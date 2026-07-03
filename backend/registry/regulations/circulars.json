@@ -3,9 +3,8 @@
   "display_name": "Recent RBI Circulars",
   "category": "circulars",
   "rbi_url": "https://www.rbi.org.in/Scripts/BS_PressReleaseDisplay.aspx",
-  "source_doc": "rbi_recent_circulars.pdf",
+  "source_docs": ["rbi_recent_circulars.pdf"],
   "qdrant_collection": "reg_circulars",
   "applicability": "Current-year circulars relevant to NBFCs below ₹500 crore",
-  "effective_date": "2024-01-01",
-  "priority": "medium"
+  "effective_date": "2024-01-01"
 }
