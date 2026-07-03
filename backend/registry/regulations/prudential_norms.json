@@ -1,0 +1,11 @@
+{
+  "id": "prudential_norms",
+  "display_name": "Prudential Norms for NBFCs",
+  "category": "prudential_norms",
+  "rbi_url": "https://www.rbi.org.in/scripts/BS_ViewMasterDirections.aspx",
+  "source_doc": "rbi_prudential_norms.pdf",
+  "qdrant_collection": "reg_prudential_norms",
+  "applicability": "NBFCs — capital adequacy, income recognition, asset classification, provisioning",
+  "effective_date": "2020-01-01",
+  "priority": "high"
+}

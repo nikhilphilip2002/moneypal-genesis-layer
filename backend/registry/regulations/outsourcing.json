@@ -1,0 +1,11 @@
+{
+  "id": "outsourcing",
+  "display_name": "Outsourcing of Financial Services",
+  "category": "outsourcing",
+  "rbi_url": "https://www.rbi.org.in/scripts/BS_ViewMasterDirections.aspx",
+  "source_doc": "rbi_outsourcing_guidelines.pdf",
+  "qdrant_collection": "reg_outsourcing",
+  "applicability": "NBFCs that outsource any financial or operational function",
+  "effective_date": "2020-08-17",
+  "priority": "medium"
+}

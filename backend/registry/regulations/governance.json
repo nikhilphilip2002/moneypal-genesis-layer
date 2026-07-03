@@ -1,0 +1,11 @@
+{
+  "id": "governance",
+  "display_name": "Corporate Governance Norms",
+  "category": "governance",
+  "rbi_url": "https://www.rbi.org.in/scripts/BS_ViewMasterDirections.aspx",
+  "source_doc": "rbi_corporate_governance.pdf",
+  "qdrant_collection": "reg_governance",
+  "applicability": "All NBFCs — board composition, committees, disclosures",
+  "effective_date": "2023-03-15",
+  "priority": "medium"
+}
