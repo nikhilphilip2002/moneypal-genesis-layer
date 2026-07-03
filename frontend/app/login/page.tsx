@@ -2,8 +2,8 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import Link from 'next/link';
 import { auth } from '@/lib/api';
+import { clearUserRoleCache, homeRoute, type UserRole } from '@/lib/useUserRole';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -24,7 +24,10 @@ export default function LoginPage() {
       const data = await auth.login(username, password);
       localStorage.setItem('token', data.access);
       localStorage.setItem('refreshToken', data.refresh);
-      router.replace('/');
+      clearUserRoleCache();
+      const me = await auth.me().catch(() => null);
+      const landing = me?.role ? homeRoute(me.role as UserRole) : '/';
+      router.replace(landing);
       router.refresh();
     } catch (err: any) {
       setError(err.message || 'Invalid username or password.');
@@ -36,20 +39,34 @@ export default function LoginPage() {
     <div className="auth-page px-4 py-6 sm:px-6">
       <div className="glass-strong glass-in rounded-3xl w-full max-w-md p-6 sm:p-8 space-y-5 sm:space-y-6 overflow-hidden">
 
-        {/* Logo + heading */}
+        {/* Joint Moneypal × GICC branding */}
         <div className="flex flex-col items-center gap-3 text-center">
-          <div className="relative w-20 h-20 drop-shadow-lg">
-            <Image
-              src="/aroha.png"
-              alt="Aroha Technologies"
-              fill
-              className="object-contain"
-              priority
-            />
+          <div className="flex items-center gap-3">
+            <div className="relative w-32 h-16 overflow-hidden">
+              <Image
+                src="/moneypal.png"
+                alt="Moneypal"
+                fill
+                className="object-contain"
+                priority
+              />
+            </div>
+            <span className="text-xl font-light text-muted-foreground">×</span>
+            <div className="relative w-16 h-16 overflow-hidden">
+              <Image
+                src="/gicc.png"
+                alt="GICC"
+                fill
+                className="object-contain p-1"
+                priority
+              />
+            </div>
           </div>
           <div className="space-y-1">
-            <h1 className="text-2xl font-semibold tracking-tight text-foreground">Welcome back</h1>
-            <p className="text-sm text-muted-foreground">Sign in to your account</p>
+            <h1 className="font-headline text-2xl font-semibold tracking-tight text-foreground">Genesis Intelligence Console</h1>
+            <p className="text-sm text-muted-foreground">
+              A joint onboarding environment for Moneypal Digital Services and GICC
+            </p>
           </div>
         </div>
 
@@ -90,11 +107,8 @@ export default function LoginPage() {
           </Button>
         </form>
 
-        <p className="text-center text-sm text-muted-foreground">
-          Don&apos;t have an account?{' '}
-          <Link href="/register" className="text-foreground underline-offset-4 hover:underline">
-            Register
-          </Link>
+        <p className="text-center text-xs text-muted-foreground">
+          Access is provisioned by Moneypal for GICC leadership.
         </p>
       </div>
     </div>

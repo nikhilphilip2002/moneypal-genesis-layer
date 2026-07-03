@@ -1,13 +1,13 @@
-// Aroha service worker — app-shell cache + network-first for HTML, cache-first for static assets.
+// Moneypal Genesis service worker — app-shell cache + network-first for HTML, cache-first for static assets.
 // Bump CACHE_VERSION whenever the shell needs to refresh on existing installs.
-const CACHE_VERSION = 'aroha-v1';
+const CACHE_VERSION = 'moneypal-v1';
 const SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
 const SHELL_ASSETS = [
   '/',
   '/manifest.webmanifest',
-  '/aroha.png',
+  '/moneypal.png',
   '/offline.html',
 ];
 

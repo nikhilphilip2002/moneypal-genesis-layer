@@ -1,45 +1,42 @@
 'use client'
 
 import Link from 'next/link'
-import { usePathname, useRouter } from 'next/navigation'
-import { Home, BarChart3, BookOpen, MessageCircle, User, Plus } from 'lucide-react'
-import { useUserRole } from '@/lib/useUserRole'
+import { usePathname } from 'next/navigation'
+import { LayoutDashboard, TrendingUp, Building, Scale, Settings2, ClipboardCheck, FileText, User } from 'lucide-react'
+import { useUserRole, ROLE_ROUTES, type UserRole } from '@/lib/useUserRole'
 import { cn } from '@/lib/utils'
 
 type TabDef = {
   href: string
   label: string
-  icon: typeof Home
-  matchPrefix?: string
+  icon: typeof LayoutDashboard
 }
 
-function tabsForRole(role: 'admin' | 'manager' | 'standard' | null): TabDef[] {
-  const slot2: TabDef =
-    role === 'admin' || role === 'manager'
-      ? { href: '/ibridge-analysis', label: 'Insights', icon: BarChart3 }
-      : { href: '/knowledge-base', label: 'Knowledge', icon: BookOpen, matchPrefix: '/knowledge-base' }
+const MODULE_TABS: TabDef[] = [
+  { href: '/', label: 'Home', icon: LayoutDashboard },
+  { href: '/macro', label: 'Macro', icon: TrendingUp },
+  { href: '/competitive', label: 'Compete', icon: Building },
+  { href: '/regulatory', label: 'Regulatory', icon: Scale },
+  { href: '/admin', label: 'Admin', icon: Settings2 },
+  { href: '/review', label: 'Review', icon: ClipboardCheck },
+  { href: '/policy', label: 'Policy', icon: FileText },
+]
 
-  return [
-    { href: '/', label: 'Home', icon: Home },
-    slot2,
-    { href: '/general-chat?new=1', label: 'New', icon: Plus, matchPrefix: '__fab__' },
-    { href: '/general-chat', label: 'Chat', icon: MessageCircle, matchPrefix: '/general-chat' },
-    { href: '/profile', label: 'Me', icon: User },
-  ]
+function tabsForRole(role: UserRole | null): TabDef[] {
+  const allowed = role ? ROLE_ROUTES[role] : []
+  const tabs = MODULE_TABS.filter((t) => allowed.includes(t.href))
+  return [...tabs, { href: '/profile', label: 'Me', icon: User }]
 }
 
 function isActive(tab: TabDef, pathname: string): boolean {
-  if (tab.matchPrefix === '__fab__') return false
-  if (tab.matchPrefix) return pathname.startsWith(tab.matchPrefix)
   if (tab.href === '/') return pathname === '/'
   return pathname === tab.href || pathname.startsWith(`${tab.href}/`)
 }
 
-const AUTH_ROUTES = new Set(['/login', '/register', '/callback'])
+const AUTH_ROUTES = new Set(['/login'])
 
 export default function MobileTabBar() {
   const pathname = usePathname()
-  const router = useRouter()
   const { role } = useUserRole()
   if (AUTH_ROUTES.has(pathname)) return null
   const tabs = tabsForRole(role)
@@ -47,30 +44,15 @@ export default function MobileTabBar() {
   return (
     <nav
       aria-label="Primary"
-      className="md:hidden fixed inset-x-3 z-30 grid grid-cols-5 items-center rounded-3xl border border-white/60 bg-white/75 backdrop-blur-xl shadow-[0_12px_30px_rgba(31,26,20,0.12)] dark:bg-black/55 dark:border-white/10"
+      className="md:hidden fixed inset-x-3 z-30 grid items-center rounded-3xl border border-white/60 bg-white/75 backdrop-blur-xl shadow-[0_12px_30px_rgba(0,69,129,0.12)] dark:bg-black/55 dark:border-white/10"
       style={{
         bottom: 'calc(env(safe-area-inset-bottom, 0px) + 12px)',
         height: '64px',
+        gridTemplateColumns: `repeat(${tabs.length}, minmax(0, 1fr))`,
       }}
     >
       {tabs.map((tab, i) => {
         const active = isActive(tab, pathname)
-        const isFab = tab.matchPrefix === '__fab__'
-
-        if (isFab) {
-          return (
-            <button
-              key={i}
-              type="button"
-              onClick={() => router.push(tab.href)}
-              aria-label={tab.label}
-              className="mx-auto grid h-11 w-11 place-items-center rounded-2xl bg-gradient-to-br from-primary to-[#F5A06C] text-white shadow-[0_10px_22px_rgba(221,122,58,0.45)] active:scale-95 transition-transform"
-            >
-              <tab.icon className="h-5 w-5" strokeWidth={2.5} />
-            </button>
-          )
-        }
-
         return (
           <Link
             key={i}
@@ -81,7 +63,7 @@ export default function MobileTabBar() {
               active ? 'text-primary' : 'text-muted-foreground'
             )}
           >
-            <tab.icon className={cn('h-5 w-5', active && 'drop-shadow-[0_2px_4px_rgba(221,122,58,0.35)]')} strokeWidth={active ? 2.4 : 1.9} />
+            <tab.icon className={cn('h-5 w-5', active && 'drop-shadow-[0_2px_4px_rgba(0,93,170,0.35)]')} strokeWidth={active ? 2.4 : 1.9} />
             <span>{tab.label}</span>
           </Link>
         )

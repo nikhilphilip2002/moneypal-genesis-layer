@@ -5,7 +5,7 @@ import { SidebarTrigger } from '@/components/ui/sidebar';
 import { Separator } from '@/components/ui/separator';
 import NavBar from '@/components/NavBar';
 
-const AUTH_ROUTES = ['/login', '/register', '/callback'];
+const AUTH_ROUTES = ['/login'];
 
 export default function ConditionalHeader() {
   const pathname = usePathname();

@@ -67,13 +67,21 @@ module.exports = {
 			},
 			fontFamily: {
 				sans: [
-					'Plus Jakarta Sans',
+					'Inter',
 					'system-ui',
 					'sans-serif'
 				],
+				headline: [
+					'Harabara',
+					'Poppins',
+					'Inter',
+					'sans-serif'
+				],
 				serif: [
-					'Georgia',
-					'serif'
+					'Harabara',
+					'Poppins',
+					'Inter',
+					'sans-serif'
 				],
 				mono: [
 					'JetBrains Mono',

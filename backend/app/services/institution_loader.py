@@ -22,3 +22,9 @@ def load_one(institution_id: str) -> dict | None:
     if not path.exists():
         return None
     return json.loads(path.read_text(encoding="utf-8"))
+
+
+def save(institution: dict) -> None:
+    """Persist a new institution config. Adding an institution = adding a JSON file."""
+    path = INSTITUTIONS_DIR / f"{institution['id']}.json"
+    path.write_text(json.dumps(institution, indent=2) + "\n", encoding="utf-8")

@@ -1,29 +1,29 @@
 {
-  "name": "Aroha",
-  "short_name": "Aroha",
-  "description": "Company intelligence, learner analytics and AI assistants — by Aroha.",
+  "name": "Moneypal Genesis Intelligence Console",
+  "short_name": "Moneypal",
+  "description": "Macro-economic, competitive and regulatory intelligence for GICC leadership — by Moneypal.",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
   "orientation": "portrait",
-  "background_color": "#FBF6EE",
-  "theme_color": "#DD7A3A",
-  "categories": ["business", "productivity", "education"],
+  "background_color": "#F8F9FB",
+  "theme_color": "#005DAA",
+  "categories": ["business", "finance", "productivity"],
   "icons": [
     {
-      "src": "/aroha.png",
+      "src": "/moneypal.png",
       "sizes": "192x192",
       "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "/aroha.png",
+      "src": "/moneypal.png",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "/aroha.png",
+      "src": "/moneypal.png",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "maskable"
@@ -31,16 +31,16 @@
   ],
   "shortcuts": [
     {
-      "name": "Intel Chat",
-      "short_name": "Chat",
-      "url": "/general-chat",
-      "icons": [{ "src": "/aroha.png", "sizes": "192x192" }]
+      "name": "Regulatory Intelligence",
+      "short_name": "Regulatory",
+      "url": "/regulatory",
+      "icons": [{ "src": "/moneypal.png", "sizes": "192x192" }]
     },
     {
-      "name": "iBridge Analysis",
-      "short_name": "iBridge",
-      "url": "/ibridge-analysis",
-      "icons": [{ "src": "/aroha.png", "sizes": "192x192" }]
+      "name": "Competitive Intelligence",
+      "short_name": "Competitive",
+      "url": "/competitive",
+      "icons": [{ "src": "/moneypal.png", "sizes": "192x192" }]
     }
   ]
 }

@@ -1,6 +1,5 @@
 import type { Metadata } from 'next'
 import './globals.css'
-import NavBar from '@/components/NavBar'
 import AppSidebar from '@/components/AppSidebar'
 import ConditionalHeader from '@/components/ConditionalHeader'
 import { SidebarProvider, SidebarInset } from '@/components/ui/sidebar'
@@ -9,30 +8,29 @@ import { ThemeProvider } from '@/components/ThemeProvider'
 import PWARegister from '@/components/PWARegister'
 import MobileTopNav from '@/components/mobile/MobileTopNav'
 import MobileTabBar from '@/components/mobile/MobileTabBar'
-import GuideBot from '@/components/GuideBot'
 import type { Viewport } from 'next'
 
 export const metadata: Metadata = {
-  title: 'Aroha',
-  description: 'Company intelligence, learner analytics and AI assistants — by Aroha.',
-  applicationName: 'Aroha',
+  title: 'Moneypal — Genesis Intelligence Console',
+  description: 'Macro-economic, competitive and regulatory intelligence for GICC leadership — by Moneypal.',
+  applicationName: 'Moneypal Genesis',
   manifest: '/manifest.webmanifest',
   appleWebApp: {
     capable: true,
     statusBarStyle: 'default',
-    title: 'Aroha',
+    title: 'Moneypal Genesis',
   },
   icons: {
-    icon: '/aroha.png',
-    apple: '/aroha.png',
+    icon: '/moneypal.png',
+    apple: '/moneypal.png',
   },
   formatDetection: { telephone: false },
 }
 
 export const viewport: Viewport = {
   themeColor: [
-    { media: '(prefers-color-scheme: light)', color: '#DD7A3A' },
-    { media: '(prefers-color-scheme: dark)', color: '#1F1A14' },
+    { media: '(prefers-color-scheme: light)', color: '#005DAA' },
+    { media: '(prefers-color-scheme: dark)', color: '#0E1114' },
   ],
   width: 'device-width',
   initialScale: 1,
@@ -51,7 +49,7 @@ export default function RootLayout({
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
         <link
           rel="stylesheet"
-          href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
+          href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Poppins:wght@500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
         />
       </head>
       <body className="font-sans antialiased">
@@ -79,11 +77,13 @@ export default function RootLayout({
               >
                 {children}
               </main>
+              <footer className="hidden md:block shrink-0 px-6 py-2 text-center text-[11px] text-muted-foreground/70">
+                Powered by Aroha Corporate Intelligence Framework
+              </footer>
               <MobileTabBar />
             </SidebarInset>
           </SidebarProvider>
           <Toaster />
-          <GuideBot />
         </ThemeProvider>
         <PWARegister />
       </body>

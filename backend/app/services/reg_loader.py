@@ -18,3 +18,9 @@ def load_one(category_id: str) -> dict | None:
     if not path.exists():
         return None
     return json.loads(path.read_text(encoding="utf-8"))
+
+
+def save(regulation: dict) -> None:
+    """Persist a new regulation category config."""
+    path = REGULATIONS_DIR / f"{regulation['id']}.json"
+    path.write_text(json.dumps(regulation, indent=2) + "\n", encoding="utf-8")

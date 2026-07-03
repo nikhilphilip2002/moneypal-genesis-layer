@@ -1,0 +1,152 @@
+'use client';
+
+import { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
+import {
+  auth,
+  regulatory,
+  type RegulationCategory,
+  type IntelligenceResponse,
+} from '@/lib/api';
+import { canAccess, homeRoute, type UserRole } from '@/lib/useUserRole';
+import { useIntel } from '@/lib/useIntel';
+import { Card, CardContent } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
+import IntelligenceCard from '@/components/intel/IntelligenceCard';
+import LoadingCard from '@/components/intel/LoadingCard';
+import WidgetError from '@/components/intel/WidgetError';
+import { ChevronDown, ExternalLink, Scale } from 'lucide-react';
+import { cn } from '@/lib/utils';
+
+const priorityStyles: Record<string, string> = {
+  high: 'border-red-300 bg-red-50 text-red-700 dark:border-red-800 dark:bg-red-950/50 dark:text-red-400',
+  medium: 'border-amber-300 bg-amber-50 text-amber-700 dark:border-amber-800 dark:bg-amber-950/50 dark:text-amber-400',
+  low: 'border-border/80 bg-muted text-muted-foreground',
+};
+
+function CategoryRow({ category }: { category: RegulationCategory }) {
+  const [open, setOpen] = useState(false);
+  const [detail, setDetail] = useState<IntelligenceResponse | null>(null);
+  const [error, setError] = useState(false);
+
+  // Fetch the RAG-generated briefing lazily, on first expand.
+  useEffect(() => {
+    if (!open || detail || error) return;
+    regulatory.detail(category.id).then(setDetail).catch(() => setError(true));
+  }, [open, detail, error, category.id]);
+
+  return (
+    <Card className="dashboard-surface overflow-hidden rounded-[1.5rem] border-border/70 shadow-none">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="flex w-full items-center gap-3 p-4 text-left transition-colors hover:bg-accent/40 md:p-5"
+      >
+        <div className="rounded-2xl bg-accent p-2 text-accent-foreground">
+          <Scale className="h-4 w-4" />
+        </div>
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-semibold leading-snug">{category.display_name}</p>
+          <p className="mt-0.5 truncate text-xs text-muted-foreground">
+            {category.applicability || 'Applies to NBFCs'}
+            {category.effective_date ? ` · Effective ${category.effective_date}` : ''}
+          </p>
+        </div>
+        <Badge
+          variant="outline"
+          className={cn('shrink-0 rounded-full px-2.5 py-0.5 text-[10px] uppercase', priorityStyles[category.priority || 'medium'] || priorityStyles.medium)}
+        >
+          {category.priority || 'medium'}
+        </Badge>
+        {category.rbi_url && (
+          <a
+            href={category.rbi_url}
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={(e) => e.stopPropagation()}
+            className="hidden shrink-0 items-center gap-1 text-[11px] font-medium text-primary hover:underline sm:inline-flex"
+          >
+            RBI source <ExternalLink className="h-3 w-3" />
+          </a>
+        )}
+        <ChevronDown className={cn('h-4 w-4 shrink-0 text-muted-foreground transition-transform duration-200', open && 'rotate-180')} />
+      </button>
+
+      {open && (
+        <CardContent className="border-t border-border/50 p-4 md:p-5">
+          {!detail && !error && <LoadingCard lines={8} className="border-0 shadow-none" />}
+          {error && <WidgetError title={category.display_name} onRetry={() => setError(false)} className="border-0 shadow-none" />}
+          {detail && <IntelligenceCard data={detail} className="border-0 shadow-none" />}
+        </CardContent>
+      )}
+    </Card>
+  );
+}
+
+export default function RegulatoryPage() {
+  const router = useRouter();
+  const [authorized, setAuthorized] = useState(false);
+
+  useEffect(() => {
+    auth
+      .me()
+      .then((user) => {
+        const role = user.role as UserRole;
+        if (!canAccess(role, '/regulatory')) {
+          router.replace(homeRoute(role));
+          return;
+        }
+        setAuthorized(true);
+      })
+      .catch(() => router.replace('/login'));
+  }, [router]);
+
+  const categories = useIntel<RegulationCategory[]>(regulatory.categories);
+
+  if (!authorized) {
+    return (
+      <div className="mx-auto w-full max-w-6xl space-y-4 px-4 py-8 md:px-6">
+        <LoadingCard lines={6} />
+      </div>
+    );
+  }
+
+  return (
+    <div className="h-full overflow-auto">
+      <div className="mx-auto max-w-4xl px-4 py-6 md:px-6 md:py-8">
+        <div className="space-y-5">
+          {/* Header */}
+          <section className="space-y-2">
+            <Badge variant="outline" className="rounded-full border-border/80 bg-card/80 px-3 py-1 text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
+              Module 3
+            </Badge>
+            <h1 className="font-headline text-2xl font-semibold tracking-tight md:text-3xl">Regulatory Intelligence</h1>
+            <p className="max-w-2xl text-sm text-muted-foreground">
+              RBI regulations applicable to NBFCs below ₹500 crore, translated into business actions for GICC. Expand a category for the full briefing.
+            </p>
+          </section>
+
+          {/* Category list */}
+          {categories.loading && (
+            <div className="space-y-3">
+              {[1, 2, 3, 4].map((i) => (
+                <LoadingCard key={i} lines={1} />
+              ))}
+            </div>
+          )}
+          {categories.error && <WidgetError title="Regulation registry" onRetry={categories.reload} />}
+          {categories.data && (
+            <div className="space-y-3">
+              {categories.data.map((category) => (
+                <CategoryRow key={category.id} category={category} />
+              ))}
+              {categories.data.length === 0 && (
+                <p className="py-12 text-center text-sm text-muted-foreground">No regulation categories configured.</p>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}

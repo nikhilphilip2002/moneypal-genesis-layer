@@ -4,40 +4,40 @@
 
 @layer base {
   :root {
-    /* ── Aroha brand ── */
-    --background: 28 100% 98%;
-    --foreground: 0 0% 8%;
+    /* ── Moneypal brand (DESIGN.md palette) ── */
+    --background: 220 27% 98%;
+    --foreground: 204 9% 11%;
     --card: 0 0% 100%;
-    --card-foreground: 0 0% 8%;
+    --card-foreground: 204 9% 11%;
     --popover: 0 0% 100%;
-    --popover-foreground: 0 0% 8%;
-    --primary: 18 76% 56%;
+    --popover-foreground: 204 9% 11%;
+    --primary: 207 100% 33%;
     --primary-foreground: 0 0% 100%;
-    --secondary: 28 100% 95%;
-    --secondary-foreground: 0 0% 8%;
-    --muted: 28 60% 93%;
-    --muted-foreground: 0 0% 40%;
-    --accent: 30 81% 62%;
-    --accent-foreground: 0 0% 8%;
-    --destructive: 3 73% 51%;
+    --secondary: 210 12% 93%;
+    --secondary-foreground: 204 9% 11%;
+    --muted: 210 12% 93%;
+    --muted-foreground: 217 11% 29%;
+    --accent: 219 100% 92%;
+    --accent-foreground: 211 100% 11%;
+    --destructive: 0 75% 42%;
     --destructive-foreground: 0 0% 98%;
-    --border: 28 25% 84%;
-    --input: 28 25% 84%;
-    --ring: 18 76% 56%;
+    --border: 223 17% 79%;
+    --input: 223 17% 79%;
+    --ring: 207 100% 33%;
     --radius: 1rem;
-    --chart-1: 18 76% 56%;
-    --chart-2: 30 81% 62%;
-    --chart-3: 26 71% 56%;
-    --chart-4: 3 73% 51%;
-    --chart-5: 0 0% 6%;
-    --sidebar-background: 28 80% 97%;
-    --sidebar-foreground: 0 0% 15%;
-    --sidebar-primary: 18 76% 56%;
+    --chart-1: 207 100% 33%;
+    --chart-2: 217 100% 82%;
+    --chart-3: 208 100% 25%;
+    --chart-4: 0 75% 42%;
+    --chart-5: 204 9% 11%;
+    --sidebar-background: 210 18% 96%;
+    --sidebar-foreground: 204 9% 15%;
+    --sidebar-primary: 207 100% 33%;
     --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 28 70% 91%;
-    --sidebar-accent-foreground: 0 0% 8%;
-    --sidebar-border: 28 30% 86%;
-    --sidebar-ring: 18 76% 56%;
+    --sidebar-accent: 210 9% 91%;
+    --sidebar-accent-foreground: 204 9% 11%;
+    --sidebar-border: 210 5% 85%;
+    --sidebar-ring: 207 100% 33%;
 
     /* ── Apple-style glass tokens ── */
     --glass-blur:     20px;
@@ -45,66 +45,66 @@
     --glass-bg:       rgba(255, 255, 255, 0.62);
     --glass-border:   rgba(255, 255, 255, 0.75);
     --glass-border-top: rgba(255, 255, 255, 0.95);
-    --glass-shadow:   0 8px 32px rgba(221, 122, 58, 0.12),
-                      0 2px 8px rgba(221, 122, 58, 0.06);
+    --glass-shadow:   0 8px 32px rgba(0, 93, 170, 0.12),
+                      0 2px 8px rgba(0, 93, 170, 0.06);
     --glass-inset:    0 1px 0 rgba(255, 255, 255, 0.90) inset;
 
-    /* ── Mesh gradient (light) — rich amber wash ── */
-    --mesh-base:   hsl(32 100% 95%);
-    --blob-1:      hsl(18 95% 72%);
-    --blob-2:      hsl(35 100% 76%);
-    --blob-3:      hsl(14 90% 78%);
-    --blob-4:      hsl(50 100% 80%);
+    /* ── Mesh gradient (light) — cool institutional blue wash ── */
+    --mesh-base:   hsl(220 40% 96%);
+    --blob-1:      hsl(207 85% 78%);
+    --blob-2:      hsl(217 100% 85%);
+    --blob-3:      hsl(200 70% 82%);
+    --blob-4:      hsl(228 60% 86%);
   }
 
   .dark {
-    --background: 0 0% 4%;
-    --foreground: 28 40% 94%;
-    --card: 0 0% 6%;
-    --card-foreground: 28 40% 94%;
-    --popover: 0 0% 6%;
-    --popover-foreground: 28 40% 94%;
-    --primary: 18 76% 56%;
+    --background: 204 9% 5%;
+    --foreground: 210 20% 94%;
+    --card: 204 9% 7%;
+    --card-foreground: 210 20% 94%;
+    --popover: 204 9% 7%;
+    --popover-foreground: 210 20% 94%;
+    --primary: 207 90% 45%;
     --primary-foreground: 0 0% 100%;
-    --secondary: 0 0% 11%;
-    --secondary-foreground: 28 40% 94%;
-    --muted: 0 0% 11%;
-    --muted-foreground: 0 0% 58%;
-    --accent: 30 81% 62%;
-    --accent-foreground: 0 0% 6%;
-    --destructive: 3 73% 51%;
+    --secondary: 204 9% 12%;
+    --secondary-foreground: 210 20% 94%;
+    --muted: 204 9% 12%;
+    --muted-foreground: 215 10% 60%;
+    --accent: 211 60% 18%;
+    --accent-foreground: 217 100% 87%;
+    --destructive: 0 75% 51%;
     --destructive-foreground: 0 0% 98%;
-    --border: 0 0% 16%;
-    --input: 0 0% 16%;
-    --ring: 18 76% 56%;
-    --chart-1: 18 76% 56%;
-    --chart-2: 30 81% 62%;
-    --chart-3: 26 71% 56%;
-    --chart-4: 3 73% 51%;
-    --chart-5: 28 40% 94%;
-    --sidebar-background: 0 0% 5%;
-    --sidebar-foreground: 28 25% 78%;
-    --sidebar-primary: 18 76% 56%;
+    --border: 204 9% 17%;
+    --input: 204 9% 17%;
+    --ring: 207 90% 45%;
+    --chart-1: 207 90% 45%;
+    --chart-2: 217 100% 82%;
+    --chart-3: 208 100% 60%;
+    --chart-4: 0 75% 51%;
+    --chart-5: 210 20% 94%;
+    --sidebar-background: 204 9% 6%;
+    --sidebar-foreground: 214 15% 78%;
+    --sidebar-primary: 207 90% 45%;
     --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 18 45% 13%;
-    --sidebar-accent-foreground: 28 40% 94%;
-    --sidebar-border: 0 0% 14%;
-    --sidebar-ring: 18 76% 56%;
+    --sidebar-accent: 211 50% 14%;
+    --sidebar-accent-foreground: 210 20% 94%;
+    --sidebar-border: 204 9% 15%;
+    --sidebar-ring: 207 90% 45%;
 
     /* ── Apple-style glass tokens (dark) ── */
-    --glass-bg:        rgba(20, 16, 14, 0.68);
+    --glass-bg:        rgba(14, 17, 20, 0.68);
     --glass-border:    rgba(255, 255, 255, 0.10);
     --glass-border-top: rgba(255, 255, 255, 0.22);
     --glass-shadow:    0 8px 40px rgba(0, 0, 0, 0.55),
                        0 2px 8px rgba(0, 0, 0, 0.30);
     --glass-inset:     0 1px 0 rgba(255, 255, 255, 0.08) inset;
 
-    /* ── Mesh gradient (dark) — deep ember ── */
-    --mesh-base:   hsl(0 0% 3%);
-    --blob-1:      hsl(18 80% 18%);
-    --blob-2:      hsl(5 70% 14%);
-    --blob-3:      hsl(35 65% 16%);
-    --blob-4:      hsl(270 30% 14%);
+    /* ── Mesh gradient (dark) — deep navy ── */
+    --mesh-base:   hsl(210 15% 4%);
+    --blob-1:      hsl(207 80% 16%);
+    --blob-2:      hsl(217 70% 13%);
+    --blob-3:      hsl(200 65% 15%);
+    --blob-4:      hsl(240 30% 13%);
   }
 }
 
@@ -114,8 +114,8 @@
 }
 
 /* ── Html base colour (visible before JS hydrates) ── */
-html                { background: hsl(32 100% 95%); }
-html.dark           { background: hsl(0 0% 3%); }
+html                { background: hsl(220 40% 96%); }
+html.dark           { background: hsl(210 15% 4%); }
 
 body {
   font-feature-settings: "rlig" 1, "calt" 1;
@@ -135,18 +135,18 @@ body {
   overflow: hidden;
   /* Rich radial gradient wash — fills the whole screen */
   background:
-    radial-gradient(ellipse 90% 70% at 15% 20%,  hsl(28 100% 88%) 0%, transparent 60%),
-    radial-gradient(ellipse 70% 60% at 85% 80%,  hsl(14 90%  82%) 0%, transparent 55%),
-    radial-gradient(ellipse 80% 80% at 50% 50%,  hsl(40 100% 93%) 0%, transparent 70%),
-    hsl(32 100% 96%);
+    radial-gradient(ellipse 90% 70% at 15% 20%,  hsl(207 80% 90%) 0%, transparent 60%),
+    radial-gradient(ellipse 70% 60% at 85% 80%,  hsl(217 70% 86%) 0%, transparent 55%),
+    radial-gradient(ellipse 80% 80% at 50% 50%,  hsl(220 60% 95%) 0%, transparent 70%),
+    hsl(220 40% 97%);
 }
 
 .dark .bg-mesh {
   background:
-    radial-gradient(ellipse 80% 60% at 20% 15%,  hsl(18 70% 12%) 0%, transparent 55%),
-    radial-gradient(ellipse 60% 50% at 80% 85%,  hsl(5  65% 10%) 0%, transparent 50%),
-    radial-gradient(ellipse 70% 70% at 55% 45%,  hsl(270 25% 9%) 0%, transparent 60%),
-    hsl(0 0% 3%);
+    radial-gradient(ellipse 80% 60% at 20% 15%,  hsl(207 70% 11%) 0%, transparent 55%),
+    radial-gradient(ellipse 60% 50% at 80% 85%,  hsl(217 60% 9%) 0%, transparent 50%),
+    radial-gradient(ellipse 70% 70% at 55% 45%,  hsl(240 25% 8%) 0%, transparent 60%),
+    hsl(210 15% 4%);
 }
 
 /* Floating blobs — more opaque + vivid than before */
@@ -255,13 +255,13 @@ body {
   border: 1px solid rgba(255, 255, 255, 0.80);
   border-top-color: rgba(255, 255, 255, 0.98);
   box-shadow:
-    0 20px 60px rgba(221, 122, 58, 0.15),
-    0 8px 24px rgba(221, 122, 58, 0.08),
+    0 20px 60px rgba(0, 93, 170, 0.15),
+    0 8px 24px rgba(0, 93, 170, 0.08),
     0 1px 0 rgba(255, 255, 255, 0.95) inset;
 }
 
 .dark .glass-strong {
-  background: rgba(18, 14, 12, 0.78);
+  background: rgba(12, 15, 18, 0.78);
   border: 1px solid rgba(255, 255, 255, 0.10);
   border-top-color: rgba(255, 255, 255, 0.20);
   box-shadow:
@@ -279,12 +279,12 @@ body {
   border: 1px solid rgba(255, 255, 255, 0.65);
   border-top-color: rgba(255, 255, 255, 0.92);
   box-shadow:
-    0 4px 20px rgba(221, 122, 58, 0.08),
+    0 4px 20px rgba(0, 93, 170, 0.08),
     0 1px 0 rgba(255, 255, 255, 0.88) inset;
 }
 
 .dark .glass-vibrancy {
-  background: rgba(16, 13, 11, 0.72);
+  background: rgba(11, 14, 17, 0.72);
   backdrop-filter: saturate(200%) blur(24px) brightness(1.06);
   -webkit-backdrop-filter: saturate(200%) blur(24px) brightness(1.06);
   border: 1px solid rgba(255, 255, 255, 0.09);
@@ -325,11 +325,11 @@ body {
 ::-webkit-scrollbar { width: 6px; height: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb {
-  background: rgba(221, 122, 58, 0.25);
+  background: rgba(0, 93, 170, 0.25);
   border-radius: 999px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(221, 122, 58, 0.45);
+  background: rgba(0, 93, 170, 0.45);
 }
 .dark ::-webkit-scrollbar-thumb {
   background: rgba(255, 255, 255, 0.12);
@@ -362,6 +362,6 @@ body {
    SELECTION COLOUR
 ═══════════════════════════════════════════════════════════════════════════ */
 ::selection {
-  background: rgba(221, 122, 58, 0.25);
+  background: rgba(0, 93, 170, 0.25);
   color: hsl(var(--foreground));
 }

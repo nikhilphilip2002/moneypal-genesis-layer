@@ -3,8 +3,6 @@
 import Image from 'next/image';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { useEffect, useState } from 'react';
-import { auth } from '@/lib/api';
 import {
     Sidebar,
     SidebarContent,
@@ -15,30 +13,17 @@ import {
     SidebarMenu,
     SidebarMenuButton,
     SidebarMenuItem,
-    SidebarMenuSub,
-    SidebarMenuSubButton,
-    SidebarMenuSubItem,
     SidebarRail,
 } from '@/components/ui/sidebar';
+import { useUserRole, ROLE_ROUTES, type UserRole } from '@/lib/useUserRole';
 import {
-    Collapsible,
-    CollapsibleContent,
-    CollapsibleTrigger,
-} from '@radix-ui/react-collapsible';
-import {
-    MessageSquare,
-    Zap,
-    MessageCircle,
+    LayoutDashboard,
+    TrendingUp,
     Building,
-    Search,
-    Database,
-    BarChart3,
-    Briefcase,
-    ChevronRight,
-    Mail,
-    Network,
+    Scale,
+    Settings2,
     ClipboardCheck,
-    Sparkles,
+    FileText,
 } from 'lucide-react';
 
 interface NavItem {
@@ -47,101 +32,37 @@ interface NavItem {
     icon: React.ElementType;
 }
 
-interface NavSection {
-    title: string;
-    icon: React.ElementType;
-    items: NavItem[];
+const ALL_NAV_ITEMS: NavItem[] = [
+    { title: 'Executive Dashboard', url: '/', icon: LayoutDashboard },
+    { title: 'Macro Intelligence', url: '/macro', icon: TrendingUp },
+    { title: 'Competitive Intelligence', url: '/competitive', icon: Building },
+    { title: 'Regulatory Intelligence', url: '/regulatory', icon: Scale },
+    { title: 'Administration', url: '/admin', icon: Settings2 },
+    { title: 'Intelligence Review', url: '/review', icon: ClipboardCheck },
+    { title: 'Policy Workspace', url: '/policy', icon: FileText },
+];
+
+function navForRole(role: UserRole | null): NavItem[] {
+    if (!role) return [];
+    const allowed = ROLE_ROUTES[role];
+    return allowed
+        .map((url) => ALL_NAV_ITEMS.find((item) => item.url === url))
+        .filter((item): item is NavItem => Boolean(item));
 }
-
-const chatSection: NavSection = {
-    title: 'Chat',
-    icon: MessageSquare,
-    items: [
-        { title: 'Company Intel', url: '/intel', icon: Zap },
-        { title: 'General Intel', url: '/general-chat', icon: MessageCircle },
-    ],
-};
-
-const insightsSection: NavSection = {
-    title: 'Insights',
-    icon: Sparkles,
-    items: [
-        { title: 'YouTube Snippets', url: '/youtube-chat', icon: Zap },
-        { title: 'iBridge Analysis', url: '/ibridge-analysis', icon: ClipboardCheck },
-    ],
-};
-
-function getStandaloneItems(userRole: string): NavItem[] {
-    if (userRole === 'admin') {
-        return [
-            { title: 'Job Requirements', url: '/intel/requirements', icon: Briefcase },
-            { title: 'Companies', url: '/companies', icon: Building },
-            { title: 'Email KB', url: '/email-knowledge-base', icon: Mail },
-            { title: 'Curiosity Graph', url: '/curiosity-graph', icon: Network },
-            { title: 'Search History', url: '/search-history', icon: Search },
-            { title: 'Retrieval', url: '/retrieval', icon: Database },
-            { title: 'Usage', url: '/usage', icon: BarChart3 },
-        ];
-    }
-    if (userRole === 'manager') {
-        return [
-            { title: 'Job Requirements', url: '/intel/requirements', icon: Briefcase },
-            { title: 'Companies', url: '/companies', icon: Building },
-            { title: 'Retrieval', url: '/retrieval', icon: Database },
-            { title: 'Usage', url: '/usage', icon: BarChart3 },
-        ];
-    }
-    return [
-        { title: 'Companies', url: '/companies', icon: Building },
-    ];
-}
-
-const adminExclusivePaths = ['/search-history', '/email-knowledge-base', '/curiosity-graph'];
-const standardAllowedChatPaths = ['/general-chat'];
-const standardAllowedInsightsPaths = ['/youtube-chat', '/ibridge-analysis'];
-const standardAllowedStandalonePaths = ['/companies'];
 
 export default function AppSidebar() {
     const pathname = usePathname();
-    const [role, setRole] = useState<string>('standard');
-    const [isInitialized, setIsInitialized] = useState(false);
+    const { role, ready } = useUserRole();
 
-    useEffect(() => {
-        auth.me()
-            .then(user => {
-                const userRole = user.role || (user.is_staff ? 'admin' : 'standard');
-                setRole(userRole);
-            })
-            .catch(() => setRole('standard'))
-            .finally(() => setIsInitialized(true));
-    }, [pathname]);
+    if (!ready) return null;
+    if (pathname === '/login') return null;
 
-    if (!isInitialized) return null;
-    if (pathname === '/login' || pathname === '/register' || pathname === '/callback') return null;
-
-    const visibleChatItems = chatSection.items.filter(item => {
-        if (role === 'admin' || role === 'manager') return true;
-        return standardAllowedChatPaths.includes(item.url);
-    });
-
-    const visibleInsightsItems = insightsSection.items.filter(item => {
-        if (role === 'admin' || role === 'manager') return true;
-        return standardAllowedInsightsPaths.includes(item.url);
-    });
-
-    const visibleItems = getStandaloneItems(role).filter(item => {
-        if (role === 'admin') return true;
-        if (role === 'manager') return !adminExclusivePaths.includes(item.url);
-        return standardAllowedStandalonePaths.includes(item.url);
-    });
+    const visibleItems = navForRole(role);
 
     const isActive = (url: string) => {
         if (url === '/') return pathname === '/';
         return pathname === url || pathname.startsWith(url + '/');
     };
-
-    const isChatSectionActive = chatSection.items.some(item => isActive(item.url));
-    const isInsightsSectionActive = insightsSection.items.some(item => isActive(item.url));
 
     return (
         <Sidebar collapsible="icon">
@@ -151,21 +72,21 @@ export default function AppSidebar() {
                         <SidebarMenuButton
                             size="lg"
                             asChild
-                            className="h-auto rounded-md border border-sidebar-border/70 p-3 group-data-[collapsible=icon]:p-2"
+                            className="h-auto rounded-md border border-sidebar-border/70 p-3 group-data-[collapsible=icon]:!size-8 group-data-[collapsible=icon]:!p-0 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:border-0"
                         >
                             <Link href="/">
-                                <div className="flex size-12 items-center justify-center rounded-lg bg-white shadow-sm ring-1 ring-black/5 group-data-[collapsible=icon]:size-8">
+                                <div className="flex h-10 w-20 shrink-0 items-center justify-center group-data-[collapsible=icon]:h-8 group-data-[collapsible=icon]:w-8 overflow-hidden">
                                     <Image
-                                        src="/aroha.png"
-                                        alt="Aroha"
-                                        width={48}
-                                        height={48}
-                                        className="size-11 object-contain group-data-[collapsible=icon]:size-7"
+                                        src="/moneypal.png"
+                                        alt="Moneypal"
+                                        width={160}
+                                        height={80}
+                                        className="h-9 w-[72px] object-contain group-data-[collapsible=icon]:h-7 group-data-[collapsible=icon]:w-7"
                                     />
                                 </div>
-                                <div className="grid flex-1 text-left text-sm leading-tight">
-                                    <span className="truncate font-semibold tracking-tight text-[13px]">Aroha Technologies</span>
-                                    <span className="truncate font-mono text-[9px] uppercase tracking-widest text-sidebar-foreground/40">Company Intel</span>
+                                <div className="grid flex-1 text-left text-sm leading-tight group-data-[collapsible=icon]:hidden">
+                                    <span className="truncate font-semibold tracking-tight text-[13px]">Moneypal</span>
+                                    <span className="truncate font-mono text-[9px] uppercase tracking-widest text-sidebar-foreground/40">Genesis Console</span>
                                 </div>
                             </Link>
                         </SidebarMenuButton>
@@ -174,101 +95,9 @@ export default function AppSidebar() {
             </SidebarHeader>
 
             <SidebarContent>
-                {/* Chat section */}
                 <SidebarGroup className="px-3 py-2">
                     <SidebarGroupLabel className="text-[10px] font-semibold uppercase tracking-widest text-sidebar-foreground/40 mb-1">
-                        Platform
-                    </SidebarGroupLabel>
-                    <SidebarGroupContent>
-                        <SidebarMenu>
-                            <Collapsible
-                                defaultOpen={isChatSectionActive}
-                                className="group/collapsible"
-                            >
-                                <SidebarMenuItem>
-                                    <CollapsibleTrigger asChild>
-                                        <SidebarMenuButton
-                                            tooltip="Chat"
-                                            className="rounded-md text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-foreground"
-                                        >
-                                            <MessageSquare className="size-4" />
-                                            <span className="text-[13px]">Chat</span>
-                                            <ChevronRight className="ml-auto size-3.5 transition-transform duration-200 group-data-[state=open]/collapsible:rotate-90" />
-                                        </SidebarMenuButton>
-                                    </CollapsibleTrigger>
-                                    <CollapsibleContent>
-                                        <SidebarMenuSub>
-                                            {visibleChatItems.map((item) => (
-                                                <SidebarMenuSubItem key={item.url}>
-                                                    <SidebarMenuSubButton
-                                                        asChild
-                                                        isActive={isActive(item.url)}
-                                                        className="rounded-md text-[12px] data-[active=true]:bg-foreground data-[active=true]:text-background"
-                                                    >
-                                                        <Link href={item.url}>
-                                                            <item.icon className="size-3.5" />
-                                                            <span>{item.title}</span>
-                                                        </Link>
-                                                    </SidebarMenuSubButton>
-                                                </SidebarMenuSubItem>
-                                            ))}
-                                        </SidebarMenuSub>
-                                    </CollapsibleContent>
-                                </SidebarMenuItem>
-                            </Collapsible>
-                        </SidebarMenu>
-                    </SidebarGroupContent>
-                </SidebarGroup>
-
-                {/* Insights section */}
-                {visibleInsightsItems.length > 0 && (
-                    <SidebarGroup className="px-3 py-2">
-                        <SidebarGroupContent>
-                            <SidebarMenu>
-                                <Collapsible
-                                    defaultOpen={isInsightsSectionActive}
-                                    className="group/collapsible"
-                                >
-                                    <SidebarMenuItem>
-                                        <CollapsibleTrigger asChild>
-                                            <SidebarMenuButton
-                                                tooltip="Insights"
-                                                className="rounded-md text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-foreground"
-                                            >
-                                                <Sparkles className="size-4" />
-                                                <span className="text-[13px]">Insights</span>
-                                                <ChevronRight className="ml-auto size-3.5 transition-transform duration-200 group-data-[state=open]/collapsible:rotate-90" />
-                                            </SidebarMenuButton>
-                                        </CollapsibleTrigger>
-                                        <CollapsibleContent>
-                                            <SidebarMenuSub>
-                                                {visibleInsightsItems.map((item) => (
-                                                    <SidebarMenuSubItem key={item.url}>
-                                                        <SidebarMenuSubButton
-                                                            asChild
-                                                            isActive={isActive(item.url)}
-                                                            className="rounded-md text-[12px] data-[active=true]:bg-foreground data-[active=true]:text-background"
-                                                        >
-                                                            <Link href={item.url}>
-                                                                <item.icon className="size-3.5" />
-                                                                <span>{item.title}</span>
-                                                            </Link>
-                                                        </SidebarMenuSubButton>
-                                                    </SidebarMenuSubItem>
-                                                ))}
-                                            </SidebarMenuSub>
-                                        </CollapsibleContent>
-                                    </SidebarMenuItem>
-                                </Collapsible>
-                            </SidebarMenu>
-                        </SidebarGroupContent>
-                    </SidebarGroup>
-                )}
-
-                {/* Management section */}
-                <SidebarGroup className="px-3 py-2">
-                    <SidebarGroupLabel className="text-[10px] font-semibold uppercase tracking-widest text-sidebar-foreground/40 mb-1">
-                        Management
+                        Intelligence Modules
                     </SidebarGroupLabel>
                     <SidebarGroupContent>
                         <SidebarMenu>
@@ -288,6 +117,27 @@ export default function AppSidebar() {
                                 </SidebarMenuItem>
                             ))}
                         </SidebarMenu>
+                    </SidebarGroupContent>
+                </SidebarGroup>
+
+                {/* GICC partner mark */}
+                <SidebarGroup className="mt-auto px-3 py-2 group-data-[collapsible=icon]:hidden">
+                    <SidebarGroupContent>
+                        <div className="flex items-center gap-2 rounded-md border border-sidebar-border/70 p-2.5">
+                            <div className="flex size-8 shrink-0 items-center justify-center overflow-hidden">
+                                <Image
+                                    src="/gicc.png"
+                                    alt="GICC"
+                                    width={32}
+                                    height={32}
+                                    className="size-7 object-contain"
+                                />
+                            </div>
+                            <div className="grid text-left leading-tight">
+                                <span className="truncate text-[11px] font-semibold">GICC</span>
+                                <span className="truncate text-[9px] text-sidebar-foreground/40">Intelligence Partner</span>
+                            </div>
+                        </div>
                     </SidebarGroupContent>
                 </SidebarGroup>
             </SidebarContent>

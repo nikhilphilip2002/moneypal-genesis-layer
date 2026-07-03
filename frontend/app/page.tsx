@@ -1,368 +1,239 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { auth, companies, health as healthApi } from '@/lib/api';
+import {
+  auth,
+  macro,
+  competitive,
+  regulatory,
+  type IntelligenceResponse,
+  type RegulatoryAlert,
+} from '@/lib/api';
+import { homeRoute, type UserRole } from '@/lib/useUserRole';
+import { useIntel } from '@/lib/useIntel';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Skeleton } from '@/components/ui/skeleton';
-import { ArrowRight, Building2, Bot, Database, RefreshCcw, TrendingUp, TrendingDown } from 'lucide-react';
+import AIBriefPanel from '@/components/intel/AIBriefPanel';
+import IntelligenceCard from '@/components/intel/IntelligenceCard';
+import LoadingCard from '@/components/intel/LoadingCard';
+import WidgetError from '@/components/intel/WidgetError';
+import OnboardingRibbon from '@/components/intel/OnboardingRibbon';
+import GenesisSearch from '@/components/intel/GenesisSearch';
+import {
+  ArrowRight,
+  TrendingUp,
+  Building,
+  Scale,
+  ClipboardCheck,
+  AlertTriangle,
+  ExternalLink,
+} from 'lucide-react';
 
-interface Stats {
-  total: number;
-  completed: number;
-  pending: number;
-  failed: number;
-}
+const severityStyles: Record<string, string> = {
+  high: 'border-red-300/70 bg-red-50/70 dark:border-red-900 dark:bg-red-950/40',
+  medium: 'border-amber-300/70 bg-amber-50/70 dark:border-amber-900 dark:bg-amber-950/40',
+  low: 'border-border/70 bg-card/70',
+};
 
-interface SystemHealth {
-  status: string;
-  version: string;
-  database: string;
-}
+const severityBadge: Record<string, string> = {
+  high: 'bg-red-100 text-red-700 dark:bg-red-950/60 dark:text-red-400',
+  medium: 'bg-amber-100 text-amber-700 dark:bg-amber-950/60 dark:text-amber-400',
+  low: 'bg-muted text-muted-foreground',
+};
 
-const statCards = [
-  { key: 'total', label: 'Total Companies', tag: 'Portfolio scope' },
-  { key: 'completed', label: 'Completed', tag: 'Healthy' },
-  { key: 'pending', label: 'Pending', tag: 'In queue' },
-  { key: 'failed', label: 'Failed', tag: 'Needs review' },
+// Row 3 static content — recent intelligence + hardcoded action items.
+const RECENT_INTELLIGENCE = [
+  { title: 'India Economic Survey — MSME credit outlook refreshed', module: 'Macro', href: '/macro', icon: TrendingUp },
+  { title: 'Kinara Capital institution profile and SWOT updated', module: 'Competitive', href: '/competitive', icon: Building },
+  { title: 'RBI Digital Lending Guidelines briefing regenerated', module: 'Regulatory', href: '/regulatory', icon: Scale },
+  { title: 'Karnataka lending landscape cross-institution summary', module: 'Competitive', href: '/competitive', icon: Building },
+  { title: 'KYC / AML Master Directions compliance actions revised', module: 'Regulatory', href: '/regulatory', icon: Scale },
 ];
 
-const statColors: Record<string, string> = {
-  total: 'bg-foreground/8 text-foreground',
-  completed: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-400',
-  pending: 'bg-amber-50 text-amber-700 dark:bg-amber-950/50 dark:text-amber-400',
-  failed: 'bg-red-50 text-red-700 dark:bg-red-950/50 dark:text-red-400',
-};
-
-const statAccents: Record<string, string> = {
-  total: 'border-t-foreground/30',
-  completed: 'border-t-emerald-500',
-  pending: 'border-t-amber-500',
-  failed: 'border-t-red-500',
-};
+const ACTION_ITEMS = [
+  { title: 'Review Digital Lending compliance checklist', due: 'Before next board meeting', priority: 'High' },
+  { title: 'Assess Kinara Capital ticket-size overlap in Bengaluru districts', due: 'This week', priority: 'Medium' },
+  { title: 'Schedule re-KYC audit for overdue customer accounts', due: 'This month', priority: 'High' },
+];
 
 export default function Dashboard() {
   const router = useRouter();
-  const [isAdmin, setIsAdmin] = useState<boolean | null>(null);
-  const [stats, setStats] = useState<Stats | null>(null);
-  const [health, setHealth] = useState<SystemHealth | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [authorized, setAuthorized] = useState<boolean | null>(null);
 
   useEffect(() => {
-    const checkAuthAndLoad = async () => {
-      try {
-        const user = await auth.me();
-        const userRole = user.role || (user.is_staff ? 'admin' : 'standard');
-        if (userRole === 'standard') {
-          router.replace('/knowledge-base');
+    auth
+      .me()
+      .then((user) => {
+        const role = user.role as UserRole;
+        // Policy makers land on Regulatory — the dashboard is not part of their view.
+        if (role === 'gicc_policy') {
+          router.replace(homeRoute(role));
           return;
         }
-        setIsAdmin(true);
-
-        setLoading(true);
-        const [statsData, healthData] = await Promise.all([
-          companies.stats(),
-          healthApi.check(),
-        ]);
-        setStats(statsData);
-        setHealth(healthData);
-        setError(null);
-      } catch (err) {
-        console.error("Dashboard load failed", err);
-        setError(err instanceof Error ? err.message : 'Failed to load data');
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    checkAuthAndLoad();
+        setAuthorized(true);
+      })
+      .catch(() => router.replace('/login'));
   }, [router]);
 
-  if (isAdmin === null || loading) {
+  const briefing = useIntel<IntelligenceResponse>(macro.briefing);
+  const alerts = useIntel<RegulatoryAlert[]>(regulatory.alerts);
+  const snapshot = useIntel<IntelligenceResponse>(macro.snapshot);
+  const landscape = useIntel<IntelligenceResponse>(competitive.landscape);
+
+  if (authorized === null) {
     return (
-      <div className="h-full overflow-auto">
-        <div className="mx-auto max-w-6xl space-y-6 px-6 py-8">
-          <Skeleton className="h-6 w-48" />
-          <Skeleton className="h-4 w-64" />
-          <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-4">
-            {[1, 2, 3, 4].map((i) => (
-              <Card key={i} className="border-border/60">
-                <CardHeader className="pb-2">
-                  <Skeleton className="h-3 w-24" />
-                </CardHeader>
-                <CardContent>
-                  <Skeleton className="h-8 w-16" />
-                </CardContent>
-              </Card>
-            ))}
-          </div>
+      <div className="mx-auto w-full max-w-6xl space-y-4 px-4 py-8 md:px-6">
+        <LoadingCard lines={6} />
+        <div className="grid gap-4 md:grid-cols-2">
+          <LoadingCard />
+          <LoadingCard />
         </div>
       </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <Card className="max-w-md mx-auto mt-8 border-destructive">
-        <CardHeader>
-          <CardTitle className="text-destructive">Error</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <p className="text-muted-foreground mb-4">{error}</p>
-          <Button onClick={() => window.location.reload()}>Retry</Button>
-        </CardContent>
-      </Card>
     );
   }
 
   return (
-    <div className="h-full md:overflow-auto">
-      {/* ───── Mobile layout (<md) ───── */}
-      <div className="md:hidden px-4 pt-3 pb-2 space-y-4">
-        {/* Greeting card */}
-        <div className="rounded-2xl border border-white/60 bg-white/65 backdrop-blur-md p-4 shadow-[0_6px_20px_rgba(31,26,20,0.06)] dark:bg-black/40 dark:border-white/10">
-          <p className="text-[11px] uppercase tracking-wider font-semibold text-muted-foreground">Good day</p>
-          <h2 className="mt-0.5 text-xl font-bold tracking-tight">Welcome back 👋</h2>
-          <p className="mt-1 text-xs text-muted-foreground">
-            {stats?.pending ? `${stats.pending} pending` : 'All clear'} ·{' '}
-            {stats?.failed ? `${stats.failed} need review` : 'no failures'}
-          </p>
-        </div>
-
-        {/* 2-col stat grid */}
-        <div className="grid grid-cols-2 gap-2.5">
-          {statCards.map((stat) => (
-            <div
-              key={stat.key}
-              className="rounded-2xl border border-white/60 bg-white/60 backdrop-blur-md p-3 shadow-[0_4px_14px_rgba(31,26,20,0.05)] dark:bg-black/40 dark:border-white/10"
-            >
-              <p className="text-[10px] uppercase tracking-wider font-bold text-muted-foreground">{stat.label}</p>
-              <p className="mt-1 font-mono text-2xl font-extrabold tracking-tight">
-                {stats?.[stat.key as keyof Stats] ?? 0}
-              </p>
-              <span className={`mt-1 inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold ${statColors[stat.key]}`}>
-                {stat.key === 'failed' ? <TrendingDown className="h-2.5 w-2.5" /> : <TrendingUp className="h-2.5 w-2.5" />}
-                {stat.tag}
-              </span>
-            </div>
-          ))}
-        </div>
-
-        {/* Priority actions — full-width tap rows */}
-        <div className="rounded-2xl border border-white/60 bg-white/60 backdrop-blur-md p-2 dark:bg-black/40 dark:border-white/10">
-          <p className="px-2 pt-2 pb-1 text-[11px] uppercase tracking-wider font-bold text-muted-foreground">Quick actions</p>
-          {[
-            { icon: Building2, title: 'Company pipeline', desc: 'Pending & failed records', href: '/companies' },
-            { icon: Bot, title: 'Intel assistant', desc: 'Continue analysis', href: '/intel' },
-            { icon: Database, title: 'Knowledge base', desc: 'Retrieval & grounded answers', href: '/knowledge-base' },
-          ].map((action) => (
-            <button
-              key={action.href}
-              type="button"
-              onClick={() => router.push(action.href)}
-              className="flex w-full items-center gap-3 rounded-xl p-3 text-left active:bg-white/60 dark:active:bg-white/5 transition-colors"
-            >
-              <div className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-primary/10 text-primary">
-                <action.icon className="h-5 w-5" />
-              </div>
-              <div className="min-w-0 flex-1">
-                <p className="text-sm font-semibold leading-tight">{action.title}</p>
-                <p className="mt-0.5 text-xs text-muted-foreground truncate">{action.desc}</p>
-              </div>
-              <ArrowRight className="h-4 w-4 shrink-0 text-muted-foreground" />
-            </button>
-          ))}
-        </div>
-
-        {/* Compact health */}
-        <div className="rounded-2xl border border-white/60 bg-white/60 backdrop-blur-md p-4 dark:bg-black/40 dark:border-white/10">
-          <div className="flex items-center justify-between">
-            <p className="text-[11px] uppercase tracking-wider font-bold text-muted-foreground">System</p>
-            <button
-              type="button"
-              onClick={() => window.location.reload()}
-              className="grid h-8 w-8 place-items-center rounded-lg border border-white/60 bg-white/60 active:scale-95 transition-transform dark:bg-white/5 dark:border-white/10"
-              aria-label="Refresh"
-            >
-              <RefreshCcw className="h-3.5 w-3.5" />
-            </button>
-          </div>
-          <div className="mt-2 grid grid-cols-3 gap-2 text-xs">
-            <div>
-              <p className="text-muted-foreground">Status</p>
-              <p className="mt-0.5 font-semibold capitalize">{health?.status || '—'}</p>
-            </div>
-            <div>
-              <p className="text-muted-foreground">Version</p>
-              <p className="mt-0.5 font-mono text-[11px]">{health?.version || '—'}</p>
-            </div>
-            <div>
-              <p className="text-muted-foreground">Database</p>
-              <p className="mt-0.5 font-mono text-[11px]">{health?.database || '—'}</p>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* ───── Desktop layout (md+) ───── */}
-      <div className="hidden md:block mx-auto max-w-6xl px-6 py-8">
-        <div className="space-y-6">
-
+    <div className="h-full overflow-auto">
+      <div className="mx-auto max-w-6xl px-4 py-6 md:px-6 md:py-8">
+        <div className="space-y-5">
           {/* Header */}
-          <section className="flex items-start justify-between">
-            <div className="space-y-1">
-              <h1 className="font-sanstext-2xl font-semibold tracking-tight">Dashboard</h1>
-              <p className="text-sm text-muted-foreground">
-                Executive overview of your intelligence workflows
-              </p>
-            </div>
-            <div className="flex items-center gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => window.location.reload()}
-                className="gap-1.5"
-              >
-                <RefreshCcw className="h-3.5 w-3.5" />
-                Sync
-              </Button>
-              <Button
-                size="sm"
-                onClick={() => router.push('/companies')}
-                className="gap-1.5"
-              >
-                Add Company
-              </Button>
-            </div>
+          <section className="space-y-1">
+            <h1 className="font-headline text-2xl font-semibold tracking-tight">Executive Dashboard</h1>
+            <p className="text-sm text-muted-foreground">
+              What GICC leadership should know today — every insight traced back to its source.
+            </p>
           </section>
 
-          {/* Stat Cards */}
-          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-            {statCards.map((stat) => (
-              <Card
-                key={stat.key}
-                className={`border-border/60 border-t-2 ${statAccents[stat.key]}`}
-              >
-                <CardHeader className="pb-2 pt-4">
-                  <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-                    {stat.label}
+          {/* GICC × Moneypal onboarding status */}
+          <OnboardingRibbon />
+
+          {/* Explainable semantic search across all Genesis collections */}
+          <GenesisSearch />
+
+          {/* AI Briefings — Row 1: AI Executive Brief (2/3) + Regulatory Alerts (1/3) */}
+          <p className="pt-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+            AI Briefings
+          </p>
+          <div className="grid gap-4 lg:grid-cols-[2fr_1fr]">
+            <div>
+              {briefing.loading && <LoadingCard lines={8} className="h-full" />}
+              {briefing.error && <WidgetError title="AI Executive Brief" onRetry={briefing.reload} className="h-full" />}
+              {briefing.data && <AIBriefPanel data={briefing.data} className="h-full" />}
+            </div>
+
+            <Card className="dashboard-surface rounded-[1.5rem] border-border/70 shadow-none">
+              <CardHeader className="pb-3">
+                <CardTitle className="flex items-center gap-2 font-headline text-base font-semibold">
+                  <AlertTriangle className="h-4 w-4 text-amber-500" />
+                  Regulatory Alerts
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-2.5">
+                {alerts.loading &&
+                  [1, 2, 3].map((i) => <div key={i} className="h-20 animate-pulse rounded-2xl bg-muted" />)}
+                {alerts.error && (
+                  <p className="py-4 text-center text-xs text-muted-foreground">
+                    Alerts are unavailable right now.
                   </p>
-                </CardHeader>
-                <CardContent className="space-y-2.5 pb-4">
-                  <div className="font-mono text-3xl font-bold tracking-tight">
-                    {stats?.[stat.key as keyof Stats] || 0}
+                )}
+                {alerts.data?.map((alert, i) => (
+                  <div key={i} className={`rounded-2xl border p-3 ${severityStyles[alert.severity] || severityStyles.low}`}>
+                    <div className="flex items-start justify-between gap-2">
+                      <p className="text-[13px] font-semibold leading-snug">{alert.title}</p>
+                      <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-bold uppercase ${severityBadge[alert.severity] || severityBadge.low}`}>
+                        {alert.severity}
+                      </span>
+                    </div>
+                    <p className="mt-1 text-xs text-muted-foreground">{alert.summary}</p>
+                    <p className="mt-1.5 text-xs font-medium text-foreground/80">→ {alert.action}</p>
+                    <div className="mt-2 flex items-center justify-between gap-2">
+                      <a
+                        href={alert.source_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1 text-[11px] font-medium text-primary hover:underline"
+                      >
+                        RBI source <ExternalLink className="h-3 w-3" />
+                      </a>
+                    </div>
+                    <p className="mt-1.5 text-[10px] italic text-muted-foreground">{alert.ai_note}</p>
                   </div>
-                  <span className={`inline-block rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${statColors[stat.key]}`}>
-                    {stat.tag}
-                  </span>
-                </CardContent>
-              </Card>
-            ))}
+                ))}
+              </CardContent>
+            </Card>
           </div>
 
-          {/* Two-column grid */}
-          <div className="grid gap-3 lg:grid-cols-[1.4fr_0.6fr]">
+          {/* Strategic Insights — Row 2: Economic Snapshot + Karnataka Lending Landscape */}
+          <p className="pt-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+            Strategic Insights
+          </p>
+          <div className="grid gap-4 lg:grid-cols-2">
+            <div>
+              {snapshot.loading && <LoadingCard className="h-full" />}
+              {snapshot.error && <WidgetError title="Economic Snapshot" onRetry={snapshot.reload} className="h-full" />}
+              {snapshot.data && <IntelligenceCard data={snapshot.data} className="h-full" />}
+            </div>
+            <div>
+              {landscape.loading && <LoadingCard className="h-full" />}
+              {landscape.error && <WidgetError title="Karnataka Lending Landscape" onRetry={landscape.reload} className="h-full" />}
+              {landscape.data && <IntelligenceCard data={landscape.data} className="h-full" />}
+            </div>
+          </div>
 
-            {/* Priority Actions */}
-            <Card className="border-border/60">
+          {/* Row 3 — Recently Updated Intelligence + Action Items */}
+          <div className="grid gap-4 lg:grid-cols-[1.4fr_0.6fr]">
+            <Card className="dashboard-surface rounded-[1.5rem] border-border/70 shadow-none">
               <CardHeader className="pb-3">
-                <CardTitle className="font-sanstext-base font-semibold">Priority actions</CardTitle>
-                <p className="text-sm text-muted-foreground">
-                  Jump into the most critical workflows.
-                </p>
+                <CardTitle className="font-headline text-base font-semibold">Recently Updated Intelligence</CardTitle>
               </CardHeader>
               <CardContent className="space-y-2">
-                {[
-                  {
-                    icon: Building2,
-                    title: 'Review company pipeline',
-                    desc: 'Inspect pending and failed records, trigger targeted retries',
-                    href: '/companies',
-                  },
-                  {
-                    icon: Bot,
-                    title: 'Continue in Intel assistant',
-                    desc: 'Resume analysis with requirements, interviews, and context',
-                    href: '/intel',
-                  },
-                  {
-                    icon: Database,
-                    title: 'Explore knowledge base',
-                    desc: 'Retrieval, source quality, and grounded responses',
-                    href: '/knowledge-base',
-                  },
-                ].map((action) => (
-                  <button
-                    key={action.href}
-                    type="button"
-                    onClick={() => router.push(action.href)}
+                {RECENT_INTELLIGENCE.map((item, i) => (
+                  <Link
+                    key={i}
+                    href={item.href}
                     className="group flex w-full items-center gap-3 rounded-lg border border-border/60 bg-background px-3.5 py-3 text-left transition-all hover:border-border hover:bg-accent"
                   >
                     <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-border/60 bg-muted text-muted-foreground transition-all group-hover:border-border group-hover:bg-foreground group-hover:text-background">
-                      <action.icon className="h-3.5 w-3.5" />
+                      <item.icon className="h-3.5 w-3.5" />
                     </div>
                     <div className="min-w-0 flex-1">
-                      <p className="text-[13px] font-medium group-hover:text-accent-foreground">{action.title}</p>
-                      <p className="text-xs text-muted-foreground">{action.desc}</p>
+                      <p className="text-[13px] font-medium group-hover:text-accent-foreground">{item.title}</p>
+                      <p className="text-xs text-muted-foreground">{item.module} Intelligence</p>
                     </div>
                     <ArrowRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground transition-colors group-hover:text-foreground" />
-                  </button>
+                  </Link>
                 ))}
               </CardContent>
             </Card>
 
-            {/* System Health */}
-            <Card className="border-border/60">
+            <Card className="dashboard-surface rounded-[1.5rem] border-border/70 shadow-none">
               <CardHeader className="pb-3">
-                <CardTitle className="font-sanstext-base font-semibold">System health</CardTitle>
-                <p className="text-sm text-muted-foreground">
-                  Live platform diagnostics.
-                </p>
+                <CardTitle className="flex items-center gap-2 font-headline text-base font-semibold">
+                  <ClipboardCheck className="h-4 w-4 text-primary" />
+                  Action Items
+                </CardTitle>
               </CardHeader>
-              <CardContent className="space-y-0">
-                {[
-                  {
-                    label: 'Status',
-                    value: (
+              <CardContent className="space-y-2.5">
+                {ACTION_ITEMS.map((item, i) => (
+                  <div key={i} className="rounded-2xl border border-border/60 bg-card/70 p-3">
+                    <div className="flex items-start justify-between gap-2">
+                      <p className="text-[13px] font-medium leading-snug">{item.title}</p>
                       <Badge
                         variant="outline"
-                        className={`rounded-full px-2.5 py-0.5 text-[11px] ${
-                          health?.status === 'healthy'
-                            ? 'border-emerald-300 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-400'
+                        className={`shrink-0 rounded-full px-2 py-0 text-[10px] ${
+                          item.priority === 'High'
+                            ? 'border-red-300 bg-red-50 text-red-700 dark:border-red-800 dark:bg-red-950/50 dark:text-red-400'
                             : 'border-amber-300 bg-amber-50 text-amber-700 dark:border-amber-800 dark:bg-amber-950/50 dark:text-amber-400'
                         }`}
                       >
-                        {health?.status || 'Unknown'}
+                        {item.priority}
                       </Badge>
-                    ),
-                  },
-                  { label: 'Version', value: <span className="font-mono text-xs">{health?.version || 'N/A'}</span> },
-                  { label: 'Database', value: <span className="font-mono text-xs">{health?.database || 'N/A'}</span> },
-                  { label: 'Last sync', value: <span className="font-mono text-xs">2 min ago</span> },
-                  { label: 'Uptime', value: <span className="font-mono text-xs">99.97%</span> },
-                ].map((row, i, arr) => (
-                  <div
-                    key={row.label}
-                    className={`flex items-center justify-between py-2.5 text-sm ${i < arr.length - 1 ? 'border-b border-border/50' : ''}`}
-                  >
-                    <span className="text-muted-foreground text-xs">{row.label}</span>
-                    {row.value}
+                    </div>
+                    <p className="mt-1 text-xs text-muted-foreground">{item.due}</p>
                   </div>
                 ))}
-                <div className="pt-4">
-                  <Button
-                    variant="outline"
-                    className="w-full justify-center text-xs"
-                    size="sm"
-                    onClick={() => window.location.reload()}
-                  >
-                    <RefreshCcw className="mr-1.5 h-3 w-3" />
-                    Refresh
-                  </Button>
-                </div>
               </CardContent>
             </Card>
           </div>

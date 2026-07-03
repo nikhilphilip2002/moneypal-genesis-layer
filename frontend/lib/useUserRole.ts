@@ -3,27 +3,54 @@
 import { useEffect, useState } from 'react'
 import { auth } from '@/lib/api'
 
-export type UserRole = 'admin' | 'manager' | 'standard'
+// admin = Moneypal Administrator (full platform)
+// gicc_admin = GICC Administrator (dashboard + competitive + regulatory)
+// gicc_policy = GICC Policy Maker (regulatory + competitive)
+// gicc_director = GICC Director (executive dashboard only)
+export type UserRole = 'admin' | 'gicc_admin' | 'gicc_policy' | 'gicc_director'
 
-// Module-level cache so multiple consumers (AppSidebar, MobileShell, …) don't
+export const ROLE_LABELS: Record<UserRole, string> = {
+  admin: 'Moneypal Administrator',
+  gicc_admin: 'GICC Administrator',
+  gicc_policy: 'GICC Policy Maker',
+  gicc_director: 'GICC Director',
+}
+
+// Routes each role may see, in nav order (first entry = landing page).
+// Role workspaces from the developer brief: admin → platform administration,
+// gicc_admin → intelligence review, gicc_policy → policy formulation.
+export const ROLE_ROUTES: Record<UserRole, string[]> = {
+  admin: ['/', '/macro', '/competitive', '/regulatory', '/admin'],
+  gicc_admin: ['/', '/competitive', '/regulatory', '/review'],
+  gicc_policy: ['/regulatory', '/competitive', '/policy'],
+  gicc_director: ['/'],
+}
+
+// Landing page after login, per role.
+export function homeRoute(role: UserRole): string {
+  return ROLE_ROUTES[role][0]
+}
+
+export function canAccess(role: UserRole, route: string): boolean {
+  return ROLE_ROUTES[role].includes(route)
+}
+
+// Module-level cache so multiple consumers (AppSidebar, NavBar, …) don't
 // each re-fetch /me on every navigation.
 let cachedRole: UserRole | null = null
-let inflight: Promise<UserRole> | null = null
+let inflight: Promise<UserRole | null> | null = null
 
-function fetchRole(): Promise<UserRole> {
+function fetchRole(): Promise<UserRole | null> {
   if (cachedRole) return Promise.resolve(cachedRole)
   if (inflight) return inflight
   inflight = auth
     .me()
-    .then((user: { role?: string; is_staff?: boolean }) => {
-      const role = (user.role as UserRole) || (user.is_staff ? 'admin' : 'standard')
+    .then((user: { role?: string }) => {
+      const role = (user.role as UserRole) || null
       cachedRole = role
       return role
     })
-    .catch(() => {
-      cachedRole = 'standard'
-      return 'standard' as UserRole
-    })
+    .catch(() => null)
     .finally(() => {
       inflight = null
     })

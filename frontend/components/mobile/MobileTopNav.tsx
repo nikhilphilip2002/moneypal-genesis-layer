@@ -6,32 +6,26 @@ import { ChevronLeft, Bell } from 'lucide-react'
 
 // Map route prefixes to their mobile top-bar title.
 const TITLES: Array<[string | RegExp, string]> = [
-  [/^\/$/, 'Aroha'],
-  [/^\/general-chat/, 'Intel Chat'],
-  [/^\/ibridge-analysis/, 'iBridge'],
-  [/^\/knowledge-base/, 'Knowledge Base'],
-  [/^\/email-knowledge-base/, 'Email KB'],
-  [/^\/youtube-chat/, 'YouTube KB'],
-  [/^\/companies/, 'Companies'],
-  [/^\/curiosity-graph/, 'Curiosity Graph'],
-  [/^\/intel/, 'Intel'],
-  [/^\/agent/, 'Agent'],
-  [/^\/retrieval/, 'Retrieval'],
-  [/^\/search-history/, 'History'],
-  [/^\/usage/, 'Usage'],
+  [/^\/$/, 'Moneypal Genesis'],
+  [/^\/macro/, 'Macro Intelligence'],
+  [/^\/competitive/, 'Competitive Intel'],
+  [/^\/regulatory/, 'Regulatory Intel'],
+  [/^\/admin/, 'Administration'],
+  [/^\/review/, 'Intelligence Review'],
+  [/^\/policy/, 'Policy Workspace'],
   [/^\/profile/, 'Profile'],
 ]
 
-const ROOT_PATHS = new Set(['/', '/general-chat', '/ibridge-analysis', '/knowledge-base', '/profile'])
+const ROOT_PATHS = new Set(['/', '/macro', '/competitive', '/regulatory', '/admin', '/review', '/policy', '/profile'])
 
 function titleFor(pathname: string): string {
   for (const [pattern, title] of TITLES) {
     if (typeof pattern === 'string' ? pathname === pattern : pattern.test(pathname)) return title
   }
-  return 'Aroha'
+  return 'Moneypal Genesis'
 }
 
-const AUTH_ROUTES = new Set(['/login', '/register', '/callback'])
+const AUTH_ROUTES = new Set(['/login'])
 
 export default function MobileTopNav() {
   const pathname = usePathname()
@@ -59,8 +53,8 @@ export default function MobileTopNav() {
             <ChevronLeft className="h-5 w-5" />
           </button>
         ) : (
-          <div className="relative h-10 w-10 shrink-0 rounded-lg bg-white shadow-sm ring-1 ring-black/5">
-            <Image src="/aroha.png" alt="Aroha" fill className="object-contain p-0.5" priority />
+          <div className="relative h-10 w-20 shrink-0 overflow-hidden">
+            <Image src="/moneypal.png" alt="Moneypal" fill className="object-contain p-0.5" priority />
           </div>
         )}
         <h1 className="truncate text-[15px] font-semibold tracking-tight">{title}</h1>
