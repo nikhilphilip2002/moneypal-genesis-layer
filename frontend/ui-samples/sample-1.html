@@ -1,0 +1,461 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sample 1 | Executive Dashboard</title>
+  <style>
+    :root {
+      --bg: #f3f4ef;
+      --panel: rgba(255, 255, 255, 0.78);
+      --panel-strong: #ffffff;
+      --line: rgba(16, 24, 40, 0.08);
+      --text: #172126;
+      --muted: #5d6a70;
+      --accent: #20493d;
+      --accent-soft: #dce7e2;
+      --warning: #d97706;
+      --danger: #b42318;
+      --shadow: 0 24px 64px rgba(18, 28, 24, 0.08);
+      --radius: 24px;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      font-family: "Segoe UI", "Helvetica Neue", sans-serif;
+      background:
+        radial-gradient(circle at top left, rgba(32, 73, 61, 0.10), transparent 28rem),
+        linear-gradient(180deg, #f7f7f3 0%, var(--bg) 100%);
+      color: var(--text);
+    }
+
+    .shell {
+      display: grid;
+      grid-template-columns: 272px 1fr;
+      min-height: 100vh;
+      gap: 24px;
+      padding: 24px;
+    }
+
+    .sidebar,
+    .content-card,
+    .metric,
+    .section-card {
+      backdrop-filter: blur(20px);
+      background: var(--panel);
+      border: 1px solid var(--line);
+      box-shadow: var(--shadow);
+    }
+
+    .sidebar {
+      border-radius: 28px;
+      padding: 24px 18px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 28px;
+    }
+
+    .brand-badge {
+      width: 42px;
+      height: 42px;
+      border-radius: 14px;
+      background: var(--accent);
+      color: #fff;
+      display: grid;
+      place-items: center;
+      font-size: 18px;
+      font-weight: 700;
+    }
+
+    .brand h1,
+    .brand p,
+    .nav-group h2,
+    .nav-item,
+    .hero h2,
+    .hero p,
+    .metric p,
+    .metric strong,
+    .section-card h3,
+    .section-card p,
+    .status-row,
+    .list-item,
+    .footer-note {
+      margin: 0;
+    }
+
+    .brand h1 {
+      font-size: 15px;
+      font-weight: 700;
+    }
+
+    .brand p,
+    .nav-group h2,
+    .hero p,
+    .metric p,
+    .section-card p,
+    .footer-note,
+    .muted {
+      color: var(--muted);
+    }
+
+    .nav-group {
+      margin-bottom: 22px;
+    }
+
+    .nav-group h2 {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.14em;
+      margin-bottom: 10px;
+    }
+
+    .nav-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 12px 14px;
+      border-radius: 14px;
+      color: var(--text);
+      font-size: 14px;
+      text-decoration: none;
+      margin-bottom: 6px;
+    }
+
+    .nav-item.active {
+      background: var(--accent);
+      color: #fff;
+    }
+
+    .nav-item span {
+      color: inherit;
+      opacity: 0.74;
+      font-size: 12px;
+    }
+
+    .main {
+      display: flex;
+      flex-direction: column;
+      gap: 24px;
+    }
+
+    .content-card {
+      border-radius: 32px;
+      padding: 30px;
+    }
+
+    .topbar {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 28px;
+    }
+
+    .hero h2 {
+      font-size: 34px;
+      line-height: 1.05;
+      font-weight: 700;
+      margin-bottom: 10px;
+      max-width: 12ch;
+    }
+
+    .hero p {
+      font-size: 15px;
+      max-width: 56ch;
+      line-height: 1.6;
+    }
+
+    .tag {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 14px;
+      border-radius: 999px;
+      background: var(--panel-strong);
+      border: 1px solid var(--line);
+      font-size: 13px;
+      white-space: nowrap;
+    }
+
+    .metrics {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 16px;
+      margin-bottom: 24px;
+    }
+
+    .metric {
+      border-radius: 24px;
+      padding: 22px;
+    }
+
+    .metric p {
+      font-size: 13px;
+      margin-bottom: 18px;
+    }
+
+    .metric strong {
+      display: block;
+      font-size: 34px;
+      font-weight: 700;
+      margin-bottom: 8px;
+    }
+
+    .delta {
+      display: inline-flex;
+      padding: 6px 10px;
+      border-radius: 999px;
+      font-size: 12px;
+      background: var(--accent-soft);
+      color: var(--accent);
+    }
+
+    .sections {
+      display: grid;
+      grid-template-columns: 1.2fr 0.8fr;
+      gap: 16px;
+    }
+
+    .section-card {
+      border-radius: 28px;
+      padding: 24px;
+    }
+
+    .section-card h3 {
+      font-size: 18px;
+      margin-bottom: 8px;
+    }
+
+    .section-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 18px;
+    }
+
+    .list {
+      display: grid;
+      gap: 12px;
+    }
+
+    .list-item,
+    .status-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      padding: 14px 0;
+      border-top: 1px solid var(--line);
+      font-size: 14px;
+    }
+
+    .list-item:first-child,
+    .status-row:first-child {
+      border-top: 0;
+      padding-top: 0;
+    }
+
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 7px 10px;
+      border-radius: 999px;
+      font-size: 12px;
+      background: #f6f7f6;
+      border: 1px solid var(--line);
+    }
+
+    .pill.warning {
+      color: var(--warning);
+      background: #fff6eb;
+    }
+
+    .pill.danger {
+      color: var(--danger);
+      background: #fff0ef;
+    }
+
+    @media (max-width: 1080px) {
+      .shell,
+      .sections {
+        grid-template-columns: 1fr;
+      }
+
+      .metrics {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+    }
+
+    @media (max-width: 720px) {
+      .shell {
+        padding: 16px;
+      }
+
+      .sidebar {
+        display: none;
+      }
+
+      .content-card {
+        padding: 20px;
+        border-radius: 24px;
+      }
+
+      .topbar,
+      .metrics {
+        grid-template-columns: 1fr;
+        display: grid;
+      }
+
+      .hero h2 {
+        font-size: 28px;
+      }
+
+      .metrics {
+        gap: 12px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <aside class="sidebar">
+      <div>
+        <div class="brand">
+          <div class="brand-badge">CI</div>
+          <div>
+            <h1>Company Intel</h1>
+            <p>Operations console</p>
+          </div>
+        </div>
+
+        <div class="nav-group">
+          <h2>Overview</h2>
+          <a class="nav-item active" href="#">Dashboard <span>01</span></a>
+          <a class="nav-item" href="#">Intel Workspace <span>07</span></a>
+          <a class="nav-item" href="#">Companies <span>142</span></a>
+        </div>
+
+        <div class="nav-group">
+          <h2>Knowledge</h2>
+          <a class="nav-item" href="#">Knowledge Base <span>Live</span></a>
+          <a class="nav-item" href="#">Search History <span>Today</span></a>
+          <a class="nav-item" href="#">iBridge Analysis <span>New</span></a>
+        </div>
+      </div>
+
+      <p class="footer-note">A calmer, more executive presentation of the same product surface.</p>
+    </aside>
+
+    <main class="main">
+      <section class="content-card">
+        <div class="topbar">
+          <div class="hero">
+            <h2>Operational clarity for intelligence workflows</h2>
+            <p>
+              The current application has broad capability, but the visual hierarchy is fairly flat.
+              This direction emphasizes one primary overview, softer surfaces, and clearer scanning.
+            </p>
+          </div>
+          <div class="tag">System healthy • PostgreSQL connected</div>
+        </div>
+
+        <div class="metrics">
+          <article class="metric">
+            <p>Total companies</p>
+            <strong>142</strong>
+            <span class="delta">+11 this week</span>
+          </article>
+          <article class="metric">
+            <p>Completed</p>
+            <strong>121</strong>
+            <span class="delta">85% success rate</span>
+          </article>
+          <article class="metric">
+            <p>Pending</p>
+            <strong>17</strong>
+            <span class="delta">Queue stable</span>
+          </article>
+          <article class="metric">
+            <p>Failed</p>
+            <strong>4</strong>
+            <span class="delta">Needs attention</span>
+          </article>
+        </div>
+
+        <div class="sections">
+          <article class="section-card">
+            <div class="section-head">
+              <div>
+                <h3>Priority work</h3>
+                <p>Condensed actions instead of multiple competing cards.</p>
+              </div>
+              <div class="pill">3 actions</div>
+            </div>
+            <div class="list">
+              <div class="list-item">
+                <div>
+                  <strong>Review failed enrichment jobs</strong>
+                  <p class="muted">4 companies are waiting on manual retry.</p>
+                </div>
+                <div class="pill danger">Urgent</div>
+              </div>
+              <div class="list-item">
+                <div>
+                  <strong>Open Intel assistant</strong>
+                  <p class="muted">Continue the latest client requirements conversation.</p>
+                </div>
+                <div class="pill">Resume</div>
+              </div>
+              <div class="list-item">
+                <div>
+                  <strong>Audit retrieval quality</strong>
+                  <p class="muted">Check yesterday’s question traces and source fit.</p>
+                </div>
+                <div class="pill warning">Review</div>
+              </div>
+            </div>
+          </article>
+
+          <article class="section-card">
+            <div class="section-head">
+              <div>
+                <h3>System status</h3>
+                <p>Less chrome, stronger contrast on signal.</p>
+              </div>
+            </div>
+            <div class="status-row">
+              <span class="muted">API</span>
+              <span class="pill">Healthy</span>
+            </div>
+            <div class="status-row">
+              <span class="muted">Vector retrieval</span>
+              <span class="pill">Indexed</span>
+            </div>
+            <div class="status-row">
+              <span class="muted">Email KB sync</span>
+              <span class="pill warning">Lag 12m</span>
+            </div>
+            <div class="status-row">
+              <span class="muted">Background workers</span>
+              <span class="pill">6 active</span>
+            </div>
+          </article>
+        </div>
+      </section>
+    </main>
+  </div>
+</body>
+</html>

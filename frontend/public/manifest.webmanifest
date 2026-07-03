@@ -1,0 +1,46 @@
+{
+  "name": "Aroha",
+  "short_name": "Aroha",
+  "description": "Company intelligence, learner analytics and AI assistants — by Aroha.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#FBF6EE",
+  "theme_color": "#DD7A3A",
+  "categories": ["business", "productivity", "education"],
+  "icons": [
+    {
+      "src": "/aroha.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/aroha.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/aroha.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Intel Chat",
+      "short_name": "Chat",
+      "url": "/general-chat",
+      "icons": [{ "src": "/aroha.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "iBridge Analysis",
+      "short_name": "iBridge",
+      "url": "/ibridge-analysis",
+      "icons": [{ "src": "/aroha.png", "sizes": "192x192" }]
+    }
+  ]
+}

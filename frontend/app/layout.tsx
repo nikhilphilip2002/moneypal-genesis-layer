@@ -1,0 +1,92 @@
+import type { Metadata } from 'next'
+import './globals.css'
+import NavBar from '@/components/NavBar'
+import AppSidebar from '@/components/AppSidebar'
+import ConditionalHeader from '@/components/ConditionalHeader'
+import { SidebarProvider, SidebarInset } from '@/components/ui/sidebar'
+import { Toaster } from '@/components/ui/toaster'
+import { ThemeProvider } from '@/components/ThemeProvider'
+import PWARegister from '@/components/PWARegister'
+import MobileTopNav from '@/components/mobile/MobileTopNav'
+import MobileTabBar from '@/components/mobile/MobileTabBar'
+import GuideBot from '@/components/GuideBot'
+import type { Viewport } from 'next'
+
+export const metadata: Metadata = {
+  title: 'Aroha',
+  description: 'Company intelligence, learner analytics and AI assistants — by Aroha.',
+  applicationName: 'Aroha',
+  manifest: '/manifest.webmanifest',
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: 'default',
+    title: 'Aroha',
+  },
+  icons: {
+    icon: '/aroha.png',
+    apple: '/aroha.png',
+  },
+  formatDetection: { telephone: false },
+}
+
+export const viewport: Viewport = {
+  themeColor: [
+    { media: '(prefers-color-scheme: light)', color: '#DD7A3A' },
+    { media: '(prefers-color-scheme: dark)', color: '#1F1A14' },
+  ],
+  width: 'device-width',
+  initialScale: 1,
+  viewportFit: 'cover',
+}
+
+export default function RootLayout({
+  children,
+}: {
+  children: React.ReactNode
+}) {
+  return (
+    <html lang="en" suppressHydrationWarning>
+      <head>
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
+        <link
+          rel="stylesheet"
+          href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
+        />
+      </head>
+      <body className="font-sans antialiased">
+        {/* Fixed animated gradient mesh — glass surfaces blur this */}
+        <div className="bg-mesh" aria-hidden="true">
+          <div className="bg-mesh-blob bg-mesh-blob-1" />
+          <div className="bg-mesh-blob bg-mesh-blob-2" />
+          <div className="bg-mesh-blob bg-mesh-blob-3" />
+          <div className="bg-mesh-blob bg-mesh-blob-4" />
+        </div>
+
+        <ThemeProvider
+          attribute="class"
+          defaultTheme="system"
+          enableSystem
+          disableTransitionOnChange
+        >
+          <SidebarProvider>
+            <AppSidebar />
+            <SidebarInset>
+              <ConditionalHeader />
+              <MobileTopNav />
+              <main
+                className="flex min-h-0 flex-1 flex-col overflow-y-auto md:overflow-hidden relative pb-[calc(env(safe-area-inset-bottom,0px)+88px)] md:pb-0"
+              >
+                {children}
+              </main>
+              <MobileTabBar />
+            </SidebarInset>
+          </SidebarProvider>
+          <Toaster />
+          <GuideBot />
+        </ThemeProvider>
+        <PWARegister />
+      </body>
+    </html>
+  )
+}

@@ -1,0 +1,711 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Design 2 — Carbon</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg:          #0B0D11;
+  --surface:     #13161C;
+  --surface-2:   #1A1E27;
+  --surface-3:   #1F2430;
+  --border:      rgba(255,255,255,0.07);
+  --border-2:    rgba(255,255,255,0.12);
+  --text-1:      #E8ECF3;
+  --text-2:      #8892A0;
+  --text-3:      #4E5663;
+  --blue:        #4F8EF7;
+  --blue-dim:    rgba(79,142,247,0.12);
+  --blue-border: rgba(79,142,247,0.25);
+  --green:       #34C78A;
+  --green-dim:   rgba(52,199,138,0.1);
+  --amber:       #F59E0B;
+  --amber-dim:   rgba(245,158,11,0.1);
+  --red:         #F87171;
+  --red-dim:     rgba(248,113,113,0.1);
+  --radius:      6px;
+  --radius-lg:   10px;
+  --font:        'Sora', system-ui, sans-serif;
+  --font-mono:   'JetBrains Mono', monospace;
+  --sidebar-w:   232px;
+  --topbar-h:    52px;
+}
+
+html, body { height: 100%; font-family: var(--font); background: var(--bg); color: var(--text-1); font-size: 13.5px; line-height: 1.5; -webkit-font-smoothing: antialiased; }
+
+/* ── Layout ── */
+.app { display: flex; height: 100vh; overflow: hidden; }
+
+.sidebar {
+  width: var(--sidebar-w); flex-shrink: 0;
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+  display: flex; flex-direction: column;
+}
+
+.sidebar-brand {
+  display: flex; align-items: center; gap: 11px;
+  padding: 18px 14px 16px;
+  border-bottom: 1px solid var(--border);
+}
+.brand-mark {
+  width: 30px; height: 30px; border-radius: var(--radius);
+  background: linear-gradient(135deg, var(--blue) 0%, #7C3AED 100%);
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
+}
+.brand-mark svg { width: 15px; height: 15px; color: #fff; }
+.brand-name { font-size: 13px; font-weight: 600; color: var(--text-1); letter-spacing: -0.01em; }
+.brand-tag  { font-size: 10px; color: var(--text-3); font-family: var(--font-mono); text-transform: uppercase; letter-spacing: 0.08em; margin-top: 1px; }
+
+.sidebar-nav { flex: 1; padding: 12px 8px; overflow-y: auto; }
+.nav-label { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.1em; color: var(--text-3); padding: 6px 8px 4px; }
+
+.nav-item {
+  display: flex; align-items: center; gap: 9px;
+  padding: 7.5px 9px; border-radius: var(--radius);
+  cursor: pointer; color: var(--text-2);
+  font-size: 13px; font-weight: 500;
+  transition: all 0.12s; margin-bottom: 1px;
+}
+.nav-item svg { width: 14px; height: 14px; flex-shrink: 0; }
+.nav-item:hover { background: var(--surface-2); color: var(--text-1); }
+.nav-item.active { background: var(--blue-dim); color: var(--blue); border: 1px solid var(--blue-border); }
+.nav-item.active svg { color: var(--blue); }
+.nav-sep { height: 1px; background: var(--border); margin: 8px 8px; }
+
+.sidebar-bottom {
+  padding: 12px 8px;
+  border-top: 1px solid var(--border);
+}
+.user-chip {
+  display: flex; align-items: center; gap: 9px;
+  padding: 8px 10px; border-radius: var(--radius);
+  background: var(--surface-2); border: 1px solid var(--border);
+  cursor: pointer;
+}
+.user-chip:hover { border-color: var(--border-2); }
+.ava {
+  width: 26px; height: 26px; border-radius: 50%;
+  background: linear-gradient(135deg, var(--blue) 0%, #7C3AED 100%);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 10px; font-weight: 700; color: #fff; flex-shrink: 0;
+}
+.user-name { font-size: 12.5px; font-weight: 600; color: var(--text-1); }
+.user-role { font-size: 10px; color: var(--text-3); font-family: var(--font-mono); text-transform: uppercase; }
+
+/* ── Workspace ── */
+.workspace { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+
+.topbar {
+  height: var(--topbar-h);
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 0 22px; flex-shrink: 0;
+}
+.page-heading { font-size: 14px; font-weight: 600; color: var(--text-1); letter-spacing: -0.01em; }
+.page-meta    { font-size: 11px; color: var(--text-3); font-family: var(--font-mono); margin-top: 1px; }
+.topbar-right { display: flex; align-items: center; gap: 8px; }
+
+.btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 6px 13px; border-radius: var(--radius);
+  font-size: 12.5px; font-weight: 500; font-family: var(--font);
+  cursor: pointer; border: 1px solid transparent;
+  transition: all 0.12s; line-height: 1.2;
+}
+.btn svg { width: 13px; height: 13px; }
+.btn-primary { background: var(--blue); color: #fff; border-color: var(--blue); }
+.btn-primary:hover { background: #3B7DF0; }
+.btn-ghost { background: transparent; color: var(--text-2); border-color: var(--border); }
+.btn-ghost:hover { background: var(--surface-2); border-color: var(--border-2); color: var(--text-1); }
+.btn-danger { background: var(--red-dim); color: var(--red); border-color: rgba(248,113,113,0.2); }
+
+.content { flex: 1; overflow-y: auto; padding: 22px 22px 40px; }
+.page { display: none; }
+.page.active { display: block; }
+
+/* ── Stat strip ── */
+.stat-strip { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 20px; }
+.stat-block {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius-lg); padding: 16px 18px;
+  position: relative; overflow: hidden;
+}
+.stat-block::before {
+  content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px;
+}
+.stat-block.blue::before  { background: var(--blue); }
+.stat-block.green::before { background: var(--green); }
+.stat-block.amber::before { background: var(--amber); }
+.stat-block.red::before   { background: var(--red); }
+.stat-lbl { font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-3); font-family: var(--font-mono); margin-bottom: 10px; }
+.stat-val { font-size: 30px; font-weight: 700; letter-spacing: -0.04em; font-family: var(--font-mono); line-height: 1; margin-bottom: 8px; }
+.stat-block.blue  .stat-val { color: var(--blue); }
+.stat-block.green .stat-val { color: var(--green); }
+.stat-block.amber .stat-val { color: var(--amber); }
+.stat-block.red   .stat-val { color: var(--red); }
+.stat-sub { font-size: 11px; color: var(--text-3); }
+
+/* ── Grid ── */
+.main-grid { display: grid; grid-template-columns: 1.5fr 1fr; gap: 12px; }
+.panel {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius-lg); overflow: hidden;
+}
+.panel-header {
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; justify-content: space-between;
+}
+.panel-title { font-size: 13px; font-weight: 600; color: var(--text-1); }
+.panel-sub   { font-size: 11px; color: var(--text-3); margin-top: 2px; }
+.panel-body  { padding: 16px 18px; }
+
+.action-row {
+  display: flex; align-items: center; gap: 12px;
+  padding: 11px 14px; border-radius: var(--radius);
+  border: 1px solid var(--border); background: var(--surface-2);
+  cursor: pointer; margin-bottom: 8px;
+  transition: all 0.14s;
+}
+.action-row:last-child { margin-bottom: 0; }
+.action-row:hover { border-color: var(--border-2); background: var(--surface-3); }
+.action-row:hover .act-icon { border-color: var(--blue-border); color: var(--blue); }
+.act-icon {
+  width: 30px; height: 30px; border-radius: var(--radius);
+  border: 1px solid var(--border);
+  display: flex; align-items: center; justify-content: center;
+  color: var(--text-2); flex-shrink: 0; transition: all 0.12s;
+}
+.act-icon svg { width: 14px; height: 14px; }
+.act-title { font-size: 13px; font-weight: 500; color: var(--text-1); }
+.act-desc  { font-size: 11.5px; color: var(--text-3); margin-top: 1px; }
+.act-arrow { margin-left: auto; color: var(--text-3); }
+.act-arrow svg { width: 13px; height: 13px; }
+
+.health-item {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 9px 0; border-bottom: 1px solid var(--border);
+  font-size: 12.5px;
+}
+.health-item:last-child { border-bottom: none; }
+.health-key { color: var(--text-3); font-family: var(--font-mono); font-size: 11.5px; }
+.health-val { color: var(--text-1); font-family: var(--font-mono); font-size: 12px; }
+
+/* ── Badge ── */
+.badge {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-size: 11px; font-weight: 600; padding: 3px 8px;
+  border-radius: 4px; font-family: var(--font-mono); text-transform: uppercase; letter-spacing: 0.04em;
+}
+.badge-green { background: var(--green-dim); color: var(--green); border: 1px solid rgba(52,199,138,0.2); }
+.badge-amber { background: var(--amber-dim); color: var(--amber); border: 1px solid rgba(245,158,11,0.2); }
+.badge-red   { background: var(--red-dim);   color: var(--red);   border: 1px solid rgba(248,113,113,0.2); }
+.badge-grey  { background: var(--surface-2); color: var(--text-2); border: 1px solid var(--border); }
+.badge-blue  { background: var(--blue-dim);  color: var(--blue);  border: 1px solid var(--blue-border); }
+.badge-dot   { width: 5px; height: 5px; border-radius: 50%; background: currentColor; }
+
+/* ── Intel ── */
+.intel-strip { display: grid; grid-template-columns: repeat(4,1fr); gap: 8px; margin-bottom: 14px; }
+.intel-kpi {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 12px 14px;
+  display: flex; align-items: flex-end; justify-content: space-between;
+}
+.kpi-num  { font-size: 22px; font-weight: 700; font-family: var(--font-mono); color: var(--text-1); letter-spacing: -0.03em; }
+.kpi-lbl  { font-size: 10.5px; color: var(--text-3); font-family: var(--font-mono); text-transform: uppercase; letter-spacing: 0.07em; }
+.kpi-sub  { font-size: 11px; color: var(--green); font-family: var(--font-mono); }
+
+.intel-layout { display: grid; grid-template-columns: 1fr 240px; gap: 12px; height: calc(100vh - var(--topbar-h) - 126px); }
+
+.chat-panel {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius-lg); display: flex; flex-direction: column; overflow: hidden; height: 100%;
+}
+.chat-head { padding: 14px 16px; border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 10px; }
+.chat-head-icon {
+  width: 28px; height: 28px; border-radius: var(--radius);
+  background: var(--blue-dim); border: 1px solid var(--blue-border);
+  display: flex; align-items: center; justify-content: center; color: var(--blue);
+}
+.chat-head-icon svg { width: 13px; height: 13px; }
+.chat-head-title { font-size: 13px; font-weight: 600; color: var(--text-1); }
+.chat-head-sub   { font-size: 11px; color: var(--text-3); font-family: var(--font-mono); }
+
+.chat-msgs { flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 14px; }
+.msg { display: flex; gap: 9px; max-width: 88%; }
+.msg.user { align-self: flex-end; flex-direction: row-reverse; }
+.msg-ava {
+  width: 26px; height: 26px; border-radius: 50%; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 10px; font-weight: 700;
+}
+.msg.assistant .msg-ava { background: var(--blue-dim); color: var(--blue); border: 1px solid var(--blue-border); }
+.msg.user      .msg-ava { background: var(--surface-3); color: var(--text-2); border: 1px solid var(--border-2); }
+.msg-bub {
+  padding: 10px 13px; font-size: 13px; line-height: 1.65;
+  border-radius: var(--radius-lg);
+}
+.msg.assistant .msg-bub { background: var(--surface-2); border: 1px solid var(--border); color: var(--text-1); border-radius: 3px var(--radius-lg) var(--radius-lg) var(--radius-lg); }
+.msg.user      .msg-bub { background: var(--blue);      color: #fff; border-radius: var(--radius-lg) 3px var(--radius-lg) var(--radius-lg); }
+.msg-bub strong { font-weight: 600; }
+.msg-ts { font-size: 10px; color: var(--text-3); margin-top: 3px; font-family: var(--font-mono); }
+.msg.user .msg-ts { text-align: right; }
+
+.chat-input-box { padding: 12px 14px; border-top: 1px solid var(--border); background: var(--surface-2); }
+.chat-row { display: flex; gap: 7px; align-items: flex-end; }
+.chat-ta {
+  flex: 1; padding: 8px 12px;
+  background: var(--surface); border: 1px solid var(--border-2);
+  border-radius: var(--radius); font-family: var(--font); font-size: 13px; color: var(--text-1);
+  resize: none; outline: none; line-height: 1.5;
+  transition: border-color 0.12s;
+}
+.chat-ta:focus { border-color: rgba(79,142,247,0.4); }
+.chat-ta::placeholder { color: var(--text-3); }
+.send-btn {
+  width: 34px; height: 34px; border-radius: var(--radius);
+  background: var(--blue); color: #fff; border: none;
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer; flex-shrink: 0; transition: background 0.12s;
+}
+.send-btn:hover { background: #3B7DF0; }
+.send-btn svg { width: 14px; height: 14px; }
+
+.intel-ctx {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius-lg); padding: 14px; overflow-y: auto; display: flex; flex-direction: column; gap: 14px;
+}
+.ctx-lbl { font-size: 10px; text-transform: uppercase; letter-spacing: 0.1em; color: var(--text-3); font-family: var(--font-mono); margin-bottom: 8px; }
+.ctx-item {
+  padding: 9px 11px; border-radius: var(--radius);
+  border: 1px solid var(--border); background: var(--surface-2); margin-bottom: 6px;
+}
+.ctx-name { font-size: 12.5px; font-weight: 600; color: var(--text-1); }
+.ctx-meta { font-size: 11px; color: var(--text-3); font-family: var(--font-mono); margin-top: 2px; }
+
+/* ── Companies table ── */
+.toolbar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; gap: 10px; }
+.search-wrap { position: relative; flex: 1; max-width: 280px; }
+.search-wrap svg { position: absolute; left: 9px; top: 50%; transform: translateY(-50%); width: 13px; height: 13px; color: var(--text-3); }
+.search-inp {
+  width: 100%; padding: 7px 12px 7px 30px;
+  background: var(--surface); border: 1px solid var(--border-2);
+  border-radius: var(--radius); font-family: var(--font); font-size: 12.5px; color: var(--text-1);
+  outline: none; transition: border-color 0.12s;
+}
+.search-inp:focus { border-color: rgba(79,142,247,0.35); }
+.search-inp::placeholder { color: var(--text-3); }
+
+.dt { width: 100%; border-collapse: collapse; }
+.dt-wrap {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius-lg); overflow: hidden;
+}
+.dt th {
+  padding: 10px 16px; text-align: left;
+  font-size: 10.5px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em;
+  color: var(--text-3); background: var(--surface-2); border-bottom: 1px solid var(--border);
+  font-family: var(--font-mono);
+}
+.dt td { padding: 12px 16px; border-bottom: 1px solid var(--border); font-size: 13px; vertical-align: middle; }
+.dt tbody tr:last-child td { border-bottom: none; }
+.dt tbody tr:hover td { background: var(--surface-2); }
+.co-name { font-weight: 600; color: var(--text-1); }
+.co-url  { font-size: 11px; color: var(--text-3); font-family: var(--font-mono); margin-top: 1px; }
+.prog-row { display: flex; align-items: center; gap: 8px; }
+.prog-bar { flex: 1; height: 3px; background: var(--border); border-radius: 2px; overflow: hidden; max-width: 64px; }
+.prog-fill      { height: 100%; border-radius: 2px; background: var(--green); }
+.prog-fill.amber { background: var(--amber); }
+.prog-fill.red   { background: var(--red); }
+.prog-pct { font-size: 11px; color: var(--text-3); font-family: var(--font-mono); width: 28px; }
+.act-btns { display: flex; gap: 5px; }
+.ic-btn {
+  width: 26px; height: 26px; border-radius: var(--radius);
+  border: 1px solid var(--border); background: transparent;
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer; color: var(--text-2); transition: all 0.12s;
+}
+.ic-btn:hover { background: var(--surface-2); border-color: var(--border-2); color: var(--text-1); }
+.ic-btn svg { width: 12px; height: 12px; }
+
+/* ── KB ── */
+.kb-wrap { display: flex; gap: 12px; height: calc(100vh - var(--topbar-h) - 44px); }
+.kb-src {
+  width: 200px; background: var(--surface);
+  border: 1px solid var(--border); border-radius: var(--radius-lg);
+  padding: 14px; overflow-y: auto; flex-shrink: 0;
+}
+.src-item {
+  padding: 8px 10px; border-radius: var(--radius);
+  border: 1px solid var(--border); background: var(--surface-2);
+  margin-bottom: 6px; cursor: pointer; transition: all 0.12s;
+}
+.src-item:hover { border-color: var(--blue-border); background: var(--blue-dim); }
+.src-name { font-size: 12px; font-weight: 600; color: var(--text-1); }
+.src-meta { font-size: 10.5px; color: var(--text-3); font-family: var(--font-mono); margin-top: 2px; }
+
+/* ── Usage ── */
+.usage-strip { display: grid; grid-template-columns: repeat(3,1fr); gap: 10px; margin-bottom: 16px; }
+.u-card {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius-lg); padding: 16px 18px;
+}
+.u-lbl { font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-3); font-family: var(--font-mono); margin-bottom: 10px; }
+.u-val { font-size: 26px; font-weight: 700; font-family: var(--font-mono); color: var(--text-1); letter-spacing: -0.03em; }
+.u-delta { font-size: 11px; color: var(--green); font-family: var(--font-mono); margin-top: 4px; }
+
+.chart-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 18px; }
+.chart-head { font-size: 13px; font-weight: 600; margin-bottom: 14px; }
+.bar-chart  { display: flex; align-items: flex-end; gap: 5px; height: 90px; }
+.bc { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 4px; }
+.b { width: 100%; background: var(--surface-2); border: 1px solid var(--border); border-radius: 3px 3px 0 0; cursor: pointer; transition: all 0.15s; min-height: 4px; }
+.b:hover { background: var(--blue-dim); border-color: var(--blue-border); }
+.b.hi { background: var(--blue-dim); border-color: var(--blue-border); }
+.b-lbl { font-size: 9.5px; color: var(--text-3); font-family: var(--font-mono); }
+
+/* ── Log table ── */
+.log-table { width: 100%; border-collapse: collapse; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); overflow: hidden; margin-top: 12px; }
+.log-table th { padding: 9px 14px; background: var(--surface-2); border-bottom: 1px solid var(--border); font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-3); font-family: var(--font-mono); text-align: left; }
+.log-table td { padding: 10px 14px; border-bottom: 1px solid var(--border); font-size: 12.5px; color: var(--text-2); vertical-align: middle; font-family: var(--font-mono); }
+.log-table tr:last-child td { border-bottom: none; }
+.log-table tbody tr:hover td { background: var(--surface-2); }
+</style>
+</head>
+<body>
+<div class="app">
+
+  <!-- ── Sidebar ── -->
+  <aside class="sidebar">
+    <div class="sidebar-brand">
+      <div class="brand-mark">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 2v3m0 14v3M2 12h3m14 0h3M4.93 4.93l2.12 2.12m9.9 9.9l2.12 2.12M4.93 19.07l2.12-2.12m9.9-9.9l2.12-2.12"/></svg>
+      </div>
+      <div>
+        <div class="brand-name">Company Intel</div>
+        <div class="brand-tag">v2.4.1</div>
+      </div>
+    </div>
+
+    <nav class="sidebar-nav">
+      <div class="nav-label">Overview</div>
+      <div class="nav-item active" onclick="nav('dashboard', this, 'Dashboard', '/ overview')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+        Dashboard
+      </div>
+
+      <div class="nav-sep"></div>
+      <div class="nav-label">Intelligence</div>
+      <div class="nav-item" onclick="nav('intel', this, 'Intel', '/ intel')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+        Intel
+      </div>
+      <div class="nav-item" onclick="nav('kb', this, 'Knowledge Base', '/ kb')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M2 3h6a4 4 0 014 4v14a3 3 0 00-3-3H2z"/><path d="M22 3h-6a4 4 0 00-4 4v14a3 3 0 013-3h7z"/></svg>
+        Knowledge Base
+      </div>
+      <div class="nav-item" onclick="nav('search', this, 'Search History', '/ search')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        Search History
+      </div>
+
+      <div class="nav-sep"></div>
+      <div class="nav-label">Management</div>
+      <div class="nav-item" onclick="nav('companies', this, 'Companies', '/ companies')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M6 22V4a2 2 0 012-2h8a2 2 0 012 2v18"/><path d="M6 12H4a2 2 0 00-2 2v8"/><path d="M18 9h2a2 2 0 012 2v11"/></svg>
+        Companies
+      </div>
+      <div class="nav-item" onclick="nav('usage', this, 'Usage', '/ usage')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M18 20V10"/><path d="M12 20V4"/><path d="M6 20v-6"/></svg>
+        Usage
+      </div>
+      <div class="nav-item" onclick="nav('email', this, 'Email KB', '/ email-kb')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
+        Email KB
+      </div>
+    </nav>
+
+    <div class="sidebar-bottom">
+      <div class="user-chip">
+        <div class="ava">NK</div>
+        <div>
+          <div class="user-name">nikhil.k</div>
+          <div class="user-role">ADMIN</div>
+        </div>
+      </div>
+    </div>
+  </aside>
+
+  <!-- ── Workspace ── -->
+  <div class="workspace">
+    <header class="topbar">
+      <div>
+        <div class="page-heading" id="pg-title">Dashboard</div>
+        <div class="page-meta" id="pg-meta">/ overview</div>
+      </div>
+      <div class="topbar-right">
+        <button class="btn btn-ghost">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>
+          Sync
+        </button>
+        <button class="btn btn-primary">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          Add Company
+        </button>
+      </div>
+    </header>
+
+    <div class="content">
+
+      <!-- ── Dashboard ── -->
+      <div id="page-dashboard" class="page active">
+        <div class="stat-strip">
+          <div class="stat-block blue">
+            <div class="stat-lbl">Companies</div>
+            <div class="stat-val">47</div>
+            <div class="stat-sub">Portfolio total</div>
+          </div>
+          <div class="stat-block green">
+            <div class="stat-lbl">Completed</div>
+            <div class="stat-val">31</div>
+            <div class="stat-sub">66% success rate</div>
+          </div>
+          <div class="stat-block amber">
+            <div class="stat-lbl">Pending</div>
+            <div class="stat-val">12</div>
+            <div class="stat-sub">In queue</div>
+          </div>
+          <div class="stat-block red">
+            <div class="stat-lbl">Failed</div>
+            <div class="stat-val">4</div>
+            <div class="stat-sub">Needs review</div>
+          </div>
+        </div>
+
+        <div class="main-grid">
+          <div class="panel">
+            <div class="panel-header">
+              <div>
+                <div class="panel-title">Priority actions</div>
+                <div class="panel-sub">Critical workflow shortcuts</div>
+              </div>
+            </div>
+            <div class="panel-body">
+              <div class="action-row">
+                <div class="act-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M6 22V4a2 2 0 012-2h8a2 2 0 012 2v18"/><path d="M6 12H4a2 2 0 00-2 2v8"/><path d="M18 9h2a2 2 0 012 2v11"/></svg></div>
+                <div><div class="act-title">Company pipeline</div><div class="act-desc">4 failed records — inspect and retry</div></div>
+                <div class="act-arrow"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg></div>
+              </div>
+              <div class="action-row">
+                <div class="act-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg></div>
+                <div><div class="act-title">Intel assistant</div><div class="act-desc">Resume analysis with requirements context</div></div>
+                <div class="act-arrow"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg></div>
+              </div>
+              <div class="action-row">
+                <div class="act-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M2 3h6a4 4 0 014 4v14a3 3 0 00-3-3H2z"/><path d="M22 3h-6a4 4 0 00-4 4v14a3 3 0 013-3h7z"/></svg></div>
+                <div><div class="act-title">Knowledge base</div><div class="act-desc">Explore retrieval and source quality</div></div>
+                <div class="act-arrow"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="panel">
+            <div class="panel-header"><div><div class="panel-title">System health</div><div class="panel-sub">Live diagnostics</div></div></div>
+            <div class="panel-body">
+              <div class="health-item"><span class="health-key">status</span><span class="badge badge-green"><span class="badge-dot"></span>healthy</span></div>
+              <div class="health-item"><span class="health-key">version</span><span class="health-val">2.4.1</span></div>
+              <div class="health-item"><span class="health-key">database</span><span class="health-val">PostgreSQL</span></div>
+              <div class="health-item"><span class="health-key">last_sync</span><span class="health-val">2m ago</span></div>
+              <div class="health-item"><span class="health-key">uptime</span><span class="health-val">99.97%</span></div>
+              <div style="margin-top:14px;">
+                <button class="btn btn-ghost" style="width:100%;justify-content:center;">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" style="width:12px;height:12px;"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>
+                  Refresh
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── Intel ── -->
+      <div id="page-intel" class="page">
+        <div class="intel-strip">
+          <div class="intel-kpi"><div><div class="kpi-num">128</div><div class="kpi-lbl">Clients</div></div><div class="kpi-sub">89 active</div></div>
+          <div class="intel-kpi"><div><div class="kpi-num">340</div><div class="kpi-lbl">Employees</div></div><div class="kpi-sub">298 current</div></div>
+          <div class="intel-kpi"><div><div class="kpi-num">56</div><div class="kpi-lbl">Requirements</div></div><div class="kpi-sub">23 open</div></div>
+          <div class="intel-kpi"><div><div class="kpi-num">145</div><div class="kpi-lbl">Interviews</div></div><div class="kpi-sub">this quarter</div></div>
+        </div>
+        <div class="intel-layout">
+          <div class="chat-panel">
+            <div class="chat-head">
+              <div class="chat-head-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg></div>
+              <div><div class="chat-head-title">Intel Assistant</div><div class="chat-head-sub">grounded · company data</div></div>
+            </div>
+            <div class="chat-msgs" id="intel-msgs">
+              <div class="msg assistant"><div class="msg-ava">AI</div><div><div class="msg-bub">Hello! I can help you find information about clients, job requirements, interview questions, and more.</div><div class="msg-ts">09:14</div></div></div>
+              <div class="msg user"><div class="msg-ava">NK</div><div><div class="msg-bub">Which companies are hiring senior ML engineers with RAG experience?</div><div class="msg-ts">09:15</div></div></div>
+              <div class="msg assistant"><div class="msg-ava">AI</div><div><div class="msg-bub">Found <strong>3 companies</strong> with active ML requirements matching RAG:<br><br><strong>TechCorp</strong> — 2 open senior roles, LLM/RAG focus, 6-month window.<br><strong>Nexus Systems</strong> — 1 urgent hire, NLP + vision.<br><strong>Arcturus Labs</strong> — 2 new research roles post Series B.<br><br>Pull full interview data for any of these?</div><div class="msg-ts">09:15</div></div></div>
+            </div>
+            <div class="chat-input-box">
+              <div class="chat-row">
+                <textarea class="chat-ta" id="intel-ta" rows="1" placeholder="Ask about clients, requirements…" onkeydown="handleKey(event,'intel')"></textarea>
+                <button class="send-btn" onclick="send('intel')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg></button>
+              </div>
+            </div>
+          </div>
+          <div class="intel-ctx">
+            <div><div class="ctx-lbl">Active companies</div>
+              <div class="ctx-item"><div class="ctx-name">TechCorp</div><div class="ctx-meta">2 open reqs · 2h ago</div></div>
+              <div class="ctx-item"><div class="ctx-name">Nexus Systems</div><div class="ctx-meta">1 urgent · today</div></div>
+              <div class="ctx-item"><div class="ctx-name">Arcturus Labs</div><div class="ctx-meta">2 new · processing</div></div>
+            </div>
+            <div style="height:1px;background:var(--border);"></div>
+            <div><div class="ctx-lbl">Intent tags</div>
+              <div style="display:flex;gap:5px;flex-wrap:wrap;">
+                <span class="badge badge-blue" style="font-size:10.5px;">ml-engineer</span>
+                <span class="badge badge-grey" style="font-size:10.5px;">rag</span>
+                <span class="badge badge-grey" style="font-size:10.5px;">senior</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── Companies ── -->
+      <div id="page-companies" class="page">
+        <div class="toolbar">
+          <div class="search-wrap">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+            <input class="search-inp" type="text" placeholder="Filter companies…">
+          </div>
+          <div style="display:flex;gap:7px;">
+            <button class="btn btn-ghost"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" style="width:12px;height:12px;"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>Sync all</button>
+            <button class="btn btn-primary"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:12px;height:12px;"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>Add</button>
+          </div>
+        </div>
+        <div class="dt-wrap">
+          <table class="dt">
+            <thead><tr><th>Company</th><th>Status</th><th>Progress</th><th>Last Scraped</th><th>Actions</th></tr></thead>
+            <tbody>
+              <tr><td><div class="co-name">TechCorp</div><div class="co-url">techcorp.com</div></td><td><span class="badge badge-green"><span class="badge-dot"></span>Completed</span></td><td><div class="prog-row"><div class="prog-bar"><div class="prog-fill" style="width:100%"></div></div><span class="prog-pct">100%</span></div></td><td style="color:var(--text-3);font-size:11.5px;font-family:var(--font-mono);">12m ago</td><td><div class="act-btns"><div class="ic-btn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93l-1.41 1.41M5.34 18.66l-1.41 1.41M2 12h2m16 0h2"/></svg></div><div class="ic-btn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg></div></div></td></tr>
+              <tr><td><div class="co-name">Nexus Systems</div><div class="co-url">nexussystems.io</div></td><td><span class="badge badge-green"><span class="badge-dot"></span>Completed</span></td><td><div class="prog-row"><div class="prog-bar"><div class="prog-fill" style="width:100%"></div></div><span class="prog-pct">100%</span></div></td><td style="color:var(--text-3);font-size:11.5px;font-family:var(--font-mono);">2h ago</td><td><div class="act-btns"><div class="ic-btn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93l-1.41 1.41M5.34 18.66l-1.41 1.41M2 12h2m16 0h2"/></svg></div><div class="ic-btn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg></div></div></td></tr>
+              <tr><td><div class="co-name">Arcturus Labs</div><div class="co-url">arcturus.ai</div></td><td><span class="badge badge-amber"><span class="badge-dot"></span>Processing</span></td><td><div class="prog-row"><div class="prog-bar"><div class="prog-fill amber" style="width:73%"></div></div><span class="prog-pct">73%</span></div></td><td style="color:var(--text-3);font-size:11.5px;font-family:var(--font-mono);">now</td><td><div class="act-btns"><div class="ic-btn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93l-1.41 1.41M5.34 18.66l-1.41 1.41M2 12h2m16 0h2"/></svg></div><div class="ic-btn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg></div></div></td></tr>
+              <tr><td><div class="co-name">Meridian Analytics</div><div class="co-url">meridian.co</div></td><td><span class="badge badge-grey">Pending</span></td><td><div class="prog-row"><div class="prog-bar"><div class="prog-fill" style="width:0%"></div></div><span class="prog-pct">0%</span></div></td><td style="color:var(--text-3);font-size:11.5px;font-family:var(--font-mono);">—</td><td><div class="act-btns"><div class="ic-btn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93l-1.41 1.41M5.34 18.66l-1.41 1.41M2 12h2m16 0h2"/></svg></div><div class="ic-btn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg></div></div></td></tr>
+              <tr><td><div class="co-name">Vantage Point AI</div><div class="co-url">vantagepoint.ai</div></td><td><span class="badge badge-red"><span class="badge-dot"></span>Failed</span></td><td><div class="prog-row"><div class="prog-bar"><div class="prog-fill red" style="width:45%"></div></div><span class="prog-pct">45%</span></div></td><td style="color:var(--text-3);font-size:11.5px;font-family:var(--font-mono);">5d ago</td><td><div class="act-btns"><div class="ic-btn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93l-1.41 1.41M5.34 18.66l-1.41 1.41M2 12h2m16 0h2"/></svg></div><div class="ic-btn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg></div></div></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- ── KB ── -->
+      <div id="page-kb" class="page">
+        <div class="kb-wrap">
+          <div class="kb-src">
+            <div class="ctx-lbl" style="margin-bottom:10px;">Sources</div>
+            <div class="src-item"><div class="src-name">TechCorp Overview</div><div class="src-meta">PDF · 24pp</div></div>
+            <div class="src-item"><div class="src-name">Q3 Requirements</div><div class="src-meta">DOCX · 12pp</div></div>
+            <div class="src-item"><div class="src-name">Interview Playbook</div><div class="src-meta">PDF · 8pp</div></div>
+            <div class="src-item"><div class="src-name">Client Profiles 2024</div><div class="src-meta">XLSX · 340 rows</div></div>
+          </div>
+          <div class="chat-panel" style="flex:1;">
+            <div class="chat-head">
+              <div class="chat-head-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M2 3h6a4 4 0 014 4v14a3 3 0 00-3-3H2z"/><path d="M22 3h-6a4 4 0 00-4 4v14a3 3 0 013-3h7z"/></svg></div>
+              <div><div class="chat-head-title">Knowledge Base</div><div class="chat-head-sub">rag · document retrieval</div></div>
+            </div>
+            <div class="chat-msgs" id="kb-msgs"><div class="msg assistant"><div class="msg-ava">AI</div><div><div class="msg-bub">Ready to search across your knowledge base. Ask me anything.</div><div class="msg-ts">now</div></div></div></div>
+            <div class="chat-input-box"><div class="chat-row"><textarea class="chat-ta" id="kb-ta" rows="1" placeholder="Search your documents…" onkeydown="handleKey(event,'kb')"></textarea><button class="send-btn" onclick="send('kb')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg></button></div></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── Usage ── -->
+      <div id="page-usage" class="page">
+        <div class="usage-strip">
+          <div class="u-card"><div class="u-lbl">Total Tokens</div><div class="u-val">2.4M</div><div class="u-delta">↑ +12% this week</div></div>
+          <div class="u-card"><div class="u-lbl">API Calls</div><div class="u-val">8,342</div><div class="u-delta">↑ +5% this week</div></div>
+          <div class="u-card"><div class="u-lbl">Avg Latency</div><div class="u-val">1.8s</div><div class="u-delta">↓ -0.3s vs last week</div></div>
+        </div>
+        <div class="chart-card">
+          <div class="chart-head">Daily token usage — 7 days</div>
+          <div class="bar-chart">
+            <div class="bc"><div class="b" style="height:52px;"></div><div class="b-lbl">MON</div></div>
+            <div class="bc"><div class="b" style="height:68px;"></div><div class="b-lbl">TUE</div></div>
+            <div class="bc"><div class="b" style="height:42px;"></div><div class="b-lbl">WED</div></div>
+            <div class="bc"><div class="b" style="height:78px;"></div><div class="b-lbl">THU</div></div>
+            <div class="bc"><div class="b" style="height:62px;"></div><div class="b-lbl">FRI</div></div>
+            <div class="bc"><div class="b" style="height:28px;"></div><div class="b-lbl">SAT</div></div>
+            <div class="bc"><div class="b hi" style="height:88px;"></div><div class="b-lbl">SUN</div></div>
+          </div>
+        </div>
+        <table class="log-table">
+          <thead><tr><th>Endpoint</th><th>Model</th><th>Tokens</th><th>Latency</th><th>Time</th></tr></thead>
+          <tbody>
+            <tr><td>intel.queryStream</td><td>claude-sonnet-4-6</td><td>3,420</td><td>1.6s</td><td>09:15:32</td></tr>
+            <tr><td>kb.query</td><td>claude-haiku-4-5</td><td>890</td><td>0.8s</td><td>08:52:10</td></tr>
+            <tr><td>intel.queryStream</td><td>claude-sonnet-4-6</td><td>2,150</td><td>1.9s</td><td>08:30:44</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- ── Search ── -->
+      <div id="page-search" class="page">
+        <table class="log-table" style="margin-top:0;">
+          <thead><tr><th>Query</th><th>Intent</th><th>Results</th><th>Time</th></tr></thead>
+          <tbody>
+            <tr><td style="color:var(--text-1);">Senior ML engineers RAG</td><td><span class="badge badge-blue">requirements</span></td><td>3</td><td>09:15:14</td></tr>
+            <tr><td style="color:var(--text-1);">TechCorp contact details</td><td><span class="badge badge-grey">clients</span></td><td>1</td><td>08:52:03</td></tr>
+            <tr><td style="color:var(--text-1);">Python interview questions</td><td><span class="badge badge-grey">interviews</span></td><td>8</td><td>08:30:55</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- ── Email ── -->
+      <div id="page-email" class="page">
+        <div class="panel" style="max-width:480px;">
+          <div class="panel-header"><div class="panel-title">Email Knowledge Base</div></div>
+          <div class="panel-body" style="display:flex;flex-direction:column;gap:14px;">
+            <div><div class="ctx-lbl" style="margin-bottom:5px;">IMAP Connection</div><input style="width:100%;padding:7px 10px;background:var(--surface-2);border:1px solid var(--border-2);border-radius:var(--radius);font-family:var(--font-mono);font-size:12px;color:var(--text-1);outline:none;" value="imap.gmail.com:993"></div>
+            <div><div class="ctx-lbl" style="margin-bottom:5px;">Status</div><span class="badge badge-green"><span class="badge-dot"></span>Connected — 2,340 emails indexed</span></div>
+            <button class="btn btn-primary" style="align-self:flex-start;">Sync Now</button>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<script>
+function nav(id, el, title, meta) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+  document.getElementById('page-' + id).classList.add('active');
+  if (el) el.classList.add('active');
+  document.getElementById('pg-title').textContent = title;
+  document.getElementById('pg-meta').textContent = meta;
+}
+function handleKey(e, t) { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(t); } }
+function send(t) {
+  const ta = document.getElementById(t + '-ta');
+  const txt = ta.value.trim(); if (!txt) return;
+  const msgs = document.getElementById(t + '-msgs');
+  const ts = new Date().toTimeString().slice(0,5);
+  msgs.innerHTML += `<div class="msg user"><div class="msg-ava">NK</div><div><div class="msg-bub">${esc(txt)}</div><div class="msg-ts">${ts}</div></div></div>`;
+  ta.value = ''; msgs.scrollTop = msgs.scrollHeight;
+  setTimeout(() => {
+    msgs.innerHTML += `<div class="msg assistant"><div class="msg-ava">AI</div><div><div class="msg-bub">Searching for <strong>${esc(txt)}</strong> across your intelligence database…</div><div class="msg-ts">${ts}</div></div></div>`;
+    msgs.scrollTop = msgs.scrollHeight;
+  }, 600);
+}
+function esc(s) { return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+</script>
+</body>
+</html>

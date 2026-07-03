@@ -1,0 +1,354 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sample 3 | Operations View</title>
+  <style>
+    :root {
+      --bg: #f2f3ef;
+      --panel: #fcfcfa;
+      --panel-strong: #ffffff;
+      --line: #dfe4dc;
+      --text: #16211c;
+      --muted: #67736c;
+      --accent: #1f4d3c;
+      --accent-soft: #e1ebe5;
+      --radius: 20px;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      font-family: "Segoe UI", "Helvetica Neue", sans-serif;
+      background:
+        radial-gradient(circle at right top, rgba(31, 77, 60, 0.08), transparent 26rem),
+        var(--bg);
+      color: var(--text);
+    }
+
+    .page {
+      min-height: 100vh;
+      padding: 24px;
+    }
+
+    .frame {
+      max-width: 1440px;
+      margin: 0 auto;
+      display: grid;
+      grid-template-rows: auto auto 1fr;
+      gap: 18px;
+    }
+
+    .topbar,
+    .toolbar,
+    .board,
+    .summary-card,
+    .table-card {
+      background: rgba(252, 252, 250, 0.9);
+      border: 1px solid var(--line);
+      border-radius: 28px;
+      box-shadow: 0 20px 50px rgba(17, 29, 23, 0.06);
+      backdrop-filter: blur(14px);
+    }
+
+    .topbar,
+    .toolbar {
+      padding: 18px 22px;
+    }
+
+    .topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+    }
+
+    .title h1,
+    .title p,
+    .summary-card h2,
+    .summary-card p,
+    .table-card h2,
+    .table-card p,
+    .row,
+    .tag {
+      margin: 0;
+    }
+
+    .title h1 {
+      font-size: 30px;
+      margin-bottom: 8px;
+    }
+
+    .title p,
+    .summary-card p,
+    .table-card p,
+    .muted {
+      color: var(--muted);
+    }
+
+    .tag {
+      padding: 10px 14px;
+      border-radius: 999px;
+      background: var(--panel-strong);
+      border: 1px solid var(--line);
+      font-size: 13px;
+      white-space: nowrap;
+    }
+
+    .toolbar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+    }
+
+    .tool {
+      padding: 11px 14px;
+      border-radius: 14px;
+      border: 1px solid var(--line);
+      background: var(--panel-strong);
+      font-size: 14px;
+      color: var(--text);
+    }
+
+    .tool.primary {
+      background: var(--accent);
+      color: #fff;
+      border-color: var(--accent);
+    }
+
+    .board {
+      padding: 18px;
+      display: grid;
+      grid-template-columns: 340px 1fr;
+      gap: 18px;
+    }
+
+    .summary-grid {
+      display: grid;
+      gap: 14px;
+      align-content: start;
+    }
+
+    .summary-card,
+    .table-card {
+      padding: 20px;
+    }
+
+    .summary-card h2,
+    .table-card h2 {
+      font-size: 18px;
+      margin-bottom: 8px;
+    }
+
+    .stat-block {
+      padding: 16px;
+      border-radius: 18px;
+      background: var(--accent-soft);
+      margin-top: 14px;
+    }
+
+    .stat-value {
+      font-size: 34px;
+      font-weight: 700;
+      margin-bottom: 6px;
+    }
+
+    .table-header,
+    .row {
+      display: grid;
+      grid-template-columns: 1.4fr 0.8fr 0.8fr 0.6fr;
+      gap: 14px;
+      align-items: center;
+    }
+
+    .table-header {
+      padding: 12px 0;
+      border-bottom: 1px solid var(--line);
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      color: var(--muted);
+    }
+
+    .row {
+      padding: 16px 0;
+      border-bottom: 1px solid var(--line);
+      font-size: 14px;
+    }
+
+    .row:last-child {
+      border-bottom: 0;
+      padding-bottom: 0;
+    }
+
+    .company strong {
+      display: block;
+      margin-bottom: 4px;
+      font-size: 15px;
+    }
+
+    .status {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 8px 10px;
+      border-radius: 999px;
+      font-size: 12px;
+      background: var(--panel-strong);
+      border: 1px solid var(--line);
+      width: fit-content;
+    }
+
+    .status.done {
+      color: var(--accent);
+      background: var(--accent-soft);
+    }
+
+    .status.queue {
+      color: #9a6700;
+      background: #fff5db;
+    }
+
+    .status.flag {
+      color: #b42318;
+      background: #fff1f1;
+    }
+
+    @media (max-width: 1060px) {
+      .board {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    @media (max-width: 720px) {
+      .page {
+        padding: 16px;
+      }
+
+      .topbar,
+      .toolbar,
+      .board,
+      .summary-card,
+      .table-card {
+        border-radius: 20px;
+      }
+
+      .topbar {
+        flex-direction: column;
+        align-items: flex-start;
+      }
+
+      .table-header {
+        display: none;
+      }
+
+      .row {
+        grid-template-columns: 1fr;
+        gap: 8px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <div class="frame">
+      <section class="topbar">
+        <div class="title">
+          <h1>Companies</h1>
+          <p>
+            A more refined operations screen for review, tracking, and bulk actions.
+            The current product already has the data; this version improves readability and decision flow.
+          </p>
+        </div>
+        <div class="tag">142 tracked • 17 pending • synced today</div>
+      </section>
+
+      <section class="toolbar">
+        <div class="tool">Search companies</div>
+        <div class="tool">Status: All</div>
+        <div class="tool">Owner: Any</div>
+        <div class="tool">Last scraped</div>
+        <div class="tool primary">Run sync</div>
+      </section>
+
+      <section class="board">
+        <aside class="summary-grid">
+          <article class="summary-card">
+            <h2>Processing overview</h2>
+            <p>This direction is best if you want the platform to feel like a serious internal operations tool.</p>
+            <div class="stat-block">
+              <div class="stat-value">85%</div>
+              <div class="muted">completion rate over the current data set</div>
+            </div>
+          </article>
+
+          <article class="summary-card">
+            <h2>Attention needed</h2>
+            <p>Failures and long-pending items are grouped into a single place instead of being scattered across widgets.</p>
+            <div class="stat-block">
+              <div class="stat-value">4</div>
+              <div class="muted">records require manual review</div>
+            </div>
+          </article>
+        </aside>
+
+        <article class="table-card">
+          <h2>Recent companies</h2>
+          <p>Balanced spacing, softer contrast, and stronger row grouping improve scan speed for admin tasks.</p>
+
+          <div class="table-header">
+            <div>Company</div>
+            <div>Status</div>
+            <div>Last activity</div>
+            <div>Owner</div>
+          </div>
+
+          <div class="row">
+            <div class="company">
+              <strong>Data Crew</strong>
+              <span class="muted">Knowledge base and requirement profile synced</span>
+            </div>
+            <div><span class="status done">Completed</span></div>
+            <div>12 min ago</div>
+            <div>System</div>
+          </div>
+
+          <div class="row">
+            <div class="company">
+              <strong>Relanto Global</strong>
+              <span class="muted">Interview references queued for enrichment</span>
+            </div>
+            <div><span class="status queue">Pending</span></div>
+            <div>38 min ago</div>
+            <div>Anika</div>
+          </div>
+
+          <div class="row">
+            <div class="company">
+              <strong>DVARA</strong>
+              <span class="muted">Recent company signal detected from external notes</span>
+            </div>
+            <div><span class="status done">Completed</span></div>
+            <div>1 hr ago</div>
+            <div>System</div>
+          </div>
+
+          <div class="row">
+            <div class="company">
+              <strong>Concert AI</strong>
+              <span class="muted">Scrape failed due to missing source mapping</span>
+            </div>
+            <div><span class="status flag">Needs review</span></div>
+            <div>2 hr ago</div>
+            <div>Ravi</div>
+          </div>
+        </article>
+      </section>
+    </div>
+  </div>
+</body>
+</html>
