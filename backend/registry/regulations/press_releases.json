@@ -1,0 +1,10 @@
+{
+  "id": "press_releases",
+  "display_name": "Press Releases",
+  "category": "Press Releases",
+  "rbi_url": "https://www.rbi.org.in/",
+  "source_docs": ["*.pdf"],
+  "qdrant_collection": "reg_press_releases",
+  "applicability": "RBI press releases that may affect market context or compliance awareness for financial institutions.",
+  "effective_date": "As dated in the press release"
+}

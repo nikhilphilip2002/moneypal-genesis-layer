@@ -1,0 +1,10 @@
+{
+  "id": "recent_circulars",
+  "display_name": "Recent Circulars",
+  "category": "Recent Circulars",
+  "rbi_url": "https://www.rbi.org.in/",
+  "source_docs": ["*.pdf"],
+  "qdrant_collection": "reg_recent_circulars",
+  "applicability": "Recent RBI circulars and amendment directions relevant to regulated entities, including NBFCs where the scope applies.",
+  "effective_date": "As specified in each circular"
+}

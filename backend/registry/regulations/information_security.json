@@ -1,11 +1,10 @@
 {
   "id": "information_security",
-  "display_name": "Information Security and Cyber Resilience",
-  "category": "information_security",
-  "rbi_url": "https://www.rbi.org.in/scripts/BS_ViewMasterDirections.aspx",
-  "source_doc": "rbi_it_framework_nbfc.pdf",
+  "display_name": "Information Security",
+  "category": "Information Security",
+  "rbi_url": "https://www.rbi.org.in/",
+  "source_docs": ["Information Security.pdf"],
   "qdrant_collection": "reg_information_security",
-  "applicability": "All NBFCs — IT systems, cyber resilience framework, data protection",
-  "effective_date": "2021-06-25",
-  "priority": "high"
+  "applicability": "NBFC technology, cyber security, information security governance, incident handling, and digital operational resilience controls.",
+  "effective_date": "As specified in the RBI information security directions"
 }

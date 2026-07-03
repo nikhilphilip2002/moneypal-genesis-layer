@@ -1,11 +1,10 @@
 {
   "id": "governance",
-  "display_name": "Corporate Governance Norms",
-  "category": "governance",
-  "rbi_url": "https://www.rbi.org.in/scripts/BS_ViewMasterDirections.aspx",
-  "source_doc": "rbi_corporate_governance.pdf",
+  "display_name": "Governance",
+  "category": "Governance",
+  "rbi_url": "https://www.rbi.org.in/",
+  "source_docs": ["Governance.pdf"],
   "qdrant_collection": "reg_governance",
-  "applicability": "All NBFCs — board composition, committees, disclosures",
-  "effective_date": "2023-03-15",
-  "priority": "medium"
+  "applicability": "NBFC governance, board oversight, policy approval, management accountability, and control framework requirements.",
+  "effective_date": "As specified in the RBI governance directions"
 }

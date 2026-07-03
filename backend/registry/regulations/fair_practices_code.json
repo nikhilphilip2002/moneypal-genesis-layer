@@ -1,0 +1,10 @@
+{
+  "id": "fair_practices_code",
+  "display_name": "Fair Practices Code",
+  "category": "Fair Practices Code",
+  "rbi_url": "https://www.rbi.org.in/",
+  "source_docs": ["Fair Practices Code.pdf"],
+  "qdrant_collection": "reg_fair_practices_code",
+  "applicability": "NBFC customer-facing lending practices, disclosures, recovery conduct, grievance redressal, and fair treatment obligations.",
+  "effective_date": "As specified in the RBI fair practices code"
+}

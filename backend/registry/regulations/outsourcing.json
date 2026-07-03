@@ -1,11 +1,10 @@
 {
   "id": "outsourcing",
-  "display_name": "Outsourcing of Financial Services",
-  "category": "outsourcing",
-  "rbi_url": "https://www.rbi.org.in/scripts/BS_ViewMasterDirections.aspx",
-  "source_doc": "rbi_outsourcing_guidelines.pdf",
+  "display_name": "Outsourcing",
+  "category": "Out sourcing",
+  "rbi_url": "https://www.rbi.org.in/",
+  "source_docs": ["outsourcing.pdf"],
   "qdrant_collection": "reg_outsourcing",
-  "applicability": "NBFCs that outsource any financial or operational function",
-  "effective_date": "2020-08-17",
-  "priority": "medium"
+  "applicability": "NBFC outsourcing of financial services, vendor governance, due diligence, risk management, monitoring, and exit planning.",
+  "effective_date": "As specified in the RBI outsourcing directions"
 }

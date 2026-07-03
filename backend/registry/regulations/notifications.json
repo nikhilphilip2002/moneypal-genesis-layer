@@ -1,0 +1,10 @@
+{
+  "id": "notifications",
+  "display_name": "Notifications",
+  "category": "Notifications",
+  "rbi_url": "https://www.rbi.org.in/",
+  "source_docs": ["Notifications.pdf"],
+  "qdrant_collection": "reg_notifications",
+  "applicability": "Recent RBI notifications relevant to regulated entities, including NBFCs where the notification scope applies.",
+  "effective_date": "As specified in the notification"
+}
