@@ -1,0 +1,9 @@
+# Backend dependencies for all three modules (Direct RAG, no framework)
+fastapi
+uvicorn[standard]
+qdrant-client
+sentence-transformers
+groq
+python-dotenv
+pypdf
+pydantic
