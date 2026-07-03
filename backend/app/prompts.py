@@ -1,5 +1,6 @@
-"""Prompt text for Module 1. Refine these — the sharper the prompt, the better the brief."""
+"""Prompt text. Refine these — the sharper the prompt, the better the brief."""
 
+# --- Macro (Team A) --------------------------------------------------------
 SNAPSHOT = (
     "Give a concise economic snapshot for a financial institution director. Cover: "
     "India's GDP growth (current FY), CPI inflation, RBI policy stance, overall and "
@@ -29,4 +30,12 @@ BRIEFING = (
     "(1 paragraph on the local MSME lending opportunity); RISK WATCH (3 bullets); "
     "OPPORTUNITY (1 paragraph, what GICC should do). Be decisive and specific; use "
     "numbers; cite sources throughout."
+)
+
+# --- Competitive (Team B) --------------------------------------------------
+LANDSCAPE = (
+    "Give an executive overview of the Karnataka MSME lending landscape. Cover: "
+    "major players and positioning; typical products and rate ranges; the most "
+    "contested customer segments; market gaps / underserved areas; and the strategic "
+    "implication for a co-operative bank (GICC). Be specific, not generic."
 )

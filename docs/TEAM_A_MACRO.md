@@ -1,5 +1,5 @@
 # Team A — Module 1: Macro-economic Intelligence
-**Port: 8001 | Qdrant Collection: `macro_intel` | Duration: 24 Hours**
+**Port: 8000 (/macro) | Qdrant Collection: `macro_intel` | Duration: 24 Hours**
 
 ---
 
@@ -103,7 +103,7 @@ This is the most important prep work. The quality of your RAG output depends ent
 
 ### Where to Save Everything
 
-Put all files into your `data/` folder. The ingestion script reads everything from that folder automatically.
+Put all files into your `backend/data/macro/` folder. Run ingestion: `python scripts/ingest.py macro`.
 
 ---
 
@@ -272,6 +272,7 @@ Before you hand off, check every endpoint against this list:
 - [ ] CORS is open — Integration Lead can call your API from localhost:3000
 - [ ] `/health` returns 200
 - [ ] All 4 endpoints return 200 (no 500 errors)
+- [ ] Working inside [macro.py](file:///home/null/Projects/moneypal/backend/app/api/routes/macro.py) and [macro.py](file:///home/null/Projects/moneypal/backend/app/services/macro.py)
 - [ ] Response time under 30 seconds (Groq is fast, but RAG adds time)
 
 ---

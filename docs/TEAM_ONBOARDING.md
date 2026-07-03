@@ -29,17 +29,16 @@ cd moneypal-genesis-layer
 
 | Team | Module | Branch | Port |
 |------|--------|--------|------|
-| A | Macro-economic Intelligence | `team-a-macro` | 8001 |
-| B | Competitive Intelligence | `team-b-competitive` | 8002 |
-| C | Regulatory Intelligence | `team-c-regulatory` | 8003 |
+| A | Macro-economic Intelligence | `team-a-macro` | 8000 (/macro) |
+| B | Competitive Intelligence | `team-b-competitive` | 8000 (/competitive) |
+| C | Regulatory Intelligence | `team-c-regulatory` | 8000 (/regulatory) |
 | — | Frontend / Integration | `main` | 3000 |
 
 ```bash
 git switch team-a-macro        # Team A  (or team-b-competitive / team-c-regulatory)
 ```
 
-Work only inside your module folder. Do not edit `shared/` — if something in shared
-needs changing, tell the Integration Lead.
+Work inside your respective routes and services files within [backend/app/](file:///home/null/Projects/moneypal/backend/app). Do not edit `packages/genesis_core/` — if the shared engine needs changing, tell the Integration Lead.
 
 ---
 
@@ -47,22 +46,33 @@ needs changing, tell the Integration Lead.
 
 ```
 moneypal-genesis-layer/
-├── shared/                    ← DO NOT EDIT. Import from here.
-│   ├── schema.py              response contract (IntelligenceResponse, make_response)
-│   ├── rag_helpers.py         Direct RAG: ingest_folder / search / generate / ask
-│   ├── download_model.py      pre-download bge-m3 (run once)
-│   └── smoke_test.py          end-to-end pipeline test
-├── module1-macro/             ← Team A  (main, prompts, routes, ingest, README)
-├── module2-competitive/       ← Team B  (routes, institution_loader, institutions/*.json, ingest, README)
-├── module3-regulatory/        ← Team C  (routes, reg_loader, regulations/*.json, alerts, ingest, README)
-├── requirements.txt           backend deps (Direct RAG — no framework)
+├── packages/genesis_core/     ← DO NOT EDIT. The shared engine you import.
+│   └── src/genesis_core/
+│       ├── schema.py          response contract (IntelligenceResponse, make_response)
+│       ├── rag.py             Direct RAG: ingest_folder / search / generate / ask
+│       └── config.py          settings (Qdrant, Groq, bge-m3) via pydantic-settings
+├── backend/                   ← Unified FastAPI Application (All Teams)
+│   ├── app/
+│   │   ├── main.py            FastAPI setup containing all routers
+│   │   ├── prompts.py         Prompts mapping dictionary
+│   │   ├── api/routes/        Thin route handlers for macro, competitive, and regulatory
+│   │   └── services/          Business/RAG logic handlers for each domain
+│   ├── registry/              JSON files for institutions (B) and regulations (C)
+│   ├── scripts/               ingest.py (Unified ingestion script)
+│   ├── Dockerfile
+│   └── data/                  macro/, competitive/, regulatory/ (gitignored local PDFs)
+├── scripts/                   download_model.py · smoke_test.py
+├── requirements.txt           one-shot backend setup
+├── docker-compose.yml         runs the unified backend service
 ├── .env.example               copy to .env, add your Groq key
 ├── assets/                    Moneypal + GICC logos
 └── docs/                      plans, per-team briefs, Qdrant setup, this file
 ```
 
-Each module already **runs** and its endpoints are already wired to the shared RAG
-pipeline. Your job is: **get good data in, and sharpen the prompts** — not rebuild plumbing.
+Each domain already **runs** and its endpoints are already wired to the shared RAG
+engine. Your job is: **get good data in, and sharpen the prompts** — not rebuild plumbing.
+Business logic lives in `app/services/`, endpoints in `app/api/routes/`, prompts in
+`app/prompts.py` (or inline in the service). Import the engine with `from genesis_core import rag, make_response`.
 
 Read your module's deep brief before starting:
 - Team A → `docs/TEAM_A_MACRO.md`
@@ -75,30 +85,34 @@ Read your module's deep brief before starting:
 ## 4. Set up your environment
 
 ```bash
-pip install -r requirements.txt
-cp .env.example .env            # then paste the Groq key into .env
-python shared/download_model.py # downloads bge-m3 (~570MB), once
+pip install -r requirements.txt   # installs genesis-core (editable) + fastapi + uvicorn
+cp .env.example .env              # then paste the Groq key into .env
+python scripts/download_model.py  # downloads bge-m3 (~570MB), once
 ```
 
 Verify the pipeline works before you build:
 
 ```bash
-python shared/smoke_test.py     # must print "SMOKE TEST PASSED"
+python scripts/smoke_test.py      # must print "SMOKE TEST PASSED"
 ```
 
 ---
 
 ## 5. Build your module
 
-The exact steps are in your module's `README.md`. In short:
+In short:
 
-1. Collect source documents → put them in your module's `data/` folder
-   (Team B: `data/<institution_id>/`, Team C: `data/` with filenames matching each JSON's `source_doc`)
-2. Create the config JSONs your module needs (Team B: institutions, Team C: regulations)
-3. Run ingestion: `cd module<X>-... && python ingest.py`
-4. Run the API: `uvicorn main:app --port 800X --reload`
-5. Test: `curl http://localhost:800X/health` then hit your endpoints
-6. Refine prompts until the summaries read like an executive briefing
+1. Collect source documents → put them in [backend/data/](file:///home/null/Projects/moneypal/backend/data)
+   - Team A: `backend/data/macro/`
+   - Team B: `backend/data/competitive/<institution_id>/`
+   - Team C: `backend/data/regulatory/` (filenames must match JSON's `source_doc`)
+2. Create the config JSONs your module needs:
+   - Team B: inside [backend/registry/institutions/](file:///home/null/Projects/moneypal/backend/registry/institutions)
+   - Team C: inside [backend/registry/regulations/](file:///home/null/Projects/moneypal/backend/registry/regulations)
+3. Run ingestion: `cd backend && python scripts/ingest.py [macro|competitive|regulatory]`
+4. Run the API: `cd backend && uvicorn app.main:app --port 8000 --reload`
+5. Test: `curl http://localhost:8000/health` then hit your endpoints
+6. Refine prompts in [backend/app/prompts.py](file:///home/null/Projects/moneypal/backend/app/prompts.py) until summaries read like an executive briefing
 
 ---
 

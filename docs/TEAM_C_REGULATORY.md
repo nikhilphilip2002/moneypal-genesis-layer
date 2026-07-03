@@ -1,5 +1,5 @@
 # Team C — Module 3: Regulatory Intelligence
-**Port: 8003 | Qdrant: one collection per regulation category | Duration: 24 Hours**
+**Port: 8000 (/regulatory) | Qdrant: one collection per regulation category | Duration: 24 Hours**
 
 ---
 
@@ -231,8 +231,8 @@ Use the shared `rag_helpers.py` from the Integration Lead for embed and store fu
 **Note on the Master Directions PDF:** It is a large document covering multiple categories. You can index the same PDF into multiple Qdrant collections (e.g. both `reg_master_directions` and `reg_prudential_norms`). This is fine — the collection scoping ensures each query only retrieves relevant chunks.
 
 For each category:
-1. Confirm source PDF is in `data/`
-2. Run ingestion into the collection specified in that category's JSON
+1. Confirm source PDF is in `backend/data/regulatory/`
+2. Run ingestion: `python scripts/ingest.py regulatory`
 3. Test: embed "What are GICC's compliance requirements for digital lending?" → search Qdrant → verify returned chunks are from the right document
 
 ---
@@ -421,7 +421,7 @@ Source: RBI Information Security Directions
 ### Handoff Checklist
 
 **Config System**
-- [ ] All 9 regulation categories have a JSON config file in `regulations/` folder
+- [ ] All 9 regulation categories have a JSON config file in [backend/registry/regulations/](file:///home/null/Projects/moneypal/backend/registry/regulations/) folder
 - [ ] Every JSON has a valid `rbi_url` linking to the actual RBI page
 - [ ] Every JSON has a correct `effective_date`
 
@@ -441,6 +441,7 @@ Source: RBI Information Security Directions
 - [ ] CORS is open — Integration Lead can call your API from localhost:3000
 - [ ] `/health` returns 200
 - [ ] All endpoints return 200 (no 500 errors)
+- [ ] Working inside [regulatory.py](file:///home/null/Projects/moneypal/backend/app/api/routes/regulatory.py) and [regulatory.py](file:///home/null/Projects/moneypal/backend/app/services/regulatory.py)
 - [ ] Response time under 30 seconds
 
 ---

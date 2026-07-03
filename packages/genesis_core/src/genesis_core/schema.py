@@ -1,8 +1,4 @@
-"""Shared response contract for all three modules.
-
-Every intelligence endpoint returns an IntelligenceResponse. This keeps the
-frontend and all backends in sync. Import from here — do not redefine per module.
-"""
+"""Shared response contract. Every intelligence endpoint returns IntelligenceResponse."""
 from __future__ import annotations
 
 from datetime import date
@@ -21,10 +17,10 @@ class SourceRef(BaseModel):
 
 class IntelligenceResponse(BaseModel):
     title: str
-    summary: str                              # AI-generated executive summary
-    key_points: list[str] = Field(default_factory=list)  # 3-5 bullets
+    summary: str                                          # AI-generated executive summary
+    key_points: list[str] = Field(default_factory=list)   # 3-5 bullets
     source: SourceRef
-    ai_note: str                              # separates sourced fact from AI interpretation
+    ai_note: str                                          # separates fact from AI interpretation
     last_updated: str = Field(default_factory=lambda: date.today().isoformat())
     confidence: Confidence = "medium"
 
@@ -39,7 +35,7 @@ def make_response(
     page: Optional[str] = None,
     confidence: Confidence = "medium",
 ) -> IntelligenceResponse:
-    """Convenience builder so route code stays short."""
+    """Convenience builder so service code stays short."""
     return IntelligenceResponse(
         title=title,
         summary=summary,

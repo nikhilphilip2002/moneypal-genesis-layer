@@ -1,20 +1,12 @@
-"""Competitive intelligence endpoints."""
-import os
-import sys
+"""Business logic for competitive intelligence (Team B)."""
+from genesis_core import make_response, rag
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "shared"))
-
-from fastapi import APIRouter, HTTPException  # noqa: E402
-
-import institution_loader as il  # noqa: E402
-import rag_helpers as rag  # noqa: E402
-from schema import IntelligenceResponse, make_response  # noqa: E402
-
-router = APIRouter(prefix="/competitive", tags=["competitive"])
+from app import prompts
+from app.core.config import LANDSCAPE_ANCHOR
+from app.services import institution_loader as il
 
 
-@router.get("/institutions")
-def list_institutions():
+def list_institutions() -> list[dict]:
     return [
         {
             "id": i["id"],
@@ -28,12 +20,10 @@ def list_institutions():
     ]
 
 
-@router.get("/institutions/{institution_id}", response_model=IntelligenceResponse)
-def institution_profile(institution_id: str):
+def profile(institution_id: str):
     inst = il.load_one(institution_id)
     if not inst:
-        raise HTTPException(404, "Institution not found")
-
+        return None
     prompt = (
         f"Write a competitor intelligence profile of {inst['name']} for GICC's strategy "
         f"team. Cover: overview and customers; key loan products and ticket sizes; MSME "
@@ -60,12 +50,10 @@ def institution_profile(institution_id: str):
     )
 
 
-@router.get("/institutions/{institution_id}/swot")
-def institution_swot(institution_id: str):
+def swot(institution_id: str):
     inst = il.load_one(institution_id)
     if not inst:
-        raise HTTPException(404, "Institution not found")
-
+        return None
     prompt = (
         f"Generate a SWOT analysis of {inst['name']} from the perspective of a competing "
         f"Karnataka MSME lender (GICC). Label every point [FACT] if sourced or "
@@ -79,26 +67,14 @@ def institution_swot(institution_id: str):
         "swot_analysis": answer,
         "source": {
             "document": f"{inst['name']} annual report & public disclosures",
-            "url": inst.get("source_urls", {}).get(
-                "annual_report", inst.get("website", "#")
-            ),
+            "url": inst.get("source_urls", {}).get("annual_report", inst.get("website", "#")),
         },
         "ai_note": "[FACT] points are sourced from documents; [AI INTERPRETATION] points are analytical inferences.",
     }
 
 
-@router.get("/landscape", response_model=IntelligenceResponse)
 def landscape():
-    # Uses one well-documented collection as an anchor; refine to a dedicated
-    # comp_landscape collection if you ingest a cross-institution summary.
-    anchor = "comp_sidbi"
-    prompt = (
-        "Give an executive overview of the Karnataka MSME lending landscape. Cover: "
-        "major players and positioning; typical products and rate ranges; the most "
-        "contested customer segments; market gaps / underserved areas; and the strategic "
-        "implication for a co-operative bank (GICC). Be specific, not generic."
-    )
-    answer, _ = rag.ask(anchor, prompt)
+    answer, _ = rag.ask(LANDSCAPE_ANCHOR, prompts.LANDSCAPE)
     return make_response(
         title="Karnataka MSME Lending Landscape",
         summary=answer,

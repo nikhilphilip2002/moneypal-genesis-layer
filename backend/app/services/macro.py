@@ -1,22 +1,12 @@
-"""Macro-economic intelligence endpoints. All return the shared IntelligenceResponse."""
-import os
-import sys
+"""Business logic for macro-economic intelligence (Team A)."""
+from genesis_core import make_response, rag
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "shared"))
-
-from fastapi import APIRouter  # noqa: E402
-
-import prompts  # noqa: E402
-import rag_helpers as rag  # noqa: E402
-from schema import IntelligenceResponse, make_response  # noqa: E402
-
-router = APIRouter(prefix="/macro", tags=["macro"])
-COLLECTION = "macro_intel"
+from app import prompts
+from app.core.config import MACRO_COLLECTION
 
 
 def _brief(title, prompt, key_points, document, url, ai_note, confidence="medium"):
-    """Retrieve + generate + wrap in the shared schema."""
-    answer, sources = rag.ask(COLLECTION, prompt)
+    answer, sources = rag.ask(MACRO_COLLECTION, prompt)
     page = str(sources[0]["page"]) if sources and sources[0].get("page") else None
     return make_response(
         title=title,
@@ -30,7 +20,6 @@ def _brief(title, prompt, key_points, document, url, ai_note, confidence="medium
     )
 
 
-@router.get("/snapshot", response_model=IntelligenceResponse)
 def snapshot():
     return _brief(
         "India Economic Snapshot",
@@ -43,7 +32,6 @@ def snapshot():
     )
 
 
-@router.get("/karnataka", response_model=IntelligenceResponse)
 def karnataka():
     return _brief(
         "Karnataka Economic Landscape",
@@ -56,7 +44,6 @@ def karnataka():
     )
 
 
-@router.get("/msme", response_model=IntelligenceResponse)
 def msme():
     return _brief(
         "MSME Lending Trends",
@@ -69,7 +56,6 @@ def msme():
     )
 
 
-@router.get("/briefing", response_model=IntelligenceResponse)
 def briefing():
     return _brief(
         "AI Executive Brief — Macro Intelligence",

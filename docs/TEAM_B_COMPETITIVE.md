@@ -1,5 +1,5 @@
 # Team B — Module 2: Competitive Intelligence
-**Port: 8002 | Qdrant: one collection per institution | Duration: 24 Hours**
+**Port: 8000 (/competitive) | Qdrant: one collection per institution | Duration: 24 Hours**
 
 ---
 
@@ -56,7 +56,7 @@ This is the most architecturally important thing you do. The brief explicitly sa
 
 ### How It Works
 
-Every institution is defined by a single JSON file in your `institutions/` folder. Your Python code reads all JSON files from that folder at startup — so adding an institution means dropping in a new JSON file and restarting, with zero code changes.
+Every institution is defined by a single JSON file in your `backend/registry/institutions/` folder. Your Python code reads all JSON files from that folder at startup — so adding an institution means dropping in a new JSON file and restarting, with zero code changes.
 
 ---
 
@@ -144,7 +144,7 @@ Each file must contain these fields:
 
 ## HOUR 4–7: Data Collection
 
-For each institution collect as much publicly available information as possible. Save everything into `data/{institution_id}/` folder.
+For each institution collect as much publicly available information as possible. Save everything into `backend/data/competitive/{institution_id}/` folder.
 
 ---
 
@@ -199,7 +199,7 @@ Use the shared `rag_helpers.py` from the Integration Lead for the embed and stor
 
 For each institution:
 1. Confirm all files are in `data/{institution_id}/`
-2. Run the ingestion script pointing at that folder and collection name
+2. Run the ingestion script: `python scripts/ingest.py competitive`.
 3. Verify with a test search: embed "What loans does {institution} offer?" → search Qdrant → check returned chunks make sense
 
 Each institution gets its own isolated Qdrant collection. This is critical — queries for Kinara Capital only search Kinara Capital documents, preventing cross-contamination between institutions.
@@ -337,7 +337,7 @@ Given this landscape, where does GICC have a natural advantage? What should they
 ### Handoff Checklist
 
 **Config System**
-- [ ] All 11 institutions have a JSON config file in `institutions/` folder
+- [ ] All 11 institutions have a JSON config file in [backend/registry/institutions/](file:///home/null/Projects/moneypal/backend/registry/institutions/) folder
 - [ ] Adding a new institution only requires adding a JSON file — no Python changes needed
 - [ ] All institution IDs are URL-safe slugs (lowercase, underscores, no spaces)
 
@@ -357,6 +357,7 @@ Given this landscape, where does GICC have a natural advantage? What should they
 - [ ] CORS is open — Integration Lead can call your API from localhost:3000
 - [ ] `/health` returns 200
 - [ ] All 4 endpoints return 200 (no 500 errors)
+- [ ] Working inside [competitive.py](file:///home/null/Projects/moneypal/backend/app/api/routes/competitive.py) and [competitive.py](file:///home/null/Projects/moneypal/backend/app/services/competitive.py)
 - [ ] Response time under 30 seconds
 
 ---

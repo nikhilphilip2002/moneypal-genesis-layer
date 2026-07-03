@@ -1,21 +1,11 @@
-"""Regulatory intelligence endpoints."""
-import os
-import sys
+"""Business logic for regulatory intelligence (Team C)."""
+from genesis_core import make_response, rag
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "shared"))
-
-from fastapi import APIRouter, HTTPException  # noqa: E402
-
-import alerts as alerts_data  # noqa: E402
-import rag_helpers as rag  # noqa: E402
-import reg_loader as rl  # noqa: E402
-from schema import IntelligenceResponse, make_response  # noqa: E402
-
-router = APIRouter(prefix="/regulatory", tags=["regulatory"])
+from app.services import reg_loader as rl
+from app.services.alerts_data import ALERTS
 
 
-@router.get("/categories")
-def list_categories():
+def list_categories() -> list[dict]:
     return [
         {
             "id": r["id"],
@@ -29,17 +19,14 @@ def list_categories():
     ]
 
 
-@router.get("/alerts")
-def get_alerts():
-    return alerts_data.ALERTS
+def get_alerts() -> list[dict]:
+    return ALERTS
 
 
-@router.get("/{category_id}", response_model=IntelligenceResponse)
-def regulation_detail(category_id: str):
+def detail(category_id: str):
     reg = rl.load_one(category_id)
     if not reg:
-        raise HTTPException(404, "Regulation category not found")
-
+        return None
     prompt = (
         f"Brief the Director and Policy Maker of GICC (a Karnataka co-operative bank / "
         f"NBFC under Rs 500 crore) on the {reg['display_name']} issued by RBI. Translate "

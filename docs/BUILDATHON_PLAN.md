@@ -22,9 +22,7 @@
 
 ```
 Frontend       →  localhost:3000
-Module 1       →  localhost:8001
-Module 2       →  localhost:8002
-Module 3       →  localhost:8003
+Backend (App)  →  localhost:8000  (unified: /macro, /competitive, /regulatory)
 Qdrant         →  localhost:6333  (shared by all modules)
 ```
 
@@ -61,14 +59,15 @@ Every API endpoint across all 3 modules returns the same shape:
 
 ```
 moneypal-genesis/
-├── shared/              ← schema + shared RAG helpers (embed function, qdrant search, groq generate)
-├── module1-macro/       ← Team A
-│   └── data/            ← PDFs downloaded from approved sources
-├── module2-competitive/ ← Team B
-│   └── institutions/    ← one JSON config file per institution
-├── module3-regulatory/  ← Team C
-│   └── regulations/     ← one JSON config file per regulation category
-└── frontend/            ← You
+├── packages/genesis_core/ ← Shared engine (schema, direct RAG helpers)
+├── backend/               ← Unified FastAPI instance (All Teams)
+│   ├── app/
+│   │   ├── api/routes/    ← macro.py (A), competitive.py (B), regulatory.py (C)
+│   │   └── services/      ← macro.py (A), competitive.py (B), regulatory.py (C)
+│   ├── registry/          ← institutions/ (B), regulations/ (C)
+│   ├── scripts/           ← ingest.py (unified ingestion script)
+│   └── data/              ← macro/, competitive/, regulatory/ (local PDFs, gitignored)
+└── frontend/              ← Next.js Web Console (Integration Lead)
 ```
 
 ---
@@ -100,14 +99,14 @@ Do not split yet. Everyone does this first.
 - Create a `.env` file with `GROQ_API_KEY` — everyone uses the same key
 - Set Qdrant host and port in env
 
-> **End of Hour 2:** Qdrant running. bge-m3 downloaded everywhere. All 3 FastAPI services start clean. Next.js runs on 3000.
+> **End of Hour 2:** Qdrant running. bge-m3 downloaded everywhere. Unified FastAPI service starts clean on 8000. Next.js runs on 3000.
 
 ---
 
 ---
 
 # TEAM A — Module 1: Macro-economic Intelligence
-**Port 8001 | Qdrant collection: `macro_intel`**
+**Port 8000 (/macro) | Qdrant collection: `macro_intel`**
 
 ## What You Build
 An executive intelligence service covering India's macro economy and Karnataka's MSME lending landscape.
@@ -123,7 +122,7 @@ An executive intelligence service covering India's macro economy and Karnataka's
 - Indian Economy presentation — DocSend link provided in brief
 - RBI Annual Report (credit growth section) — rbi.org.in
 
-Save all PDFs into your `data/` folder. Run ingestion to index everything into Qdrant collection `macro_intel`.
+Save all PDFs into your `backend/data/macro/` folder. Run ingestion to index everything: `python scripts/ingest.py macro`.
 
 ---
 
@@ -184,7 +183,7 @@ Every response must include a clear `ai_note` that says something like:
 ---
 
 # TEAM B — Module 2: Competitive Intelligence
-**Port 8002 | Qdrant: one collection per institution e.g. `comp_kinara_capital`**
+**Port 8000 (/competitive) | Qdrant: one collection per institution e.g. `comp_kinara_capital`**
 
 ## What You Build
 An intelligence service mapping the competitive lending landscape in Karnataka with profiles and AI-generated SWOT for 11 institutions.
@@ -193,7 +192,7 @@ An intelligence service mapping the competitive lending landscape in Karnataka w
 
 ## Hour 2–4: Institution Config System
 
-Create one JSON file per institution inside the `institutions/` folder. This is how you satisfy the brief's requirement that "institutions can be added without software changes" — adding a new institution means adding a JSON file, nothing else.
+Create one JSON file per institution inside the `backend/registry/institutions/` folder. This is how you satisfy the brief's requirement that "institutions can be added without software changes" — adding a new institution means adding a JSON file, nothing else.
 
 Each JSON must contain:
 - id (slug, e.g. `kinara_capital`)
@@ -229,7 +228,7 @@ For each institution collect whatever is publicly available and save to `data/{i
 - Credit rating reports if available
 - News articles (paste relevant content as .txt)
 
-Run ingestion for each institution into its own Qdrant collection.
+Run ingestion for each institution: `python scripts/ingest.py competitive`.
 
 ---
 
@@ -272,7 +271,7 @@ Cross-institution executive summary answering:
 ---
 
 # TEAM C — Module 3: Regulatory Intelligence
-**Port 8003 | Qdrant: one collection per category e.g. `reg_digital_lending`**
+**Port 8000 (/regulatory) | Qdrant: one collection per category e.g. `reg_digital_lending`**
 
 ## What You Build
 An executive regulatory intelligence service covering RBI regulations applicable to NBFCs with assets below ₹500 crore, specifically relevant to GICC.
@@ -281,7 +280,7 @@ An executive regulatory intelligence service covering RBI regulations applicable
 
 ## Hour 2–4: Regulation Config System
 
-Create one JSON file per regulation category inside the `regulations/` folder.
+Create one JSON file per regulation category inside the `backend/registry/regulations/` folder.
 
 Each JSON must contain:
 - id (slug, e.g. `digital_lending`)
@@ -319,7 +318,7 @@ RBI Master Directions for NBFCs — URL provided in brief. Download the PDF.
 - Outsourcing Guidelines PDF
 - Any recent RBI circulars relevant to small NBFCs
 
-All from rbi.org.in. Run ingestion for each into its own Qdrant collection.
+All from rbi.org.in. Run ingestion for each category: `python scripts/ingest.py regulatory`.
 
 ---
 

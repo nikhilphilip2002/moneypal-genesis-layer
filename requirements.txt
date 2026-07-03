@@ -1,9 +1,6 @@
-# Backend dependencies for all three modules (Direct RAG, no framework)
+# One-shot backend setup for any module.
+#   pip install -r requirements.txt
+# Installs the shared engine (editable) plus the per-service web deps.
+-e ./packages/genesis_core
 fastapi
 uvicorn[standard]
-qdrant-client
-sentence-transformers
-groq
-python-dotenv
-pypdf
-pydantic

@@ -1,0 +1,34 @@
+# Runs the three intelligence services. Qdrant is external (shared instance at
+# 192.168.1.183:6333) — set GROQ_API_KEY in .env before `docker compose up`.
+services:
+  macro:
+    build:
+      context: .
+      dockerfile: module1-macro/Dockerfile
+    ports:
+      - "8001:8001"
+    env_file: .env
+
+  competitive:
+    build:
+      context: .
+      dockerfile: module2-competitive/Dockerfile
+    ports:
+      - "8002:8002"
+    env_file: .env
+
+  regulatory:
+    build:
+      context: .
+      dockerfile: module3-regulatory/Dockerfile
+    ports:
+      - "8003:8003"
+    env_file: .env
+
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    ports:
+      - "8000:8000"
+    env_file: .env

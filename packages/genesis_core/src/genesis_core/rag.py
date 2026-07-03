@@ -1,46 +1,32 @@
-"""Direct RAG helpers shared by all three modules.
+"""Direct RAG engine — no framework.
 
-No framework. The whole pipeline is five explicit steps you can read and debug:
+Five explicit steps you can read and debug:
 
-    load (pypdf)  ->  chunk  ->  embed (bge-m3)  ->  store/search (Qdrant)  ->  generate (Groq)
+    load (pypdf) -> chunk -> embed (bge-m3) -> store/search (Qdrant) -> generate (Groq)
 
-Import these functions. Do NOT rewrite embedding/search/generation logic per module.
-
-Typical usage
--------------
-Ingestion (run once, offline):
-    import rag_helpers as rag
-    rag.ingest_folder("macro_intel", "./data")
-
-Serving (inside a FastAPI route):
-    answer, sources = rag.ask("macro_intel", "Summarise India's GDP outlook for MSME lenders")
+Usage
+-----
+    from genesis_core import rag
+    rag.ingest_folder("macro_intel", "./data")            # offline
+    answer, sources = rag.ask("macro_intel", "Summarise ...")  # in a request
 """
 from __future__ import annotations
 
-import os
 import uuid
 from functools import lru_cache
 from pathlib import Path
 
-from dotenv import load_dotenv
-
-load_dotenv()
-
-QDRANT_HOST = os.getenv("QDRANT_HOST", "192.168.1.183")
-QDRANT_PORT = int(os.getenv("QDRANT_PORT", "6333"))
-EMBED_MODEL = os.getenv("EMBED_MODEL", "BAAI/bge-m3")
-GROQ_MODEL = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
-VECTOR_SIZE = 1024  # bge-m3 embedding dimension
+from .config import settings
 
 
 # --------------------------------------------------------------------------
-# Embeddings (bge-m3, loaded lazily so importing this module stays cheap)
+# Embeddings (bge-m3, loaded lazily)
 # --------------------------------------------------------------------------
 @lru_cache(maxsize=1)
 def get_embedder():
     from sentence_transformers import SentenceTransformer
 
-    return SentenceTransformer(EMBED_MODEL)
+    return SentenceTransformer(settings.embed_model)
 
 
 def embed_text(text: str) -> list[float]:
@@ -60,15 +46,11 @@ def embed_batch(texts: list[str]) -> list[list[float]]:
 def get_qdrant():
     from qdrant_client import QdrantClient
 
-    return QdrantClient(host=QDRANT_HOST, port=QDRANT_PORT)
+    return QdrantClient(host=settings.qdrant_host, port=settings.qdrant_port)
 
 
 def ensure_collection(name: str) -> None:
-    """Create the collection only if missing.
-
-    Uses create_collection (never recreate_collection) so an existing collection
-    from another project on the shared instance is never wiped.
-    """
+    """Create the collection only if missing (never recreate — won't wipe existing data)."""
     from qdrant_client.models import Distance, VectorParams
 
     client = get_qdrant()
@@ -77,7 +59,7 @@ def ensure_collection(name: str) -> None:
         return
     client.create_collection(
         collection_name=name,
-        vectors_config=VectorParams(size=VECTOR_SIZE, distance=Distance.COSINE),
+        vectors_config=VectorParams(size=settings.vector_size, distance=Distance.COSINE),
     )
 
 
@@ -102,7 +84,7 @@ def load_text_file(path: str) -> str:
 
 
 def chunk_text(text: str, chunk_words: int = 500, overlap: int = 50) -> list[str]:
-    """Split text into ~chunk_words windows with `overlap` words of context carry-over."""
+    """Split text into ~chunk_words windows with `overlap` words carried over."""
     words = text.split()
     if not words:
         return []
@@ -136,7 +118,7 @@ def ingest_files(
 
     for path in paths:
         p = Path(path)
-        segments: list[tuple[int | None, str]] = []  # (page, chunk_text)
+        segments: list[tuple[int | None, str]] = []
 
         if p.suffix.lower() == ".pdf":
             for page_no, page_text in load_pdf(str(p)):
@@ -206,7 +188,7 @@ def search(collection: str, query: str, top_k: int = 5) -> list[dict]:
 def get_groq():
     from groq import Groq
 
-    return Groq(api_key=os.environ["GROQ_API_KEY"])
+    return Groq(api_key=settings.groq_api_key)
 
 
 DEFAULT_SYSTEM = (
@@ -224,14 +206,14 @@ def generate(
     system: str = DEFAULT_SYSTEM,
     temperature: float = 0.3,
 ) -> str:
-    """Generate an answer from a prompt grounded in retrieved context chunks."""
+    """Generate an answer grounded in retrieved context chunks."""
     context = "\n\n".join(
         f"[Source: {c.get('source')}, page {c.get('page')}]\n{c.get('text', '')}"
         for c in context_chunks
     )
     user = f"CONTEXT:\n{context}\n\n---\n\nTASK:\n{prompt}"
     resp = get_groq().chat.completions.create(
-        model=GROQ_MODEL,
+        model=settings.groq_model,
         temperature=temperature,
         messages=[
             {"role": "system", "content": system},

@@ -1,7 +1,4 @@
-"""Hardcoded regulatory alerts for the dashboard widget.
-
-Curated, high-priority items for GICC. No RAG — these are deliberately editorial.
-"""
+"""Curated, high-priority regulatory alerts for the dashboard widget (no RAG)."""
 
 ALERTS = [
     {
