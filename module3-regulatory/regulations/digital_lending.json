@@ -1,0 +1,11 @@
+{
+  "id": "digital_lending",
+  "display_name": "Digital Lending Guidelines",
+  "category": "digital_lending",
+  "rbi_url": "https://rbi.org.in/Scripts/BS_ViewMasterDirections.aspx?id=12256",
+  "source_doc": "rbi_digital_lending_2022.pdf",
+  "qdrant_collection": "reg_digital_lending",
+  "applicability": "NBFCs engaged in digital lending or using Lending Service Providers (LSPs)",
+  "effective_date": "2022-09-02",
+  "priority": "high"
+}

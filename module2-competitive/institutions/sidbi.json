@@ -1,0 +1,16 @@
+{
+  "id": "sidbi",
+  "name": "SIDBI",
+  "type": "Development Finance Institution",
+  "website": "https://www.sidbi.in/en",
+  "headquarters": "Lucknow (pan-India)",
+  "msme_focus": true,
+  "confidence": "high",
+  "note": "Benchmark, not a direct competitor.",
+  "source_docs": ["sidbi_annual_report.pdf", "sidbi_msme_pulse.pdf"],
+  "source_urls": {
+    "website": "https://www.sidbi.in/en",
+    "annual_report": "https://www.sidbi.in/en/annual-reports"
+  },
+  "qdrant_collection": "comp_sidbi"
+}

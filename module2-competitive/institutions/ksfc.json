@@ -1,0 +1,14 @@
+{
+  "id": "ksfc",
+  "name": "Karnataka State Financial Corporation",
+  "type": "State Financial Institution",
+  "website": "https://ksfc.in",
+  "headquarters": "Bengaluru, Karnataka",
+  "msme_focus": true,
+  "confidence": "medium",
+  "source_docs": ["ksfc_annual_report.pdf"],
+  "source_urls": {
+    "website": "https://ksfc.in"
+  },
+  "qdrant_collection": "comp_ksfc"
+}

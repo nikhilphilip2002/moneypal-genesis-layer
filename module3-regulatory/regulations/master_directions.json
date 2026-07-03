@@ -1,0 +1,11 @@
+{
+  "id": "master_directions",
+  "display_name": "NBFC Master Directions",
+  "category": "master_directions",
+  "rbi_url": "https://rbi.org.in/scripts/BS_ViewMasterDirections.aspx?did=411",
+  "source_doc": "rbi_nbfc_master_directions.pdf",
+  "qdrant_collection": "reg_master_directions",
+  "applicability": "All NBFCs registered with RBI, including those below Rs 500 crore asset size",
+  "effective_date": "2016-09-01",
+  "priority": "high"
+}

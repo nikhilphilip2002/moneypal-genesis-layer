@@ -1,0 +1,11 @@
+{
+  "id": "kyc_aml",
+  "display_name": "KYC and Anti-Money Laundering",
+  "category": "kyc_aml",
+  "rbi_url": "https://rbi.org.in/Scripts/BS_ViewMasterDirections.aspx?id=11566",
+  "source_doc": "rbi_kyc_master_directions.pdf",
+  "qdrant_collection": "reg_kyc_aml",
+  "applicability": "All NBFCs — customer identification, due diligence and monitoring",
+  "effective_date": "2016-02-25",
+  "priority": "high"
+}

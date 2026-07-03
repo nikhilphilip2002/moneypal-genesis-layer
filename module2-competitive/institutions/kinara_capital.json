@@ -1,0 +1,15 @@
+{
+  "id": "kinara_capital",
+  "name": "Kinara Capital",
+  "type": "NBFC",
+  "website": "https://kinaracapital.com",
+  "headquarters": "Bengaluru, Karnataka",
+  "msme_focus": true,
+  "confidence": "high",
+  "source_docs": ["kinara_capital_annual_report_2023.pdf", "kinara_about.txt"],
+  "source_urls": {
+    "website": "https://kinaracapital.com",
+    "annual_report": "https://kinaracapital.com/investor-relations"
+  },
+  "qdrant_collection": "comp_kinara_capital"
+}
