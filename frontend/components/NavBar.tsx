@@ -97,8 +97,8 @@ export default function NavBar() {
       </nav>
 
       <div className="flex items-center gap-2.5">
-        <div className="hidden h-7 w-7 items-center justify-center overflow-hidden sm:flex">
-          <Image src="/gicc.png" alt="GICC" width={28} height={28} className="h-6 w-6 object-contain" />
+        <div className="hidden h-8 w-8 items-center justify-center overflow-hidden sm:flex">
+          <Image src="/gicc.png" alt="GICC" width={32} height={32} className="h-7 w-7 object-contain" />
         </div>
         <ThemeToggle />
         {isLoggedIn && (

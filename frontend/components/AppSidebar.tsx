@@ -130,7 +130,7 @@ export default function AppSidebar() {
                                     alt="GICC"
                                     width={32}
                                     height={32}
-                                    className="size-7 object-contain"
+                                    className="size-8 object-contain"
                                 />
                             </div>
                             <div className="grid text-left leading-tight">

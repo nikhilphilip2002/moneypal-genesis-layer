@@ -113,8 +113,11 @@
   body { @apply bg-background text-foreground; }
 }
 
-/* ── Html base colour (visible before JS hydrates) ── */
-html                { background: hsl(220 40% 96%); }
+/* ── Html base settings (visible before JS hydrates) ── */
+html {
+  font-size: 104%;
+  background: hsl(220 40% 96%);
+}
 html.dark           { background: hsl(210 15% 4%); }
 
 body {
