@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { auth, macro, type IntelligenceResponse } from '@/lib/api';
 import { canAccess, homeRoute, type UserRole } from '@/lib/useUserRole';
 import { useIntel } from '@/lib/useIntel';
-import { Badge } from '@/components/ui/badge';
+
 import AIBriefPanel from '@/components/intel/AIBriefPanel';
 import IntelligenceCard from '@/components/intel/IntelligenceCard';
 import LoadingCard from '@/components/intel/LoadingCard';
@@ -48,9 +48,6 @@ export default function MacroPage() {
         <div className="space-y-5">
           {/* Header */}
           <section className="space-y-2">
-            <Badge variant="outline" className="rounded-full border-border/80 bg-card/80 px-3 py-1 text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
-              Module 1
-            </Badge>
             <h1 className="font-headline text-2xl font-semibold tracking-tight md:text-3xl">Macro-economic Intelligence</h1>
             <p className="max-w-2xl text-sm text-muted-foreground">
               India&apos;s macro economy and Karnataka&apos;s MSME lending landscape, distilled for GICC leadership.

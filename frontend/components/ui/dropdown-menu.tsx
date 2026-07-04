@@ -45,7 +45,7 @@ const DropdownMenuSubContent = React.forwardRef<
   <DropdownMenuPrimitive.SubContent
     ref={ref}
     className={cn(
-      "z-50 min-w-[8rem] overflow-hidden rounded-2xl border border-white/75 dark:border-white/10 [border-top-color:rgba(255,255,255,0.95)] dark:[border-top-color:rgba(255,255,255,0.20)] [background:rgba(255,255,255,0.82)] dark:[background:rgba(18,14,12,0.82)] [backdrop-filter:saturate(200%)_blur(24px)] [-webkit-backdrop-filter:saturate(200%)_blur(24px)] p-1.5 text-popover-foreground shadow-[0_8px_32px_rgba(221,122,58,0.14),0_2px_8px_rgba(221,122,58,0.08),0_1px_0_rgba(255,255,255,0.90)_inset] dark:shadow-[0_8px_40px_rgba(0,0,0,0.60),0_2px_8px_rgba(0,0,0,0.30),0_1px_0_rgba(255,255,255,0.06)_inset] data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2",
+      "z-50 min-w-[8rem] overflow-hidden rounded-2xl border border-white/75 dark:border-white/10 [border-top-color:rgba(255,255,255,0.95)] dark:[border-top-color:rgba(255,255,255,0.20)] [background:rgba(255,255,255,0.82)] dark:[background:rgba(18,14,12,0.82)] [backdrop-filter:saturate(200%)_blur(24px)] [-webkit-backdrop-filter:saturate(200%)_blur(24px)] p-1.5 text-popover-foreground shadow-[0_8px_32px_rgba(0,93,170,0.08),0_2px_8px_rgba(0,93,170,0.04),0_1px_0_rgba(255,255,255,0.90)_inset] dark:shadow-[0_8px_40px_rgba(0,0,0,0.60),0_2px_8px_rgba(0,0,0,0.30),0_1px_0_rgba(255,255,255,0.06)_inset] data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2",
       className
     )}
     {...props}
@@ -63,7 +63,7 @@ const DropdownMenuContent = React.forwardRef<
       ref={ref}
       sideOffset={sideOffset}
       className={cn(
-        "z-50 min-w-[8rem] overflow-hidden rounded-xl border border-white/60 dark:border-white/10 bg-white/80 dark:bg-black/70 backdrop-blur-xl p-1 text-popover-foreground shadow-[0_8px_32px_rgba(221,122,58,0.12)] dark:shadow-[0_8px_32px_rgba(0,0,0,0.5)]",
+        "z-50 min-w-[8rem] overflow-hidden rounded-xl border border-white/60 dark:border-white/10 bg-white/80 dark:bg-black/70 backdrop-blur-xl p-1 text-popover-foreground shadow-[0_8px_32px_rgba(0,93,170,0.06)] dark:shadow-[0_8px_32px_rgba(0,0,0,0.5)]",
         "data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2",
         className
       )}

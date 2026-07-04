@@ -120,9 +120,6 @@ export default function RegulatoryPage() {
         <div className="space-y-5">
           {/* Header */}
           <section className="space-y-2">
-            <Badge variant="outline" className="rounded-full border-border/80 bg-card/80 px-3 py-1 text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
-              Module 3
-            </Badge>
             <h1 className="font-headline text-2xl font-semibold tracking-tight md:text-3xl">Regulatory Intelligence</h1>
             <p className="max-w-2xl text-sm text-muted-foreground">
               RBI regulations applicable to NBFCs below ₹500 crore, translated into business actions for GICC. Expand a category for the full briefing.

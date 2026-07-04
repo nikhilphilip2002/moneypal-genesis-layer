@@ -9,12 +9,12 @@ const buttonVariants = cva(
   {
     variants: {
       variant: {
-        /* Apple-style primary — glowing orange with ambient shadow */
+        /* Apple-style primary — glowing blue with ambient shadow */
         default:
           "bg-primary text-primary-foreground font-semibold " +
-          "shadow-[0_4px_16px_rgba(221,122,58,0.45),0_1px_0_rgba(255,255,255,0.25)_inset] " +
-          "hover:bg-primary/92 hover:shadow-[0_6px_24px_rgba(221,122,58,0.55),0_1px_0_rgba(255,255,255,0.25)_inset] " +
-          "dark:shadow-[0_4px_20px_rgba(221,122,58,0.35),0_1px_0_rgba(255,255,255,0.15)_inset]",
+          "shadow-[0_4px_16px_rgba(0,93,170,0.30),0_1px_0_rgba(255,255,255,0.20)_inset] " +
+          "hover:bg-primary/92 hover:shadow-[0_6px_20px_rgba(0,93,170,0.40),0_1px_0_rgba(255,255,255,0.20)_inset] " +
+          "dark:shadow-[0_4px_16px_rgba(0,0,0,0.40),0_1px_0_rgba(255,255,255,0.10)_inset]",
         destructive:
           "bg-destructive text-destructive-foreground shadow-sm hover:bg-destructive/90",
         /* Glass outline — Apple vibrancy */
@@ -26,7 +26,7 @@ const buttonVariants = cva(
           "shadow-[0_2px_8px_rgba(0,0,0,0.06),0_1px_0_rgba(255,255,255,0.75)_inset] " +
           "dark:shadow-[0_2px_8px_rgba(0,0,0,0.30),0_1px_0_rgba(255,255,255,0.06)_inset] " +
           "hover:bg-white/65 dark:hover:bg-white/12 hover:border-white/90 " +
-          "hover:shadow-[0_4px_16px_rgba(221,122,58,0.12),0_1px_0_rgba(255,255,255,0.80)_inset]",
+          "hover:shadow-[0_4px_16px_rgba(0,93,170,0.08),0_1px_0_rgba(255,255,255,0.80)_inset]",
         secondary:
           "bg-white/50 dark:bg-white/8 " +
           "[backdrop-filter:saturate(180%)_blur(12px)] [-webkit-backdrop-filter:saturate(180%)_blur(12px)] " +

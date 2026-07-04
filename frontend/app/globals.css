@@ -30,13 +30,13 @@
     --chart-3: 208 100% 25%;
     --chart-4: 0 75% 42%;
     --chart-5: 204 9% 11%;
-    --sidebar-background: 210 18% 96%;
-    --sidebar-foreground: 204 9% 15%;
+    --sidebar-background: 220 27% 98%;
+    --sidebar-foreground: 204 9% 11%;
     --sidebar-primary: 207 100% 33%;
     --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 210 9% 91%;
-    --sidebar-accent-foreground: 204 9% 11%;
-    --sidebar-border: 210 5% 85%;
+    --sidebar-accent: 219 100% 92%;
+    --sidebar-accent-foreground: 211 100% 11%;
+    --sidebar-border: 223 17% 79%;
     --sidebar-ring: 207 100% 33%;
 
     /* ── Apple-style glass tokens ── */
@@ -82,13 +82,13 @@
     --chart-3: 208 100% 60%;
     --chart-4: 0 75% 51%;
     --chart-5: 210 20% 94%;
-    --sidebar-background: 204 9% 6%;
-    --sidebar-foreground: 214 15% 78%;
+    --sidebar-background: 204 9% 5%;
+    --sidebar-foreground: 210 20% 94%;
     --sidebar-primary: 207 90% 45%;
     --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 211 50% 14%;
-    --sidebar-accent-foreground: 210 20% 94%;
-    --sidebar-border: 204 9% 15%;
+    --sidebar-accent: 211 60% 18%;
+    --sidebar-accent-foreground: 217 100% 87%;
+    --sidebar-border: 204 9% 17%;
     --sidebar-ring: 207 90% 45%;
 
     /* ── Apple-style glass tokens (dark) ── */

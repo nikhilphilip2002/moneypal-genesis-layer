@@ -107,7 +107,7 @@ export default function AppSidebar() {
                                         asChild
                                         isActive={isActive(item.url)}
                                         tooltip={item.title}
-                                        className="rounded-md text-[13px] text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-foreground data-[active=true]:bg-foreground data-[active=true]:text-background"
+                                        className="rounded-md text-[13px] text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-foreground data-[active=true]:bg-primary data-[active=true]:text-primary-foreground"
                                     >
                                         <Link href={item.url}>
                                             <item.icon className="size-4" />
