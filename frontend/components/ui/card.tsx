@@ -14,12 +14,8 @@ const Card = React.forwardRef<
       "bg-white/62 dark:bg-[rgba(20,16,14,0.68)]",
       "backdrop-blur-[20px] [backdrop-filter:saturate(180%)_blur(20px)]",
       "[-webkit-backdrop-filter:saturate(180%)_blur(20px)]",
-      /* Thin border with brighter top edge */
-      "border border-white/75 dark:border-white/10",
-      "[border-top-color:rgba(255,255,255,0.95)] dark:[border-top-color:rgba(255,255,255,0.22)]",
-      /* Coloured shadow + inset highlight */
-      "shadow-[0_8px_32px_rgba(221,122,58,0.12),0_2px_8px_rgba(221,122,58,0.06),0_1px_0_rgba(255,255,255,0.90)_inset]",
-      "dark:shadow-[0_8px_40px_rgba(0,0,0,0.55),0_2px_8px_rgba(0,0,0,0.30),0_1px_0_rgba(255,255,255,0.08)_inset]",
+      /* Normal border */
+      "border border-border",
       "transition-all duration-300",
       className
     )}

@@ -52,14 +52,7 @@ export default function RootLayout({
           href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Poppins:wght@500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
         />
       </head>
-      <body className="font-sans antialiased">
-        {/* Fixed animated gradient mesh — glass surfaces blur this */}
-        <div className="bg-mesh" aria-hidden="true">
-          <div className="bg-mesh-blob bg-mesh-blob-1" />
-          <div className="bg-mesh-blob bg-mesh-blob-2" />
-          <div className="bg-mesh-blob bg-mesh-blob-3" />
-          <div className="bg-mesh-blob bg-mesh-blob-4" />
-        </div>
+      <body className="font-sans antialiased bg-background text-foreground">
 
         <ThemeProvider
           attribute="class"
