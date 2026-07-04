@@ -1,0 +1,10 @@
+{
+  "id": "nbfc_bank_list",
+  "display_name": "NBFC / Bank Registry",
+  "category": "NBFC Bank List",
+  "rbi_url": "https://www.rbi.org.in/",
+  "source_docs": ["*"],
+  "qdrant_collection": "reg_nbfc_bank_list",
+  "applicability": "Registry listings, active classifications, and regulatory status of banks and non-banking financial companies.",
+  "effective_date": "Active"
+}
