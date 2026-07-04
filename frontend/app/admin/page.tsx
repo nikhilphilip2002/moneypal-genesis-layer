@@ -419,8 +419,8 @@ export default function AdminPage() {
                                 <TableCell className="text-xs text-muted-foreground">{inst.type}</TableCell>
                                 <TableCell>
                                   {coll?.indexed
-                                    ? <Badge variant="secondary" className="rounded-full text-[10px]">{coll.vectors ?? 0} vectors</Badge>
-                                    : <Badge variant="outline" className="rounded-full text-[10px] text-muted-foreground">not ingested</Badge>}
+                                    ? <Badge variant="secondary" className="rounded-full text-[10px] whitespace-nowrap">{coll.vectors ?? 0} vectors</Badge>
+                                    : <Badge variant="outline" className="rounded-full text-[10px] text-muted-foreground whitespace-nowrap">not ingested</Badge>}
                                 </TableCell>
                               </TableRow>
                             );
@@ -455,12 +455,12 @@ export default function AdminPage() {
                               <TableRow key={reg.id} className="border-border/70">
                                 <TableCell className="font-medium">{reg.display_name}</TableCell>
                                 <TableCell>
-                                  <Badge variant="outline" className="rounded-full text-[10px] uppercase">{reg.priority}</Badge>
+                                  <Badge variant="outline" className="rounded-full text-[10px] uppercase whitespace-nowrap">{reg.priority}</Badge>
                                 </TableCell>
                                 <TableCell>
                                   {coll?.indexed
-                                    ? <Badge variant="secondary" className="rounded-full text-[10px]">{coll.vectors ?? 0} vectors</Badge>
-                                    : <Badge variant="outline" className="rounded-full text-[10px] text-muted-foreground">not ingested</Badge>}
+                                    ? <Badge variant="secondary" className="rounded-full text-[10px] whitespace-nowrap">{coll.vectors ?? 0} vectors</Badge>
+                                    : <Badge variant="outline" className="rounded-full text-[10px] text-muted-foreground whitespace-nowrap">not ingested</Badge>}
                                 </TableCell>
                               </TableRow>
                             );
