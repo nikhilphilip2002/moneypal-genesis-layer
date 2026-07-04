@@ -10,7 +10,7 @@ export type IntelFetch<T> = {
 };
 
 // Version segment invalidates session caches when brief formats change.
-const PREFIX = 'intel.v2:';
+const PREFIX = 'intel.v3:';
 
 function readCache<T>(key: string): T | null {
   if (typeof window === 'undefined') return null;
