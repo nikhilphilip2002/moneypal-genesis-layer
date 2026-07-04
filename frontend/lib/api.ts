@@ -50,7 +50,7 @@ export type RegulatoryAlert = {
   category: string;
   severity: 'high' | 'medium' | 'low';
   summary: string;
-  action: string;
+  action_required: string;
   source_url: string;
   ai_note: string;
 };
@@ -232,11 +232,19 @@ export const policy = {
     apiRequest('/policy/brief', { method: 'POST', body: JSON.stringify(data) }),
 };
 
-// ─── Cross-collection semantic search ───
+// ─── Cross-collection semantic search + Ask Genesis Q&A ───
+
+export type AskResponse = {
+  question: string;
+  answer: string;
+  results: SearchResult[];
+};
 
 export const intelligence = {
   search: (query: string): Promise<{ query: string; results: SearchResult[] }> =>
     apiRequest('/intelligence/search', { method: 'POST', body: JSON.stringify({ query }) }),
+  ask: (query: string): Promise<AskResponse> =>
+    apiRequest('/intelligence/ask', { method: 'POST', body: JSON.stringify({ query }) }),
 };
 
 // ─── Health check ───

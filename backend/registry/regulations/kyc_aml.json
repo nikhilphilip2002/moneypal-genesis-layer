@@ -1,11 +1,10 @@
 {
   "id": "kyc_aml",
-  "display_name": "KYC and Anti-Money Laundering",
-  "category": "kyc_aml",
-  "rbi_url": "https://rbi.org.in/Scripts/BS_ViewMasterDirections.aspx?id=11566",
-  "source_doc": "rbi_kyc_master_directions.pdf",
+  "display_name": "KYC / AML",
+  "category": "KYC  AML",
+  "rbi_url": "https://www.rbi.org.in/",
+  "source_docs": ["KYC  AML.pdf"],
   "qdrant_collection": "reg_kyc_aml",
-  "applicability": "All NBFCs — customer identification, due diligence and monitoring",
-  "effective_date": "2016-02-25",
-  "priority": "high"
+  "applicability": "NBFC customer due diligence, periodic KYC updation, AML monitoring, suspicious transaction controls, and recordkeeping.",
+  "effective_date": "As specified in the RBI KYC master directions"
 }

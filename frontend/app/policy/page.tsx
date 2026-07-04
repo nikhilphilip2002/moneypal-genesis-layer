@@ -49,8 +49,8 @@ export default function PolicyPage() {
       .catch(() => router.replace('/login'));
   }, [router]);
 
-  const regulations = useIntel<RegulationCategory[]>(regulatory.categories);
-  const institutions = useIntel<Institution[]>(competitive.institutions);
+  const regulations = useIntel<RegulationCategory[]>('regulatory:categories', regulatory.categories);
+  const institutions = useIntel<Institution[]>('competitive:institutions', competitive.institutions);
 
   const toggle = (list: string[], setList: (v: string[]) => void, id: string) => {
     setList(list.includes(id) ? list.filter((x) => x !== id) : [...list, id]);

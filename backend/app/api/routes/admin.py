@@ -2,7 +2,7 @@
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-from app.services import platform
+from app.services import brief_cache, platform
 
 router = APIRouter(tags=["admin"])
 
@@ -24,3 +24,17 @@ def search(req: SearchRequest):
         return {"query": req.query, "results": platform.search(req.query)}
     except Exception:
         raise HTTPException(503, "Semantic search is unavailable — vector store not reachable")
+
+
+@router.post("/intelligence/ask")
+def ask(req: SearchRequest):
+    """Ask Genesis: natural-language question -> grounded, cited answer + sources.
+
+    Answers are cached (same question asked twice costs zero LLM tokens)."""
+    if not req.query.strip():
+        raise HTTPException(400, "Question must not be empty")
+    cache_key = "ask:" + " ".join(req.query.lower().split())
+    try:
+        return brief_cache.cached(cache_key, lambda: platform.ask(req.query))
+    except Exception:
+        raise HTTPException(503, "Ask Genesis is unavailable — intelligence services not reachable")

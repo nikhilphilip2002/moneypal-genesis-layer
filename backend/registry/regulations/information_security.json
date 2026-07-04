@@ -1,0 +1,10 @@
+{
+  "id": "information_security",
+  "display_name": "Information Security",
+  "category": "Information Security",
+  "rbi_url": "https://www.rbi.org.in/",
+  "source_docs": ["Information Security.pdf"],
+  "qdrant_collection": "reg_information_security",
+  "applicability": "NBFC technology, cyber security, information security governance, incident handling, and digital operational resilience controls.",
+  "effective_date": "As specified in the RBI information security directions"
+}

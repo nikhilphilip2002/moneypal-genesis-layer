@@ -24,16 +24,21 @@ const priorityStyles: Record<string, string> = {
   low: 'border-border/80 bg-muted text-muted-foreground',
 };
 
+function CategoryDetail({ category }: { category: RegulationCategory }) {
+  const detail = useIntel<IntelligenceResponse>(`regulatory:detail:${category.id}`, () =>
+    regulatory.detail(category.id),
+  );
+  return (
+    <>
+      {detail.loading && <LoadingCard lines={8} className="border-0 shadow-none" />}
+      {detail.error && <WidgetError title={category.display_name} onRetry={detail.reload} className="border-0 shadow-none" />}
+      {detail.data && <IntelligenceCard data={detail.data} className="border-0 shadow-none" onRefresh={detail.reload} />}
+    </>
+  );
+}
+
 function CategoryRow({ category }: { category: RegulationCategory }) {
   const [open, setOpen] = useState(false);
-  const [detail, setDetail] = useState<IntelligenceResponse | null>(null);
-  const [error, setError] = useState(false);
-
-  // Fetch the RAG-generated briefing lazily, on first expand.
-  useEffect(() => {
-    if (!open || detail || error) return;
-    regulatory.detail(category.id).then(setDetail).catch(() => setError(true));
-  }, [open, detail, error, category.id]);
 
   return (
     <Card className="dashboard-surface overflow-hidden rounded-[1.5rem] border-border/70 shadow-none">
@@ -74,9 +79,7 @@ function CategoryRow({ category }: { category: RegulationCategory }) {
 
       {open && (
         <CardContent className="border-t border-border/50 p-4 md:p-5">
-          {!detail && !error && <LoadingCard lines={8} className="border-0 shadow-none" />}
-          {error && <WidgetError title={category.display_name} onRetry={() => setError(false)} className="border-0 shadow-none" />}
-          {detail && <IntelligenceCard data={detail} className="border-0 shadow-none" />}
+          <CategoryDetail category={category} />
         </CardContent>
       )}
     </Card>
@@ -101,7 +104,7 @@ export default function RegulatoryPage() {
       .catch(() => router.replace('/login'));
   }, [router]);
 
-  const categories = useIntel<RegulationCategory[]>(regulatory.categories);
+  const categories = useIntel<RegulationCategory[]>('regulatory:categories', regulatory.categories);
 
   if (!authorized) {
     return (

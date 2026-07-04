@@ -35,29 +35,22 @@ import WidgetError from '@/components/intel/WidgetError';
 import { Building, MapPin, Search } from 'lucide-react';
 
 function InstitutionDetail({ institution }: { institution: Institution }) {
-  const [profile, setProfile] = useState<IntelligenceResponse | null>(null);
-  const [swot, setSwot] = useState<SwotResponse | null>(null);
-  const [profileError, setProfileError] = useState(false);
-  const [swotError, setSwotError] = useState(false);
-
-  useEffect(() => {
-    setProfile(null);
-    setSwot(null);
-    setProfileError(false);
-    setSwotError(false);
-    competitive.profile(institution.id).then(setProfile).catch(() => setProfileError(true));
-    competitive.swot(institution.id).then(setSwot).catch(() => setSwotError(true));
-  }, [institution.id]);
+  const profile = useIntel<IntelligenceResponse>(`competitive:profile:${institution.id}`, () =>
+    competitive.profile(institution.id),
+  );
+  const swot = useIntel<SwotResponse>(`competitive:swot:${institution.id}`, () =>
+    competitive.swot(institution.id),
+  );
 
   return (
     <div className="space-y-4 pb-8">
-      {!profile && !profileError && <LoadingCard lines={8} />}
-      {profileError && <WidgetError title="Institution profile" />}
-      {profile && <IntelligenceCard data={profile} />}
+      {profile.loading && <LoadingCard lines={8} />}
+      {profile.error && <WidgetError title="Institution profile" onRetry={profile.reload} />}
+      {profile.data && <IntelligenceCard data={profile.data} onRefresh={profile.reload} />}
 
-      {!swot && !swotError && <LoadingCard lines={6} />}
-      {swotError && <WidgetError title="SWOT analysis" />}
-      {swot && <SWOTCard data={swot} />}
+      {swot.loading && <LoadingCard lines={6} />}
+      {swot.error && <WidgetError title="SWOT analysis" onRetry={swot.reload} />}
+      {swot.data && <SWOTCard data={swot.data} />}
     </div>
   );
 }
@@ -83,7 +76,7 @@ export default function CompetitivePage() {
       .catch(() => router.replace('/login'));
   }, [router]);
 
-  const institutions = useIntel<Institution[]>(competitive.institutions);
+  const institutions = useIntel<Institution[]>('competitive:institutions', competitive.institutions);
 
   const types = useMemo(() => {
     const set = new Set((institutions.data || []).map((i) => i.type));

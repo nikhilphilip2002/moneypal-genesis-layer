@@ -28,6 +28,7 @@ import {
   Scale,
   ClipboardCheck,
   AlertTriangle,
+  ChevronDown,
   ExternalLink,
 } from 'lucide-react';
 
@@ -51,6 +52,45 @@ const RECENT_INTELLIGENCE = [
   { title: 'Karnataka lending landscape cross-institution summary', module: 'Competitive', href: '/competitive', icon: Building },
   { title: 'KYC / AML Master Directions compliance actions revised', module: 'Regulatory', href: '/regulatory', icon: Scale },
 ];
+
+// Collapsed alert = title + severity, expandable in place for a cleaner scan.
+function AlertRow({ alert }: { alert: RegulatoryAlert }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className={`rounded-2xl border ${severityStyles[alert.severity] || severityStyles.low}`}>
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="flex w-full items-start justify-between gap-2 p-3 text-left"
+      >
+        <p className="text-[13px] font-semibold leading-snug">{alert.title}</p>
+        <span className="flex shrink-0 items-center gap-1.5">
+          <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase ${severityBadge[alert.severity] || severityBadge.low}`}>
+            {alert.severity}
+          </span>
+          <ChevronDown className={`h-3.5 w-3.5 text-muted-foreground transition-transform ${open ? 'rotate-180' : ''}`} />
+        </span>
+      </button>
+      {open && (
+        <div className="px-3 pb-3">
+          <p className="text-xs text-muted-foreground">{alert.summary}</p>
+          <p className="mt-1.5 text-xs font-medium text-foreground/80">→ {alert.action_required}</p>
+          <div className="mt-2 flex items-center justify-between gap-2">
+            <a
+              href={alert.source_url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1 text-[11px] font-medium text-primary hover:underline"
+            >
+              RBI source <ExternalLink className="h-3 w-3" />
+            </a>
+          </div>
+          <p className="mt-1.5 text-[10px] italic text-muted-foreground">{alert.ai_note}</p>
+        </div>
+      )}
+    </div>
+  );
+}
 
 const ACTION_ITEMS = [
   { title: 'Review Digital Lending compliance checklist', due: 'Before next board meeting', priority: 'High' },
@@ -77,10 +117,10 @@ export default function Dashboard() {
       .catch(() => router.replace('/login'));
   }, [router]);
 
-  const briefing = useIntel<IntelligenceResponse>(macro.briefing);
-  const alerts = useIntel<RegulatoryAlert[]>(regulatory.alerts);
-  const snapshot = useIntel<IntelligenceResponse>(macro.snapshot);
-  const landscape = useIntel<IntelligenceResponse>(competitive.landscape);
+  const briefing = useIntel<IntelligenceResponse>('macro:briefing', macro.briefing);
+  const alerts = useIntel<RegulatoryAlert[]>('regulatory:alerts', regulatory.alerts);
+  const snapshot = useIntel<IntelligenceResponse>('macro:snapshot', macro.snapshot);
+  const landscape = useIntel<IntelligenceResponse>('competitive:landscape', competitive.landscape);
 
   if (authorized === null) {
     return (
@@ -120,7 +160,7 @@ export default function Dashboard() {
             <div>
               {briefing.loading && <LoadingCard lines={8} className="h-full" />}
               {briefing.error && <WidgetError title="AI Executive Brief" onRetry={briefing.reload} className="h-full" />}
-              {briefing.data && <AIBriefPanel data={briefing.data} className="h-full" />}
+              {briefing.data && <AIBriefPanel data={briefing.data} className="h-full" onRefresh={briefing.reload} />}
             </div>
 
             <Card className="dashboard-surface rounded-[1.5rem] border-border/70 shadow-none">
@@ -139,27 +179,7 @@ export default function Dashboard() {
                   </p>
                 )}
                 {alerts.data?.map((alert, i) => (
-                  <div key={i} className={`rounded-2xl border p-3 ${severityStyles[alert.severity] || severityStyles.low}`}>
-                    <div className="flex items-start justify-between gap-2">
-                      <p className="text-[13px] font-semibold leading-snug">{alert.title}</p>
-                      <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-bold uppercase ${severityBadge[alert.severity] || severityBadge.low}`}>
-                        {alert.severity}
-                      </span>
-                    </div>
-                    <p className="mt-1 text-xs text-muted-foreground">{alert.summary}</p>
-                    <p className="mt-1.5 text-xs font-medium text-foreground/80">→ {alert.action}</p>
-                    <div className="mt-2 flex items-center justify-between gap-2">
-                      <a
-                        href={alert.source_url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="inline-flex items-center gap-1 text-[11px] font-medium text-primary hover:underline"
-                      >
-                        RBI source <ExternalLink className="h-3 w-3" />
-                      </a>
-                    </div>
-                    <p className="mt-1.5 text-[10px] italic text-muted-foreground">{alert.ai_note}</p>
-                  </div>
+                  <AlertRow key={i} alert={alert} />
                 ))}
               </CardContent>
             </Card>
@@ -173,12 +193,12 @@ export default function Dashboard() {
             <div>
               {snapshot.loading && <LoadingCard className="h-full" />}
               {snapshot.error && <WidgetError title="Economic Snapshot" onRetry={snapshot.reload} className="h-full" />}
-              {snapshot.data && <IntelligenceCard data={snapshot.data} className="h-full" />}
+              {snapshot.data && <IntelligenceCard data={snapshot.data} className="h-full" onRefresh={snapshot.reload} collapsible />}
             </div>
             <div>
               {landscape.loading && <LoadingCard className="h-full" />}
               {landscape.error && <WidgetError title="Karnataka Lending Landscape" onRetry={landscape.reload} className="h-full" />}
-              {landscape.data && <IntelligenceCard data={landscape.data} className="h-full" />}
+              {landscape.data && <IntelligenceCard data={landscape.data} className="h-full" onRefresh={landscape.reload} collapsible />}
             </div>
           </div>
 

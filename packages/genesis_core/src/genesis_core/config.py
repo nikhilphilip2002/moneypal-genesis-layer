@@ -13,8 +13,9 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
-    # Groq LLM
+    # Groq LLM (secondary key takes over when the primary is 75% rate-limited or 429s)
     groq_api_key: str = ""
+    groq_api_key_secondary: str = ""
     groq_model: str = "llama-3.3-70b-versatile"
 
     # Qdrant (shared instance — must be on Aroha_T1 / Aroha_G1 WiFi)

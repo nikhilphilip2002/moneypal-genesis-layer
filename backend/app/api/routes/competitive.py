@@ -6,7 +6,7 @@ from pydantic import BaseModel, Field
 
 from genesis_core import IntelligenceResponse
 
-from app.services import competitive
+from app.services import brief_cache, competitive
 from app.services import institution_loader as il
 
 router = APIRouter(prefix="/competitive", tags=["competitive"])
@@ -51,21 +51,25 @@ def add_institution(req: NewInstitution):
 
 
 @router.get("/landscape", response_model=IntelligenceResponse)
-def landscape():
-    return competitive.landscape()
+def landscape(refresh: bool = False):
+    return brief_cache.cached("competitive:landscape", competitive.landscape, refresh)
 
 
 @router.get("/institutions/{institution_id}", response_model=IntelligenceResponse)
-def institution_profile(institution_id: str):
-    result = competitive.profile(institution_id)
+def institution_profile(institution_id: str, refresh: bool = False):
+    result = brief_cache.cached(
+        f"competitive:profile:{institution_id}", lambda: competitive.profile(institution_id), refresh
+    )
     if result is None:
         raise HTTPException(404, "Institution not found")
     return result
 
 
 @router.get("/institutions/{institution_id}/swot")
-def institution_swot(institution_id: str):
-    result = competitive.swot(institution_id)
+def institution_swot(institution_id: str, refresh: bool = False):
+    result = brief_cache.cached(
+        f"competitive:swot:{institution_id}", lambda: competitive.swot(institution_id), refresh
+    )
     if result is None:
         raise HTTPException(404, "Institution not found")
     return result

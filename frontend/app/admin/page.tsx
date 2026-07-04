@@ -205,10 +205,10 @@ export default function AdminPage() {
       .catch(() => router.replace('/login'));
   }, [router]);
 
-  const status = useIntel<PlatformStatus>(admin.status);
-  const users = useIntel<DemoUser[]>(auth.users);
-  const institutions = useIntel<Institution[]>(competitive.institutions);
-  const regulations = useIntel<RegulationCategory[]>(regulatory.categories);
+  const status = useIntel<PlatformStatus>('admin:status', admin.status, { live: true });
+  const users = useIntel<DemoUser[]>('auth:users', auth.users);
+  const institutions = useIntel<Institution[]>('competitive:institutions', competitive.institutions);
+  const regulations = useIntel<RegulationCategory[]>('regulatory:categories', regulatory.categories);
 
   if (!authorized) {
     return (

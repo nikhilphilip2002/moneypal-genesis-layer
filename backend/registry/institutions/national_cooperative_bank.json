@@ -1,0 +1,20 @@
+{
+  "id": "national_cooperative_bank",
+  "name": "National Co-operative Bank",
+  "type": "Co-operative Bank",
+  "website": "https://nationalbank.bank.in/english/home.aspx",
+  "headquarters": "Bengaluru, Karnataka",
+  "msme_focus": true,
+  "confidence": "medium",
+  "source_docs": [
+    "profile.md",
+    "raw_english_ATM.md",
+    "raw_english_AboutUs.md",
+    "raw_english_AnywhereBanking.md",
+    "raw_english_Auction.md"
+  ],
+  "source_urls": {
+    "website": "https://nationalbank.bank.in/english/home.aspx"
+  },
+  "qdrant_collection": "comp_national_coop"
+}

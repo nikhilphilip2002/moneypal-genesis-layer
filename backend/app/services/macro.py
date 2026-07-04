@@ -5,8 +5,8 @@ from app import prompts
 from app.core.config import MACRO_COLLECTION
 
 
-def _brief(title, prompt, key_points, document, url, ai_note, confidence="medium"):
-    answer, sources = rag.ask(MACRO_COLLECTION, prompt)
+def _brief(title, prompt, key_points, document, url, ai_note, confidence="medium", queries=None):
+    answer, sources = rag.ask(MACRO_COLLECTION, prompt, queries=queries)
     page = str(sources[0]["page"]) if sources and sources[0].get("page") else None
     return make_response(
         title=title,
@@ -29,6 +29,7 @@ def snapshot():
         "https://www.indiabudget.gov.in/economicsurvey/",
         "GDP and inflation figures are from the Economic Survey; forward-looking views are AI interpretation.",
         confidence="high",
+        queries=prompts.SNAPSHOT_QUERIES,
     )
 
 
@@ -41,6 +42,7 @@ def karnataka():
         "https://www.mospi.gov.in/",
         "State data from MOSPI and the Karnataka Economic Survey; credit-gap estimates are AI interpretation.",
         confidence="medium",
+        queries=prompts.KARNATAKA_QUERIES,
     )
 
 
@@ -53,6 +55,7 @@ def msme():
         "https://msme.gov.in/",
         "Credit and NPA figures from official reports; market-gap estimates are AI interpretation.",
         confidence="high",
+        queries=prompts.MSME_QUERIES,
     )
 
 
@@ -65,4 +68,5 @@ def briefing():
         "https://www.indiabudget.gov.in/economicsurvey/",
         "AI-synthesised from multiple official sources; statistics are sourced, strategy is AI interpretation.",
         confidence="high",
+        queries=prompts.BRIEFING_QUERIES,
     )

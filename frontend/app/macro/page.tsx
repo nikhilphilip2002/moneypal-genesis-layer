@@ -29,10 +29,10 @@ export default function MacroPage() {
       .catch(() => router.replace('/login'));
   }, [router]);
 
-  const briefing = useIntel<IntelligenceResponse>(macro.briefing);
-  const snapshot = useIntel<IntelligenceResponse>(macro.snapshot);
-  const karnataka = useIntel<IntelligenceResponse>(macro.karnataka);
-  const msme = useIntel<IntelligenceResponse>(macro.msme);
+  const briefing = useIntel<IntelligenceResponse>('macro:briefing', macro.briefing);
+  const snapshot = useIntel<IntelligenceResponse>('macro:snapshot', macro.snapshot);
+  const karnataka = useIntel<IntelligenceResponse>('macro:karnataka', macro.karnataka);
+  const msme = useIntel<IntelligenceResponse>('macro:msme', macro.msme);
 
   if (!authorized) {
     return (
@@ -61,7 +61,7 @@ export default function MacroPage() {
           <div>
             {briefing.loading && <LoadingCard lines={8} />}
             {briefing.error && <WidgetError title="AI Executive Brief" onRetry={briefing.reload} />}
-            {briefing.data && <AIBriefPanel data={briefing.data} />}
+            {briefing.data && <AIBriefPanel data={briefing.data} onRefresh={briefing.reload} />}
           </div>
 
           {/* 3 intelligence cards */}
@@ -74,7 +74,7 @@ export default function MacroPage() {
               <div key={label}>
                 {state.loading && <LoadingCard className="h-full" />}
                 {state.error && <WidgetError title={label} onRetry={state.reload} className="h-full" />}
-                {state.data && <IntelligenceCard data={state.data} className="h-full" />}
+                {state.data && <IntelligenceCard data={state.data} className="h-full" onRefresh={state.reload} />}
               </div>
             ))}
           </div>

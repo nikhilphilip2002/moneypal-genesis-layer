@@ -1,0 +1,10 @@
+{
+  "id": "prudential_norms",
+  "display_name": "Prudential Norms",
+  "category": "Prudential Norms",
+  "rbi_url": "https://www.rbi.org.in/",
+  "source_docs": ["Prudential Norms.pdf"],
+  "qdrant_collection": "reg_prudential_norms",
+  "applicability": "NBFC prudential requirements including capital, asset classification, provisioning, exposure, and risk controls where applicable.",
+  "effective_date": "As specified in the RBI prudential norms"
+}

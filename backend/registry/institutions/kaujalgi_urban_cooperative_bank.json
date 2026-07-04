@@ -1,0 +1,20 @@
+{
+  "id": "kaujalgi_urban_cooperative_bank",
+  "name": "Kaujalgi Urban Co-operative Bank",
+  "type": "Urban Co-operative Bank",
+  "website": "https://www.kaujalgiurban.com/",
+  "headquarters": "Kaujalgi, Karnataka",
+  "msme_focus": true,
+  "confidence": "medium",
+  "source_docs": [
+    "profile.md",
+    "raw_about.md",
+    "raw_contact.md",
+    "raw_index.md",
+    "raw_partners.md"
+  ],
+  "source_urls": {
+    "website": "https://www.kaujalgiurban.com/"
+  },
+  "qdrant_collection": "comp_kaujalgi"
+}

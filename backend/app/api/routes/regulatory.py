@@ -1,8 +1,3 @@
-"""Regulatory intelligence endpoints (Team C) — thin handlers.
-
-`/categories` and `/alerts` are declared before the parametric `/{category_id}`
-so those literal paths take precedence.
-"""
 import re
 from typing import Literal
 
@@ -11,7 +6,7 @@ from pydantic import BaseModel
 
 from genesis_core import IntelligenceResponse
 
-from app.services import regulatory
+from app.services import brief_cache, regulatory
 from app.services import reg_loader as rl
 
 router = APIRouter(prefix="/regulatory", tags=["regulatory"])
@@ -44,7 +39,7 @@ def add_category(req: NewRegulation):
         "display_name": req.display_name,
         "category": req.category or req.display_name,
         "rbi_url": req.rbi_url,
-        "source_doc": "",
+        "source_docs": ["*.pdf"],
         "qdrant_collection": f"reg_{slug}",
         "applicability": req.applicability,
         "effective_date": req.effective_date,
@@ -56,12 +51,11 @@ def add_category(req: NewRegulation):
 
 @router.get("/alerts")
 def get_alerts():
-    return regulatory.get_alerts()
+    return regulatory.regulatory_alerts()
 
 
 @router.get("/{category_id}", response_model=IntelligenceResponse)
-def regulation_detail(category_id: str):
-    result = regulatory.detail(category_id)
-    if result is None:
-        raise HTTPException(404, "Regulation category not found")
-    return result
+def get_regulation_detail(category_id: str, refresh: bool = False):
+    return brief_cache.cached(
+        f"regulatory:detail:{category_id}", lambda: regulatory.regulation_detail(category_id), refresh
+    )

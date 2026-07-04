@@ -116,8 +116,8 @@ export default function ReviewPage() {
       .catch(() => router.replace('/login'));
   }, [router]);
 
-  const items = useIntel<ReviewItem[]>(review.items);
-  const users = useIntel<DemoUser[]>(auth.users);
+  const items = useIntel<ReviewItem[]>('review:items', review.items);
+  const users = useIntel<DemoUser[]>('auth:users', auth.users);
 
   if (!authorized) {
     return (

@@ -2,15 +2,23 @@
 
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { MarkdownRenderer } from '@/components/ui/markdown-renderer';
+import BriefRenderer from '@/components/intel/BriefRenderer';
 import SourceBadge from '@/components/intel/SourceBadge';
-import { ConfidenceBadge } from '@/components/intel/IntelligenceCard';
+import { ConfidenceBadge, RefreshButton } from '@/components/intel/IntelligenceCard';
 import type { IntelligenceResponse } from '@/lib/api';
 import { Sparkles } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 // Full-width executive briefing panel — the dashboard's hero element.
-export default function AIBriefPanel({ data, className }: { data: IntelligenceResponse; className?: string }) {
+export default function AIBriefPanel({
+  data,
+  className,
+  onRefresh,
+}: {
+  data: IntelligenceResponse;
+  className?: string;
+  onRefresh?: () => void;
+}) {
   return (
     <Card className={cn('dashboard-surface rounded-[1.75rem] border-border/70 shadow-none', className)}>
       <CardHeader className="pb-3">
@@ -20,25 +28,30 @@ export default function AIBriefPanel({ data, className }: { data: IntelligenceRe
             AI Executive Brief
           </Badge>
           <ConfidenceBadge confidence={data.confidence} />
+          {onRefresh && (
+            <span className="ml-auto">
+              <RefreshButton onRefresh={onRefresh} />
+            </span>
+          )}
         </div>
         <CardTitle className="font-headline pt-2 text-xl font-semibold leading-snug md:text-2xl">
           {data.title}
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">
-        <div className="text-[15px] leading-7">
-          <MarkdownRenderer content={data.summary} variant="light" />
-        </div>
+        <BriefRenderer content={data.summary} className="text-[15px]" />
 
         {data.key_points?.length > 0 && (
-          <ul className="grid gap-2 md:grid-cols-2">
+          <div className="flex flex-wrap gap-1.5 border-t border-border/50 pt-3">
             {data.key_points.map((point, i) => (
-              <li key={i} className="flex items-start gap-2 rounded-xl border border-border/60 bg-card/60 px-3 py-2 text-sm">
-                <span className="mt-[7px] h-1.5 w-1.5 shrink-0 rounded-full bg-primary" />
-                <span>{point}</span>
-              </li>
+              <span
+                key={i}
+                className="rounded-full border border-border/60 bg-muted/50 px-2.5 py-1 text-[11px] font-medium text-foreground/80"
+              >
+                {point}
+              </span>
             ))}
-          </ul>
+          </div>
         )}
 
         <div className="flex flex-wrap items-center gap-2 pt-1">

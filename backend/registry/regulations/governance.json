@@ -1,0 +1,10 @@
+{
+  "id": "governance",
+  "display_name": "Governance",
+  "category": "Governance",
+  "rbi_url": "https://www.rbi.org.in/",
+  "source_docs": ["Governance.pdf"],
+  "qdrant_collection": "reg_governance",
+  "applicability": "NBFC governance, board oversight, policy approval, management accountability, and control framework requirements.",
+  "effective_date": "As specified in the RBI governance directions"
+}
