@@ -15,6 +15,7 @@ def list_institutions() -> list[dict]:
             "headquarters": i.get("headquarters"),
             "msme_focus": i.get("msme_focus", True),
             "website": i.get("website"),
+            "qdrant_collection": i.get("qdrant_collection"),
         }
         for i in il.load_all()
     ]
