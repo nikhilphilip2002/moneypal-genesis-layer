@@ -64,7 +64,7 @@ export default function GenesisSearch() {
               onClick={() => setMode(m)}
               className={cn(
                 'flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-semibold capitalize transition-colors',
-                mode === m ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground',
+                mode === m ? 'bg-background text-foreground shadow-none border border-border/50' : 'text-muted-foreground hover:text-foreground border border-transparent',
               )}
             >
               {m === 'ask' ? <Sparkles className="h-3 w-3" /> : <Search className="h-3 w-3" />}
@@ -81,6 +81,7 @@ export default function GenesisSearch() {
             }
             value={query}
             onChange={(e) => setQuery(e.target.value)}
+            className="shadow-none hover:shadow-none border border-border bg-background focus-visible:bg-background/80"
           />
           {(results !== null || answer !== null || error) && (
             <button
@@ -93,7 +94,7 @@ export default function GenesisSearch() {
             </button>
           )}
         </div>
-        <Button type="submit" disabled={loading || !query.trim()}>
+        <Button type="submit" disabled={loading || !query.trim()} className="shadow-none hover:shadow-none border border-primary/20">
           {loading ? (mode === 'ask' ? 'Thinking…' : 'Searching…') : mode === 'ask' ? 'Ask' : 'Search'}
         </Button>
       </form>

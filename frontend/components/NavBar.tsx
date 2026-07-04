@@ -104,7 +104,7 @@ export default function NavBar() {
         {isLoggedIn && (
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <button className="flex items-center gap-2 rounded-xl border border-white/75 dark:border-white/14 [border-top-color:rgba(255,255,255,0.95)] dark:[border-top-color:rgba(255,255,255,0.22)] [background:rgba(255,255,255,0.50)] dark:[background:rgba(255,255,255,0.07)] [backdrop-filter:saturate(180%)_blur(16px)] [-webkit-backdrop-filter:saturate(180%)_blur(16px)] px-1.5 py-1 transition-all duration-200 hover:[background:rgba(255,255,255,0.70)] dark:hover:[background:rgba(255,255,255,0.12)] shadow-[0_2px_8px_rgba(0,93,170,0.08),0_1px_0_rgba(255,255,255,0.80)_inset] focus-visible:outline-none">
+              <button className="flex items-center gap-2 rounded-xl border border-border bg-accent/40 hover:bg-accent/70 px-1.5 py-1 transition-all duration-200 shadow-none focus-visible:outline-none">
                 <Avatar className="h-6 w-6">
                   <AvatarFallback className="bg-foreground text-background text-[10px] font-semibold">
                     {getInitials(username)}
