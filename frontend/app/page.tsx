@@ -33,14 +33,14 @@ import {
 } from 'lucide-react';
 
 const severityStyles: Record<string, string> = {
-  high: 'border-red-300/70 bg-red-50/70 dark:border-red-900 dark:bg-red-950/40',
-  medium: 'border-amber-300/70 bg-amber-50/70 dark:border-amber-900 dark:bg-amber-950/40',
+  high: 'border-border/70 bg-card/70',
+  medium: 'border-border/70 bg-card/70',
   low: 'border-border/70 bg-card/70',
 };
 
 const severityBadge: Record<string, string> = {
-  high: 'bg-red-100 text-red-700 dark:bg-red-950/60 dark:text-red-400',
-  medium: 'bg-amber-100 text-amber-700 dark:bg-amber-950/60 dark:text-amber-400',
+  high: 'bg-red-500/10 text-red-600 dark:bg-red-500/20 dark:text-red-400',
+  medium: 'bg-amber-500/10 text-amber-600 dark:bg-amber-500/20 dark:text-amber-400',
   low: 'bg-muted text-muted-foreground',
 };
 
@@ -241,10 +241,10 @@ export default function Dashboard() {
                       <p className="text-[13px] font-medium leading-snug">{item.title}</p>
                       <Badge
                         variant="outline"
-                        className={`shrink-0 rounded-full px-2 py-0 text-[10px] ${
+                        className={`shrink-0 rounded-full px-2 py-0 text-[10px] border-none ${
                           item.priority === 'High'
-                            ? 'border-red-300 bg-red-50 text-red-700 dark:border-red-800 dark:bg-red-950/50 dark:text-red-400'
-                            : 'border-amber-300 bg-amber-50 text-amber-700 dark:border-amber-800 dark:bg-amber-950/50 dark:text-amber-400'
+                            ? 'bg-red-500/10 text-red-600 dark:bg-red-500/20 dark:text-red-400'
+                            : 'bg-amber-500/10 text-amber-600 dark:bg-amber-500/20 dark:text-amber-400'
                         }`}
                       >
                         {item.priority}

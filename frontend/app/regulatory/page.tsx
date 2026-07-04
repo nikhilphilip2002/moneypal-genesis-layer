@@ -19,9 +19,9 @@ import { ChevronDown, ExternalLink, Scale } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 const priorityStyles: Record<string, string> = {
-  high: 'border-red-300 bg-red-50 text-red-700 dark:border-red-800 dark:bg-red-950/50 dark:text-red-400',
-  medium: 'border-amber-300 bg-amber-50 text-amber-700 dark:border-amber-800 dark:bg-amber-950/50 dark:text-amber-400',
-  low: 'border-border/80 bg-muted text-muted-foreground',
+  high: 'bg-red-500/10 text-red-600 dark:bg-red-500/20 dark:text-red-400 border-none',
+  medium: 'bg-amber-500/10 text-amber-600 dark:bg-amber-500/20 dark:text-amber-400 border-none',
+  low: 'bg-muted text-muted-foreground border-none',
 };
 
 function CategoryDetail({ category }: { category: RegulationCategory }) {
