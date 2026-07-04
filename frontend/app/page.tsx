@@ -146,8 +146,6 @@ export default function Dashboard() {
             </p>
           </section>
 
-
-
           {/* Explainable semantic search across all Genesis collections */}
           <GenesisSearch />
 
