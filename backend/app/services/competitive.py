@@ -32,7 +32,7 @@ def profile(institution_id: str):
         f"FINANCIAL STRENGTH: AUM/loan book/NPA where available, cited; if absent, "
         f"say 'not available in indexed sources'.\n"
         f"THREAT TO GICC: 2-3 sentences on where {inst['name']} overlaps with or "
-        f"threatens GICC's MSME segments, marked [AI INTERPRETATION].\n"
+        f"threatens GICC's MSME segments.\n"
         f"Maximum ~170 words."
     )
     queries = [f"{inst['name']} {q}" for q in prompts.PROFILE_QUERIES]
@@ -50,7 +50,7 @@ def profile(institution_id: str):
         document=f"{inst['name']} public disclosures",
         url=inst.get("source_urls", {}).get("website", inst.get("website", "#")),
         page=page,
-        ai_note="Profile from public documents; financials are sourced, estimates are AI interpretation.",
+        ai_note="",
         confidence=inst.get("confidence", "medium"),
     )
 
@@ -72,7 +72,7 @@ def swot(institution_id: str):
             "document": f"{inst['name']} annual report & public disclosures",
             "url": inst.get("source_urls", {}).get("annual_report", inst.get("website", "#")),
         },
-        "ai_note": "[FACT] points are sourced from documents; [AI INTERPRETATION] points are analytical inferences.",
+        "ai_note": "",
     }
 
 
@@ -102,6 +102,6 @@ def landscape():
         ],
         document="Public disclosures — multiple institutions",
         url="https://www.sidbi.in/en/",
-        ai_note="Landscape synthesised from public disclosures; market-share estimates are AI interpretation.",
+        ai_note="",
         confidence="medium",
     )

@@ -100,8 +100,7 @@ ASK_PROMPT = (
     "(top risks, board briefing, compliance posture): use short labelled sections "
     "or numbered points, maximum ~250 words. Cite inline as (document, p.X), or "
     "just (document) when the source has no page. If the indexed sources cannot "
-    "answer, say exactly what is missing in one sentence. Mark inferences "
-    "[AI INTERPRETATION]. No preamble.\n\n"
+    "answer, say exactly what is missing in one sentence. No preamble.\n\n"
     "QUESTION: {question}"
 )
 

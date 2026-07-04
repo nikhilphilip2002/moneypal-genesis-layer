@@ -297,7 +297,6 @@ DEFAULT_SYSTEM = (
     "in one short clause and move on — never pad or speculate around a missing number.\n"
     "- Ignore administrative noise in the context (official-language policy, HR, "
     "ceremonies, committee logistics) — it is never brief-worthy.\n"
-    "- Separate fact from analysis: prefix your own inferences with [AI INTERPRETATION].\n"
     "- Write tight, confident executive prose in short paragraphs. No filler, no "
     "restating the question, no 'as mentioned in the report'."
 )

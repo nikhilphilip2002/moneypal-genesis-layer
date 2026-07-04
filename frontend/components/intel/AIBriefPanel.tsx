@@ -59,7 +59,9 @@ export default function AIBriefPanel({
           <span className="text-[11px] text-muted-foreground">Updated {data.last_updated}</span>
         </div>
 
-        <p className="border-t border-border/50 pt-3 text-xs italic text-muted-foreground">{data.ai_note}</p>
+        {data.ai_note && (
+          <p className="border-t border-border/50 pt-3 text-xs italic text-muted-foreground">{data.ai_note}</p>
+        )}
       </CardContent>
     </Card>
   );

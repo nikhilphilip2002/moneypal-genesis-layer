@@ -30,7 +30,7 @@ SNAPSHOT = (
     "EMPLOYMENT & DEMAND: employment/formalisation trend and what it signals for "
     "borrower cash flows.\n"
     "SO WHAT FOR GICC: 2 sentences — the single most important implication for "
-    "GICC's lending book this quarter, marked [AI INTERPRETATION].\n"
+    "GICC's lending book this quarter.\n"
     "Maximum ~150 words. Every number cited (document, p.X)."
 )
 
@@ -50,7 +50,7 @@ KARNATAKA = (
     "MSME BASE: unit count, employment and where they cluster — this is WHO GICC "
     "can lend to.\n"
     "CREDIT GAP: where formal credit is thin (segments/geographies) — this is the "
-    "OPPORTUNITY; mark estimates [AI INTERPRETATION].\n"
+    "OPPORTUNITY.\n"
     "SCHEME SUPPORT: active central/state schemes GICC can lend under, named and cited.\n"
     "Maximum ~160 words. If a Karnataka-specific figure is not in context, say so "
     "briefly rather than silently substituting an all-India number."
@@ -73,7 +73,7 @@ MSME = (
     "UNDERSERVED DEMAND: the formal-vs-informal credit gap and digital-lending "
     "penetration — WHO IS NOT BEING SERVED.\n"
     "MOVES FOR GICC: exactly 3 numbered, concrete recommendations sized for a bank "
-    "under Rs 500 crore (product, process, partnership), each marked [AI INTERPRETATION].\n"
+    "under Rs 500 crore (product, process, partnership).\n"
     "Maximum ~170 words. Never fabricate a number; a missing figure gets one clause."
 )
 
@@ -94,9 +94,8 @@ BRIEFING = (
     "MACRO CONTEXT: one short paragraph — growth, inflation, credit conditions, cited.\n"
     "KARNATAKA FOCUS: one short paragraph — the local MSME lending opportunity, cited.\n"
     "RISK WATCH: exactly 3 bullets — concrete risks to GICC's lending book, cited "
-    "where sourced, [AI INTERPRETATION] where inferred.\n"
-    "OPPORTUNITY: one short paragraph — the specific move GICC should evaluate now, "
-    "marked [AI INTERPRETATION].\n"
+    "where sourced.\n"
+    "OPPORTUNITY: one short paragraph — the specific move GICC should evaluate now.\n"
     "Maximum ~200 words. Decisive, numbers-first, no filler."
 )
 
@@ -123,14 +122,13 @@ LANDSCAPE = (
     "differ (rates, speed, reach), grounded in context.\n"
     "CONTESTED SEGMENTS: which borrower segments everyone is chasing.\n"
     "WHITE SPACE: underserved segments/geographies a sub-Rs 500 crore co-operative "
-    "can win — mark inferences [AI INTERPRETATION].\n"
-    "GICC PLAY: 2-3 sentences on positioning, marked [AI INTERPRETATION].\n"
+    "can win.\n"
+    "GICC PLAY: 2-3 sentences on positioning.\n"
     "Maximum ~160 words. Specific institutions and figures only when in context."
 )
 
 SWOT_RULES = (
-    "Label every point [FACT] if directly sourced from context or [AI INTERPRETATION] "
-    "if inferred. 3-4 points per quadrant, each one line. Format:\n"
+    "3-4 points per quadrant, each one line. Format:\n"
     "STRENGTHS:\n- ...\nWEAKNESSES:\n- ...\nOPPORTUNITIES:\n- ...\nTHREATS:\n- ...\n"
     "STRATEGIC OBSERVATION: 2-3 sentences on what GICC should do about this competitor."
 )

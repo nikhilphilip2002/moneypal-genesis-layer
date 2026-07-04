@@ -112,9 +112,22 @@ export default function IntelligenceCard({
               <span className="text-[11px] text-muted-foreground">Updated {data.last_updated}</span>
             </div>
 
-            <div className="flex items-start justify-between gap-3 border-t border-border/50 pt-3">
-              <p className="text-xs italic text-muted-foreground">{data.ai_note}</p>
-              {collapsible && (
+            {data.ai_note && (
+              <div className="flex items-start justify-between gap-3 border-t border-border/50 pt-3">
+                <p className="text-xs italic text-muted-foreground">{data.ai_note}</p>
+                {collapsible && (
+                  <button
+                    type="button"
+                    onClick={() => setOpen(false)}
+                    className="inline-flex shrink-0 items-center gap-1 text-xs font-semibold text-muted-foreground hover:text-foreground"
+                  >
+                    Collapse <ChevronDown className="h-3.5 w-3.5 rotate-180" />
+                  </button>
+                )}
+              </div>
+            )}
+            {!data.ai_note && collapsible && (
+              <div className="flex justify-end pt-2 border-t border-border/20">
                 <button
                   type="button"
                   onClick={() => setOpen(false)}
@@ -122,8 +135,8 @@ export default function IntelligenceCard({
                 >
                   Collapse <ChevronDown className="h-3.5 w-3.5 rotate-180" />
                 </button>
-              )}
-            </div>
+              </div>
+            )}
           </>
         )}
       </CardContent>

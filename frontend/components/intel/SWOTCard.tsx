@@ -120,7 +120,9 @@ export default function SWOTCard({ data, className }: { data: SwotResponse; clas
           <SourceBadge source={data.source} />
         </div>
 
-        <p className="border-t border-border/50 pt-3 text-xs italic text-muted-foreground">{data.ai_note}</p>
+        {data.ai_note && (
+          <p className="border-t border-border/50 pt-3 text-xs italic text-muted-foreground">{data.ai_note}</p>
+        )}
       </CardContent>
     </Card>
   );

@@ -27,7 +27,7 @@ def snapshot():
         ["GDP growth (current FY)", "CPI inflation", "MSME credit growth", "Employment trend"],
         "Government of India Economic Survey",
         "https://www.indiabudget.gov.in/economicsurvey/",
-        "GDP and inflation figures are from the Economic Survey; forward-looking views are AI interpretation.",
+        "",
         confidence="high",
         queries=prompts.SNAPSHOT_QUERIES,
     )
@@ -40,7 +40,7 @@ def karnataka():
         ["Karnataka GSDP & growth", "MSME units & employment", "Credit gap", "Active lending schemes"],
         "MOSPI & Karnataka Economic Survey",
         "https://www.mospi.gov.in/",
-        "State data from MOSPI and the Karnataka Economic Survey; credit-gap estimates are AI interpretation.",
+        "",
         confidence="medium",
         queries=prompts.KARNATAKA_QUERIES,
     )
@@ -53,7 +53,7 @@ def msme():
         ["MSME credit outstanding", "NPA trends", "Formal vs informal split", "Digital lending gap"],
         "MSME Ministry Annual Report & SIDBI MSME Pulse",
         "https://msme.gov.in/",
-        "Credit and NPA figures from official reports; market-gap estimates are AI interpretation.",
+        "",
         confidence="high",
         queries=prompts.MSME_QUERIES,
     )
@@ -66,7 +66,7 @@ def briefing():
         ["Credit environment", "Karnataka opportunity", "Risk watch", "Strategic move for GICC"],
         "Economic Survey + RBI Annual Report + MSME Ministry",
         "https://www.indiabudget.gov.in/economicsurvey/",
-        "AI-synthesised from multiple official sources; statistics are sourced, strategy is AI interpretation.",
+        "",
         confidence="high",
         queries=prompts.BRIEFING_QUERIES,
     )

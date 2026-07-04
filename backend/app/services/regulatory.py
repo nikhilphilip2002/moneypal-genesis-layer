@@ -54,10 +54,7 @@ def regulation_detail(category_id: str) -> IntelligenceResponse:
         summary=summary,
         key_points=key_points_from_text(summary),
         source=Source(document=source_doc, url=category.rbi_url),
-        ai_note=(
-            "Summary generated from indexed RBI regulation PDFs. Compliance implications are AI interpretation; "
-            "quoted obligations should be verified against the source document."
-        ),
+        ai_note="",
         last_updated=date.today().isoformat(),
         confidence=confidence,
     )
@@ -78,7 +75,7 @@ def regulatory_alerts() -> list[RegulatoryAlert]:
             summary="Ensure every digital lending journey has clear lender disclosure, consent capture, and customer grievance handling.",
             action_required="Review loan app and partner flows against the digital lending checklist.",
             source_url=url("digital_lending"),
-            ai_note="Alert priority is AI interpretation based on the indexed RBI digital lending material.",
+            ai_note="",
         ),
         RegulatoryAlert(
             title="KYC and AML evidence readiness",
@@ -87,7 +84,7 @@ def regulatory_alerts() -> list[RegulatoryAlert]:
             summary="Customer due diligence, periodic updation, and suspicious transaction controls need inspection-ready evidence.",
             action_required="Validate KYC policy, periodic refresh queues, and AML escalation logs.",
             source_url=url("kyc_aml"),
-            ai_note="Alert priority is AI interpretation; factual requirements are in the linked RBI source.",
+            ai_note="",
         ),
         RegulatoryAlert(
             title="Outsourcing risk governance",
@@ -96,7 +93,7 @@ def regulatory_alerts() -> list[RegulatoryAlert]:
             summary="Material outsourced activities need board-approved controls, vendor oversight, and exit planning.",
             action_required="Refresh vendor inventory, risk ratings, SLAs, and exit plans.",
             source_url=url("outsourcing"),
-            ai_note="Alert priority is AI interpretation based on RBI outsourcing expectations.",
+            ai_note="",
         ),
         RegulatoryAlert(
             title="Board and governance reporting",
@@ -105,6 +102,6 @@ def regulatory_alerts() -> list[RegulatoryAlert]:
             summary="Governance directions raise the bar on documented oversight, policy approvals, and risk reporting.",
             action_required="Add regulatory compliance status to the next board or committee pack.",
             source_url=url("governance"),
-            ai_note="Alert priority is AI interpretation based on the indexed governance directions.",
+            ai_note="",
         ),
     ]

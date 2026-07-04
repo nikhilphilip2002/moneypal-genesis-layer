@@ -35,7 +35,7 @@ def brief(regulation_ids: list[str], institution_ids: list[str], focus: str):
         f"COMPETITIVE CONTEXT: what competitors do, cited.\n"
         f"RECOMMENDED POLICY POSITIONS: 3-5 numbered recommendations for GICC.\n"
         f"IMPLEMENTATION ACTIONS: 3-5 bullets with owners (board / compliance / lending ops).\n"
-        f"Label inferences [AI INTERPRETATION]. Actionable, not legal."
+        f"Actionable, not legal."
     )
     answer = rag.generate(prompt, chunks)
 
@@ -51,9 +51,6 @@ def brief(regulation_ids: list[str], institution_ids: list[str], focus: str):
         ],
         document="; ".join(docs) if docs else "Genesis intelligence collections",
         url=url or "#",
-        ai_note=(
-            "Synthesised from the cited RBI regulations and competitor disclosures. "
-            "Recommended positions are AI interpretation and require policy-maker review."
-        ),
+        ai_note="",
         confidence="medium",
     )
