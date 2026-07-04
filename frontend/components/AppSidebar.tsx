@@ -75,13 +75,13 @@ export default function AppSidebar() {
                             className="h-auto rounded-md border border-sidebar-border/70 p-3 group-data-[collapsible=icon]:!size-8 group-data-[collapsible=icon]:!p-0 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:border-0"
                         >
                             <Link href="/">
-                                <div className="flex h-10 w-20 shrink-0 items-center justify-center group-data-[collapsible=icon]:h-8 group-data-[collapsible=icon]:w-8 overflow-hidden">
+                                <div className="flex h-10 w-20 shrink-0 items-center justify-center group-data-[collapsible=icon]:h-8 group-data-[collapsible=icon]:w-8 overflow-hidden group-data-[collapsible=icon]:justify-start">
                                     <Image
                                         src="/moneypal.png"
                                         alt="Moneypal"
                                         width={160}
                                         height={80}
-                                        className="h-9 w-[72px] object-contain group-data-[collapsible=icon]:h-7 group-data-[collapsible=icon]:w-7"
+                                        className="h-9 w-[72px] object-contain group-data-[collapsible=icon]:h-8 group-data-[collapsible=icon]:w-[64px] group-data-[collapsible=icon]:object-cover group-data-[collapsible=icon]:object-left"
                                     />
                                 </div>
                                 <div className="grid flex-1 text-left text-sm leading-tight group-data-[collapsible=icon]:hidden">
