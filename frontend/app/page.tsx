@@ -19,7 +19,7 @@ import AIBriefPanel from '@/components/intel/AIBriefPanel';
 import IntelligenceCard from '@/components/intel/IntelligenceCard';
 import LoadingCard from '@/components/intel/LoadingCard';
 import WidgetError from '@/components/intel/WidgetError';
-import OnboardingRibbon from '@/components/intel/OnboardingRibbon';
+
 import GenesisSearch from '@/components/intel/GenesisSearch';
 import {
   ArrowRight,
@@ -146,8 +146,7 @@ export default function Dashboard() {
             </p>
           </section>
 
-          {/* GICC × Moneypal onboarding status */}
-          <OnboardingRibbon />
+
 
           {/* Explainable semantic search across all Genesis collections */}
           <GenesisSearch />
