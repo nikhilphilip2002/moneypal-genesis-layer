@@ -25,8 +25,8 @@ const priorityStyles: Record<string, string> = {
 };
 
 function CategoryDetail({ category }: { category: RegulationCategory }) {
-  const detail = useIntel<IntelligenceResponse>(`regulatory:detail:${category.id}`, () =>
-    regulatory.detail(category.id),
+  const detail = useIntel<IntelligenceResponse>(`regulatory:detail:${category.id}`, (refresh) =>
+    regulatory.detail(category.id, refresh),
   );
   return (
     <>

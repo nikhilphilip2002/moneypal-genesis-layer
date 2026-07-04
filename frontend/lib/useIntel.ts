@@ -38,7 +38,7 @@ function writeCache(key: string, data: unknown) {
 // background — for status/health data that must never be served stale.
 export function useIntel<T>(
   key: string,
-  fetcher: () => Promise<T>,
+  fetcher: (refresh?: boolean) => Promise<T>,
   options?: { live?: boolean },
 ): IntelFetch<T> {
   const live = options?.live ?? false;
@@ -59,7 +59,7 @@ export function useIntel<T>(
       // Live mode keeps showing the cached value while revalidating.
       setState((prev) => ({ data: live ? (prev.data ?? cached) : null, loading: !(live && cached !== null), error: false }));
       fetcherRef
-        .current()
+        .current(force)
         .then((data) => {
           writeCache(key, data);
           setState({ data, loading: false, error: false });

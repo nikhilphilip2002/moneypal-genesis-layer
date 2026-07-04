@@ -178,29 +178,29 @@ export const auth = {
 // ─── Module 1: Macro-economic intelligence ───
 
 export const macro = {
-  snapshot: (): Promise<IntelligenceResponse> => apiRequest('/macro/snapshot'),
-  karnataka: (): Promise<IntelligenceResponse> => apiRequest('/macro/karnataka'),
-  msme: (): Promise<IntelligenceResponse> => apiRequest('/macro/msme'),
-  briefing: (): Promise<IntelligenceResponse> => apiRequest('/macro/briefing'),
+  snapshot: (refresh?: boolean): Promise<IntelligenceResponse> => apiRequest(`/macro/snapshot${refresh ? '?refresh=1' : ''}`),
+  karnataka: (refresh?: boolean): Promise<IntelligenceResponse> => apiRequest(`/macro/karnataka${refresh ? '?refresh=1' : ''}`),
+  msme: (refresh?: boolean): Promise<IntelligenceResponse> => apiRequest(`/macro/msme${refresh ? '?refresh=1' : ''}`),
+  briefing: (refresh?: boolean): Promise<IntelligenceResponse> => apiRequest(`/macro/briefing${refresh ? '?refresh=1' : ''}`),
 };
 
 // ─── Module 2: Competitive intelligence ───
 
 export const competitive = {
   institutions: (): Promise<Institution[]> => apiRequest('/competitive/institutions'),
-  profile: (id: string): Promise<IntelligenceResponse> =>
-    apiRequest(`/competitive/institutions/${encodeURIComponent(id)}`),
-  swot: (id: string): Promise<SwotResponse> =>
-    apiRequest(`/competitive/institutions/${encodeURIComponent(id)}/swot`),
-  landscape: (): Promise<IntelligenceResponse> => apiRequest('/competitive/landscape'),
+  profile: (id: string, refresh?: boolean): Promise<IntelligenceResponse> =>
+    apiRequest(`/competitive/institutions/${encodeURIComponent(id)}${refresh ? '?refresh=1' : ''}`),
+  swot: (id: string, refresh?: boolean): Promise<SwotResponse> =>
+    apiRequest(`/competitive/institutions/${encodeURIComponent(id)}/swot${refresh ? '?refresh=1' : ''}`),
+  landscape: (refresh?: boolean): Promise<IntelligenceResponse> => apiRequest(`/competitive/landscape${refresh ? '?refresh=1' : ''}`),
 };
 
 // ─── Module 3: Regulatory intelligence ───
 
 export const regulatory = {
   categories: (): Promise<RegulationCategory[]> => apiRequest('/regulatory/categories'),
-  detail: (id: string): Promise<IntelligenceResponse> =>
-    apiRequest(`/regulatory/${encodeURIComponent(id)}`),
+  detail: (id: string, refresh?: boolean): Promise<IntelligenceResponse> =>
+    apiRequest(`/regulatory/${encodeURIComponent(id)}${refresh ? '?refresh=1' : ''}`),
   alerts: (): Promise<RegulatoryAlert[]> => apiRequest('/regulatory/alerts'),
 };
 

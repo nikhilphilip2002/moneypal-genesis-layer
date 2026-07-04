@@ -35,11 +35,11 @@ import WidgetError from '@/components/intel/WidgetError';
 import { Building, MapPin, Search } from 'lucide-react';
 
 function InstitutionDetail({ institution }: { institution: Institution }) {
-  const profile = useIntel<IntelligenceResponse>(`competitive:profile:${institution.id}`, () =>
-    competitive.profile(institution.id),
+  const profile = useIntel<IntelligenceResponse>(`competitive:profile:${institution.id}`, (refresh) =>
+    competitive.profile(institution.id, refresh),
   );
-  const swot = useIntel<SwotResponse>(`competitive:swot:${institution.id}`, () =>
-    competitive.swot(institution.id),
+  const swot = useIntel<SwotResponse>(`competitive:swot:${institution.id}`, (refresh) =>
+    competitive.swot(institution.id, refresh),
   );
 
   return (
