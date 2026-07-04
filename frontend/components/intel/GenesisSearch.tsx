@@ -81,7 +81,7 @@ export default function GenesisSearch() {
             }
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            className="shadow-none hover:shadow-none border border-border bg-background focus-visible:bg-background/80"
+            className="shadow-none hover:shadow-none border border-border [border-top-color:hsl(var(--border))] bg-background focus-visible:bg-background/80"
           />
           {(results !== null || answer !== null || error) && (
             <button
