@@ -87,8 +87,8 @@ export default function NavBar() {
             className={cn(
               'rounded-lg px-3 py-1.5 text-[13px] font-medium transition-all duration-200',
               pathname === item.href
-                ? '[background:rgba(255,255,255,0.75)] dark:[background:rgba(255,255,255,0.10)] [backdrop-filter:saturate(180%)_blur(16px)] border border-white/80 dark:border-white/18 [border-top-color:rgba(255,255,255,0.95)] shadow-[0_2px_8px_rgba(0,93,170,0.10),0_1px_0_rgba(255,255,255,0.85)_inset] text-foreground font-medium'
-                : 'text-muted-foreground hover:[background:rgba(255,255,255,0.50)] dark:hover:[background:rgba(255,255,255,0.07)] hover:text-foreground'
+                ? 'bg-accent text-accent-foreground border border-border/40 font-semibold'
+                : 'text-muted-foreground hover:bg-accent/50 hover:text-foreground'
             )}
           >
             {item.label}
