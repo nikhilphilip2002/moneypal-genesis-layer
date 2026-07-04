@@ -411,7 +411,8 @@ export default function AdminPage() {
                         </TableHeader>
                         <TableBody>
                           {institutions.data.map((inst) => {
-                            const coll = status.data?.collections.find((c) => c.collection === `comp_${inst.id}`);
+                            const targetCol = inst.qdrant_collection || `comp_${inst.id}`;
+                            const coll = status.data?.collections.find((c) => c.collection === targetCol);
                             return (
                               <TableRow key={inst.id} className="border-border/70">
                                 <TableCell className="font-medium">{inst.name}</TableCell>
@@ -448,7 +449,8 @@ export default function AdminPage() {
                         </TableHeader>
                         <TableBody>
                           {regulations.data.map((reg) => {
-                            const coll = status.data?.collections.find((c) => c.collection === `reg_${reg.id}`);
+                            const targetCol = reg.qdrant_collection || `reg_${reg.id}`;
+                            const coll = status.data?.collections.find((c) => c.collection === targetCol);
                             return (
                               <TableRow key={reg.id} className="border-border/70">
                                 <TableCell className="font-medium">{reg.display_name}</TableCell>

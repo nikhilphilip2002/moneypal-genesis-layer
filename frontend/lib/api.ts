@@ -27,6 +27,7 @@ export type Institution = {
   headquarters?: string | null;
   msme_focus?: boolean;
   website?: string | null;
+  qdrant_collection?: string;
 };
 
 export type SwotResponse = {
@@ -43,6 +44,7 @@ export type RegulationCategory = {
   effective_date?: string | null;
   priority?: string;
   rbi_url?: string | null;
+  qdrant_collection?: string;
 };
 
 export type RegulatoryAlert = {
