@@ -1,28 +1,39 @@
+"""Moneypal Genesis Intelligence — single FastAPI application.
+
+One app, three domain routers (macro, competitive, regulatory) mounted together.
+
+Run (from backend/):  uvicorn app.main:app --port 8000 --reload
+"""
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api.routes.regulatory import router as regulatory_router
+from app.api.routes import admin, auth, competitive, macro, policy, regulatory, review
 from app.core.config import settings
 
 
-app = FastAPI(
-    title="Moneypal Genesis Regulatory Intelligence API",
-    version="0.1.0",
-    description="RAG backend for RBI/NBFC regulatory intelligence.",
-)
+def create_app() -> FastAPI:
+    app = FastAPI(title="Moneypal Genesis Intelligence API")
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=settings.cors_origins,
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=settings.cors_origins,
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+    app.include_router(auth.router)
+    app.include_router(macro.router)
+    app.include_router(competitive.router)
+    app.include_router(regulatory.router)
+    app.include_router(admin.router)
+    app.include_router(review.router)
+    app.include_router(policy.router)
+
+    @app.get("/health")
+    def health():
+        return {"status": "ok", "service": "genesis-intelligence"}
+
+    return app
 
 
-@app.get("/health")
-def health() -> dict[str, str]:
-    return {"status": "ok", "service": "regulatory-intelligence"}
-
-
-app.include_router(regulatory_router, prefix="/regulatory", tags=["regulatory"])
+app = create_app()

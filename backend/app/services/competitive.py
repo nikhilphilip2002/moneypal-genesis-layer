@@ -25,13 +25,18 @@ def profile(institution_id: str):
     if not inst:
         return None
     prompt = (
-        f"Write a competitor intelligence profile of {inst['name']} for GICC's strategy "
-        f"team. Cover: overview and customers; key loan products and ticket sizes; MSME "
-        f"focus (segments, geography); public financial highlights (AUM, loan book, NPA "
-        f"if available); geographic presence; and strategic positioning. Be factual; "
-        f"flag estimates. 4-5 paragraphs."
+        f"Write the competitor intelligence profile of {inst['name']} for GICC's strategy team.\n"
+        f"Format exactly:\n"
+        f"WHO THEY ARE: overview, customer base, geographic presence, cited.\n"
+        f"PRODUCTS & PRICING: key loan products, ticket sizes and rates, cited.\n"
+        f"FINANCIAL STRENGTH: AUM/loan book/NPA where available, cited; if absent, "
+        f"say 'not available in indexed sources'.\n"
+        f"THREAT TO GICC: 2-3 sentences on where {inst['name']} overlaps with or "
+        f"threatens GICC's MSME segments, marked [AI INTERPRETATION].\n"
+        f"Maximum ~170 words."
     )
-    answer, sources = rag.ask(inst["qdrant_collection"], prompt)
+    queries = [f"{inst['name']} {q}" for q in prompts.PROFILE_QUERIES]
+    answer, sources = rag.ask(inst["qdrant_collection"], prompt, queries=queries)
     page = str(sources[0]["page"]) if sources and sources[0].get("page") else None
     return make_response(
         title=f"{inst['name']} — Institution Profile",
@@ -56,12 +61,10 @@ def swot(institution_id: str):
         return None
     prompt = (
         f"Generate a SWOT analysis of {inst['name']} from the perspective of a competing "
-        f"Karnataka MSME lender (GICC). Label every point [FACT] if sourced or "
-        f"[AI INTERPRETATION] if inferred. Format:\n"
-        f"STRENGTHS:\n- ...\nWEAKNESSES:\n- ...\nOPPORTUNITIES:\n- ...\nTHREATS:\n- ...\n"
-        f"STRATEGIC OBSERVATION: one paragraph on what GICC should know about this competitor."
+        f"Karnataka MSME lender (GICC).\n{prompts.SWOT_RULES}"
     )
-    answer, _ = rag.ask(inst["qdrant_collection"], prompt)
+    queries = [f"{inst['name']} {q}" for q in prompts.PROFILE_QUERIES]
+    answer, _ = rag.ask(inst["qdrant_collection"], prompt, queries=queries)
     return {
         "institution": inst["name"],
         "swot_analysis": answer,
@@ -74,7 +77,20 @@ def swot(institution_id: str):
 
 
 def landscape():
-    answer, _ = rag.ask(LANDSCAPE_ANCHOR, prompts.LANDSCAPE)
+    # Landscape spans lenders: retrieve from every institution collection, not one anchor.
+    chunks: list[dict] = []
+    for inst in il.load_all():
+        try:
+            chunks += rag.search_multi(
+                inst["qdrant_collection"], prompts.LANDSCAPE_QUERIES, top_k=2, max_chunks=3
+            )
+        except Exception:
+            continue  # unindexed collection — skip
+    chunks.sort(key=lambda h: h["score"], reverse=True)
+    if chunks:
+        answer = rag.generate(prompts.LANDSCAPE, chunks[:14])
+    else:
+        answer, _ = rag.ask(LANDSCAPE_ANCHOR, prompts.LANDSCAPE, queries=prompts.LANDSCAPE_QUERIES)
     return make_response(
         title="Karnataka MSME Lending Landscape",
         summary=answer,

@@ -1,0 +1,20 @@
+{
+  "id": "karnataka_apex_bank",
+  "name": "Karnataka State Co-operative Apex Bank",
+  "type": "State Co-operative Apex Bank",
+  "website": "https://karnatakaapex.bank.in/new/",
+  "headquarters": "Bengaluru, Karnataka",
+  "msme_focus": true,
+  "confidence": "medium",
+  "source_docs": [
+    "profile.md",
+    "raw_new.md",
+    "raw_new_about-us_acsti_administration.md",
+    "raw_new_about-us_acsti_calendar-of-training-programs-2023-24.md",
+    "raw_new_about-us_acsti_co-operative-education-and-training.md"
+  ],
+  "source_urls": {
+    "website": "https://karnatakaapex.bank.in/new/"
+  },
+  "qdrant_collection": "comp_kscab"
+}

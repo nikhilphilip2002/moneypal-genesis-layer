@@ -1,0 +1,367 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* ── Moneypal brand (DESIGN.md palette) ── */
+    --background: 220 27% 98%;
+    --foreground: 204 9% 11%;
+    --card: 0 0% 100%;
+    --card-foreground: 204 9% 11%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 204 9% 11%;
+    --primary: 207 100% 33%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 210 12% 93%;
+    --secondary-foreground: 204 9% 11%;
+    --muted: 210 12% 93%;
+    --muted-foreground: 217 11% 29%;
+    --accent: 219 100% 92%;
+    --accent-foreground: 211 100% 11%;
+    --destructive: 0 75% 42%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 223 17% 79%;
+    --input: 223 17% 79%;
+    --ring: 207 100% 33%;
+    --radius: 1rem;
+    --chart-1: 207 100% 33%;
+    --chart-2: 217 100% 82%;
+    --chart-3: 208 100% 25%;
+    --chart-4: 0 75% 42%;
+    --chart-5: 204 9% 11%;
+    --sidebar-background: 210 18% 96%;
+    --sidebar-foreground: 204 9% 15%;
+    --sidebar-primary: 207 100% 33%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 210 9% 91%;
+    --sidebar-accent-foreground: 204 9% 11%;
+    --sidebar-border: 210 5% 85%;
+    --sidebar-ring: 207 100% 33%;
+
+    /* ── Apple-style glass tokens ── */
+    --glass-blur:     20px;
+    --glass-saturate: 180%;
+    --glass-bg:       rgba(255, 255, 255, 0.62);
+    --glass-border:   rgba(255, 255, 255, 0.75);
+    --glass-border-top: rgba(255, 255, 255, 0.95);
+    --glass-shadow:   0 8px 32px rgba(0, 93, 170, 0.12),
+                      0 2px 8px rgba(0, 93, 170, 0.06);
+    --glass-inset:    0 1px 0 rgba(255, 255, 255, 0.90) inset;
+
+    /* ── Mesh gradient (light) — cool institutional blue wash ── */
+    --mesh-base:   hsl(220 40% 96%);
+    --blob-1:      hsl(207 85% 78%);
+    --blob-2:      hsl(217 100% 85%);
+    --blob-3:      hsl(200 70% 82%);
+    --blob-4:      hsl(228 60% 86%);
+  }
+
+  .dark {
+    --background: 204 9% 5%;
+    --foreground: 210 20% 94%;
+    --card: 204 9% 7%;
+    --card-foreground: 210 20% 94%;
+    --popover: 204 9% 7%;
+    --popover-foreground: 210 20% 94%;
+    --primary: 207 90% 45%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 204 9% 12%;
+    --secondary-foreground: 210 20% 94%;
+    --muted: 204 9% 12%;
+    --muted-foreground: 215 10% 60%;
+    --accent: 211 60% 18%;
+    --accent-foreground: 217 100% 87%;
+    --destructive: 0 75% 51%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 204 9% 17%;
+    --input: 204 9% 17%;
+    --ring: 207 90% 45%;
+    --chart-1: 207 90% 45%;
+    --chart-2: 217 100% 82%;
+    --chart-3: 208 100% 60%;
+    --chart-4: 0 75% 51%;
+    --chart-5: 210 20% 94%;
+    --sidebar-background: 204 9% 6%;
+    --sidebar-foreground: 214 15% 78%;
+    --sidebar-primary: 207 90% 45%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 211 50% 14%;
+    --sidebar-accent-foreground: 210 20% 94%;
+    --sidebar-border: 204 9% 15%;
+    --sidebar-ring: 207 90% 45%;
+
+    /* ── Apple-style glass tokens (dark) ── */
+    --glass-bg:        rgba(14, 17, 20, 0.68);
+    --glass-border:    rgba(255, 255, 255, 0.10);
+    --glass-border-top: rgba(255, 255, 255, 0.22);
+    --glass-shadow:    0 8px 40px rgba(0, 0, 0, 0.55),
+                       0 2px 8px rgba(0, 0, 0, 0.30);
+    --glass-inset:     0 1px 0 rgba(255, 255, 255, 0.08) inset;
+
+    /* ── Mesh gradient (dark) — deep navy ── */
+    --mesh-base:   hsl(210 15% 4%);
+    --blob-1:      hsl(207 80% 16%);
+    --blob-2:      hsl(217 70% 13%);
+    --blob-3:      hsl(200 65% 15%);
+    --blob-4:      hsl(240 30% 13%);
+  }
+}
+
+@layer base {
+  * { @apply border-border; }
+  body { @apply bg-background text-foreground; }
+}
+
+/* ── Html base colour (visible before JS hydrates) ── */
+html                { background: hsl(220 40% 96%); }
+html.dark           { background: hsl(210 15% 4%); }
+
+body {
+  font-feature-settings: "rlig" 1, "calt" 1;
+  min-height: 100vh;
+  -webkit-font-smoothing: antialiased;
+  background: transparent;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   APPLE-STYLE ANIMATED BACKGROUND MESH
+   Full-screen radial gradient base + vivid drifting blobs
+═══════════════════════════════════════════════════════════════════════════ */
+.bg-mesh {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  overflow: hidden;
+  /* Rich radial gradient wash — fills the whole screen */
+  background:
+    radial-gradient(ellipse 90% 70% at 15% 20%,  hsl(207 80% 90%) 0%, transparent 60%),
+    radial-gradient(ellipse 70% 60% at 85% 80%,  hsl(217 70% 86%) 0%, transparent 55%),
+    radial-gradient(ellipse 80% 80% at 50% 50%,  hsl(220 60% 95%) 0%, transparent 70%),
+    hsl(220 40% 97%);
+}
+
+.dark .bg-mesh {
+  background:
+    radial-gradient(ellipse 80% 60% at 20% 15%,  hsl(207 70% 11%) 0%, transparent 55%),
+    radial-gradient(ellipse 60% 50% at 80% 85%,  hsl(217 60% 9%) 0%, transparent 50%),
+    radial-gradient(ellipse 70% 70% at 55% 45%,  hsl(240 25% 8%) 0%, transparent 60%),
+    hsl(210 15% 4%);
+}
+
+/* Floating blobs — more opaque + vivid than before */
+.bg-mesh-blob {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(100px);
+  opacity: 0.65;
+  pointer-events: none;
+  will-change: transform;
+}
+
+.bg-mesh-blob-1 {
+  width: 650px; height: 650px;
+  background: radial-gradient(circle, var(--blob-1) 0%, transparent 70%);
+  top: -160px; left: -140px;
+  animation: blob-drift-a 24s ease-in-out infinite alternate;
+}
+
+.bg-mesh-blob-2 {
+  width: 500px; height: 500px;
+  background: radial-gradient(circle, var(--blob-2) 0%, transparent 70%);
+  bottom: -120px; right: -120px;
+  animation: blob-drift-b 30s ease-in-out infinite alternate;
+}
+
+.bg-mesh-blob-3 {
+  width: 380px; height: 380px;
+  background: radial-gradient(circle, var(--blob-3) 0%, transparent 70%);
+  top: 38%; left: 48%;
+  animation: blob-drift-c 36s ease-in-out infinite alternate;
+}
+
+.bg-mesh-blob-4 {
+  width: 280px; height: 280px;
+  background: radial-gradient(circle, var(--blob-4) 0%, transparent 70%);
+  top: 20%; right: 20%;
+  animation: blob-drift-d 20s ease-in-out infinite alternate;
+}
+
+@keyframes blob-drift-a {
+  0%   { transform: translate(0,    0)      scale(1);    }
+  33%  { transform: translate(70px, -50px)  scale(1.10); }
+  66%  { transform: translate(-30px, 60px)  scale(0.92); }
+  100% { transform: translate(40px,  30px)  scale(1.05); }
+}
+@keyframes blob-drift-b {
+  0%   { transform: translate(0,     0)      scale(1);    }
+  33%  { transform: translate(-60px, 40px)   scale(1.08); }
+  66%  { transform: translate(40px, -70px)   scale(0.94); }
+  100% { transform: translate(-20px, -20px)  scale(1.04); }
+}
+@keyframes blob-drift-c {
+  0%   { transform: translate(-50%, -50%) scale(1);    }
+  40%  { transform: translate(-44%, -56%) scale(1.12); }
+  70%  { transform: translate(-56%, -44%) scale(0.90); }
+  100% { transform: translate(-48%, -52%) scale(1.06); }
+}
+@keyframes blob-drift-d {
+  0%   { transform: translate(0,    0)      scale(1);    }
+  50%  { transform: translate(-40px, 50px)  scale(1.15); }
+  100% { transform: translate(30px, -30px)  scale(0.88); }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   APPLE GLASS SYSTEM
+   The saturate() is Apple's signature — it makes colours vivid through glass
+═══════════════════════════════════════════════════════════════════════════ */
+
+/* Noise overlay — shared pseudo-element for grain texture */
+.glass::after,
+.glass-strong::after,
+.glass-vibrancy::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  opacity: 0.025;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E");
+  background-size: 128px 128px;
+  mix-blend-mode: overlay;
+}
+.dark .glass::after,
+.dark .glass-strong::after,
+.dark .glass-vibrancy::after { opacity: 0.040; }
+
+/* Base glass — used on cards, panels */
+.glass {
+  position: relative;
+  background: var(--glass-bg);
+  backdrop-filter: saturate(var(--glass-saturate)) blur(var(--glass-blur));
+  -webkit-backdrop-filter: saturate(var(--glass-saturate)) blur(var(--glass-blur));
+  border: 1px solid var(--glass-border);
+  /* Top-edge highlight — Apple's signature bright rim */
+  border-top-color: var(--glass-border-top);
+  box-shadow: var(--glass-shadow), var(--glass-inset);
+}
+
+/* Strong glass — auth pages, modals */
+.glass-strong {
+  position: relative;
+  background: rgba(255, 255, 255, 0.75);
+  backdrop-filter: saturate(200%) blur(28px);
+  -webkit-backdrop-filter: saturate(200%) blur(28px);
+  border: 1px solid rgba(255, 255, 255, 0.80);
+  border-top-color: rgba(255, 255, 255, 0.98);
+  box-shadow:
+    0 20px 60px rgba(0, 93, 170, 0.15),
+    0 8px 24px rgba(0, 93, 170, 0.08),
+    0 1px 0 rgba(255, 255, 255, 0.95) inset;
+}
+
+.dark .glass-strong {
+  background: rgba(12, 15, 18, 0.78);
+  border: 1px solid rgba(255, 255, 255, 0.10);
+  border-top-color: rgba(255, 255, 255, 0.20);
+  box-shadow:
+    0 20px 60px rgba(0, 0, 0, 0.65),
+    0 8px 24px rgba(0, 0, 0, 0.40),
+    0 1px 0 rgba(255, 255, 255, 0.07) inset;
+}
+
+/* Vibrancy glass — Apple Music player bars, header, sidebar */
+.glass-vibrancy {
+  position: relative;
+  background: rgba(255, 255, 255, 0.52);
+  backdrop-filter: saturate(220%) blur(24px) brightness(1.04);
+  -webkit-backdrop-filter: saturate(220%) blur(24px) brightness(1.04);
+  border: 1px solid rgba(255, 255, 255, 0.65);
+  border-top-color: rgba(255, 255, 255, 0.92);
+  box-shadow:
+    0 4px 20px rgba(0, 93, 170, 0.08),
+    0 1px 0 rgba(255, 255, 255, 0.88) inset;
+}
+
+.dark .glass-vibrancy {
+  background: rgba(11, 14, 17, 0.72);
+  backdrop-filter: saturate(200%) blur(24px) brightness(1.06);
+  -webkit-backdrop-filter: saturate(200%) blur(24px) brightness(1.06);
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-top-color: rgba(255, 255, 255, 0.18);
+  box-shadow:
+    0 4px 20px rgba(0, 0, 0, 0.50),
+    0 1px 0 rgba(255, 255, 255, 0.06) inset;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   ENTRANCE ANIMATIONS — Apple spring curves
+═══════════════════════════════════════════════════════════════════════════ */
+@keyframes glass-in {
+  from { opacity: 0; transform: translateY(24px) scale(0.96); filter: blur(4px); }
+  to   { opacity: 1; transform: translateY(0)    scale(1);    filter: blur(0);   }
+}
+.glass-in {
+  animation: glass-in 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes glass-in-fast {
+  from { opacity: 0; transform: translateY(10px) scale(0.98); }
+  to   { opacity: 1; transform: translateY(0)    scale(1);    }
+}
+.glass-in-fast {
+  animation: glass-in-fast 0.28s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes msg-in {
+  from { opacity: 0; transform: translateY(12px); }
+  to   { opacity: 1; transform: translateY(0);    }
+}
+.msg-enter { animation: msg-in 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   APPLE-STYLE SCROLLBAR
+═══════════════════════════════════════════════════════════════════════════ */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: rgba(0, 93, 170, 0.25);
+  border-radius: 999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 93, 170, 0.45);
+}
+.dark ::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.12);
+}
+.dark ::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.22);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   APPLE-STYLE FOCUS RING
+═══════════════════════════════════════════════════════════════════════════ */
+:focus-visible {
+  outline: 2px solid hsl(var(--ring));
+  outline-offset: 2px;
+  border-radius: calc(var(--radius) - 2px);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   AUTH PAGE WRAPPER
+═══════════════════════════════════════════════════════════════════════════ */
+.auth-page {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 3rem 1rem;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   SELECTION COLOUR
+═══════════════════════════════════════════════════════════════════════════ */
+::selection {
+  background: rgba(0, 93, 170, 0.25);
+  color: hsl(var(--foreground));
+}

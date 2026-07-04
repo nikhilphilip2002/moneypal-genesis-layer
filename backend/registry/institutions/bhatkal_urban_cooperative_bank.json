@@ -1,0 +1,20 @@
+{
+  "id": "bhatkal_urban_cooperative_bank",
+  "name": "Bhatkal Urban Co-operative Bank",
+  "type": "Urban Co-operative Bank",
+  "website": "https://bhatkalurban.bank.in/",
+  "headquarters": "Bhatkal, Karnataka",
+  "msme_focus": true,
+  "confidence": "medium",
+  "source_docs": [
+    "profile.md",
+    "raw_about-us.md",
+    "raw_about-us_banking-ombudsman-info.md",
+    "raw_about-us_bucb-complaint.md",
+    "raw_about-us_policy.md"
+  ],
+  "source_urls": {
+    "website": "https://bhatkalurban.bank.in/"
+  },
+  "qdrant_collection": "comp_bhatkal_urban"
+}

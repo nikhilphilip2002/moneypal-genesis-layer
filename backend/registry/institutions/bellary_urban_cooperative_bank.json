@@ -1,0 +1,20 @@
+{
+  "id": "bellary_urban_cooperative_bank",
+  "name": "Bellary Urban Co-operative Bank",
+  "type": "Urban Co-operative Bank",
+  "website": "https://www.bucb.co.in/",
+  "headquarters": "Ballari, Karnataka",
+  "msme_focus": true,
+  "confidence": "medium",
+  "source_docs": [
+    "profile.md",
+    "raw_contact-us.md",
+    "raw_directors.md",
+    "raw_gallery.md",
+    "raw_history.md"
+  ],
+  "source_urls": {
+    "website": "https://www.bucb.co.in/"
+  },
+  "qdrant_collection": "comp_bellary_urban"
+}

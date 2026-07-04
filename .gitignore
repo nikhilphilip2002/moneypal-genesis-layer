@@ -30,3 +30,8 @@ module*/data/
 .vscode/
 *.log
 CLAUDE.md
+
+Regulations/
+
+# Generated brief cache + local fallback index
+backend/vector_store/

@@ -25,6 +25,7 @@ class RegulationCategory(BaseModel):
     source_docs: list[str]
     rbi_url: str
     qdrant_collection: str
+    priority: str = "medium"
 
 
 class RegulatoryAlert(BaseModel):

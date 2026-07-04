@@ -5,6 +5,14 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 
+BASE_DIR = Path(__file__).resolve().parents[2]   # backend/
+REGISTRY_DIR = BASE_DIR / "registry"             # institution/regulation JSON configs
+DATA_DIR = BASE_DIR / "data"                     # ingested PDFs/TXTs (gitignored)
+
+# Qdrant collections
+MACRO_COLLECTION = "macro_intel1"
+LANDSCAPE_ANCHOR = "comp_sidbi"                  # anchor collection for the landscape summary
+
 
 def _load_env_file() -> dict[str, str]:
     env_path = REPO_ROOT / ".env"
@@ -28,6 +36,7 @@ class Settings:
             return os.environ.get(name) or env_file.get(name) or default
 
         self.groq_api_key = get("GROQ_API_KEY")
+        self.groq_api_key_secondary = get("GROQ_API_KEY_SECONDARY")
         self.groq_model = get("GROQ_MODEL", "llama-3.3-70b-versatile") or "llama-3.3-70b-versatile"
 
         self.qdrant_url = get("QDRANT_URL", "http://localhost:6333") or "http://localhost:6333"

@@ -1,0 +1,59 @@
+{
+  "institutions": [
+    {
+      "name": "Karnataka State Financial Corporation",
+      "slug": "karnataka_state_financial_corporation",
+      "start_url": "https://ksfc.karnataka.gov.in/en"
+    },
+    {
+      "name": "Karnataka State Co-operative Apex Bank",
+      "slug": "karnataka_state_co_operative_apex_bank",
+      "start_url": "https://karnatakaapex.bank.in/new/"
+    },
+    {
+      "name": "Kinara Capital",
+      "slug": "kinara_capital",
+      "start_url": "https://kinaracapital.com/"
+    },
+    {
+      "name": "National Co-operative Bank",
+      "slug": "national_co_operative_bank",
+      "start_url": "https://nationalbank.bank.in/english/home.aspx"
+    },
+    {
+      "name": "Belagavi District Central Co-operative Bank",
+      "slug": "belagavi_district_central_co_operative_bank",
+      "start_url": "https://belagavidccb.com/"
+    },
+    {
+      "name": "Belgaum Industrial Co-operative Bank",
+      "slug": "belgaum_industrial_co_operative_bank",
+      "start_url": "https://bibank.co.in/"
+    },
+    {
+      "name": "Kaujalgi Urban Co-operative Bank",
+      "slug": "kaujalgi_urban_co_operative_bank",
+      "start_url": "https://www.kaujalgiurban.com/"
+    },
+    {
+      "name": "Bellary Urban Co-operative Bank",
+      "slug": "bellary_urban_co_operative_bank",
+      "start_url": "https://www.bucb.co.in/"
+    },
+    {
+      "name": "Bhatkal Urban Co-operative Bank",
+      "slug": "bhatkal_urban_co_operative_bank",
+      "start_url": "https://bhatkalurban.bank.in/"
+    },
+    {
+      "name": "South Canara District Central Co-operative Bank",
+      "slug": "south_canara_district_central_co_operative_bank",
+      "start_url": "https://scdcc.bank.in/"
+    },
+    {
+      "name": "SIDBI (MSME ecosystem benchmark)",
+      "slug": "sidbi_msme_ecosystem_benchmark",
+      "start_url": "https://www.sidbi.in/msme-pulse"
+    }
+  ]
+}

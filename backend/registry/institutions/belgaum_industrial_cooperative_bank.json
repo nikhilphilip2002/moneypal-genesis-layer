@@ -1,0 +1,20 @@
+{
+  "id": "belgaum_industrial_cooperative_bank",
+  "name": "Belgaum Industrial Co-operative Bank",
+  "type": "Industrial Co-operative Bank",
+  "website": "https://bibank.co.in/",
+  "headquarters": "Belagavi, Karnataka",
+  "msme_focus": true,
+  "confidence": "medium",
+  "source_docs": [
+    "profile.md",
+    "raw_about-us.md",
+    "raw_board-of-directors.md",
+    "raw_contact-us.md",
+    "raw_deposits.md"
+  ],
+  "source_urls": {
+    "website": "https://bibank.co.in/"
+  },
+  "qdrant_collection": "comp_belgaum_industrial"
+}

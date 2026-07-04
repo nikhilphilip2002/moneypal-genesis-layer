@@ -1,0 +1,20 @@
+{
+  "id": "south_canara_dccb",
+  "name": "South Canara District Central Co-operative Bank",
+  "type": "District Central Co-operative Bank",
+  "website": "https://scdcc.bank.in/",
+  "headquarters": "Mangaluru, Karnataka",
+  "msme_focus": true,
+  "confidence": "medium",
+  "source_docs": [
+    "profile.md",
+    "raw_DICGC-Logo-and-QR-code.md",
+    "raw_aboutus.md",
+    "raw_achievment.md",
+    "raw_agricultural_land_purchase.md"
+  ],
+  "source_urls": {
+    "website": "https://scdcc.bank.in/"
+  },
+  "qdrant_collection": "comp_scdcc"
+}

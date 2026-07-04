@@ -1,0 +1,20 @@
+{
+  "id": "belagavi_dccb",
+  "name": "Belagavi District Central Co-operative Bank",
+  "type": "District Central Co-operative Bank",
+  "website": "https://belagavidccb.com/",
+  "headquarters": "Belagavi, Karnataka",
+  "msme_focus": true,
+  "confidence": "medium",
+  "source_docs": [
+    "profile.md",
+    "raw_bank_policies_for_Appointment_Re_appointment_Removal_of_SA_2024_25.php.md",
+    "raw_index.md",
+    "raw_pages_about.php.md",
+    "raw_pages_achievment.php.md"
+  ],
+  "source_urls": {
+    "website": "https://belagavidccb.com/"
+  },
+  "qdrant_collection": "comp_belagavi_dccb"
+}

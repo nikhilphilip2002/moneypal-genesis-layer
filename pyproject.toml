@@ -1,0 +1,19 @@
+[project]
+name = "moneypal"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "fastapi>=0.139.0",
+    "genesis-core",
+    "uvicorn[standard]>=0.49.0",
+]
+
+[tool.uv.workspace]
+members = [
+    "packages/genesis_core",
+]
+
+[tool.uv.sources]
+genesis-core = { workspace = true }
