@@ -242,11 +242,27 @@ export type AskResponse = {
   results: SearchResult[];
 };
 
+export type RecentIntel = {
+  title: string;
+  module: 'Macro' | 'Competitive' | 'Regulatory';
+  href: string;
+  last_updated: number | null;
+};
+
+export type ActionItem = {
+  title: string;
+  detail: string;
+  priority: 'High' | 'Medium';
+  href: string;
+};
+
 export const intelligence = {
   search: (query: string): Promise<{ query: string; results: SearchResult[] }> =>
     apiRequest('/intelligence/search', { method: 'POST', body: JSON.stringify({ query }) }),
   ask: (query: string): Promise<AskResponse> =>
     apiRequest('/intelligence/ask', { method: 'POST', body: JSON.stringify({ query }) }),
+  recent: (): Promise<RecentIntel[]> => apiRequest('/intelligence/recent'),
+  actionItems: (): Promise<ActionItem[]> => apiRequest('/intelligence/action-items'),
 };
 
 // ─── Health check ───

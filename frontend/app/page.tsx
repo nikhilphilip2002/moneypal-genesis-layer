@@ -8,8 +8,11 @@ import {
   macro,
   competitive,
   regulatory,
+  intelligence,
   type IntelligenceResponse,
   type RegulatoryAlert,
+  type RecentIntel,
+  type ActionItem,
 } from '@/lib/api';
 import { homeRoute, type UserRole } from '@/lib/useUserRole';
 import { useIntel } from '@/lib/useIntel';
@@ -44,14 +47,25 @@ const severityBadge: Record<string, string> = {
   low: 'bg-muted text-muted-foreground',
 };
 
-// Row 3 static content — recent intelligence + hardcoded action items.
-const RECENT_INTELLIGENCE = [
-  { title: 'India Economic Survey — MSME credit outlook refreshed', module: 'Macro', href: '/macro', icon: TrendingUp },
-  { title: 'Kinara Capital institution profile and SWOT updated', module: 'Competitive', href: '/competitive', icon: Building },
-  { title: 'RBI Digital Lending Guidelines briefing regenerated', module: 'Regulatory', href: '/regulatory', icon: Scale },
-  { title: 'Karnataka lending landscape cross-institution summary', module: 'Competitive', href: '/competitive', icon: Building },
-  { title: 'KYC / AML Master Directions compliance actions revised', module: 'Regulatory', href: '/regulatory', icon: Scale },
-];
+// Row 3 — icon per intelligence module for the "Recently Updated" feed.
+const MODULE_ICON: Record<RecentIntel['module'], typeof TrendingUp> = {
+  Macro: TrendingUp,
+  Competitive: Building,
+  Regulatory: Scale,
+};
+
+// "3h ago" style relative label from an epoch-seconds timestamp.
+function relativeTime(epochSeconds: number | null): string {
+  if (!epochSeconds) return 'Recently';
+  const diffMs = Date.now() - epochSeconds * 1000;
+  const mins = Math.round(diffMs / 60000);
+  if (mins < 1) return 'Just now';
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.round(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  const days = Math.round(hrs / 24);
+  return `${days}d ago`;
+}
 
 // Collapsed alert = title + severity, expandable in place for a cleaner scan.
 function AlertRow({ alert }: { alert: RegulatoryAlert }) {
@@ -92,12 +106,6 @@ function AlertRow({ alert }: { alert: RegulatoryAlert }) {
   );
 }
 
-const ACTION_ITEMS = [
-  { title: 'Review Digital Lending compliance checklist', due: 'Before next board meeting', priority: 'High' },
-  { title: 'Assess Kinara Capital ticket-size overlap in Bengaluru districts', due: 'This week', priority: 'Medium' },
-  { title: 'Schedule re-KYC audit for overdue customer accounts', due: 'This month', priority: 'High' },
-];
-
 export default function Dashboard() {
   const router = useRouter();
   const [authorized, setAuthorized] = useState<boolean | null>(null);
@@ -121,6 +129,8 @@ export default function Dashboard() {
   const alerts = useIntel<RegulatoryAlert[]>('regulatory:alerts', regulatory.alerts);
   const snapshot = useIntel<IntelligenceResponse>('macro:snapshot', macro.snapshot);
   const landscape = useIntel<IntelligenceResponse>('competitive:landscape', competitive.landscape);
+  const recent = useIntel<RecentIntel[]>('intelligence:recent', intelligence.recent);
+  const actionItems = useIntel<ActionItem[]>('intelligence:action-items', intelligence.actionItems);
 
   if (authorized === null) {
     return (
@@ -206,22 +216,34 @@ export default function Dashboard() {
                 <CardTitle className="font-headline text-base font-semibold">Recently Updated Intelligence</CardTitle>
               </CardHeader>
               <CardContent className="space-y-2">
-                {RECENT_INTELLIGENCE.map((item, i) => (
-                  <Link
-                    key={i}
-                    href={item.href}
-                    className="group flex w-full items-center gap-3 rounded-lg border border-border/60 bg-background px-3.5 py-3 text-left transition-all hover:border-border hover:bg-accent"
-                  >
-                    <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-border/60 bg-muted text-muted-foreground transition-all group-hover:border-border group-hover:bg-foreground group-hover:text-background">
-                      <item.icon className="h-3.5 w-3.5" />
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <p className="text-[13px] font-medium group-hover:text-accent-foreground">{item.title}</p>
-                      <p className="text-xs text-muted-foreground">{item.module} Intelligence</p>
-                    </div>
-                    <ArrowRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground transition-colors group-hover:text-foreground" />
-                  </Link>
-                ))}
+                {recent.loading &&
+                  [1, 2, 3, 4, 5].map((i) => <div key={i} className="h-14 animate-pulse rounded-lg bg-muted" />)}
+                {recent.error && (
+                  <p className="py-4 text-center text-xs text-muted-foreground">
+                    Recent intelligence is unavailable right now.
+                  </p>
+                )}
+                {recent.data?.map((item, i) => {
+                  const Icon = MODULE_ICON[item.module];
+                  return (
+                    <Link
+                      key={i}
+                      href={item.href}
+                      className="group flex w-full items-center gap-3 rounded-lg border border-border/60 bg-background px-3.5 py-3 text-left transition-all hover:border-border hover:bg-accent"
+                    >
+                      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-border/60 bg-muted text-muted-foreground transition-all group-hover:border-border group-hover:bg-foreground group-hover:text-background">
+                        <Icon className="h-3.5 w-3.5" />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-[13px] font-medium group-hover:text-accent-foreground">{item.title}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {item.module} Intelligence · {relativeTime(item.last_updated)}
+                        </p>
+                      </div>
+                      <ArrowRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground transition-colors group-hover:text-foreground" />
+                    </Link>
+                  );
+                })}
               </CardContent>
             </Card>
 
@@ -233,8 +255,24 @@ export default function Dashboard() {
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-2.5">
-                {ACTION_ITEMS.map((item, i) => (
-                  <div key={i} className="rounded-2xl border border-border/60 bg-card/70 p-3">
+                {actionItems.loading &&
+                  [1, 2, 3].map((i) => <div key={i} className="h-16 animate-pulse rounded-2xl bg-muted" />)}
+                {actionItems.error && (
+                  <p className="py-4 text-center text-xs text-muted-foreground">
+                    Action items are unavailable right now.
+                  </p>
+                )}
+                {actionItems.data?.length === 0 && (
+                  <p className="py-4 text-center text-xs text-muted-foreground">
+                    No open action items. You&apos;re all caught up.
+                  </p>
+                )}
+                {actionItems.data?.map((item, i) => (
+                  <Link
+                    key={i}
+                    href={item.href}
+                    className="block rounded-2xl border border-border/60 bg-card/70 p-3 transition-colors hover:border-border hover:bg-accent"
+                  >
                     <div className="flex items-start justify-between gap-2">
                       <p className="text-[13px] font-medium leading-snug">{item.title}</p>
                       <Badge
@@ -248,8 +286,8 @@ export default function Dashboard() {
                         {item.priority}
                       </Badge>
                     </div>
-                    <p className="mt-1 text-xs text-muted-foreground">{item.due}</p>
-                  </div>
+                    <p className="mt-1 text-xs text-muted-foreground">{item.detail}</p>
+                  </Link>
                 ))}
               </CardContent>
             </Card>

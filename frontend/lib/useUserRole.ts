@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { usePathname } from 'next/navigation'
 import { auth } from '@/lib/api'
 
 // admin = Moneypal Administrator (full platform)
@@ -62,9 +63,13 @@ export function clearUserRoleCache() {
 }
 
 export function useUserRole(): { role: UserRole | null; ready: boolean } {
+  const pathname = usePathname()
   const [role, setRole] = useState<UserRole | null>(cachedRole)
   const [ready, setReady] = useState<boolean>(cachedRole !== null)
 
+  // Re-runs on client-side navigation (e.g. right after login) so consumers
+  // like AppSidebar pick up the role without a hard refresh. fetchRole caches,
+  // so this only hits /me while the role is still unknown.
   useEffect(() => {
     if (typeof window === 'undefined') return
     let cancelled = false
@@ -77,7 +82,7 @@ export function useUserRole(): { role: UserRole | null; ready: boolean } {
     return () => {
       cancelled = true
     }
-  }, [])
+  }, [pathname])
 
   return { role, ready }
 }

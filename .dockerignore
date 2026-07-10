@@ -1,0 +1,12 @@
+# Build context for backend/Dockerfile is the repo root — keep it lean.
+.git
+.env
+.env.*
+tmp/
+docs/
+assets/
+frontend/
+scripts/
+**/__pycache__/
+**/*.pyc
+**/node_modules/

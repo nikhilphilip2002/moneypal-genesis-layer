@@ -15,7 +15,6 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
-import { ThemeToggle } from '@/components/ThemeToggle';
 
 const NAV_LABELS: Record<string, string> = {
   '/': 'Dashboard',
@@ -100,7 +99,6 @@ export default function NavBar() {
         <div className="hidden h-8 w-8 items-center justify-center overflow-hidden sm:flex">
           <Image src="/gicc.png" alt="GICC" width={32} height={32} className="h-7 w-7 object-contain" />
         </div>
-        <ThemeToggle />
         {isLoggedIn && (
           <DropdownMenu>
             <DropdownMenuTrigger asChild>

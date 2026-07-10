@@ -61,7 +61,7 @@ def msme():
 
 def briefing():
     return _brief(
-        "AI Executive Brief — Macro Intelligence",
+        "Macro Intelligence",
         prompts.BRIEFING,
         ["Credit environment", "Karnataka opportunity", "Risk watch", "Strategic move for GICC"],
         "Economic Survey + RBI Annual Report + MSME Ministry",

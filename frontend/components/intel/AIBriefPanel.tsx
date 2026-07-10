@@ -1,12 +1,10 @@
 'use client';
 
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
 import BriefRenderer from '@/components/intel/BriefRenderer';
 import SourceBadge from '@/components/intel/SourceBadge';
 import { ConfidenceBadge, RefreshButton } from '@/components/intel/IntelligenceCard';
 import type { IntelligenceResponse } from '@/lib/api';
-import { Sparkles } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 // Full-width executive briefing panel — the dashboard's hero element.
@@ -23,10 +21,6 @@ export default function AIBriefPanel({
     <Card className={cn('dashboard-surface rounded-[1.75rem] border-border/70 shadow-none', className)}>
       <CardHeader className="pb-3">
         <div className="flex flex-wrap items-center gap-2">
-          <Badge variant="outline" className="rounded-full border-primary/30 bg-primary/5 px-3 py-1 text-[11px] uppercase tracking-[0.18em] text-primary">
-            <Sparkles className="mr-1.5 h-3 w-3" />
-            AI Executive Brief
-          </Badge>
           <ConfidenceBadge confidence={data.confidence} />
           {onRefresh && (
             <span className="ml-auto">

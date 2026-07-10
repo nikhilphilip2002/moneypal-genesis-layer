@@ -7,16 +7,26 @@ import { cn } from '@/lib/utils';
 /**
  * Uniform renderer for LLM-generated brief text.
  *
- * Backend prompts enforce a shared shape — `SECTION HEADING:` lines, `-` bullets,
- * inline `(document, p.X)` citations and `[FACT]` / `[AI INTERPRETATION]` labels.
+ * Backend prompts enforce a shared shape — `SECTION HEADING:` lines, `-` bullets
+ * and inline `(document, p.X)` citations. Fact-vs-interpretation is marked at the
+ * section level (see `INTERPRETIVE_HEADING`) rather than with mid-sentence labels.
  * This component parses that shape into consistent typography so every brief on
  * every page looks identical, instead of raw markdown leaking through.
  */
 
-// ── inline parsing: **bold**, [FACT]/[AI INTERPRETATION], (document, p.X) ──
+// Section headings that are the analyst's forward-looking judgment / recommendations
+// rather than sourced fact — tagged once as "AI interpretation" on the heading.
+const INTERPRETIVE_HEADING =
+  /\b(SO WHAT|MOVES FOR|STRATEGIC|RECOMMEND|IMPLICATION|OUTLOOK|OBSERVATION|TAKEAWAY|WHAT THIS MEANS)\b/;
+
+// Model output occasionally sprinkles these inline labels; we drop them and mark
+// interpretation at the section level instead.
+const INLINE_LABEL = /\s*\[(?:FACT|AI INTERPRETATION)\]\s*/g;
+
+// ── inline parsing: **bold**, (document, p.X) ──
 
 const INLINE_TOKEN =
-  /(\*\*.+?\*\*|\[(?:FACT|AI INTERPRETATION)\]|\((?:Source:\s*)?[^()\n]{2,90}?,\s*(?:p\.|page\s+)[\w?]+\))/g;
+  /(\*\*.+?\*\*|\((?:Source:\s*)?[^()\n]{2,90}?,\s*(?:p\.|page\s+)[\w?]+\))/g;
 
 function renderInline(text: string): ReactNode[] {
   return text.split(INLINE_TOKEN).map((part, i) => {
@@ -26,26 +36,6 @@ function renderInline(text: string): ReactNode[] {
         <strong key={i} className="font-semibold text-foreground">
           {part.slice(2, -2)}
         </strong>
-      );
-    }
-    if (part === '[FACT]') {
-      return (
-        <span
-          key={i}
-          className="mx-0.5 inline-flex items-center rounded-full bg-emerald-100 px-1.5 py-px align-middle text-[10px] font-bold uppercase tracking-wide text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-400"
-        >
-          Fact
-        </span>
-      );
-    }
-    if (part === '[AI INTERPRETATION]') {
-      return (
-        <span
-          key={i}
-          className="mx-0.5 inline-flex items-center rounded-full bg-primary/10 px-1.5 py-px align-middle text-[10px] font-bold uppercase tracking-wide text-primary"
-        >
-          AI Interpretation
-        </span>
       );
     }
     if (/^\((?:Source:\s*)?[^()\n]+,\s*(?:p\.|page\s+)[\w?]+\)$/.test(part)) {
@@ -122,7 +112,7 @@ function parseBlocks(text: string): Block[] {
 }
 
 export default function BriefRenderer({ content, className }: { content: string; className?: string }) {
-  const blocks = parseBlocks(content);
+  const blocks = parseBlocks(content.replace(INLINE_LABEL, ' '));
   return (
     <div className={cn('space-y-2.5', className)}>
       {blocks.map((block, i) => {
@@ -130,9 +120,14 @@ export default function BriefRenderer({ content, className }: { content: string;
           return (
             <p
               key={i}
-              className="pt-1.5 text-[11px] font-bold uppercase tracking-[0.14em] text-primary first:pt-0"
+              className="flex flex-wrap items-center gap-2 pt-1.5 text-[11px] font-bold uppercase tracking-[0.14em] text-primary first:pt-0"
             >
               {block.text}
+              {INTERPRETIVE_HEADING.test(block.text) && (
+                <span className="inline-flex items-center rounded-full bg-primary/10 px-1.5 py-px text-[9px] font-semibold normal-case tracking-normal text-primary">
+                  AI interpretation
+                </span>
+              )}
             </p>
           );
         }

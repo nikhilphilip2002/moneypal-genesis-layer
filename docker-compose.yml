@@ -1,34 +1,35 @@
-# Runs the three intelligence services. Qdrant is external (shared instance at
-# 192.168.1.183:6333) — set GROQ_API_KEY in .env before `docker compose up`.
+# Full stack behind nginx on http://localhost:46100 — set GROQ_API_KEY (and
+# QDRANT_URL for the shared instance at 192.168.1.183:6333) in .env first.
+#
+#   nginx :8070  ->  /api/* -> backend :8000 (prefix stripped)
+#                    /*     -> frontend :3000
 services:
-  macro:
-    build:
-      context: .
-      dockerfile: module1-macro/Dockerfile
-    ports:
-      - "8001:8001"
-    env_file: .env
-
-  competitive:
-    build:
-      context: .
-      dockerfile: module2-competitive/Dockerfile
-    ports:
-      - "8002:8002"
-    env_file: .env
-
-  regulatory:
-    build:
-      context: .
-      dockerfile: module3-regulatory/Dockerfile
-    ports:
-      - "8003:8003"
-    env_file: .env
-
   backend:
     build:
       context: .
       dockerfile: backend/Dockerfile
-    ports:
-      - "8000:8000"
     env_file: .env
+    environment:
+      # Override any host paths from .env with in-container paths.
+      REGULATIONS_DIR: /srv/Regulations
+      REGISTRY_DIR: /srv/backend/registry/regulations
+      LOCAL_INDEX_PATH: /srv/backend/vector_store/regulatory_chunks.jsonl
+    volumes:
+      - ./Regulations:/srv/Regulations:ro
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        # Same-origin API calls: the browser hits nginx at /api/*.
+        NEXT_PUBLIC_API_URL: /api
+
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "48106:80"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      - backend
+      - frontend

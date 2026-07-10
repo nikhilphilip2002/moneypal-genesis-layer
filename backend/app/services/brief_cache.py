@@ -20,7 +20,7 @@ DB_PATH = BASE_DIR / "vector_store" / "genesis.db"
 DEFAULT_TTL = 12 * 3600  # briefs stay stable for half a day
 
 # Bump when prompt/format changes should invalidate previously generated briefs.
-CACHE_VERSION = "v2"
+CACHE_VERSION = "v3"
 
 
 def _conn() -> sqlite3.Connection:
@@ -51,6 +51,20 @@ def put(cache_key: str, payload: Any) -> Any:
             (cache_key, json.dumps(encoded, ensure_ascii=False), time.time()),
         )
     return encoded
+
+
+def recent(limit: int = 5) -> list[tuple[str, float]]:
+    """Most recently generated briefs as (cache_key, generated_at), newest first.
+
+    The stored ``cache_key`` still carries the ``CACHE_VERSION`` prefix — callers
+    strip it before resolving to a display item.
+    """
+    with _conn() as conn:
+        rows = conn.execute(
+            "SELECT cache_key, generated_at FROM briefs ORDER BY generated_at DESC LIMIT ?",
+            (limit,),
+        ).fetchall()
+    return [(row[0], row[1]) for row in rows]
 
 
 def cached(
