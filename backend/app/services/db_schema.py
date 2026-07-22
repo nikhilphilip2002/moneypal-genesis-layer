@@ -21,6 +21,25 @@ BRANCH_METADATA_MAP = {
     "1020": {"name": "Electronic City Industrial Branch", "manager": "Suresh Bhat", "city": "Bangalore"},
 }
 
+NAMED_BRANCHES_CATALOG = [
+    ("Bangalore Central Headquarters", "Rajesh Sharma"),
+    ("MG Road Main Financial Branch", "Ananya Roy"),
+    ("Basavanagudi Credit Hub", "Vikram Deshmukh"),
+    ("Whitefield Tech & MSME Branch", "Pooja Hegde"),
+    ("Malleshwaram Regional Branch", "Siddharth Rao"),
+    ("Hebbal Enterprise Branch", "Kavita Menon"),
+    ("Koramangala Commercial Branch", "Amitabh Sen"),
+    ("Vijayanagar Micro-Lending Branch", "Meera Joshi"),
+    ("Banashankari Growth Branch", "Deepak Verma"),
+    ("Yelahanka Metro Branch", "Rohan Gupta"),
+    ("Rajajinagar Trade Hub", "Sunita Patil"),
+    ("Jayanagar Retail & SME Branch", "Nikhil Swamy"),
+    ("HSR Layout Startup & SME Branch", "Tanvi Kapoor"),
+    ("Marathahalli Commercial Hub", "Arjun Nair"),
+    ("Indiranagar Financial Hub", "Priya Kulkarni"),
+    ("Electronic City Industrial Branch", "Suresh Bhat")
+]
+
 OFFICER_NAME_POOL = [
     ("Priya Patel", "Senior Credit Officer"),
     ("Amit Verma", "Field Relationship Manager"),
@@ -58,6 +77,40 @@ ZONES = [
     {"id": "ZONE-NORTH", "name": "North Zone Division", "director": "Alok Chatterjee", "code": "NORTH"},
     {"id": "ZONE-EAST", "name": "East Zone Division", "director": "Rina Sen", "code": "EAST"}
 ]
+
+def get_branch_metadata(raw_code: Any) -> Dict[str, str]:
+    if raw_code is None:
+        raw_code = "1001"
+    
+    code_str = str(raw_code).strip()
+    if code_str.endswith(".0"):
+        code_str = code_str[:-2]
+    
+    if code_str in BRANCH_METADATA_MAP:
+        return BRANCH_METADATA_MAP[code_str]
+    
+    try:
+        val_int = int(float(code_str))
+        int_key = str(val_int)
+        if int_key in BRANCH_METADATA_MAP:
+            return BRANCH_METADATA_MAP[int_key]
+        
+        # Oracle 1-16 index mapping
+        if 1 <= val_int <= len(NAMED_BRANCHES_CATALOG):
+            name, mgr = NAMED_BRANCHES_CATALOG[val_int - 1]
+            return {"name": name, "manager": mgr, "city": "Bangalore"}
+        
+        idx = abs(val_int) % len(NAMED_BRANCHES_CATALOG)
+        name, mgr = NAMED_BRANCHES_CATALOG[idx]
+        return {"name": name, "manager": mgr, "city": "Bangalore"}
+    except (ValueError, TypeError):
+        pass
+    
+    return {
+        "name": f"{code_str.title()} Regional Branch",
+        "manager": "Rajesh Sharma",
+        "city": "Karnataka"
+    }
 
 def get_connection():
     host = os.environ.get("POSTGRES_HOST", "100.70.118.31")
@@ -110,7 +163,7 @@ def search_entities(query_str: str, entity_type: str = "all") -> List[Dict[str, 
                 results.append({
                     "id": f"BRN-{code}",
                     "title": meta["name"],
-                    "subtitle": f"Branch #{code} • Manager: {meta['manager']}",
+                    "subtitle": f"Branch Manager: {meta['manager']}",
                     "type": "manager",
                     "view_level": "manager",
                     "manager_id": f"BRN-{code}"
@@ -148,11 +201,11 @@ def search_entities(query_str: str, entity_type: str = "all") -> List[Dict[str, 
             c_rows = cur.fetchall()
             for r in c_rows:
                 br_code = str(r[4] or "1001")
-                br_name = BRANCH_METADATA_MAP.get(br_code, {}).get("name", f"Branch #{br_code}")
+                br_meta = get_branch_metadata(br_code)
                 results.append({
                     "id": f"CUST-{r[0]}",
                     "title": str(r[1]),
-                    "subtitle": f"Customer ID: #{r[0]} • Account #{r[2]} • {br_name}",
+                    "subtitle": f"Customer ID: #{r[0]} • Account #{r[2]} • {br_meta['name']}",
                     "type": "customer",
                     "view_level": "customer",
                     "customer_id": str(r[0])
@@ -205,11 +258,7 @@ def get_db_schema_graph(
         branch_rows = cur.fetchall()
         for i, r in enumerate(branch_rows):
             brn_code = str(r[0])
-            brn_meta = BRANCH_METADATA_MAP.get(brn_code, {
-                "name": f"Branch #{brn_code}",
-                "manager": f"Manager #{brn_code}",
-                "city": "Karnataka"
-            })
+            brn_meta = get_branch_metadata(brn_code)
             zone_obj = ZONES[i % len(ZONES)]
             real_branches.append({
                 "id": f"BRN-{brn_code}",
@@ -252,7 +301,6 @@ def get_db_schema_graph(
     selected_agent = None
     selected_customer = None
 
-    # Search Overrides
     if search_term and search_term.strip():
         search_res = search_entities(search_term, entity_type=entity_type or "all")
         if search_res:
@@ -354,7 +402,6 @@ def get_db_schema_graph(
                 "manager_id": br["id"],
                 "details": {
                     "Branch Name": br["display_title"],
-                    "Branch Code": f"#{br['code']}",
                     "Manager Name": br["manager"],
                     "Active Borrowers": f"{br['cust_count']:,} Customers",
                     "Loan Accounts": f"{br['acnt_count']:,} Accounts",
@@ -377,7 +424,6 @@ def get_db_schema_graph(
         selected_mgr = next((b for b in real_branches if b["id"] == target_mgr_id), real_branches[0])
         selected_zonal = next((z for z in ZONES if z["id"] == selected_mgr["zone_id"]), ZONES[0])
 
-        # Parent Zonal Node
         nodes.append({
             "id": selected_zonal["id"],
             "type": "zonal",
@@ -393,7 +439,6 @@ def get_db_schema_graph(
             }
         })
 
-        # Selected Branch Manager Node
         nodes.append({
             "id": selected_mgr["id"],
             "type": "manager",
@@ -405,7 +450,6 @@ def get_db_schema_graph(
             "manager_id": selected_mgr["id"],
             "details": {
                 "Branch Name": selected_mgr["display_title"],
-                "Branch Code": f"#{selected_mgr['code']}",
                 "Manager Name": selected_mgr["manager"],
                 "Zone": selected_zonal["name"],
                 "Active Customers": f"{selected_mgr['cust_count']:,} Borrowers"
@@ -421,7 +465,8 @@ def get_db_schema_graph(
         })
 
         for idx in range(3):
-            off_name, off_role = OFFICER_NAME_POOL[(int(selected_mgr["code"]) + idx) % len(OFFICER_NAME_POOL)]
+            off_code_val = int(selected_mgr["code"]) if selected_mgr["code"].isdigit() else 1001
+            off_name, off_role = OFFICER_NAME_POOL[(off_code_val + idx) % len(OFFICER_NAME_POOL)]
             agt_id = f"AGT-{selected_mgr['code']}-{idx+1}"
             cust_share = round(selected_mgr["cust_count"] / 3)
 
@@ -439,7 +484,6 @@ def get_db_schema_graph(
                     "Officer Name": off_name,
                     "Designation": off_role,
                     "Branch": selected_mgr["display_title"],
-                    "Branch Code": f"#{selected_mgr['code']}",
                     "Serviced Borrowers": f"{cust_share:,} Customers"
                 }
             })
@@ -459,7 +503,8 @@ def get_db_schema_graph(
         selected_mgr = next((b for b in real_branches if b["code"] == brn_code), real_branches[0])
         selected_zonal = next((z for z in ZONES if z["id"] == selected_mgr["zone_id"]), ZONES[0])
         
-        off_name, off_role = OFFICER_NAME_POOL[int(brn_code) % len(OFFICER_NAME_POOL)]
+        brn_code_val = int(brn_code) if brn_code.isdigit() else 1001
+        off_name, off_role = OFFICER_NAME_POOL[brn_code_val % len(OFFICER_NAME_POOL)]
         selected_agent = {
             "id": agent_id or f"AGT-{brn_code}-1",
             "name": off_name,
@@ -467,7 +512,6 @@ def get_db_schema_graph(
             "manager_id": selected_mgr["id"]
         }
 
-        # Parent Branch Manager Node
         nodes.append({
             "id": selected_mgr["id"],
             "type": "manager",
@@ -483,7 +527,6 @@ def get_db_schema_graph(
             }
         })
 
-        # Selected Field Officer Node
         nodes.append({
             "id": selected_agent["id"],
             "type": "agent",
@@ -497,7 +540,6 @@ def get_db_schema_graph(
                 "Officer Name": off_name,
                 "Role": off_role,
                 "Branch": selected_mgr["display_title"],
-                "Branch Code": f"#{selected_mgr['code']}",
                 "Zone": selected_zonal["name"]
             }
         })
@@ -588,7 +630,7 @@ def get_db_schema_graph(
             c_row = cur.fetchone()
             if c_row:
                 br_code_str = str(c_row[6] or "1001")
-                br_name = BRANCH_METADATA_MAP.get(br_code_str, {}).get("name", f"Branch #{br_code_str}")
+                br_meta = get_branch_metadata(br_code_str)
                 target_cust = {
                     "cust_id": str(c_row[0]),
                     "cust_name": str(c_row[1]),
@@ -597,7 +639,7 @@ def get_db_schema_graph(
                     "loan_type": str(c_row[4] or "Term Loan"),
                     "sanc_date": str(c_row[5] or "2025-10-01"),
                     "brn_code": br_code_str,
-                    "brn_name": br_name
+                    "brn_name": br_meta["name"]
                 }
             conn.close()
         except Exception:
@@ -630,7 +672,6 @@ def get_db_schema_graph(
                 "Customer Name": target_cust["cust_name"],
                 "Customer ID": str(target_cust["cust_id"]),
                 "Branch": target_cust.get("brn_name", "Bangalore Central Headquarters"),
-                "Branch Code": f"#{target_cust.get('brn_code', '1001')}",
                 "Risk Rating": "Grade A (Compliant)",
                 "Total Sanction Limit": f"₹{target_cust['sanc_amt']:,}"
             }
