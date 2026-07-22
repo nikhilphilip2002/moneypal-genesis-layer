@@ -1,4 +1,4 @@
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+const API_URL = (process.env.NEXT_PUBLIC_API_URL || 'http://100.70.118.31:4321/api').replace(/\/$/, '');
 
 // ─── Shared response contract (mirrors genesis_core.schema) ───
 
@@ -210,8 +210,22 @@ export const regulatory = {
 
 export const admin = {
   status: (): Promise<PlatformStatus> => apiRequest('/admin/status'),
-  dbSchema: (search?: string): Promise<any> =>
-    apiRequest(`/admin/db-schema${search ? `?search=${encodeURIComponent(search)}` : ''}`),
+  dbSchema: (params?: { search?: string; view_level?: string; zonal_id?: string; manager_id?: string; agent_id?: string; customer_id?: string } | string): Promise<any> => {
+    let q = '';
+    if (typeof params === 'string') {
+      q = params ? `?search=${encodeURIComponent(params)}` : '';
+    } else if (params) {
+      const parts: string[] = [];
+      if (params.search) parts.push(`search=${encodeURIComponent(params.search)}`);
+      if (params.view_level) parts.push(`view_level=${encodeURIComponent(params.view_level)}`);
+      if (params.zonal_id) parts.push(`zonal_id=${encodeURIComponent(params.zonal_id)}`);
+      if (params.manager_id) parts.push(`manager_id=${encodeURIComponent(params.manager_id)}`);
+      if (params.agent_id) parts.push(`agent_id=${encodeURIComponent(params.agent_id)}`);
+      if (params.customer_id) parts.push(`customer_id=${encodeURIComponent(params.customer_id)}`);
+      if (parts.length > 0) q = '?' + parts.join('&');
+    }
+    return apiRequest(`/admin/db-schema${q}`);
+  },
   addInstitution: (data: { name: string; type: string; website?: string; headquarters?: string; msme_focus?: boolean }) =>
     apiRequest('/competitive/institutions', { method: 'POST', body: JSON.stringify(data) }),
   addRegulation: (data: { display_name: string; rbi_url?: string; applicability?: string; effective_date?: string; priority?: string }) =>

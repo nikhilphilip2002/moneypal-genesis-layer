@@ -26,7 +26,13 @@ import {
   ZoomIn,
   ZoomOut,
   RotateCcw,
-  Move
+  Move,
+  ChevronRight,
+  ShieldCheck,
+  UserCheck,
+  Award,
+  Globe2,
+  Building
 } from 'lucide-react';
 
 const ForceGraph2D = dynamic(() => import('react-force-graph-2d'), {
@@ -35,7 +41,7 @@ const ForceGraph2D = dynamic(() => import('react-force-graph-2d'), {
     <div className="flex h-[520px] items-center justify-center bg-card/30 rounded-2xl border border-border/50">
       <div className="flex items-center gap-2 text-muted-foreground animate-pulse text-xs">
         <Network className="h-4 w-4 animate-spin text-primary" />
-        <span>Loading expanded graph engine...</span>
+        <span>Loading 5-Tier Enterprise Curiosity Graph...</span>
       </div>
     </div>
   ),
@@ -43,12 +49,16 @@ const ForceGraph2D = dynamic(() => import('react-force-graph-2d'), {
 
 interface GraphNode {
   id: string;
-  type: 'account' | 'customer' | 'disbursement' | 'repayment' | 'schedule';
+  type: 'executive' | 'zonal' | 'manager' | 'agent' | 'customer' | 'account' | 'disbursement' | 'repayment';
   title: string;
   subtitle?: string;
   node_label: string;
   color: string;
   size: number;
+  zonal_id?: string;
+  manager_id?: string;
+  agent_id?: string;
+  customer_id?: string;
   details: Record<string, string>;
   x?: number;
   y?: number;
@@ -62,19 +72,49 @@ interface GraphEdge {
   weight?: number;
 }
 
-interface SampleAccountItem {
-  account_num: string;
-  cust_id: string;
-  cust_name: string;
-  amount: string;
+interface ZonalItem {
+  id: string;
+  name: string;
+  role: string;
+  zone: string;
+  color: string;
 }
 
-interface InstanceGraphPayload {
+interface ManagerItem {
+  id: string;
+  name: string;
+  role: string;
+  branch: string;
+  zone_id: string;
+  color: string;
+}
+
+interface AgentItem {
+  id: string;
+  name: string;
+  role: string;
+  code: string;
+  manager_id: string;
+  color: string;
+}
+
+interface HierarchicalGraphPayload {
   nodes: GraphNode[];
   edges: GraphEdge[];
-  selected_account: string;
-  customer_name?: string;
-  sample_accounts: SampleAccountItem[];
+  view_level: 'executive' | 'zonal' | 'manager' | 'agent' | 'customer';
+  executive_info: {
+    id: string;
+    name: string;
+    role: string;
+    org: string;
+  };
+  zonals: ZonalItem[];
+  selected_zonal?: ZonalItem | null;
+  managers: ManagerItem[];
+  selected_manager?: ManagerItem | null;
+  agents: AgentItem[];
+  selected_agent?: AgentItem | null;
+  selected_customer?: any;
   metadata: {
     is_live: boolean;
     schema: string;
@@ -89,43 +129,77 @@ export default function DBSchemaGraph() {
   const containerRef = useRef<HTMLDivElement>(null);
 
   const [loading, setLoading] = useState(true);
-  const [data, setData] = useState<InstanceGraphPayload | null>(null);
+  const [data, setData] = useState<HierarchicalGraphPayload | null>(null);
+  
+  // Navigation State Across 5 Enterprise Tiers
+  const [viewLevel, setViewLevel] = useState<'executive' | 'zonal' | 'manager' | 'agent' | 'customer'>('executive');
+  const [selectedZonalId, setSelectedZonalId] = useState<string | null>(null);
+  const [selectedManagerId, setSelectedManagerId] = useState<string | null>(null);
+  const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
+  const [selectedCustomerId, setSelectedCustomerId] = useState<string | null>(null);
   const [selectedNode, setSelectedNode] = useState<GraphNode | null>(null);
   const [hoverNode, setHoverNode] = useState<GraphNode | null>(null);
+  
   const [searchQuery, setSearchQuery] = useState('');
   const [isExpanded, setIsExpanded] = useState(false);
   const [dimensions, setDimensions] = useState({ width: 800, height: 520 });
 
   const isDark = theme === 'dark';
 
-  const loadGraph = useCallback(async (term?: string) => {
+  const loadGraph = useCallback(async (opts?: {
+    level?: 'executive' | 'zonal' | 'manager' | 'agent' | 'customer';
+    zonalId?: string;
+    managerId?: string;
+    agentId?: string;
+    custId?: string;
+    search?: string;
+  }) => {
     setLoading(true);
     try {
-      const res = await admin.dbSchema(term);
+      const levelToFetch = opts?.level || viewLevel;
+      const zId = opts?.zonalId !== undefined ? opts.zonalId : selectedZonalId;
+      const mId = opts?.managerId !== undefined ? opts.managerId : selectedManagerId;
+      const agtId = opts?.agentId !== undefined ? opts.agentId : selectedAgentId;
+      const cId = opts?.custId !== undefined ? opts.custId : selectedCustomerId;
+      const term = opts?.search !== undefined ? opts.search : searchQuery;
+
+      const res = await admin.dbSchema({
+        view_level: levelToFetch,
+        zonal_id: zId || undefined,
+        manager_id: mId || undefined,
+        agent_id: agtId || undefined,
+        customer_id: cId || undefined,
+        search: term || undefined
+      });
+
       setData(res);
+      setViewLevel(res.view_level || levelToFetch);
+
       if (res && res.nodes && res.nodes.length > 0) {
-        const custNode = res.nodes.find((n: GraphNode) => n.type === 'customer') || res.nodes[0];
-        setSelectedNode(custNode);
+        const primaryNode = res.nodes.find((n: GraphNode) => 
+          n.type === 'customer' || n.type === 'agent' || n.type === 'manager' || n.type === 'zonal' || n.type === 'executive'
+        ) || res.nodes[0];
+        setSelectedNode(primaryNode);
       }
     } catch (err) {
-      console.error('Failed to load instance graph:', err);
+      console.error('Failed to load Enterprise Curiosity Graph:', err);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [viewLevel, selectedZonalId, selectedManagerId, selectedAgentId, selectedCustomerId, searchQuery]);
 
   useEffect(() => {
     loadGraph();
   }, [loadGraph]);
 
-  // Dynamic dimension calculation for full screen expansion
+  // Dimension calculations for expansion
   useEffect(() => {
     const handleResize = () => {
       if (containerRef.current) {
         const rect = containerRef.current.getBoundingClientRect();
         setDimensions({
           width: rect.width,
-          height: isExpanded ? Math.max(650, window.innerHeight - 180) : 520,
+          height: isExpanded ? Math.max(660, window.innerHeight - 200) : 520,
         });
       }
     };
@@ -138,7 +212,7 @@ export default function DBSchemaGraph() {
     };
   }, [data, isExpanded]);
 
-  // Apply strong repulsion & link distance physics so nodes spread out legibly
+  // Apply D3 force physics to separate nodes cleanly
   const forceGraphData = useMemo(() => {
     return data
       ? {
@@ -157,52 +231,96 @@ export default function DBSchemaGraph() {
     if (!graphRef.current || forceGraphData.nodes.length === 0) return;
 
     const timer = setTimeout(() => {
-      // Strong repulsion to prevent congestion
       const chargeForce = graphRef.current.d3Force('charge');
       if (chargeForce?.strength) {
-        chargeForce.strength(-650);
+        chargeForce.strength(-680);
       }
-
-      // Link distance to spread connected nodes comfortably
       const linkForce = graphRef.current.d3Force('link');
       if (linkForce?.distance) {
-        linkForce.distance(160);
+        linkForce.distance(180);
       }
-
       graphRef.current.zoomToFit(500, 90);
     }, 150);
 
     return () => clearTimeout(timer);
   }, [forceGraphData, dimensions]);
 
+  // 5-Tier Breadcrumb Navigation Handlers
+  const navigateToExecutive = () => {
+    setViewLevel('executive');
+    setSelectedZonalId(null);
+    setSelectedManagerId(null);
+    setSelectedAgentId(null);
+    setSelectedCustomerId(null);
+    setSearchQuery('');
+    loadGraph({ level: 'executive', zonalId: undefined, managerId: undefined, agentId: undefined, custId: undefined, search: '' });
+  };
+
+  const navigateToZonal = (zonalId: string) => {
+    setViewLevel('zonal');
+    setSelectedZonalId(zonalId);
+    setSelectedManagerId(null);
+    setSelectedAgentId(null);
+    setSelectedCustomerId(null);
+    loadGraph({ level: 'zonal', zonalId, managerId: undefined, agentId: undefined, custId: undefined });
+  };
+
+  const navigateToManager = (managerId: string) => {
+    setViewLevel('manager');
+    setSelectedManagerId(managerId);
+    setSelectedAgentId(null);
+    setSelectedCustomerId(null);
+    loadGraph({ level: 'manager', managerId, agentId: undefined, custId: undefined });
+  };
+
+  const navigateToAgent = (agentId: string) => {
+    setViewLevel('agent');
+    setSelectedAgentId(agentId);
+    setSelectedCustomerId(null);
+    loadGraph({ level: 'agent', agentId, custId: undefined });
+  };
+
+  const navigateToCustomer = (custId: string) => {
+    setViewLevel('customer');
+    setSelectedCustomerId(custId);
+    loadGraph({ level: 'customer', custId });
+  };
+
+  const handleNodeClick = (node: GraphNode) => {
+    setSelectedNode(node);
+
+    // Dynamic 5-Tier Drilldown based on clicked node type!
+    if (node.type === 'zonal' && node.zonal_id) {
+      navigateToZonal(node.zonal_id);
+    } else if (node.type === 'manager' && node.manager_id) {
+      navigateToManager(node.manager_id);
+    } else if (node.type === 'agent' && node.agent_id) {
+      navigateToAgent(node.agent_id);
+    } else if (node.type === 'customer' && node.customer_id) {
+      navigateToCustomer(node.customer_id);
+    } else if (node.type === 'executive') {
+      navigateToExecutive();
+    } else if (graphRef.current && node.x != null && node.y != null) {
+      graphRef.current.centerAt(node.x, node.y, 600);
+      graphRef.current.zoom(2.0, 600);
+    }
+  };
+
   const handleSearchSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (searchQuery.trim()) {
-      loadGraph(searchQuery.trim());
+      loadGraph({ search: searchQuery.trim() });
     }
-  };
-
-  const selectSampleAccount = (accNum: string) => {
-    setSearchQuery(accNum);
-    loadGraph(accNum);
   };
 
   const handleZoomIn = () => {
-    if (graphRef.current) {
-      graphRef.current.zoom(graphRef.current.zoom() * 1.3, 300);
-    }
+    if (graphRef.current) graphRef.current.zoom(graphRef.current.zoom() * 1.3, 300);
   };
-
   const handleZoomOut = () => {
-    if (graphRef.current) {
-      graphRef.current.zoom(graphRef.current.zoom() / 1.3, 300);
-    }
+    if (graphRef.current) graphRef.current.zoom(graphRef.current.zoom() / 1.3, 300);
   };
-
   const handleResetZoom = () => {
-    if (graphRef.current) {
-      graphRef.current.zoomToFit(400, 90);
-    }
+    if (graphRef.current) graphRef.current.zoomToFit(400, 90);
   };
 
   const linksByNode = useMemo(() => {
@@ -238,11 +356,11 @@ export default function DBSchemaGraph() {
         if (!isConnected) isDimmed = true;
       }
 
-      // Outer Selection Ring Glow
+      // Outer Glow Ring
       if (isSelected || isHovered) {
         ctx.beginPath();
         ctx.arc(node.x!, node.y!, size + 6 / globalScale, 0, 2 * Math.PI);
-        ctx.fillStyle = isDark ? 'rgba(56, 189, 248, 0.25)' : 'rgba(7, 95, 172, 0.25)';
+        ctx.fillStyle = isDark ? 'rgba(124, 58, 237, 0.25)' : 'rgba(79, 70, 229, 0.25)';
         ctx.fill();
       }
 
@@ -266,7 +384,7 @@ export default function DBSchemaGraph() {
       ctx.lineWidth = (isSelected ? 3 : isHovered ? 2.5 : 1.5) / globalScale;
       ctx.stroke();
 
-      // Text Label Pill Background for Maximum Legibility
+      // Text Label Pill Background
       const titleText = String(node.title || '');
       const baseFontSize = isHovered || isSelected ? 13 : 11;
       const scaledFontSize = Math.min(baseFontSize / Math.max(globalScale * 0.5, 0.35), baseFontSize * 1.5);
@@ -277,7 +395,6 @@ export default function DBSchemaGraph() {
       const textY = node.y! + size + 5;
 
       if (!isDimmed) {
-        // Draw background pill behind text so it never collides with lines
         ctx.fillStyle = isDark ? 'rgba(15, 23, 42, 0.88)' : 'rgba(255, 255, 255, 0.92)';
         const padX = 6;
         const padY = 3;
@@ -294,7 +411,6 @@ export default function DBSchemaGraph() {
         ctx.lineWidth = 1 / globalScale;
         ctx.stroke();
 
-        // Print Text
         ctx.textAlign = 'center';
         ctx.textBaseline = 'top';
         ctx.fillStyle = isDark ? '#f8fafc' : '#0f172a';
@@ -330,7 +446,7 @@ export default function DBSchemaGraph() {
 
       ctx.beginPath();
       ctx.moveTo(start.x, start.y);
-      ctx.lineTo(end.x, end.y); // CORRECT GEOMETRY: end.x, end.y
+      ctx.lineTo(end.x, end.y);
 
       let opacity = isDimmed ? 0.08 : 0.45;
       let strokeColor = isDark ? '148, 163, 184' : '100, 116, 139';
@@ -338,7 +454,7 @@ export default function DBSchemaGraph() {
 
       if (isConnectedToHover) {
         opacity = 0.95;
-        strokeColor = isDark ? '56, 189, 248' : '7, 95, 172';
+        strokeColor = isDark ? '168, 85, 247' : '124, 58, 237';
         lineWidth = 2.5;
       }
 
@@ -346,7 +462,6 @@ export default function DBSchemaGraph() {
       ctx.lineWidth = lineWidth;
       ctx.stroke();
 
-      // Draw connection edge label
       if ((globalScale > 0.75 || isConnectedToHover) && !isDimmed) {
         const midX = (start.x + end.x) / 2;
         const midY = (start.y + end.y) / 2;
@@ -374,26 +489,24 @@ export default function DBSchemaGraph() {
     ctx.fill();
   }, []);
 
-  const focusNode = useCallback((node: GraphNode) => {
-    setSelectedNode(node);
-    if (graphRef.current && node.x != null && node.y != null) {
-      graphRef.current.centerAt(node.x, node.y, 600);
-      graphRef.current.zoom(2.0, 600);
-    }
-  }, []);
-
   const getNodeIcon = (type: string) => {
     switch (type) {
+      case 'executive':
+        return <Award className="h-4 w-4 text-purple-500" />;
+      case 'zonal':
+        return <Globe2 className="h-4 w-4 text-violet-500" />;
+      case 'manager':
+        return <Building className="h-4 w-4 text-indigo-500" />;
+      case 'agent':
+        return <UserCheck className="h-4 w-4 text-sky-500" />;
       case 'customer':
-        return <Building2 className="h-4 w-4 text-sky-500" />;
+        return <Building2 className="h-4 w-4 text-teal-500" />;
       case 'account':
         return <CreditCard className="h-4 w-4 text-primary" />;
       case 'disbursement':
         return <ArrowUpRight className="h-4 w-4 text-orange-500" />;
       case 'repayment':
-        return <ArrowDownLeft className="h-4 w-4 text-teal-500" />;
-      case 'schedule':
-        return <Calendar className="h-4 w-4 text-purple-500" />;
+        return <ArrowDownLeft className="h-4 w-4 text-emerald-500" />;
       default:
         return <Info className="h-4 w-4 text-muted-foreground" />;
     }
@@ -402,20 +515,18 @@ export default function DBSchemaGraph() {
   return (
     <div className={`flex flex-col h-full overflow-hidden ${isExpanded ? 'fixed inset-0 z-50 bg-background p-6' : ''}`}>
       {/* Top Header & Search Control Bar */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between border-b pb-4 mb-4 gap-3 shrink-0">
+      <div className="flex flex-col md:flex-row md:items-center justify-between border-b pb-4 mb-3 gap-3 shrink-0">
         <div>
           <div className="flex items-center gap-2">
             <h2 className="text-base font-headline font-semibold tracking-tight md:text-lg flex items-center gap-2">
-              <Network className="h-5 w-5 text-primary" /> Data Curiosity Graph
+              <Network className="h-5 w-5 text-primary" /> Enterprise Curiosity Graph
             </h2>
-            {data?.customer_name && (
-              <Badge variant="outline" className="text-xs border-primary/30 bg-primary/5 text-primary font-semibold">
-                Borrower: {data.customer_name}
-              </Badge>
-            )}
+            <Badge variant="outline" className="text-xs border-purple-500/30 bg-purple-500/10 text-purple-500 font-semibold uppercase">
+              Tier: {viewLevel}
+            </Badge>
           </div>
           <p className="text-[11px] text-muted-foreground mt-0.5">
-            Interactive, movable entity network. Drag nodes to reposition, scroll to zoom, or search customer accounts.
+            Full 5-tier governance hierarchy. Click any Executive, Zone, Manager, Agent, or Customer node to drill down.
           </p>
         </div>
 
@@ -424,17 +535,17 @@ export default function DBSchemaGraph() {
             <div className="relative">
               <Search className="h-3.5 w-3.5 absolute left-2.5 top-2.5 text-muted-foreground" />
               <Input
-                placeholder="Search Customer Name or Account #..."
+                placeholder="Search Executive, Zone, Manager, Officer, or Customer..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="h-8 text-xs pl-8 w-[220px] md:w-[260px] rounded-xl border-border/80"
+                className="h-8 text-xs pl-8 w-[220px] md:w-[280px] rounded-xl border-border/80"
               />
               {searchQuery && (
                 <button
                   type="button"
                   onClick={() => {
                     setSearchQuery('');
-                    loadGraph();
+                    loadGraph({ search: '' });
                   }}
                   className="absolute right-2.5 top-2.5 text-muted-foreground hover:text-foreground"
                 >
@@ -466,117 +577,94 @@ export default function DBSchemaGraph() {
         </div>
       </div>
 
-      {/* Quick Select Sample Accounts Pills */}
-      {data?.sample_accounts && data.sample_accounts.length > 0 && (
-        <div className="flex items-center gap-2 mb-3 overflow-x-auto pb-1 shrink-0">
-          <span className="text-[10px] uppercase font-semibold text-muted-foreground shrink-0 tracking-wider">
-            Quick Select Borrower:
-          </span>
-          <div className="flex items-center gap-1.5 overflow-x-auto">
-            {data.sample_accounts.map((acc) => {
-              const isSelected = data.selected_account === acc.account_num;
-              return (
-                <button
-                  key={acc.account_num}
-                  type="button"
-                  onClick={() => selectSampleAccount(acc.account_num)}
-                  className={`text-[11px] px-2.5 py-1 rounded-lg border transition-all shrink-0 flex items-center gap-1.5 ${
-                    isSelected
-                      ? 'border-primary bg-primary/10 text-primary font-semibold'
-                      : 'border-border/70 hover:bg-muted/50 text-muted-foreground'
-                  }`}
-                >
-                  <span className="font-medium">{acc.cust_name}</span>
-                  <span className="font-mono text-[9px] opacity-75">(#{acc.account_num})</span>
-                </button>
-              );
-            })}
-          </div>
-        </div>
-      )}
+      {/* 5-Tier Breadcrumb Navigation Header */}
+      <div className="flex flex-wrap items-center justify-between gap-2 mb-3 bg-muted/40 p-2.5 rounded-xl border shrink-0 text-xs">
+        <div className="flex items-center gap-1.5 font-medium overflow-x-auto">
+          {/* Level 0: Executive MD */}
+          <button
+            onClick={navigateToExecutive}
+            className={`flex items-center gap-1 px-2.5 py-1 rounded-lg border transition-all ${
+              viewLevel === 'executive'
+                ? 'bg-purple-500/15 border-purple-500 text-purple-600 font-semibold dark:text-purple-400'
+                : 'border-border/70 hover:bg-muted text-muted-foreground'
+            }`}
+          >
+            <Award className="h-3.5 w-3.5 text-purple-500" />
+            MD & CEO: Dr. Vikramaditya Rao
+          </button>
 
-      {/* Main Workspace Layout */}
-      <div className="flex flex-col lg:flex-row gap-4 min-h-0 flex-1">
-        {/* Force-directed Link Graph Canvas */}
-        <div ref={containerRef} className="flex-1 bg-card/20 rounded-2xl border border-border/70 overflow-hidden relative flex flex-col justify-between">
-          {/* Top Left Legend */}
-          <div className="absolute top-3 left-3 z-10 flex flex-col gap-1 bg-background/85 backdrop-blur-md border rounded-xl p-2.5 max-w-[210px] pointer-events-none shadow-sm">
-            <span className="text-[9px] uppercase tracking-wider font-semibold text-muted-foreground flex items-center gap-1">
-              <Move className="h-2.5 w-2.5" /> Drag & Click Nodes
-            </span>
-            <div className="space-y-1 mt-1 text-[10px]">
-              <div className="flex items-center gap-1.5">
-                <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: '#0284c7' }} />
-                <span className="font-medium text-foreground/80">Customer / Borrower</span>
-              </div>
-              <div className="flex items-center gap-1.5">
-                <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: '#075fac' }} />
-                <span className="font-medium text-foreground/80">Master Loan Account</span>
-              </div>
-              <div className="flex items-center gap-1.5">
-                <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: '#ea580c' }} />
-                <span className="font-medium text-foreground/80">Disbursement Payout</span>
-              </div>
-              <div className="flex items-center gap-1.5">
-                <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: '#0f766e' }} />
-                <span className="font-medium text-foreground/80">Repayment Credit</span>
-              </div>
-              <div className="flex items-center gap-1.5">
-                <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: '#7c3aed' }} />
-                <span className="font-medium text-foreground/80">Amortization Schedule</span>
-              </div>
-            </div>
-          </div>
-
-          {/* Top Right Zoom Controls */}
-          <div className="absolute top-3 right-3 z-10 flex items-center gap-1 bg-background/85 backdrop-blur-md border rounded-xl p-1 shadow-sm">
-            <Button variant="ghost" size="sm" onClick={handleZoomIn} title="Zoom In" className="h-7 w-7 p-0 rounded-lg">
-              <ZoomIn className="h-3.5 w-3.5" />
-            </Button>
-            <Button variant="ghost" size="sm" onClick={handleZoomOut} title="Zoom Out" className="h-7 w-7 p-0 rounded-lg">
-              <ZoomOut className="h-3.5 w-3.5" />
-            </Button>
-            <Button variant="ghost" size="sm" onClick={handleResetZoom} title="Reset View" className="h-7 w-7 p-0 rounded-lg">
-              <RotateCcw className="h-3.5 w-3.5" />
-            </Button>
-          </div>
-
-          {data && (
-            <ForceGraph2D
-              ref={graphRef}
-              width={dimensions.width}
-              height={dimensions.height}
-              graphData={forceGraphData}
-              backgroundColor={isDark ? '#090d16' : '#fafafa'}
-              nodeCanvasObject={paintNode}
-              linkCanvasObject={paintLink}
-              onNodeClick={(node) => focusNode(node as GraphNode)}
-              onNodeHover={(node) => setHoverNode(node ? (node as GraphNode) : null)}
-              enableNodeDrag={true}
-              enableZoomInteraction={true}
-              enablePanInteraction={true}
-              nodePointerAreaPaint={drawNodePointerArea}
-              cooldownTicks={200}
-              d3AlphaDecay={0.02}
-              d3VelocityDecay={0.2}
-              onEngineStop={() => {
-                graphRef.current?.zoomToFit(300, 80);
-              }}
-            />
+          {/* Level 1: Zonal Director */}
+          {(viewLevel === 'zonal' || viewLevel === 'manager' || viewLevel === 'agent' || viewLevel === 'customer') && data?.selected_zonal && (
+            <>
+              <ChevronRight className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+              <button
+                onClick={() => navigateToZonal(data.selected_zonal!.id)}
+                className={`flex items-center gap-1 px-2.5 py-1 rounded-lg border transition-all ${
+                  viewLevel === 'zonal'
+                    ? 'bg-violet-500/15 border-violet-500 text-violet-600 font-semibold dark:text-violet-400'
+                    : 'border-border/70 hover:bg-muted text-muted-foreground'
+                }`}
+              >
+                <Globe2 className="h-3.5 w-3.5 text-violet-500" />
+                Zone: {data.selected_zonal.name}
+              </button>
+            </>
           )}
 
-          {/* Bottom Active Summary Bar */}
-          <div className="absolute bottom-3 left-3 z-10 flex items-center gap-2 bg-background/85 backdrop-blur-md px-3 py-1.5 rounded-xl border border-border/80 text-[11px] shadow-sm">
-            <Badge variant="outline" className="font-semibold text-[10px]">
-              {data?.customer_name}
-            </Badge>
-            <span className="font-mono text-muted-foreground">• Account #{data?.selected_account}</span>
-            <span className="text-muted-foreground">• {data?.nodes.length || 0} moveable nodes</span>
-          </div>
-        </div>
+          {/* Level 2: Branch Manager */}
+          {(viewLevel === 'manager' || viewLevel === 'agent' || viewLevel === 'customer') && data?.selected_manager && (
+            <>
+              <ChevronRight className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+              <button
+                onClick={() => navigateToManager(data.selected_manager!.id)}
+                className={`flex items-center gap-1 px-2.5 py-1 rounded-lg border transition-all ${
+                  viewLevel === 'manager'
+                    ? 'bg-indigo-500/15 border-indigo-500 text-indigo-600 font-semibold dark:text-indigo-400'
+                    : 'border-border/70 hover:bg-muted text-muted-foreground'
+                }`}
+              >
+                <Building className="h-3.5 w-3.5 text-indigo-500" />
+                Manager: {data.selected_manager.name}
+              </button>
+            </>
+          )}
 
-        {/* Selected Node Record Inspector Panel */}
-        <div className="w-full lg:w-[360px] shrink-0 flex flex-col bg-card rounded-2xl border border-border/70 overflow-hidden">
+          {/* Level 3: Loan Officer / Agent */}
+          {(viewLevel === 'agent' || viewLevel === 'customer') && data?.selected_agent && (
+            <>
+              <ChevronRight className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+              <button
+                onClick={() => navigateToAgent(data.selected_agent!.id)}
+                className={`flex items-center gap-1 px-2.5 py-1 rounded-lg border transition-all ${
+                  viewLevel === 'agent'
+                    ? 'bg-sky-500/15 border-sky-500 text-sky-600 font-semibold dark:text-sky-400'
+                    : 'border-border/70 hover:bg-muted text-muted-foreground'
+                }`}
+              >
+                <UserCheck className="h-3.5 w-3.5 text-sky-500" />
+                Officer: {data.selected_agent.name}
+              </button>
+            </>
+          )}
+
+          {/* Level 4: Customer */}
+          {viewLevel === 'customer' && data?.selected_customer && (
+            <>
+              <ChevronRight className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+              <div className="flex items-center gap-1 px-2.5 py-1 rounded-lg border border-teal-500 bg-teal-500/15 text-teal-600 font-semibold dark:text-teal-400">
+                <Building2 className="h-3.5 w-3.5 text-teal-500" />
+                Customer: {data.selected_customer.cust_name}
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+
+      {/* Main Workspace Layout (LEFT OVERVIEW INSPECTOR + RIGHT GRAPH CANVAS) */}
+      <div className="flex flex-col lg:flex-row gap-4 min-h-0 flex-1">
+        
+        {/* LEFT-SIDE OVERVIEW INSPECTOR PANEL */}
+        <div className="w-full lg:w-[350px] shrink-0 flex flex-col bg-card rounded-2xl border border-border/70 overflow-hidden order-2 lg:order-1">
           {selectedNode ? (
             <div className="flex flex-col h-full min-h-0">
               {/* Record Header */}
@@ -604,9 +692,31 @@ export default function DBSchemaGraph() {
 
               {/* Attributes Key-Value Table */}
               <div className="flex-1 overflow-y-auto p-4 space-y-2">
-                <span className="text-[9px] uppercase tracking-wider font-semibold text-muted-foreground block mb-2">
-                  Record Attributes & Details
-                </span>
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-[9px] uppercase tracking-wider font-semibold text-muted-foreground">
+                    Record Overview & Action
+                  </span>
+                  {selectedNode.type === 'zonal' && selectedNode.zonal_id && (
+                    <Button variant="ghost" size="sm" onClick={() => navigateToZonal(selectedNode.zonal_id!)} className="h-6 text-[10px] px-2 text-violet-500">
+                      View Zone Branches →
+                    </Button>
+                  )}
+                  {selectedNode.type === 'manager' && selectedNode.manager_id && (
+                    <Button variant="ghost" size="sm" onClick={() => navigateToManager(selectedNode.manager_id!)} className="h-6 text-[10px] px-2 text-indigo-500">
+                      View Branch Officers →
+                    </Button>
+                  )}
+                  {selectedNode.type === 'agent' && selectedNode.agent_id && (
+                    <Button variant="ghost" size="sm" onClick={() => navigateToAgent(selectedNode.agent_id!)} className="h-6 text-[10px] px-2 text-sky-500">
+                      View Officer Borrowers →
+                    </Button>
+                  )}
+                  {selectedNode.type === 'customer' && selectedNode.customer_id && (
+                    <Button variant="ghost" size="sm" onClick={() => navigateToCustomer(selectedNode.customer_id!)} className="h-6 text-[10px] px-2 text-teal-500">
+                      View Loan Accounts →
+                    </Button>
+                  )}
+                </div>
 
                 {Object.entries(selectedNode.details).map(([key, val]) => (
                   <div key={key} className="p-2.5 rounded-xl border border-border/60 bg-muted/30 flex items-center justify-between text-[11px]">
@@ -616,7 +726,7 @@ export default function DBSchemaGraph() {
                 ))}
               </div>
 
-              {/* Linked Connections Helper */}
+              {/* Relational Join Paths Helper */}
               <div className="p-3 bg-muted/40 border-t shrink-0">
                 <span className="text-[9px] uppercase tracking-wider font-semibold text-muted-foreground block mb-1">
                   Relational Join Paths ({data?.edges.filter(e => {
@@ -652,10 +762,89 @@ export default function DBSchemaGraph() {
           ) : (
             <div className="flex flex-col items-center justify-center h-full p-6 text-muted-foreground text-center">
               <Network className="h-6 w-6 stroke-1 animate-pulse mb-2 text-muted-foreground/60" />
-              <p className="text-xs">Click any node in the graph to inspect record attributes and relational paths.</p>
+              <p className="text-xs">Click any Executive, Zone, Manager, Officer, or Customer node to inspect overview details on the left.</p>
             </div>
           )}
         </div>
+
+        {/* RIGHT GRAPH CANVAS */}
+        <div ref={containerRef} className="flex-1 bg-card/20 rounded-2xl border border-border/70 overflow-hidden relative flex flex-col justify-between order-1 lg:order-2">
+          {/* Top Left Legend */}
+          <div className="absolute top-3 left-3 z-10 flex flex-col gap-1 bg-background/85 backdrop-blur-md border rounded-xl p-2.5 max-w-[210px] pointer-events-none shadow-sm">
+            <span className="text-[9px] uppercase tracking-wider font-semibold text-muted-foreground flex items-center gap-1">
+              <Move className="h-2.5 w-2.5" /> Move & Click Nodes
+            </span>
+            <div className="space-y-1 mt-1 text-[10px]">
+              <div className="flex items-center gap-1.5">
+                <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: '#4c1d95' }} />
+                <span className="font-medium text-foreground/80">MD & CEO / Executive</span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: '#6d28d9' }} />
+                <span className="font-medium text-foreground/80">Zonal VP</span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: '#4338ca' }} />
+                <span className="font-medium text-foreground/80">Branch Manager</span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: '#0284c7' }} />
+                <span className="font-medium text-foreground/80">Loan Officer / Agent</span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: '#0f766e' }} />
+                <span className="font-medium text-foreground/80">Customer / Borrower</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Top Right Zoom Controls */}
+          <div className="absolute top-3 right-3 z-10 flex items-center gap-1 bg-background/85 backdrop-blur-md border rounded-xl p-1 shadow-sm">
+            <Button variant="ghost" size="sm" onClick={handleZoomIn} title="Zoom In" className="h-7 w-7 p-0 rounded-lg">
+              <ZoomIn className="h-3.5 w-3.5" />
+            </Button>
+            <Button variant="ghost" size="sm" onClick={handleZoomOut} title="Zoom Out" className="h-7 w-7 p-0 rounded-lg">
+              <ZoomOut className="h-3.5 w-3.5" />
+            </Button>
+            <Button variant="ghost" size="sm" onClick={handleResetZoom} title="Reset View" className="h-7 w-7 p-0 rounded-lg">
+              <RotateCcw className="h-3.5 w-3.5" />
+            </Button>
+          </div>
+
+          {data && (
+            <ForceGraph2D
+              ref={graphRef}
+              width={dimensions.width}
+              height={dimensions.height}
+              graphData={forceGraphData}
+              backgroundColor={isDark ? '#090d16' : '#fafafa'}
+              nodeCanvasObject={paintNode}
+              linkCanvasObject={paintLink}
+              onNodeClick={(node) => handleNodeClick(node as GraphNode)}
+              onNodeHover={(node) => setHoverNode(node ? (node as GraphNode) : null)}
+              enableNodeDrag={true}
+              enableZoomInteraction={true}
+              enablePanInteraction={true}
+              nodePointerAreaPaint={drawNodePointerArea}
+              cooldownTicks={200}
+              d3AlphaDecay={0.02}
+              d3VelocityDecay={0.2}
+              onEngineStop={() => {
+                graphRef.current?.zoomToFit(300, 80);
+              }}
+            />
+          )}
+
+          {/* Bottom Active Summary Bar */}
+          <div className="absolute bottom-3 left-3 z-10 flex items-center gap-2 bg-background/85 backdrop-blur-md px-3 py-1.5 rounded-xl border border-border/80 text-[11px] shadow-sm">
+            <Badge variant="outline" className="font-semibold text-[10px] uppercase">
+              {viewLevel} Tier
+            </Badge>
+            <span className="font-mono text-muted-foreground">• {data?.nodes.length || 0} nodes</span>
+            <span className="text-muted-foreground">• Click any node to drill down</span>
+          </div>
+        </div>
+
       </div>
     </div>
   );

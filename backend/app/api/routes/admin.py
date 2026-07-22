@@ -18,9 +18,23 @@ def status():
 
 
 @router.get("/admin/db-schema")
-def db_schema(search: str = None):
-    """Retrieve the PostgreSQL database relation graph for a specific customer or loan account."""
-    return get_db_schema_graph(search_term=search)
+def db_schema(
+    search: str = None,
+    view_level: str = "executive",
+    zonal_id: str = None,
+    manager_id: str = None,
+    agent_id: str = None,
+    customer_id: str = None
+):
+    """Retrieve the 5-tier Enterprise Curiosity Graph (Executive -> Zonal -> Manager -> Agent -> Customer -> Account)."""
+    return get_db_schema_graph(
+        search_term=search,
+        view_level=view_level,
+        zonal_id=zonal_id,
+        manager_id=manager_id,
+        agent_id=agent_id,
+        customer_id=customer_id
+    )
 
 
 @router.post("/intelligence/search")
