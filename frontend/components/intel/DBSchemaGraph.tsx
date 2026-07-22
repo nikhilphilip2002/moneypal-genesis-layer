@@ -885,11 +885,15 @@ export default function DBSchemaGraph() {
                       <Users className="h-2.5 w-2.5 text-sky-500" /> Borrowers
                     </span>
                     <span className="font-mono font-bold text-foreground mt-0.5 text-xs truncate">
-                      {selectedNode.details["Total Borrowers"] ||
-                       selectedNode.details["Serviced Borrowers"] ||
-                       selectedNode.details["Total Customer Base"] ||
-                       selectedNode.details["Active Customers"] ||
-                       (selectedNode.type === 'customer' ? '1 Borrower Profile' : '1 Borrower')}
+                      {(() => {
+                        const raw = selectedNode.details["Total Borrowers"] ||
+                                    selectedNode.details["Serviced Borrowers"] ||
+                                    selectedNode.details["Total Customer Base"] ||
+                                    selectedNode.details["Active Customers"] ||
+                                    "1";
+                        const match = String(raw).match(/[\d,]+/);
+                        return match ? match[0] : (selectedNode.type === 'customer' ? '1' : '1');
+                      })()}
                     </span>
                   </div>
 
