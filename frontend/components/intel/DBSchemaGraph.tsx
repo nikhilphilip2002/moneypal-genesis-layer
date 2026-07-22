@@ -202,10 +202,18 @@ export default function DBSchemaGraph() {
       setViewLevel(res.view_level || levelToFetch);
 
       if (res && res.nodes && res.nodes.length > 0) {
-        const primaryNode = res.nodes.find((n: GraphNode) => 
-          n.type === 'agent' || n.type === 'customer' || n.type === 'manager' || n.type === 'zonal' || n.type === 'executive'
-        ) || res.nodes[0];
-        setSelectedNode(primaryNode);
+        const targetType = res.view_level || levelToFetch;
+        let primaryNode = res.nodes.find((n: GraphNode) => n.type === targetType);
+        
+        if (!primaryNode) {
+          if (targetType === 'agent') primaryNode = res.nodes.find((n: GraphNode) => n.type === 'agent');
+          else if (targetType === 'manager') primaryNode = res.nodes.find((n: GraphNode) => n.type === 'manager');
+          else if (targetType === 'zonal') primaryNode = res.nodes.find((n: GraphNode) => n.type === 'zonal');
+          else if (targetType === 'customer') primaryNode = res.nodes.find((n: GraphNode) => n.type === 'customer');
+          else if (targetType === 'executive') primaryNode = res.nodes.find((n: GraphNode) => n.type === 'executive');
+        }
+
+        setSelectedNode(primaryNode || res.nodes[0]);
       }
     } catch (err) {
       console.error('Failed to load Enterprise Curiosity Graph:', err);

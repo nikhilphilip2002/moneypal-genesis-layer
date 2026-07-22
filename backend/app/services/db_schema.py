@@ -182,12 +182,13 @@ def search_entities(query_str: str, entity_type: str = "all") -> List[Dict[str, 
             conn = get_connection()
             cur = conn.cursor()
             cur.execute("""
-                SELECT gnlnac_cust_id, COALESCE(gnlnac_cust_name, 'Borrower #' || gnlnac_cust_id),
-                       gnlnac_acnt_num, gnlnac_sanc_amt, gnlnac_appl_brn_code
+                SELECT gnlnac_cust_id, COALESCE(MAX(gnlnac_cust_name), 'Borrower #' || gnlnac_cust_id),
+                       MAX(gnlnac_acnt_num), SUM(gnlnac_sanc_amt), MAX(gnlnac_appl_brn_code)
                 FROM bronze.genlnacnts
                 WHERE LOWER(gnlnac_cust_name) LIKE %s 
                    OR CAST(gnlnac_cust_id AS TEXT) LIKE %s 
                    OR CAST(gnlnac_acnt_num AS TEXT) LIKE %s
+                GROUP BY gnlnac_cust_id
                 LIMIT 12;
             """, (f"%{term}%", f"%{term}%", f"%{term}%"))
             c_rows = cur.fetchall()
@@ -515,7 +516,7 @@ def get_db_schema_graph(
             })
 
     # -------------------------------------------------------------
-    # TIER 3: AGENT VIEW (Shows Manager -> Officer -> Customers)
+    # TIER 3: AGENT VIEW (Shows Manager -> Officer -> Unique Customers)
     # -------------------------------------------------------------
     elif current_level == "agent" or (agent_id and not customer_id):
         brn_code = agent_id.split("-")[1] if agent_id and "-" in agent_id else real_branches[0]["code"]
@@ -589,12 +590,14 @@ def get_db_schema_graph(
         try:
             conn = get_connection()
             cur = conn.cursor()
+            # GROUP BY gnlnac_cust_id TO GUARANTEE 100% UNIQUE CUSTOMER NODES
             cur.execute("""
-                SELECT DISTINCT gnlnac_cust_id, COALESCE(gnlnac_cust_name, 'Borrower #' || gnlnac_cust_id),
-                       gnlnac_acnt_num, gnlnac_sanc_amt, gnlnac_loan_type, gnlnac_sanc_date
+                SELECT gnlnac_cust_id, COALESCE(MAX(gnlnac_cust_name), 'Borrower #' || gnlnac_cust_id),
+                       MAX(gnlnac_acnt_num), SUM(gnlnac_sanc_amt), MAX(gnlnac_loan_type), MAX(gnlnac_sanc_date)
                 FROM bronze.genlnacnts 
                 WHERE CAST(gnlnac_appl_brn_code AS TEXT) LIKE %s OR %s = '1001'
-                ORDER BY gnlnac_sanc_amt DESC LIMIT %s;
+                GROUP BY gnlnac_cust_id
+                ORDER BY SUM(gnlnac_sanc_amt) DESC LIMIT %s;
             """, (f"%{brn_code}%", brn_code, limit))
             c_rows = cur.fetchall()
             for r in c_rows:
@@ -616,8 +619,13 @@ def get_db_schema_graph(
                 {"cust_id": "1398", "cust_name": "DEVENDRA KUMAR P", "acnt_num": "1000400000222", "sanc_amt": 1500000, "loan_type": "Commercial Loan", "sanc_date": "2025-09-10"}
             ]
 
+        seen_cust_ids = set()
         for c in agent_customers:
             cust_node_id = f"CUST-{c['cust_id']}"
+            if cust_node_id in seen_cust_ids:
+                continue
+            seen_cust_ids.add(cust_node_id)
+
             c_repay = round(c["sanc_amt"] * 0.18)
             nodes.append({
                 "id": cust_node_id,
@@ -790,7 +798,14 @@ def get_db_schema_graph(
             "purpose": "Credit Receipt"
         })
 
-    # GUARANTEE 100% CONNECTED GRAPH (FILTER OUT FLOATING ORPHAN NODES)
+    # GUARANTEE UNIQUE NODES & 100% CONNECTED GRAPH (NO DUPLICATE OR ORPHAN NODES)
+    unique_nodes = []
+    seen_ids = set()
+    for n in nodes:
+        if n["id"] not in seen_ids:
+            seen_ids.add(n["id"])
+            unique_nodes.append(n)
+
     connected_node_ids = set()
     for e in edges:
         src = e["source"] if isinstance(e["source"], str) else e["source"]["id"]
@@ -798,11 +813,11 @@ def get_db_schema_graph(
         connected_node_ids.add(src)
         connected_node_ids.add(tgt)
 
-    if len(nodes) > 1 and connected_node_ids:
-        nodes = [n for n in nodes if n["id"] in connected_node_ids]
+    if len(unique_nodes) > 1 and connected_node_ids:
+        unique_nodes = [n for n in unique_nodes if n["id"] in connected_node_ids]
 
     return {
-        "nodes": nodes,
+        "nodes": unique_nodes,
         "edges": edges,
         "view_level": current_level,
         "executive_info": EXECUTIVE_INFO,
@@ -820,7 +835,7 @@ def get_db_schema_graph(
         "metadata": {
             "is_live": is_live,
             "schema": "bronze",
-            "total_nodes": len(nodes),
+            "total_nodes": len(unique_nodes),
             "total_edges": len(edges)
         }
     }
