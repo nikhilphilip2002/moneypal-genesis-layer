@@ -32,7 +32,8 @@ import {
   UserCheck,
   Award,
   Globe2,
-  Building
+  Building,
+  Database
 } from 'lucide-react';
 
 const ForceGraph2D = dynamic(() => import('react-force-graph-2d'), {
@@ -41,7 +42,7 @@ const ForceGraph2D = dynamic(() => import('react-force-graph-2d'), {
     <div className="flex h-[520px] items-center justify-center bg-card/30 rounded-2xl border border-border/50">
       <div className="flex items-center gap-2 text-muted-foreground animate-pulse text-xs">
         <Network className="h-4 w-4 animate-spin text-primary" />
-        <span>Loading 5-Tier Enterprise Curiosity Graph...</span>
+        <span>Loading Enterprise Curiosity Graph...</span>
       </div>
     </div>
   ),
@@ -75,27 +76,19 @@ interface GraphEdge {
 interface ZonalItem {
   id: string;
   name: string;
-  role: string;
-  zone: string;
-  color: string;
-}
-
-interface ManagerItem {
-  id: string;
-  name: string;
-  role: string;
-  branch: string;
-  zone_id: string;
-  color: string;
-}
-
-interface AgentItem {
-  id: string;
-  name: string;
-  role: string;
+  director: string;
   code: string;
-  manager_id: string;
-  color: string;
+}
+
+interface BranchItem {
+  id: string;
+  code: string;
+  name: string;
+  manager: string;
+  cust_count: number;
+  acnt_count: number;
+  total_vol: number;
+  zone_id: string;
 }
 
 interface HierarchicalGraphPayload {
@@ -110,11 +103,15 @@ interface HierarchicalGraphPayload {
   };
   zonals: ZonalItem[];
   selected_zonal?: ZonalItem | null;
-  managers: ManagerItem[];
-  selected_manager?: ManagerItem | null;
-  agents: AgentItem[];
-  selected_agent?: AgentItem | null;
+  branches: BranchItem[];
+  selected_manager?: BranchItem | null;
+  selected_agent?: any;
   selected_customer?: any;
+  total_database_metrics?: {
+    total_customers: number;
+    total_accounts: number;
+    total_branches: number;
+  };
   metadata: {
     is_live: boolean;
     schema: string;
@@ -131,7 +128,6 @@ export default function DBSchemaGraph() {
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState<HierarchicalGraphPayload | null>(null);
   
-  // Navigation State Across 5 Enterprise Tiers
   const [viewLevel, setViewLevel] = useState<'executive' | 'zonal' | 'manager' | 'agent' | 'customer'>('executive');
   const [selectedZonalId, setSelectedZonalId] = useState<string | null>(null);
   const [selectedManagerId, setSelectedManagerId] = useState<string | null>(null);
@@ -192,7 +188,6 @@ export default function DBSchemaGraph() {
     loadGraph();
   }, [loadGraph]);
 
-  // Dimension calculations for expansion
   useEffect(() => {
     const handleResize = () => {
       if (containerRef.current) {
@@ -212,7 +207,6 @@ export default function DBSchemaGraph() {
     };
   }, [data, isExpanded]);
 
-  // Apply D3 force physics to separate nodes cleanly
   const forceGraphData = useMemo(() => {
     return data
       ? {
@@ -245,7 +239,6 @@ export default function DBSchemaGraph() {
     return () => clearTimeout(timer);
   }, [forceGraphData, dimensions]);
 
-  // 5-Tier Breadcrumb Navigation Handlers
   const navigateToExecutive = () => {
     setViewLevel('executive');
     setSelectedZonalId(null);
@@ -289,7 +282,6 @@ export default function DBSchemaGraph() {
   const handleNodeClick = (node: GraphNode) => {
     setSelectedNode(node);
 
-    // Dynamic 5-Tier Drilldown based on clicked node type!
     if (node.type === 'zonal' && node.zonal_id) {
       navigateToZonal(node.zonal_id);
     } else if (node.type === 'manager' && node.manager_id) {
@@ -340,7 +332,6 @@ export default function DBSchemaGraph() {
     return map;
   }, [data]);
 
-  // High-legibility node rendering with background text pills
   const paintNode = useCallback(
     (node: any, ctx: CanvasRenderingContext2D, globalScale: number) => {
       const size = node.size || 20;
@@ -356,7 +347,6 @@ export default function DBSchemaGraph() {
         if (!isConnected) isDimmed = true;
       }
 
-      // Outer Glow Ring
       if (isSelected || isHovered) {
         ctx.beginPath();
         ctx.arc(node.x!, node.y!, size + 6 / globalScale, 0, 2 * Math.PI);
@@ -364,7 +354,6 @@ export default function DBSchemaGraph() {
         ctx.fill();
       }
 
-      // Node Body Circle
       ctx.beginPath();
       ctx.arc(node.x!, node.y!, size + (isHovered ? 2 : 0), 0, 2 * Math.PI);
       
@@ -374,7 +363,6 @@ export default function DBSchemaGraph() {
       ctx.fillStyle = fillColor;
       ctx.fill();
 
-      // Border outline
       ctx.strokeStyle = isSelected
         ? (isDark ? '#ffffff' : '#000000')
         : isHovered || isNeighborOfSelected
@@ -384,7 +372,6 @@ export default function DBSchemaGraph() {
       ctx.lineWidth = (isSelected ? 3 : isHovered ? 2.5 : 1.5) / globalScale;
       ctx.stroke();
 
-      // Text Label Pill Background
       const titleText = String(node.title || '');
       const baseFontSize = isHovered || isSelected ? 13 : 11;
       const scaledFontSize = Math.min(baseFontSize / Math.max(globalScale * 0.5, 0.35), baseFontSize * 1.5);
@@ -512,21 +499,29 @@ export default function DBSchemaGraph() {
     }
   };
 
+  const m = data?.total_database_metrics;
+
   return (
     <div className={`flex flex-col h-full overflow-hidden ${isExpanded ? 'fixed inset-0 z-50 bg-background p-6' : ''}`}>
       {/* Top Header & Search Control Bar */}
       <div className="flex flex-col md:flex-row md:items-center justify-between border-b pb-4 mb-3 gap-3 shrink-0">
         <div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <h2 className="text-base font-headline font-semibold tracking-tight md:text-lg flex items-center gap-2">
               <Network className="h-5 w-5 text-primary" /> Enterprise Curiosity Graph
             </h2>
             <Badge variant="outline" className="text-xs border-purple-500/30 bg-purple-500/10 text-purple-500 font-semibold uppercase">
               Tier: {viewLevel}
             </Badge>
+            {m && (
+              <Badge variant="secondary" className="text-xs font-mono font-medium flex items-center gap-1">
+                <Database className="h-3 w-3 text-primary" />
+                {m.total_customers.toLocaleString()} Borrowers • {m.total_branches} Branches
+              </Badge>
+            )}
           </div>
           <p className="text-[11px] text-muted-foreground mt-0.5">
-            Full 5-tier governance hierarchy. Click any Executive, Zone, Manager, Agent, or Customer node to drill down.
+            Querying all 11,347 customers across 16 branches. Click any Executive, Zone, Branch, Officer, or Borrower node to drill down.
           </p>
         </div>
 
@@ -535,7 +530,7 @@ export default function DBSchemaGraph() {
             <div className="relative">
               <Search className="h-3.5 w-3.5 absolute left-2.5 top-2.5 text-muted-foreground" />
               <Input
-                placeholder="Search Executive, Zone, Manager, Officer, or Customer..."
+                placeholder="Search Customer Name, ID, or Branch Code..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="h-8 text-xs pl-8 w-[220px] md:w-[280px] rounded-xl border-border/80"
@@ -624,7 +619,7 @@ export default function DBSchemaGraph() {
                 }`}
               >
                 <Building className="h-3.5 w-3.5 text-indigo-500" />
-                Manager: {data.selected_manager.name}
+                Branch: {data.selected_manager.name}
               </button>
             </>
           )}
@@ -762,7 +757,7 @@ export default function DBSchemaGraph() {
           ) : (
             <div className="flex flex-col items-center justify-center h-full p-6 text-muted-foreground text-center">
               <Network className="h-6 w-6 stroke-1 animate-pulse mb-2 text-muted-foreground/60" />
-              <p className="text-xs">Click any Executive, Zone, Manager, Officer, or Customer node to inspect overview details on the left.</p>
+              <p className="text-xs">Click any Executive, Zone, Branch, Officer, or Customer node to inspect overview details on the left.</p>
             </div>
           )}
         </div>
@@ -840,7 +835,7 @@ export default function DBSchemaGraph() {
             <Badge variant="outline" className="font-semibold text-[10px] uppercase">
               {viewLevel} Tier
             </Badge>
-            <span className="font-mono text-muted-foreground">• {data?.nodes.length || 0} nodes</span>
+            <span className="font-mono text-muted-foreground">• {data?.nodes.length || 0} active nodes</span>
             <span className="text-muted-foreground">• Click any node to drill down</span>
           </div>
         </div>

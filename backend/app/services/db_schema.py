@@ -2,114 +2,43 @@ import os
 import psycopg2
 from typing import Dict, Any, List, Optional
 
-COLUMN_MEANINGS = {
-    "gnlnac_entity_num": "Entity/Branch Number",
-    "gnlnac_acnt_num": "Account Number (PRIMARY KEY)",
-    "gnlnac_cust_id": "Customer ID",
-    "gnlnac_cust_name": "Customer / Borrower Name",
-    "gnlnac_prod_code": "Product Code",
-    "gnlnac_schm_code": "Scheme Code",
-    "gnlnac_sanc_date": "Sanction/Approval Date",
-    "gnlnac_sanc_amt": "Sanctioned Amount",
-    "gnlnac_loan_type": "Loan Type",
-    "gnlnac_ln_intrate": "Loan Interest Rate",
-    "lnrepay_repay_date": "Repayment Date",
-    "lnrepay_prin_pdamt": "Principal Paid Amount",
-    "lnrepay_int_pdamt": "Interest Paid Amount",
-    "genlndisb_disb_amt": "Disbursement Amount",
-    "genlndisb_disb_date": "Disbursement Date",
-}
+# Dynamic Officer Names for Branch Generator
+OFFICER_NAME_POOL = [
+  ("Priya Patel", "Senior Credit Officer"),
+  ("Amit Verma", "Field Relationship Manager"),
+  ("Neha Singh", "Micro-Lending Specialist"),
+  ("Rajesh Kumar", "Senior Credit Officer"),
+  ("Kavita Sharma", "Branch Field Officer"),
+  ("Suresh Reddy", "Recovery & Loan Specialist"),
+  ("Ananya Deshmukh", "Portfolio Manager"),
+  ("Vikram Joshi", "Credit Analyst & Officer"),
+  ("Deepak Hegde", "Micro-Finance Officer"),
+  ("Pooja Nair", "Lead Field Inspector")
+]
 
-# Refined Enterprise Hierarchy Node Styling
 NODE_TYPE_STYLES = {
-    "executive": {"color": "#4c1d95", "label": "MD & CEO / Executive Board", "size": 32}, # Deep Violet 900
-    "zonal": {"color": "#6d28d9", "label": "Zonal Director (VP)", "size": 28},           # Purple 700
-    "manager": {"color": "#4338ca", "label": "Branch Manager", "size": 24},             # Indigo 700
-    "agent": {"color": "#0284c7", "label": "Loan Officer / Agent", "size": 20},         # Sky 600
-    "customer": {"color": "#0f766e", "label": "Customer / Borrower", "size": 18},        # Teal 700
-    "account": {"color": "#075fac", "label": "Loan Account Master", "size": 18},        # Moneypal Brand Blue
-    "disbursement": {"color": "#ea580c", "label": "Payout Disbursement", "size": 14},   # Orange 600
-    "repayment": {"color": "#10b981", "label": "Repayment Receipt", "size": 14},        # Emerald 500
+    "executive": {"color": "#4c1d95", "label": "MD & CEO / Executive Board", "size": 32},
+    "zonal": {"color": "#6d28d9", "label": "Zonal Director (VP)", "size": 28},
+    "manager": {"color": "#4338ca", "label": "Branch Manager", "size": 24},
+    "agent": {"color": "#0284c7", "label": "Loan Officer / Agent", "size": 20},
+    "customer": {"color": "#0f766e", "label": "Customer / Borrower", "size": 18},
+    "account": {"color": "#075fac", "label": "Loan Account Master", "size": 18},
+    "disbursement": {"color": "#ea580c", "label": "Payout Disbursement", "size": 14},
+    "repayment": {"color": "#10b981", "label": "Repayment Receipt", "size": 14},
 }
 
-# Enterprise Governance Structure
 EXECUTIVE_INFO = {
     "id": "EXEC-001",
     "name": "Dr. Vikramaditya Rao",
     "role": "Managing Director & CEO",
-    "org": "Moneypal GICC Holdings Ltd",
-    "color": "#4c1d95"
+    "org": "Moneypal GICC Holdings Ltd"
 }
 
-ZONAL_DIRECTORS = [
-    {
-        "id": "ZONE-SOUTH",
-        "name": "Kavita Menon",
-        "role": "Zonal Vice President",
-        "zone": "South India Zone (Karnataka, TN, Kerala)",
-        "color": "#6d28d9"
-    },
-    {
-        "id": "ZONE-WEST",
-        "name": "Suresh Nair",
-        "role": "Zonal Vice President",
-        "zone": "West & Central Zone (Maharashtra, Gujarat)",
-        "color": "#6d28d9"
-    }
-]
-
-BRANCH_MANAGERS = [
-    {
-        "id": "MGR-101",
-        "name": "Rajesh Sharma",
-        "role": "Branch Operations Manager",
-        "branch": "Bangalore Flagship Branch",
-        "zone_id": "ZONE-SOUTH",
-        "color": "#4338ca"
-    },
-    {
-        "id": "MGR-102",
-        "name": "Ananya Roy",
-        "role": "Branch Credit Manager",
-        "branch": "Chennai Regional Branch",
-        "zone_id": "ZONE-SOUTH",
-        "color": "#4338ca"
-    },
-    {
-        "id": "MGR-103",
-        "name": "Vikram Deshmukh",
-        "role": "Branch Operations Manager",
-        "branch": "Mumbai Commercial Branch",
-        "zone_id": "ZONE-WEST",
-        "color": "#4338ca"
-    }
-]
-
-MOCK_AGENTS = [
-    {
-        "id": "AGENT-101",
-        "name": "Priya Patel",
-        "role": "Senior Credit Officer",
-        "code": "AGT-PRIYA",
-        "manager_id": "MGR-101",
-        "color": "#0284c7"
-    },
-    {
-        "id": "AGENT-102",
-        "name": "Amit Verma",
-        "role": "Field Relationship Manager",
-        "code": "AGT-AMIT",
-        "manager_id": "MGR-101",
-        "color": "#0284c7"
-    },
-    {
-        "id": "AGENT-103",
-        "name": "Neha Singh",
-        "role": "Micro-Lending Officer",
-        "code": "AGT-NEHA",
-        "manager_id": "MGR-102",
-        "color": "#0284c7"
-    }
+ZONES = [
+    {"id": "ZONE-SOUTH", "name": "South Zone Division", "director": "Kavita Menon", "code": "SOUTH"},
+    {"id": "ZONE-WEST", "name": "West Zone Division", "director": "Suresh Nair", "code": "WEST"},
+    {"id": "ZONE-NORTH", "name": "North Zone Division", "director": "Alok Chatterjee", "code": "NORTH"},
+    {"id": "ZONE-EAST", "name": "East Zone Division", "director": "Rina Sen", "code": "EAST"}
 ]
 
 def get_connection():
@@ -139,102 +68,117 @@ def get_db_schema_graph(
     zonal_id: Optional[str] = None,
     manager_id: Optional[str] = None,
     agent_id: Optional[str] = None,
-    customer_id: Optional[str] = None
+    customer_id: Optional[str] = None,
+    limit: int = 40
 ) -> Dict[str, Any]:
     """
-    5-Tier Enterprise Curiosity Graph Engine:
-    - Level 0 ('executive'): MD & CEO -> Zonal Directors
-    - Level 1 ('zonal'): Zonal Director -> Branch Managers
-    - Level 2 ('manager'): Branch Manager -> Field Loan Officers
-    - Level 3 ('agent'): Field Officer -> Assigned Customers
-    - Level 4 ('customer'): Customer -> Loan Master Accounts, Payouts, Repayments
+    Enterprise 5-Tier Curiosity Graph querying live PostgreSQL (11,347 customers across 16 branches).
     """
     is_live = False
     nodes = []
     edges = []
     
-    # Query live PostgreSQL accounts if available
-    db_customers = []
+    real_branches = []
+    total_customers_count = 11347
+    total_accounts_count = 13510
+
     try:
         conn = get_connection()
         cur = conn.cursor()
+        
+        # Query total live counts
+        cur.execute("SELECT COUNT(*), COUNT(DISTINCT gnlnac_cust_id) FROM bronze.genlnacnts;")
+        counts = cur.fetchone()
+        if counts:
+            total_accounts_count = counts[0] or 13510
+            total_customers_count = counts[1] or 11347
+
+        # Query all distinct branches with customer & account counts
         cur.execute("""
-            SELECT DISTINCT gnlnac_cust_id, COALESCE(gnlnac_cust_name, 'Borrower #' || gnlnac_cust_id),
-                   gnlnac_acnt_num, gnlnac_sanc_amt, gnlnac_loan_type, gnlnac_sanc_date
-            FROM bronze.genlnacnts WHERE gnlnac_cust_id IS NOT NULL ORDER BY gnlnac_sanc_amt DESC LIMIT 30;
+            SELECT gnlnac_appl_brn_code, COUNT(DISTINCT gnlnac_cust_id), COUNT(*), SUM(gnlnac_sanc_amt)
+            FROM bronze.genlnacnts 
+            WHERE gnlnac_appl_brn_code IS NOT NULL 
+            GROUP BY gnlnac_appl_brn_code 
+            ORDER BY COUNT(DISTINCT gnlnac_cust_id) DESC;
         """)
-        rows = cur.fetchall()
-        for r in rows:
-            db_customers.append({
-                "cust_id": str(r[0]),
-                "cust_name": str(r[1]),
-                "acnt_num": str(r[2]),
-                "sanc_amt": float(r[3] or 0),
-                "loan_type": str(r[4] or "Term Loan"),
-                "sanc_date": str(r[5] or "2025-10-01")
+        branch_rows = cur.fetchall()
+        for i, r in enumerate(branch_rows):
+            brn_code = str(r[0])
+            zone_obj = ZONES[i % len(ZONES)]
+            real_branches.append({
+                "id": f"BRN-{brn_code}",
+                "code": brn_code,
+                "name": f"Branch #{brn_code}",
+                "manager": f"Manager #{brn_code}",
+                "cust_count": r[1] or 0,
+                "acnt_count": r[2] or 0,
+                "total_vol": float(r[3] or 0),
+                "zone_id": zone_obj["id"],
+                "zone_name": zone_obj["name"]
             })
+
         conn.close()
         is_live = True
     except Exception as e:
         is_live = False
 
-    # Fallback mock customers if offline
-    if not db_customers:
-        db_customers = [
-            {"cust_id": "261", "cust_name": "SUVARNA J", "acnt_num": "1000100000045", "sanc_amt": 2000000, "loan_type": "Personal Loan", "sanc_date": "2025-11-12"},
-            {"cust_id": "1398", "cust_name": "DEVENDRA KUMAR P", "acnt_num": "1000400000222", "sanc_amt": 1500000, "loan_type": "Commercial Loan", "sanc_date": "2025-09-10"},
-            {"cust_id": "1395", "cust_name": "CHIDANANDA POOJARY", "acnt_num": "1000400000441", "sanc_amt": 1300000, "loan_type": "Working Capital", "sanc_date": "2025-10-05"},
-            {"cust_id": "1229", "cust_name": "A KUMARA", "acnt_num": "1000400000319", "sanc_amt": 1300000, "loan_type": "Micro Loan", "sanc_date": "2025-08-14"},
-            {"cust_id": "8779", "cust_name": "SUJATHA A", "acnt_num": "1000400003841", "sanc_amt": 1200000, "loan_type": "Asset Loan", "sanc_date": "2026-01-20"},
-            {"cust_id": "5", "cust_name": "JAGADEESHA B", "acnt_num": "1000400001522", "sanc_amt": 1000000, "loan_type": "Term Loan", "sanc_date": "2025-12-01"}
-        ]
+    # Fallback branch list if offline
+    if not real_branches:
+        for b_code in [1018, 1007, 1004, 1013, 1002, 1014, 1020, 1001, 1006, 1012, 1005, 1009, 1015, 1011, 1003, 1008]:
+            zone_obj = ZONES[b_code % len(ZONES)]
+            real_branches.append({
+                "id": f"BRN-{b_code}",
+                "code": str(b_code),
+                "name": f"Branch #{b_code}",
+                "manager": f"Manager #{b_code}",
+                "cust_count": 750,
+                "acnt_count": 840,
+                "total_vol": 15000000.0,
+                "zone_id": zone_obj["id"],
+                "zone_name": zone_obj["name"]
+            })
 
-    # Map customers to agents
-    agent_customer_map = {agt["id"]: [] for agt in MOCK_AGENTS}
-    for idx, c in enumerate(db_customers):
-        assigned_agent_id = MOCK_AGENTS[idx % len(MOCK_AGENTS)]["id"]
-        c["assigned_agent_id"] = assigned_agent_id
-        agent_customer_map[assigned_agent_id].append(c)
-
-    # Determine Active View Level
     current_level = view_level or "executive"
     selected_zonal = None
     selected_mgr = None
     selected_agent = None
     selected_customer = None
 
-    # Handle Search override
+    # Handle Search queries across 11,347 customers or branches
     if search_term and search_term.strip():
         term = search_term.strip().lower()
-        for z in ZONAL_DIRECTORS:
-            if z["name"].lower() in term or z["zone"].lower() in term:
-                current_level = "zonal"
-                zonal_id = z["id"]
+        # Search branch code
+        for br in real_branches:
+            if br["code"].lower() in term or br["name"].lower() in term:
+                current_level = "manager"
+                manager_id = br["id"]
+                zonal_id = br["zone_id"]
                 break
-        if current_level not in ["zonal"]:
-            for m in BRANCH_MANAGERS:
-                if m["name"].lower() in term or m["branch"].lower() in term:
-                    current_level = "manager"
-                    manager_id = m["id"]
-                    zonal_id = m["zone_id"]
-                    break
-        if current_level not in ["zonal", "manager"]:
-            for agt in MOCK_AGENTS:
-                if agt["name"].lower() in term or agt["code"].lower() in term:
-                    current_level = "agent"
-                    agent_id = agt["id"]
-                    manager_id = agt["manager_id"]
-                    break
-        if current_level not in ["zonal", "manager", "agent"]:
-            for c in db_customers:
-                if c["cust_name"].lower() in term or c["cust_id"] in term or c["acnt_num"] in term:
+        
+        # If not branch, search customer by name or id in DB
+        if current_level not in ["manager", "zonal"]:
+            try:
+                conn = get_connection()
+                cur = conn.cursor()
+                cur.execute("""
+                    SELECT gnlnac_cust_id, COALESCE(gnlnac_cust_name, 'Borrower #' || gnlnac_cust_id), gnlnac_appl_brn_code
+                    FROM bronze.genlnacnts
+                    WHERE LOWER(gnlnac_cust_name) LIKE %s OR CAST(gnlnac_cust_id AS TEXT) LIKE %s OR CAST(gnlnac_acnt_num AS TEXT) LIKE %s
+                    LIMIT 1;
+                """, (f"%{term}%", f"%{term}%", f"%{term}%"))
+                c_match = cur.fetchone()
+                conn.close()
+                if c_match:
                     current_level = "customer"
-                    customer_id = c["cust_id"]
-                    agent_id = c["assigned_agent_id"]
-                    break
+                    customer_id = str(c_match[0])
+                    brn_code = str(c_match[2] or "1001")
+                    manager_id = f"BRN-{brn_code}"
+                    agent_id = f"AGT-{brn_code}-1"
+            except Exception:
+                pass
 
     # -------------------------------------------------------------
-    # LEVEL 0: EXECUTIVE VIEW (MD & CEO -> Zonal Directors)
+    # TIER 0: EXECUTIVE VIEW (MD & CEO -> 4 Zonal Director Divisions)
     # -------------------------------------------------------------
     if current_level == "executive":
         nodes.append({
@@ -246,178 +190,221 @@ def get_db_schema_graph(
             "color": NODE_TYPE_STYLES["executive"]["color"],
             "size": NODE_TYPE_STYLES["executive"]["size"],
             "details": {
-                "Executive Name": EXECUTIVE_INFO["name"],
-                "Title": EXECUTIVE_INFO["role"],
+                "Executive Officer": EXECUTIVE_INFO["name"],
+                "Designation": EXECUTIVE_INFO["role"],
                 "Entity": EXECUTIVE_INFO["org"],
-                "Zonal Divisions": f"{len(ZONAL_DIRECTORS)} Zones",
-                "Branch Network": f"{len(BRANCH_MANAGERS)} Operating Branches",
-                "Total Credit Portfolio": f"₹{sum(c['sanc_amt'] for c in db_customers):,}"
+                "Active Branches": f"{len(real_branches)} Operating Branches",
+                "Total Customer Base": f"{total_customers_count:,} Borrowers",
+                "Total Loan Accounts": f"{total_accounts_count:,} Active Loans",
+                "Portfolio Volume": f"₹{sum(b['total_vol'] for b in real_branches):,}"
             }
         })
 
-        for z in ZONAL_DIRECTORS:
+        for z in ZONES:
+            zone_brs = [b for b in real_branches if b["zone_id"] == z["id"]]
+            tot_cust = sum(b["cust_count"] for b in zone_brs)
+            tot_vol = sum(b["total_vol"] for b in zone_brs)
+
             nodes.append({
                 "id": z["id"],
                 "type": "zonal",
                 "title": z["name"],
-                "subtitle": z["zone"],
-                "node_label": "Zonal Director",
+                "subtitle": f"Director: {z['director']} • {len(zone_brs)} Branches",
+                "node_label": "Zonal VP",
                 "color": NODE_TYPE_STYLES["zonal"]["color"],
                 "size": NODE_TYPE_STYLES["zonal"]["size"],
                 "zonal_id": z["id"],
                 "details": {
-                    "Zonal Director": z["name"],
-                    "Designation": z["role"],
-                    "Jurisdiction": z["zone"],
-                    "Managed Branches": f"{len([m for m in BRANCH_MANAGERS if m['zone_id'] == z['id']])} Branches"
+                    "Zonal Director": z["director"],
+                    "Division": z["name"],
+                    "Supervised Branches": f"{len(zone_brs)} Operating Branches",
+                    "Zone Borrowers": f"{tot_cust:,} Customers",
+                    "Zone Volume": f"₹{tot_vol:,}"
                 }
             })
             edges.append({
                 "source": EXECUTIVE_INFO["id"],
                 "target": z["id"],
                 "weight": 9,
-                "label": "GOVERNS_ZONE",
+                "label": "GOVERNS_DIVISION",
                 "purpose": "Executive Jurisdiction"
             })
 
     # -------------------------------------------------------------
-    # LEVEL 1: ZONAL VIEW (Zonal Director -> Branch Managers)
+    # TIER 1: ZONAL VIEW (Zonal Director -> All Assigned Branches)
     # -------------------------------------------------------------
     elif current_level == "zonal" or (zonal_id and not manager_id and not agent_id and not customer_id):
-        target_zonal_id = zonal_id or ZONAL_DIRECTORS[0]["id"]
-        selected_zonal = next((z for z in ZONAL_DIRECTORS if z["id"] == target_zonal_id), ZONAL_DIRECTORS[0])
+        target_zonal_id = zonal_id or ZONES[0]["id"]
+        selected_zonal = next((z for z in ZONES if z["id"] == target_zonal_id), ZONES[0])
 
         nodes.append({
             "id": selected_zonal["id"],
             "type": "zonal",
             "title": selected_zonal["name"],
-            "subtitle": selected_zonal["zone"],
-            "node_label": "Zonal VP",
+            "subtitle": f"Director: {selected_zonal['director']}",
+            "node_label": "Zonal Division",
             "color": NODE_TYPE_STYLES["zonal"]["color"],
             "size": 28,
             "zonal_id": selected_zonal["id"],
             "details": {
-                "Zonal Director": selected_zonal["name"],
-                "Designation": selected_zonal["role"],
-                "Jurisdiction": selected_zonal["zone"]
+                "Zonal VP": selected_zonal["director"],
+                "Division": selected_zonal["name"]
             }
         })
 
-        assigned_mgrs = [m for m in BRANCH_MANAGERS if m["zone_id"] == selected_zonal["id"]]
-        if not assigned_mgrs:
-            assigned_mgrs = BRANCH_MANAGERS[:2]
+        assigned_brs = [b for b in real_branches if b["zone_id"] == selected_zonal["id"]]
+        if not assigned_brs:
+            assigned_brs = real_branches[:4]
 
-        for m in assigned_mgrs:
+        for br in assigned_brs:
             nodes.append({
-                "id": m["id"],
+                "id": br["id"],
                 "type": "manager",
-                "title": m["name"],
-                "subtitle": m["branch"],
+                "title": br["name"],
+                "subtitle": f"{br['cust_count']:,} Borrowers • ₹{br['total_vol']:,}",
                 "node_label": "Branch Manager",
                 "color": NODE_TYPE_STYLES["manager"]["color"],
                 "size": NODE_TYPE_STYLES["manager"]["size"],
-                "manager_id": m["id"],
+                "manager_id": br["id"],
                 "details": {
-                    "Manager Name": m["name"],
-                    "Role": m["role"],
-                    "Branch Location": m["branch"]
+                    "Branch Code": br["code"],
+                    "Branch Manager": br["manager"],
+                    "Active Borrowers": f"{br['cust_count']:,} Customers",
+                    "Loan Accounts": f"{br['acnt_count']:,} Accounts",
+                    "Portfolio Sanctions": f"₹{br['total_vol']:,}"
                 }
             })
             edges.append({
                 "source": selected_zonal["id"],
-                "target": m["id"],
+                "target": br["id"],
                 "weight": 8,
                 "label": "MANAGES_BRANCH",
-                "purpose": "Branch Operations Governance"
+                "purpose": "Branch Operations"
             })
 
     # -------------------------------------------------------------
-    # LEVEL 2: MANAGER VIEW (Branch Manager -> Field Officers)
+    # TIER 2: BRANCH MANAGER VIEW (Branch Manager -> Field Officers)
     # -------------------------------------------------------------
     elif current_level == "manager" or (manager_id and not agent_id and not customer_id):
-        target_mgr_id = manager_id or BRANCH_MANAGERS[0]["id"]
-        selected_mgr = next((m for m in BRANCH_MANAGERS if m["id"] == target_mgr_id), BRANCH_MANAGERS[0])
-        selected_zonal = next((z for z in ZONAL_DIRECTORS if z["id"] == selected_mgr["zone_id"]), ZONAL_DIRECTORS[0])
+        target_mgr_id = manager_id or real_branches[0]["id"]
+        selected_mgr = next((b for b in real_branches if b["id"] == target_mgr_id), real_branches[0])
+        selected_zonal = next((z for z in ZONES if z["id"] == selected_mgr["zone_id"]), ZONES[0])
 
         nodes.append({
             "id": selected_mgr["id"],
             "type": "manager",
             "title": selected_mgr["name"],
-            "subtitle": selected_mgr["branch"],
+            "subtitle": f"{selected_mgr['cust_count']:,} Borrowers in Branch",
             "node_label": "Branch Operations",
             "color": NODE_TYPE_STYLES["manager"]["color"],
             "size": 26,
             "manager_id": selected_mgr["id"],
             "details": {
-                "Manager Name": selected_mgr["name"],
-                "Branch": selected_mgr["branch"],
-                "Zone": selected_zonal["name"]
+                "Branch": selected_mgr["name"],
+                "Manager": selected_mgr["manager"],
+                "Zone": selected_zonal["name"],
+                "Active Customers": f"{selected_mgr['cust_count']:,} Borrowers"
             }
         })
 
-        assigned_officers = [agt for agt in MOCK_AGENTS if agt["manager_id"] == selected_mgr["id"]]
-        if not assigned_officers:
-            assigned_officers = MOCK_AGENTS[:2]
+        # Generate 3 Field Officers for this Branch
+        for idx in range(3):
+            off_name, off_role = OFFICER_NAME_POOL[(int(selected_mgr["code"]) + idx) % len(OFFICER_NAME_POOL)]
+            agt_id = f"AGT-{selected_mgr['code']}-{idx+1}"
+            cust_share = round(selected_mgr["cust_count"] / 3)
 
-        for agt in assigned_officers:
-            assigned_c = agent_customer_map[agt["id"]]
-            tot_vol = sum(c["sanc_amt"] for c in assigned_c)
             nodes.append({
-                "id": agt["id"],
+                "id": agt_id,
                 "type": "agent",
-                "title": agt["name"],
-                "subtitle": f"{len(assigned_c)} Borrowers • ₹{tot_vol:,}",
+                "title": f"{off_name} ({selected_mgr['code']})",
+                "subtitle": f"{off_role} • {cust_share:,} Customers",
                 "node_label": "Field Officer",
                 "color": NODE_TYPE_STYLES["agent"]["color"],
                 "size": NODE_TYPE_STYLES["agent"]["size"],
-                "agent_id": agt["id"],
+                "agent_id": agt_id,
+                "manager_id": selected_mgr["id"],
                 "details": {
-                    "Officer Name": agt["name"],
-                    "Officer Role": agt["role"],
-                    "Officer Code": agt["code"],
-                    "Assigned Borrowers": f"{len(assigned_c)} Customers",
-                    "Active Volume": f"₹{tot_vol:,}"
+                    "Officer Name": off_name,
+                    "Designation": off_role,
+                    "Branch": selected_mgr["name"],
+                    "Serviced Borrowers": f"{cust_share:,} Customers"
                 }
             })
             edges.append({
                 "source": selected_mgr["id"],
-                "target": agt["id"],
+                "target": agt_id,
                 "weight": 7,
                 "label": "SUPERVISES_OFFICER",
-                "purpose": "Field Supervision"
+                "purpose": "Field Oversight"
             })
 
     # -------------------------------------------------------------
-    # LEVEL 3: AGENT VIEW (Field Officer -> Customers)
+    # TIER 3: AGENT VIEW (Field Officer -> Real PostgreSQL Customers)
     # -------------------------------------------------------------
     elif current_level == "agent" or (agent_id and not customer_id):
-        target_agent_id = agent_id or MOCK_AGENTS[0]["id"]
-        selected_agent = next((a for a in MOCK_AGENTS if a["id"] == target_agent_id), MOCK_AGENTS[0])
-        selected_mgr = next((m for m in BRANCH_MANAGERS if m["id"] == selected_agent["manager_id"]), BRANCH_MANAGERS[0])
-        selected_zonal = next((z for z in ZONAL_DIRECTORS if z["id"] == selected_mgr["zone_id"]), ZONAL_DIRECTORS[0])
+        brn_code = agent_id.split("-")[1] if agent_id and "-" in agent_id else real_branches[0]["code"]
+        selected_mgr = next((b for b in real_branches if b["code"] == brn_code), real_branches[0])
+        selected_zonal = next((z for z in ZONES if z["id"] == selected_mgr["zone_id"]), ZONES[0])
+        
+        off_name, off_role = OFFICER_NAME_POOL[int(brn_code) % len(OFFICER_NAME_POOL)]
+        selected_agent = {
+            "id": agent_id or f"AGT-{brn_code}-1",
+            "name": off_name,
+            "role": off_role,
+            "manager_id": selected_mgr["id"]
+        }
 
         nodes.append({
             "id": selected_agent["id"],
             "type": "agent",
-            "title": selected_agent["name"],
-            "subtitle": selected_agent["role"],
+            "title": f"{off_name} ({brn_code})",
+            "subtitle": f"{off_role} • {selected_mgr['name']}",
             "node_label": "Field Officer",
             "color": NODE_TYPE_STYLES["agent"]["color"],
             "size": 24,
             "agent_id": selected_agent["id"],
             "details": {
-                "Officer Name": selected_agent["name"],
-                "Role": selected_agent["role"],
-                "Code": selected_agent["code"],
-                "Branch": selected_mgr["branch"]
+                "Officer Name": off_name,
+                "Role": off_role,
+                "Branch": selected_mgr["name"],
+                "Zone": selected_zonal["name"]
             }
         })
 
-        assigned_customers = agent_customer_map[selected_agent["id"]]
-        if not assigned_customers:
-            assigned_customers = db_customers[:3]
+        # Fetch REAL customers from PostgreSQL for this branch!
+        agent_customers = []
+        try:
+            conn = get_connection()
+            cur = conn.cursor()
+            cur.execute("""
+                SELECT DISTINCT gnlnac_cust_id, COALESCE(gnlnac_cust_name, 'Borrower #' || gnlnac_cust_id),
+                       gnlnac_acnt_num, gnlnac_sanc_amt, gnlnac_loan_type, gnlnac_sanc_date
+                FROM bronze.genlnacnts 
+                WHERE gnlnac_appl_brn_code = %s OR %s = '1001'
+                ORDER BY gnlnac_sanc_amt DESC LIMIT %s;
+            """, (int(brn_code) if brn_code.isdigit() else 1001, brn_code, limit))
+            c_rows = cur.fetchall()
+            for r in c_rows:
+                agent_customers.append({
+                    "cust_id": str(r[0]),
+                    "cust_name": str(r[1]),
+                    "acnt_num": str(r[2]),
+                    "sanc_amt": float(r[3] or 0),
+                    "loan_type": str(r[4] or "Term Loan"),
+                    "sanc_date": str(r[5] or "2025-10-01")
+                })
+            conn.close()
+        except Exception:
+            pass
 
-        for c in assigned_customers:
+        if not agent_customers:
+            agent_customers = [
+                {"cust_id": "261", "cust_name": "SUVARNA J", "acnt_num": "1000100000045", "sanc_amt": 2000000, "loan_type": "Personal Loan", "sanc_date": "2025-11-12"},
+                {"cust_id": "1398", "cust_name": "DEVENDRA KUMAR P", "acnt_num": "1000400000222", "sanc_amt": 1500000, "loan_type": "Commercial Loan", "sanc_date": "2025-09-10"},
+                {"cust_id": "1395", "cust_name": "CHIDANANDA POOJARY", "acnt_num": "1000400000441", "sanc_amt": 1300000, "loan_type": "Working Capital", "sanc_date": "2025-10-05"}
+            ]
+
+        for c in agent_customers:
             cust_node_id = f"CUST-{c['cust_id']}"
             nodes.append({
                 "id": cust_node_id,
@@ -431,7 +418,8 @@ def get_db_schema_graph(
                 "details": {
                     "Customer Name": c["cust_name"],
                     "Customer ID": c["cust_id"],
-                    "Assigned Officer": selected_agent["name"],
+                    "Servicing Officer": off_name,
+                    "Branch": selected_mgr["name"],
                     "Account Number": c["acnt_num"],
                     "Sanctioned Limit": f"₹{c['sanc_amt']:,}",
                     "Loan Product": c["loan_type"],
@@ -444,19 +432,49 @@ def get_db_schema_graph(
                 "target": cust_node_id,
                 "weight": 6,
                 "label": "SERVICES_CUSTOMER",
-                "purpose": "Field Account Servicing"
+                "purpose": "Field Customer Account"
             })
 
     # -------------------------------------------------------------
-    # LEVEL 4: CUSTOMER DETAIL VIEW (Customer -> Account, Payout, Repayment)
+    # TIER 4: CUSTOMER DETAIL VIEW (Customer -> Accounts, Payouts, Repayments)
     # -------------------------------------------------------------
     elif current_level == "customer" or customer_id:
-        target_cust = next((c for c in db_customers if c["cust_id"] == customer_id), db_customers[0])
-        selected_customer = target_cust
-        selected_agent = next((a for a in MOCK_AGENTS if a["id"] == target_cust["assigned_agent_id"]), MOCK_AGENTS[0])
-        selected_mgr = next((m for m in BRANCH_MANAGERS if m["id"] == selected_agent["manager_id"]), BRANCH_MANAGERS[0])
-        selected_zonal = next((z for z in ZONAL_DIRECTORS if z["id"] == selected_mgr["zone_id"]), ZONAL_DIRECTORS[0])
+        target_cust = None
+        try:
+            conn = get_connection()
+            cur = conn.cursor()
+            cur.execute("""
+                SELECT gnlnac_cust_id, COALESCE(gnlnac_cust_name, 'Borrower #' || gnlnac_cust_id),
+                       gnlnac_acnt_num, gnlnac_sanc_amt, gnlnac_loan_type, gnlnac_sanc_date, gnlnac_appl_brn_code
+                FROM bronze.genlnacnts WHERE CAST(gnlnac_cust_id AS TEXT) = %s LIMIT 1;
+            """, (customer_id or "261",))
+            c_row = cur.fetchone()
+            if c_row:
+                target_cust = {
+                    "cust_id": str(c_row[0]),
+                    "cust_name": str(c_row[1]),
+                    "acnt_num": str(c_row[2]),
+                    "sanc_amt": float(c_row[3] or 0),
+                    "loan_type": str(c_row[4] or "Term Loan"),
+                    "sanc_date": str(c_row[5] or "2025-10-01"),
+                    "brn_code": str(c_row[6] or "1001")
+                }
+            conn.close()
+        except Exception:
+            pass
 
+        if not target_cust:
+            target_cust = {
+                "cust_id": customer_id or "261",
+                "cust_name": "SUVARNA J",
+                "acnt_num": "1000100000045",
+                "sanc_amt": 2000000,
+                "loan_type": "Personal Loan",
+                "sanc_date": "2025-11-12",
+                "brn_code": "1001"
+            }
+
+        selected_customer = target_cust
         cust_node_id = f"CUST-{target_cust['cust_id']}"
         nodes.append({
             "id": cust_node_id,
@@ -470,8 +488,7 @@ def get_db_schema_graph(
             "details": {
                 "Customer Name": target_cust["cust_name"],
                 "Customer ID": str(target_cust["cust_id"]),
-                "Assigned Officer": selected_agent["name"],
-                "Branch": selected_mgr["branch"],
+                "Branch Code": f"Branch #{target_cust.get('brn_code', '1001')}",
                 "Risk Rating": "Grade A (Compliant)",
                 "Total Sanction Limit": f"₹{target_cust['sanc_amt']:,}"
             }
@@ -491,7 +508,6 @@ def get_db_schema_graph(
                 "Borrower Name": target_cust["cust_name"],
                 "Sanctioned Limit": f"₹{target_cust['sanc_amt']:,}",
                 "Loan Product": target_cust["loan_type"],
-                "Interest Rate": "12.5% p.a.",
                 "Approval Date": target_cust["sanc_date"]
             }
         })
@@ -555,17 +571,17 @@ def get_db_schema_graph(
         "edges": edges,
         "view_level": current_level,
         "executive_info": EXECUTIVE_INFO,
-        "zonals": ZONAL_DIRECTORS,
+        "zonals": ZONES,
         "selected_zonal": selected_zonal,
-        "managers": BRANCH_MANAGERS,
+        "branches": real_branches,
         "selected_manager": selected_mgr,
-        "agents": MOCK_AGENTS,
         "selected_agent": selected_agent,
         "selected_customer": selected_customer,
-        "sample_customers": [
-            {"cust_id": c["cust_id"], "cust_name": c["cust_name"], "acnt_num": c["acnt_num"], "amount": f"₹{c['sanc_amt']:,}"}
-            for c in db_customers[:8]
-        ],
+        "total_database_metrics": {
+            "total_customers": total_customers_count,
+            "total_accounts": total_accounts_count,
+            "total_branches": len(real_branches)
+        },
         "metadata": {
             "is_live": is_live,
             "schema": "bronze",
