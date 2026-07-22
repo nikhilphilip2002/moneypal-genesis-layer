@@ -884,8 +884,12 @@ export default function DBSchemaGraph() {
                     <span className="text-[9px] uppercase text-muted-foreground font-medium flex items-center gap-1">
                       <Users className="h-2.5 w-2.5 text-sky-500" /> Borrowers
                     </span>
-                    <span className="font-mono font-bold text-foreground mt-0.5 text-xs">
-                      {selectedNode.details["Total Borrowers"] || selectedNode.details["Serviced Borrowers"] || "1 Borrower"}
+                    <span className="font-mono font-bold text-foreground mt-0.5 text-xs truncate">
+                      {selectedNode.details["Total Borrowers"] ||
+                       selectedNode.details["Serviced Borrowers"] ||
+                       selectedNode.details["Total Customer Base"] ||
+                       selectedNode.details["Active Customers"] ||
+                       (selectedNode.type === 'customer' ? '1 Borrower Profile' : '1 Borrower')}
                     </span>
                   </div>
 
