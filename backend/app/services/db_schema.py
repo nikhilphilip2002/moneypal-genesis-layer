@@ -2,18 +2,37 @@ import os
 import psycopg2
 from typing import Dict, Any, List, Optional
 
-# Dynamic Officer Names for Branch Generator
+# Mapping Real Branch Codes to Human-Readable Branch Names & Managers
+BRANCH_METADATA_MAP = {
+    "1001": {"name": "Bangalore Central Headquarters", "manager": "Rajesh Sharma", "city": "Bangalore"},
+    "1002": {"name": "MG Road Main Financial Branch", "manager": "Ananya Roy", "city": "Bangalore"},
+    "1003": {"name": "Basavanagudi Credit Hub", "manager": "Vikram Deshmukh", "city": "Bangalore"},
+    "1004": {"name": "Whitefield Tech & MSME Branch", "manager": "Pooja Hegde", "city": "Bangalore"},
+    "1005": {"name": "Malleshwaram Regional Branch", "manager": "Siddharth Rao", "city": "Bangalore"},
+    "1006": {"name": "Hebbal Enterprise Branch", "manager": "Kavita Menon", "city": "Bangalore"},
+    "1007": {"name": "Koramangala Commercial Branch", "manager": "Amitabh Sen", "city": "Bangalore"},
+    "1008": {"name": "Vijayanagar Micro-Lending Branch", "manager": "Meera Joshi", "city": "Bangalore"},
+    "1009": {"name": "Banashankari Growth Branch", "manager": "Deepak Verma", "city": "Bangalore"},
+    "1011": {"name": "Yelahanka Metro Branch", "manager": "Rohan Gupta", "city": "Bangalore"},
+    "1012": {"name": "Rajajinagar Trade Hub", "manager": "Sunita Patil", "city": "Bangalore"},
+    "1013": {"name": "Jayanagar Retail & SME Branch", "manager": "Nikhil Swamy", "city": "Bangalore"},
+    "1014": {"name": "HSR Layout Startup & SME Branch", "manager": "Tanvi Kapoor", "city": "Bangalore"},
+    "1015": {"name": "Marathahalli Commercial Hub", "manager": "Arjun Nair", "city": "Bangalore"},
+    "1018": {"name": "Indiranagar Financial Hub", "manager": "Priya Kulkarni", "city": "Bangalore"},
+    "1020": {"name": "Electronic City Industrial Branch", "manager": "Suresh Bhat", "city": "Bangalore"},
+}
+
 OFFICER_NAME_POOL = [
-  ("Priya Patel", "Senior Credit Officer"),
-  ("Amit Verma", "Field Relationship Manager"),
-  ("Neha Singh", "Micro-Lending Specialist"),
-  ("Rajesh Kumar", "Senior Credit Officer"),
-  ("Kavita Sharma", "Branch Field Officer"),
-  ("Suresh Reddy", "Recovery & Loan Specialist"),
-  ("Ananya Deshmukh", "Portfolio Manager"),
-  ("Vikram Joshi", "Credit Analyst & Officer"),
-  ("Deepak Hegde", "Micro-Finance Officer"),
-  ("Pooja Nair", "Lead Field Inspector")
+    ("Priya Patel", "Senior Credit Officer"),
+    ("Amit Verma", "Field Relationship Manager"),
+    ("Neha Singh", "Micro-Lending Specialist"),
+    ("Rajesh Kumar", "Senior Credit Officer"),
+    ("Kavita Sharma", "Branch Field Officer"),
+    ("Suresh Reddy", "Recovery & Loan Specialist"),
+    ("Ananya Deshmukh", "Portfolio Manager"),
+    ("Vikram Joshi", "Credit Analyst & Officer"),
+    ("Deepak Hegde", "Micro-Finance Officer"),
+    ("Pooja Nair", "Lead Field Inspector")
 ]
 
 NODE_TYPE_STYLES = {
@@ -72,7 +91,7 @@ def get_db_schema_graph(
     limit: int = 40
 ) -> Dict[str, Any]:
     """
-    Enterprise 5-Tier Curiosity Graph querying live PostgreSQL (11,347 customers across 16 branches).
+    Enterprise 5-Tier Curiosity Graph querying live PostgreSQL (11,347 customers across 16 named branches).
     """
     is_live = False
     nodes = []
@@ -86,14 +105,12 @@ def get_db_schema_graph(
         conn = get_connection()
         cur = conn.cursor()
         
-        # Query total live counts
         cur.execute("SELECT COUNT(*), COUNT(DISTINCT gnlnac_cust_id) FROM bronze.genlnacnts;")
         counts = cur.fetchone()
         if counts:
             total_accounts_count = counts[0] or 13510
             total_customers_count = counts[1] or 11347
 
-        # Query all distinct branches with customer & account counts
         cur.execute("""
             SELECT gnlnac_appl_brn_code, COUNT(DISTINCT gnlnac_cust_id), COUNT(*), SUM(gnlnac_sanc_amt)
             FROM bronze.genlnacnts 
@@ -104,12 +121,18 @@ def get_db_schema_graph(
         branch_rows = cur.fetchall()
         for i, r in enumerate(branch_rows):
             brn_code = str(r[0])
+            brn_meta = BRANCH_METADATA_MAP.get(brn_code, {
+                "name": f"Branch #{brn_code}",
+                "manager": f"Manager #{brn_code}",
+                "city": "Karnataka"
+            })
             zone_obj = ZONES[i % len(ZONES)]
             real_branches.append({
                 "id": f"BRN-{brn_code}",
                 "code": brn_code,
-                "name": f"Branch #{brn_code}",
-                "manager": f"Manager #{brn_code}",
+                "name": f"{brn_meta['name']} (#{brn_code})",
+                "display_title": brn_meta["name"],
+                "manager": brn_meta["manager"],
                 "cust_count": r[1] or 0,
                 "acnt_count": r[2] or 0,
                 "total_vol": float(r[3] or 0),
@@ -119,18 +142,19 @@ def get_db_schema_graph(
 
         conn.close()
         is_live = True
-    except Exception as e:
+    except Exception:
         is_live = False
 
-    # Fallback branch list if offline
     if not real_branches:
-        for b_code in [1018, 1007, 1004, 1013, 1002, 1014, 1020, 1001, 1006, 1012, 1005, 1009, 1015, 1011, 1003, 1008]:
+        for b_code_str, brn_meta in BRANCH_METADATA_MAP.items():
+            b_code = int(b_code_str)
             zone_obj = ZONES[b_code % len(ZONES)]
             real_branches.append({
-                "id": f"BRN-{b_code}",
-                "code": str(b_code),
-                "name": f"Branch #{b_code}",
-                "manager": f"Manager #{b_code}",
+                "id": f"BRN-{b_code_str}",
+                "code": b_code_str,
+                "name": f"{brn_meta['name']} (#{b_code_str})",
+                "display_title": brn_meta["name"],
+                "manager": brn_meta["manager"],
                 "cust_count": 750,
                 "acnt_count": 840,
                 "total_vol": 15000000.0,
@@ -144,18 +168,15 @@ def get_db_schema_graph(
     selected_agent = None
     selected_customer = None
 
-    # Handle Search queries across 11,347 customers or branches
     if search_term and search_term.strip():
         term = search_term.strip().lower()
-        # Search branch code
         for br in real_branches:
-            if br["code"].lower() in term or br["name"].lower() in term:
+            if br["code"].lower() in term or br["display_title"].lower() in term or br["name"].lower() in term:
                 current_level = "manager"
                 manager_id = br["id"]
                 zonal_id = br["zone_id"]
                 break
         
-        # If not branch, search customer by name or id in DB
         if current_level not in ["manager", "zonal"]:
             try:
                 conn = get_connection()
@@ -178,7 +199,7 @@ def get_db_schema_graph(
                 pass
 
     # -------------------------------------------------------------
-    # TIER 0: EXECUTIVE VIEW (MD & CEO -> 4 Zonal Director Divisions)
+    # TIER 0: EXECUTIVE VIEW
     # -------------------------------------------------------------
     if current_level == "executive":
         nodes.append({
@@ -193,7 +214,7 @@ def get_db_schema_graph(
                 "Executive Officer": EXECUTIVE_INFO["name"],
                 "Designation": EXECUTIVE_INFO["role"],
                 "Entity": EXECUTIVE_INFO["org"],
-                "Active Branches": f"{len(real_branches)} Operating Branches",
+                "Active Branches": f"{len(real_branches)} Named Branches",
                 "Total Customer Base": f"{total_customers_count:,} Borrowers",
                 "Total Loan Accounts": f"{total_accounts_count:,} Active Loans",
                 "Portfolio Volume": f"₹{sum(b['total_vol'] for b in real_branches):,}"
@@ -217,7 +238,7 @@ def get_db_schema_graph(
                 "details": {
                     "Zonal Director": z["director"],
                     "Division": z["name"],
-                    "Supervised Branches": f"{len(zone_brs)} Operating Branches",
+                    "Supervised Branches": f"{len(zone_brs)} Named Branches",
                     "Zone Borrowers": f"{tot_cust:,} Customers",
                     "Zone Volume": f"₹{tot_vol:,}"
                 }
@@ -231,7 +252,7 @@ def get_db_schema_graph(
             })
 
     # -------------------------------------------------------------
-    # TIER 1: ZONAL VIEW (Zonal Director -> All Assigned Branches)
+    # TIER 1: ZONAL VIEW (Shows Named Branches)
     # -------------------------------------------------------------
     elif current_level == "zonal" or (zonal_id and not manager_id and not agent_id and not customer_id):
         target_zonal_id = zonal_id or ZONES[0]["id"]
@@ -260,18 +281,19 @@ def get_db_schema_graph(
             nodes.append({
                 "id": br["id"],
                 "type": "manager",
-                "title": br["name"],
-                "subtitle": f"{br['cust_count']:,} Borrowers • ₹{br['total_vol']:,}",
+                "title": br["display_title"],
+                "subtitle": f"Code #{br['code']} • {br['cust_count']:,} Borrowers",
                 "node_label": "Branch Manager",
                 "color": NODE_TYPE_STYLES["manager"]["color"],
                 "size": NODE_TYPE_STYLES["manager"]["size"],
                 "manager_id": br["id"],
                 "details": {
-                    "Branch Code": br["code"],
-                    "Branch Manager": br["manager"],
+                    "Branch Name": br["display_title"],
+                    "Branch Code": f"#{br['code']}",
+                    "Manager Name": br["manager"],
                     "Active Borrowers": f"{br['cust_count']:,} Customers",
                     "Loan Accounts": f"{br['acnt_count']:,} Accounts",
-                    "Portfolio Sanctions": f"₹{br['total_vol']:,}"
+                    "Portfolio Volume": f"₹{br['total_vol']:,}"
                 }
             })
             edges.append({
@@ -283,7 +305,7 @@ def get_db_schema_graph(
             })
 
     # -------------------------------------------------------------
-    # TIER 2: BRANCH MANAGER VIEW (Branch Manager -> Field Officers)
+    # TIER 2: BRANCH MANAGER VIEW
     # -------------------------------------------------------------
     elif current_level == "manager" or (manager_id and not agent_id and not customer_id):
         target_mgr_id = manager_id or real_branches[0]["id"]
@@ -293,21 +315,21 @@ def get_db_schema_graph(
         nodes.append({
             "id": selected_mgr["id"],
             "type": "manager",
-            "title": selected_mgr["name"],
-            "subtitle": f"{selected_mgr['cust_count']:,} Borrowers in Branch",
+            "title": selected_mgr["display_title"],
+            "subtitle": f"Code #{selected_mgr['code']} • Mgr: {selected_mgr['manager']}",
             "node_label": "Branch Operations",
             "color": NODE_TYPE_STYLES["manager"]["color"],
             "size": 26,
             "manager_id": selected_mgr["id"],
             "details": {
-                "Branch": selected_mgr["name"],
-                "Manager": selected_mgr["manager"],
+                "Branch Name": selected_mgr["display_title"],
+                "Branch Code": f"#{selected_mgr['code']}",
+                "Manager Name": selected_mgr["manager"],
                 "Zone": selected_zonal["name"],
                 "Active Customers": f"{selected_mgr['cust_count']:,} Borrowers"
             }
         })
 
-        # Generate 3 Field Officers for this Branch
         for idx in range(3):
             off_name, off_role = OFFICER_NAME_POOL[(int(selected_mgr["code"]) + idx) % len(OFFICER_NAME_POOL)]
             agt_id = f"AGT-{selected_mgr['code']}-{idx+1}"
@@ -316,8 +338,8 @@ def get_db_schema_graph(
             nodes.append({
                 "id": agt_id,
                 "type": "agent",
-                "title": f"{off_name} ({selected_mgr['code']})",
-                "subtitle": f"{off_role} • {cust_share:,} Customers",
+                "title": f"{off_name}",
+                "subtitle": f"{off_role} • {selected_mgr['display_title']}",
                 "node_label": "Field Officer",
                 "color": NODE_TYPE_STYLES["agent"]["color"],
                 "size": NODE_TYPE_STYLES["agent"]["size"],
@@ -326,7 +348,8 @@ def get_db_schema_graph(
                 "details": {
                     "Officer Name": off_name,
                     "Designation": off_role,
-                    "Branch": selected_mgr["name"],
+                    "Branch": selected_mgr["display_title"],
+                    "Branch Code": f"#{selected_mgr['code']}",
                     "Serviced Borrowers": f"{cust_share:,} Customers"
                 }
             })
@@ -339,7 +362,7 @@ def get_db_schema_graph(
             })
 
     # -------------------------------------------------------------
-    # TIER 3: AGENT VIEW (Field Officer -> Real PostgreSQL Customers)
+    # TIER 3: AGENT VIEW
     # -------------------------------------------------------------
     elif current_level == "agent" or (agent_id and not customer_id):
         brn_code = agent_id.split("-")[1] if agent_id and "-" in agent_id else real_branches[0]["code"]
@@ -357,8 +380,8 @@ def get_db_schema_graph(
         nodes.append({
             "id": selected_agent["id"],
             "type": "agent",
-            "title": f"{off_name} ({brn_code})",
-            "subtitle": f"{off_role} • {selected_mgr['name']}",
+            "title": off_name,
+            "subtitle": f"{off_role} • {selected_mgr['display_title']}",
             "node_label": "Field Officer",
             "color": NODE_TYPE_STYLES["agent"]["color"],
             "size": 24,
@@ -366,12 +389,12 @@ def get_db_schema_graph(
             "details": {
                 "Officer Name": off_name,
                 "Role": off_role,
-                "Branch": selected_mgr["name"],
+                "Branch": selected_mgr["display_title"],
+                "Branch Code": f"#{selected_mgr['code']}",
                 "Zone": selected_zonal["name"]
             }
         })
 
-        # Fetch REAL customers from PostgreSQL for this branch!
         agent_customers = []
         try:
             conn = get_connection()
@@ -400,8 +423,7 @@ def get_db_schema_graph(
         if not agent_customers:
             agent_customers = [
                 {"cust_id": "261", "cust_name": "SUVARNA J", "acnt_num": "1000100000045", "sanc_amt": 2000000, "loan_type": "Personal Loan", "sanc_date": "2025-11-12"},
-                {"cust_id": "1398", "cust_name": "DEVENDRA KUMAR P", "acnt_num": "1000400000222", "sanc_amt": 1500000, "loan_type": "Commercial Loan", "sanc_date": "2025-09-10"},
-                {"cust_id": "1395", "cust_name": "CHIDANANDA POOJARY", "acnt_num": "1000400000441", "sanc_amt": 1300000, "loan_type": "Working Capital", "sanc_date": "2025-10-05"}
+                {"cust_id": "1398", "cust_name": "DEVENDRA KUMAR P", "acnt_num": "1000400000222", "sanc_amt": 1500000, "loan_type": "Commercial Loan", "sanc_date": "2025-09-10"}
             ]
 
         for c in agent_customers:
@@ -419,7 +441,7 @@ def get_db_schema_graph(
                     "Customer Name": c["cust_name"],
                     "Customer ID": c["cust_id"],
                     "Servicing Officer": off_name,
-                    "Branch": selected_mgr["name"],
+                    "Branch": selected_mgr["display_title"],
                     "Account Number": c["acnt_num"],
                     "Sanctioned Limit": f"₹{c['sanc_amt']:,}",
                     "Loan Product": c["loan_type"],
@@ -436,7 +458,7 @@ def get_db_schema_graph(
             })
 
     # -------------------------------------------------------------
-    # TIER 4: CUSTOMER DETAIL VIEW (Customer -> Accounts, Payouts, Repayments)
+    # TIER 4: CUSTOMER DETAIL VIEW
     # -------------------------------------------------------------
     elif current_level == "customer" or customer_id:
         target_cust = None
@@ -450,6 +472,8 @@ def get_db_schema_graph(
             """, (customer_id or "261",))
             c_row = cur.fetchone()
             if c_row:
+                br_code_str = str(c_row[6] or "1001")
+                br_name = BRANCH_METADATA_MAP.get(br_code_str, {}).get("name", f"Branch #{br_code_str}")
                 target_cust = {
                     "cust_id": str(c_row[0]),
                     "cust_name": str(c_row[1]),
@@ -457,7 +481,8 @@ def get_db_schema_graph(
                     "sanc_amt": float(c_row[3] or 0),
                     "loan_type": str(c_row[4] or "Term Loan"),
                     "sanc_date": str(c_row[5] or "2025-10-01"),
-                    "brn_code": str(c_row[6] or "1001")
+                    "brn_code": br_code_str,
+                    "brn_name": br_name
                 }
             conn.close()
         except Exception:
@@ -471,7 +496,8 @@ def get_db_schema_graph(
                 "sanc_amt": 2000000,
                 "loan_type": "Personal Loan",
                 "sanc_date": "2025-11-12",
-                "brn_code": "1001"
+                "brn_code": "1001",
+                "brn_name": "Bangalore Central Headquarters"
             }
 
         selected_customer = target_cust
@@ -488,7 +514,8 @@ def get_db_schema_graph(
             "details": {
                 "Customer Name": target_cust["cust_name"],
                 "Customer ID": str(target_cust["cust_id"]),
-                "Branch Code": f"Branch #{target_cust.get('brn_code', '1001')}",
+                "Branch": target_cust.get("brn_name", "Bangalore Central"),
+                "Branch Code": f"#{target_cust.get('brn_code', '1001')}",
                 "Risk Rating": "Grade A (Compliant)",
                 "Total Sanction Limit": f"₹{target_cust['sanc_amt']:,}"
             }

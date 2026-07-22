@@ -84,6 +84,7 @@ interface BranchItem {
   id: string;
   code: string;
   name: string;
+  display_title: string;
   manager: string;
   cust_count: number;
   acnt_count: number;
@@ -279,9 +280,12 @@ export default function DBSchemaGraph() {
     loadGraph({ level: 'customer', custId });
   };
 
+  // EVERY NODE IS 100% CLICKABLE
   const handleNodeClick = (node: GraphNode) => {
+    // Unconditionally update selectedNode so the left inspector panel populates!
     setSelectedNode(node);
 
+    // Dynamic Level Drilldown based on node type
     if (node.type === 'zonal' && node.zonal_id) {
       navigateToZonal(node.zonal_id);
     } else if (node.type === 'manager' && node.manager_id) {
@@ -293,8 +297,8 @@ export default function DBSchemaGraph() {
     } else if (node.type === 'executive') {
       navigateToExecutive();
     } else if (graphRef.current && node.x != null && node.y != null) {
-      graphRef.current.centerAt(node.x, node.y, 600);
-      graphRef.current.zoom(2.0, 600);
+      graphRef.current.centerAt(node.x, node.y, 500);
+      graphRef.current.zoom(2.0, 500);
     }
   };
 
@@ -468,12 +472,22 @@ export default function DBSchemaGraph() {
     [hoverNode, selectedNode, isDark]
   );
 
+  // EXPANDED POINTER AREA FOR 100% EASY CLICKING ON NODES AND LABELS
   const drawNodePointerArea = useCallback((node: any, color: string, ctx: CanvasRenderingContext2D) => {
-    const size = (node.size || 20) + 12;
+    const size = (node.size || 20) + 16;
     ctx.fillStyle = color;
     ctx.beginPath();
     ctx.arc(node.x!, node.y!, size, 0, 2 * Math.PI);
     ctx.fill();
+
+    const titleText = String(node.title || '');
+    const labelWidth = Math.max(100, Math.min(260, titleText.length * 9 + 24));
+    ctx.fillRect(
+      node.x! - labelWidth / 2,
+      node.y! + size - 8,
+      labelWidth,
+      28
+    );
   }, []);
 
   const getNodeIcon = (type: string) => {
@@ -516,12 +530,12 @@ export default function DBSchemaGraph() {
             {m && (
               <Badge variant="secondary" className="text-xs font-mono font-medium flex items-center gap-1">
                 <Database className="h-3 w-3 text-primary" />
-                {m.total_customers.toLocaleString()} Borrowers • {m.total_branches} Branches
+                {m.total_customers.toLocaleString()} Borrowers • {m.total_branches} Named Branches
               </Badge>
             )}
           </div>
           <p className="text-[11px] text-muted-foreground mt-0.5">
-            Querying all 11,347 customers across 16 branches. Click any Executive, Zone, Branch, Officer, or Borrower node to drill down.
+            Querying all 11,347 customers across 16 named branches. Click any node or label to inspect details on the left.
           </p>
         </div>
 
@@ -530,10 +544,10 @@ export default function DBSchemaGraph() {
             <div className="relative">
               <Search className="h-3.5 w-3.5 absolute left-2.5 top-2.5 text-muted-foreground" />
               <Input
-                placeholder="Search Customer Name, ID, or Branch Code..."
+                placeholder="Search Branch Name (e.g. Indiranagar, MG Road), Customer..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="h-8 text-xs pl-8 w-[220px] md:w-[280px] rounded-xl border-border/80"
+                className="h-8 text-xs pl-8 w-[220px] md:w-[320px] rounded-xl border-border/80"
               />
               {searchQuery && (
                 <button
@@ -619,7 +633,7 @@ export default function DBSchemaGraph() {
                 }`}
               >
                 <Building className="h-3.5 w-3.5 text-indigo-500" />
-                Branch: {data.selected_manager.name}
+                Branch: {data.selected_manager.display_title || data.selected_manager.name}
               </button>
             </>
           )}
@@ -659,7 +673,7 @@ export default function DBSchemaGraph() {
       <div className="flex flex-col lg:flex-row gap-4 min-h-0 flex-1">
         
         {/* LEFT-SIDE OVERVIEW INSPECTOR PANEL */}
-        <div className="w-full lg:w-[350px] shrink-0 flex flex-col bg-card rounded-2xl border border-border/70 overflow-hidden order-2 lg:order-1">
+        <div className="w-full lg:w-[360px] shrink-0 flex flex-col bg-card rounded-2xl border border-border/70 overflow-hidden order-2 lg:order-1">
           {selectedNode ? (
             <div className="flex flex-col h-full min-h-0">
               {/* Record Header */}
@@ -757,7 +771,7 @@ export default function DBSchemaGraph() {
           ) : (
             <div className="flex flex-col items-center justify-center h-full p-6 text-muted-foreground text-center">
               <Network className="h-6 w-6 stroke-1 animate-pulse mb-2 text-muted-foreground/60" />
-              <p className="text-xs">Click any Executive, Zone, Branch, Officer, or Customer node to inspect overview details on the left.</p>
+              <p className="text-xs">Click any node or label to inspect overview details on the left.</p>
             </div>
           )}
         </div>
@@ -836,7 +850,7 @@ export default function DBSchemaGraph() {
               {viewLevel} Tier
             </Badge>
             <span className="font-mono text-muted-foreground">• {data?.nodes.length || 0} active nodes</span>
-            <span className="text-muted-foreground">• Click any node to drill down</span>
+            <span className="text-muted-foreground">• Click any node or label to inspect</span>
           </div>
         </div>
 
