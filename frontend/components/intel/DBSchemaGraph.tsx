@@ -22,16 +22,20 @@ import {
   RefreshCw,
   Info,
   Link2,
-  Building2
+  Building2,
+  ZoomIn,
+  ZoomOut,
+  RotateCcw,
+  Move
 } from 'lucide-react';
 
 const ForceGraph2D = dynamic(() => import('react-force-graph-2d'), {
   ssr: false,
   loading: () => (
-    <div className="flex h-[480px] items-center justify-center bg-card/30 rounded-2xl border border-border/50">
+    <div className="flex h-[520px] items-center justify-center bg-card/30 rounded-2xl border border-border/50">
       <div className="flex items-center gap-2 text-muted-foreground animate-pulse text-xs">
         <Network className="h-4 w-4 animate-spin text-primary" />
-        <span>Loading curiosity graph...</span>
+        <span>Loading expanded graph engine...</span>
       </div>
     </div>
   ),
@@ -90,7 +94,7 @@ export default function DBSchemaGraph() {
   const [hoverNode, setHoverNode] = useState<GraphNode | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [isExpanded, setIsExpanded] = useState(false);
-  const [dimensions, setDimensions] = useState({ width: 700, height: 480 });
+  const [dimensions, setDimensions] = useState({ width: 800, height: 520 });
 
   const isDark = theme === 'dark';
 
@@ -114,32 +118,62 @@ export default function DBSchemaGraph() {
     loadGraph();
   }, [loadGraph]);
 
+  // Dynamic dimension calculation for full screen expansion
   useEffect(() => {
     const handleResize = () => {
       if (containerRef.current) {
         const rect = containerRef.current.getBoundingClientRect();
         setDimensions({
           width: rect.width,
-          height: isExpanded ? window.innerHeight - 200 : 480,
+          height: isExpanded ? Math.max(650, window.innerHeight - 180) : 520,
         });
       }
     };
     window.addEventListener('resize', handleResize);
     handleResize();
-    const timeout = setTimeout(handleResize, 150);
+    const timeout = setTimeout(handleResize, 100);
     return () => {
       window.removeEventListener('resize', handleResize);
       clearTimeout(timeout);
     };
   }, [data, isExpanded]);
 
-  useEffect(() => {
-    if (graphRef.current && data && data.nodes.length > 0) {
-      setTimeout(() => {
-        graphRef.current.zoomToFit(400, 60);
-      }, 200);
-    }
+  // Apply strong repulsion & link distance physics so nodes spread out legibly
+  const forceGraphData = useMemo(() => {
+    return data
+      ? {
+          nodes: data.nodes.map((n) => ({ ...n, id: n.id })),
+          links: data.edges.map((e) => ({
+            source: typeof e.source === 'object' ? e.source.id : e.source,
+            target: typeof e.target === 'object' ? e.target.id : e.target,
+            label: e.label,
+            purpose: e.purpose
+          })),
+        }
+      : { nodes: [], links: [] };
   }, [data]);
+
+  useEffect(() => {
+    if (!graphRef.current || forceGraphData.nodes.length === 0) return;
+
+    const timer = setTimeout(() => {
+      // Strong repulsion to prevent congestion
+      const chargeForce = graphRef.current.d3Force('charge');
+      if (chargeForce?.strength) {
+        chargeForce.strength(-650);
+      }
+
+      // Link distance to spread connected nodes comfortably
+      const linkForce = graphRef.current.d3Force('link');
+      if (linkForce?.distance) {
+        linkForce.distance(160);
+      }
+
+      graphRef.current.zoomToFit(500, 90);
+    }, 150);
+
+    return () => clearTimeout(timer);
+  }, [forceGraphData, dimensions]);
 
   const handleSearchSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -151,6 +185,24 @@ export default function DBSchemaGraph() {
   const selectSampleAccount = (accNum: string) => {
     setSearchQuery(accNum);
     loadGraph(accNum);
+  };
+
+  const handleZoomIn = () => {
+    if (graphRef.current) {
+      graphRef.current.zoom(graphRef.current.zoom() * 1.3, 300);
+    }
+  };
+
+  const handleZoomOut = () => {
+    if (graphRef.current) {
+      graphRef.current.zoom(graphRef.current.zoom() / 1.3, 300);
+    }
+  };
+
+  const handleResetZoom = () => {
+    if (graphRef.current) {
+      graphRef.current.zoomToFit(400, 90);
+    }
   };
 
   const linksByNode = useMemo(() => {
@@ -170,9 +222,10 @@ export default function DBSchemaGraph() {
     return map;
   }, [data]);
 
+  // High-legibility node rendering with background text pills
   const paintNode = useCallback(
     (node: any, ctx: CanvasRenderingContext2D, globalScale: number) => {
-      const size = node.size || 18;
+      const size = node.size || 20;
       const isSelected = selectedNode?.id === node.id;
       const isHovered = hoverNode?.id === node.id;
       const isNeighborOfSelected = selectedNode
@@ -185,9 +238,17 @@ export default function DBSchemaGraph() {
         if (!isConnected) isDimmed = true;
       }
 
-      // Fill node circle with distinct, polished category colors
+      // Outer Selection Ring Glow
+      if (isSelected || isHovered) {
+        ctx.beginPath();
+        ctx.arc(node.x!, node.y!, size + 6 / globalScale, 0, 2 * Math.PI);
+        ctx.fillStyle = isDark ? 'rgba(56, 189, 248, 0.25)' : 'rgba(7, 95, 172, 0.25)';
+        ctx.fill();
+      }
+
+      // Node Body Circle
       ctx.beginPath();
-      ctx.arc(node.x!, node.y!, size + (isHovered ? 2.5 : 0), 0, 2 * Math.PI);
+      ctx.arc(node.x!, node.y!, size + (isHovered ? 2 : 0), 0, 2 * Math.PI);
       
       let fillColor = node.color || '#075fac';
       if (isDimmed) fillColor = isDark ? '#1e293b' : '#e2e8f0';
@@ -195,31 +256,49 @@ export default function DBSchemaGraph() {
       ctx.fillStyle = fillColor;
       ctx.fill();
 
-      // Node ring outline
+      // Border outline
       ctx.strokeStyle = isSelected
         ? (isDark ? '#ffffff' : '#000000')
         : isHovered || isNeighborOfSelected
-        ? (isDark ? '#cbd5e1' : '#334155')
-        : (isDark ? 'rgba(255, 255, 255, 0.2)' : 'rgba(0, 0, 0, 0.15)');
+        ? (isDark ? '#e2e8f0' : '#1e293b')
+        : (isDark ? 'rgba(255, 255, 255, 0.3)' : 'rgba(0, 0, 0, 0.2)');
       
-      ctx.lineWidth = (isSelected ? 3 : isHovered ? 2 : 1.5) / globalScale;
+      ctx.lineWidth = (isSelected ? 3 : isHovered ? 2.5 : 1.5) / globalScale;
       ctx.stroke();
 
-      // Node Label Text (Displays Customer Name prominently on Customer Node)
+      // Text Label Pill Background for Maximum Legibility
+      const titleText = String(node.title || '');
       const baseFontSize = isHovered || isSelected ? 13 : 11;
-      const scaledFontSize = Math.min(baseFontSize / Math.max(globalScale * 0.5, 0.4), baseFontSize * 1.6);
+      const scaledFontSize = Math.min(baseFontSize / Math.max(globalScale * 0.5, 0.35), baseFontSize * 1.5);
+      
       ctx.font = `${isSelected || isHovered ? '600' : '500'} ${scaledFontSize}px Inter, system-ui, sans-serif`;
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'top';
+      const textWidth = ctx.measureText(titleText).width;
+      const textHeight = scaledFontSize * 1.2;
+      const textY = node.y! + size + 5;
 
-      const textY = node.y! + size + 4;
-      ctx.fillStyle = isDimmed ? (isDark ? '#475569' : '#94a3b8') : (isDark ? '#f8fafc' : '#0f172a');
-      ctx.fillText(node.title, node.x!, textY);
+      if (!isDimmed) {
+        // Draw background pill behind text so it never collides with lines
+        ctx.fillStyle = isDark ? 'rgba(15, 23, 42, 0.88)' : 'rgba(255, 255, 255, 0.92)';
+        const padX = 6;
+        const padY = 3;
+        ctx.beginPath();
+        ctx.roundRect(
+          node.x! - textWidth / 2 - padX,
+          textY - padY,
+          textWidth + padX * 2,
+          textHeight + padY * 2,
+          4
+        );
+        ctx.fill();
+        ctx.strokeStyle = isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)';
+        ctx.lineWidth = 1 / globalScale;
+        ctx.stroke();
 
-      if (node.subtitle && (globalScale > 0.9 || isSelected || isHovered)) {
-        ctx.font = `400 ${Math.max(8, scaledFontSize * 0.85)}px Inter, sans-serif`;
-        ctx.fillStyle = isDark ? '#94a3b8' : '#64748b';
-        ctx.fillText(node.subtitle, node.x!, textY + scaledFontSize + 2);
+        // Print Text
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'top';
+        ctx.fillStyle = isDark ? '#f8fafc' : '#0f172a';
+        ctx.fillText(titleText, node.x!, textY);
       }
     },
     [selectedNode, hoverNode, linksByNode, isDark]
@@ -253,12 +332,12 @@ export default function DBSchemaGraph() {
       ctx.moveTo(start.x, start.y);
       ctx.lineTo(end.x, end.y); // CORRECT GEOMETRY: end.x, end.y
 
-      let opacity = isDimmed ? 0.08 : 0.4;
+      let opacity = isDimmed ? 0.08 : 0.45;
       let strokeColor = isDark ? '148, 163, 184' : '100, 116, 139';
       let lineWidth = 1.5;
 
       if (isConnectedToHover) {
-        opacity = 0.9;
+        opacity = 0.95;
         strokeColor = isDark ? '56, 189, 248' : '7, 95, 172';
         lineWidth = 2.5;
       }
@@ -268,18 +347,32 @@ export default function DBSchemaGraph() {
       ctx.stroke();
 
       // Draw connection edge label
-      if ((globalScale > 0.8 || isConnectedToHover) && !isDimmed) {
+      if ((globalScale > 0.75 || isConnectedToHover) && !isDimmed) {
         const midX = (start.x + end.x) / 2;
         const midY = (start.y + end.y) / 2;
+        const labelText = String(link.label || '');
         ctx.font = `500 ${Math.max(8, 10 / Math.max(globalScale, 0.6))}px Inter, sans-serif`;
-        ctx.fillStyle = isDark ? 'rgba(203, 213, 225, 0.85)' : 'rgba(71, 85, 105, 0.85)';
+        
+        ctx.fillStyle = isDark ? 'rgba(15, 23, 42, 0.85)' : 'rgba(241, 245, 249, 0.9)';
+        const lWidth = ctx.measureText(labelText).width;
+        ctx.fillRect(midX - lWidth / 2 - 3, midY - 6, lWidth + 6, 12);
+
+        ctx.fillStyle = isDark ? '#cbd5e1' : '#334155';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
-        ctx.fillText(link.label || '', midX, midY);
+        ctx.fillText(labelText, midX, midY);
       }
     },
     [hoverNode, selectedNode, isDark]
   );
+
+  const drawNodePointerArea = useCallback((node: any, color: string, ctx: CanvasRenderingContext2D) => {
+    const size = (node.size || 20) + 12;
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.arc(node.x!, node.y!, size, 0, 2 * Math.PI);
+    ctx.fill();
+  }, []);
 
   const focusNode = useCallback((node: GraphNode) => {
     setSelectedNode(node);
@@ -306,23 +399,9 @@ export default function DBSchemaGraph() {
     }
   };
 
-  const forceGraphData = useMemo(() => {
-    return data
-      ? {
-          nodes: data.nodes.map((n) => ({ ...n, id: n.id })),
-          links: data.edges.map((e) => ({
-            source: typeof e.source === 'object' ? e.source.id : e.source,
-            target: typeof e.target === 'object' ? e.target.id : e.target,
-            label: e.label,
-            purpose: e.purpose
-          })),
-        }
-      : { nodes: [], links: [] };
-  }, [data]);
-
   return (
     <div className={`flex flex-col h-full overflow-hidden ${isExpanded ? 'fixed inset-0 z-50 bg-background p-6' : ''}`}>
-      {/* Top Bar Header */}
+      {/* Top Header & Search Control Bar */}
       <div className="flex flex-col md:flex-row md:items-center justify-between border-b pb-4 mb-4 gap-3 shrink-0">
         <div>
           <div className="flex items-center gap-2">
@@ -336,7 +415,7 @@ export default function DBSchemaGraph() {
             )}
           </div>
           <p className="text-[11px] text-muted-foreground mt-0.5">
-            Search or select a customer account to visualize connected borrower records, disbursements, repayments, and schedule lines.
+            Interactive, movable entity network. Drag nodes to reposition, scroll to zoom, or search customer accounts.
           </p>
         </div>
 
@@ -368,8 +447,21 @@ export default function DBSchemaGraph() {
             </Button>
           </form>
 
-          <Button variant="outline" size="sm" onClick={() => setIsExpanded(p => !p)} className="rounded-xl h-8 w-8 p-0 shrink-0">
-            {isExpanded ? <Minimize2 className="h-3.5 w-3.5" /> : <Maximize2 className="h-3.5 w-3.5" />}
+          <Button
+            variant={isExpanded ? "default" : "outline"}
+            size="sm"
+            onClick={() => setIsExpanded(p => !p)}
+            className="rounded-xl h-8 text-xs px-3 shrink-0 flex items-center gap-1.5"
+          >
+            {isExpanded ? (
+              <>
+                <Minimize2 className="h-3.5 w-3.5" /> Exit Full Screen
+              </>
+            ) : (
+              <>
+                <Maximize2 className="h-3.5 w-3.5" /> Expand Canvas
+              </>
+            )}
           </Button>
         </div>
       </div>
@@ -407,8 +499,11 @@ export default function DBSchemaGraph() {
       <div className="flex flex-col lg:flex-row gap-4 min-h-0 flex-1">
         {/* Force-directed Link Graph Canvas */}
         <div ref={containerRef} className="flex-1 bg-card/20 rounded-2xl border border-border/70 overflow-hidden relative flex flex-col justify-between">
-          <div className="absolute top-3 left-3 z-10 flex flex-col gap-1 bg-background/80 backdrop-blur-md border rounded-xl p-2.5 max-w-[210px] pointer-events-none shadow-sm">
-            <span className="text-[9px] uppercase tracking-wider font-semibold text-muted-foreground">Entity Color Legend</span>
+          {/* Top Left Legend */}
+          <div className="absolute top-3 left-3 z-10 flex flex-col gap-1 bg-background/85 backdrop-blur-md border rounded-xl p-2.5 max-w-[210px] pointer-events-none shadow-sm">
+            <span className="text-[9px] uppercase tracking-wider font-semibold text-muted-foreground flex items-center gap-1">
+              <Move className="h-2.5 w-2.5" /> Drag & Click Nodes
+            </span>
             <div className="space-y-1 mt-1 text-[10px]">
               <div className="flex items-center gap-1.5">
                 <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: '#0284c7' }} />
@@ -433,6 +528,19 @@ export default function DBSchemaGraph() {
             </div>
           </div>
 
+          {/* Top Right Zoom Controls */}
+          <div className="absolute top-3 right-3 z-10 flex items-center gap-1 bg-background/85 backdrop-blur-md border rounded-xl p-1 shadow-sm">
+            <Button variant="ghost" size="sm" onClick={handleZoomIn} title="Zoom In" className="h-7 w-7 p-0 rounded-lg">
+              <ZoomIn className="h-3.5 w-3.5" />
+            </Button>
+            <Button variant="ghost" size="sm" onClick={handleZoomOut} title="Zoom Out" className="h-7 w-7 p-0 rounded-lg">
+              <ZoomOut className="h-3.5 w-3.5" />
+            </Button>
+            <Button variant="ghost" size="sm" onClick={handleResetZoom} title="Reset View" className="h-7 w-7 p-0 rounded-lg">
+              <RotateCcw className="h-3.5 w-3.5" />
+            </Button>
+          </div>
+
           {data && (
             <ForceGraph2D
               ref={graphRef}
@@ -444,20 +552,26 @@ export default function DBSchemaGraph() {
               linkCanvasObject={paintLink}
               onNodeClick={(node) => focusNode(node as GraphNode)}
               onNodeHover={(node) => setHoverNode(node ? (node as GraphNode) : null)}
-              cooldownTicks={100}
+              enableNodeDrag={true}
+              enableZoomInteraction={true}
+              enablePanInteraction={true}
+              nodePointerAreaPaint={drawNodePointerArea}
+              cooldownTicks={200}
+              d3AlphaDecay={0.02}
+              d3VelocityDecay={0.2}
               onEngineStop={() => {
-                graphRef.current?.zoomToFit(300, 60);
+                graphRef.current?.zoomToFit(300, 80);
               }}
             />
           )}
 
-          {/* Bottom Active Node Summary Bar */}
-          <div className="absolute bottom-3 left-3 z-10 flex items-center gap-2 bg-background/80 backdrop-blur-md px-3 py-1.5 rounded-xl border border-border/80 text-[11px]">
+          {/* Bottom Active Summary Bar */}
+          <div className="absolute bottom-3 left-3 z-10 flex items-center gap-2 bg-background/85 backdrop-blur-md px-3 py-1.5 rounded-xl border border-border/80 text-[11px] shadow-sm">
             <Badge variant="outline" className="font-semibold text-[10px]">
               {data?.customer_name}
             </Badge>
             <span className="font-mono text-muted-foreground">• Account #{data?.selected_account}</span>
-            <span className="text-muted-foreground">• {data?.nodes.length || 0} connected nodes</span>
+            <span className="text-muted-foreground">• {data?.nodes.length || 0} moveable nodes</span>
           </div>
         </div>
 
