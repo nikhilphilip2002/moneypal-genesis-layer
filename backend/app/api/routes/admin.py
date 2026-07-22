@@ -18,9 +18,9 @@ def status():
 
 
 @router.get("/admin/db-schema")
-def db_schema():
-    """Retrieve the PostgreSQL database relation graph for the lending tables."""
-    return get_db_schema_graph()
+def db_schema(search: str = None):
+    """Retrieve the PostgreSQL database relation graph for a specific customer or loan account."""
+    return get_db_schema_graph(search_term=search)
 
 
 @router.post("/intelligence/search")

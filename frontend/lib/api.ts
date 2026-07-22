@@ -210,7 +210,8 @@ export const regulatory = {
 
 export const admin = {
   status: (): Promise<PlatformStatus> => apiRequest('/admin/status'),
-  dbSchema: (): Promise<any> => apiRequest('/admin/db-schema'),
+  dbSchema: (search?: string): Promise<any> =>
+    apiRequest(`/admin/db-schema${search ? `?search=${encodeURIComponent(search)}` : ''}`),
   addInstitution: (data: { name: string; type: string; website?: string; headquarters?: string; msme_focus?: boolean }) =>
     apiRequest('/competitive/institutions', { method: 'POST', body: JSON.stringify(data) }),
   addRegulation: (data: { display_name: string; rbi_url?: string; applicability?: string; effective_date?: string; priority?: string }) =>
