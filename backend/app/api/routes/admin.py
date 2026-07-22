@@ -3,6 +3,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from app.services import brief_cache, platform
+from app.services.db_schema import get_db_schema_graph
 
 router = APIRouter(tags=["admin"])
 
@@ -14,6 +15,12 @@ class SearchRequest(BaseModel):
 @router.get("/admin/status")
 def status():
     return platform.status()
+
+
+@router.get("/admin/db-schema")
+def db_schema():
+    """Retrieve the PostgreSQL database relation graph for the lending tables."""
+    return get_db_schema_graph()
 
 
 @router.post("/intelligence/search")

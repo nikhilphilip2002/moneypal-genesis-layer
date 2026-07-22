@@ -24,6 +24,7 @@ import {
     Settings2,
     ClipboardCheck,
     FileText,
+    Database,
 } from 'lucide-react';
 
 interface NavItem {

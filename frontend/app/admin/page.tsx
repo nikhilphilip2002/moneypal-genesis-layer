@@ -15,7 +15,7 @@ import {
 } from '@/lib/api';
 import { canAccess, homeRoute, ROLE_LABELS, type UserRole } from '@/lib/useUserRole';
 import { useIntel } from '@/lib/useIntel';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -40,7 +40,7 @@ import {
 } from '@/components/ui/dialog';
 import LoadingCard from '@/components/intel/LoadingCard';
 import WidgetError from '@/components/intel/WidgetError';
-import { Check, Circle, Database, Plus, Users } from 'lucide-react';
+import { ArrowRight, Check, Circle, Database, Plus, Users } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 function StatusDot({ ok }: { ok: boolean }) {
@@ -326,6 +326,26 @@ export default function AdminPage() {
                   </CardContent>
                 </Card>
               </div>
+
+              {/* Database Curiosity Graph Quick-Access Banner */}
+              <Card className="dashboard-surface rounded-[1.5rem] border-border/70 shadow-none overflow-hidden bg-gradient-to-br from-primary/[0.03] to-transparent">
+                <CardHeader className="pb-2">
+                  <CardTitle className="flex items-center gap-2 font-headline text-base font-semibold">
+                    <Database className="h-4 w-4 text-primary" /> Database Curiosity Graph
+                  </CardTitle>
+                  <CardDescription className="text-xs">
+                    Explore active lending tables (GENLNACNTS, LOANREPAY, LOANSCHEDULE, GENLNDISB) and logical relationships.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="pb-4 flex flex-col md:flex-row md:items-center justify-between gap-4">
+                  <div className="text-xs text-muted-foreground max-w-xl">
+                    Interact with a live 2D force-directed link graph showing entity row count scaling, logical join keys, schema descriptions, and SQL conditions. Useful for validating migration structures.
+                  </div>
+                  <Button size="sm" className="rounded-xl shrink-0 gap-1.5" onClick={() => router.push('/regulatory?tab=schema')}>
+                    Open Curiosity Graph <ArrowRight className="h-3.5 w-3.5" />
+                  </Button>
+                </CardContent>
+              </Card>
             </TabsContent>
 
             {/* ── Client onboarding ── */}

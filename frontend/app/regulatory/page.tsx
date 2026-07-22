@@ -12,9 +12,11 @@ import { canAccess, homeRoute, type UserRole } from '@/lib/useUserRole';
 import { useIntel } from '@/lib/useIntel';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import IntelligenceCard from '@/components/intel/IntelligenceCard';
 import LoadingCard from '@/components/intel/LoadingCard';
 import WidgetError from '@/components/intel/WidgetError';
+import DBSchemaGraph from '@/components/intel/DBSchemaGraph';
 import { ChevronDown, ExternalLink, Scale } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -89,6 +91,7 @@ function CategoryRow({ category }: { category: RegulationCategory }) {
 export default function RegulatoryPage() {
   const router = useRouter();
   const [authorized, setAuthorized] = useState(false);
+  const [activeTab, setActiveTab] = useState('briefings');
 
   useEffect(() => {
     auth
@@ -104,6 +107,16 @@ export default function RegulatoryPage() {
       .catch(() => router.replace('/login'));
   }, [router]);
 
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      const tab = params.get('tab');
+      if (tab === 'schema') {
+        setActiveTab('schema');
+      }
+    }
+  }, []);
+
   const categories = useIntel<RegulationCategory[]>('regulatory:categories', regulatory.categories);
 
   if (!authorized) {
@@ -116,35 +129,50 @@ export default function RegulatoryPage() {
 
   return (
     <div className="h-full overflow-auto">
-      <div className="mx-auto max-w-4xl px-4 py-6 md:px-6 md:py-8">
+      <div className="mx-auto max-w-6xl px-4 py-6 md:px-6 md:py-8">
         <div className="space-y-5">
           {/* Header */}
           <section className="space-y-2">
             <h1 className="font-headline text-2xl font-semibold tracking-tight md:text-3xl">Regulatory Intelligence</h1>
             <p className="max-w-2xl text-sm text-muted-foreground">
-              RBI regulations applicable to NBFCs below ₹500 crore, translated into business actions for GICC. Expand a category for the full briefing.
+              RBI regulations applicable to NBFCs below ₹500 crore, translated into GICC business logic, alongside relational schema metrics.
             </p>
           </section>
 
-          {/* Category list */}
-          {categories.loading && (
-            <div className="space-y-3">
-              {[1, 2, 3, 4].map((i) => (
-                <LoadingCard key={i} lines={1} />
-              ))}
-            </div>
-          )}
-          {categories.error && <WidgetError title="Regulation registry" onRetry={categories.reload} />}
-          {categories.data && (
-            <div className="space-y-3">
-              {categories.data.map((category) => (
-                <CategoryRow key={category.id} category={category} />
-              ))}
-              {categories.data.length === 0 && (
-                <p className="py-12 text-center text-sm text-muted-foreground">No regulation categories configured.</p>
+          <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+            <TabsList className="mb-4">
+              <TabsTrigger value="briefings">RBI Regulation Briefings</TabsTrigger>
+              <TabsTrigger value="schema">Database Curiosity Graph</TabsTrigger>
+            </TabsList>
+
+            <TabsContent value="briefings" className="space-y-3 mt-0">
+              {/* Category list */}
+              {categories.loading && (
+                <div className="space-y-3">
+                  {[1, 2, 3, 4].map((i) => (
+                    <LoadingCard key={i} lines={1} />
+                  ))}
+                </div>
               )}
-            </div>
-          )}
+              {categories.error && <WidgetError title="Regulation registry" onRetry={categories.reload} />}
+              {categories.data && (
+                <div className="space-y-3">
+                  {categories.data.map((category) => (
+                    <CategoryRow key={category.id} category={category} />
+                  ))}
+                  {categories.data.length === 0 && (
+                    <p className="py-12 text-center text-sm text-muted-foreground">No regulation categories configured.</p>
+                  )}
+                </div>
+              )}
+            </TabsContent>
+
+            <TabsContent value="schema" className="mt-0">
+              <Card className="dashboard-surface rounded-[1.5rem] border-border/70 shadow-none overflow-hidden p-4 md:p-6 bg-card">
+                <DBSchemaGraph />
+              </Card>
+            </TabsContent>
+          </Tabs>
         </div>
       </div>
     </div>

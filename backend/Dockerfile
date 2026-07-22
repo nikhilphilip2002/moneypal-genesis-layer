@@ -3,7 +3,7 @@ FROM python:3.11-slim
 
 WORKDIR /srv
 COPY packages/genesis_core /srv/packages/genesis_core
-RUN pip install --no-cache-dir /srv/packages/genesis_core fastapi "uvicorn[standard]"
+RUN pip install --no-cache-dir /srv/packages/genesis_core fastapi "uvicorn[standard]" psycopg2-binary
 
 COPY backend /srv/backend
 WORKDIR /srv/backend
