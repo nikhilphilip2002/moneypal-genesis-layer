@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import { admin } from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -32,17 +33,16 @@ import {
   Award,
   Globe2,
   Building,
-  Database,
-  Filter
+  Database
 } from 'lucide-react';
 
 const ForceGraph2D = dynamic(() => import('react-force-graph-2d'), {
   ssr: false,
   loading: () => (
-    <div className="flex h-[520px] items-center justify-center bg-card/30 rounded-2xl border border-border/50">
+    <div className="flex h-[540px] items-center justify-center bg-card/30 rounded-2xl border border-border/50">
       <div className="flex items-center gap-2 text-muted-foreground animate-pulse text-xs">
         <Network className="h-4 w-4 animate-spin text-primary" />
-        <span>Loading 5-Tier Enterprise Curiosity Graph...</span>
+        <span>Loading Enterprise Curiosity Graph...</span>
       </div>
     </div>
   ),
@@ -140,6 +140,7 @@ export default function DBSchemaGraph() {
 
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState<HierarchicalGraphPayload | null>(null);
+  const [isMounted, setIsMounted] = useState(false);
   
   // Navigation State Across 5 Enterprise Tiers
   const [viewLevel, setViewLevel] = useState<'executive' | 'zonal' | 'manager' | 'agent' | 'customer'>('executive');
@@ -157,9 +158,13 @@ export default function DBSchemaGraph() {
   const [isSearchOpen, setIsSearchOpen] = useState(false);
 
   const [isExpanded, setIsExpanded] = useState(false);
-  const [dimensions, setDimensions] = useState({ width: 800, height: 520 });
+  const [dimensions, setDimensions] = useState({ width: 800, height: 540 });
 
   const isDark = theme === 'dark';
+
+  useEffect(() => {
+    setIsMounted(true);
+  }, []);
 
   const loadGraph = useCallback(async (opts?: {
     level?: 'executive' | 'zonal' | 'manager' | 'agent' | 'customer';
@@ -207,19 +212,19 @@ export default function DBSchemaGraph() {
     loadGraph();
   }, [loadGraph]);
 
-  // Robust Full-Screen Canvas Dimensions Calculation
+  // Robust Canvas Dimension Measurement
   useEffect(() => {
     const handleResize = () => {
       if (isExpanded) {
         setDimensions({
-          width: Math.max(600, window.innerWidth - 32),
-          height: Math.max(450, window.innerHeight - 150),
+          width: Math.max(600, window.innerWidth - 48),
+          height: Math.max(450, window.innerHeight - 170),
         });
       } else if (containerRef.current) {
         const rect = containerRef.current.getBoundingClientRect();
         setDimensions({
           width: Math.max(400, rect.width),
-          height: 520,
+          height: 540,
         });
       }
     };
@@ -576,10 +581,10 @@ export default function DBSchemaGraph() {
 
   const m = data?.total_database_metrics;
 
-  return (
-    <div className={`flex flex-col ${isExpanded ? 'fixed inset-0 z-[100] w-screen h-screen bg-background p-4 overflow-hidden' : 'h-full overflow-hidden'}`}>
+  const graphContent = (
+    <div className={`flex flex-col ${isExpanded ? 'fixed inset-0 z-[9999] w-screen h-screen bg-background p-6 overflow-hidden' : 'w-full h-full min-h-[580px]'}`}>
       {/* Top Header Bar */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between border-b pb-4 mb-3 gap-3 shrink-0">
+      <div className="flex flex-wrap items-center justify-between border-b pb-4 mb-3 gap-3 shrink-0">
         <div>
           <div className="flex items-center gap-2 flex-wrap">
             <h2 className="text-base font-headline font-semibold tracking-tight md:text-lg flex items-center gap-2">
@@ -601,9 +606,8 @@ export default function DBSchemaGraph() {
         </div>
 
         {/* SEARCH WITH ENTITY DROPDOWN & LIVE AUTOCOMPLETE */}
-        <div className="flex items-center gap-2 relative">
+        <div className="flex items-center gap-2 relative flex-wrap">
           <form onSubmit={handleSearchSubmit} className="flex items-center gap-1.5 relative">
-            {/* Entity Type Dropdown Selector */}
             <div className="relative">
               <select
                 value={searchEntityType}
@@ -618,7 +622,6 @@ export default function DBSchemaGraph() {
               </select>
             </div>
 
-            {/* Input Search Box */}
             <div className="relative">
               <Search className="h-3.5 w-3.5 absolute left-2.5 top-2.5 text-muted-foreground" />
               <Input
@@ -628,7 +631,7 @@ export default function DBSchemaGraph() {
                 onFocus={() => {
                   if (searchResults.length > 0) setIsSearchOpen(true);
                 }}
-                className="h-8 text-xs pl-8 w-[200px] md:w-[260px] rounded-xl border-border/80"
+                className="h-8 text-xs pl-8 w-[190px] md:w-[260px] rounded-xl border-border/80"
               />
               {searchQuery && (
                 <button
@@ -700,7 +703,6 @@ export default function DBSchemaGraph() {
       {/* 5-Tier Breadcrumb Navigation Header */}
       <div className="flex flex-wrap items-center justify-between gap-2 mb-3 bg-muted/40 p-2.5 rounded-xl border shrink-0 text-xs">
         <div className="flex items-center gap-1.5 font-medium overflow-x-auto">
-          {/* Level 0: Executive MD */}
           <button
             onClick={navigateToExecutive}
             className={`flex items-center gap-1 px-2.5 py-1 rounded-lg border transition-all ${
@@ -713,7 +715,6 @@ export default function DBSchemaGraph() {
             MD & CEO: Dr. Vikramaditya Rao
           </button>
 
-          {/* Level 1: Zonal Director */}
           {(viewLevel === 'zonal' || viewLevel === 'manager' || viewLevel === 'agent' || viewLevel === 'customer') && data?.selected_zonal && (
             <>
               <ChevronRight className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
@@ -731,7 +732,6 @@ export default function DBSchemaGraph() {
             </>
           )}
 
-          {/* Level 2: Branch Manager */}
           {(viewLevel === 'manager' || viewLevel === 'agent' || viewLevel === 'customer') && data?.selected_manager && (
             <>
               <ChevronRight className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
@@ -749,7 +749,6 @@ export default function DBSchemaGraph() {
             </>
           )}
 
-          {/* Level 3: Loan Officer / Agent */}
           {(viewLevel === 'agent' || viewLevel === 'customer') && data?.selected_agent && (
             <>
               <ChevronRight className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
@@ -767,7 +766,6 @@ export default function DBSchemaGraph() {
             </>
           )}
 
-          {/* Level 4: Customer */}
           {viewLevel === 'customer' && data?.selected_customer && (
             <>
               <ChevronRight className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
@@ -787,7 +785,6 @@ export default function DBSchemaGraph() {
         <div className="w-full lg:w-[360px] shrink-0 flex flex-col bg-card rounded-2xl border border-border/70 overflow-hidden order-2 lg:order-1">
           {selectedNode ? (
             <div className="flex flex-col h-full min-h-0">
-              {/* Record Header */}
               <div className="p-4 border-b shrink-0 bg-muted/20" style={{ borderTop: `4px solid ${selectedNode.color}` }}>
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
@@ -810,7 +807,6 @@ export default function DBSchemaGraph() {
                 </div>
               </div>
 
-              {/* Attributes Key-Value Table */}
               <div className="flex-1 overflow-y-auto p-4 space-y-2">
                 <div className="flex items-center justify-between mb-2">
                   <span className="text-[9px] uppercase tracking-wider font-semibold text-muted-foreground">
@@ -846,7 +842,6 @@ export default function DBSchemaGraph() {
                 ))}
               </div>
 
-              {/* Relational Join Paths Helper */}
               <div className="p-3 bg-muted/40 border-t shrink-0">
                 <span className="text-[9px] uppercase tracking-wider font-semibold text-muted-foreground block mb-1">
                   Relational Join Paths ({data?.edges.filter(e => {
@@ -889,7 +884,6 @@ export default function DBSchemaGraph() {
 
         {/* RIGHT GRAPH CANVAS */}
         <div ref={containerRef} className="flex-1 bg-card/20 rounded-2xl border border-border/70 overflow-hidden relative flex flex-col justify-between order-1 lg:order-2">
-          {/* Top Left Legend */}
           <div className="absolute top-3 left-3 z-10 flex flex-col gap-1 bg-background/85 backdrop-blur-md border rounded-xl p-2.5 max-w-[210px] pointer-events-none shadow-sm">
             <span className="text-[9px] uppercase tracking-wider font-semibold text-muted-foreground flex items-center gap-1">
               <Move className="h-2.5 w-2.5" /> Move & Click Nodes
@@ -918,7 +912,6 @@ export default function DBSchemaGraph() {
             </div>
           </div>
 
-          {/* Top Right Zoom Controls */}
           <div className="absolute top-3 right-3 z-10 flex items-center gap-1 bg-background/85 backdrop-blur-md border rounded-xl p-1 shadow-sm">
             <Button variant="ghost" size="sm" onClick={handleZoomIn} title="Zoom In" className="h-7 w-7 p-0 rounded-lg">
               <ZoomIn className="h-3.5 w-3.5" />
@@ -955,7 +948,6 @@ export default function DBSchemaGraph() {
             />
           )}
 
-          {/* Bottom Active Summary Bar */}
           <div className="absolute bottom-3 left-3 z-10 flex items-center gap-2 bg-background/85 backdrop-blur-md px-3 py-1.5 rounded-xl border border-border/80 text-[11px] shadow-sm">
             <Badge variant="outline" className="font-semibold text-[10px] uppercase">
               {viewLevel} Tier
@@ -968,4 +960,10 @@ export default function DBSchemaGraph() {
       </div>
     </div>
   );
+
+  if (isExpanded && isMounted) {
+    return createPortal(graphContent, document.body);
+  }
+
+  return graphContent;
 }

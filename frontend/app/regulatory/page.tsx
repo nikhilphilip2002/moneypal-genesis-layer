@@ -168,7 +168,7 @@ export default function RegulatoryPage() {
             </TabsContent>
 
             <TabsContent value="schema" className="mt-0">
-              <Card className="dashboard-surface rounded-[1.5rem] border-border/70 shadow-none overflow-hidden p-4 md:p-6 bg-card">
+              <Card className="dashboard-surface rounded-[1.5rem] border-border/70 shadow-none overflow-hidden p-4 md:p-6 bg-card min-h-[680px]">
                 <DBSchemaGraph />
               </Card>
             </TabsContent>
