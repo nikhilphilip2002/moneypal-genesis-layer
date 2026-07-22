@@ -33,7 +33,10 @@ import {
   Award,
   Globe2,
   Building,
-  Database
+  Database,
+  TrendingUp,
+  DollarSign,
+  Users
 } from 'lucide-react';
 
 const ForceGraph2D = dynamic(() => import('react-force-graph-2d'), {
@@ -197,7 +200,7 @@ export default function DBSchemaGraph() {
 
       if (res && res.nodes && res.nodes.length > 0) {
         const primaryNode = res.nodes.find((n: GraphNode) => 
-          n.type === 'customer' || n.type === 'agent' || n.type === 'manager' || n.type === 'zonal' || n.type === 'executive'
+          n.type === 'agent' || n.type === 'customer' || n.type === 'manager' || n.type === 'zonal' || n.type === 'executive'
         ) || res.nodes[0];
         setSelectedNode(primaryNode);
       }
@@ -212,7 +215,7 @@ export default function DBSchemaGraph() {
     loadGraph();
   }, [loadGraph]);
 
-  // Robust Canvas Dimension Measurement
+  // Canvas Dimensions Calculation
   useEffect(() => {
     const handleResize = () => {
       if (isExpanded) {
@@ -785,6 +788,7 @@ export default function DBSchemaGraph() {
         <div className="w-full lg:w-[360px] shrink-0 flex flex-col bg-card rounded-2xl border border-border/70 overflow-hidden order-2 lg:order-1">
           {selectedNode ? (
             <div className="flex flex-col h-full min-h-0">
+              {/* Record Header */}
               <div className="p-4 border-b shrink-0 bg-muted/20" style={{ borderTop: `4px solid ${selectedNode.color}` }}>
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
@@ -807,10 +811,52 @@ export default function DBSchemaGraph() {
                 </div>
               </div>
 
+              {/* FEATURED METRIC SUMMARY CARDS FOR OFFICERS / MANAGERS */}
+              <div className="p-3 bg-muted/20 border-b shrink-0">
+                <div className="grid grid-cols-2 gap-2 text-xs">
+                  <div className="p-2 bg-card rounded-xl border border-border/80 flex flex-col">
+                    <span className="text-[9px] uppercase text-muted-foreground font-medium flex items-center gap-1">
+                      <Users className="h-2.5 w-2.5 text-sky-500" /> Borrowers
+                    </span>
+                    <span className="font-mono font-bold text-foreground mt-0.5 text-xs">
+                      {selectedNode.details["Total Borrowers"] || selectedNode.details["Serviced Borrowers"] || "1 Borrower"}
+                    </span>
+                  </div>
+
+                  <div className="p-2 bg-card rounded-xl border border-border/80 flex flex-col">
+                    <span className="text-[9px] uppercase text-muted-foreground font-medium flex items-center gap-1">
+                      <DollarSign className="h-2.5 w-2.5 text-orange-500" /> Disbursed
+                    </span>
+                    <span className="font-mono font-bold text-orange-600 dark:text-orange-400 mt-0.5 text-xs truncate">
+                      {selectedNode.details["Total Disbursed"] || selectedNode.details["Sanctioned Limit"] || "N/A"}
+                    </span>
+                  </div>
+
+                  <div className="p-2 bg-card rounded-xl border border-border/80 flex flex-col">
+                    <span className="text-[9px] uppercase text-muted-foreground font-medium flex items-center gap-1">
+                      <CreditCard className="h-2.5 w-2.5 text-emerald-500" /> Repaid
+                    </span>
+                    <span className="font-mono font-bold text-emerald-600 dark:text-emerald-400 mt-0.5 text-xs truncate">
+                      {selectedNode.details["Total Repaid"] || selectedNode.details["Repayment Amount"] || "N/A"}
+                    </span>
+                  </div>
+
+                  <div className="p-2 bg-card rounded-xl border border-border/80 flex flex-col">
+                    <span className="text-[9px] uppercase text-muted-foreground font-medium flex items-center gap-1">
+                      <TrendingUp className="h-2.5 w-2.5 text-purple-500" /> Efficiency
+                    </span>
+                    <span className="font-mono font-bold text-purple-600 dark:text-purple-400 mt-0.5 text-xs">
+                      {selectedNode.details["Recovery Rate"] || selectedNode.details["Collection Efficiency"] || "Compliant"}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Attributes Key-Value Table */}
               <div className="flex-1 overflow-y-auto p-4 space-y-2">
                 <div className="flex items-center justify-between mb-2">
                   <span className="text-[9px] uppercase tracking-wider font-semibold text-muted-foreground">
-                    Record Overview & Action
+                    Record Overview & Details
                   </span>
                   {selectedNode.type === 'zonal' && selectedNode.zonal_id && (
                     <Button variant="ghost" size="sm" onClick={() => navigateToZonal(selectedNode.zonal_id!)} className="h-6 text-[10px] px-2 text-violet-500">
@@ -842,6 +888,7 @@ export default function DBSchemaGraph() {
                 ))}
               </div>
 
+              {/* Relational Join Paths Helper */}
               <div className="p-3 bg-muted/40 border-t shrink-0">
                 <span className="text-[9px] uppercase tracking-wider font-semibold text-muted-foreground block mb-1">
                   Relational Join Paths ({data?.edges.filter(e => {
