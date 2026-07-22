@@ -7,6 +7,7 @@ COLUMN_MEANINGS = {
     "gnlnac_entity_num": "Entity/Branch Number",
     "gnlnac_acnt_num": "Account Number (PRIMARY KEY)",
     "gnlnac_cust_id": "Customer ID",
+    "gnlnac_cust_name": "Customer / Borrower Name",
     "gnlnac_prod_code": "Product Code",
     "gnlnac_schm_code": "Scheme Code",
     "gnlnac_appl_brn_code": "Application Branch Code",
@@ -51,13 +52,13 @@ COLUMN_MEANINGS = {
     "genlndisb_net_pay_amt": "Net Payment Amount",
 }
 
-# Minimalist, clean color palette (subtle slates, darks, and minimal accents)
+# Refined, vibrant financial brand color palette (matching Moneypal design system & scenario_pipeline)
 NODE_TYPE_STYLES = {
-    "account": {"color": "#1e293b", "label": "Account Master", "size": 24},       # Slate 800
-    "customer": {"color": "#0f172a", "label": "Borrower Profile", "size": 20},     # Slate 900
-    "disbursement": {"color": "#334155", "label": "Disbursement Payout", "size": 16}, # Slate 700
-    "repayment": {"color": "#475569", "label": "Repayment Log", "size": 16},      # Slate 600
-    "schedule": {"color": "#64748b", "label": "Installment Schedule", "size": 14} # Slate 500
+    "customer": {"color": "#0284c7", "label": "Customer / Borrower", "size": 22},     # Sky 600
+    "account": {"color": "#075fac", "label": "Loan Account Master", "size": 26},     # Moneypal Primary Blue
+    "disbursement": {"color": "#ea580c", "label": "Payout Disbursement", "size": 16}, # Orange 600
+    "repayment": {"color": "#0f766e", "label": "Repayment Receipt", "size": 16},      # Teal 700
+    "schedule": {"color": "#7c3aed", "label": "Amortization Schedule", "size": 14}    # Purple 600
 }
 
 def get_connection():
@@ -83,25 +84,25 @@ def get_connection():
 
 def get_db_schema_graph(search_term: Optional[str] = None) -> Dict[str, Any]:
     """
-    Constructs a Data Instance Curiosity Graph for a specific selected Customer/Account,
-    showing its real connected disbursements, repayments, and amortization schedule lines.
+    Constructs an Instance Curiosity Graph for a selected Customer / Account,
+    showing Customer Name, Account Details, Payouts, Repayments, and Amortization Schedules.
     """
     sample_accounts = []
     selected_account = None
     is_live = False
 
-    # Default fallback account data if DB is offline or search misses
+    # Realistic mock dataset with Customer Names for fallback or offline mode
     mock_accounts_db = [
         {
             "acnt_num": 1001044,
             "cust_id": 90412,
-            "cust_name": "Apex Commercial Logistics",
+            "cust_name": "Apex Commercial Logistics Ltd",
             "sanc_amt": 350000,
             "sanc_date": "2025-11-10",
             "loan_type": "Term Loan",
             "interest_rate": 11.5,
             "disbursements": [
-                {"sl": 1, "amt": 350000, "date": "2025-11-12", "to": "Self Account"}
+                {"sl": 1, "amt": 350000, "date": "2025-11-12", "to": "Apex Operating Account"}
             ],
             "repayments": [
                 {"sl": 1, "prin": 25000, "int": 3354, "date": "2025-12-10"},
@@ -119,14 +120,14 @@ def get_db_schema_graph(search_term: Optional[str] = None) -> Dict[str, Any]:
         {
             "acnt_num": 1002219,
             "cust_id": 90815,
-            "cust_name": "Sunrise Agrotech NBFC",
+            "cust_name": "Sunrise Agrotech Enterprises",
             "sanc_amt": 500000,
             "sanc_date": "2025-08-20",
             "loan_type": "Working Capital",
             "interest_rate": 12.0,
             "disbursements": [
-                {"sl": 1, "amt": 250000, "date": "2025-08-22", "to": "Vendor A"},
-                {"sl": 2, "amt": 250000, "date": "2025-09-15", "to": "Vendor B"}
+                {"sl": 1, "amt": 250000, "date": "2025-08-22", "to": "Equipment Supplier A"},
+                {"sl": 2, "amt": 250000, "date": "2025-09-15", "to": "Fertilizer Vendor B"}
             ],
             "repayments": [
                 {"sl": 1, "prin": 50000, "int": 5000, "date": "2025-09-20"},
@@ -142,7 +143,7 @@ def get_db_schema_graph(search_term: Optional[str] = None) -> Dict[str, Any]:
         {
             "acnt_num": 1005112,
             "cust_id": 91204,
-            "cust_name": "Vanguard Micro Enterprises",
+            "cust_name": "Vanguard Micro Infrastructure",
             "sanc_amt": 1200000,
             "sanc_date": "2026-01-15",
             "loan_type": "Asset Finance",
@@ -159,28 +160,42 @@ def get_db_schema_graph(search_term: Optional[str] = None) -> Dict[str, Any]:
         conn = get_connection()
         cur = conn.cursor()
         
-        # 1. Fetch sample accounts list for quick selection
-        cur.execute("SELECT gnlnac_acnt_num, gnlnac_cust_id, gnlnac_sanc_amt FROM bronze.genlnacnts ORDER BY gnlnac_sanc_amt DESC LIMIT 10;")
+        # Query top sample accounts with Customer Names
+        cur.execute("""
+            SELECT gnlnac_acnt_num, gnlnac_cust_id, COALESCE(gnlnac_cust_name, 'Borrower #' || gnlnac_cust_id), gnlnac_sanc_amt
+            FROM bronze.genlnacnts ORDER BY gnlnac_sanc_amt DESC LIMIT 10;
+        """)
         sample_rows = cur.fetchall()
         sample_accounts = [
-            {"account_num": str(r[0]), "cust_id": str(r[1] or 'N/A'), "amount": f"₹{r[2]:,}" if r[2] else "₹0"}
+            {
+                "account_num": str(r[0]),
+                "cust_id": str(r[1] or 'N/A'),
+                "cust_name": str(r[2] or f"Customer #{r[1]}"),
+                "amount": f"₹{r[3]:,}" if r[3] else "₹0"
+            }
             for r in sample_rows
         ]
 
-        # 2. Determine targeted account number
+        # Targeted search logic
         target_acnt = None
         if search_term and search_term.strip():
             term = search_term.strip().replace("Account #", "").replace("CUST-", "")
-            if term.isdigit():
+            # Match by account number or customer search
+            for r in sample_rows:
+                if str(r[0]) in term or str(r[1]) in term or term.lower() in str(r[2]).lower():
+                    target_acnt = r[0]
+                    break
+            if not target_acnt and term.isdigit():
                 target_acnt = int(term)
 
         if not target_acnt and sample_rows:
             target_acnt = sample_rows[0][0]
 
         if target_acnt:
-            # Query Account info
+            # Query Account Master and Customer Details
             cur.execute("""
-                SELECT gnlnac_acnt_num, gnlnac_cust_id, gnlnac_sanc_amt, gnlnac_sanc_date, gnlnac_loan_type, gnlnac_ln_intrate
+                SELECT gnlnac_acnt_num, gnlnac_cust_id, COALESCE(gnlnac_cust_name, 'Customer #' || gnlnac_cust_id),
+                       gnlnac_sanc_amt, gnlnac_sanc_date, gnlnac_loan_type, gnlnac_ln_intrate
                 FROM bronze.genlnacnts WHERE gnlnac_acnt_num = %s;
             """, (target_acnt,))
             acnt_row = cur.fetchone()
@@ -210,11 +225,12 @@ def get_db_schema_graph(search_term: Optional[str] = None) -> Dict[str, Any]:
                 selected_account = {
                     "acnt_num": acnt_row[0],
                     "cust_id": acnt_row[1] or 90000 + (acnt_row[0] % 1000),
-                    "sanc_amt": float(acnt_row[2] or 0),
-                    "sanc_date": str(acnt_row[3] or "2025-10-01"),
-                    "loan_type": str(acnt_row[4] or "Term Loan"),
-                    "interest_rate": float(acnt_row[5] or 11.5),
-                    "disbursements": [{"sl": r[0], "amt": float(r[1] or 0), "date": str(r[2] or "N/A"), "to": str(r[3] or "Beneficiary")} for r in disb_rows],
+                    "cust_name": acnt_row[2] or f"Customer #{acnt_row[1]}",
+                    "sanc_amt": float(acnt_row[3] or 0),
+                    "sanc_date": str(acnt_row[4] or "2025-10-01"),
+                    "loan_type": str(acnt_row[5] or "Term Loan"),
+                    "interest_rate": float(acnt_row[6] or 11.5),
+                    "disbursements": [{"sl": r[0], "amt": float(r[1] or 0), "date": str(r[2] or "N/A"), "to": str(r[3] or "Beneficiary Account")} for r in disb_rows],
                     "repayments": [{"sl": r[0], "prin": float(r[1] or 0), "int": float(r[2] or 0), "date": str(r[3] or "N/A")} for r in repay_rows],
                     "schedules": [{"sl": r[0], "prin": float(r[1] or 0), "int": float(r[2] or 0), "date": str(r[3] or "N/A")} for r in sched_rows]
                 }
@@ -224,29 +240,53 @@ def get_db_schema_graph(search_term: Optional[str] = None) -> Dict[str, Any]:
     except Exception as e:
         is_live = False
 
-    # Fallback to mock dataset if query yielded nothing or DB is offline
+    # Fallback dataset if DB is unreachable or query yields empty
     if not selected_account:
         selected_account = mock_accounts_db[0]
         if search_term and search_term.strip():
+            term_lower = search_term.strip().lower()
             for acc in mock_accounts_db:
-                if str(acc["acnt_num"]) in search_term or str(acc["cust_id"]) in search_term:
+                if str(acc["acnt_num"]) in term_lower or str(acc["cust_id"]) in term_lower or term_lower in acc["cust_name"].lower():
                     selected_account = acc
                     break
 
     if not sample_accounts:
         sample_accounts = [
-            {"account_num": str(acc["acnt_num"]), "cust_id": str(acc["cust_id"]), "amount": f"₹{acc['sanc_amt']:,}"}
+            {
+                "account_num": str(acc["acnt_num"]),
+                "cust_id": str(acc["cust_id"]),
+                "cust_name": acc["cust_name"],
+                "amount": f"₹{acc['sanc_amt']:,}"
+            }
             for acc in mock_accounts_db
         ]
 
-    # Build Instance Graph Payload
+    # Construct Instance Graph
     nodes = []
     edges = []
 
-    # 1. Central Account Master Node
-    acnt_id = f"ACNT-{selected_account['acnt_num']}"
+    # 1. Customer Borrower Node (Primary)
+    cust_id_str = f"CUST-{selected_account['cust_id']}"
     nodes.append({
-        "id": acnt_id,
+        "id": cust_id_str,
+        "type": "customer",
+        "title": selected_account["cust_name"],
+        "subtitle": f"Customer ID: #{selected_account['cust_id']}",
+        "node_label": "Borrower",
+        "color": NODE_TYPE_STYLES["customer"]["color"],
+        "size": NODE_TYPE_STYLES["customer"]["size"],
+        "details": {
+            "Customer Name": selected_account["cust_name"],
+            "Customer ID": str(selected_account["cust_id"]),
+            "Risk Category": "Low Risk (Grade A)",
+            "Account Status": "Active Borrowing"
+        }
+    })
+
+    # 2. Central Loan Account Node
+    acnt_id_str = f"ACNT-{selected_account['acnt_num']}"
+    nodes.append({
+        "id": acnt_id_str,
         "type": "account",
         "title": f"Account #{selected_account['acnt_num']}",
         "subtitle": f"Sanction: ₹{selected_account['sanc_amt']:,}",
@@ -255,35 +295,22 @@ def get_db_schema_graph(search_term: Optional[str] = None) -> Dict[str, Any]:
         "size": NODE_TYPE_STYLES["account"]["size"],
         "details": {
             "Account Number": str(selected_account["acnt_num"]),
+            "Borrower Name": selected_account["cust_name"],
             "Customer ID": str(selected_account["cust_id"]),
-            "Sanctioned Amount": f"₹{selected_account['sanc_amt']:,}",
-            "Loan Type": selected_account["loan_type"],
+            "Sanctioned Limit": f"₹{selected_account['sanc_amt']:,}",
+            "Loan Product": selected_account["loan_type"],
             "Interest Rate": f"{selected_account['interest_rate']}% p.a.",
             "Sanction Date": selected_account["sanc_date"]
         }
     })
 
-    # 2. Borrower Profile Node
-    cust_id = f"CUST-{selected_account['cust_id']}"
-    nodes.append({
-        "id": cust_id,
-        "type": "customer",
-        "title": f"Borrower #{selected_account['cust_id']}",
-        "subtitle": selected_account.get("cust_name", f"Customer ID #{selected_account['cust_id']}"),
-        "node_label": "Borrower",
-        "color": NODE_TYPE_STYLES["customer"]["color"],
-        "size": NODE_TYPE_STYLES["customer"]["size"],
-        "details": {
-            "Customer ID": str(selected_account["cust_id"]),
-            "Risk Profile": "Standard NBFC Category A",
-            "Linked Accounts": f"1 Account (#{selected_account['acnt_num']})"
-        }
-    })
+    # Link Customer -> Account
     edges.append({
-        "source": cust_id,
-        "target": acnt_id,
-        "label": "HELD_BY",
-        "purpose": "Primary Borrower Ownership"
+        "source": cust_id_str,
+        "target": acnt_id_str,
+        "weight": 8,
+        "label": "OWNS_ACCOUNT",
+        "purpose": "Primary Account Ownership"
     })
 
     # 3. Disbursement Nodes
@@ -292,23 +319,24 @@ def get_db_schema_graph(search_term: Optional[str] = None) -> Dict[str, Any]:
         nodes.append({
             "id": disb_id,
             "type": "disbursement",
-            "title": f"Disbursement #{disb['sl']}",
-            "subtitle": f"₹{disb['amt']:,}",
+            "title": f"Disb #{disb['sl']}: ₹{disb['amt']:,}",
+            "subtitle": f"Date: {disb['date']}",
             "node_label": "Payout",
             "color": NODE_TYPE_STYLES["disbursement"]["color"],
             "size": NODE_TYPE_STYLES["disbursement"]["size"],
             "details": {
-                "Disbursement Line": str(disb["sl"]),
+                "Disbursement Line": f"Serial #{disb['sl']}",
                 "Payout Amount": f"₹{disb['amt']:,}",
                 "Disbursement Date": disb["date"],
-                "Disbursed To": disb.get("to", "Beneficiary")
+                "Disbursed To": disb.get("to", "Beneficiary Account")
             }
         })
         edges.append({
-            "source": acnt_id,
+            "source": acnt_id_str,
             "target": disb_id,
+            "weight": 6,
             "label": "DISBURSED",
-            "purpose": "Funds Payout"
+            "purpose": "Fund Payout"
         })
 
     # 4. Repayment Nodes
@@ -318,13 +346,13 @@ def get_db_schema_graph(search_term: Optional[str] = None) -> Dict[str, Any]:
         nodes.append({
             "id": rep_id,
             "type": "repayment",
-            "title": f"Repayment #{rep['sl']}",
-            "subtitle": f"Paid: ₹{tot_paid:,}",
+            "title": f"Repay #{rep['sl']}: ₹{tot_paid:,}",
+            "subtitle": f"Date: {rep['date']}",
             "node_label": "Receipt",
             "color": NODE_TYPE_STYLES["repayment"]["color"],
             "size": NODE_TYPE_STYLES["repayment"]["size"],
             "details": {
-                "Repayment Line": str(rep["sl"]),
+                "Repayment Line": f"Serial #{rep['sl']}",
                 "Principal Paid": f"₹{rep['prin']:,}",
                 "Interest Paid": f"₹{rep['int']:,}",
                 "Total Amount Paid": f"₹{tot_paid:,}",
@@ -333,9 +361,10 @@ def get_db_schema_graph(search_term: Optional[str] = None) -> Dict[str, Any]:
         })
         edges.append({
             "source": rep_id,
-            "target": acnt_id,
+            "target": acnt_id_str,
+            "weight": 6,
             "label": "PAID_REPAYMENT",
-            "purpose": "Credit Receipt"
+            "purpose": "Credit Repayment"
         })
 
     # 5. Schedule Nodes
@@ -345,30 +374,32 @@ def get_db_schema_graph(search_term: Optional[str] = None) -> Dict[str, Any]:
         nodes.append({
             "id": sch_id,
             "type": "schedule",
-            "title": f"Schedule #{sch['sl']}",
-            "subtitle": f"Due: ₹{tot_due:,}",
+            "title": f"Schedule #{sch['sl']}: ₹{tot_due:,}",
+            "subtitle": f"Due: {sch['date']}",
             "node_label": "Installment",
             "color": NODE_TYPE_STYLES["schedule"]["color"],
             "size": NODE_TYPE_STYLES["schedule"]["size"],
             "details": {
-                "Schedule Line": str(sch["sl"]),
+                "Schedule Installment": f"Installment #{sch['sl']}",
                 "Principal Due": f"₹{sch['prin']:,}",
                 "Interest Due": f"₹{sch['int']:,}",
                 "Total Scheduled Due": f"₹{tot_due:,}",
-                "Scheduled Due Date": sch["date"]
+                "Due Date": sch["date"]
             }
         })
         edges.append({
-            "source": acnt_id,
+            "source": acnt_id_str,
             "target": sch_id,
+            "weight": 4,
             "label": "SCHEDULED_DUE",
-            "purpose": "Planned Amortization"
+            "purpose": "Amortization Installment"
         })
 
     return {
         "nodes": nodes,
         "edges": edges,
         "selected_account": str(selected_account["acnt_num"]),
+        "customer_name": selected_account["cust_name"],
         "sample_accounts": sample_accounts,
         "metadata": {
             "is_live": is_live,

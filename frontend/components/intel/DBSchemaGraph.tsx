@@ -21,7 +21,8 @@ import {
   Minimize2,
   RefreshCw,
   Info,
-  Link2
+  Link2,
+  Building2
 } from 'lucide-react';
 
 const ForceGraph2D = dynamic(() => import('react-force-graph-2d'), {
@@ -30,7 +31,7 @@ const ForceGraph2D = dynamic(() => import('react-force-graph-2d'), {
     <div className="flex h-[480px] items-center justify-center bg-card/30 rounded-2xl border border-border/50">
       <div className="flex items-center gap-2 text-muted-foreground animate-pulse text-xs">
         <Network className="h-4 w-4 animate-spin text-primary" />
-        <span>Loading account instance graph...</span>
+        <span>Loading curiosity graph...</span>
       </div>
     </div>
   ),
@@ -54,11 +55,13 @@ interface GraphEdge {
   target: string | GraphNode;
   label: string;
   purpose: string;
+  weight?: number;
 }
 
 interface SampleAccountItem {
   account_num: string;
   cust_id: string;
+  cust_name: string;
   amount: string;
 }
 
@@ -66,6 +69,7 @@ interface InstanceGraphPayload {
   nodes: GraphNode[];
   edges: GraphEdge[];
   selected_account: string;
+  customer_name?: string;
   sample_accounts: SampleAccountItem[];
   metadata: {
     is_live: boolean;
@@ -96,8 +100,8 @@ export default function DBSchemaGraph() {
       const res = await admin.dbSchema(term);
       setData(res);
       if (res && res.nodes && res.nodes.length > 0) {
-        const center = res.nodes.find((n: GraphNode) => n.type === 'account') || res.nodes[0];
-        setSelectedNode(center);
+        const custNode = res.nodes.find((n: GraphNode) => n.type === 'customer') || res.nodes[0];
+        setSelectedNode(custNode);
       }
     } catch (err) {
       console.error('Failed to load instance graph:', err);
@@ -168,7 +172,7 @@ export default function DBSchemaGraph() {
 
   const paintNode = useCallback(
     (node: any, ctx: CanvasRenderingContext2D, globalScale: number) => {
-      const size = node.size || 16;
+      const size = node.size || 18;
       const isSelected = selectedNode?.id === node.id;
       const isHovered = hoverNode?.id === node.id;
       const isNeighborOfSelected = selectedNode
@@ -181,64 +185,64 @@ export default function DBSchemaGraph() {
         if (!isConnected) isDimmed = true;
       }
 
-      // Minimal node fill
+      // Fill node circle with distinct, polished category colors
       ctx.beginPath();
-      ctx.arc(node.x!, node.y!, size + (isHovered ? 2 : 0), 0, 2 * Math.PI);
+      ctx.arc(node.x!, node.y!, size + (isHovered ? 2.5 : 0), 0, 2 * Math.PI);
       
-      let fillColor = isDark ? '#1e293b' : '#334155'; // Clean minimal slate
-      if (node.type === 'account') fillColor = isDark ? '#0f172a' : '#1e293b';
-      else if (node.type === 'customer') fillColor = isDark ? '#020617' : '#0f172a';
-      else if (node.type === 'disbursement') fillColor = isDark ? '#334155' : '#475569';
-      else if (node.type === 'repayment') fillColor = isDark ? '#475569' : '#64748b';
-      else if (node.type === 'schedule') fillColor = isDark ? '#64748b' : '#94a3b8';
-
-      if (isDimmed) fillColor = isDark ? '#0f172a' : '#e2e8f0';
+      let fillColor = node.color || '#075fac';
+      if (isDimmed) fillColor = isDark ? '#1e293b' : '#e2e8f0';
 
       ctx.fillStyle = fillColor;
       ctx.fill();
 
-      // Minimal subtle border
+      // Node ring outline
       ctx.strokeStyle = isSelected
-        ? (isDark ? '#f8fafc' : '#0f172a')
+        ? (isDark ? '#ffffff' : '#000000')
         : isHovered || isNeighborOfSelected
-        ? (isDark ? '#94a3b8' : '#475569')
-        : (isDark ? '#334155' : '#cbd5e1');
+        ? (isDark ? '#cbd5e1' : '#334155')
+        : (isDark ? 'rgba(255, 255, 255, 0.2)' : 'rgba(0, 0, 0, 0.15)');
       
-      ctx.lineWidth = (isSelected ? 2.5 : 1) / globalScale;
+      ctx.lineWidth = (isSelected ? 3 : isHovered ? 2 : 1.5) / globalScale;
       ctx.stroke();
 
-      // Node Label Text
-      const baseFontSize = isHovered || isSelected ? 12 : 10;
-      const scaledFontSize = Math.min(baseFontSize / Math.max(globalScale * 0.5, 0.4), baseFontSize * 1.5);
-      ctx.font = `${isSelected || isHovered ? '600' : '400'} ${scaledFontSize}px Inter, system-ui, sans-serif`;
+      // Node Label Text (Displays Customer Name prominently on Customer Node)
+      const baseFontSize = isHovered || isSelected ? 13 : 11;
+      const scaledFontSize = Math.min(baseFontSize / Math.max(globalScale * 0.5, 0.4), baseFontSize * 1.6);
+      ctx.font = `${isSelected || isHovered ? '600' : '500'} ${scaledFontSize}px Inter, system-ui, sans-serif`;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'top';
 
-      const textY = node.y! + size + 3;
-      ctx.fillStyle = isDimmed ? (isDark ? '#334155' : '#94a3b8') : (isDark ? '#f8fafc' : '#0f172a');
+      const textY = node.y! + size + 4;
+      ctx.fillStyle = isDimmed ? (isDark ? '#475569' : '#94a3b8') : (isDark ? '#f8fafc' : '#0f172a');
       ctx.fillText(node.title, node.x!, textY);
+
+      if (node.subtitle && (globalScale > 0.9 || isSelected || isHovered)) {
+        ctx.font = `400 ${Math.max(8, scaledFontSize * 0.85)}px Inter, sans-serif`;
+        ctx.fillStyle = isDark ? '#94a3b8' : '#64748b';
+        ctx.fillText(node.subtitle, node.x!, textY + scaledFontSize + 2);
+      }
     },
     [selectedNode, hoverNode, linksByNode, isDark]
   );
 
   const paintLink = useCallback(
-    (link: any, ctx: CanvasRenderingContext2D) => {
+    (link: any, ctx: CanvasRenderingContext2D, globalScale: number) => {
       const start = link.source;
       const end = link.target;
 
-      if (start.x == null || start.y == null || end.x == null || end.y == null) return;
+      if (!start || !end || start.x == null || start.y == null || end.x == null || end.y == null) return;
 
-      let isHighlighted = false;
+      let isConnectedToHover = false;
       let isDimmed = hoverNode !== null;
 
       if (hoverNode) {
         if (start.id === hoverNode.id || end.id === hoverNode.id) {
-          isHighlighted = true;
+          isConnectedToHover = true;
           isDimmed = false;
         }
       } else if (selectedNode) {
         if (start.id === selectedNode.id || end.id === selectedNode.id) {
-          isHighlighted = true;
+          isConnectedToHover = true;
           isDimmed = false;
         }
       } else {
@@ -247,21 +251,32 @@ export default function DBSchemaGraph() {
 
       ctx.beginPath();
       ctx.moveTo(start.x, start.y);
-      ctx.lineTo(end.x, end.y);
+      ctx.lineTo(end.x, end.y); // CORRECT GEOMETRY: end.x, end.y
 
-      let opacity = isDimmed ? 0.05 : 0.25;
+      let opacity = isDimmed ? 0.08 : 0.4;
       let strokeColor = isDark ? '148, 163, 184' : '100, 116, 139';
-      let lineWidth = 1;
+      let lineWidth = 1.5;
 
-      if (isHighlighted) {
-        opacity = 0.8;
-        strokeColor = isDark ? '248, 250, 252' : '15, 23, 42';
-        lineWidth = 2;
+      if (isConnectedToHover) {
+        opacity = 0.9;
+        strokeColor = isDark ? '56, 189, 248' : '7, 95, 172';
+        lineWidth = 2.5;
       }
 
       ctx.strokeStyle = `rgba(${strokeColor}, ${opacity})`;
       ctx.lineWidth = lineWidth;
       ctx.stroke();
+
+      // Draw connection edge label
+      if ((globalScale > 0.8 || isConnectedToHover) && !isDimmed) {
+        const midX = (start.x + end.x) / 2;
+        const midY = (start.y + end.y) / 2;
+        ctx.font = `500 ${Math.max(8, 10 / Math.max(globalScale, 0.6))}px Inter, sans-serif`;
+        ctx.fillStyle = isDark ? 'rgba(203, 213, 225, 0.85)' : 'rgba(71, 85, 105, 0.85)';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(link.label || '', midX, midY);
+      }
     },
     [hoverNode, selectedNode, isDark]
   );
@@ -277,42 +292,63 @@ export default function DBSchemaGraph() {
   const getNodeIcon = (type: string) => {
     switch (type) {
       case 'customer':
-        return <User className="h-4 w-4 text-primary" />;
+        return <Building2 className="h-4 w-4 text-sky-500" />;
       case 'account':
         return <CreditCard className="h-4 w-4 text-primary" />;
       case 'disbursement':
-        return <ArrowUpRight className="h-4 w-4 text-muted-foreground" />;
+        return <ArrowUpRight className="h-4 w-4 text-orange-500" />;
       case 'repayment':
-        return <ArrowDownLeft className="h-4 w-4 text-muted-foreground" />;
+        return <ArrowDownLeft className="h-4 w-4 text-teal-500" />;
       case 'schedule':
-        return <Calendar className="h-4 w-4 text-muted-foreground" />;
+        return <Calendar className="h-4 w-4 text-purple-500" />;
       default:
         return <Info className="h-4 w-4 text-muted-foreground" />;
     }
   };
 
+  const forceGraphData = useMemo(() => {
+    return data
+      ? {
+          nodes: data.nodes.map((n) => ({ ...n, id: n.id })),
+          links: data.edges.map((e) => ({
+            source: typeof e.source === 'object' ? e.source.id : e.source,
+            target: typeof e.target === 'object' ? e.target.id : e.target,
+            label: e.label,
+            purpose: e.purpose
+          })),
+        }
+      : { nodes: [], links: [] };
+  }, [data]);
+
   return (
     <div className={`flex flex-col h-full overflow-hidden ${isExpanded ? 'fixed inset-0 z-50 bg-background p-6' : ''}`}>
-      {/* Top Search & Filter Bar */}
+      {/* Top Bar Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between border-b pb-4 mb-4 gap-3 shrink-0">
         <div>
-          <h2 className="text-base font-headline font-semibold tracking-tight md:text-lg flex items-center gap-2">
-            <Network className="h-5 w-5 text-primary" /> Data Curiosity Graph
-          </h2>
+          <div className="flex items-center gap-2">
+            <h2 className="text-base font-headline font-semibold tracking-tight md:text-lg flex items-center gap-2">
+              <Network className="h-5 w-5 text-primary" /> Data Curiosity Graph
+            </h2>
+            {data?.customer_name && (
+              <Badge variant="outline" className="text-xs border-primary/30 bg-primary/5 text-primary font-semibold">
+                Borrower: {data.customer_name}
+              </Badge>
+            )}
+          </div>
           <p className="text-[11px] text-muted-foreground mt-0.5">
-            Search or select a loan account to visualize real connected borrower profiles, payouts, repayments, and schedules.
+            Search or select a customer account to visualize connected borrower records, disbursements, repayments, and schedule lines.
           </p>
         </div>
 
         <div className="flex items-center gap-2">
           <form onSubmit={handleSearchSubmit} className="flex items-center gap-2">
             <div className="relative">
-              <Search className="h-3.5 w-3.5 absolute left-2.5 top-2 text-muted-foreground" />
+              <Search className="h-3.5 w-3.5 absolute left-2.5 top-2.5 text-muted-foreground" />
               <Input
-                placeholder="Search Account # or Cust ID..."
+                placeholder="Search Customer Name or Account #..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="h-8 text-xs pl-8 w-[200px] md:w-[240px] rounded-xl border-border/80"
+                className="h-8 text-xs pl-8 w-[220px] md:w-[260px] rounded-xl border-border/80"
               />
               {searchQuery && (
                 <button
@@ -321,7 +357,7 @@ export default function DBSchemaGraph() {
                     setSearchQuery('');
                     loadGraph();
                   }}
-                  className="absolute right-2 top-2 text-muted-foreground hover:text-foreground"
+                  className="absolute right-2.5 top-2.5 text-muted-foreground hover:text-foreground"
                 >
                   <X className="h-3.5 w-3.5" />
                 </button>
@@ -338,11 +374,11 @@ export default function DBSchemaGraph() {
         </div>
       </div>
 
-      {/* Sample Accounts Quick Select Pills */}
+      {/* Quick Select Sample Accounts Pills */}
       {data?.sample_accounts && data.sample_accounts.length > 0 && (
         <div className="flex items-center gap-2 mb-3 overflow-x-auto pb-1 shrink-0">
           <span className="text-[10px] uppercase font-semibold text-muted-foreground shrink-0 tracking-wider">
-            Quick Accounts:
+            Quick Select Borrower:
           </span>
           <div className="flex items-center gap-1.5 overflow-x-auto">
             {data.sample_accounts.map((acc) => {
@@ -352,14 +388,14 @@ export default function DBSchemaGraph() {
                   key={acc.account_num}
                   type="button"
                   onClick={() => selectSampleAccount(acc.account_num)}
-                  className={`text-[11px] font-mono px-2.5 py-1 rounded-lg border transition-all shrink-0 flex items-center gap-1.5 ${
+                  className={`text-[11px] px-2.5 py-1 rounded-lg border transition-all shrink-0 flex items-center gap-1.5 ${
                     isSelected
                       ? 'border-primary bg-primary/10 text-primary font-semibold'
                       : 'border-border/70 hover:bg-muted/50 text-muted-foreground'
                   }`}
                 >
-                  <span>#{acc.account_num}</span>
-                  <span className="text-[9px] opacity-75">({acc.amount})</span>
+                  <span className="font-medium">{acc.cust_name}</span>
+                  <span className="font-mono text-[9px] opacity-75">(#{acc.account_num})</span>
                 </button>
               );
             })}
@@ -371,27 +407,27 @@ export default function DBSchemaGraph() {
       <div className="flex flex-col lg:flex-row gap-4 min-h-0 flex-1">
         {/* Force-directed Link Graph Canvas */}
         <div ref={containerRef} className="flex-1 bg-card/20 rounded-2xl border border-border/70 overflow-hidden relative flex flex-col justify-between">
-          <div className="absolute top-3 left-3 z-10 flex flex-col gap-1 bg-background/80 backdrop-blur-md border rounded-xl p-2.5 max-w-[200px] pointer-events-none shadow-sm">
-            <span className="text-[9px] uppercase tracking-wider font-semibold text-muted-foreground">Minimal Node Legend</span>
+          <div className="absolute top-3 left-3 z-10 flex flex-col gap-1 bg-background/80 backdrop-blur-md border rounded-xl p-2.5 max-w-[210px] pointer-events-none shadow-sm">
+            <span className="text-[9px] uppercase tracking-wider font-semibold text-muted-foreground">Entity Color Legend</span>
             <div className="space-y-1 mt-1 text-[10px]">
               <div className="flex items-center gap-1.5">
-                <span className="h-2 w-2 rounded-full bg-slate-900 dark:bg-slate-100" />
-                <span className="font-medium text-foreground/80">Account Master</span>
+                <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: '#0284c7' }} />
+                <span className="font-medium text-foreground/80">Customer / Borrower</span>
               </div>
               <div className="flex items-center gap-1.5">
-                <span className="h-2 w-2 rounded-full bg-slate-800 dark:bg-slate-300" />
-                <span className="font-medium text-foreground/80">Borrower Profile</span>
+                <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: '#075fac' }} />
+                <span className="font-medium text-foreground/80">Master Loan Account</span>
               </div>
               <div className="flex items-center gap-1.5">
-                <span className="h-2 w-2 rounded-full bg-slate-700 dark:bg-slate-400" />
-                <span className="font-medium text-foreground/80">Disbursements</span>
+                <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: '#ea580c' }} />
+                <span className="font-medium text-foreground/80">Disbursement Payout</span>
               </div>
               <div className="flex items-center gap-1.5">
-                <span className="h-2 w-2 rounded-full bg-slate-600 dark:bg-slate-500" />
-                <span className="font-medium text-foreground/80">Repayments</span>
+                <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: '#0f766e' }} />
+                <span className="font-medium text-foreground/80">Repayment Credit</span>
               </div>
               <div className="flex items-center gap-1.5">
-                <span className="h-2 w-2 rounded-full bg-slate-500 dark:bg-slate-600" />
+                <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: '#7c3aed' }} />
                 <span className="font-medium text-foreground/80">Amortization Schedule</span>
               </div>
             </div>
@@ -402,14 +438,7 @@ export default function DBSchemaGraph() {
               ref={graphRef}
               width={dimensions.width}
               height={dimensions.height}
-              graphData={{
-                nodes: data.nodes.map(n => ({ ...n })),
-                links: data.edges.map(e => ({
-                  source: e.source,
-                  target: e.target,
-                  label: e.label
-                }))
-              }}
+              graphData={forceGraphData}
               backgroundColor={isDark ? '#090d16' : '#fafafa'}
               nodeCanvasObject={paintNode}
               linkCanvasObject={paintLink}
@@ -422,11 +451,12 @@ export default function DBSchemaGraph() {
             />
           )}
 
-          {/* Bottom Active Node Count Bar */}
+          {/* Bottom Active Node Summary Bar */}
           <div className="absolute bottom-3 left-3 z-10 flex items-center gap-2 bg-background/80 backdrop-blur-md px-3 py-1.5 rounded-xl border border-border/80 text-[11px]">
-            <Badge variant="outline" className="font-mono text-[10px]">
-              Account #{data?.selected_account}
+            <Badge variant="outline" className="font-semibold text-[10px]">
+              {data?.customer_name}
             </Badge>
+            <span className="font-mono text-muted-foreground">• Account #{data?.selected_account}</span>
             <span className="text-muted-foreground">• {data?.nodes.length || 0} connected nodes</span>
           </div>
         </div>
@@ -436,7 +466,7 @@ export default function DBSchemaGraph() {
           {selectedNode ? (
             <div className="flex flex-col h-full min-h-0">
               {/* Record Header */}
-              <div className="p-4 border-b shrink-0 bg-muted/20">
+              <div className="p-4 border-b shrink-0 bg-muted/20" style={{ borderTop: `4px solid ${selectedNode.color}` }}>
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     {getNodeIcon(selectedNode.type)}
@@ -475,7 +505,11 @@ export default function DBSchemaGraph() {
               {/* Linked Connections Helper */}
               <div className="p-3 bg-muted/40 border-t shrink-0">
                 <span className="text-[9px] uppercase tracking-wider font-semibold text-muted-foreground block mb-1">
-                  Graph Relational Paths
+                  Relational Join Paths ({data?.edges.filter(e => {
+                    const src = typeof e.source === 'object' ? e.source.id : e.source;
+                    const tgt = typeof e.target === 'object' ? e.target.id : e.target;
+                    return src === selectedNode.id || tgt === selectedNode.id;
+                  }).length})
                 </span>
                 <div className="space-y-1">
                   {data?.edges
@@ -504,7 +538,7 @@ export default function DBSchemaGraph() {
           ) : (
             <div className="flex flex-col items-center justify-center h-full p-6 text-muted-foreground text-center">
               <Network className="h-6 w-6 stroke-1 animate-pulse mb-2 text-muted-foreground/60" />
-              <p className="text-xs">Click any node in the curiosity graph to inspect its record details.</p>
+              <p className="text-xs">Click any node in the graph to inspect record attributes and relational paths.</p>
             </div>
           )}
         </div>
