@@ -318,7 +318,7 @@ def get_db_schema_graph(
                 "Designation": EXECUTIVE_INFO["role"],
                 "Entity": EXECUTIVE_INFO["org"],
                 "Active Branches": f"{len(real_branches)} Named Branches",
-                "Total Borrowers": f"{total_customers_count:,} Borrowers",
+                "Total Borrowers": f"{total_customers_count:,}",
                 "Total Loan Accounts": f"{total_accounts_count:,} Active Loans",
                 "Total Disbursed": f"₹{tot_exec_vol:,.0f}",
                 "Total Repaid": f"₹{tot_exec_repaid:,.0f}",
@@ -345,7 +345,7 @@ def get_db_schema_graph(
                     "Zonal Director": z["director"],
                     "Division": z["name"],
                     "Supervised Branches": f"{len(zone_brs)} Named Branches",
-                    "Total Borrowers": f"{tot_cust:,} Borrowers",
+                    "Total Borrowers": f"{tot_cust:,}",
                     "Total Disbursed": f"₹{tot_vol:,.0f}",
                     "Total Repaid": f"₹{tot_repay:,.0f}",
                     "Recovery Rate": "94.6%"
@@ -387,7 +387,7 @@ def get_db_schema_graph(
                 "Zonal VP": selected_zonal["director"],
                 "Division": selected_zonal["name"],
                 "Supervised Branches": f"{len(assigned_brs)} Named Branches",
-                "Total Borrowers": f"{tot_z_cust:,} Borrowers",
+                "Total Borrowers": f"{tot_z_cust:,}",
                 "Total Disbursed": f"₹{tot_z_vol:,.0f}",
                 "Total Repaid": f"₹{tot_z_repay:,.0f}",
                 "Recovery Rate": "95.2%"
@@ -408,7 +408,7 @@ def get_db_schema_graph(
                 "details": {
                     "Branch Name": br["display_title"],
                     "Manager Name": br["manager"],
-                    "Total Borrowers": f"{br['cust_count']:,} Borrowers",
+                    "Total Borrowers": f"{br['cust_count']:,}",
                     "Active Loan Accounts": f"{br['acnt_count']:,} Accounts",
                     "Total Disbursed": f"₹{br['total_vol']:,.0f}",
                     "Total Repaid": f"₹{b_repay:,.0f}",
@@ -461,7 +461,7 @@ def get_db_schema_graph(
                 "Branch Name": selected_mgr["display_title"],
                 "Manager Name": selected_mgr["manager"],
                 "Zone": selected_zonal["name"],
-                "Total Borrowers": f"{selected_mgr['cust_count']:,} Borrowers",
+                "Total Borrowers": f"{selected_mgr['cust_count']:,}",
                 "Active Loan Accounts": f"{selected_mgr['acnt_count']:,} Accounts",
                 "Total Disbursed": f"₹{selected_mgr['total_vol']:,.0f}",
                 "Total Repaid": f"₹{b_repay:,.0f}",
@@ -499,7 +499,7 @@ def get_db_schema_graph(
                     "Officer Name": off_name,
                     "Designation": off_role,
                     "Branch Hub": selected_mgr["display_title"],
-                    "Total Borrowers": f"{cust_share:,} Borrowers",
+                    "Total Borrowers": f"{cust_share:,}",
                     "Active Accounts": f"{round(cust_share * 1.15):,} Loans",
                     "Total Disbursed": f"₹{off_disb:,.0f}",
                     "Total Repaid": f"₹{off_repay:,.0f}",
@@ -569,7 +569,7 @@ def get_db_schema_graph(
                 "Role": off_role,
                 "Branch Hub": selected_mgr["display_title"],
                 "Zone": selected_zonal["name"],
-                "Total Borrowers": f"{cust_share:,} Borrowers",
+                "Total Borrowers": f"{cust_share:,}",
                 "Active Accounts": f"{round(cust_share * 1.15):,} Loans",
                 "Total Disbursed": f"₹{off_disb:,.0f}",
                 "Total Repaid": f"₹{off_repay:,.0f}",
@@ -593,9 +593,9 @@ def get_db_schema_graph(
                 SELECT DISTINCT gnlnac_cust_id, COALESCE(gnlnac_cust_name, 'Borrower #' || gnlnac_cust_id),
                        gnlnac_acnt_num, gnlnac_sanc_amt, gnlnac_loan_type, gnlnac_sanc_date
                 FROM bronze.genlnacnts 
-                WHERE gnlnac_appl_brn_code = %s OR %s = '1001'
+                WHERE CAST(gnlnac_appl_brn_code AS TEXT) LIKE %s OR %s = '1001'
                 ORDER BY gnlnac_sanc_amt DESC LIMIT %s;
-            """, (int(brn_code) if brn_code.isdigit() else 1001, brn_code, limit))
+            """, (f"%{brn_code}%", brn_code, limit))
             c_rows = cur.fetchall()
             for r in c_rows:
                 agent_customers.append({
@@ -633,7 +633,7 @@ def get_db_schema_graph(
                     "Customer ID": c["cust_id"],
                     "Servicing Officer": off_name,
                     "Branch Hub": selected_mgr["display_title"],
-                    "Total Borrowers": "1 Borrower Profile",
+                    "Total Borrowers": "1",
                     "Account Number": c["acnt_num"],
                     "Total Disbursed": f"₹{c['sanc_amt']:,.0f}",
                     "Total Repaid": f"₹{c_repay:,.0f}",
@@ -710,7 +710,7 @@ def get_db_schema_graph(
                 "Customer Name": target_cust["cust_name"],
                 "Customer ID": str(target_cust["cust_id"]),
                 "Branch Hub": target_cust.get("brn_name", "Bangalore Central Headquarters"),
-                "Total Borrowers": "1 Borrower Profile",
+                "Total Borrowers": "1",
                 "Risk Rating": "Grade A (Compliant)",
                 "Total Disbursed": f"₹{target_cust['sanc_amt']:,.0f}",
                 "Total Repaid": f"₹{cust_repay:,.0f}",
@@ -789,6 +789,17 @@ def get_db_schema_graph(
             "label": "PAID_REPAYMENT",
             "purpose": "Credit Receipt"
         })
+
+    # GUARANTEE 100% CONNECTED GRAPH (FILTER OUT FLOATING ORPHAN NODES)
+    connected_node_ids = set()
+    for e in edges:
+        src = e["source"] if isinstance(e["source"], str) else e["source"]["id"]
+        tgt = e["target"] if isinstance(e["target"], str) else e["target"]["id"]
+        connected_node_ids.add(src)
+        connected_node_ids.add(tgt)
+
+    if len(nodes) > 1 and connected_node_ids:
+        nodes = [n for n in nodes if n["id"] in connected_node_ids]
 
     return {
         "nodes": nodes,
