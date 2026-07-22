@@ -2,7 +2,6 @@
 
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { admin } from '@/lib/api';
-import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
@@ -33,7 +32,8 @@ import {
   Award,
   Globe2,
   Building,
-  Database
+  Database,
+  Filter
 } from 'lucide-react';
 
 const ForceGraph2D = dynamic(() => import('react-force-graph-2d'), {
@@ -42,7 +42,7 @@ const ForceGraph2D = dynamic(() => import('react-force-graph-2d'), {
     <div className="flex h-[520px] items-center justify-center bg-card/30 rounded-2xl border border-border/50">
       <div className="flex items-center gap-2 text-muted-foreground animate-pulse text-xs">
         <Network className="h-4 w-4 animate-spin text-primary" />
-        <span>Loading Enterprise Curiosity Graph...</span>
+        <span>Loading 5-Tier Enterprise Curiosity Graph...</span>
       </div>
     </div>
   ),
@@ -92,6 +92,18 @@ interface BranchItem {
   zone_id: string;
 }
 
+interface SearchResultItem {
+  id: string;
+  title: string;
+  subtitle: string;
+  type: string;
+  view_level: 'executive' | 'zonal' | 'manager' | 'agent' | 'customer';
+  zonal_id?: string;
+  manager_id?: string;
+  agent_id?: string;
+  customer_id?: string;
+}
+
 interface HierarchicalGraphPayload {
   nodes: GraphNode[];
   edges: GraphEdge[];
@@ -129,6 +141,7 @@ export default function DBSchemaGraph() {
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState<HierarchicalGraphPayload | null>(null);
   
+  // Navigation State Across 5 Enterprise Tiers
   const [viewLevel, setViewLevel] = useState<'executive' | 'zonal' | 'manager' | 'agent' | 'customer'>('executive');
   const [selectedZonalId, setSelectedZonalId] = useState<string | null>(null);
   const [selectedManagerId, setSelectedManagerId] = useState<string | null>(null);
@@ -137,7 +150,12 @@ export default function DBSchemaGraph() {
   const [selectedNode, setSelectedNode] = useState<GraphNode | null>(null);
   const [hoverNode, setHoverNode] = useState<GraphNode | null>(null);
   
+  // Search & Autocomplete State
+  const [searchEntityType, setSearchEntityType] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState<SearchResultItem[]>([]);
+  const [isSearchOpen, setIsSearchOpen] = useState(false);
+
   const [isExpanded, setIsExpanded] = useState(false);
   const [dimensions, setDimensions] = useState({ width: 800, height: 520 });
 
@@ -189,16 +207,23 @@ export default function DBSchemaGraph() {
     loadGraph();
   }, [loadGraph]);
 
+  // Robust Full-Screen Canvas Dimensions Calculation
   useEffect(() => {
     const handleResize = () => {
-      if (containerRef.current) {
+      if (isExpanded) {
+        setDimensions({
+          width: Math.max(600, window.innerWidth - 32),
+          height: Math.max(450, window.innerHeight - 150),
+        });
+      } else if (containerRef.current) {
         const rect = containerRef.current.getBoundingClientRect();
         setDimensions({
-          width: rect.width,
-          height: isExpanded ? Math.max(660, window.innerHeight - 200) : 520,
+          width: Math.max(400, rect.width),
+          height: 520,
         });
       }
     };
+
     window.addEventListener('resize', handleResize);
     handleResize();
     const timeout = setTimeout(handleResize, 100);
@@ -207,6 +232,28 @@ export default function DBSchemaGraph() {
       clearTimeout(timeout);
     };
   }, [data, isExpanded]);
+
+  // Live Autocomplete Suggestions as user types
+  useEffect(() => {
+    if (!searchQuery.trim() || searchQuery.length < 2) {
+      setSearchResults([]);
+      setIsSearchOpen(false);
+      return;
+    }
+
+    const timer = setTimeout(() => {
+      admin.dbSchemaSearch(searchQuery.trim(), searchEntityType)
+        .then((res) => {
+          if (res && res.results) {
+            setSearchResults(res.results);
+            setIsSearchOpen(true);
+          }
+        })
+        .catch(() => setSearchResults([]));
+    }, 200);
+
+    return () => clearTimeout(timer);
+  }, [searchQuery, searchEntityType]);
 
   const forceGraphData = useMemo(() => {
     return data
@@ -240,6 +287,7 @@ export default function DBSchemaGraph() {
     return () => clearTimeout(timer);
   }, [forceGraphData, dimensions]);
 
+  // Tier Navigation Handlers
   const navigateToExecutive = () => {
     setViewLevel('executive');
     setSelectedZonalId(null);
@@ -282,10 +330,8 @@ export default function DBSchemaGraph() {
 
   // EVERY NODE IS 100% CLICKABLE
   const handleNodeClick = (node: GraphNode) => {
-    // Unconditionally update selectedNode so the left inspector panel populates!
     setSelectedNode(node);
 
-    // Dynamic Level Drilldown based on node type
     if (node.type === 'zonal' && node.zonal_id) {
       navigateToZonal(node.zonal_id);
     } else if (node.type === 'manager' && node.manager_id) {
@@ -302,9 +348,25 @@ export default function DBSchemaGraph() {
     }
   };
 
+  const handleSelectSearchResult = (item: SearchResultItem) => {
+    setIsSearchOpen(false);
+    setSearchQuery('');
+
+    if (item.view_level === 'zonal' && item.zonal_id) {
+      navigateToZonal(item.zonal_id);
+    } else if (item.view_level === 'manager' && item.manager_id) {
+      navigateToManager(item.manager_id);
+    } else if (item.view_level === 'agent' && item.agent_id) {
+      navigateToAgent(item.agent_id);
+    } else if (item.view_level === 'customer' && item.customer_id) {
+      navigateToCustomer(item.customer_id);
+    }
+  };
+
   const handleSearchSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (searchQuery.trim()) {
+      setIsSearchOpen(false);
       loadGraph({ search: searchQuery.trim() });
     }
   };
@@ -472,7 +534,6 @@ export default function DBSchemaGraph() {
     [hoverNode, selectedNode, isDark]
   );
 
-  // EXPANDED POINTER AREA FOR 100% EASY CLICKING ON NODES AND LABELS
   const drawNodePointerArea = useCallback((node: any, color: string, ctx: CanvasRenderingContext2D) => {
     const size = (node.size || 20) + 16;
     ctx.fillStyle = color;
@@ -516,8 +577,8 @@ export default function DBSchemaGraph() {
   const m = data?.total_database_metrics;
 
   return (
-    <div className={`flex flex-col h-full overflow-hidden ${isExpanded ? 'fixed inset-0 z-50 bg-background p-6' : ''}`}>
-      {/* Top Header & Search Control Bar */}
+    <div className={`flex flex-col ${isExpanded ? 'fixed inset-0 z-[100] w-screen h-screen bg-background p-4 overflow-hidden' : 'h-full overflow-hidden'}`}>
+      {/* Top Header Bar */}
       <div className="flex flex-col md:flex-row md:items-center justify-between border-b pb-4 mb-3 gap-3 shrink-0">
         <div>
           <div className="flex items-center gap-2 flex-wrap">
@@ -535,25 +596,46 @@ export default function DBSchemaGraph() {
             )}
           </div>
           <p className="text-[11px] text-muted-foreground mt-0.5">
-            Querying all 11,347 customers across 16 named branches. Click any node or label to inspect details on the left.
+            Querying all 11,347 customers across 16 named branches. Click any Executive, Zone, Branch, Officer, or Borrower node to inspect details on the left.
           </p>
         </div>
 
-        <div className="flex items-center gap-2">
-          <form onSubmit={handleSearchSubmit} className="flex items-center gap-2">
+        {/* SEARCH WITH ENTITY DROPDOWN & LIVE AUTOCOMPLETE */}
+        <div className="flex items-center gap-2 relative">
+          <form onSubmit={handleSearchSubmit} className="flex items-center gap-1.5 relative">
+            {/* Entity Type Dropdown Selector */}
+            <div className="relative">
+              <select
+                value={searchEntityType}
+                onChange={(e) => setSearchEntityType(e.target.value)}
+                className="h-8 text-xs px-2 rounded-xl border border-border/80 bg-background text-foreground focus:ring-1 focus:ring-primary cursor-pointer font-medium"
+              >
+                <option value="all">All Types</option>
+                <option value="customer">👤 Customer</option>
+                <option value="agent">👔 Officer / Agent</option>
+                <option value="manager">🏢 Branch Manager</option>
+                <option value="zonal">🌐 Zonal VP</option>
+              </select>
+            </div>
+
+            {/* Input Search Box */}
             <div className="relative">
               <Search className="h-3.5 w-3.5 absolute left-2.5 top-2.5 text-muted-foreground" />
               <Input
-                placeholder="Search Branch Name (e.g. Indiranagar, MG Road), Customer..."
+                placeholder="Search name, customer ID, or branch..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="h-8 text-xs pl-8 w-[220px] md:w-[320px] rounded-xl border-border/80"
+                onFocus={() => {
+                  if (searchResults.length > 0) setIsSearchOpen(true);
+                }}
+                className="h-8 text-xs pl-8 w-[200px] md:w-[260px] rounded-xl border-border/80"
               />
               {searchQuery && (
                 <button
                   type="button"
                   onClick={() => {
                     setSearchQuery('');
+                    setIsSearchOpen(false);
                     loadGraph({ search: '' });
                   }}
                   className="absolute right-2.5 top-2.5 text-muted-foreground hover:text-foreground"
@@ -562,11 +644,40 @@ export default function DBSchemaGraph() {
                 </button>
               )}
             </div>
+
             <Button type="submit" variant="default" size="sm" disabled={loading} className="h-8 rounded-xl text-xs px-3">
               {loading ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : 'Inspect'}
             </Button>
           </form>
 
+          {/* Live Autocomplete Dropdown List */}
+          {isSearchOpen && searchResults.length > 0 && (
+            <div className="absolute top-10 right-[100px] z-50 w-[320px] bg-card rounded-xl border shadow-xl max-h-[300px] overflow-y-auto p-1 text-xs">
+              <div className="px-2 py-1 text-[10px] uppercase font-semibold text-muted-foreground border-b flex justify-between">
+                <span>Matching Suggestions</span>
+                <span>{searchResults.length} items</span>
+              </div>
+              {searchResults.map((item) => (
+                <button
+                  key={item.id}
+                  type="button"
+                  onClick={() => handleSelectSearchResult(item)}
+                  className="w-full text-left p-2 rounded-lg hover:bg-muted/70 flex items-start gap-2 border-b border-border/40 last:border-0"
+                >
+                  {getNodeIcon(item.type)}
+                  <div className="min-w-0 flex-1">
+                    <p className="font-semibold text-foreground truncate">{item.title}</p>
+                    <p className="text-[10px] text-muted-foreground truncate">{item.subtitle}</p>
+                  </div>
+                  <Badge variant="outline" className="text-[9px] uppercase shrink-0">
+                    {item.type}
+                  </Badge>
+                </button>
+              ))}
+            </div>
+          )}
+
+          {/* Full Screen Toggle Button */}
           <Button
             variant={isExpanded ? "default" : "outline"}
             size="sm"

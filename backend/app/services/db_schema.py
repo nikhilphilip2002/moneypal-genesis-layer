@@ -2,7 +2,6 @@ import os
 import psycopg2
 from typing import Dict, Any, List, Optional
 
-# Mapping Real Branch Codes to Human-Readable Branch Names & Managers
 BRANCH_METADATA_MAP = {
     "1001": {"name": "Bangalore Central Headquarters", "manager": "Rajesh Sharma", "city": "Bangalore"},
     "1002": {"name": "MG Road Main Financial Branch", "manager": "Ananya Roy", "city": "Bangalore"},
@@ -81,8 +80,92 @@ def get_connection():
         connect_timeout=3
     )
 
+def search_entities(query_str: str, entity_type: str = "all") -> List[Dict[str, Any]]:
+    """
+    Search autocomplete backend engine across 11,347 Customers, Officers, Branch Managers, and Zonal VPs.
+    """
+    results = []
+    if not query_str or not query_str.strip():
+        return results
+
+    term = query_str.strip().lower()
+
+    # 1. Zonal VPs Search
+    if entity_type in ["all", "zonal"]:
+        for z in ZONES:
+            if term in z["name"].lower() or term in z["director"].lower():
+                results.append({
+                    "id": z["id"],
+                    "title": z["name"],
+                    "subtitle": f"Zonal VP: {z['director']}",
+                    "type": "zonal",
+                    "view_level": "zonal",
+                    "zonal_id": z["id"]
+                })
+
+    # 2. Branch Managers Search
+    if entity_type in ["all", "manager"]:
+        for code, meta in BRANCH_METADATA_MAP.items():
+            if term in meta["name"].lower() or term in meta["manager"].lower() or term in code:
+                results.append({
+                    "id": f"BRN-{code}",
+                    "title": meta["name"],
+                    "subtitle": f"Branch #{code} • Manager: {meta['manager']}",
+                    "type": "manager",
+                    "view_level": "manager",
+                    "manager_id": f"BRN-{code}"
+                })
+
+    # 3. Field Officers Search
+    if entity_type in ["all", "agent"]:
+        for code, meta in BRANCH_METADATA_MAP.items():
+            for idx in range(2):
+                off_name, off_role = OFFICER_NAME_POOL[(int(code) + idx) % len(OFFICER_NAME_POOL)]
+                if term in off_name.lower() or term in off_role.lower() or term in code:
+                    results.append({
+                        "id": f"AGT-{code}-{idx+1}",
+                        "title": off_name,
+                        "subtitle": f"{off_role} • {meta['name']}",
+                        "type": "agent",
+                        "view_level": "agent",
+                        "agent_id": f"AGT-{code}-{idx+1}"
+                    })
+
+    # 4. Customers Search in PostgreSQL (11,347 Records)
+    if entity_type in ["all", "customer"]:
+        try:
+            conn = get_connection()
+            cur = conn.cursor()
+            cur.execute("""
+                SELECT gnlnac_cust_id, COALESCE(gnlnac_cust_name, 'Borrower #' || gnlnac_cust_id),
+                       gnlnac_acnt_num, gnlnac_sanc_amt, gnlnac_appl_brn_code
+                FROM bronze.genlnacnts
+                WHERE LOWER(gnlnac_cust_name) LIKE %s 
+                   OR CAST(gnlnac_cust_id AS TEXT) LIKE %s 
+                   OR CAST(gnlnac_acnt_num AS TEXT) LIKE %s
+                LIMIT 12;
+            """, (f"%{term}%", f"%{term}%", f"%{term}%"))
+            c_rows = cur.fetchall()
+            for r in c_rows:
+                br_code = str(r[4] or "1001")
+                br_name = BRANCH_METADATA_MAP.get(br_code, {}).get("name", f"Branch #{br_code}")
+                results.append({
+                    "id": f"CUST-{r[0]}",
+                    "title": str(r[1]),
+                    "subtitle": f"Customer ID: #{r[0]} • Account #{r[2]} • {br_name}",
+                    "type": "customer",
+                    "view_level": "customer",
+                    "customer_id": str(r[0])
+                })
+            conn.close()
+        except Exception:
+            pass
+
+    return results[:15]
+
 def get_db_schema_graph(
     search_term: Optional[str] = None,
+    entity_type: Optional[str] = "all",
     view_level: Optional[str] = "executive",
     zonal_id: Optional[str] = None,
     manager_id: Optional[str] = None,
@@ -92,6 +175,7 @@ def get_db_schema_graph(
 ) -> Dict[str, Any]:
     """
     Enterprise 5-Tier Curiosity Graph querying live PostgreSQL (11,347 customers across 16 named branches).
+    Includes full parent chain visualization (Zonal VP -> Manager -> Officer -> Customer).
     """
     is_live = False
     nodes = []
@@ -130,7 +214,7 @@ def get_db_schema_graph(
             real_branches.append({
                 "id": f"BRN-{brn_code}",
                 "code": brn_code,
-                "name": f"{brn_meta['name']} (#{brn_code})",
+                "name": brn_meta["name"],
                 "display_title": brn_meta["name"],
                 "manager": brn_meta["manager"],
                 "cust_count": r[1] or 0,
@@ -152,7 +236,7 @@ def get_db_schema_graph(
             real_branches.append({
                 "id": f"BRN-{b_code_str}",
                 "code": b_code_str,
-                "name": f"{brn_meta['name']} (#{b_code_str})",
+                "name": brn_meta["name"],
                 "display_title": brn_meta["name"],
                 "manager": brn_meta["manager"],
                 "cust_count": 750,
@@ -168,35 +252,16 @@ def get_db_schema_graph(
     selected_agent = None
     selected_customer = None
 
+    # Search Overrides
     if search_term and search_term.strip():
-        term = search_term.strip().lower()
-        for br in real_branches:
-            if br["code"].lower() in term or br["display_title"].lower() in term or br["name"].lower() in term:
-                current_level = "manager"
-                manager_id = br["id"]
-                zonal_id = br["zone_id"]
-                break
-        
-        if current_level not in ["manager", "zonal"]:
-            try:
-                conn = get_connection()
-                cur = conn.cursor()
-                cur.execute("""
-                    SELECT gnlnac_cust_id, COALESCE(gnlnac_cust_name, 'Borrower #' || gnlnac_cust_id), gnlnac_appl_brn_code
-                    FROM bronze.genlnacnts
-                    WHERE LOWER(gnlnac_cust_name) LIKE %s OR CAST(gnlnac_cust_id AS TEXT) LIKE %s OR CAST(gnlnac_acnt_num AS TEXT) LIKE %s
-                    LIMIT 1;
-                """, (f"%{term}%", f"%{term}%", f"%{term}%"))
-                c_match = cur.fetchone()
-                conn.close()
-                if c_match:
-                    current_level = "customer"
-                    customer_id = str(c_match[0])
-                    brn_code = str(c_match[2] or "1001")
-                    manager_id = f"BRN-{brn_code}"
-                    agent_id = f"AGT-{brn_code}-1"
-            except Exception:
-                pass
+        search_res = search_entities(search_term, entity_type=entity_type or "all")
+        if search_res:
+            top_match = search_res[0]
+            current_level = top_match["view_level"]
+            if "zonal_id" in top_match: zonal_id = top_match["zonal_id"]
+            if "manager_id" in top_match: manager_id = top_match["manager_id"]
+            if "agent_id" in top_match: agent_id = top_match["agent_id"]
+            if "customer_id" in top_match: customer_id = top_match["customer_id"]
 
     # -------------------------------------------------------------
     # TIER 0: EXECUTIVE VIEW
@@ -252,7 +317,7 @@ def get_db_schema_graph(
             })
 
     # -------------------------------------------------------------
-    # TIER 1: ZONAL VIEW (Shows Named Branches)
+    # TIER 1: ZONAL VIEW (Shows Zonal VP -> Branches)
     # -------------------------------------------------------------
     elif current_level == "zonal" or (zonal_id and not manager_id and not agent_id and not customer_id):
         target_zonal_id = zonal_id or ZONES[0]["id"]
@@ -282,7 +347,7 @@ def get_db_schema_graph(
                 "id": br["id"],
                 "type": "manager",
                 "title": br["display_title"],
-                "subtitle": f"Code #{br['code']} • {br['cust_count']:,} Borrowers",
+                "subtitle": f"Manager: {br['manager']} • {br['cust_count']:,} Borrowers",
                 "node_label": "Branch Manager",
                 "color": NODE_TYPE_STYLES["manager"]["color"],
                 "size": NODE_TYPE_STYLES["manager"]["size"],
@@ -305,18 +370,35 @@ def get_db_schema_graph(
             })
 
     # -------------------------------------------------------------
-    # TIER 2: BRANCH MANAGER VIEW
+    # TIER 2: BRANCH MANAGER VIEW (Shows Zonal VP -> Branch Manager -> Officers)
     # -------------------------------------------------------------
     elif current_level == "manager" or (manager_id and not agent_id and not customer_id):
         target_mgr_id = manager_id or real_branches[0]["id"]
         selected_mgr = next((b for b in real_branches if b["id"] == target_mgr_id), real_branches[0])
         selected_zonal = next((z for z in ZONES if z["id"] == selected_mgr["zone_id"]), ZONES[0])
 
+        # Parent Zonal Node
+        nodes.append({
+            "id": selected_zonal["id"],
+            "type": "zonal",
+            "title": selected_zonal["name"],
+            "subtitle": f"Director: {selected_zonal['director']}",
+            "node_label": "Parent Zone",
+            "color": NODE_TYPE_STYLES["zonal"]["color"],
+            "size": 24,
+            "zonal_id": selected_zonal["id"],
+            "details": {
+                "Zonal Director": selected_zonal["director"],
+                "Division": selected_zonal["name"]
+            }
+        })
+
+        # Selected Branch Manager Node
         nodes.append({
             "id": selected_mgr["id"],
             "type": "manager",
             "title": selected_mgr["display_title"],
-            "subtitle": f"Code #{selected_mgr['code']} • Mgr: {selected_mgr['manager']}",
+            "subtitle": f"Manager: {selected_mgr['manager']}",
             "node_label": "Branch Operations",
             "color": NODE_TYPE_STYLES["manager"]["color"],
             "size": 26,
@@ -328,6 +410,14 @@ def get_db_schema_graph(
                 "Zone": selected_zonal["name"],
                 "Active Customers": f"{selected_mgr['cust_count']:,} Borrowers"
             }
+        })
+
+        edges.append({
+            "source": selected_zonal["id"],
+            "target": selected_mgr["id"],
+            "weight": 8,
+            "label": "MANAGES_BRANCH",
+            "purpose": "Zone Oversight"
         })
 
         for idx in range(3):
@@ -362,7 +452,7 @@ def get_db_schema_graph(
             })
 
     # -------------------------------------------------------------
-    # TIER 3: AGENT VIEW
+    # TIER 3: AGENT VIEW (Shows Manager -> Officer -> Customers)
     # -------------------------------------------------------------
     elif current_level == "agent" or (agent_id and not customer_id):
         brn_code = agent_id.split("-")[1] if agent_id and "-" in agent_id else real_branches[0]["code"]
@@ -377,6 +467,23 @@ def get_db_schema_graph(
             "manager_id": selected_mgr["id"]
         }
 
+        # Parent Branch Manager Node
+        nodes.append({
+            "id": selected_mgr["id"],
+            "type": "manager",
+            "title": selected_mgr["display_title"],
+            "subtitle": f"Manager: {selected_mgr['manager']}",
+            "node_label": "Branch Manager",
+            "color": NODE_TYPE_STYLES["manager"]["color"],
+            "size": 24,
+            "manager_id": selected_mgr["id"],
+            "details": {
+                "Branch Name": selected_mgr["display_title"],
+                "Manager Name": selected_mgr["manager"]
+            }
+        })
+
+        # Selected Field Officer Node
         nodes.append({
             "id": selected_agent["id"],
             "type": "agent",
@@ -393,6 +500,14 @@ def get_db_schema_graph(
                 "Branch Code": f"#{selected_mgr['code']}",
                 "Zone": selected_zonal["name"]
             }
+        })
+
+        edges.append({
+            "source": selected_mgr["id"],
+            "target": selected_agent["id"],
+            "weight": 7,
+            "label": "SUPERVISES_OFFICER",
+            "purpose": "Branch Supervision"
         })
 
         agent_customers = []
@@ -458,7 +573,7 @@ def get_db_schema_graph(
             })
 
     # -------------------------------------------------------------
-    # TIER 4: CUSTOMER DETAIL VIEW
+    # TIER 4: CUSTOMER DETAIL VIEW (Shows Officer -> Customer -> Accounts)
     # -------------------------------------------------------------
     elif current_level == "customer" or customer_id:
         target_cust = None
@@ -514,7 +629,7 @@ def get_db_schema_graph(
             "details": {
                 "Customer Name": target_cust["cust_name"],
                 "Customer ID": str(target_cust["cust_id"]),
-                "Branch": target_cust.get("brn_name", "Bangalore Central"),
+                "Branch": target_cust.get("brn_name", "Bangalore Central Headquarters"),
                 "Branch Code": f"#{target_cust.get('brn_code', '1001')}",
                 "Risk Rating": "Grade A (Compliant)",
                 "Total Sanction Limit": f"₹{target_cust['sanc_amt']:,}"

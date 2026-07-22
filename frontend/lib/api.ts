@@ -226,6 +226,8 @@ export const admin = {
     }
     return apiRequest(`/admin/db-schema${q}`);
   },
+  dbSchemaSearch: (q: string, entity_type: string = 'all'): Promise<{ query: string; entity_type: string; results: any[] }> =>
+    apiRequest(`/admin/db-schema/search?q=${encodeURIComponent(q)}&entity_type=${encodeURIComponent(entity_type)}`),
   addInstitution: (data: { name: string; type: string; website?: string; headquarters?: string; msme_focus?: boolean }) =>
     apiRequest('/competitive/institutions', { method: 'POST', body: JSON.stringify(data) }),
   addRegulation: (data: { display_name: string; rbi_url?: string; applicability?: string; effective_date?: string; priority?: string }) =>

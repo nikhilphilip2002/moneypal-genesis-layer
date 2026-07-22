@@ -20,6 +20,7 @@ def status():
 @router.get("/admin/db-schema")
 def db_schema(
     search: str = None,
+    entity_type: str = "all",
     view_level: str = "executive",
     zonal_id: str = None,
     manager_id: str = None,
@@ -29,12 +30,19 @@ def db_schema(
     """Retrieve the 5-tier Enterprise Curiosity Graph (Executive -> Zonal -> Manager -> Agent -> Customer -> Account)."""
     return get_db_schema_graph(
         search_term=search,
+        entity_type=entity_type,
         view_level=view_level,
         zonal_id=zonal_id,
         manager_id=manager_id,
         agent_id=agent_id,
         customer_id=customer_id
     )
+
+
+@router.get("/admin/db-schema/search")
+def db_schema_search(q: str = "", entity_type: str = "all"):
+    """Instant live autocomplete search across 11,347 customers, officers, branch managers, and zonal VPs."""
+    return {"query": q, "entity_type": entity_type, "results": search_entities(q, entity_type)}
 
 
 @router.post("/intelligence/search")
