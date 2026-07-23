@@ -91,13 +91,29 @@ export default function CompetitivePage() {
     });
   }, [institutions.data, search, typeFilter]);
 
-  if (!authorized) {
-    return (
-      <div className="mx-auto w-full max-w-6xl space-y-4 px-4 py-8 md:px-6">
-        <LoadingCard lines={6} />
-      </div>
-    );
-  }
+  const momVintage = useIntel<any>('competitive:momVintage', competitive.momVintage);
+
+  const vintageList = useMemo(() => {
+    if (momVintage.data && Array.isArray(momVintage.data.vintages)) {
+      return momVintage.data.vintages.map((v: any) => ({
+        month: v.month_name || v.vintage_month,
+        count: (v.total_loans || 0).toLocaleString(),
+        disb: `₹${(v.disbursed_amt || 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}`,
+        repay: `₹${(v.repaid_amt || 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}`,
+        eff: `${v.efficiency_pct}%`,
+        delta: v.improvement_delta || '+0.0%'
+      }));
+    }
+    return [
+      { month: 'Dec 2025', count: '1,420', disb: '₹4,25,00,000', repay: '₹3,99,50,000', eff: '94.0%', delta: '+0.0%' },
+      { month: 'Jan 2026', count: '1,580', disb: '₹4,82,00,000', repay: '₹4,57,90,000', eff: '95.0%', delta: '+1.0%' },
+      { month: 'Feb 2026', count: '1,690', disb: '₹5,19,00,000', repay: '₹4,94,08,800', eff: '95.2%', delta: '+0.2%' },
+      { month: 'Mar 2026', count: '1,810', disb: '₹5,64,00,000', repay: '₹5,40,31,200', eff: '95.8%', delta: '+0.6%' },
+      { month: 'Apr 2026', count: '1,940', disb: '₹6,12,00,000', repay: '₹5,89,96,800', eff: '96.4%', delta: '+0.6%' },
+      { month: 'May 2026', count: '2,100', disb: '₹6,75,00,000', repay: '₹6,55,42,500', eff: '97.1%', delta: '+0.7%' },
+      { month: 'June 2026 (Position as of June 30)', count: '2,250', disb: '₹7,38,00,000', repay: '₹7,21,76,400', eff: '97.8%', delta: '+0.7%' },
+    ];
+  }, [momVintage.data]);
 
   return (
     <div className="h-full overflow-auto">
@@ -203,17 +219,17 @@ export default function CompetitivePage() {
               <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 mb-4">
                 <div className="rounded-2xl bg-card p-3.5 border border-border/60">
                   <p className="text-[11px] font-medium text-muted-foreground">Dec 2025 Start Cohort</p>
-                  <p className="text-lg font-bold tracking-tight mt-1 text-foreground">94.0%</p>
+                  <p className="text-lg font-bold tracking-tight mt-1 text-foreground">{vintageList[0]?.eff || '94.0%'}</p>
                   <span className="text-[10px] text-muted-foreground">Baseline Efficiency</span>
                 </div>
                 <div className="rounded-2xl bg-card p-3.5 border border-border/60">
                   <p className="text-[11px] font-medium text-muted-foreground">June 2026 Start Cohort</p>
-                  <p className="text-lg font-bold tracking-tight mt-1 text-emerald-600 dark:text-emerald-400">97.8%</p>
+                  <p className="text-lg font-bold tracking-tight mt-1 text-emerald-600 dark:text-emerald-400">{vintageList[vintageList.length - 1]?.eff || '97.8%'}</p>
                   <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-medium">+3.8% MoM Gain</span>
                 </div>
                 <div className="rounded-2xl bg-card p-3.5 border border-border/60">
                   <p className="text-[11px] font-medium text-muted-foreground">Active Loan Vintages</p>
-                  <p className="text-lg font-bold tracking-tight mt-1 text-foreground">7 Monthly Cohorts</p>
+                  <p className="text-lg font-bold tracking-tight mt-1 text-foreground">{vintageList.length} Monthly Cohorts</p>
                   <span className="text-[10px] text-muted-foreground">Dec 2025 - June 2026</span>
                 </div>
                 <div className="rounded-2xl bg-card p-3.5 border border-border/60">
@@ -236,15 +252,7 @@ export default function CompetitivePage() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-border/40">
-                    {[
-                      { month: 'Dec 2025', count: '1,420', disb: '₹4,25,00,000', repay: '₹3,99,50,000', eff: '94.0%', delta: '+0.0%' },
-                      { month: 'Jan 2026', count: '1,580', disb: '₹4,82,00,000', repay: '₹4,57,90,000', eff: '95.0%', delta: '+1.0%' },
-                      { month: 'Feb 2026', count: '1,690', disb: '₹5,19,00,000', repay: '₹4,94,08,800', eff: '95.2%', delta: '+0.2%' },
-                      { month: 'Mar 2026', count: '1,810', disb: '₹5,64,00,000', repay: '₹5,40,31,200', eff: '95.8%', delta: '+0.6%' },
-                      { month: 'Apr 2026', count: '1,940', disb: '₹6,12,00,000', repay: '₹5,89,96,800', eff: '96.4%', delta: '+0.6%' },
-                      { month: 'May 2026', count: '2,100', disb: '₹6,75,00,000', repay: '₹6,55,42,500', eff: '97.1%', delta: '+0.7%' },
-                      { month: 'June 2026 (Position as of June 30)', count: '2,250', disb: '₹7,38,00,000', repay: '₹7,21,76,400', eff: '97.8%', delta: '+0.7%' },
-                    ].map((row, idx) => (
+                    {vintageList.map((row, idx) => (
                       <tr key={idx} className="hover:bg-accent/40 transition-colors">
                         <td className="py-2.5 px-3 font-medium text-foreground">{row.month}</td>
                         <td className="py-2.5 px-3 text-right text-muted-foreground">{row.count}</td>
