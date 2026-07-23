@@ -3,7 +3,12 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from app.services import brief_cache, platform
-from app.services.db_schema import get_db_schema_graph, get_monthly_breakdown, search_entities
+from app.services.db_schema import (
+    get_db_schema_graph,
+    get_monthly_breakdown,
+    get_mom_loan_start_analysis,
+    search_entities,
+)
 
 router = APIRouter(tags=["admin"])
 
@@ -45,6 +50,12 @@ def db_schema(
 def monthly_breakdown(month: str = None):
     """Retrieve monthly basis aggregates (sanctions, disbursements, repayments, efficiency)."""
     return get_monthly_breakdown(selected_month=month)
+
+
+@router.get("/admin/mom-loan-analysis")
+def mom_loan_analysis():
+    """Month-on-month loan start date analysis tracking institution growth and improvement over time."""
+    return get_mom_loan_start_analysis()
 
 
 @router.get("/admin/db-schema/search")

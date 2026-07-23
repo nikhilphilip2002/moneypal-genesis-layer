@@ -229,6 +229,8 @@ export const admin = {
   },
   monthlyBreakdown: (month?: string): Promise<any> =>
     apiRequest(`/admin/monthly-breakdown${month ? `?month=${encodeURIComponent(month)}` : ''}`),
+  momLoanAnalysis: (): Promise<any> =>
+    apiRequest('/admin/mom-loan-analysis'),
   dbSchemaSearch: (q: string, entity_type: string = 'all'): Promise<{ query: string; entity_type: string; results: any[] }> =>
     apiRequest(`/admin/db-schema/search?q=${encodeURIComponent(q)}&entity_type=${encodeURIComponent(entity_type)}`),
   addInstitution: (data: { name: string; type: string; website?: string; headquarters?: string; msme_focus?: boolean }) =>

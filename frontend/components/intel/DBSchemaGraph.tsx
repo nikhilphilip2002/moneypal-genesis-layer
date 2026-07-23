@@ -165,6 +165,23 @@ export default function DBSchemaGraph() {
   const [searchResults, setSearchResults] = useState<SearchResultItem[]>([]);
   const [isSearchOpen, setIsSearchOpen] = useState(false);
 
+  // Month-on-Month (MoM) Vintage Analysis State
+  const [isMomOpen, setIsMomOpen] = useState(false);
+  const [momData, setMomData] = useState<any>(null);
+  const [loadingMom, setLoadingMom] = useState(false);
+
+  const fetchMomData = useCallback(async () => {
+    setLoadingMom(true);
+    try {
+      const res = await admin.momLoanAnalysis();
+      setMomData(res);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setLoadingMom(false);
+    }
+  }, []);
+
   const [isExpanded, setIsExpanded] = useState(false);
   const [dimensions, setDimensions] = useState({ width: 800, height: 540 });
 
@@ -763,6 +780,20 @@ export default function DBSchemaGraph() {
             </div>
           )}
 
+          {/* MoM Loan Start Analysis Button */}
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              setIsMomOpen(true);
+              if (!momData) fetchMomData();
+            }}
+            className="rounded-xl h-8 text-xs px-3 shrink-0 flex items-center gap-1.5 border-emerald-500/40 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/10 shadow-sm"
+          >
+            <TrendingUp className="h-3.5 w-3.5 text-emerald-500" />
+            <span>MoM Loan Analysis</span>
+          </Button>
+
           {/* Full Screen Toggle Button */}
           <Button
             variant={isExpanded ? "default" : "outline"}
@@ -1113,6 +1144,115 @@ export default function DBSchemaGraph() {
         </div>
 
       </div>
+
+      {/* MONTH-ON-MONTH (MoM) LOAN START DATE & INSTITUTION IMPROVEMENT MODAL */}
+      {isMomOpen && (
+        <div className="fixed inset-0 z-50 bg-background/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-card border border-border rounded-2xl shadow-2xl max-w-4xl w-full max-h-[85vh] flex flex-col overflow-hidden">
+            <div className="p-4 border-b flex items-center justify-between bg-muted/30">
+              <div className="flex items-center gap-2">
+                <TrendingUp className="h-5 w-5 text-emerald-500" />
+                <div>
+                  <h3 className="font-semibold text-sm text-foreground">Month-on-Month (MoM) Loan Start Date Analysis</h3>
+                  <p className="text-[11px] text-muted-foreground">Tracking institution origination growth & portfolio improvement over time</p>
+                </div>
+              </div>
+              <Button variant="ghost" size="sm" onClick={() => setIsMomOpen(false)} className="h-8 w-8 p-0 rounded-lg">
+                <X className="h-4 w-4" />
+              </Button>
+            </div>
+
+            <div className="p-4 overflow-y-auto space-y-4 text-xs">
+              {loadingMom ? (
+                <div className="py-12 text-center text-muted-foreground animate-pulse">Loading Month-on-Month loan vintage analytics from database...</div>
+              ) : momData ? (
+                <>
+                  {/* Institution Improvement Metric Cards */}
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                    <div className="bg-muted/40 p-3 rounded-xl border">
+                      <p className="text-[10px] text-muted-foreground uppercase font-semibold">Origination Growth</p>
+                      <p className="text-lg font-bold text-emerald-600 dark:text-emerald-400 mt-1">
+                        {momData.institution_improvement?.origination_growth_multiplier}x
+                      </p>
+                      <p className="text-[10px] text-muted-foreground mt-0.5">
+                        {momData.institution_improvement?.start_period} to {momData.institution_improvement?.latest_period}
+                      </p>
+                    </div>
+
+                    <div className="bg-muted/40 p-3 rounded-xl border">
+                      <p className="text-[10px] text-muted-foreground uppercase font-semibold">Avg MoM Volume Growth</p>
+                      <p className="text-lg font-bold text-blue-600 dark:text-blue-400 mt-1">
+                        +{momData.institution_improvement?.average_mom_growth_pct}%
+                      </p>
+                      <p className="text-[10px] text-muted-foreground mt-0.5">Average monthly rate</p>
+                    </div>
+
+                    <div className="bg-muted/40 p-3 rounded-xl border">
+                      <p className="text-[10px] text-muted-foreground uppercase font-semibold">Total New Originations</p>
+                      <p className="text-lg font-bold text-purple-600 dark:text-purple-400 mt-1">
+                        ₹{((momData.institution_improvement?.total_new_volume_started || 0) / 10000000).toFixed(1)} Cr
+                      </p>
+                      <p className="text-[10px] text-muted-foreground mt-0.5">Loans started in period</p>
+                    </div>
+
+                    <div className="bg-muted/40 p-3 rounded-xl border">
+                      <p className="text-[10px] text-muted-foreground uppercase font-semibold">Portfolio Trend</p>
+                      <p className="text-xs font-bold text-teal-600 dark:text-teal-400 mt-1">
+                        {momData.institution_improvement?.portfolio_health_trend}
+                      </p>
+                      <p className="text-[10px] text-muted-foreground mt-0.5">Institutional status</p>
+                    </div>
+                  </div>
+
+                  {/* MoM Cohorts Table */}
+                  <div className="border rounded-xl overflow-hidden">
+                    <table className="w-full text-left border-collapse">
+                      <thead className="bg-muted/60 text-[10px] uppercase tracking-wider font-semibold text-muted-foreground">
+                        <tr className="border-b">
+                          <th className="p-2.5">Start Month</th>
+                          <th className="p-2.5">Loans Started</th>
+                          <th className="p-2.5">Borrowers</th>
+                          <th className="p-2.5">Volume Sanctioned</th>
+                          <th className="p-2.5">MoM Growth</th>
+                          <th className="p-2.5">Avg Yield (ROI)</th>
+                          <th className="p-2.5">Status</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y text-xs">
+                        {momData.monthly_cohorts?.map((c: any) => (
+                          <tr key={c.start_month} className="hover:bg-muted/20 transition-colors">
+                            <td className="p-2.5 font-semibold font-mono">{c.start_month}</td>
+                            <td className="p-2.5 font-mono">{c.loans_started?.toLocaleString()} loans</td>
+                            <td className="p-2.5 font-mono">{c.borrowers_onboarded?.toLocaleString()}</td>
+                            <td className="p-2.5 font-bold font-mono">₹{(c.volume_sanctioned / 10000000).toFixed(2)} Cr</td>
+                            <td className="p-2.5 font-mono">
+                              <span className={`px-1.5 py-0.5 rounded text-[10px] font-semibold ${c.mom_growth_pct > 0 ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400' : 'bg-muted text-muted-foreground'}`}>
+                                {c.mom_growth_pct > 0 ? `+${c.mom_growth_pct}%` : `${c.mom_growth_pct}%`}
+                              </span>
+                            </td>
+                            <td className="p-2.5 font-mono">{c.avg_interest_rate}%</td>
+                            <td className="p-2.5">
+                              <Badge variant="outline" className="text-[10px]">
+                                {c.institution_status}
+                              </Badge>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </>
+              ) : null}
+            </div>
+
+            <div className="p-3 border-t bg-muted/20 flex justify-end">
+              <Button size="sm" onClick={() => setIsMomOpen(false)} className="text-xs px-4">
+                Close Analysis
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 
