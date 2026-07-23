@@ -210,7 +210,7 @@ export const regulatory = {
 
 export const admin = {
   status: (): Promise<PlatformStatus> => apiRequest('/admin/status'),
-  dbSchema: (params?: { search?: string; view_level?: string; zonal_id?: string; manager_id?: string; agent_id?: string; customer_id?: string } | string): Promise<any> => {
+  dbSchema: (params?: { search?: string; view_level?: string; zonal_id?: string; manager_id?: string; agent_id?: string; customer_id?: string; month?: string } | string): Promise<any> => {
     let q = '';
     if (typeof params === 'string') {
       q = params ? `?search=${encodeURIComponent(params)}` : '';
@@ -222,10 +222,13 @@ export const admin = {
       if (params.manager_id) parts.push(`manager_id=${encodeURIComponent(params.manager_id)}`);
       if (params.agent_id) parts.push(`agent_id=${encodeURIComponent(params.agent_id)}`);
       if (params.customer_id) parts.push(`customer_id=${encodeURIComponent(params.customer_id)}`);
+      if (params.month) parts.push(`month=${encodeURIComponent(params.month)}`);
       if (parts.length > 0) q = '?' + parts.join('&');
     }
     return apiRequest(`/admin/db-schema${q}`);
   },
+  monthlyBreakdown: (month?: string): Promise<any> =>
+    apiRequest(`/admin/monthly-breakdown${month ? `?month=${encodeURIComponent(month)}` : ''}`),
   dbSchemaSearch: (q: string, entity_type: string = 'all'): Promise<{ query: string; entity_type: string; results: any[] }> =>
     apiRequest(`/admin/db-schema/search?q=${encodeURIComponent(q)}&entity_type=${encodeURIComponent(entity_type)}`),
   addInstitution: (data: { name: string; type: string; website?: string; headquarters?: string; msme_focus?: boolean }) =>

@@ -3,7 +3,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from app.services import brief_cache, platform
-from app.services.db_schema import get_db_schema_graph
+from app.services.db_schema import get_db_schema_graph, get_monthly_breakdown, search_entities
 
 router = APIRouter(tags=["admin"])
 
@@ -25,9 +25,10 @@ def db_schema(
     zonal_id: str = None,
     manager_id: str = None,
     agent_id: str = None,
-    customer_id: str = None
+    customer_id: str = None,
+    month: str = None
 ):
-    """Retrieve the 5-tier Enterprise Curiosity Graph (Executive -> Zonal -> Manager -> Agent -> Customer -> Account)."""
+    """Retrieve the Enterprise Curiosity Graph with optional monthly basis filter."""
     return get_db_schema_graph(
         search_term=search,
         entity_type=entity_type,
@@ -35,13 +36,20 @@ def db_schema(
         zonal_id=zonal_id,
         manager_id=manager_id,
         agent_id=agent_id,
-        customer_id=customer_id
+        customer_id=customer_id,
+        month=month
     )
+
+
+@router.get("/admin/monthly-breakdown")
+def monthly_breakdown(month: str = None):
+    """Retrieve monthly basis aggregates (sanctions, disbursements, repayments, efficiency)."""
+    return get_monthly_breakdown(selected_month=month)
 
 
 @router.get("/admin/db-schema/search")
 def db_schema_search(q: str = "", entity_type: str = "all"):
-    """Instant live autocomplete search across 11,347 customers, officers, branch managers, and zonal VPs."""
+    """Instant live autocomplete search across customers, loan accounts, and branches."""
     return {"query": q, "entity_type": entity_type, "results": search_entities(q, entity_type)}
 
 

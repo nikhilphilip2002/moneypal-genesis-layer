@@ -130,6 +130,7 @@ interface HierarchicalGraphPayload {
     total_accounts: number;
     total_branches: number;
   };
+  monthly_summary?: any;
   metadata: {
     is_live: boolean;
     schema: string;
@@ -153,6 +154,7 @@ export default function DBSchemaGraph() {
   const [selectedManagerId, setSelectedManagerId] = useState<string | null>(null);
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
   const [selectedCustomerId, setSelectedCustomerId] = useState<string | null>(null);
+  const [selectedMonth, setSelectedMonth] = useState<string>('all');
   const [selectedNode, setSelectedNode] = useState<GraphNode | null>(null);
   const [hoverNode, setHoverNode] = useState<GraphNode | null>(null);
   
@@ -179,6 +181,7 @@ export default function DBSchemaGraph() {
     agentId?: string;
     custId?: string;
     search?: string;
+    month?: string;
   }) => {
     setLoading(true);
     try {
@@ -188,6 +191,7 @@ export default function DBSchemaGraph() {
       const agtId = opts?.agentId !== undefined ? opts.agentId : selectedAgentId;
       const cId = opts?.custId !== undefined ? opts.custId : selectedCustomerId;
       const term = opts?.search !== undefined ? opts.search : searchQuery;
+      const monthToFetch = opts?.month !== undefined ? opts.month : selectedMonth;
 
       const res = await admin.dbSchema({
         view_level: levelToFetch,
@@ -195,7 +199,8 @@ export default function DBSchemaGraph() {
         manager_id: mId || undefined,
         agent_id: agtId || undefined,
         customer_id: cId || undefined,
-        search: term || undefined
+        search: term || undefined,
+        month: monthToFetch === 'all' ? undefined : monthToFetch
       });
 
       setData(res);
@@ -853,6 +858,28 @@ export default function DBSchemaGraph() {
               </div>
             </>
           )}
+        </div>
+
+        {/* Monthly Basis Selector */}
+        <div className="flex items-center gap-1.5 bg-background border rounded-lg px-2.5 py-1 text-xs shrink-0 shadow-sm">
+          <Calendar className="h-3.5 w-3.5 text-primary shrink-0" />
+          <span className="text-muted-foreground font-medium hidden sm:inline">Monthly Basis:</span>
+          <select
+            value={selectedMonth}
+            onChange={(e) => {
+              const newMonth = e.target.value;
+              setSelectedMonth(newMonth);
+              loadGraph({ month: newMonth });
+            }}
+            className="bg-transparent font-semibold text-foreground focus:outline-none cursor-pointer text-xs"
+          >
+            <option value="all">All Months (Cumulative Portfolio)</option>
+            {data?.monthly_summary?.monthly_series?.map((m: any) => (
+              <option key={m.month} value={m.month}>
+                {m.month} ({m.loan_count} loans • ₹{(m.total_sanctioned / 10000000).toFixed(2)} Cr)
+              </option>
+            ))}
+          </select>
         </div>
       </div>
 
