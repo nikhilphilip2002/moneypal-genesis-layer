@@ -18,3 +18,8 @@ members = [
 
 [tool.uv.sources]
 genesis-core = { workspace = true }
+
+[tool.pytest.ini_options]
+pythonpath = ["backend"]
+testpaths = ["backend/tests"]
+
