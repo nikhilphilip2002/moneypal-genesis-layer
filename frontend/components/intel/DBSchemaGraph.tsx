@@ -1019,19 +1019,19 @@ export default function DBSchemaGraph() {
             <div className="space-y-1 mt-1 text-[10px]">
               <div className="flex items-center gap-1.5">
                 <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: '#4c1d95' }} />
-                <span className="font-medium text-foreground/80">MD & CEO / Executive</span>
+                <span className="font-medium text-foreground/80">Portfolio Master (Oracle DB)</span>
               </div>
               <div className="flex items-center gap-1.5">
                 <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: '#6d28d9' }} />
-                <span className="font-medium text-foreground/80">Zonal VP</span>
+                <span className="font-medium text-foreground/80">Product Division</span>
               </div>
               <div className="flex items-center gap-1.5">
                 <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: '#4338ca' }} />
-                <span className="font-medium text-foreground/80">Branch Manager</span>
+                <span className="font-medium text-foreground/80">Oracle Branch</span>
               </div>
               <div className="flex items-center gap-1.5">
                 <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: '#0284c7' }} />
-                <span className="font-medium text-foreground/80">Loan Officer / Agent</span>
+                <span className="font-medium text-foreground/80">Lending Scheme Desk</span>
               </div>
               <div className="flex items-center gap-1.5">
                 <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: '#0f766e' }} />

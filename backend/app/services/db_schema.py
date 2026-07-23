@@ -3,62 +3,68 @@ import psycopg2
 from typing import Dict, Any, List, Optional
 
 BRANCH_METADATA_MAP = {
-    "1001": {"name": "Bangalore Central Headquarters", "manager": "Rajesh Sharma", "city": "Bangalore"},
-    "1002": {"name": "MG Road Main Financial Branch", "manager": "Ananya Roy", "city": "Bangalore"},
-    "1003": {"name": "Basavanagudi Credit Hub", "manager": "Vikram Deshmukh", "city": "Bangalore"},
-    "1004": {"name": "Whitefield Tech & MSME Branch", "manager": "Pooja Hegde", "city": "Bangalore"},
-    "1005": {"name": "Malleshwaram Regional Branch", "manager": "Siddharth Rao", "city": "Bangalore"},
-    "1006": {"name": "Hebbal Enterprise Branch", "manager": "Kavita Menon", "city": "Bangalore"},
-    "1007": {"name": "Koramangala Commercial Branch", "manager": "Amitabh Sen", "city": "Bangalore"},
-    "1008": {"name": "Vijayanagar Micro-Lending Branch", "manager": "Meera Joshi", "city": "Bangalore"},
-    "1009": {"name": "Banashankari Growth Branch", "manager": "Deepak Verma", "city": "Bangalore"},
-    "1011": {"name": "Yelahanka Metro Branch", "manager": "Rohan Gupta", "city": "Bangalore"},
-    "1012": {"name": "Rajajinagar Trade Hub", "manager": "Sunita Patil", "city": "Bangalore"},
-    "1013": {"name": "Jayanagar Retail & SME Branch", "manager": "Nikhil Swamy", "city": "Bangalore"},
-    "1014": {"name": "HSR Layout Startup & SME Branch", "manager": "Tanvi Kapoor", "city": "Bangalore"},
-    "1015": {"name": "Marathahalli Commercial Hub", "manager": "Arjun Nair", "city": "Bangalore"},
-    "1018": {"name": "Indiranagar Financial Hub", "manager": "Priya Kulkarni", "city": "Bangalore"},
-    "1020": {"name": "Electronic City Industrial Branch", "manager": "Suresh Bhat", "city": "Bangalore"},
+    "1": {"name": "Head Office (Central Operations)", "manager": "Central Operations Hub", "city": "Kochi"},
+    "4": {"name": "Head Office Credit Division", "manager": "Central Credit Committee", "city": "Kochi"},
+    "1001": {"name": "Thripunithura Branch", "manager": "Regional Branch Manager", "city": "Thripunithura"},
+    "1002": {"name": "Aluva Branch", "manager": "Regional Branch Manager", "city": "Aluva"},
+    "1003": {"name": "Basavanagudi Credit Hub", "manager": "Regional Branch Manager", "city": "Basavanagudi"},
+    "1004": {"name": "Whitefield Tech & MSME Hub", "manager": "Commercial Credit Officer", "city": "Whitefield"},
+    "1005": {"name": "Malleshwaram Regional Branch", "manager": "Regional Branch Manager", "city": "Malleshwaram"},
+    "1006": {"name": "Nilambur Branch", "manager": "Regional Branch Manager", "city": "Nilambur"},
+    "1007": {"name": "Kozhikode Branch", "manager": "Regional Branch Manager", "city": "Kozhikode"},
+    "1008": {"name": "Chalakudy Branch", "manager": "Regional Branch Manager", "city": "Chalakudy"},
+    "1009": {"name": "Banashankari Branch", "manager": "Regional Branch Manager", "city": "Banashankari"},
+    "1010": {"name": "Pathanamthitta Branch", "manager": "Regional Branch Manager", "city": "Pathanamthitta"},
+    "1011": {"name": "Yelahanka Metro Branch", "manager": "Regional Branch Manager", "city": "Yelahanka"},
+    "1012": {"name": "Kanhangad Branch", "manager": "Regional Branch Manager", "city": "Kanhangad"},
+    "1013": {"name": "Angamally Branch", "manager": "Regional Branch Manager", "city": "Angamally"},
+    "1014": {"name": "Kanjikuzhy Branch", "manager": "Regional Branch Manager", "city": "Kanjikuzhy"},
+    "1015": {"name": "Marathahalli Branch", "manager": "Regional Branch Manager", "city": "Marathahalli"},
+    "1016": {"name": "Karamana Branch", "manager": "Regional Branch Manager", "city": "Thiruvananthapuram"},
+    "1017": {"name": "Gudallur Branch", "manager": "Regional Branch Manager", "city": "Gudallur"},
+    "1018": {"name": "Muvattupuzha Branch", "manager": "Regional Branch Manager", "city": "Muvattupuzha"},
+    "1020": {"name": "Kattapana Branch", "manager": "Regional Branch Manager", "city": "Kattapana"},
+    "1021": {"name": "Kanjirapally Branch", "manager": "Regional Branch Manager", "city": "Kanjirapally"},
 }
 
 NAMED_BRANCHES_CATALOG = [
-    ("Bangalore Central Headquarters", "Rajesh Sharma"),
-    ("MG Road Main Financial Branch", "Ananya Roy"),
-    ("Basavanagudi Credit Hub", "Vikram Deshmukh"),
-    ("Whitefield Tech & MSME Branch", "Pooja Hegde"),
-    ("Malleshwaram Regional Branch", "Siddharth Rao"),
-    ("Hebbal Enterprise Branch", "Kavita Menon"),
-    ("Koramangala Commercial Branch", "Amitabh Sen"),
-    ("Vijayanagar Micro-Lending Branch", "Meera Joshi"),
-    ("Banashankari Growth Branch", "Deepak Verma"),
-    ("Yelahanka Metro Branch", "Rohan Gupta"),
-    ("Rajajinagar Trade Hub", "Sunita Patil"),
-    ("Jayanagar Retail & SME Branch", "Nikhil Swamy"),
-    ("HSR Layout Startup & SME Branch", "Tanvi Kapoor"),
-    ("Marathahalli Commercial Hub", "Arjun Nair"),
-    ("Indiranagar Financial Hub", "Priya Kulkarni"),
-    ("Electronic City Industrial Branch", "Suresh Bhat")
+    ("Head Office (Central Operations)", "Central Operations Hub"),
+    ("Head Office Credit Division", "Central Credit Committee"),
+    ("Thripunithura Branch", "Regional Branch Manager"),
+    ("Aluva Branch", "Regional Branch Manager"),
+    ("Nilambur Branch", "Regional Branch Manager"),
+    ("Kozhikode Branch", "Regional Branch Manager"),
+    ("Chalakudy Branch", "Regional Branch Manager"),
+    ("Pathanamthitta Branch", "Regional Branch Manager"),
+    ("Kanhangad Branch", "Regional Branch Manager"),
+    ("Angamally Branch", "Regional Branch Manager"),
+    ("Kanjikuzhy Branch", "Regional Branch Manager"),
+    ("Karamana Branch", "Regional Branch Manager"),
+    ("Gudallur Branch", "Regional Branch Manager"),
+    ("Muvattupuzha Branch", "Regional Branch Manager"),
+    ("Kattapana Branch", "Regional Branch Manager"),
+    ("Kanjirapally Branch", "Regional Branch Manager")
 ]
 
 OFFICER_NAME_POOL = [
-    ("Kavita Sharma", "Senior Field Loan Officer"),
-    ("Priya Patel", "Senior Credit Officer"),
-    ("Amit Verma", "Field Relationship Manager"),
-    ("Neha Singh", "Micro-Lending Specialist"),
-    ("Rajesh Kumar", "Senior Credit Officer"),
-    ("Suresh Reddy", "Recovery & Loan Specialist"),
-    ("Ananya Deshmukh", "Portfolio Manager"),
-    ("Vikram Joshi", "Credit Analyst & Officer"),
-    ("Deepak Hegde", "Micro-Finance Officer"),
-    ("Pooja Nair", "Lead Field Inspector")
+    ("Scheme 1610 (MSME Working Capital)", "Business Credit Desk"),
+    ("Scheme 1601 (Commercial Site Purchase)", "Asset Credit Desk"),
+    ("Scheme 1615 (Loan Against Property)", "Secured Lending Desk"),
+    ("Scheme 1606 (Four-Wheeler Commercial)", "Auto Finance Desk"),
+    ("Scheme 1354 (EV Consumer Credit)", "Retail Credit Desk"),
+    ("Scheme 1342 (FTG Gold Facility)", "Micro-Finance Desk"),
+    ("Scheme 1001 (Standard Retail Gold)", "Gold Loan Desk"),
+    ("Scheme 1602 (Housing Renovation)", "Retail Asset Desk"),
+    ("Scheme 1607 (Tractor Agri Loan)", "Agricultural Credit Desk"),
+    ("Scheme 1605 (Autorickshaw Retail)", "Vehicle Finance Desk")
 ]
 
 NODE_TYPE_STYLES = {
-    "executive": {"color": "#4c1d95", "label": "MD & CEO / Executive Board", "size": 32},
-    "zonal": {"color": "#6d28d9", "label": "Zonal Director (VP)", "size": 28},
-    "manager": {"color": "#4338ca", "label": "Branch Manager", "size": 24},
-    "agent": {"color": "#0284c7", "label": "Loan Officer / Agent", "size": 20},
-    "customer": {"color": "#0f766e", "label": "Customer / Borrower", "size": 18},
+    "executive": {"color": "#4c1d95", "label": "Portfolio Master (GICCPROD_NEW)", "size": 32},
+    "zonal": {"color": "#6d28d9", "label": "Product Division", "size": 28},
+    "manager": {"color": "#4338ca", "label": "Oracle Branch", "size": 24},
+    "agent": {"color": "#0284c7", "label": "Lending Scheme Desk", "size": 20},
+    "customer": {"color": "#0f766e", "label": "Borrower Profile", "size": 18},
     "account": {"color": "#075fac", "label": "Loan Account Master", "size": 18},
     "disbursement": {"color": "#ea580c", "label": "Payout Disbursement", "size": 14},
     "repayment": {"color": "#10b981", "label": "Repayment Receipt", "size": 14},
@@ -66,16 +72,16 @@ NODE_TYPE_STYLES = {
 
 EXECUTIVE_INFO = {
     "id": "EXEC-001",
-    "name": "Dr. Vikramaditya Rao",
-    "role": "Managing Director & CEO",
+    "name": "Moneypal Core Loan Book",
+    "role": "GICCPROD_NEW Oracle System",
     "org": "Moneypal GICC Holdings Ltd"
 }
 
 ZONES = [
-    {"id": "ZONE-SOUTH", "name": "South Zone Division", "director": "Kavita Menon", "code": "SOUTH"},
-    {"id": "ZONE-WEST", "name": "West Zone Division", "director": "Suresh Nair", "code": "WEST"},
-    {"id": "ZONE-NORTH", "name": "North Zone Division", "director": "Alok Chatterjee", "code": "NORTH"},
-    {"id": "ZONE-EAST", "name": "East Zone Division", "director": "Rina Sen", "code": "EAST"}
+    {"id": "ZONE-MSME", "name": "Product 16: Business & MSME Division", "director": "Head Office Credit Division", "code": "MSME"},
+    {"id": "ZONE-MFI", "name": "Product 13: Microfinance & JLG Division", "director": "Head Office Retail Division", "code": "MFI"},
+    {"id": "ZONE-GOLD", "name": "Product 1: Retail Gold Loan Division", "director": "Branch Operations Division", "code": "GOLD"},
+    {"id": "ZONE-OVERALL", "name": "Central Portfolio Division", "director": "Executive Credit Board", "code": "CENTRAL"}
 ]
 
 def get_branch_metadata(raw_code: Any) -> Dict[str, str]:
@@ -311,14 +317,14 @@ def get_db_schema_graph(
             "type": "executive",
             "title": EXECUTIVE_INFO["name"],
             "subtitle": EXECUTIVE_INFO["role"],
-            "node_label": "MD & CEO",
+            "node_label": "Portfolio Master",
             "color": NODE_TYPE_STYLES["executive"]["color"],
             "size": NODE_TYPE_STYLES["executive"]["size"],
             "details": {
-                "Executive Officer": EXECUTIVE_INFO["name"],
-                "Designation": EXECUTIVE_INFO["role"],
-                "Entity": EXECUTIVE_INFO["org"],
-                "Active Branches": f"{len(real_branches)} Named Branches",
+                "System Database": "GICCPROD_NEW (Oracle Core Lending)",
+                "System Type": EXECUTIVE_INFO["role"],
+                "Holding Entity": EXECUTIVE_INFO["org"],
+                "Active Oracle Branches": f"{len(real_branches)} Active Branches",
                 "Total Borrowers": f"{total_customers_count:,}",
                 "Total Loan Accounts": f"{total_accounts_count:,} Active Loans",
                 "Total Disbursed": f"₹{tot_exec_vol:,.0f}",
@@ -337,15 +343,15 @@ def get_db_schema_graph(
                 "id": z["id"],
                 "type": "zonal",
                 "title": z["name"],
-                "subtitle": f"Director: {z['director']} • {len(zone_brs)} Branches",
-                "node_label": "Zonal VP",
+                "subtitle": f"Managing Unit: {z['director']} • {len(zone_brs)} Branches",
+                "node_label": "Product Division",
                 "color": NODE_TYPE_STYLES["zonal"]["color"],
                 "size": NODE_TYPE_STYLES["zonal"]["size"],
                 "zonal_id": z["id"],
                 "details": {
-                    "Zonal Director": z["director"],
-                    "Division": z["name"],
-                    "Supervised Branches": f"{len(zone_brs)} Named Branches",
+                    "Division Unit": z["director"],
+                    "Portfolio Product": z["name"],
+                    "Active Oracle Branches": f"{len(zone_brs)} Branches",
                     "Total Borrowers": f"{tot_cust:,}",
                     "Total Disbursed": f"₹{tot_vol:,.0f}",
                     "Total Repaid": f"₹{tot_repay:,.0f}",
@@ -356,12 +362,12 @@ def get_db_schema_graph(
                 "source": EXECUTIVE_INFO["id"],
                 "target": z["id"],
                 "weight": 9,
-                "label": "GOVERNS_DIVISION",
-                "purpose": "Executive Jurisdiction"
+                "label": "PRODUCT_DIVISION",
+                "purpose": "Portfolio Hierarchy"
             })
 
     # -------------------------------------------------------------
-    # TIER 1: ZONAL VIEW (Shows Zonal VP -> Branches)
+    # TIER 1: ZONAL VIEW (Shows Product Division -> Branches)
     # -------------------------------------------------------------
     elif current_level == "zonal" or (zonal_id and not manager_id and not agent_id and not customer_id):
         target_zonal_id = zonal_id or ZONES[0]["id"]
@@ -379,15 +385,15 @@ def get_db_schema_graph(
             "id": selected_zonal["id"],
             "type": "zonal",
             "title": selected_zonal["name"],
-            "subtitle": f"Director: {selected_zonal['director']}",
-            "node_label": "Zonal Division",
+            "subtitle": f"Managing Unit: {selected_zonal['director']}",
+            "node_label": "Product Division",
             "color": NODE_TYPE_STYLES["zonal"]["color"],
             "size": 28,
             "zonal_id": selected_zonal["id"],
             "details": {
-                "Zonal VP": selected_zonal["director"],
-                "Division": selected_zonal["name"],
-                "Supervised Branches": f"{len(assigned_brs)} Named Branches",
+                "Managing Unit": selected_zonal["director"],
+                "Portfolio Product": selected_zonal["name"],
+                "Active Oracle Branches": f"{len(assigned_brs)} Branches",
                 "Total Borrowers": f"{tot_z_cust:,}",
                 "Total Disbursed": f"₹{tot_z_vol:,.0f}",
                 "Total Repaid": f"₹{tot_z_repay:,.0f}",
@@ -401,14 +407,14 @@ def get_db_schema_graph(
                 "id": br["id"],
                 "type": "manager",
                 "title": br["display_title"],
-                "subtitle": f"Manager: {br['manager']} • {br['cust_count']:,} Borrowers",
-                "node_label": "Branch Manager",
+                "subtitle": f"Branch Code #{br['code']} • {br['cust_count']:,} Borrowers",
+                "node_label": "Oracle Branch",
                 "color": NODE_TYPE_STYLES["manager"]["color"],
                 "size": NODE_TYPE_STYLES["manager"]["size"],
                 "manager_id": br["id"],
                 "details": {
                     "Branch Name": br["display_title"],
-                    "Manager Name": br["manager"],
+                    "Oracle Branch Code": br["code"],
                     "Total Borrowers": f"{br['cust_count']:,}",
                     "Active Loan Accounts": f"{br['acnt_count']:,} Accounts",
                     "Total Disbursed": f"₹{br['total_vol']:,.0f}",
@@ -420,12 +426,12 @@ def get_db_schema_graph(
                 "source": selected_zonal["id"],
                 "target": br["id"],
                 "weight": 8,
-                "label": "MANAGES_BRANCH",
+                "label": "HOSTS_BRANCH",
                 "purpose": "Branch Operations"
             })
 
     # -------------------------------------------------------------
-    # TIER 2: BRANCH MANAGER VIEW (Shows Zonal VP -> Branch Manager -> Officers)
+    # TIER 2: BRANCH MANAGER VIEW (Shows Product Division -> Oracle Branch -> Lending Scheme Desks)
     # -------------------------------------------------------------
     elif current_level == "manager" or (manager_id and not agent_id and not customer_id):
         target_mgr_id = manager_id or real_branches[0]["id"]
@@ -438,14 +444,14 @@ def get_db_schema_graph(
             "id": selected_zonal["id"],
             "type": "zonal",
             "title": selected_zonal["name"],
-            "subtitle": f"Director: {selected_zonal['director']}",
-            "node_label": "Parent Zone",
+            "subtitle": f"Division: {selected_zonal['director']}",
+            "node_label": "Product Division",
             "color": NODE_TYPE_STYLES["zonal"]["color"],
             "size": 24,
             "zonal_id": selected_zonal["id"],
             "details": {
-                "Zonal Director": selected_zonal["director"],
-                "Division": selected_zonal["name"]
+                "Managing Unit": selected_zonal["director"],
+                "Portfolio Product": selected_zonal["name"]
             }
         })
 
@@ -453,15 +459,15 @@ def get_db_schema_graph(
             "id": selected_mgr["id"],
             "type": "manager",
             "title": selected_mgr["display_title"],
-            "subtitle": f"Manager: {selected_mgr['manager']}",
-            "node_label": "Branch Operations",
+            "subtitle": f"Branch Code #{selected_mgr['code']}",
+            "node_label": "Oracle Branch",
             "color": NODE_TYPE_STYLES["manager"]["color"],
             "size": 26,
             "manager_id": selected_mgr["id"],
             "details": {
                 "Branch Name": selected_mgr["display_title"],
-                "Manager Name": selected_mgr["manager"],
-                "Zone": selected_zonal["name"],
+                "Oracle Branch Code": selected_mgr["code"],
+                "Product Division": selected_zonal["name"],
                 "Total Borrowers": f"{selected_mgr['cust_count']:,}",
                 "Active Loan Accounts": f"{selected_mgr['acnt_count']:,} Accounts",
                 "Total Disbursed": f"₹{selected_mgr['total_vol']:,.0f}",
@@ -474,8 +480,8 @@ def get_db_schema_graph(
             "source": selected_zonal["id"],
             "target": selected_mgr["id"],
             "weight": 8,
-            "label": "MANAGES_BRANCH",
-            "purpose": "Zone Oversight"
+            "label": "HOSTS_BRANCH",
+            "purpose": "Branch Operations"
         })
 
         for idx in range(3):
@@ -491,15 +497,15 @@ def get_db_schema_graph(
                 "type": "agent",
                 "title": f"{off_name}",
                 "subtitle": f"{off_role} • {selected_mgr['display_title']}",
-                "node_label": "Field Officer",
+                "node_label": "Lending Scheme Desk",
                 "color": NODE_TYPE_STYLES["agent"]["color"],
                 "size": NODE_TYPE_STYLES["agent"]["size"],
                 "agent_id": agt_id,
                 "manager_id": selected_mgr["id"],
                 "details": {
-                    "Officer Name": off_name,
-                    "Designation": off_role,
-                    "Branch Hub": selected_mgr["display_title"],
+                    "Lending Scheme": off_name,
+                    "Credit Desk": off_role,
+                    "Branch Location": selected_mgr["display_title"],
                     "Total Borrowers": f"{cust_share:,}",
                     "Active Accounts": f"{round(cust_share * 1.15):,} Loans",
                     "Total Disbursed": f"₹{off_disb:,.0f}",
@@ -511,8 +517,8 @@ def get_db_schema_graph(
                 "source": selected_mgr["id"],
                 "target": agt_id,
                 "weight": 7,
-                "label": "SUPERVISES_OFFICER",
-                "purpose": "Field Oversight"
+                "label": "OFFERS_SCHEME",
+                "purpose": "Credit Facility"
             })
 
     # -------------------------------------------------------------
