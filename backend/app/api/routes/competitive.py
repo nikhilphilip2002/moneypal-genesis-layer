@@ -73,3 +73,10 @@ def institution_swot(institution_id: str, refresh: bool = False):
     if result is None:
         raise HTTPException(404, "Institution not found")
     return result
+
+
+@router.get("/mom-vintage")
+def mom_vintage():
+    """Month-on-Month (MoM) Loan Start Date Vintage Analysis endpoint."""
+    return competitive.mom_vintage_analysis()
+

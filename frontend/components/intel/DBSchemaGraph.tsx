@@ -1085,7 +1085,7 @@ export default function DBSchemaGraph() {
               </div>
               <div className="flex items-center gap-1.5">
                 <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: '#4338ca' }} />
-                <span className="font-medium text-foreground/80">Oracle Branch</span>
+                <span className="font-medium text-foreground/80">District Virtual Branch</span>
               </div>
               <div className="flex items-center gap-1.5">
                 <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: '#0284c7' }} />

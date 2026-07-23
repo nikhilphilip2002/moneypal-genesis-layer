@@ -195,6 +195,7 @@ export const competitive = {
   swot: (id: string, refresh?: boolean): Promise<SwotResponse> =>
     apiRequest(`/competitive/institutions/${encodeURIComponent(id)}/swot${refresh ? '?refresh=1' : ''}`),
   landscape: (refresh?: boolean): Promise<IntelligenceResponse> => apiRequest(`/competitive/landscape${refresh ? '?refresh=1' : ''}`),
+  momVintage: (): Promise<any> => apiRequest('/competitive/mom-vintage'),
 };
 
 // ─── Module 3: Regulatory intelligence ───

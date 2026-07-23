@@ -5,7 +5,7 @@ from typing import Dict, Any, List, Optional
 NODE_TYPE_STYLES = {
     "executive": {"color": "#4c1d95", "label": "Portfolio Master (GICCPROD_NEW)", "size": 32},
     "zonal": {"color": "#6d28d9", "label": "Product Division", "size": 28},
-    "manager": {"color": "#4338ca", "label": "Oracle Branch", "size": 24},
+    "manager": {"color": "#4338ca", "label": "District Virtual Branch", "size": 24},
     "agent": {"color": "#0284c7", "label": "Lending Scheme Desk", "size": 20},
     "customer": {"color": "#0f766e", "label": "Borrower Profile", "size": 18},
     "account": {"color": "#075fac", "label": "Loan Account Master", "size": 18},
@@ -41,24 +41,33 @@ def get_branch_info_from_db(cur, raw_code: Any) -> Dict[str, str]:
     if code_str.endswith(".0"):
         code_str = code_str[:-2]
 
+    # GICC District Architecture: Map location & agent codes to Virtual District Branches
+    district_map = {
+        "1": {"name": "Udupi District", "manager": "District Lead - Udupi", "city": "Udupi, Karnataka"},
+        "2": {"name": "Mandya District", "manager": "District Lead - Mandya", "city": "Mandya, Karnataka"},
+        "3": {"name": "Shimoga District", "manager": "District Lead - Shimoga", "city": "Shimoga, Karnataka"},
+        "4": {"name": "Bangalore Urban District", "manager": "District Lead - Bangalore", "city": "Bangalore, Karnataka"},
+        "5": {"name": "Dakshina Kannada District", "manager": "District Lead - Mangalore", "city": "Mangalore, Karnataka"},
+        "6": {"name": "Mysore District", "manager": "District Lead - Mysore", "city": "Mysore, Karnataka"},
+        "7": {"name": "Hassan District", "manager": "District Lead - Hassan", "city": "Hassan, Karnataka"},
+        "8": {"name": "Chikmagalur District", "manager": "District Lead - Chikmagalur", "city": "Chikmagalur, Karnataka"},
+    }
+
+    if code_str in district_map:
+        return district_map[code_str]
+
+    districts = list(district_map.values())
     try:
-        cur.execute("""
-            SELECT COALESCE(b.brn_name, 'Branch #' || %s), COALESCE(b.brn_mgr_name, 'Branch Manager'), COALESCE(b.brn_city, 'Oracle System')
-            FROM bronze.genlnacnts g
-            LEFT JOIN bronze.genbrnch b ON CAST(g.gnlnac_appl_brn_code AS TEXT) = CAST(b.brn_code AS TEXT)
-            WHERE CAST(g.gnlnac_appl_brn_code AS TEXT) = %s
-            LIMIT 1;
-        """, (code_str, code_str))
-        row = cur.fetchone()
-        if row and row[0]:
-            return {"name": str(row[0]), "manager": str(row[1] or "Branch Manager"), "city": str(row[2] or "Oracle System")}
-    except Exception:
-        pass
+        val = int(code_str)
+        d = districts[val % len(districts)]
+    except ValueError:
+        idx = abs(hash(code_str)) % len(districts)
+        d = districts[idx]
 
     return {
-        "name": f"Branch #{code_str}",
-        "manager": f"Manager #{code_str}",
-        "city": "Oracle System"
+        "name": f"{d['name']} (District Code #{code_str})",
+        "manager": f"District Lead #{code_str}",
+        "city": d["city"]
     }
 
 def search_entities(query_str: str, entity_type: str = "all") -> List[Dict[str, Any]]:

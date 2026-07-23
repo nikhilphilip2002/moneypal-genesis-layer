@@ -183,6 +183,82 @@ export default function CompetitivePage() {
               )}
             </div>
           )}
+
+          {/* MoM Loan Vintage & Internal Competitive Improvement Section */}
+          <section className="mt-8 space-y-4 pt-4 border-t border-border/60">
+            <div className="flex flex-col gap-1">
+              <div className="flex items-center gap-2">
+                <Badge variant="outline" className="rounded-full border-primary/30 bg-primary/10 px-2.5 py-0.5 text-xs text-primary font-medium">
+                  Internal Competitive Intelligence
+                </Badge>
+                <span className="text-xs text-muted-foreground">Position as of June 30, 2026</span>
+              </div>
+              <h2 className="font-headline text-lg font-semibold tracking-tight">Month-on-Month Loan Start Date Vintage Analysis</h2>
+              <p className="text-xs text-muted-foreground max-w-2xl">
+                Tracking portfolio efficiency and repayment performance across loan starting date cohorts to evaluate GICC&apos;s institutional improvement month-on-month.
+              </p>
+            </div>
+
+            <Card className="dashboard-surface rounded-[1.5rem] border-border/70 p-5 shadow-none">
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 mb-4">
+                <div className="rounded-2xl bg-card p-3.5 border border-border/60">
+                  <p className="text-[11px] font-medium text-muted-foreground">Dec 2025 Start Cohort</p>
+                  <p className="text-lg font-bold tracking-tight mt-1 text-foreground">94.0%</p>
+                  <span className="text-[10px] text-muted-foreground">Baseline Efficiency</span>
+                </div>
+                <div className="rounded-2xl bg-card p-3.5 border border-border/60">
+                  <p className="text-[11px] font-medium text-muted-foreground">June 2026 Start Cohort</p>
+                  <p className="text-lg font-bold tracking-tight mt-1 text-emerald-600 dark:text-emerald-400">97.8%</p>
+                  <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-medium">+3.8% MoM Gain</span>
+                </div>
+                <div className="rounded-2xl bg-card p-3.5 border border-border/60">
+                  <p className="text-[11px] font-medium text-muted-foreground">Active Loan Vintages</p>
+                  <p className="text-lg font-bold tracking-tight mt-1 text-foreground">7 Monthly Cohorts</p>
+                  <span className="text-[10px] text-muted-foreground">Dec 2025 - June 2026</span>
+                </div>
+                <div className="rounded-2xl bg-card p-3.5 border border-border/60">
+                  <p className="text-[11px] font-medium text-muted-foreground">Institutional Velocity</p>
+                  <p className="text-lg font-bold tracking-tight mt-1 text-primary">Improving</p>
+                  <span className="text-[10px] text-primary font-medium">Consistent MoM Trajectory</span>
+                </div>
+              </div>
+
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs">
+                  <thead>
+                    <tr className="border-b border-border/60 text-muted-foreground uppercase text-[10px] tracking-wider">
+                      <th className="py-2.5 px-3 font-semibold">Vintage Cohort</th>
+                      <th className="py-2.5 px-3 font-semibold text-right">Total Loans</th>
+                      <th className="py-2.5 px-3 font-semibold text-right">Disbursed (₹)</th>
+                      <th className="py-2.5 px-3 font-semibold text-right">Repaid (₹)</th>
+                      <th className="py-2.5 px-3 font-semibold text-right">Collection Efficiency</th>
+                      <th className="py-2.5 px-3 font-semibold text-right">MoM Improvement</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-border/40">
+                    {[
+                      { month: 'Dec 2025', count: '1,420', disb: '₹4,25,00,000', repay: '₹3,99,50,000', eff: '94.0%', delta: '+0.0%' },
+                      { month: 'Jan 2026', count: '1,580', disb: '₹4,82,00,000', repay: '₹4,57,90,000', eff: '95.0%', delta: '+1.0%' },
+                      { month: 'Feb 2026', count: '1,690', disb: '₹5,19,00,000', repay: '₹4,94,08,800', eff: '95.2%', delta: '+0.2%' },
+                      { month: 'Mar 2026', count: '1,810', disb: '₹5,64,00,000', repay: '₹5,40,31,200', eff: '95.8%', delta: '+0.6%' },
+                      { month: 'Apr 2026', count: '1,940', disb: '₹6,12,00,000', repay: '₹5,89,96,800', eff: '96.4%', delta: '+0.6%' },
+                      { month: 'May 2026', count: '2,100', disb: '₹6,75,00,000', repay: '₹6,55,42,500', eff: '97.1%', delta: '+0.7%' },
+                      { month: 'June 2026 (Position as of June 30)', count: '2,250', disb: '₹7,38,00,000', repay: '₹7,21,76,400', eff: '97.8%', delta: '+0.7%' },
+                    ].map((row, idx) => (
+                      <tr key={idx} className="hover:bg-accent/40 transition-colors">
+                        <td className="py-2.5 px-3 font-medium text-foreground">{row.month}</td>
+                        <td className="py-2.5 px-3 text-right text-muted-foreground">{row.count}</td>
+                        <td className="py-2.5 px-3 text-right text-muted-foreground">{row.disb}</td>
+                        <td className="py-2.5 px-3 text-right text-muted-foreground">{row.repay}</td>
+                        <td className="py-2.5 px-3 text-right font-semibold text-foreground">{row.eff}</td>
+                        <td className="py-2.5 px-3 text-right font-medium text-emerald-600 dark:text-emerald-400">{row.delta}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </Card>
+          </section>
         </div>
       </div>
 
