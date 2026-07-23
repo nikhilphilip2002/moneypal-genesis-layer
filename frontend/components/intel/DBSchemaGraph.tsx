@@ -790,7 +790,7 @@ export default function DBSchemaGraph() {
             }`}
           >
             <Award className="h-3.5 w-3.5 text-purple-500" />
-            MD & CEO: Dr. Vikramaditya Rao
+            {data?.executive_info?.name || 'Portfolio Master'}
           </button>
 
           {(viewLevel === 'zonal' || viewLevel === 'manager' || viewLevel === 'agent' || viewLevel === 'customer') && data?.selected_zonal && (
