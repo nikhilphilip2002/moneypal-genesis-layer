@@ -34,6 +34,15 @@ import LoadingCard from '@/components/intel/LoadingCard';
 import WidgetError from '@/components/intel/WidgetError';
 import { Building, MapPin, Search } from 'lucide-react';
 
+interface VintageItem {
+  month: string;
+  count: string;
+  disb: string;
+  repay: string;
+  eff: string;
+  delta: string;
+}
+
 function InstitutionDetail({ institution }: { institution: Institution }) {
   const profile = useIntel<IntelligenceResponse>(`competitive:profile:${institution.id}`, (refresh) =>
     competitive.profile(institution.id, refresh),
@@ -93,7 +102,7 @@ export default function CompetitivePage() {
 
   const momVintage = useIntel<any>('competitive:momVintage', competitive.momVintage);
 
-  const vintageList = useMemo(() => {
+  const vintageList = useMemo<VintageItem[]>(() => {
     if (momVintage.data && Array.isArray(momVintage.data.vintages)) {
       return momVintage.data.vintages.map((v: any) => ({
         month: v.month_name || v.vintage_month,
@@ -252,7 +261,7 @@ export default function CompetitivePage() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-border/40">
-                    {vintageList.map((row, idx) => (
+                    {vintageList.map((row: VintageItem, idx: number) => (
                       <tr key={idx} className="hover:bg-accent/40 transition-colors">
                         <td className="py-2.5 px-3 font-medium text-foreground">{row.month}</td>
                         <td className="py-2.5 px-3 text-right text-muted-foreground">{row.count}</td>
