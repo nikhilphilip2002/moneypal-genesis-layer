@@ -63,6 +63,8 @@ class TestDNBS02Service:
         # Annex 10 Top Investments
         assert "annex10_top_investments" in data
         assert isinstance(data["annex10_top_investments"], list)
+        assert len(data["annex10_top_investments"]) > 0
+
 
         # Annex 13 Branches
         assert "annex13_branches" in data

@@ -301,6 +301,14 @@ def get_dnbs02_report_data(
         {"name": "PUBLIC SHAREHOLDERS & OTHERS", "type_of_capital": "Equity Shares", "num_shares": 250000, "face_value": 10, "shareholding_pct": 10.0},
     ]
 
+    # Annex 10 Top Investments
+    annex10_top_investments = [
+        {"entity_name": "CANARA STEEL LTD - DEBENTURES", "investment_type": "Corporate Debentures", "book_value": round(120.0 * capital_mult, 2), "amt_outstanding": round(120.0 * capital_mult, 2)},
+        {"entity_name": "HDFC LIQUID MUTUAL FUND", "investment_type": "Mutual Funds", "book_value": round(250.0 * capital_mult, 2), "amt_outstanding": round(250.0 * capital_mult, 2)},
+        {"entity_name": "SBI SHORT TERM DEBT FUND", "investment_type": "Mutual Funds", "book_value": round(180.0 * capital_mult, 2), "amt_outstanding": round(180.0 * capital_mult, 2)},
+        {"entity_name": "NABARD TERM DEPOSITS", "investment_type": "Fixed Deposits", "book_value": round(300.0 * capital_mult, 2), "amt_outstanding": round(300.0 * capital_mult, 2)},
+    ]
+
     net_owned_funds = round(4600.0 * capital_mult, 2)
     crar_pct = round(24.8 + min(date_scale_factor * 0.1, 2.0), 1)
     npa_ratio_pct = round(0.5, 1)
@@ -331,51 +339,6 @@ def get_dnbs02_report_data(
         "annex13_branches": annex13_branches,
     }
 
-
-    # Part 2 Loan Assets & Maturity Buckets
-    part2_loans = [
-        {"category": "Secured MSME & Business Loans (Product 16)", "amount_lakhs": round(total_loan_book * 0.65, 2), "share_pct": 65.0},
-        {"category": "Retail Gold Loans (Product 1)", "amount_lakhs": round(total_loan_book * 0.20, 2), "share_pct": 20.0},
-        {"category": "Microfinance & JLG Loans (Product 13)", "amount_lakhs": round(total_loan_book * 0.15, 2), "share_pct": 15.0},
-        {"category": "Receivables Due Within 3 Months", "amount_lakhs": round(total_loan_book * 0.35, 2), "share_pct": 35.0},
-        {"category": "Receivables Due 3 to 12 Months", "amount_lakhs": round(total_loan_book * 0.45, 2), "share_pct": 45.0},
-        {"category": "Receivables Due > 12 Months", "amount_lakhs": round(total_loan_book * 0.20, 2), "share_pct": 20.0},
-    ]
-
-    # Part 3 Revenue & Operating Profitability
-    part3_income = [
-        {"head": "Fund-Based Interest Income on Loans", "amount_lakhs": round(total_loan_book * 0.177, 2)},
-        {"head": "Processing & Loan Administrative Fees", "amount_lakhs": round(total_loan_book * 0.018, 2)},
-        {"head": "Treasury & Investment Income", "amount_lakhs": 42.5},
-        {"head": "Less: Finance & Borrowing Costs", "amount_lakhs": round(total_loan_book * 0.085, 2)},
-        {"head": "Less: Operating & Employee Expenses", "amount_lakhs": round(total_loan_book * 0.038, 2)},
-        {"head": "Net Profit Before Tax (PBT)", "amount_lakhs": round(total_loan_book * 0.072, 2)},
-    ]
-
-    # Part 6 Sensitive Sector Exposures
-    part6_sensitive = [
-        {"sector": "Real Estate & Commercial Mortgages", "exposure_lakhs": 420.0, "risk_weight_pct": 100.0},
-        {"sector": "Capital Markets & Mutual Funds", "exposure_lakhs": 430.0, "risk_weight_pct": 125.0},
-        {"sector": "MSME Commercial Desk", "exposure_lakhs": round(total_loan_book * 0.65, 2), "risk_weight_pct": 75.0},
-    ]
-
-    # Part 8A MSME Credit Profile
-    part8a_msme = [
-        {"category": "Micro Enterprises (< ₹25 Lakhs Limit)", "account_count": 4820, "amount_lakhs": round(total_loan_book * 0.40, 2), "avg_interest_rate": 18.2},
-        {"category": "Small Enterprises (₹25L - ₹5 Cr Limit)", "account_count": 1850, "amount_lakhs": round(total_loan_book * 0.45, 2), "avg_interest_rate": 17.5},
-        {"category": "Medium Enterprises (₹5 Cr - ₹10 Cr Limit)", "account_count": 142, "amount_lakhs": round(total_loan_book * 0.15, 2), "avg_interest_rate": 16.8},
-    ]
-
-    # Annex 2 Shareholders Pattern
-    annex2_shareholders = [
-        {"name": "PROSPER FINANCIAL HOLDINGS LTD", "type_of_capital": "Equity Shares", "num_shares": 1850000, "face_value": 10, "shareholding_pct": 74.0},
-        {"name": "GICC MANAGEMENT TRUST", "type_of_capital": "Equity Shares", "num_shares": 400000, "face_value": 10, "shareholding_pct": 16.0},
-        {"name": "PUBLIC SHAREHOLDERS & OTHERS", "type_of_capital": "Equity Shares", "num_shares": 250000, "face_value": 10, "shareholding_pct": 10.0},
-    ]
-
-    net_owned_funds = 4600.0
-    crar_pct = 24.8
-    npa_ratio_pct = 0.5
 def _safe_set_cell_value(sheet, coord: str, value: Any, wrap_text: bool = True):
     try:
         cell = sheet[coord]
