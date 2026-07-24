@@ -124,7 +124,7 @@ def get_dnbs02_report_data(
                         TRIM(CONCAT_WS(' ', ic.indcif_first_name, ic.indcif_midle_name, ic.indcif_last_name)),
                         'Account #' || g.gnlnac_acnt_num
                     ) AS borrower_name,
-                    COALESCE(c.pan, 'NA') AS pan,
+                    'NA' AS pan,
                     CASE WHEN g.gnlnac_prod_code = 16 THEN 'CORPORATE' ELSE 'INDIVIDUAL' END AS borrower_type,
                     COALESCE(g.gnlnac_sanc_amt, 0) / 100000.0 AS sanctioned_amt,
                     COALESCE(g.gnlnac_lndisb_amt, g.gnlnac_sanc_amt, 0) / 100000.0 AS disbursed_amt,
@@ -134,7 +134,6 @@ def get_dnbs02_report_data(
                     COALESCE(la.ascd_princ_os + la.ascd_int_due + la.ascd_charg_due, 0) / 100000.0 AS total_outstanding
                 FROM bronze.genlnacnts g
                 LEFT JOIN bronze.indcifdata_10012025_indcifdata ic ON g.gnlnac_cust_id = ic.indcif_cust_id
-                LEFT JOIN bronze.temp_cust_mig_win c ON CAST(g.gnlnac_cust_id AS TEXT) = c.cust_id
                 LEFT JOIN latest_asset la ON g.gnlnac_acnt_num = la.ascd_account_num
                 WHERE g.gnlnac_sanc_date IS NULL OR (g.gnlnac_sanc_date <= CAST(%s AS DATE))
                 ORDER BY total_outstanding DESC
