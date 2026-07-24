@@ -281,18 +281,20 @@ def _safe_set_cell_value(sheet, coord: str, value: Any):
 
 def get_template_path() -> str:
     """Locate the official RBI DNBS-02 template workbook (.xlsx) across workspace & Docker container paths."""
-    filename = "DNBS02-Important Financial Parameters (1) (4) (2).xlsx"
+    asset_file = "DNBS02_Template.xlsx"
+    doc_file = "DNBS02-Important Financial Parameters (1) (4) (2).xlsx"
     candidates = [
-        "/srv/docs/" + filename,
-        "/srv/backend/docs/" + filename,
-        os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..", "docs", filename)),
-        os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "docs", filename)),
-        os.path.abspath("docs/" + filename),
+        os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "assets", asset_file)),
+        "/srv/backend/app/assets/" + asset_file,
+        "/srv/docs/" + doc_file,
+        os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..", "docs", doc_file)),
+        os.path.abspath("docs/" + doc_file),
     ]
     for p in candidates:
         if os.path.exists(p):
             return p
     raise FileNotFoundError(f"RBI DNBS-02 template Excel file not found. Searched candidate paths: {candidates}")
+
 
 
 def generate_dnbs02_excel(frequency: str = "monthly", period: str = "2026-05") -> bytes:

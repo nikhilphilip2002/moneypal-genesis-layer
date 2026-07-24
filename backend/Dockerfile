@@ -6,9 +6,9 @@ COPY packages/genesis_core /srv/packages/genesis_core
 RUN pip install --no-cache-dir /srv/packages/genesis_core fastapi "uvicorn[standard]" psycopg2-binary openpyxl
 
 
-COPY docs /srv/docs
 COPY backend /srv/backend
 WORKDIR /srv/backend
+
 
 
 EXPOSE 8000
