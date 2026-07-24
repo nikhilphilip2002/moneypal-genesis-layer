@@ -90,7 +90,8 @@ export type DNBS02ReportData = {
     account_status: string;
     total_outstanding: number;
   }[];
-  annex10_top_investments: { entity_name: string; investment_type: string; book_value: number; amt_outstanding: number }[];
+  annex10_top_investments: { entity_name: string; nature?: string; investment_type: string; pan?: string; book_value: number; is_group_company?: string; amt_outstanding: number }[];
+
   annex13_branches: { branch_code: string; branch_name: string; customer_count: number; account_count: number; total_outstanding: number }[];
 };
 

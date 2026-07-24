@@ -328,11 +328,38 @@ def get_dnbs02_report_data(
 
     # Annex 10 Top Investments
     annex10_top_investments = [
-        {"entity_name": "CANARA STEEL LTD - DEBENTURES", "investment_type": "Corporate Debentures", "book_value": round(120.0 * capital_mult, 2), "amt_outstanding": round(120.0 * capital_mult, 2)},
-        {"entity_name": "HDFC LIQUID MUTUAL FUND", "investment_type": "Mutual Funds", "book_value": round(250.0 * capital_mult, 2), "amt_outstanding": round(250.0 * capital_mult, 2)},
-        {"entity_name": "SBI SHORT TERM DEBT FUND", "investment_type": "Mutual Funds", "book_value": round(180.0 * capital_mult, 2), "amt_outstanding": round(180.0 * capital_mult, 2)},
-        {"entity_name": "NABARD TERM DEPOSITS", "investment_type": "Fixed Deposits", "book_value": round(300.0 * capital_mult, 2), "amt_outstanding": round(300.0 * capital_mult, 2)},
+        {"entity_name": "AL CARGO", "nature": "CURRENT", "investment_type": "EQUITY SHARES", "pan": "NA", "book_value": 3.89, "is_group_company": "false", "amt_outstanding": 0.32},
+        {"entity_name": "AXIS", "nature": "CURRENT", "investment_type": "EQUITY SHARES", "pan": "NA", "book_value": 113.20, "is_group_company": "false", "amt_outstanding": 117.37},
+        {"entity_name": "BEML", "nature": "NON-CURRENT", "investment_type": "EQUITY SHARES", "pan": "NA", "book_value": 0.79, "is_group_company": "false", "amt_outstanding": 1.36},
+        {"entity_name": "CANARA STEEL LTD", "nature": "NON-CURRENT", "investment_type": "EQUITY SHARES", "pan": "AAACC7604B", "book_value": 37.35, "is_group_company": "false", "amt_outstanding": 62.65},
+        {"entity_name": "COLGATE", "nature": "NON-CURRENT", "investment_type": "EQUITY SHARES", "pan": "NA", "book_value": 0.61, "is_group_company": "false", "amt_outstanding": 7.15},
+        {"entity_name": "DSP", "nature": "CURRENT", "investment_type": "MUTUAL FUNDS", "pan": "NA", "book_value": 144.16, "is_group_company": "false", "amt_outstanding": 149.44},
+        {"entity_name": "FRNKLIN FUND", "nature": "CURRENT", "investment_type": "MUTUAL FUNDS", "pan": "NA", "book_value": 152.46, "is_group_company": "false", "amt_outstanding": 58.07},
+        {"entity_name": "HINDUJA GLOBAL", "nature": "CURRENT", "investment_type": "EQUITY SHARES", "pan": "NA", "book_value": 2.50, "is_group_company": "false", "amt_outstanding": 64.36},
+        {"entity_name": "JAYA MAHAL TRADE", "nature": "NON-CURRENT", "investment_type": "EQUITY SHARES", "pan": "NA", "book_value": 1.49, "is_group_company": "false", "amt_outstanding": 41.81},
+        {"entity_name": "JIO FINANCE", "nature": "NON-CURRENT", "investment_type": "EQUITY SHARES", "pan": "NA", "book_value": 1.04, "is_group_company": "false", "amt_outstanding": 0.89},
+        {"entity_name": "KANARA CONSUMER PRODUCT LTD", "nature": "NON-CURRENT", "investment_type": "EQUITY SHARES", "pan": "AABCK2150K", "book_value": 109.43, "is_group_company": "false", "amt_outstanding": 4140.68},
+        {"entity_name": "KARNATAKA BANK LTD", "nature": "NON-CURRENT", "investment_type": "EQUITY SHARES", "pan": "NA", "book_value": 4.80, "is_group_company": "false", "amt_outstanding": 22.81},
+        {"entity_name": "LIC", "nature": "CURRENT", "investment_type": "MUTUAL FUNDS", "pan": "NA", "book_value": 126.67, "is_group_company": "false", "amt_outstanding": 131.37},
+        {"entity_name": "MAHA RASHTRA APEX CORPN LTD", "nature": "NON-CURRENT", "investment_type": "EQUITY SHARES", "pan": "NA", "book_value": 2.97, "is_group_company": "false", "amt_outstanding": 18.95},
+        {"entity_name": "MANIPAL AD", "nature": "NON-CURRENT", "investment_type": "EQUITY SHARES", "pan": "NA", "book_value": 0.00, "is_group_company": "false", "amt_outstanding": 64.36},
+        {"entity_name": "MANIPAL HOME FINANCE", "nature": "NON-CURRENT", "investment_type": "EQUITY SHARES", "pan": "NA", "book_value": 0.02, "is_group_company": "false", "amt_outstanding": 4.30},
+        {"entity_name": "NIPPON LTD", "nature": "CURRENT", "investment_type": "MUTUAL FUNDS", "pan": "NA", "book_value": 142.96, "is_group_company": "false", "amt_outstanding": 148.18},
+        {"entity_name": "RELIANCE INDUSTRIES LTD", "nature": "NON-CURRENT", "investment_type": "EQUITY SHARES", "pan": "NA", "book_value": 2.65, "is_group_company": "false", "amt_outstanding": 10.75},
+        {"entity_name": "RELIANCE POWER", "nature": "NON-CURRENT", "investment_type": "EQUITY SHARES", "pan": "NA", "book_value": 0.11, "is_group_company": "false", "amt_outstanding": 0.29},
+        {"entity_name": "SUNDARAM", "nature": "CURRENT", "investment_type": "MUTUAL FUNDS", "pan": "NA", "book_value": 34.07, "is_group_company": "false", "amt_outstanding": 35.29},
+        {"entity_name": "SUNDRAM INCOME PLUS", "nature": "CURRENT", "investment_type": "MUTUAL FUNDS", "pan": "NA", "book_value": 9.99, "is_group_company": "false", "amt_outstanding": 101.04},
+        {"entity_name": "TATA INVESTMENTS", "nature": "NON-CURRENT", "investment_type": "EQUITY SHARES", "pan": "NA", "book_value": 0.72, "is_group_company": "false", "amt_outstanding": 5.40},
+        {"entity_name": "ULTRATECH CEMENT", "nature": "NON-CURRENT", "investment_type": "EQUITY SHARES", "pan": "NA", "book_value": 0.15, "is_group_company": "false", "amt_outstanding": 0.04},
     ]
+
+    # Scale book_value and amt_outstanding if date range requires scaling
+    if date_scale_factor != 1.0:
+        mult = max(0.8, min(date_scale_factor, 4.5))
+        for inv in annex10_top_investments:
+            inv["book_value"] = round(inv["book_value"] * mult, 2)
+            inv["amt_outstanding"] = round(inv["amt_outstanding"] * mult, 2)
+
 
     net_owned_funds = round(4600.0 * capital_mult, 2)
     crar_pct = round(24.8 + min(date_scale_factor * 0.1, 2.0), 1)
@@ -536,15 +563,17 @@ def generate_dnbs02_excel(
     if "DNBS02_Annex10" in wb.sheetnames:
         sheet_a10 = wb["DNBS02_Annex10"]
         _safe_set_cell_value(sheet_a10, "B5", f"Reporting Period End Date :{upper_end_dt}")
-        _clear_sheet_rows_from(sheet_a10, start_row=13, max_rows=30, start_col=2, max_cols=6)
+        _clear_sheet_rows_from(sheet_a10, start_row=13, max_rows=30, start_col=2, max_cols=7)
         for idx, inv in enumerate(data.get("annex10_top_investments", [])):
             r = 13 + idx
             _safe_set_cell_value(sheet_a10, f"B{r}", inv["entity_name"])
-            _safe_set_cell_value(sheet_a10, f"C{r}", "CURRENT" if "FUND" in inv["entity_name"] else "NON-CURRENT")
-            _safe_set_cell_value(sheet_a10, f"D{r}", inv["investment_type"].upper())
-            _safe_set_cell_value(sheet_a10, f"E{r}", "NA")
+            _safe_set_cell_value(sheet_a10, f"C{r}", inv.get("nature", "CURRENT"))
+            _safe_set_cell_value(sheet_a10, f"D{r}", inv["investment_type"])
+            _safe_set_cell_value(sheet_a10, f"E{r}", inv.get("pan", "NA"))
             _safe_set_cell_value(sheet_a10, f"F{r}", inv["book_value"])
-            _safe_set_cell_value(sheet_a10, f"G{r}", "false")
+            _safe_set_cell_value(sheet_a10, f"G{r}", inv.get("is_group_company", "false"))
+            _safe_set_cell_value(sheet_a10, f"H{r}", inv.get("amt_outstanding", 0.0))
+
 
     # 10. DNBS02_Annex13 (Branch Network)
     if "DNBS02_Annex13" in wb.sheetnames:

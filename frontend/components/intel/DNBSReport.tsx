@@ -560,25 +560,32 @@ export default function DNBSReport() {
             {/* Annex 10: Top Investments */}
             <TabsContent value="annex10">
               <Card className="dashboard-surface rounded-[1.5rem] border-border/70 shadow-none overflow-hidden">
-                <CardHeader className="border-b border-border/50 bg-muted/30">
-                  <CardTitle className="text-sm font-semibold">Annexure 10: Top Investments Portfolio</CardTitle>
+                <CardHeader className="border-b border-border/50 bg-muted/30 flex flex-row items-center justify-between">
+                  <CardTitle className="text-sm font-semibold">Annexure 10: Top 25 Investments Portfolio</CardTitle>
+                  <Badge variant="outline" className="text-[10px] rounded-full">{report.annex10_top_investments.length} Items</Badge>
                 </CardHeader>
                 <div className="overflow-x-auto">
                   <table className="w-full text-left text-xs">
                     <thead className="bg-muted/50 text-muted-foreground uppercase font-semibold text-[10px]">
                       <tr>
                         <th className="px-4 py-3">Entity Name</th>
+                        <th className="px-4 py-3">Nature</th>
                         <th className="px-4 py-3">Investment Type</th>
-                        <th className="px-4 py-3 text-right">Book Value (₹ Lakhs)</th>
-                        <th className="px-4 py-3 text-right">Amount Outstanding (₹ Lakhs)</th>
+                        <th className="px-4 py-3 font-mono">PAN</th>
+                        <th className="px-4 py-3 text-right">Book Value (₹ L)</th>
+                        <th className="px-4 py-3 text-center">Group Co?</th>
+                        <th className="px-4 py-3 text-right">Outstanding (₹ L)</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-border/50">
                       {report.annex10_top_investments.map((inv, idx) => (
                         <tr key={idx} className="hover:bg-accent/40">
                           <td className="px-4 py-3 font-semibold">{inv.entity_name}</td>
+                          <td className="px-4 py-3"><Badge variant="outline" className="text-[10px] uppercase">{inv.nature || 'CURRENT'}</Badge></td>
                           <td className="px-4 py-3 text-muted-foreground">{inv.investment_type}</td>
+                          <td className="px-4 py-3 font-mono text-muted-foreground">{inv.pan || 'NA'}</td>
                           <td className="px-4 py-3 text-right font-mono">₹{inv.book_value.toLocaleString('en-IN')}</td>
+                          <td className="px-4 py-3 text-center font-mono text-muted-foreground">{inv.is_group_company || 'false'}</td>
                           <td className="px-4 py-3 text-right font-mono font-semibold">₹{inv.amt_outstanding.toLocaleString('en-IN')}</td>
                         </tr>
                       ))}
@@ -587,6 +594,7 @@ export default function DNBSReport() {
                 </div>
               </Card>
             </TabsContent>
+
 
             {/* Annex 13: Branch Operations */}
             <TabsContent value="annex13">
