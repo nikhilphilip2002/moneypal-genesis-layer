@@ -109,30 +109,37 @@ def get_dnbs02_report_data(
 
             # 1. Top 25 Borrowers (Annex 9) filtered by date range
             cur.execute("""
-                SELECT 
-                    COALESCE(g.gnlnac_cust_name, 'Borrower #' || g.gnlnac_cust_id) AS borrower_name,
+                WITH latest_asset AS (
+                    SELECT ascd_account_num, ascd_asset_code, ascd_princ_os, ascd_int_due, ascd_charg_due
+                    FROM (
+                        SELECT ascd_account_num, ascd_asset_code, ascd_princ_os, ascd_int_due, ascd_charg_due,
+                               ROW_NUMBER() OVER(PARTITION BY ascd_account_num ORDER BY ascd_effective_date DESC) as rn
+                        FROM bronze.asset_classify_dtls
+                        WHERE ascd_effective_date <= CAST(%s AS DATE)
+                    ) sub WHERE rn = 1
+                )
+                SELECT
+                    COALESCE(
+                        NULLIF(g.gnlnac_cust_name, ''),
+                        TRIM(CONCAT_WS(' ', ic.indcif_first_name, ic.indcif_midle_name, ic.indcif_last_name)),
+                        'Account #' || g.gnlnac_acnt_num
+                    ) AS borrower_name,
                     COALESCE(c.pan, 'NA') AS pan,
                     CASE WHEN g.gnlnac_prod_code = 16 THEN 'CORPORATE' ELSE 'INDIVIDUAL' END AS borrower_type,
                     COALESCE(g.gnlnac_sanc_amt, 0) / 100000.0 AS sanctioned_amt,
-                    COALESCE(g.gnlnac_lndisb_amt, g.gnlnac_sanc_amt) / 100000.0 AS disbursed_amt,
-                    (COALESCE(g.gnlnac_lndisb_amt, g.gnlnac_sanc_amt) - COALESCE(g.gnlnac_pri_repay_amt, 0)) / 100000.0 AS principal_outstanding,
-                    COALESCE(g.gnlnac_tot_accr_amt, 0) / 100000.0 AS accrued_interest,
-                    COALESCE(a.ascd_asset_code, 'Standard') AS account_status,
-                    ((COALESCE(g.gnlnac_lndisb_amt, g.gnlnac_sanc_amt) - COALESCE(g.gnlnac_pri_repay_amt, 0)) + COALESCE(g.gnlnac_tot_accr_amt, 0)) / 100000.0 AS total_outstanding
+                    COALESCE(g.gnlnac_lndisb_amt, g.gnlnac_sanc_amt, 0) / 100000.0 AS disbursed_amt,
+                    COALESCE(la.ascd_princ_os, 0) / 100000.0 AS principal_outstanding,
+                    COALESCE(la.ascd_int_due, 0) / 100000.0 AS accrued_interest,
+                    CASE WHEN la.ascd_asset_code IN ('STD', 'SMA0') THEN 'Standard' ELSE COALESCE(la.ascd_asset_code, 'Standard') END AS account_status,
+                    COALESCE(la.ascd_princ_os + la.ascd_int_due + la.ascd_charg_due, 0) / 100000.0 AS total_outstanding
                 FROM bronze.genlnacnts g
+                LEFT JOIN bronze.indcifdata_10012025_indcifdata ic ON g.gnlnac_cust_id = ic.indcif_cust_id
                 LEFT JOIN bronze.temp_cust_mig_win c ON CAST(g.gnlnac_cust_id AS TEXT) = c.cust_id
-                LEFT JOIN (
-                    SELECT ascd_account_num, ascd_asset_code 
-                    FROM (
-                        SELECT ascd_account_num, ascd_asset_code, 
-                               ROW_NUMBER() OVER(PARTITION BY ascd_account_num ORDER BY ascd_effective_date DESC) as rn
-                        FROM bronze.asset_classify_dtls
-                    ) sub WHERE rn = 1
-                ) a ON g.gnlnac_acnt_num = a.ascd_account_num
+                LEFT JOIN latest_asset la ON g.gnlnac_acnt_num = la.ascd_account_num
                 WHERE g.gnlnac_sanc_date IS NULL OR (g.gnlnac_sanc_date <= CAST(%s AS DATE))
                 ORDER BY total_outstanding DESC
                 LIMIT 25;
-            """, (end_date,))
+            """, (end_date, end_date))
             b_rows = cur.fetchall()
             for r in b_rows:
                 annex9_top_borrowers.append({
