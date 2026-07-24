@@ -57,6 +57,36 @@ export type RegulatoryAlert = {
   ai_note: string;
 };
 
+export type DNBS02ReportData = {
+  frequency: 'monthly' | 'quarterly' | 'yearly';
+  period: string;
+  start_date: string;
+  end_date: string;
+  is_live_pg: boolean;
+  generated_at: string;
+  summary: {
+    total_loan_book: number;
+    net_owned_funds: number;
+    crar_pct: number;
+    npa_ratio_pct: number;
+  };
+  part1_capital: { code: string; particulars: string; amount_lakhs: number }[];
+  part8_asset_quality: { status: string; count: number; amount_lakhs: number; provision_lakhs: number }[];
+  annex9_top_borrowers: {
+    borrower_name: string;
+    pan: string;
+    borrower_type: string;
+    sanctioned_amt: number;
+    disbursed_amt: number;
+    principal_outstanding: number;
+    accrued_interest: number;
+    account_status: string;
+    total_outstanding: number;
+  }[];
+  annex10_top_investments: { entity_name: string; investment_type: string; book_value: number; amt_outstanding: number }[];
+  annex13_branches: { branch_code: string; branch_name: string; customer_count: number; account_count: number; total_outstanding: number }[];
+};
+
 export type DemoUser = {
   username: string;
   role: string;
@@ -205,7 +235,12 @@ export const regulatory = {
   detail: (id: string, refresh?: boolean): Promise<IntelligenceResponse> =>
     apiRequest(`/regulatory/${encodeURIComponent(id)}${refresh ? '?refresh=1' : ''}`),
   alerts: (): Promise<RegulatoryAlert[]> => apiRequest('/regulatory/alerts'),
+  dnbsReport: (frequency: string = 'monthly', period: string = '2026-05'): Promise<DNBS02ReportData> =>
+    apiRequest(`/regulatory/dnbs02?frequency=${encodeURIComponent(frequency)}&period=${encodeURIComponent(period)}`),
+  getDnbsExcelUrl: (frequency: string = 'monthly', period: string = '2026-05'): string =>
+    `${API_URL}/regulatory/dnbs02/export?frequency=${encodeURIComponent(frequency)}&period=${encodeURIComponent(period)}`,
 };
+
 
 // ─── Platform administration (Moneypal Administrator) ───
 

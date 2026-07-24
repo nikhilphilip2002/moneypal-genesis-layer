@@ -17,8 +17,10 @@ import IntelligenceCard from '@/components/intel/IntelligenceCard';
 import LoadingCard from '@/components/intel/LoadingCard';
 import WidgetError from '@/components/intel/WidgetError';
 import DBSchemaGraph from '@/components/intel/DBSchemaGraph';
+import DNBSReport from '@/components/intel/DNBSReport';
 import { ChevronDown, ExternalLink, Scale } from 'lucide-react';
 import { cn } from '@/lib/utils';
+
 
 const priorityStyles: Record<string, string> = {
   high: 'bg-red-500/10 text-red-600 dark:bg-red-500/20 dark:text-red-400 border-none',
@@ -113,9 +115,12 @@ export default function RegulatoryPage() {
       const tab = params.get('tab');
       if (tab === 'schema') {
         setActiveTab('schema');
+      } else if (tab === 'dnbs') {
+        setActiveTab('dnbs');
       }
     }
   }, []);
+
 
   const categories = useIntel<RegulationCategory[]>('regulatory:categories', regulatory.categories);
 
@@ -143,6 +148,7 @@ export default function RegulatoryPage() {
             <TabsList className="mb-4">
               <TabsTrigger value="briefings">RBI Regulation Briefings</TabsTrigger>
               <TabsTrigger value="schema">Database Curiosity Graph</TabsTrigger>
+              <TabsTrigger value="dnbs">RBI DNBS-02 Return</TabsTrigger>
             </TabsList>
 
             <TabsContent value="briefings" className="space-y-3 mt-0">
@@ -172,7 +178,12 @@ export default function RegulatoryPage() {
                 <DBSchemaGraph />
               </Card>
             </TabsContent>
+
+            <TabsContent value="dnbs" className="mt-0">
+              <DNBSReport />
+            </TabsContent>
           </Tabs>
+
         </div>
       </div>
     </div>

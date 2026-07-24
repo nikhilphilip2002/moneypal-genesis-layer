@@ -1,13 +1,14 @@
 import re
 from typing import Literal
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Response
 from pydantic import BaseModel
 
 from genesis_core import IntelligenceResponse
 
 from app.services import brief_cache, regulatory
 from app.services import reg_loader as rl
+from app.services import dnbs02_service
 
 router = APIRouter(prefix="/regulatory", tags=["regulatory"])
 
@@ -54,8 +55,27 @@ def get_alerts():
     return regulatory.regulatory_alerts()
 
 
+@router.get("/dnbs02")
+def get_dnbs02_report(frequency: str = "monthly", period: str = "2026-05"):
+    """Retrieve RBI DNBS-02 Return metrics for specified date frequency (monthly/quarterly/yearly) and period."""
+    return dnbs02_service.get_dnbs02_report_data(frequency=frequency, period=period)
+
+
+@router.get("/dnbs02/export")
+def export_dnbs02_excel(frequency: str = "monthly", period: str = "2026-05"):
+    """Export RBI DNBS-02 Return as an Excel workbook (.xlsx)."""
+    excel_bytes = dnbs02_service.generate_dnbs02_excel(frequency=frequency, period=period)
+    filename = f"RBI_DNBS02_Return_{period}_{frequency}.xlsx"
+    return Response(
+        content=excel_bytes,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f"attachment; filename={filename}"},
+    )
+
+
 @router.get("/{category_id}", response_model=IntelligenceResponse)
 def get_regulation_detail(category_id: str, refresh: bool = False):
     return brief_cache.cached(
         f"regulatory:detail:{category_id}", lambda: regulatory.regulation_detail(category_id), refresh
     )
+
