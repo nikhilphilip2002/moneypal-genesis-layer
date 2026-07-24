@@ -84,3 +84,10 @@ class TestDNBS02Service:
         assert "DNBS02_Annex9" in sheet_names
         assert "DNBS02_Annex13" in sheet_names
 
+        # Verify FilingInfo sheet dates are correctly updated
+        filing_sheet = wb["FilingInfo"]
+        assert filing_sheet["C12"].value == "01/05/2026"
+        assert filing_sheet["C13"].value == "31/05/2026"
+        assert filing_sheet["C15"].value == "LAKHS"
+
+

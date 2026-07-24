@@ -399,8 +399,20 @@ def generate_dnbs02_excel(
         _safe_set_cell_value(sheet, "B2", f"Period: {data['start_date']} to {data['end_date']} ({data['frequency'].capitalize()})")
         _safe_set_cell_value(sheet, "B3", f"Generated Date: {data['generated_at']}")
         _safe_set_cell_value(sheet, "B4", "Scale: LAKHS")
-        _safe_set_cell_value(sheet, "C15", data['start_date'])
-        _safe_set_cell_value(sheet, "C16", data['end_date'])
+        _safe_set_cell_value(sheet, "C11", data['frequency'].capitalize())
+
+        try:
+            s_dt = datetime.datetime.strptime(data['start_date'], "%Y-%m-%d").strftime("%d/%m/%Y")
+            e_dt = datetime.datetime.strptime(data['end_date'], "%Y-%m-%d").strftime("%d/%m/%Y")
+        except Exception:
+            s_dt = data['start_date']
+            e_dt = data['end_date']
+
+        _safe_set_cell_value(sheet, "C12", s_dt)
+        _safe_set_cell_value(sheet, "C13", e_dt)
+        _safe_set_cell_value(sheet, "C15", "LAKHS")
+        _safe_set_cell_value(sheet, "C16", "1.0.0")
+
 
 
     # Populate or Create DNBS02_PART1 sheet
