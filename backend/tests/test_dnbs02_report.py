@@ -74,7 +74,11 @@ class TestDNBS02Service:
         assert len(excel_bytes) > 0
         assert excel_bytes.startswith(b"PK\x03\x04")  # Zip signature for .xlsx
 
-        # Verify openpyxl can load the generated workbook
+        # Verify openpyxl can load the generated workbook and all 28 template sheets exist
         wb = openpyxl.load_workbook(io.BytesIO(excel_bytes))
         sheet_names = wb.sheetnames
-        assert len(sheet_names) > 0
+        assert len(sheet_names) == 28, f"Expected 28 sheets from template, got {len(sheet_names)}"
+        assert "DNBS02_PART1" in sheet_names
+        assert "DNBS02_Annex9" in sheet_names
+        assert "DNBS02_Annex13" in sheet_names
+

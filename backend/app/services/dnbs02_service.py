@@ -279,17 +279,29 @@ def _safe_set_cell_value(sheet, coord: str, value: Any):
         pass
 
 
+def get_template_path() -> str:
+    """Locate the official RBI DNBS-02 template workbook (.xlsx) across workspace & Docker container paths."""
+    filename = "DNBS02-Important Financial Parameters (1) (4) (2).xlsx"
+    candidates = [
+        "/srv/docs/" + filename,
+        "/srv/backend/docs/" + filename,
+        os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..", "docs", filename)),
+        os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "docs", filename)),
+        os.path.abspath("docs/" + filename),
+    ]
+    for p in candidates:
+        if os.path.exists(p):
+            return p
+    raise FileNotFoundError(f"RBI DNBS-02 template Excel file not found. Searched candidate paths: {candidates}")
+
+
 def generate_dnbs02_excel(frequency: str = "monthly", period: str = "2026-05") -> bytes:
-    """Generate Excel file (.xlsx) for RBI DNBS-02 Return using openpyxl."""
+    """Generate Excel file (.xlsx) for RBI DNBS-02 Return using openpyxl, maintaining all 28 template sheets."""
     data = get_dnbs02_report_data(frequency, period)
 
-    template_path = os.path.join(os.path.dirname(__file__), "..", "..", "..", "docs", "DNBS02-Important Financial Parameters (1) (4) (2).xlsx")
-    template_path = os.path.abspath(template_path)
+    template_path = get_template_path()
+    wb = openpyxl.load_workbook(template_path)
 
-    if os.path.exists(template_path):
-        wb = openpyxl.load_workbook(template_path)
-    else:
-        wb = openpyxl.Workbook()
 
     # Populate FilingInfo sheet if exists
     if "FilingInfo" in wb.sheetnames:
