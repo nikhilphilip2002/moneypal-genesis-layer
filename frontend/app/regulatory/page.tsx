@@ -148,7 +148,7 @@ export default function RegulatoryPage() {
             <TabsList className="mb-4">
               <TabsTrigger value="briefings">RBI Regulation Briefings</TabsTrigger>
               <TabsTrigger value="schema">Database Curiosity Graph</TabsTrigger>
-              <TabsTrigger value="dnbs">RBI DNBS-02 Return</TabsTrigger>
+              <TabsTrigger value="dnbs">RBI DNBS Return</TabsTrigger>
             </TabsList>
 
             <TabsContent value="briefings" className="space-y-3 mt-0">

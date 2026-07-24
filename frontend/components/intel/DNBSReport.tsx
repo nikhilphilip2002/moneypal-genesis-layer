@@ -129,7 +129,7 @@ export default function DNBSReport() {
             <div className="space-y-1">
               <div className="flex items-center gap-2">
                 <FileSpreadsheet className="h-5 w-5 text-primary" />
-                <h2 className="text-lg font-semibold tracking-tight">RBI DNBS-02 Return Generator</h2>
+                <h2 className="text-lg font-semibold tracking-tight">RBI DNBS Report Generator</h2>
                 {report?.is_live_pg ? (
                   <Badge variant="outline" className="gap-1 bg-emerald-500/10 text-emerald-600 dark:bg-emerald-500/20 dark:text-emerald-400 border-none text-[11px]">
                     <Database className="h-3 w-3" /> Live PG Database
