@@ -71,7 +71,12 @@ export type DNBS02ReportData = {
     npa_ratio_pct: number;
   };
   part1_capital: { code: string; particulars: string; amount_lakhs: number }[];
+  part2_loans: { category: string; amount_lakhs: number; share_pct: number }[];
+  part3_income: { head: string; amount_lakhs: number }[];
+  part6_sensitive: { sector: string; exposure_lakhs: number; risk_weight_pct: number }[];
   part8_asset_quality: { status: string; count: number; amount_lakhs: number; provision_lakhs: number }[];
+  part8a_msme: { category: string; account_count: number; amount_lakhs: number; avg_interest_rate: number }[];
+  annex2_shareholders: { name: string; type_of_capital: string; num_shares: number; face_value: number; shareholding_pct: number }[];
   annex9_top_borrowers: {
     borrower_name: string;
     pan: string;
@@ -86,6 +91,7 @@ export type DNBS02ReportData = {
   annex10_top_investments: { entity_name: string; investment_type: string; book_value: number; amt_outstanding: number }[];
   annex13_branches: { branch_code: string; branch_name: string; customer_count: number; account_count: number; total_outstanding: number }[];
 };
+
 
 export type DemoUser = {
   username: string;

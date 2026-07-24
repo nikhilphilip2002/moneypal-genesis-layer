@@ -212,13 +212,20 @@ export default function DNBSReport() {
 
           {/* Sub-tabs for Report Details */}
           <Tabs value={activeSubTab} onValueChange={setActiveSubTab} className="w-full">
-            <TabsList className="mb-4">
-              <TabsTrigger value="part1">Part 1: Capital & Reserves</TabsTrigger>
-              <TabsTrigger value="part8">Part 8: Asset Quality</TabsTrigger>
-              <TabsTrigger value="annex9">Annex 9: Top Borrowers</TabsTrigger>
-              <TabsTrigger value="annex10">Annex 10: Top Investments</TabsTrigger>
-              <TabsTrigger value="annex13">Annex 13: Branch Operations</TabsTrigger>
-            </TabsList>
+            <div className="overflow-x-auto pb-1">
+              <TabsList className="mb-4 inline-flex w-auto shrink-0 min-w-full justify-start gap-1">
+                <TabsTrigger value="part1">Part 1: Capital & NOF</TabsTrigger>
+                <TabsTrigger value="part2">Part 2: Loan Assets</TabsTrigger>
+                <TabsTrigger value="part3">Part 3: Revenue & PnL</TabsTrigger>
+                <TabsTrigger value="part6">Part 6: Sensitive Sectors</TabsTrigger>
+                <TabsTrigger value="part8">Part 8C: Asset Quality</TabsTrigger>
+                <TabsTrigger value="part8a">Part 8A: MSME Profile</TabsTrigger>
+                <TabsTrigger value="annex2">Annex 2: Shareholders</TabsTrigger>
+                <TabsTrigger value="annex9">Annex 9: Top Borrowers</TabsTrigger>
+                <TabsTrigger value="annex10">Annex 10: Top Investments</TabsTrigger>
+                <TabsTrigger value="annex13">Annex 13: Branch Network</TabsTrigger>
+              </TabsList>
+            </div>
 
             {/* Part 1: Capital & Reserves */}
             <TabsContent value="part1">
@@ -241,6 +248,91 @@ export default function DNBSReport() {
                           <td className="px-4 py-3 font-mono">{row.code}</td>
                           <td className="px-4 py-3">{row.particulars}</td>
                           <td className="px-4 py-3 text-right font-mono font-medium">₹{row.amount_lakhs.toLocaleString('en-IN')}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </Card>
+            </TabsContent>
+
+            {/* Part 2: Loan Assets & Receivables */}
+            <TabsContent value="part2">
+              <Card className="dashboard-surface rounded-[1.5rem] border-border/70 shadow-none overflow-hidden">
+                <CardHeader className="border-b border-border/50 bg-muted/30">
+                  <CardTitle className="text-sm font-semibold">Part 2: Loan Assets & Receivables Maturity Profile</CardTitle>
+                </CardHeader>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs">
+                    <thead className="bg-muted/50 text-muted-foreground uppercase font-semibold text-[10px]">
+                      <tr>
+                        <th className="px-4 py-3">Asset Category / Maturity Bucket</th>
+                        <th className="px-4 py-3 text-right">Amount (₹ Lakhs)</th>
+                        <th className="px-4 py-3 text-right">Portfolio Share (%)</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-border/50">
+                      {report.part2_loans.map((row, idx) => (
+                        <tr key={idx} className="hover:bg-accent/40">
+                          <td className="px-4 py-3 font-medium">{row.category}</td>
+                          <td className="px-4 py-3 text-right font-mono">₹{row.amount_lakhs.toLocaleString('en-IN')}</td>
+                          <td className="px-4 py-3 text-right font-mono font-semibold">{row.share_pct}%</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </Card>
+            </TabsContent>
+
+            {/* Part 3: Revenue & PnL */}
+            <TabsContent value="part3">
+              <Card className="dashboard-surface rounded-[1.5rem] border-border/70 shadow-none overflow-hidden">
+                <CardHeader className="border-b border-border/50 bg-muted/30">
+                  <CardTitle className="text-sm font-semibold">Part 3: Revenue & Operating Profitability</CardTitle>
+                </CardHeader>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs">
+                    <thead className="bg-muted/50 text-muted-foreground uppercase font-semibold text-[10px]">
+                      <tr>
+                        <th className="px-4 py-3">Financial Head / Line Item</th>
+                        <th className="px-4 py-3 text-right">Amount (₹ in Lakhs)</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-border/50">
+                      {report.part3_income.map((row, idx) => (
+                        <tr key={idx} className={cn('hover:bg-accent/40', row.head.includes('Net Profit') && 'bg-emerald-500/10 font-semibold text-emerald-700 dark:text-emerald-300')}>
+                          <td className="px-4 py-3 font-medium">{row.head}</td>
+                          <td className="px-4 py-3 text-right font-mono font-semibold">₹{row.amount_lakhs.toLocaleString('en-IN')}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </Card>
+            </TabsContent>
+
+            {/* Part 6: Sensitive Sectors */}
+            <TabsContent value="part6">
+              <Card className="dashboard-surface rounded-[1.5rem] border-border/70 shadow-none overflow-hidden">
+                <CardHeader className="border-b border-border/50 bg-muted/30">
+                  <CardTitle className="text-sm font-semibold">Part 6: Sensitive Sector Exposures & Risk Weights</CardTitle>
+                </CardHeader>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs">
+                    <thead className="bg-muted/50 text-muted-foreground uppercase font-semibold text-[10px]">
+                      <tr>
+                        <th className="px-4 py-3">Sensitive Sector Description</th>
+                        <th className="px-4 py-3 text-right">Total Exposure (₹ Lakhs)</th>
+                        <th className="px-4 py-3 text-right">RBI Risk Weight (%)</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-border/50">
+                      {report.part6_sensitive.map((row, idx) => (
+                        <tr key={idx} className="hover:bg-accent/40">
+                          <td className="px-4 py-3 font-medium">{row.sector}</td>
+                          <td className="px-4 py-3 text-right font-mono">₹{row.exposure_lakhs.toLocaleString('en-IN')}</td>
+                          <td className="px-4 py-3 text-right font-mono font-semibold">{row.risk_weight_pct}%</td>
                         </tr>
                       ))}
                     </tbody>
@@ -272,6 +364,70 @@ export default function DNBSReport() {
                           <td className="px-4 py-3 text-right font-mono">{row.count.toLocaleString()}</td>
                           <td className="px-4 py-3 text-right font-mono">₹{row.amount_lakhs.toLocaleString('en-IN')}</td>
                           <td className="px-4 py-3 text-right font-mono">₹{row.provision_lakhs.toLocaleString('en-IN')}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </Card>
+            </TabsContent>
+
+            {/* Part 8A: MSME Credit Profile */}
+            <TabsContent value="part8a">
+              <Card className="dashboard-surface rounded-[1.5rem] border-border/70 shadow-none overflow-hidden">
+                <CardHeader className="border-b border-border/50 bg-muted/30">
+                  <CardTitle className="text-sm font-semibold">Part 8A: MSME Credit Profile Breakdown</CardTitle>
+                </CardHeader>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs">
+                    <thead className="bg-muted/50 text-muted-foreground uppercase font-semibold text-[10px]">
+                      <tr>
+                        <th className="px-4 py-3">MSME Enterprise Category</th>
+                        <th className="px-4 py-3 text-right">Account Count</th>
+                        <th className="px-4 py-3 text-right">Total Outstanding (₹ Lakhs)</th>
+                        <th className="px-4 py-3 text-right">Weighted Avg Interest Rate (%)</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-border/50">
+                      {report.part8a_msme.map((row, idx) => (
+                        <tr key={idx} className="hover:bg-accent/40">
+                          <td className="px-4 py-3 font-medium">{row.category}</td>
+                          <td className="px-4 py-3 text-right font-mono">{row.account_count.toLocaleString()}</td>
+                          <td className="px-4 py-3 text-right font-mono">₹{row.amount_lakhs.toLocaleString('en-IN')}</td>
+                          <td className="px-4 py-3 text-right font-mono font-semibold">{row.avg_interest_rate}%</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </Card>
+            </TabsContent>
+
+            {/* Annex 2: Shareholders Pattern */}
+            <TabsContent value="annex2">
+              <Card className="dashboard-surface rounded-[1.5rem] border-border/70 shadow-none overflow-hidden">
+                <CardHeader className="border-b border-border/50 bg-muted/30">
+                  <CardTitle className="text-sm font-semibold">Annexure 2: Shareholding Pattern & Ownership Structure</CardTitle>
+                </CardHeader>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs">
+                    <thead className="bg-muted/50 text-muted-foreground uppercase font-semibold text-[10px]">
+                      <tr>
+                        <th className="px-4 py-3">Shareholder Name</th>
+                        <th className="px-4 py-3">Type of Capital</th>
+                        <th className="px-4 py-3 text-right">Number of Shares</th>
+                        <th className="px-4 py-3 text-right">Face Value (₹)</th>
+                        <th className="px-4 py-3 text-right">Shareholding (%)</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-border/50">
+                      {report.annex2_shareholders.map((row, idx) => (
+                        <tr key={idx} className="hover:bg-accent/40">
+                          <td className="px-4 py-3 font-semibold">{row.name}</td>
+                          <td className="px-4 py-3 text-muted-foreground">{row.type_of_capital}</td>
+                          <td className="px-4 py-3 text-right font-mono">{row.num_shares.toLocaleString()}</td>
+                          <td className="px-4 py-3 text-right font-mono">₹{row.face_value}</td>
+                          <td className="px-4 py-3 text-right font-mono font-semibold">{row.shareholding_pct}%</td>
                         </tr>
                       ))}
                     </tbody>
@@ -388,6 +544,7 @@ export default function DNBSReport() {
               </Card>
             </TabsContent>
           </Tabs>
+
         </div>
       )}
     </div>

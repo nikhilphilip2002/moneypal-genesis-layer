@@ -236,12 +236,45 @@ def get_dnbs02_report_data(frequency: str = "monthly", period: str = "2026-05") 
         {"status": "Doubtful / Loss Assets", "count": 2, "amount_lakhs": round(total_loan_book * 0.001, 2), "provision_lakhs": round(total_loan_book * 0.001 * 1.0, 2)},
     ]
 
-    # Annex 10 Top Investments
-    annex10_top_investments = [
-        {"entity_name": "CANARA STEEL LTD - DEBENTURES", "investment_type": "Corporate Debentures", "book_value": 120.0, "amt_outstanding": 120.0},
-        {"entity_name": "HDFC LIQUID MUTUAL FUND", "investment_type": "Mutual Funds", "book_value": 250.0, "amt_outstanding": 250.0},
-        {"entity_name": "SBI SHORT TERM DEBT FUND", "investment_type": "Mutual Funds", "book_value": 180.0, "amt_outstanding": 180.0},
-        {"entity_name": "NABARD TERM DEPOSITS", "investment_type": "Fixed Deposits", "book_value": 300.0, "amt_outstanding": 300.0},
+    # Part 2 Loan Assets & Maturity Buckets
+    part2_loans = [
+        {"category": "Secured MSME & Business Loans (Product 16)", "amount_lakhs": round(total_loan_book * 0.65, 2), "share_pct": 65.0},
+        {"category": "Retail Gold Loans (Product 1)", "amount_lakhs": round(total_loan_book * 0.20, 2), "share_pct": 20.0},
+        {"category": "Microfinance & JLG Loans (Product 13)", "amount_lakhs": round(total_loan_book * 0.15, 2), "share_pct": 15.0},
+        {"category": "Receivables Due Within 3 Months", "amount_lakhs": round(total_loan_book * 0.35, 2), "share_pct": 35.0},
+        {"category": "Receivables Due 3 to 12 Months", "amount_lakhs": round(total_loan_book * 0.45, 2), "share_pct": 45.0},
+        {"category": "Receivables Due > 12 Months", "amount_lakhs": round(total_loan_book * 0.20, 2), "share_pct": 20.0},
+    ]
+
+    # Part 3 Revenue & Operating Profitability
+    part3_income = [
+        {"head": "Fund-Based Interest Income on Loans", "amount_lakhs": round(total_loan_book * 0.177, 2)},
+        {"head": "Processing & Loan Administrative Fees", "amount_lakhs": round(total_loan_book * 0.018, 2)},
+        {"head": "Treasury & Investment Income", "amount_lakhs": 42.5},
+        {"head": "Less: Finance & Borrowing Costs", "amount_lakhs": round(total_loan_book * 0.085, 2)},
+        {"head": "Less: Operating & Employee Expenses", "amount_lakhs": round(total_loan_book * 0.038, 2)},
+        {"head": "Net Profit Before Tax (PBT)", "amount_lakhs": round(total_loan_book * 0.072, 2)},
+    ]
+
+    # Part 6 Sensitive Sector Exposures
+    part6_sensitive = [
+        {"sector": "Real Estate & Commercial Mortgages", "exposure_lakhs": 420.0, "risk_weight_pct": 100.0},
+        {"sector": "Capital Markets & Mutual Funds", "exposure_lakhs": 430.0, "risk_weight_pct": 125.0},
+        {"sector": "MSME Commercial Desk", "exposure_lakhs": round(total_loan_book * 0.65, 2), "risk_weight_pct": 75.0},
+    ]
+
+    # Part 8A MSME Credit Profile
+    part8a_msme = [
+        {"category": "Micro Enterprises (< ₹25 Lakhs Limit)", "account_count": 4820, "amount_lakhs": round(total_loan_book * 0.40, 2), "avg_interest_rate": 18.2},
+        {"category": "Small Enterprises (₹25L - ₹5 Cr Limit)", "account_count": 1850, "amount_lakhs": round(total_loan_book * 0.45, 2), "avg_interest_rate": 17.5},
+        {"category": "Medium Enterprises (₹5 Cr - ₹10 Cr Limit)", "account_count": 142, "amount_lakhs": round(total_loan_book * 0.15, 2), "avg_interest_rate": 16.8},
+    ]
+
+    # Annex 2 Shareholders Pattern
+    annex2_shareholders = [
+        {"name": "PROSPER FINANCIAL HOLDINGS LTD", "type_of_capital": "Equity Shares", "num_shares": 1850000, "face_value": 10, "shareholding_pct": 74.0},
+        {"name": "GICC MANAGEMENT TRUST", "type_of_capital": "Equity Shares", "num_shares": 400000, "face_value": 10, "shareholding_pct": 16.0},
+        {"name": "PUBLIC SHAREHOLDERS & OTHERS", "type_of_capital": "Equity Shares", "num_shares": 250000, "face_value": 10, "shareholding_pct": 10.0},
     ]
 
     net_owned_funds = 4600.0
@@ -262,7 +295,12 @@ def get_dnbs02_report_data(frequency: str = "monthly", period: str = "2026-05") 
             "npa_ratio_pct": npa_ratio_pct,
         },
         "part1_capital": part1_capital,
+        "part2_loans": part2_loans,
+        "part3_income": part3_income,
+        "part6_sensitive": part6_sensitive,
         "part8_asset_quality": part8_asset_quality,
+        "part8a_msme": part8a_msme,
+        "annex2_shareholders": annex2_shareholders,
         "annex9_top_borrowers": annex9_top_borrowers,
         "annex10_top_investments": annex10_top_investments,
         "annex13_branches": annex13_branches,
@@ -296,14 +334,12 @@ def get_template_path() -> str:
     raise FileNotFoundError(f"RBI DNBS-02 template Excel file not found. Searched candidate paths: {candidates}")
 
 
-
 def generate_dnbs02_excel(frequency: str = "monthly", period: str = "2026-05") -> bytes:
     """Generate Excel file (.xlsx) for RBI DNBS-02 Return using openpyxl, maintaining all 28 template sheets."""
     data = get_dnbs02_report_data(frequency, period)
 
     template_path = get_template_path()
     wb = openpyxl.load_workbook(template_path)
-
 
     # Populate FilingInfo sheet if exists
     if "FilingInfo" in wb.sheetnames:
@@ -324,6 +360,48 @@ def generate_dnbs02_excel(frequency: str = "monthly", period: str = "2026-05") -
         _safe_set_cell_value(sheet_p1, f"A{idx}", item["code"])
         _safe_set_cell_value(sheet_p1, f"B{idx}", item["particulars"])
         _safe_set_cell_value(sheet_p1, f"C{idx}", item["amount_lakhs"])
+
+    # Populate or Create DNBS02_PART2 sheet
+    sheet_p2 = wb["DNBS02_PART2"] if "DNBS02_PART2" in wb.sheetnames else wb.create_sheet("DNBS02_PART2")
+    _safe_set_cell_value(sheet_p2, "A1", "RBI DNBS-02 RETURN - PART 2: LOAN ASSETS & RECEIVABLES MATURITY")
+    for idx, item in enumerate(data["part2_loans"], start=4):
+        _safe_set_cell_value(sheet_p2, f"A{idx}", item["category"])
+        _safe_set_cell_value(sheet_p2, f"B{idx}", item["amount_lakhs"])
+        _safe_set_cell_value(sheet_p2, f"C{idx}", f"{item['share_pct']}%")
+
+    # Populate or Create DNBS02_PART3 sheet
+    sheet_p3 = wb["DNBS02_PART3"] if "DNBS02_PART3" in wb.sheetnames else wb.create_sheet("DNBS02_PART3")
+    _safe_set_cell_value(sheet_p3, "A1", "RBI DNBS-02 RETURN - PART 3: REVENUE & OPERATING PROFITABILITY")
+    for idx, item in enumerate(data["part3_income"], start=4):
+        _safe_set_cell_value(sheet_p3, f"A{idx}", item["head"])
+        _safe_set_cell_value(sheet_p3, f"B{idx}", item["amount_lakhs"])
+
+    # Populate or Create DNBS02_PART6 sheet
+    sheet_p6 = wb["DNBS02_PART6"] if "DNBS02_PART6" in wb.sheetnames else wb.create_sheet("DNBS02_PART6")
+    _safe_set_cell_value(sheet_p6, "A1", "RBI DNBS-02 RETURN - PART 6: SENSITIVE SECTOR EXPOSURE")
+    for idx, item in enumerate(data["part6_sensitive"], start=4):
+        _safe_set_cell_value(sheet_p6, f"A{idx}", item["sector"])
+        _safe_set_cell_value(sheet_p6, f"B{idx}", item["exposure_lakhs"])
+        _safe_set_cell_value(sheet_p6, f"C{idx}", f"{item['risk_weight_pct']}%")
+
+    # Populate or Create DNBS02_PART8A sheet
+    sheet_p8a = wb["DNBS02_PART8A"] if "DNBS02_PART8A" in wb.sheetnames else wb.create_sheet("DNBS02_PART8A")
+    _safe_set_cell_value(sheet_p8a, "A1", "RBI DNBS-02 RETURN - PART 8A: MSME CREDIT PROFILE")
+    for idx, item in enumerate(data["part8a_msme"], start=4):
+        _safe_set_cell_value(sheet_p8a, f"A{idx}", item["category"])
+        _safe_set_cell_value(sheet_p8a, f"B{idx}", item["account_count"])
+        _safe_set_cell_value(sheet_p8a, f"C{idx}", item["amount_lakhs"])
+        _safe_set_cell_value(sheet_p8a, f"D{idx}", f"{item['avg_interest_rate']}%")
+
+    # Populate or Create DNBS02_Annex2 sheet
+    sheet_a2 = wb["DNBS02_Annex2"] if "DNBS02_Annex2" in wb.sheetnames else wb.create_sheet("DNBS02_Annex2")
+    _safe_set_cell_value(sheet_a2, "A1", "RBI DNBS-02 RETURN - ANNEXURE 2: SHAREHOLDERS PATTERN")
+    for idx, item in enumerate(data["annex2_shareholders"], start=4):
+        _safe_set_cell_value(sheet_a2, f"A{idx}", item["name"])
+        _safe_set_cell_value(sheet_a2, f"B{idx}", item["type_of_capital"])
+        _safe_set_cell_value(sheet_a2, f"C{idx}", item["num_shares"])
+        _safe_set_cell_value(sheet_a2, f"D{idx}", item["face_value"])
+        _safe_set_cell_value(sheet_a2, f"E{idx}", f"{item['shareholding_pct']}%")
 
     # Populate or Create DNBS02_Annex9 (Top 25 Borrowers)
     sheet_a9 = wb["DNBS02_Annex9"] if "DNBS02_Annex9" in wb.sheetnames else wb.create_sheet("DNBS02_Annex9")
@@ -371,4 +449,5 @@ def generate_dnbs02_excel(frequency: str = "monthly", period: str = "2026-05") -
     wb.save(buf)
     buf.seek(0)
     return buf.getvalue()
+
 
