@@ -56,21 +56,37 @@ def get_alerts():
 
 
 @router.get("/dnbs02")
-def get_dnbs02_report(frequency: str = "monthly", period: str = "2026-05"):
-    """Retrieve RBI DNBS-02 Return metrics for specified date frequency (monthly/quarterly/yearly) and period."""
-    return dnbs02_service.get_dnbs02_report_data(frequency=frequency, period=period)
+def get_dnbs02_report(
+    frequency: str = "monthly",
+    period: str = "2026-05",
+    start_date: str = None,
+    end_date: str = None,
+):
+    """Retrieve RBI DNBS-02 Return metrics for specified date frequency (monthly/quarterly/yearly) or custom date range."""
+    return dnbs02_service.get_dnbs02_report_data(
+        frequency=frequency, period=period, start_date=start_date, end_date=end_date
+    )
 
 
 @router.get("/dnbs02/export")
-def export_dnbs02_excel(frequency: str = "monthly", period: str = "2026-05"):
+def export_dnbs02_excel(
+    frequency: str = "monthly",
+    period: str = "2026-05",
+    start_date: str = None,
+    end_date: str = None,
+):
     """Export RBI DNBS-02 Return as an Excel workbook (.xlsx)."""
-    excel_bytes = dnbs02_service.generate_dnbs02_excel(frequency=frequency, period=period)
-    filename = f"RBI_DNBS02_Return_{period}_{frequency}.xlsx"
+    excel_bytes = dnbs02_service.generate_dnbs02_excel(
+        frequency=frequency, period=period, start_date=start_date, end_date=end_date
+    )
+    fn_period = f"{start_date}_to_{end_date}" if (start_date and end_date) else period
+    filename = f"RBI_DNBS02_Return_{fn_period}_{frequency}.xlsx"
     return Response(
         content=excel_bytes,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={"Content-Disposition": f"attachment; filename={filename}"},
     )
+
 
 
 @router.get("/{category_id}", response_model=IntelligenceResponse)

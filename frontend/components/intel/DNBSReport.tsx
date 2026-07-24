@@ -45,8 +45,10 @@ const PERIOD_OPTIONS = {
 };
 
 export default function DNBSReport() {
-  const [frequency, setFrequency] = useState<'monthly' | 'quarterly' | 'yearly'>('monthly');
+  const [frequency, setFrequency] = useState<'monthly' | 'quarterly' | 'yearly' | 'custom'>('monthly');
   const [period, setPeriod] = useState<string>('2026-05');
+  const [startDate, setStartDate] = useState<string>('2026-05-01');
+  const [endDate, setEndDate] = useState<string>('2026-05-31');
   const [report, setReport] = useState<DNBS02ReportData | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
@@ -56,7 +58,7 @@ export default function DNBSReport() {
     setLoading(true);
     setError(null);
     try {
-      const data = await regulatory.dnbsReport(frequency, period);
+      const data = await regulatory.dnbsReport(frequency, period, startDate, endDate);
       setReport(data);
     } catch (err: any) {
       setError(err?.message || 'Failed to load DNBS-02 report');
@@ -67,15 +69,54 @@ export default function DNBSReport() {
 
   useEffect(() => {
     fetchReport();
-  }, [frequency, period]);
+  }, [frequency, period, startDate, endDate]);
 
   const handleFrequencyChange = (newFreq: 'monthly' | 'quarterly' | 'yearly') => {
     setFrequency(newFreq);
-    setPeriod(PERIOD_OPTIONS[newFreq][0].value);
+    const p = PERIOD_OPTIONS[newFreq][0].value;
+    setPeriod(p);
+    updateDatesForPeriod(newFreq, p);
+  };
+
+  const updateDatesForPeriod = (freq: string, p: string) => {
+    if (freq === 'monthly') {
+      const [y, m] = p.split('-');
+      const lastDay = new Date(parseInt(y), parseInt(m), 0).getDate();
+      setStartDate(`${y}-${m.padStart(2, '0')}-01`);
+      setEndDate(`${y}-${m.padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`);
+    } else if (freq === 'quarterly') {
+      const [yStr, q] = p.split('-');
+      const y = parseInt(yStr);
+      if (q === 'Q1') { setStartDate(`${y}-04-01`); setEndDate(`${y}-06-30`); }
+      else if (q === 'Q2') { setStartDate(`${y}-07-01`); setEndDate(`${y}-09-30`); }
+      else if (q === 'Q3') { setStartDate(`${y}-10-01`); setEndDate(`${y}-12-31`); }
+      else if (q === 'Q4') { setStartDate(`${y + 1}-01-01`); setEndDate(`${y + 1}-03-31`); }
+    } else if (freq === 'yearly') {
+      const [y1, y2] = p.split('-');
+      setStartDate(`${y1}-04-01`);
+      setEndDate(`${y2}-03-31`);
+    }
+  };
+
+  const handlePeriodChange = (newPeriod: string) => {
+    setPeriod(newPeriod);
+    if (frequency !== 'custom') {
+      updateDatesForPeriod(frequency, newPeriod);
+    }
+  };
+
+  const handleCustomStartDateChange = (val: string) => {
+    setStartDate(val);
+    setFrequency('custom');
+  };
+
+  const handleCustomEndDateChange = (val: string) => {
+    setEndDate(val);
+    setFrequency('custom');
   };
 
   const handleExcelDownload = () => {
-    const url = regulatory.getDnbsExcelUrl(frequency, period);
+    const url = regulatory.getDnbsExcelUrl(frequency, period, startDate, endDate);
     window.open(url, '_blank');
   };
 
@@ -83,27 +124,47 @@ export default function DNBSReport() {
     <div className="space-y-6">
       {/* Controls Bar */}
       <Card className="dashboard-surface rounded-[1.5rem] border-border/70 p-4 md:p-6 shadow-none">
-        <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-          <div className="space-y-1">
-            <div className="flex items-center gap-2">
-              <FileSpreadsheet className="h-5 w-5 text-primary" />
-              <h2 className="text-lg font-semibold tracking-tight">RBI DNBS-02 Return Generator</h2>
-              {report?.is_live_pg ? (
-                <Badge variant="outline" className="gap-1 bg-emerald-500/10 text-emerald-600 dark:bg-emerald-500/20 dark:text-emerald-400 border-none text-[11px]">
-                  <Database className="h-3 w-3" /> Live PG Database
-                </Badge>
-              ) : (
-                <Badge variant="outline" className="gap-1 bg-blue-500/10 text-blue-600 dark:bg-blue-500/20 dark:text-blue-400 border-none text-[11px]">
-                  <Database className="h-3 w-3" /> GICC Staged Ledger
-                </Badge>
-              )}
+        <div className="flex flex-col gap-4">
+          <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+            <div className="space-y-1">
+              <div className="flex items-center gap-2">
+                <FileSpreadsheet className="h-5 w-5 text-primary" />
+                <h2 className="text-lg font-semibold tracking-tight">RBI DNBS-02 Return Generator</h2>
+                {report?.is_live_pg ? (
+                  <Badge variant="outline" className="gap-1 bg-emerald-500/10 text-emerald-600 dark:bg-emerald-500/20 dark:text-emerald-400 border-none text-[11px]">
+                    <Database className="h-3 w-3" /> Live PG Database
+                  </Badge>
+                ) : (
+                  <Badge variant="outline" className="gap-1 bg-blue-500/10 text-blue-600 dark:bg-blue-500/20 dark:text-blue-400 border-none text-[11px]">
+                    <Database className="h-3 w-3" /> GICC Staged Ledger
+                  </Badge>
+                )}
+                {report && (
+                  <Badge variant="outline" className="gap-1 text-[11px] bg-primary/10 text-primary border-none">
+                    📅 {report.start_date} to {report.end_date} ({report.duration_days ?? 31} Days)
+                  </Badge>
+                )}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Programmatic return mapping for Important Financial Parameters, Capital Adequacy, Asset Quality, and Top Exposure Annexures.
+              </p>
             </div>
-            <p className="text-xs text-muted-foreground">
-              Programmatic return mapping for Important Financial Parameters, Capital Adequacy, Asset Quality, and Top Exposure Annexures.
-            </p>
+
+            <div className="flex flex-wrap items-center gap-3">
+              <Button variant="outline" size="sm" onClick={fetchReport} className="h-9 rounded-xl gap-1.5 text-xs">
+                <RefreshCw className={cn('h-3.5 w-3.5', loading && 'animate-spin')} />
+                Refresh
+              </Button>
+
+              <Button onClick={handleExcelDownload} size="sm" className="h-9 rounded-xl gap-1.5 text-xs bg-primary text-primary-foreground">
+                <Download className="h-3.5 w-3.5" />
+                Download Excel (.xlsx)
+              </Button>
+            </div>
           </div>
 
-          <div className="flex flex-wrap items-center gap-3">
+          {/* Date & Preset Filters Bar */}
+          <div className="flex flex-wrap items-center gap-3 pt-2 border-t border-border/40">
             {/* Frequency Selection */}
             <div className="inline-flex rounded-xl bg-accent p-1 text-xs">
               {(['monthly', 'quarterly', 'yearly'] as const).map((f) => (
@@ -124,30 +185,46 @@ export default function DNBSReport() {
             </div>
 
             {/* Period Dropdown */}
-            <select
-              value={period}
-              onChange={(e) => setPeriod(e.target.value)}
-              className="h-9 rounded-xl border border-input bg-background px-3 text-xs font-medium focus:outline-none focus:ring-1 focus:ring-primary"
-            >
-              {PERIOD_OPTIONS[frequency].map((opt) => (
-                <option key={opt.value} value={opt.value}>
-                  {opt.label}
-                </option>
-              ))}
-            </select>
+            {frequency !== 'custom' && (
+              <select
+                value={period}
+                onChange={(e) => handlePeriodChange(e.target.value)}
+                className="h-9 rounded-xl border border-input bg-background px-3 text-xs font-medium focus:outline-none focus:ring-1 focus:ring-primary"
+              >
+                {PERIOD_OPTIONS[frequency as 'monthly' | 'quarterly' | 'yearly']?.map((opt) => (
+                  <option key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </option>
+                ))}
+              </select>
+            )}
 
-            <Button variant="outline" size="sm" onClick={fetchReport} className="h-9 rounded-xl gap-1.5 text-xs">
-              <RefreshCw className={cn('h-3.5 w-3.5', loading && 'animate-spin')} />
-              Refresh
-            </Button>
-
-            <Button onClick={handleExcelDownload} size="sm" className="h-9 rounded-xl gap-1.5 text-xs bg-primary text-primary-foreground">
-              <Download className="h-3.5 w-3.5" />
-              Download Excel (.xlsx)
-            </Button>
+            {/* Custom Date Pickers */}
+            <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground bg-accent/40 rounded-xl px-3 py-1 border border-border/50">
+              <span className="text-[11px] font-semibold text-foreground uppercase">Date Range:</span>
+              <div className="flex items-center gap-1.5">
+                <span className="text-[11px]">From</span>
+                <input
+                  type="date"
+                  value={startDate}
+                  onChange={(e) => handleCustomStartDateChange(e.target.value)}
+                  className="h-7 rounded-lg border border-input bg-background px-2 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                />
+              </div>
+              <div className="flex items-center gap-1.5">
+                <span className="text-[11px]">To</span>
+                <input
+                  type="date"
+                  value={endDate}
+                  onChange={(e) => handleCustomEndDateChange(e.target.value)}
+                  className="h-7 rounded-lg border border-input bg-background px-2 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                />
+              </div>
+            </div>
           </div>
         </div>
       </Card>
+
 
       {/* Main Content States */}
       {loading && <LoadingCard lines={10} />}

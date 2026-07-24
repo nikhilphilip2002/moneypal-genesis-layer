@@ -58,12 +58,14 @@ export type RegulatoryAlert = {
 };
 
 export type DNBS02ReportData = {
-  frequency: 'monthly' | 'quarterly' | 'yearly';
+  frequency: 'monthly' | 'quarterly' | 'yearly' | 'custom';
   period: string;
   start_date: string;
   end_date: string;
+  duration_days?: number;
   is_live_pg: boolean;
   generated_at: string;
+
   summary: {
     total_loan_book: number;
     net_owned_funds: number;
@@ -241,11 +243,20 @@ export const regulatory = {
   detail: (id: string, refresh?: boolean): Promise<IntelligenceResponse> =>
     apiRequest(`/regulatory/${encodeURIComponent(id)}${refresh ? '?refresh=1' : ''}`),
   alerts: (): Promise<RegulatoryAlert[]> => apiRequest('/regulatory/alerts'),
-  dnbsReport: (frequency: string = 'monthly', period: string = '2026-05'): Promise<DNBS02ReportData> =>
-    apiRequest(`/regulatory/dnbs02?frequency=${encodeURIComponent(frequency)}&period=${encodeURIComponent(period)}`),
-  getDnbsExcelUrl: (frequency: string = 'monthly', period: string = '2026-05'): string =>
-    `${API_URL}/regulatory/dnbs02/export?frequency=${encodeURIComponent(frequency)}&period=${encodeURIComponent(period)}`,
+  dnbsReport: (frequency: string = 'monthly', period: string = '2026-05', startDate?: string, endDate?: string): Promise<DNBS02ReportData> => {
+    let url = `/regulatory/dnbs02?frequency=${encodeURIComponent(frequency)}&period=${encodeURIComponent(period)}`;
+    if (startDate) url += `&start_date=${encodeURIComponent(startDate)}`;
+    if (endDate) url += `&end_date=${encodeURIComponent(endDate)}`;
+    return apiRequest(url);
+  },
+  getDnbsExcelUrl: (frequency: string = 'monthly', period: string = '2026-05', startDate?: string, endDate?: string): string => {
+    let url = `${API_URL}/regulatory/dnbs02/export?frequency=${encodeURIComponent(frequency)}&period=${encodeURIComponent(period)}`;
+    if (startDate) url += `&start_date=${encodeURIComponent(startDate)}`;
+    if (endDate) url += `&end_date=${encodeURIComponent(endDate)}`;
+    return url;
+  },
 };
+
 
 
 // ─── Platform administration (Moneypal Administrator) ───
