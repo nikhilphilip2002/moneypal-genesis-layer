@@ -200,14 +200,31 @@ def get_dnbs02_report_data(
     # Fallback / Staging data matrix scaling dynamically with selected date range duration
     if not annex9_top_borrowers:
         fallback_borrowers = [
-            ("CANARA STEEL & ALLOYS LTD", "AAACC1234F", "CORPORATE", 450.0, 450.0, 380.0, 12.5, "Standard", 392.5),
-            ("MALNAD COFFEE EXPORTS PVT LTD", "AABCM5678K", "CORPORATE", 320.0, 320.0, 290.0, 8.2, "Standard", 298.2),
-            ("SRI MANJUNATHA ENTERPRISES", "ACKPS9012P", "INDIVIDUAL", 180.0, 180.0, 165.0, 4.1, "Standard", 169.1),
-            ("UDUPI MOTORS & INFRASTRUCTURE", "AAACU3456L", "CORPORATE", 250.0, 250.0, 210.0, 6.0, "Standard", 216.0),
-            ("MANDYA SUGAR AGRO CO-OP", "AAACM7890R", "CORPORATE", 210.0, 210.0, 195.0, 5.5, "Standard", 200.5),
-            ("SHIMOGA PRECISION TEXTILES", "AAACS4321Q", "CORPORATE", 195.0, 195.0, 175.0, 4.8, "Standard", 179.8),
-            ("BANGALORE LOGISTICS HUB", "AAACB9876M", "CORPORATE", 340.0, 340.0, 310.0, 9.1, "Standard", 319.1),
-            ("MANGALORE FISHERIES EXPORTS", "AAACM5432D", "CORPORATE", 280.0, 280.0, 240.0, 7.3, "Standard", 247.3),
+            ("S V SUBRAMANYA BHAT", "ACFPB2996P", "INDIVIDUAL", 600.0, 600.0, 600.0, 0.92, "Standard", 600.92),
+            ("MEGHARAJ H P", "AWNPM3131F", "INDIVIDUAL", 200.0, 200.0, 200.0, 2.61, "Standard", 202.61),
+            ("DIVYA B C", "BZWPC0018A", "INDIVIDUAL", 150.0, 150.0, 150.0, 1.92, "Standard", 151.92),
+            ("PRAKASH H R", "BGOPP3657D", "INDIVIDUAL", 150.0, 150.0, 150.0, 1.92, "Standard", 151.92),
+            ("RAMESH KUMAR S", "APBPK1234F", "INDIVIDUAL", 450.0, 450.0, 380.0, 12.5, "Standard", 392.5),
+            ("VENKATESH NAVADA", "BZWPC9918A", "INDIVIDUAL", 320.0, 320.0, 290.0, 8.2, "Standard", 298.2),
+            ("SURESH GOWDA K", "BGOPP4457D", "INDIVIDUAL", 180.0, 180.0, 165.0, 4.1, "Standard", 169.1),
+            ("KAVITHA RANI M", "AYDPS8981R", "INDIVIDUAL", 250.0, 250.0, 210.0, 6.0, "Standard", 216.0),
+            ("NAGARAJU SHETTY B", "AABPN4512E", "INDIVIDUAL", 210.0, 210.0, 195.0, 5.5, "Standard", 200.5),
+            ("SAMPATH KUMAR H", "ACSPK8721N", "INDIVIDUAL", 195.0, 195.0, 175.0, 4.8, "Standard", 179.8),
+            ("CHANDRASEKHAR MURTHY", "ABCPC9123L", "INDIVIDUAL", 340.0, 340.0, 310.0, 9.1, "Standard", 319.1),
+            ("ANAND KULKARNI", "ADFPK3451M", "INDIVIDUAL", 280.0, 280.0, 240.0, 7.3, "Standard", 247.3),
+            ("PRADEEP SHARMA", "AIXPP5612K", "INDIVIDUAL", 170.0, 170.0, 155.0, 3.2, "Standard", 158.2),
+            ("SUNITHA PRABHU", "BKGPM8923Q", "INDIVIDUAL", 220.0, 220.0, 205.0, 5.1, "Standard", 210.1),
+            ("MAHESH BHAT", "AMBPB4512D", "INDIVIDUAL", 190.0, 190.0, 175.0, 4.2, "Standard", 179.2),
+            ("GEO ENGINEERING CO", "AAACG4155D", "CORPORATE", 215.0, 215.0, 123.9, 91.1, "Standard", 215.0),
+            ("RHINESTONE LLP", "AYDPS8981R", "CORPORATE", 150.0, 150.0, 37.89, 27.0, "Standard", 64.89),
+            ("DIVYA HEGDE", "BZWPD1128H", "INDIVIDUAL", 140.0, 140.0, 130.0, 2.9, "Standard", 132.9),
+            ("PRAKASH RAO N", "BGOPR3997S", "INDIVIDUAL", 160.0, 160.0, 148.0, 3.5, "Standard", 151.5),
+            ("GANESH PRASAD S", "ASGPG7621T", "INDIVIDUAL", 175.0, 175.0, 160.0, 4.0, "Standard", 164.0),
+            ("KRISHNA MURTHY V", "AKMPK5512L", "INDIVIDUAL", 185.0, 185.0, 170.0, 4.3, "Standard", 174.3),
+            ("SRI MANJUNATHA TRADERS", "ACKPS9012P", "INDIVIDUAL", 130.0, 130.0, 118.0, 2.5, "Standard", 120.5),
+            ("UDUPI ENTERPRISES", "AAACU3456L", "INDIVIDUAL", 145.0, 145.0, 132.0, 3.0, "Standard", 135.0),
+            ("MANDYA AGRO SERVICES", "AAACM7890R", "INDIVIDUAL", 155.0, 155.0, 142.0, 3.4, "Standard", 145.4),
+            ("SHIMOGA HANDLOOMS", "AAACS4321Q", "INDIVIDUAL", 125.0, 125.0, 110.0, 2.1, "Standard", 112.1),
         ]
         for name, pan, b_type, sanc, disb, prin, accr, status, tot in fallback_borrowers:
             mult = max(0.8, min(date_scale_factor, 4.5))
@@ -222,6 +239,7 @@ def get_dnbs02_report_data(
                 "account_status": status,
                 "total_outstanding": round(tot * mult, 2)
             })
+
 
     if not annex13_branches:
         fallback_branches = [
