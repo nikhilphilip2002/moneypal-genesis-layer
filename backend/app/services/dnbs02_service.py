@@ -347,21 +347,21 @@ def _safe_set_cell_value(sheet, coord: str, value: Any, wrap_text: bool = True):
         cell.value = value
         if wrap_text and isinstance(value, str) and len(value) > 25:
             from openpyxl.styles import Alignment
-            cell.alignment = Alignment(wrap_text=True, vertical="center")
     except Exception:
         pass
 
 
-def _clear_sheet_data_rows(sheet, start_row: int = 4, max_rows: int = 60, max_cols: int = 15):
-    """Clear pre-filled static template values in data rows to prevent cell overlaps or static text bleed-through."""
+def _clear_sheet_rows_from(sheet, start_row: int = 13, max_rows: int = 50, start_col: int = 2, max_cols: int = 12):
+    """Clear pre-filled static template values in data rows starting at Row 13 to prevent cell overlaps or static text bleed-through."""
     for r in range(start_row, start_row + max_rows):
-        for c in range(1, max_cols + 1):
+        for c in range(start_col, start_col + max_cols):
             try:
                 cell = sheet.cell(row=r, column=c)
                 if type(cell).__name__ != "MergedCell":
                     cell.value = None
             except Exception:
                 pass
+
 
 
 def get_template_path() -> str:
@@ -387,155 +387,159 @@ def generate_dnbs02_excel(
     start_date: Optional[str] = None,
     end_date: Optional[str] = None,
 ) -> bytes:
-    """Generate Excel file (.xlsx) for RBI DNBS-02 Return using openpyxl, maintaining all 28 template sheets."""
+    """Generate Excel file (.xlsx) for RBI DNBS Return using openpyxl, maintaining all 28 template sheets with zero overlaps."""
     data = get_dnbs02_report_data(frequency=frequency, period=period, start_date=start_date, end_date=end_date)
+
 
     template_path = get_template_path()
     wb = openpyxl.load_workbook(template_path)
 
-    # Populate FilingInfo sheet if exists
+    # Format date strings for template header cells
+    try:
+        s_dt = datetime.datetime.strptime(data['start_date'], "%Y-%m-%d").strftime("%d/%m/%Y")
+        e_dt = datetime.datetime.strptime(data['end_date'], "%Y-%m-%d").strftime("%d/%m/%Y")
+        upper_end_dt = datetime.datetime.strptime(data['end_date'], "%Y-%m-%d").strftime("%d-%b-%Y").upper()
+    except Exception:
+        s_dt = data['start_date']
+        e_dt = data['end_date']
+        upper_end_dt = data['end_date'].upper()
+
+    # 1. FilingInfo sheet
     if "FilingInfo" in wb.sheetnames:
         sheet = wb["FilingInfo"]
         _safe_set_cell_value(sheet, "B2", f"Period: {data['start_date']} to {data['end_date']} ({data['frequency'].capitalize()})")
         _safe_set_cell_value(sheet, "B3", f"Generated Date: {data['generated_at']}")
-        _safe_set_cell_value(sheet, "B4", "Scale: LAKHS")
         _safe_set_cell_value(sheet, "C11", data['frequency'].capitalize())
-
-        try:
-            s_dt = datetime.datetime.strptime(data['start_date'], "%Y-%m-%d").strftime("%d/%m/%Y")
-            e_dt = datetime.datetime.strptime(data['end_date'], "%Y-%m-%d").strftime("%d/%m/%Y")
-        except Exception:
-            s_dt = data['start_date']
-            e_dt = data['end_date']
-
         _safe_set_cell_value(sheet, "C12", s_dt)
         _safe_set_cell_value(sheet, "C13", e_dt)
         _safe_set_cell_value(sheet, "C15", "LAKHS")
         _safe_set_cell_value(sheet, "C16", "1.0.0")
 
+    # 2. DNBS02_PART1 sheet (Capital Structure)
+    if "DNBS02_PART1" in wb.sheetnames:
+        sheet_p1 = wb["DNBS02_PART1"]
+        _safe_set_cell_value(sheet_p1, "B5", f"Reporting Period End Date :{upper_end_dt}")
+        for idx, item in enumerate(data["part1_capital"]):
+            row_num = 13 + idx
+            _safe_set_cell_value(sheet_p1, f"C{row_num}", item["amount_lakhs"])
 
+    # 3. DNBS02_PART2 sheet (Loan Assets)
+    if "DNBS02_PART2" in wb.sheetnames:
+        sheet_p2 = wb["DNBS02_PART2"]
+        _safe_set_cell_value(sheet_p2, "B5", f"Reporting Period End Date :{upper_end_dt}")
+        _safe_set_cell_value(sheet_p2, "C13", data["summary"]["total_loan_book"])
+        if len(data["part2_loans"]) >= 6:
+            _safe_set_cell_value(sheet_p2, "C14", data["part2_loans"][0]["amount_lakhs"])
+            _safe_set_cell_value(sheet_p2, "C15", data["part2_loans"][1]["amount_lakhs"] + data["part2_loans"][2]["amount_lakhs"])
+            _safe_set_cell_value(sheet_p2, "C16", data["part2_loans"][3]["amount_lakhs"])
+            _safe_set_cell_value(sheet_p2, "C17", data["part2_loans"][4]["amount_lakhs"])
+            _safe_set_cell_value(sheet_p2, "C18", data["part2_loans"][5]["amount_lakhs"])
 
-    # Populate or Create DNBS02_PART1 sheet
-    sheet_p1 = wb["DNBS02_PART1"] if "DNBS02_PART1" in wb.sheetnames else wb.create_sheet("DNBS02_PART1")
-    _clear_sheet_data_rows(sheet_p1, start_row=5, max_rows=20, max_cols=5)
-    _safe_set_cell_value(sheet_p1, "A1", "RBI DNBS RETURN - PART 1: CAPITAL & RESERVES")
-    _safe_set_cell_value(sheet_p1, "A2", f"Reporting Period: {data['start_date']} to {data['end_date']}")
-    _safe_set_cell_value(sheet_p1, "A4", "Code")
-    _safe_set_cell_value(sheet_p1, "B4", "Particulars")
-    _safe_set_cell_value(sheet_p1, "C4", "Amount (₹ in Lakhs)")
+    # 4. DNBS02_PART3 sheet (Profitability)
+    if "DNBS02_PART3" in wb.sheetnames:
+        sheet_p3 = wb["DNBS02_PART3"]
+        _safe_set_cell_value(sheet_p3, "B5", f"Reporting Period End Date :{upper_end_dt}")
+        if len(data["part3_income"]) >= 6:
+            _safe_set_cell_value(sheet_p3, "C14", data["part3_income"][0]["amount_lakhs"])
+            _safe_set_cell_value(sheet_p3, "C15", data["part3_income"][1]["amount_lakhs"])
+            _safe_set_cell_value(sheet_p3, "C16", data["part3_income"][2]["amount_lakhs"])
+            _safe_set_cell_value(sheet_p3, "C17", data["part3_income"][3]["amount_lakhs"])
+            _safe_set_cell_value(sheet_p3, "C18", data["part3_income"][4]["amount_lakhs"])
+            _safe_set_cell_value(sheet_p3, "C19", data["part3_income"][5]["amount_lakhs"])
 
-    for idx, item in enumerate(data["part1_capital"], start=5):
-        _safe_set_cell_value(sheet_p1, f"A{idx}", item["code"])
-        _safe_set_cell_value(sheet_p1, f"B{idx}", item["particulars"])
-        _safe_set_cell_value(sheet_p1, f"C{idx}", item["amount_lakhs"])
+    # 5. DNBS02_PART6 sheet (Sensitive Sectors)
+    if "DNBS02_PART6" in wb.sheetnames:
+        sheet_p6 = wb["DNBS02_PART6"]
+        _safe_set_cell_value(sheet_p6, "B5", f"Reporting Period End Date :{upper_end_dt}")
+        if len(data["part6_sensitive"]) >= 3:
+            _safe_set_cell_value(sheet_p6, "C14", data["part6_sensitive"][0]["exposure_lakhs"])
+            _safe_set_cell_value(sheet_p6, "C15", data["part6_sensitive"][1]["exposure_lakhs"])
+            _safe_set_cell_value(sheet_p6, "C16", data["part6_sensitive"][2]["exposure_lakhs"])
 
-    # Populate or Create DNBS02_PART2 sheet
-    sheet_p2 = wb["DNBS02_PART2"] if "DNBS02_PART2" in wb.sheetnames else wb.create_sheet("DNBS02_PART2")
-    _clear_sheet_data_rows(sheet_p2, start_row=4, max_rows=20, max_cols=5)
-    _safe_set_cell_value(sheet_p2, "A1", "RBI DNBS RETURN - PART 2: LOAN ASSETS & RECEIVABLES MATURITY")
-    for idx, item in enumerate(data["part2_loans"], start=4):
-        _safe_set_cell_value(sheet_p2, f"A{idx}", item["category"])
-        _safe_set_cell_value(sheet_p2, f"B{idx}", item["amount_lakhs"])
-        _safe_set_cell_value(sheet_p2, f"C{idx}", f"{item['share_pct']}%")
+    # 6. DNBS02_PART8A sheet (MSME Profile)
+    if "DNBS02_PART8A" in wb.sheetnames:
+        sheet_p8a = wb["DNBS02_PART8A"]
+        _safe_set_cell_value(sheet_p8a, "B5", f"Reporting Period End Date :{upper_end_dt}")
+        if len(data["part8a_msme"]) >= 3:
+            # Micro
+            _safe_set_cell_value(sheet_p8a, "C17", data["part8a_msme"][0]["account_count"])
+            _safe_set_cell_value(sheet_p8a, "D17", data["part8a_msme"][0]["amount_lakhs"])
+            _safe_set_cell_value(sheet_p8a, "G17", data["part8a_msme"][0]["avg_interest_rate"])
+            # Small
+            _safe_set_cell_value(sheet_p8a, "C18", data["part8a_msme"][1]["account_count"])
+            _safe_set_cell_value(sheet_p8a, "D18", data["part8a_msme"][1]["amount_lakhs"])
+            _safe_set_cell_value(sheet_p8a, "G18", data["part8a_msme"][1]["avg_interest_rate"])
+            # Medium
+            _safe_set_cell_value(sheet_p8a, "C19", data["part8a_msme"][2]["account_count"])
+            _safe_set_cell_value(sheet_p8a, "D19", data["part8a_msme"][2]["amount_lakhs"])
+            _safe_set_cell_value(sheet_p8a, "G19", data["part8a_msme"][2]["avg_interest_rate"])
 
-    # Populate or Create DNBS02_PART3 sheet
-    sheet_p3 = wb["DNBS02_PART3"] if "DNBS02_PART3" in wb.sheetnames else wb.create_sheet("DNBS02_PART3")
-    _clear_sheet_data_rows(sheet_p3, start_row=4, max_rows=20, max_cols=5)
-    _safe_set_cell_value(sheet_p3, "A1", "RBI DNBS RETURN - PART 3: REVENUE & OPERATING PROFITABILITY")
-    for idx, item in enumerate(data["part3_income"], start=4):
-        _safe_set_cell_value(sheet_p3, f"A{idx}", item["head"])
-        _safe_set_cell_value(sheet_p3, f"B{idx}", item["amount_lakhs"])
+    # 7. DNBS02_Annex2 (Shareholders Pattern)
+    if "DNBS02_Annex2" in wb.sheetnames:
+        sheet_a2 = wb["DNBS02_Annex2"]
+        _safe_set_cell_value(sheet_a2, "B5", f"Reporting Period End Date :{upper_end_dt}")
+        _clear_sheet_rows_from(sheet_a2, start_row=13, max_rows=30, start_col=2, max_cols=6)
+        for idx, item in enumerate(data["annex2_shareholders"]):
+            r = 13 + idx
+            _safe_set_cell_value(sheet_a2, f"B{r}", item["name"])
+            _safe_set_cell_value(sheet_a2, f"C{r}", item["type_of_capital"])
+            _safe_set_cell_value(sheet_a2, f"D{r}", "NA")
+            _safe_set_cell_value(sheet_a2, f"E{r}", item["num_shares"])
+            _safe_set_cell_value(sheet_a2, f"F{r}", item["face_value"])
+            _safe_set_cell_value(sheet_a2, f"G{r}", item["shareholding_pct"])
 
-    # Populate or Create DNBS02_PART6 sheet
-    sheet_p6 = wb["DNBS02_PART6"] if "DNBS02_PART6" in wb.sheetnames else wb.create_sheet("DNBS02_PART6")
-    _clear_sheet_data_rows(sheet_p6, start_row=4, max_rows=20, max_cols=5)
-    _safe_set_cell_value(sheet_p6, "A1", "RBI DNBS RETURN - PART 6: SENSITIVE SECTOR EXPOSURE")
-    for idx, item in enumerate(data["part6_sensitive"], start=4):
-        _safe_set_cell_value(sheet_p6, f"A{idx}", item["sector"])
-        _safe_set_cell_value(sheet_p6, f"B{idx}", item["exposure_lakhs"])
-        _safe_set_cell_value(sheet_p6, f"C{idx}", f"{item['risk_weight_pct']}%")
+    # 8. DNBS02_Annex9 (Top 25 Borrowers)
+    if "DNBS02_Annex9" in wb.sheetnames:
+        sheet_a9 = wb["DNBS02_Annex9"]
+        _safe_set_cell_value(sheet_a9, "B5", f"Reporting Period End Date :{upper_end_dt}")
+        _clear_sheet_rows_from(sheet_a9, start_row=13, max_rows=40, start_col=2, max_cols=11)
+        for idx, b in enumerate(data["annex9_top_borrowers"]):
+            r = 13 + idx
+            _safe_set_cell_value(sheet_a9, f"B{r}", idx + 1)
+            _safe_set_cell_value(sheet_a9, f"C{r}", b["borrower_name"])
+            _safe_set_cell_value(sheet_a9, f"D{r}", b["pan"])
+            _safe_set_cell_value(sheet_a9, f"E{r}", b["borrower_type"])
+            _safe_set_cell_value(sheet_a9, f"F{r}", b["sanctioned_amt"])
+            _safe_set_cell_value(sheet_a9, f"G{r}", b["disbursed_amt"])
+            _safe_set_cell_value(sheet_a9, f"H{r}", 0.0)
+            _safe_set_cell_value(sheet_a9, f"I{r}", b["principal_outstanding"])
+            _safe_set_cell_value(sheet_a9, f"J{r}", b["accrued_interest"])
+            _safe_set_cell_value(sheet_a9, f"K{r}", b["account_status"])
+            _safe_set_cell_value(sheet_a9, f"L{r}", b["total_outstanding"])
 
-    # Populate or Create DNBS02_PART8A sheet
-    sheet_p8a = wb["DNBS02_PART8A"] if "DNBS02_PART8A" in wb.sheetnames else wb.create_sheet("DNBS02_PART8A")
-    _clear_sheet_data_rows(sheet_p8a, start_row=4, max_rows=20, max_cols=5)
-    _safe_set_cell_value(sheet_p8a, "A1", "RBI DNBS RETURN - PART 8A: MSME CREDIT PROFILE")
-    for idx, item in enumerate(data["part8a_msme"], start=4):
-        _safe_set_cell_value(sheet_p8a, f"A{idx}", item["category"])
-        _safe_set_cell_value(sheet_p8a, f"B{idx}", item["account_count"])
-        _safe_set_cell_value(sheet_p8a, f"C{idx}", item["amount_lakhs"])
-        _safe_set_cell_value(sheet_p8a, f"D{idx}", f"{item['avg_interest_rate']}%")
+    # 9. DNBS02_Annex10 (Top Investments)
+    if "DNBS02_Annex10" in wb.sheetnames:
+        sheet_a10 = wb["DNBS02_Annex10"]
+        _safe_set_cell_value(sheet_a10, "B5", f"Reporting Period End Date :{upper_end_dt}")
+        _clear_sheet_rows_from(sheet_a10, start_row=13, max_rows=30, start_col=2, max_cols=6)
+        for idx, inv in enumerate(data.get("annex10_top_investments", [])):
+            r = 13 + idx
+            _safe_set_cell_value(sheet_a10, f"B{r}", inv["entity_name"])
+            _safe_set_cell_value(sheet_a10, f"C{r}", "CURRENT" if "FUND" in inv["entity_name"] else "NON-CURRENT")
+            _safe_set_cell_value(sheet_a10, f"D{r}", inv["investment_type"].upper())
+            _safe_set_cell_value(sheet_a10, f"E{r}", "NA")
+            _safe_set_cell_value(sheet_a10, f"F{r}", inv["book_value"])
+            _safe_set_cell_value(sheet_a10, f"G{r}", "false")
 
-    # Populate or Create DNBS02_Annex2 sheet
-    sheet_a2 = wb["DNBS02_Annex2"] if "DNBS02_Annex2" in wb.sheetnames else wb.create_sheet("DNBS02_Annex2")
-    _clear_sheet_data_rows(sheet_a2, start_row=4, max_rows=20, max_cols=6)
-    _safe_set_cell_value(sheet_a2, "A1", "RBI DNBS RETURN - ANNEXURE 2: SHAREHOLDERS PATTERN")
-    for idx, item in enumerate(data["annex2_shareholders"], start=4):
-        _safe_set_cell_value(sheet_a2, f"A{idx}", item["name"])
-        _safe_set_cell_value(sheet_a2, f"B{idx}", item["type_of_capital"])
-        _safe_set_cell_value(sheet_a2, f"C{idx}", item["num_shares"])
-        _safe_set_cell_value(sheet_a2, f"D{idx}", item["face_value"])
-        _safe_set_cell_value(sheet_a2, f"E{idx}", f"{item['shareholding_pct']}%")
-
-    # Populate or Create DNBS02_Annex9 (Top 25 Borrowers)
-    sheet_a9 = wb["DNBS02_Annex9"] if "DNBS02_Annex9" in wb.sheetnames else wb.create_sheet("DNBS02_Annex9")
-    _clear_sheet_data_rows(sheet_a9, start_row=4, max_rows=40, max_cols=12)
-    _safe_set_cell_value(sheet_a9, "A1", "RBI DNBS RETURN - ANNEXURE 9: TOP 25 BORROWERS EXPOSURE")
-    _safe_set_cell_value(sheet_a9, "A3", "Sl No")
-    _safe_set_cell_value(sheet_a9, "B3", "Borrower Name")
-    _safe_set_cell_value(sheet_a9, "C3", "PAN")
-    _safe_set_cell_value(sheet_a9, "D3", "Type")
-    _safe_set_cell_value(sheet_a9, "E3", "Sanctioned Limit (Lakhs)")
-    _safe_set_cell_value(sheet_a9, "F3", "Disbursed Amount (Lakhs)")
-    _safe_set_cell_value(sheet_a9, "G3", "Principal Outstanding (Lakhs)")
-    _safe_set_cell_value(sheet_a9, "H3", "Accrued Interest (Lakhs)")
-    _safe_set_cell_value(sheet_a9, "I3", "Total Exposure (Lakhs)")
-    _safe_set_cell_value(sheet_a9, "J3", "Status")
-
-    for idx, b in enumerate(data["annex9_top_borrowers"], start=4):
-        _safe_set_cell_value(sheet_a9, f"A{idx}", idx - 3)
-        _safe_set_cell_value(sheet_a9, f"B{idx}", b["borrower_name"])
-        _safe_set_cell_value(sheet_a9, f"C{idx}", b["pan"])
-        _safe_set_cell_value(sheet_a9, f"D{idx}", b["borrower_type"])
-        _safe_set_cell_value(sheet_a9, f"E{idx}", b["sanctioned_amt"])
-        _safe_set_cell_value(sheet_a9, f"F{idx}", b["disbursed_amt"])
-        _safe_set_cell_value(sheet_a9, f"G{idx}", b["principal_outstanding"])
-        _safe_set_cell_value(sheet_a9, f"H{idx}", b["accrued_interest"])
-        _safe_set_cell_value(sheet_a9, f"I{idx}", b["total_outstanding"])
-        _safe_set_cell_value(sheet_a9, f"J{idx}", b["account_status"])
-
-    # Populate or Create DNBS02_Annex10 (Top Investments)
-    sheet_a10 = wb["DNBS02_Annex10"] if "DNBS02_Annex10" in wb.sheetnames else wb.create_sheet("DNBS02_Annex10")
-    _clear_sheet_data_rows(sheet_a10, start_row=4, max_rows=20, max_cols=6)
-    _safe_set_cell_value(sheet_a10, "A1", "RBI DNBS RETURN - ANNEXURE 10: TOP INVESTMENTS PORTFOLIO")
-    _safe_set_cell_value(sheet_a10, "A3", "Entity Name")
-    _safe_set_cell_value(sheet_a10, "B3", "Investment Type")
-    _safe_set_cell_value(sheet_a10, "C3", "Book Value (Lakhs)")
-    _safe_set_cell_value(sheet_a10, "D3", "Amount Outstanding (Lakhs)")
-
-    for idx, inv in enumerate(data.get("annex10_top_investments", []), start=4):
-        _safe_set_cell_value(sheet_a10, f"A{idx}", inv["entity_name"])
-        _safe_set_cell_value(sheet_a10, f"B{idx}", inv["investment_type"])
-        _safe_set_cell_value(sheet_a10, f"C{idx}", inv["book_value"])
-        _safe_set_cell_value(sheet_a10, f"D{idx}", inv["amt_outstanding"])
-
-    # Populate or Create DNBS02_Annex13 (Branch Operations)
-    sheet_a13 = wb["DNBS02_Annex13"] if "DNBS02_Annex13" in wb.sheetnames else wb.create_sheet("DNBS02_Annex13")
-    _clear_sheet_data_rows(sheet_a13, start_row=4, max_rows=20, max_cols=6)
-    _safe_set_cell_value(sheet_a13, "A1", "RBI DNBS RETURN - ANNEXURE 13: DISTRICT BRANCH NETWORK OPERATIONS")
-    _safe_set_cell_value(sheet_a13, "A3", "Branch Code")
-    _safe_set_cell_value(sheet_a13, "B3", "Branch Name")
-    _safe_set_cell_value(sheet_a13, "C3", "Borrowers")
-    _safe_set_cell_value(sheet_a13, "D3", "Loan Accounts")
-    _safe_set_cell_value(sheet_a13, "E3", "Total Outstanding (Lakhs)")
-
-    for idx, br in enumerate(data["annex13_branches"], start=4):
-        _safe_set_cell_value(sheet_a13, f"A{idx}", br["branch_code"])
-        _safe_set_cell_value(sheet_a13, f"B{idx}", br["branch_name"])
-        _safe_set_cell_value(sheet_a13, f"C{idx}", br["customer_count"])
-        _safe_set_cell_value(sheet_a13, f"D{idx}", br["account_count"])
-        _safe_set_cell_value(sheet_a13, f"E{idx}", br["total_outstanding"])
+    # 10. DNBS02_Annex13 (Branch Network)
+    if "DNBS02_Annex13" in wb.sheetnames:
+        sheet_a13 = wb["DNBS02_Annex13"]
+        _safe_set_cell_value(sheet_a13, "B5", f"Reporting Period End Date :{upper_end_dt}")
+        _clear_sheet_rows_from(sheet_a13, start_row=13, max_rows=30, start_col=2, max_cols=9)
+        for idx, br in enumerate(data["annex13_branches"]):
+            r = 13 + idx
+            _safe_set_cell_value(sheet_a13, f"B{r}", idx + 1)
+            _safe_set_cell_value(sheet_a13, f"C{r}", br["branch_name"])
+            _safe_set_cell_value(sheet_a13, f"D{r}", "Virtual District Branch Office")
+            _safe_set_cell_value(sheet_a13, f"E{r}", "District Desk")
+            _safe_set_cell_value(sheet_a13, f"F{r}", "Karnataka")
+            _safe_set_cell_value(sheet_a13, f"G{r}", br["branch_name"].replace(" Virtual Branch", ""))
+            _safe_set_cell_value(sheet_a13, f"H{r}", br["customer_count"])
+            _safe_set_cell_value(sheet_a13, f"I{r}", br["account_count"])
+            _safe_set_cell_value(sheet_a13, f"J{r}", br["total_outstanding"])
 
     buf = io.BytesIO()
     wb.save(buf)
     buf.seek(0)
     return buf.getvalue()
+
