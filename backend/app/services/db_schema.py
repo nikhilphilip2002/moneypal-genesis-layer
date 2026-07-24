@@ -19,7 +19,8 @@ NODE_TYPE_STYLES = {
 def get_connection():
     if psycopg2 is None:
         raise RuntimeError("psycopg2 module not available")
-    host = os.environ.get("POSTGRES_HOST", "100.70.118.31")
+    host = os.environ.get("POSTGRES_HOST", "192.168.1.183")
+
     if host.startswith("http://"):
         host = host[7:]
     if host.endswith("/"):
