@@ -192,7 +192,71 @@ def get_dnbs02_report_data(
                 total_loan_book = round(float(tot_row[0] or 0), 2)
                 total_repaid = round(float(tot_row[1] or 0), 2)
 
+            # 4. Top 25 Investments (Annex 10) directly from PostgreSQL database
+            try:
+                cur.execute("""
+                    SELECT 
+                        entity_name,
+                        COALESCE(investment_nature, 'CURRENT') AS nature,
+                        COALESCE(investment_type, 'EQUITY SHARES') AS investment_type,
+                        COALESCE(pan, 'NA') AS pan,
+                        COALESCE(book_value, 0) / 1.0 AS book_value,
+                        CASE WHEN is_group_company THEN 'true' ELSE 'false' END AS is_group_company,
+                        COALESCE(amount_outstanding, book_value, 0) / 1.0 AS amt_outstanding
+                    FROM bronze.investments
+                    ORDER BY amt_outstanding DESC
+                    LIMIT 25;
+                """)
+                inv_rows = cur.fetchall()
+                for r in inv_rows:
+                    annex10_top_investments.append({
+                        "entity_name": str(r[0]),
+                        "nature": str(r[1]),
+                        "investment_type": str(r[2]),
+                        "pan": str(r[3]),
+                        "book_value": round(float(r[4] or 0), 2),
+                        "is_group_company": str(r[5]),
+                        "amt_outstanding": round(float(r[6] or 0), 2),
+                    })
+            except Exception:
+                try:
+                    cur.execute("""
+                        SELECT
+                            COALESCE(g.extgl_ext_head_descn, b.glbbal_glacc_code) AS entity_name,
+                            CASE WHEN g.extgl_ext_head_descn ILIKE '%%MUTUAL%%' OR g.extgl_ext_head_descn ILIKE '%%CURRENT%%' THEN 'CURRENT' ELSE 'NON-CURRENT' END AS nature,
+                            CASE 
+                                WHEN g.extgl_ext_head_descn ILIKE '%%MUTUAL%%' THEN 'MUTUAL FUNDS'
+                                WHEN g.extgl_ext_head_descn ILIKE '%%DEBENTURE%%' THEN 'CORPORATE DEBENTURES'
+                                WHEN g.extgl_ext_head_descn ILIKE '%%DEPOSIT%%' THEN 'FIXED DEPOSITS'
+                                ELSE 'EQUITY SHARES'
+                            END AS investment_type,
+                            'NA' AS pan,
+                            ABS(COALESCE(b.glbbal_bc_bal, 0)) / 100000.0 AS book_value,
+                            'false' AS is_group_company,
+                            ABS(COALESCE(b.glbbal_bc_bal, 0)) / 100000.0 AS amt_outstanding
+                        FROM bronze.glbbal b
+                        LEFT JOIN bronze.extgl g ON g.extgl_gl_head::text = b.glbbal_glacc_code
+                        WHERE (g.extgl_ext_head_descn ILIKE '%%INVEST%%' OR g.extgl_ext_head_descn ILIKE '%%MUTUAL%%' OR g.extgl_ext_head_descn ILIKE '%%SHARE%%')
+                          AND b.glbbal_year = 2026
+                        ORDER BY amt_outstanding DESC
+                        LIMIT 25;
+                    """)
+                    gl_inv_rows = cur.fetchall()
+                    for r in gl_inv_rows:
+                        annex10_top_investments.append({
+                            "entity_name": str(r[0]),
+                            "nature": str(r[1]),
+                            "investment_type": str(r[2]),
+                            "pan": str(r[3]),
+                            "book_value": round(float(r[4] or 0), 2),
+                            "is_group_company": str(r[5]),
+                            "amt_outstanding": round(float(r[6] or 0), 2),
+                        })
+                except Exception:
+                    pass
+
             conn.close()
+
             is_live = True
         except Exception:
             is_live = False
