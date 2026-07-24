@@ -4,3 +4,5 @@
 -e ./packages/genesis_core
 fastapi
 uvicorn[standard]
+openpyxl
+
