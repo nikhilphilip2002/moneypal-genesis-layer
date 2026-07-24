@@ -479,7 +479,10 @@ def get_dnbs02_report_data(
         {"entity_name": "SUNDRAM INCOME PLUS", "nature": "CURRENT", "investment_type": "MUTUAL FUNDS", "pan": "NA", "book_value": 9.99, "is_group_company": "false", "amt_outstanding": 101.04},
         {"entity_name": "TATA INVESTMENTS", "nature": "NON-CURRENT", "investment_type": "EQUITY SHARES", "pan": "NA", "book_value": 0.72, "is_group_company": "false", "amt_outstanding": 5.40},
         {"entity_name": "ULTRATECH CEMENT", "nature": "NON-CURRENT", "investment_type": "EQUITY SHARES", "pan": "NA", "book_value": 0.15, "is_group_company": "false", "amt_outstanding": 0.04},
+        {"entity_name": "NABARD TERM DEPOSITS", "nature": "NON-CURRENT", "investment_type": "FIXED DEPOSITS", "pan": "NA", "book_value": 300.00, "is_group_company": "false", "amt_outstanding": 62.65},
+        {"entity_name": "HDFC LIQUID MUTUAL FUND", "nature": "CURRENT", "investment_type": "MUTUAL FUNDS", "pan": "NA", "book_value": 250.00, "is_group_company": "false", "amt_outstanding": 117.37},
     ]
+
 
     # Scale book_value and amt_outstanding if date range requires scaling
     if date_scale_factor != 1.0:
