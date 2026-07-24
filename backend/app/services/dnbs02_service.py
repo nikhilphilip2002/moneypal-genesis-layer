@@ -538,8 +538,23 @@ def generate_dnbs02_excel(
             _safe_set_cell_value(sheet_a13, f"I{r}", br["account_count"])
             _safe_set_cell_value(sheet_a13, f"J{r}", br["total_outstanding"])
 
+    # 11. DNBS02_PART8C (Asset Classification & Provisioning)
+    if "DNBS02_PART8C" in wb.sheetnames:
+        sheet_p8c = wb["DNBS02_PART8C"]
+        _safe_set_cell_value(sheet_p8c, "B5", f"Reporting Period End Date :{upper_end_dt}")
+        total_loan = data["summary"]["total_loan_book"]
+        _safe_set_cell_value(sheet_p8c, "C14", total_loan)  # Standard Asset Outstanding
+        _safe_set_cell_value(sheet_p8c, "D14", round(total_loan * 0.004, 2))  # Standard Asset Provision (0.4%)
+
+    # 12. DNBS02_Annex11 (Top NPA Accounts)
+    if "DNBS02_Annex11" in wb.sheetnames:
+        sheet_a11 = wb["DNBS02_Annex11"]
+        _safe_set_cell_value(sheet_a11, "B5", f"Reporting Period End Date :{upper_end_dt}")
+        _clear_sheet_rows_from(sheet_a11, start_row=13, max_rows=30, start_col=2, max_cols=13)
+
     buf = io.BytesIO()
     wb.save(buf)
     buf.seek(0)
     return buf.getvalue()
+
 
