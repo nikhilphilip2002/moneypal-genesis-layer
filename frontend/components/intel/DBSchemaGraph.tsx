@@ -322,7 +322,7 @@ export default function DBSchemaGraph() {
       if (linkForce?.distance) {
         linkForce.distance(180);
       }
-      graphRef.current.zoomToFit(500, 90);
+      graphRef.current.zoomToFit(500, 220);
     }, 150);
 
     return () => clearTimeout(timer);
@@ -418,7 +418,7 @@ export default function DBSchemaGraph() {
     if (graphRef.current) graphRef.current.zoom(graphRef.current.zoom() / 1.3, 300);
   };
   const handleResetZoom = () => {
-    if (graphRef.current) graphRef.current.zoomToFit(400, 90);
+    if (graphRef.current) graphRef.current.zoomToFit(400, 220);
   };
 
   const linksByNode = useMemo(() => {
@@ -1124,12 +1124,14 @@ export default function DBSchemaGraph() {
               enableNodeDrag={true}
               enableZoomInteraction={true}
               enablePanInteraction={true}
+              minZoom={0.15}
+              maxZoom={1.6}
               nodePointerAreaPaint={drawNodePointerArea}
               cooldownTicks={200}
               d3AlphaDecay={0.02}
               d3VelocityDecay={0.2}
               onEngineStop={() => {
-                graphRef.current?.zoomToFit(300, 80);
+                graphRef.current?.zoomToFit(400, 220);
               }}
             />
           )}

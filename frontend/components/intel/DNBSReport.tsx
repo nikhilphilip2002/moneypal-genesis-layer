@@ -5,7 +5,7 @@ import { regulatory, type DNBS02ReportData } from '@/lib/api';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Tabs, TabsContent } from '@/components/ui/tabs';
 import LoadingCard from '@/components/intel/LoadingCard';
 import WidgetError from '@/components/intel/WidgetError';
 import {
@@ -19,6 +19,8 @@ import {
   Database,
   Building2,
   Users,
+  ChevronDown,
+  Calendar,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -43,6 +45,19 @@ const PERIOD_OPTIONS = {
     { label: 'FY 2024-2025 (Annual Return)', value: '2024-2025' },
   ],
 };
+
+const REPORT_SECTION_OPTIONS = [
+  { value: 'part1', label: 'Part 1: Capital Structure & Net Owned Funds (NOF)' },
+  { value: 'part2', label: 'Part 2: Loan Assets & Receivables Maturity Profile' },
+  { value: 'part3', label: 'Part 3: Revenue & Operating Profitability' },
+  { value: 'part6', label: 'Part 6: Sensitive Sector Exposures & Risk Weights' },
+  { value: 'part8', label: 'Part 8C: Asset Classification & Provisioning' },
+  { value: 'part8a', label: 'Part 8A: MSME Credit Profile Breakdown' },
+  { value: 'annex2', label: 'Annexure 2: Shareholding Pattern & Ownership' },
+  { value: 'annex9', label: 'Annexure 9: Top 25 Borrowers Exposure' },
+  { value: 'annex10', label: 'Annexure 10: Top 25 Investments Portfolio' },
+  { value: 'annex13', label: 'Annexure 13: District Branch Network Operations' },
+];
 
 export default function DNBSReport() {
   const [frequency, setFrequency] = useState<'monthly' | 'quarterly' | 'yearly' | 'custom'>('monthly');
@@ -71,11 +86,13 @@ export default function DNBSReport() {
     fetchReport();
   }, [frequency, period, startDate, endDate]);
 
-  const handleFrequencyChange = (newFreq: 'monthly' | 'quarterly' | 'yearly') => {
+  const handleFrequencyChange = (newFreq: 'monthly' | 'quarterly' | 'yearly' | 'custom') => {
     setFrequency(newFreq);
-    const p = PERIOD_OPTIONS[newFreq][0].value;
-    setPeriod(p);
-    updateDatesForPeriod(newFreq, p);
+    if (newFreq !== 'custom') {
+      const p = PERIOD_OPTIONS[newFreq][0].value;
+      setPeriod(p);
+      updateDatesForPeriod(newFreq, p);
+    }
   };
 
   const updateDatesForPeriod = (freq: string, p: string) => {
@@ -163,11 +180,11 @@ export default function DNBSReport() {
             </div>
           </div>
 
-          {/* Date & Preset Filters Bar */}
+          {/* Date & Preset Filters Bar - Border-less Card Design Matching Monthly/Quarterly/Yearly Pills */}
           <div className="flex flex-wrap items-center gap-3 pt-2 border-t border-border/40">
-            {/* Frequency Selection */}
+            {/* Frequency Selection Group */}
             <div className="inline-flex rounded-xl bg-accent p-1 text-xs">
-              {(['monthly', 'quarterly', 'yearly'] as const).map((f) => (
+              {(['monthly', 'quarterly', 'yearly', 'custom'] as const).map((f) => (
                 <button
                   key={f}
                   type="button"
@@ -179,17 +196,17 @@ export default function DNBSReport() {
                       : 'text-muted-foreground hover:text-foreground'
                   )}
                 >
-                  {f}
+                  {f === 'custom' ? 'Custom Range' : f}
                 </button>
               ))}
             </div>
 
-            {/* Period Dropdown */}
+            {/* Period Dropdown for Monthly/Quarterly/Yearly */}
             {frequency !== 'custom' && (
               <select
                 value={period}
                 onChange={(e) => handlePeriodChange(e.target.value)}
-                className="h-9 rounded-xl border border-input bg-background px-3 text-xs font-medium focus:outline-none focus:ring-1 focus:ring-primary"
+                className="h-9 rounded-xl border-0 bg-accent text-foreground px-3 text-xs font-medium focus:outline-none focus:ring-1 focus:ring-primary shadow-none"
               >
                 {PERIOD_OPTIONS[frequency as 'monthly' | 'quarterly' | 'yearly']?.map((opt) => (
                   <option key={opt.value} value={opt.value}>
@@ -199,25 +216,27 @@ export default function DNBSReport() {
               </select>
             )}
 
-            {/* Custom Date Pickers */}
-            <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground bg-accent/40 rounded-xl px-3 py-1 border border-border/50">
-              <span className="text-[11px] font-semibold text-foreground uppercase">Date Range:</span>
-              <div className="flex items-center gap-1.5">
-                <span className="text-[11px]">From</span>
+            {/* Custom Date Pickers - Border-less bg-accent design matching toggle pills */}
+            <div className="inline-flex items-center gap-2 text-xs font-medium bg-accent rounded-xl p-1">
+              <span className="text-[11px] font-semibold text-foreground px-2 flex items-center gap-1">
+                <Calendar className="h-3.5 w-3.5 text-primary" /> Date Range:
+              </span>
+              <div className="flex items-center gap-1.5 bg-background rounded-lg px-2.5 py-1 shadow-sm">
+                <span className="text-[11px] text-muted-foreground">From</span>
                 <input
                   type="date"
                   value={startDate}
                   onChange={(e) => handleCustomStartDateChange(e.target.value)}
-                  className="h-7 rounded-lg border border-input bg-background px-2 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                  className="h-6 bg-transparent text-xs text-foreground font-mono focus:outline-none"
                 />
               </div>
-              <div className="flex items-center gap-1.5">
-                <span className="text-[11px]">To</span>
+              <div className="flex items-center gap-1.5 bg-background rounded-lg px-2.5 py-1 shadow-sm">
+                <span className="text-[11px] text-muted-foreground">To</span>
                 <input
                   type="date"
                   value={endDate}
                   onChange={(e) => handleCustomEndDateChange(e.target.value)}
-                  className="h-7 rounded-lg border border-input bg-background px-2 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                  className="h-6 bg-transparent text-xs text-foreground font-mono focus:outline-none"
                 />
               </div>
             </div>
@@ -287,21 +306,27 @@ export default function DNBSReport() {
             </Card>
           </div>
 
-          {/* Sub-tabs for Report Details */}
+          {/* Clean Dropdown Selection List for Report Sections (Replaces Sliding Tabs Bar) */}
           <Tabs value={activeSubTab} onValueChange={setActiveSubTab} className="w-full">
-            <div className="overflow-x-auto pb-1">
-              <TabsList className="mb-4 inline-flex w-auto shrink-0 min-w-full justify-start gap-1">
-                <TabsTrigger value="part1">Part 1: Capital & NOF</TabsTrigger>
-                <TabsTrigger value="part2">Part 2: Loan Assets</TabsTrigger>
-                <TabsTrigger value="part3">Part 3: Revenue & PnL</TabsTrigger>
-                <TabsTrigger value="part6">Part 6: Sensitive Sectors</TabsTrigger>
-                <TabsTrigger value="part8">Part 8C: Asset Quality</TabsTrigger>
-                <TabsTrigger value="part8a">Part 8A: MSME Profile</TabsTrigger>
-                <TabsTrigger value="annex2">Annex 2: Shareholders</TabsTrigger>
-                <TabsTrigger value="annex9">Annex 9: Top Borrowers</TabsTrigger>
-                <TabsTrigger value="annex10">Annex 10: Top Investments</TabsTrigger>
-                <TabsTrigger value="annex13">Annex 13: Branch Network</TabsTrigger>
-              </TabsList>
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6 bg-card border border-border/70 rounded-[1.25rem] p-4 shadow-none">
+              <div className="flex items-center gap-2 text-xs font-semibold text-foreground">
+                <FileSpreadsheet className="h-4.5 w-4.5 text-primary" />
+                <span>Select Report Return Section:</span>
+              </div>
+              <div className="relative flex-1 max-w-lg">
+                <select
+                  value={activeSubTab}
+                  onChange={(e) => setActiveSubTab(e.target.value)}
+                  className="w-full h-10 rounded-xl border border-input bg-background pl-3 pr-8 text-xs font-semibold text-foreground focus:outline-none focus:ring-2 focus:ring-primary shadow-sm appearance-none cursor-pointer"
+                >
+                  {REPORT_SECTION_OPTIONS.map((sec) => (
+                    <option key={sec.value} value={sec.value}>
+                      {sec.label}
+                    </option>
+                  ))}
+                </select>
+                <ChevronDown className="h-4 w-4 absolute right-3 top-3 text-muted-foreground pointer-events-none" />
+              </div>
             </div>
 
             {/* Part 1: Capital & Reserves */}
@@ -594,7 +619,6 @@ export default function DNBSReport() {
                 </div>
               </Card>
             </TabsContent>
-
 
             {/* Annex 13: Branch Operations */}
             <TabsContent value="annex13">
