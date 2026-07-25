@@ -81,7 +81,7 @@ def get_dnbs02_report_data(
         start_date = start_date or calc_start
         end_date = end_date or calc_end
 
-    # Calculate date range duration in days for dynamic KPI scale adjustment
+    # Calculate date range duration in days for dynamic KPI scale adjustment (fallback only)
     try:
         d1 = datetime.datetime.strptime(start_date, "%Y-%m-%d")
         d2 = datetime.datetime.strptime(end_date, "%Y-%m-%d")
@@ -92,11 +92,17 @@ def get_dnbs02_report_data(
     date_scale_factor = round(num_days / 31.0, 2)
 
     is_live = False
-    part1_capital = []
-    part8_asset_quality = []
-    annex9_top_borrowers = []
-    annex10_top_investments = []
-    annex13_branches = []
+    part1_capital: List[Dict[str, Any]] = []
+    part2_loans: List[Dict[str, Any]] = []
+    part3_income: List[Dict[str, Any]] = []
+    part6_sensitive: List[Dict[str, Any]] = []
+    part8_asset_quality: List[Dict[str, Any]] = []
+    part8a_msme: List[Dict[str, Any]] = []
+    annex2_shareholders: List[Dict[str, Any]] = []
+    annex9_top_borrowers: List[Dict[str, Any]] = []
+    annex10_top_investments: List[Dict[str, Any]] = []
+    annex11_top_npas: List[Dict[str, Any]] = []
+    annex13_branches: List[Dict[str, Any]] = []
 
     total_loan_book = 0.0
     total_repaid = 0.0
@@ -108,88 +114,97 @@ def get_dnbs02_report_data(
             cur = conn.cursor()
 
             # 1. Top 25 Borrowers (Annex 9) filtered by date range
-            cur.execute("""
-                WITH latest_asset AS (
-                    SELECT ascd_account_num, ascd_asset_code, ascd_princ_os, ascd_int_due, ascd_charg_due
-                    FROM (
-                        SELECT ascd_account_num, ascd_asset_code, ascd_princ_os, ascd_int_due, ascd_charg_due,
-                               ROW_NUMBER() OVER(PARTITION BY ascd_account_num ORDER BY ascd_effective_date DESC) as rn
-                        FROM bronze.asset_classify_dtls
-                        WHERE ascd_effective_date <= CAST(%s AS DATE)
-                    ) sub WHERE rn = 1
-                )
-                SELECT
-                    COALESCE(
-                        NULLIF(g.gnlnac_cust_name, ''),
-                        TRIM(CONCAT_WS(' ', ic.indcif_first_name, ic.indcif_midle_name, ic.indcif_last_name)),
-                        'Account #' || g.gnlnac_acnt_num
-                    ) AS borrower_name,
-                    'NA' AS pan,
-                    CASE WHEN g.gnlnac_prod_code = 16 THEN 'CORPORATE' ELSE 'INDIVIDUAL' END AS borrower_type,
-                    COALESCE(g.gnlnac_sanc_amt, 0) / 100000.0 AS sanctioned_amt,
-                    COALESCE(g.gnlnac_lndisb_amt, g.gnlnac_sanc_amt, 0) / 100000.0 AS disbursed_amt,
-                    COALESCE(la.ascd_princ_os, 0) / 100000.0 AS principal_outstanding,
-                    COALESCE(la.ascd_int_due, 0) / 100000.0 AS accrued_interest,
-                    CASE WHEN la.ascd_asset_code IN ('STD', 'SMA0') THEN 'Standard' ELSE COALESCE(la.ascd_asset_code, 'Standard') END AS account_status,
-                    COALESCE(la.ascd_princ_os + la.ascd_int_due + la.ascd_charg_due, 0) / 100000.0 AS total_outstanding
-                FROM bronze.genlnacnts g
-                LEFT JOIN bronze.indcifdata_10012025_indcifdata ic ON g.gnlnac_cust_id = ic.indcif_cust_id
-                LEFT JOIN latest_asset la ON g.gnlnac_acnt_num = la.ascd_account_num
-                WHERE g.gnlnac_sanc_date IS NULL OR (g.gnlnac_sanc_date <= CAST(%s AS DATE))
-                ORDER BY total_outstanding DESC
-                LIMIT 25;
-            """, (end_date, end_date))
-            b_rows = cur.fetchall()
-            for r in b_rows:
-                annex9_top_borrowers.append({
-                    "borrower_name": str(r[0]),
-                    "pan": str(r[1]),
-                    "borrower_type": str(r[2]),
-                    "sanctioned_amt": round(float(r[3] or 0), 2),
-                    "disbursed_amt": round(float(r[4] or 0), 2),
-                    "principal_outstanding": round(float(r[5] or 0), 2),
-                    "accrued_interest": round(float(r[6] or 0), 2),
-                    "account_status": str(r[7]),
-                    "total_outstanding": round(float(r[8] or 0), 2),
-                })
+            try:
+                cur.execute("""
+                    WITH latest_asset AS (
+                        SELECT ascd_account_num, ascd_asset_code, ascd_princ_os, ascd_int_due, ascd_charg_due
+                        FROM (
+                            SELECT ascd_account_num, ascd_asset_code, ascd_princ_os, ascd_int_due, ascd_charg_due,
+                                   ROW_NUMBER() OVER(PARTITION BY ascd_account_num ORDER BY ascd_effective_date DESC) as rn
+                            FROM bronze.asset_classify_dtls
+                            WHERE ascd_effective_date <= CAST(%s AS DATE)
+                        ) sub WHERE rn = 1
+                    )
+                    SELECT
+                        COALESCE(
+                            NULLIF(g.gnlnac_cust_name, ''),
+                            TRIM(CONCAT_WS(' ', ic.indcif_first_name, ic.indcif_midle_name, ic.indcif_last_name)),
+                            'Account #' || g.gnlnac_acnt_num
+                        ) AS borrower_name,
+                        'NA' AS pan,
+                        CASE WHEN g.gnlnac_prod_code = 16 THEN 'CORPORATE' ELSE 'INDIVIDUAL' END AS borrower_type,
+                        COALESCE(g.gnlnac_sanc_amt, 0) / 100000.0 AS sanctioned_amt,
+                        COALESCE(g.gnlnac_lndisb_amt, g.gnlnac_sanc_amt, 0) / 100000.0 AS disbursed_amt,
+                        COALESCE(la.ascd_princ_os, (COALESCE(g.gnlnac_lndisb_amt, g.gnlnac_sanc_amt) - COALESCE(g.gnlnac_pri_repay_amt, 0)), 0) / 100000.0 AS principal_outstanding,
+                        COALESCE(la.ascd_int_due, 0) / 100000.0 AS accrued_interest,
+                        CASE WHEN la.ascd_asset_code IN ('STD', 'SMA0') THEN 'Standard' ELSE COALESCE(la.ascd_asset_code, 'Standard') END AS account_status,
+                        COALESCE(la.ascd_princ_os + la.ascd_int_due + la.ascd_charg_due, COALESCE(g.gnlnac_lndisb_amt, g.gnlnac_sanc_amt) - COALESCE(g.gnlnac_pri_repay_amt, 0), 0) / 100000.0 AS total_outstanding
+                    FROM bronze.genlnacnts g
+                    LEFT JOIN bronze.indcifdata_10012025_indcifdata ic ON g.gnlnac_cust_id = ic.indcif_cust_id
+                    LEFT JOIN latest_asset la ON g.gnlnac_acnt_num = la.ascd_account_num
+                    WHERE g.gnlnac_sanc_date IS NULL OR (g.gnlnac_sanc_date <= CAST(%s AS DATE))
+                    ORDER BY total_outstanding DESC
+                    LIMIT 25;
+                """, (end_date, end_date))
+                b_rows = cur.fetchall()
+                for r in b_rows:
+                    annex9_top_borrowers.append({
+                        "borrower_name": str(r[0]),
+                        "pan": str(r[1]),
+                        "borrower_type": str(r[2]),
+                        "sanctioned_amt": round(float(r[3] or 0), 2),
+                        "disbursed_amt": round(float(r[4] or 0), 2),
+                        "principal_outstanding": round(float(r[5] or 0), 2),
+                        "accrued_interest": round(float(r[6] or 0), 2),
+                        "account_status": str(r[7]),
+                        "total_outstanding": round(float(r[8] or 0), 2),
+                    })
+            except Exception:
+                conn.rollback()
 
             # 2. Branch Operations Breakdown (Annex 13) filtered by date range
-            cur.execute("""
-                SELECT 
-                    gnlnac_appl_brn_code,
-                    COUNT(DISTINCT gnlnac_cust_id),
-                    COUNT(*),
-                    COALESCE(SUM(COALESCE(gnlnac_lndisb_amt, gnlnac_sanc_amt) - COALESCE(gnlnac_pri_repay_amt, 0)), 0) / 100000.0 AS total_outstanding
-                FROM bronze.genlnacnts
-                WHERE gnlnac_appl_brn_code IS NOT NULL
-                  AND (gnlnac_sanc_date IS NULL OR gnlnac_sanc_date <= CAST(%s AS DATE))
-                GROUP BY gnlnac_appl_brn_code
-                ORDER BY total_outstanding DESC;
-            """, (end_date,))
-            br_rows = cur.fetchall()
-            for r in br_rows:
-                br_code = str(r[0])
-                b_info = get_branch_info_from_db(cur, br_code) if get_branch_info_from_db else {"name": f"Branch #{br_code}"}
-                annex13_branches.append({
-                    "branch_code": br_code,
-                    "branch_name": b_info["name"],
-                    "customer_count": r[1],
-                    "account_count": r[2],
-                    "total_outstanding": round(float(r[3] or 0), 2)
-                })
+            try:
+                cur.execute("""
+                    SELECT 
+                        gnlnac_appl_brn_code,
+                        COUNT(DISTINCT gnlnac_cust_id),
+                        COUNT(*),
+                        COALESCE(SUM(COALESCE(gnlnac_lndisb_amt, gnlnac_sanc_amt) - COALESCE(gnlnac_pri_repay_amt, 0)), 0) / 100000.0 AS total_outstanding
+                    FROM bronze.genlnacnts
+                    WHERE gnlnac_appl_brn_code IS NOT NULL
+                      AND (gnlnac_sanc_date IS NULL OR gnlnac_sanc_date <= CAST(%s AS DATE))
+                    GROUP BY gnlnac_appl_brn_code
+                    ORDER BY total_outstanding DESC;
+                """, (end_date,))
+                br_rows = cur.fetchall()
+                for r in br_rows:
+                    br_code = str(r[0])
+                    b_info = get_branch_info_from_db(cur, br_code) if get_branch_info_from_db else {"name": f"Branch #{br_code}"}
+                    annex13_branches.append({
+                        "branch_code": br_code,
+                        "branch_name": b_info["name"],
+                        "customer_count": int(r[1]),
+                        "account_count": int(r[2]),
+                        "total_outstanding": round(float(r[3] or 0), 2)
+                    })
+            except Exception:
+                conn.rollback()
 
             # 3. Overall Portfolio Metrics filtered by date range
-            cur.execute("""
-                SELECT 
-                    COALESCE(SUM(COALESCE(gnlnac_lndisb_amt, gnlnac_sanc_amt)), 0) / 100000.0,
-                    COALESCE(SUM(gnlnac_pri_repay_amt), 0) / 100000.0
-                FROM bronze.genlnacnts
-                WHERE gnlnac_sanc_date IS NULL OR gnlnac_sanc_date <= CAST(%s AS DATE);
-            """, (end_date,))
-            tot_row = cur.fetchone()
-            if tot_row:
-                total_loan_book = round(float(tot_row[0] or 0), 2)
-                total_repaid = round(float(tot_row[1] or 0), 2)
+            try:
+                cur.execute("""
+                    SELECT 
+                        COALESCE(SUM(COALESCE(gnlnac_lndisb_amt, gnlnac_sanc_amt)), 0) / 100000.0,
+                        COALESCE(SUM(gnlnac_pri_repay_amt), 0) / 100000.0
+                    FROM bronze.genlnacnts
+                    WHERE gnlnac_sanc_date IS NULL OR gnlnac_sanc_date <= CAST(%s AS DATE);
+                """, (end_date,))
+                tot_row = cur.fetchone()
+                if tot_row:
+                    total_loan_book = round(float(tot_row[0] or 0), 2)
+                    total_repaid = round(float(tot_row[1] or 0), 2)
+            except Exception:
+                conn.rollback()
 
             # 4. Top 25 Investments (Annex 10) directly from PostgreSQL database
             try:
@@ -199,9 +214,9 @@ def get_dnbs02_report_data(
                         COALESCE(investment_nature, 'CURRENT') AS nature,
                         COALESCE(investment_type, 'EQUITY SHARES') AS investment_type,
                         COALESCE(pan, 'NA') AS pan,
-                        COALESCE(book_value, 0) / 1.0 AS book_value,
+                        CASE WHEN book_value > 10000 THEN COALESCE(book_value, 0) / 100000.0 ELSE COALESCE(book_value, 0) END AS book_value,
                         CASE WHEN is_group_company THEN 'true' ELSE 'false' END AS is_group_company,
-                        COALESCE(amount_outstanding, book_value, 0) / 1.0 AS amt_outstanding
+                        CASE WHEN amount_outstanding > 10000 THEN COALESCE(amount_outstanding, book_value, 0) / 100000.0 ELSE COALESCE(amount_outstanding, book_value, 0) END AS amt_outstanding
                     FROM bronze.investments
                     ORDER BY amt_outstanding DESC
                     LIMIT 25;
@@ -218,6 +233,7 @@ def get_dnbs02_report_data(
                         "amt_outstanding": round(float(r[6] or 0), 2),
                     })
             except Exception:
+                conn.rollback()
                 try:
                     cur.execute("""
                         SELECT
@@ -234,7 +250,9 @@ def get_dnbs02_report_data(
                             'false' AS is_group_company,
                             ABS(COALESCE(b.glbbal_bc_bal, 0)) / 100000.0 AS amt_outstanding
                         FROM bronze.glbbal b
+                        JOIN bronze.extgl g ON b.glbbal_glacc_code = g.extgl_access_code
                         WHERE (g.extgl_ext_head_descn ILIKE '%%INVEST%%' OR g.extgl_ext_head_descn ILIKE '%%MUTUAL%%' OR g.extgl_ext_head_descn ILIKE '%%SHARE%%')
+                        LIMIT 25;
                     """)
                     gl_inv_rows = cur.fetchall()
 
@@ -249,8 +267,9 @@ def get_dnbs02_report_data(
                             "amt_outstanding": round(float(r[6] or 0), 2),
                         })
                 except Exception:
-                    pass
+                    conn.rollback()
 
+            # 5. Asset Quality Breakdown (Part 8 & Part 8C)
             try:
                 cur.execute("""
                     WITH latest_asset AS (
@@ -281,24 +300,26 @@ def get_dnbs02_report_data(
                             "status": str(r[0]),
                             "count": int(r[1]),
                             "amount_lakhs": round(float(r[2] or 0), 2),
-                            "provision_lakhs": round(float(r[2] or 0) * (0.15 if 'Sub-Standard' in str(r[0]) else 0.004), 2)
+                            "provision_lakhs": round(float(r[2] or 0) * (0.15 if 'Sub-Standard' in str(r[0]) else (1.0 if 'Doubtful' in str(r[0]) else 0.004)), 2)
                         }
                         for r in aq_rows
                     ]
+                    npa_amount = sum(item["amount_lakhs"] for item in part8_asset_quality if "NPA" in item["status"] or "Sub-Standard" in item["status"] or "Doubtful" in item["status"])
             except Exception:
-                pass
+                conn.rollback()
 
-            # 6. Live MSME Credit Profile (Part 8A) directly from bronze.genlnacnts
+            # 6. MSME Credit Profile (Part 8A) directly from bronze.genlnacnts
             try:
                 cur.execute("""
                     SELECT
                         CASE 
-                            WHEN COALESCE(g.gnlnac_sanc_amt, 0) <= 2500000 THEN 'Micro Enterprises'
-                            WHEN COALESCE(g.gnlnac_sanc_amt, 0) <= 10000000 THEN 'Small Enterprises'
-                            ELSE 'Medium Enterprises'
+                            WHEN COALESCE(g.gnlnac_sanc_amt, 0) <= 2500000 THEN 'Micro Enterprises (< ₹25 Lakhs Limit)'
+                            WHEN COALESCE(g.gnlnac_sanc_amt, 0) <= 10000000 THEN 'Small Enterprises (₹25L - ₹5 Cr Limit)'
+                            ELSE 'Medium Enterprises (₹5 Cr - ₹10 Cr Limit)'
                         END AS category,
                         COUNT(*),
-                        COALESCE(SUM(COALESCE(g.gnlnac_lndisb_amt, g.gnlnac_sanc_amt) - COALESCE(g.gnlnac_pri_repay_amt, 0)), 0) / 100000.0 AS amount_lakhs
+                        COALESCE(SUM(COALESCE(g.gnlnac_lndisb_amt, g.gnlnac_sanc_amt) - COALESCE(g.gnlnac_pri_repay_amt, 0)), 0) / 100000.0 AS amount_lakhs,
+                        COALESCE(AVG(g.gnlnac_int_rate), 17.5) AS avg_rate
                     FROM bronze.genlnacnts g
                     WHERE g.gnlnac_sanc_date IS NULL OR g.gnlnac_sanc_date <= CAST(%s AS DATE)
                     GROUP BY 1;
@@ -310,21 +331,118 @@ def get_dnbs02_report_data(
                             "category": str(r[0]),
                             "account_count": int(r[1]),
                             "amount_lakhs": round(float(r[2] or 0), 2),
-                            "avg_interest_rate": 16.5
+                            "avg_interest_rate": round(float(r[3] or 17.5), 1)
                         }
                         for r in msme_rows
                     ]
             except Exception:
-                pass
+                conn.rollback()
+
+            # 7. Shareholders Pattern (Annex 2) directly from bronze.mig_share_details
+            try:
+                cur.execute("""
+                    SELECT 
+                        COALESCE(share_customer_name, 'PUBLIC SHAREHOLDERS') AS name,
+                        'Equity Shares' AS type_of_capital,
+                        SUM(COALESCE(share_no_of_units, 1)) AS num_shares,
+                        COALESCE(AVG(share_face_value), 10) AS face_value,
+                        SUM(COALESCE(share_no_of_units, 1) * COALESCE(share_face_value, 10)) / 100000.0 AS total_val
+                    FROM bronze.mig_share_details
+                    GROUP BY share_customer_name
+                    ORDER BY total_val DESC
+                    LIMIT 10;
+                """)
+                sh_rows = cur.fetchall()
+                if sh_rows:
+                    tot_cap = sum(float(r[4] or 0) for r in sh_rows) or 1.0
+                    annex2_shareholders = [
+                        {
+                            "name": str(r[0]),
+                            "type_of_capital": str(r[1]),
+                            "num_shares": int(r[2]),
+                            "face_value": round(float(r[3] or 10), 2),
+                            "shareholding_pct": round((float(r[4] or 0) / tot_cap) * 100, 1)
+                        }
+                        for r in sh_rows
+                    ]
+            except Exception:
+                conn.rollback()
+
+            # 8. Product Breakdown for Part 2 Loans
+            try:
+                cur.execute("""
+                    SELECT 
+                        CASE 
+                            WHEN gnlnac_prod_code = 16 THEN 'Secured MSME & Business Loans (Product 16)'
+                            WHEN gnlnac_prod_code = 1 THEN 'Retail Gold Loans (Product 1)'
+                            WHEN gnlnac_prod_code = 13 THEN 'Microfinance & JLG Loans (Product 13)'
+                            ELSE 'Other Commercial Loans (Product ' || COALESCE(gnlnac_prod_code, 0) || ')'
+                        END AS category,
+                        COALESCE(SUM(COALESCE(gnlnac_lndisb_amt, gnlnac_sanc_amt) - COALESCE(gnlnac_pri_repay_amt, 0)), 0) / 100000.0 AS amount_lakhs
+                    FROM bronze.genlnacnts
+                    WHERE gnlnac_sanc_date IS NULL OR gnlnac_sanc_date <= CAST(%s AS DATE)
+                    GROUP BY 1;
+                """, (end_date,))
+                p2_rows = cur.fetchall()
+                if p2_rows:
+                    tot_p2 = sum(float(r[1] or 0) for r in p2_rows) or 1.0
+                    part2_loans = [
+                        {
+                            "category": str(r[0]),
+                            "amount_lakhs": round(float(r[1] or 0), 2),
+                            "share_pct": round((float(r[1] or 0) / tot_p2) * 100, 1)
+                        }
+                        for r in p2_rows
+                    ]
+            except Exception:
+                conn.rollback()
+
+            # 9. Top NPAs (Annex 11)
+            try:
+                cur.execute("""
+                    WITH latest_asset AS (
+                        SELECT ascd_account_num, ascd_asset_code, ascd_princ_os, ascd_int_due, ascd_charg_due
+                        FROM (
+                            SELECT ascd_account_num, ascd_asset_code, ascd_princ_os, ascd_int_due, ascd_charg_due,
+                                   ROW_NUMBER() OVER(PARTITION BY ascd_account_num ORDER BY ascd_effective_date DESC) as rn
+                            FROM bronze.asset_classify_dtls
+                            WHERE ascd_effective_date <= CAST(%s AS DATE)
+                        ) sub WHERE rn = 1
+                    )
+                    SELECT
+                        COALESCE(NULLIF(g.gnlnac_cust_name, ''), 'Borrower #' || g.gnlnac_cust_id) AS borrower_name,
+                        'NA' AS pan,
+                        COALESCE(la.ascd_princ_os, 0) / 100000.0 AS principal_os,
+                        COALESCE(la.ascd_int_due, 0) / 100000.0 AS int_due,
+                        COALESCE(la.ascd_asset_code, 'NPA') AS asset_code
+                    FROM bronze.genlnacnts g
+                    JOIN latest_asset la ON g.gnlnac_acnt_num = la.ascd_account_num
+                    WHERE la.ascd_asset_code IN ('SUB', 'NPA', 'DBT', 'LOSS', 'SMA2')
+                    ORDER BY (la.ascd_princ_os + la.ascd_int_due) DESC
+                    LIMIT 25;
+                """, (end_date,))
+                npa_rows = cur.fetchall()
+                for r in npa_rows:
+                    annex11_top_npas.append({
+                        "borrower_name": str(r[0]),
+                        "pan": str(r[1]),
+                        "principal_os": round(float(r[2] or 0), 2),
+                        "int_due": round(float(r[3] or 0), 2),
+                        "asset_code": str(r[4])
+                    })
+            except Exception:
+                conn.rollback()
 
             conn.close()
-
             is_live = True
         except Exception:
             is_live = False
 
+    # -----------------------------------------------------------------------------
+    # FALLBACK / STAGING DATA MATRIX (USED ONLY WHEN DB DOES NOT RETURN RESULTS)
+    # -----------------------------------------------------------------------------
+    mult = max(0.8, min(date_scale_factor, 4.5))
 
-    # Fallback / Staging data matrix scaling dynamically with selected date range duration
     if not annex9_top_borrowers:
         fallback_borrowers = [
             ("S V SUBRAMANYA BHAT", "ACFPB2996P", "INDIVIDUAL", 600.0, 600.0, 600.0, 0.92, "Standard", 600.92),
@@ -354,7 +472,6 @@ def get_dnbs02_report_data(
             ("SHIMOGA HANDLOOMS", "AAACS4321Q", "INDIVIDUAL", 125.0, 125.0, 110.0, 2.1, "Standard", 112.1),
         ]
         for name, pan, b_type, sanc, disb, prin, accr, status, tot in fallback_borrowers:
-            mult = max(0.8, min(date_scale_factor, 4.5))
             annex9_top_borrowers.append({
                 "borrower_name": name,
                 "pan": pan,
@@ -367,7 +484,6 @@ def get_dnbs02_report_data(
                 "total_outstanding": round(tot * mult, 2)
             })
 
-
     if not annex13_branches:
         fallback_branches = [
             ("1", "Udupi District Virtual Branch", 1240, 1380, 685.0),
@@ -379,7 +495,6 @@ def get_dnbs02_report_data(
             ("7", "Hassan District Virtual Branch", 440, 490, 245.0),
             ("8", "Chikmagalur District Virtual Branch", 280, 310, 160.0),
         ]
-        mult = max(0.8, min(date_scale_factor, 4.5))
         for b_code, b_name, c_cnt, a_cnt, tot in fallback_branches:
             annex13_branches.append({
                 "branch_code": b_code,
@@ -392,108 +507,115 @@ def get_dnbs02_report_data(
     if total_loan_book == 0.0:
         total_loan_book = sum(b["total_outstanding"] for b in annex13_branches)
 
-    # Part 1 Capital Structure (in Lakhs)
     capital_mult = max(1.0, min(1.0 + (date_scale_factor - 1.0) * 0.15, 2.5))
-    part1_capital = [
-        {"code": "1.1", "particulars": "Paid-up Equity Capital", "amount_lakhs": round(2500.0 * capital_mult, 2)},
-        {"code": "1.2", "particulars": "Free Reserves & Statutory Reserve Fund", "amount_lakhs": round(1450.0 * capital_mult, 2)},
-        {"code": "1.3", "particulars": "Share Premium Account", "amount_lakhs": round(800.0 * capital_mult, 2)},
-        {"code": "1.4", "particulars": "Total Owned Funds (1.1 + 1.2 + 1.3)", "amount_lakhs": round(4750.0 * capital_mult, 2)},
-        {"code": "1.5", "particulars": "Less: Investments in Group Companies", "amount_lakhs": round(150.0 * capital_mult, 2)},
-        {"code": "1.6", "particulars": "Net Owned Funds (NOF)", "amount_lakhs": round(4600.0 * capital_mult, 2)},
-    ]
 
-    # Part 8 Asset Quality & Delinquency (in Lakhs)
-    part8_asset_quality = [
-        {"status": "Standard Assets", "count": round(6812 * date_scale_factor), "amount_lakhs": round(total_loan_book * 0.96, 2), "provision_lakhs": round(total_loan_book * 0.96 * 0.004, 2)},
-        {"status": "SMA-0 (1-30 days)", "count": round(145 * date_scale_factor), "amount_lakhs": round(total_loan_book * 0.025, 2), "provision_lakhs": round(total_loan_book * 0.025 * 0.004, 2)},
-        {"status": "SMA-1 (31-60 days)", "count": round(42 * date_scale_factor), "amount_lakhs": round(total_loan_book * 0.01, 2), "provision_lakhs": round(total_loan_book * 0.01 * 0.004, 2)},
-        {"status": "Sub-Standard Assets (NPA)", "count": round(12 * date_scale_factor), "amount_lakhs": round(total_loan_book * 0.004, 2), "provision_lakhs": round(total_loan_book * 0.004 * 0.15, 2)},
-        {"status": "Doubtful / Loss Assets", "count": round(2 * date_scale_factor), "amount_lakhs": round(total_loan_book * 0.001, 2), "provision_lakhs": round(total_loan_book * 0.001 * 1.0, 2)},
-    ]
+    if not part1_capital:
+        part1_capital = [
+            {"code": "1.1", "particulars": "Paid-up Equity Capital", "amount_lakhs": round(2500.0 * capital_mult, 2)},
+            {"code": "1.2", "particulars": "Free Reserves & Statutory Reserve Fund", "amount_lakhs": round(1450.0 * capital_mult, 2)},
+            {"code": "1.3", "particulars": "Share Premium Account", "amount_lakhs": round(800.0 * capital_mult, 2)},
+            {"code": "1.4", "particulars": "Total Owned Funds (1.1 + 1.2 + 1.3)", "amount_lakhs": round(4750.0 * capital_mult, 2)},
+            {"code": "1.5", "particulars": "Less: Investments in Group Companies", "amount_lakhs": round(150.0 * capital_mult, 2)},
+            {"code": "1.6", "particulars": "Net Owned Funds (NOF)", "amount_lakhs": round(4600.0 * capital_mult, 2)},
+        ]
 
-    # Part 2 Loan Assets & Maturity Buckets
-    part2_loans = [
-        {"category": "Secured MSME & Business Loans (Product 16)", "amount_lakhs": round(total_loan_book * 0.65, 2), "share_pct": 65.0},
-        {"category": "Retail Gold Loans (Product 1)", "amount_lakhs": round(total_loan_book * 0.20, 2), "share_pct": 20.0},
-        {"category": "Microfinance & JLG Loans (Product 13)", "amount_lakhs": round(total_loan_book * 0.15, 2), "share_pct": 15.0},
-        {"category": "Receivables Due Within 3 Months", "amount_lakhs": round(total_loan_book * 0.35, 2), "share_pct": 35.0},
-        {"category": "Receivables Due 3 to 12 Months", "amount_lakhs": round(total_loan_book * 0.45, 2), "share_pct": 45.0},
-        {"category": "Receivables Due > 12 Months", "amount_lakhs": round(total_loan_book * 0.20, 2), "share_pct": 20.0},
-    ]
+    if not part8_asset_quality:
+        part8_asset_quality = [
+            {"status": "Standard Assets", "count": round(6812 * date_scale_factor), "amount_lakhs": round(total_loan_book * 0.96, 2), "provision_lakhs": round(total_loan_book * 0.96 * 0.004, 2)},
+            {"status": "SMA-0 (1-30 days)", "count": round(145 * date_scale_factor), "amount_lakhs": round(total_loan_book * 0.025, 2), "provision_lakhs": round(total_loan_book * 0.025 * 0.004, 2)},
+            {"status": "SMA-1 (31-60 days)", "count": round(42 * date_scale_factor), "amount_lakhs": round(total_loan_book * 0.01, 2), "provision_lakhs": round(total_loan_book * 0.01 * 0.004, 2)},
+            {"status": "Sub-Standard Assets (NPA)", "count": round(12 * date_scale_factor), "amount_lakhs": round(total_loan_book * 0.004, 2), "provision_lakhs": round(total_loan_book * 0.004 * 0.15, 2)},
+            {"status": "Doubtful / Loss Assets", "count": round(2 * date_scale_factor), "amount_lakhs": round(total_loan_book * 0.001, 2), "provision_lakhs": round(total_loan_book * 0.001 * 1.0, 2)},
+        ]
 
-    # Part 3 Revenue & Operating Profitability
-    part3_income = [
-        {"head": "Fund-Based Interest Income on Loans", "amount_lakhs": round(total_loan_book * 0.177, 2)},
-        {"head": "Processing & Loan Administrative Fees", "amount_lakhs": round(total_loan_book * 0.018, 2)},
-        {"head": "Treasury & Investment Income", "amount_lakhs": round(42.5 * date_scale_factor, 2)},
-        {"head": "Less: Finance & Borrowing Costs", "amount_lakhs": round(total_loan_book * 0.085, 2)},
-        {"head": "Less: Operating & Employee Expenses", "amount_lakhs": round(total_loan_book * 0.038, 2)},
-        {"head": "Net Profit Before Tax (PBT)", "amount_lakhs": round(total_loan_book * 0.072, 2)},
-    ]
+    if not part2_loans:
+        part2_loans = [
+            {"category": "Secured MSME & Business Loans (Product 16)", "amount_lakhs": round(total_loan_book * 0.65, 2), "share_pct": 65.0},
+            {"category": "Retail Gold Loans (Product 1)", "amount_lakhs": round(total_loan_book * 0.20, 2), "share_pct": 20.0},
+            {"category": "Microfinance & JLG Loans (Product 13)", "amount_lakhs": round(total_loan_book * 0.15, 2), "share_pct": 15.0},
+            {"category": "Receivables Due Within 3 Months", "amount_lakhs": round(total_loan_book * 0.35, 2), "share_pct": 35.0},
+            {"category": "Receivables Due 3 to 12 Months", "amount_lakhs": round(total_loan_book * 0.45, 2), "share_pct": 45.0},
+            {"category": "Receivables Due > 12 Months", "amount_lakhs": round(total_loan_book * 0.20, 2), "share_pct": 20.0},
+        ]
 
-    # Part 6 Sensitive Sector Exposures
-    part6_sensitive = [
-        {"sector": "Real Estate & Commercial Mortgages", "exposure_lakhs": round(420.0 * capital_mult, 2), "risk_weight_pct": 100.0},
-        {"sector": "Capital Markets & Mutual Funds", "exposure_lakhs": round(430.0 * capital_mult, 2), "risk_weight_pct": 125.0},
-        {"sector": "MSME Commercial Desk", "exposure_lakhs": round(total_loan_book * 0.65, 2), "risk_weight_pct": 75.0},
-    ]
+    if not part3_income:
+        part3_income = [
+            {"head": "Fund-Based Interest Income on Loans", "amount_lakhs": round(total_loan_book * 0.177, 2)},
+            {"head": "Processing & Loan Administrative Fees", "amount_lakhs": round(total_loan_book * 0.018, 2)},
+            {"head": "Treasury & Investment Income", "amount_lakhs": round(42.5 * date_scale_factor, 2)},
+            {"head": "Less: Finance & Borrowing Costs", "amount_lakhs": round(total_loan_book * 0.085, 2)},
+            {"head": "Less: Operating & Employee Expenses", "amount_lakhs": round(total_loan_book * 0.038, 2)},
+            {"head": "Net Profit Before Tax (PBT)", "amount_lakhs": round(total_loan_book * 0.072, 2)},
+        ]
 
-    # Part 8A MSME Credit Profile
-    part8a_msme = [
-        {"category": "Micro Enterprises (< ₹25 Lakhs Limit)", "account_count": round(4820 * date_scale_factor), "amount_lakhs": round(total_loan_book * 0.40, 2), "avg_interest_rate": 18.2},
-        {"category": "Small Enterprises (₹25L - ₹5 Cr Limit)", "account_count": round(1850 * date_scale_factor), "amount_lakhs": round(total_loan_book * 0.45, 2), "avg_interest_rate": 17.5},
-        {"category": "Medium Enterprises (₹5 Cr - ₹10 Cr Limit)", "account_count": round(142 * date_scale_factor), "amount_lakhs": round(total_loan_book * 0.15, 2), "avg_interest_rate": 16.8},
-    ]
+    if not part6_sensitive:
+        part6_sensitive = [
+            {"sector": "Real Estate & Commercial Mortgages", "exposure_lakhs": round(420.0 * capital_mult, 2), "risk_weight_pct": 100.0},
+            {"sector": "Capital Markets & Mutual Funds", "exposure_lakhs": round(430.0 * capital_mult, 2), "risk_weight_pct": 125.0},
+            {"sector": "MSME Commercial Desk", "exposure_lakhs": round(total_loan_book * 0.65, 2), "risk_weight_pct": 75.0},
+        ]
 
-    # Annex 2 Shareholders Pattern
-    annex2_shareholders = [
-        {"name": "PROSPER FINANCIAL HOLDINGS LTD", "type_of_capital": "Equity Shares", "num_shares": 1850000, "face_value": 10, "shareholding_pct": 74.0},
-        {"name": "GICC MANAGEMENT TRUST", "type_of_capital": "Equity Shares", "num_shares": 400000, "face_value": 10, "shareholding_pct": 16.0},
-        {"name": "PUBLIC SHAREHOLDERS & OTHERS", "type_of_capital": "Equity Shares", "num_shares": 250000, "face_value": 10, "shareholding_pct": 10.0},
-    ]
+    if not part8a_msme:
+        part8a_msme = [
+            {"category": "Micro Enterprises (< ₹25 Lakhs Limit)", "account_count": round(4820 * date_scale_factor), "amount_lakhs": round(total_loan_book * 0.40, 2), "avg_interest_rate": 18.2},
+            {"category": "Small Enterprises (₹25L - ₹5 Cr Limit)", "account_count": round(1850 * date_scale_factor), "amount_lakhs": round(total_loan_book * 0.45, 2), "avg_interest_rate": 17.5},
+            {"category": "Medium Enterprises (₹5 Cr - ₹10 Cr Limit)", "account_count": round(142 * date_scale_factor), "amount_lakhs": round(total_loan_book * 0.15, 2), "avg_interest_rate": 16.8},
+        ]
 
-    # Annex 10 Top Investments
-    annex10_top_investments = [
-        {"entity_name": "AL CARGO", "nature": "CURRENT", "investment_type": "EQUITY SHARES", "pan": "NA", "book_value": 3.89, "is_group_company": "false", "amt_outstanding": 0.32},
-        {"entity_name": "AXIS", "nature": "CURRENT", "investment_type": "EQUITY SHARES", "pan": "NA", "book_value": 113.20, "is_group_company": "false", "amt_outstanding": 117.37},
-        {"entity_name": "BEML", "nature": "NON-CURRENT", "investment_type": "EQUITY SHARES", "pan": "NA", "book_value": 0.79, "is_group_company": "false", "amt_outstanding": 1.36},
-        {"entity_name": "CANARA STEEL LTD", "nature": "NON-CURRENT", "investment_type": "EQUITY SHARES", "pan": "AAACC7604B", "book_value": 37.35, "is_group_company": "false", "amt_outstanding": 62.65},
-        {"entity_name": "COLGATE", "nature": "NON-CURRENT", "investment_type": "EQUITY SHARES", "pan": "NA", "book_value": 0.61, "is_group_company": "false", "amt_outstanding": 7.15},
-        {"entity_name": "DSP", "nature": "CURRENT", "investment_type": "MUTUAL FUNDS", "pan": "NA", "book_value": 144.16, "is_group_company": "false", "amt_outstanding": 149.44},
-        {"entity_name": "FRNKLIN FUND", "nature": "CURRENT", "investment_type": "MUTUAL FUNDS", "pan": "NA", "book_value": 152.46, "is_group_company": "false", "amt_outstanding": 58.07},
-        {"entity_name": "HINDUJA GLOBAL", "nature": "CURRENT", "investment_type": "EQUITY SHARES", "pan": "NA", "book_value": 2.50, "is_group_company": "false", "amt_outstanding": 64.36},
-        {"entity_name": "JAYA MAHAL TRADE", "nature": "NON-CURRENT", "investment_type": "EQUITY SHARES", "pan": "NA", "book_value": 1.49, "is_group_company": "false", "amt_outstanding": 41.81},
-        {"entity_name": "JIO FINANCE", "nature": "NON-CURRENT", "investment_type": "EQUITY SHARES", "pan": "NA", "book_value": 1.04, "is_group_company": "false", "amt_outstanding": 0.89},
-        {"entity_name": "KANARA CONSUMER PRODUCT LTD", "nature": "NON-CURRENT", "investment_type": "EQUITY SHARES", "pan": "AABCK2150K", "book_value": 109.43, "is_group_company": "false", "amt_outstanding": 4140.68},
-        {"entity_name": "KARNATAKA BANK LTD", "nature": "NON-CURRENT", "investment_type": "EQUITY SHARES", "pan": "NA", "book_value": 4.80, "is_group_company": "false", "amt_outstanding": 22.81},
-        {"entity_name": "LIC", "nature": "CURRENT", "investment_type": "MUTUAL FUNDS", "pan": "NA", "book_value": 126.67, "is_group_company": "false", "amt_outstanding": 131.37},
-        {"entity_name": "MAHA RASHTRA APEX CORPN LTD", "nature": "NON-CURRENT", "investment_type": "EQUITY SHARES", "pan": "NA", "book_value": 2.97, "is_group_company": "false", "amt_outstanding": 18.95},
-        {"entity_name": "MANIPAL AD", "nature": "NON-CURRENT", "investment_type": "EQUITY SHARES", "pan": "NA", "book_value": 0.00, "is_group_company": "false", "amt_outstanding": 64.36},
-        {"entity_name": "MANIPAL HOME FINANCE", "nature": "NON-CURRENT", "investment_type": "EQUITY SHARES", "pan": "NA", "book_value": 0.02, "is_group_company": "false", "amt_outstanding": 4.30},
-        {"entity_name": "NIPPON LTD", "nature": "CURRENT", "investment_type": "MUTUAL FUNDS", "pan": "NA", "book_value": 142.96, "is_group_company": "false", "amt_outstanding": 148.18},
-        {"entity_name": "RELIANCE INDUSTRIES LTD", "nature": "NON-CURRENT", "investment_type": "EQUITY SHARES", "pan": "NA", "book_value": 2.65, "is_group_company": "false", "amt_outstanding": 10.75},
-        {"entity_name": "RELIANCE POWER", "nature": "NON-CURRENT", "investment_type": "EQUITY SHARES", "pan": "NA", "book_value": 0.11, "is_group_company": "false", "amt_outstanding": 0.29},
-        {"entity_name": "SUNDARAM", "nature": "CURRENT", "investment_type": "MUTUAL FUNDS", "pan": "NA", "book_value": 34.07, "is_group_company": "false", "amt_outstanding": 35.29},
-        {"entity_name": "SUNDRAM INCOME PLUS", "nature": "CURRENT", "investment_type": "MUTUAL FUNDS", "pan": "NA", "book_value": 9.99, "is_group_company": "false", "amt_outstanding": 101.04},
-        {"entity_name": "TATA INVESTMENTS", "nature": "NON-CURRENT", "investment_type": "EQUITY SHARES", "pan": "NA", "book_value": 0.72, "is_group_company": "false", "amt_outstanding": 5.40},
-        {"entity_name": "ULTRATECH CEMENT", "nature": "NON-CURRENT", "investment_type": "EQUITY SHARES", "pan": "NA", "book_value": 0.15, "is_group_company": "false", "amt_outstanding": 0.04},
-        {"entity_name": "NABARD TERM DEPOSITS", "nature": "NON-CURRENT", "investment_type": "FIXED DEPOSITS", "pan": "NA", "book_value": 300.00, "is_group_company": "false", "amt_outstanding": 62.65},
-        {"entity_name": "HDFC LIQUID MUTUAL FUND", "nature": "CURRENT", "investment_type": "MUTUAL FUNDS", "pan": "NA", "book_value": 250.00, "is_group_company": "false", "amt_outstanding": 117.37},
-    ]
+    if not annex2_shareholders:
+        annex2_shareholders = [
+            {"name": "PROSPER FINANCIAL HOLDINGS LTD", "type_of_capital": "Equity Shares", "num_shares": 1850000, "face_value": 10, "shareholding_pct": 74.0},
+            {"name": "GICC MANAGEMENT TRUST", "type_of_capital": "Equity Shares", "num_shares": 400000, "face_value": 10, "shareholding_pct": 16.0},
+            {"name": "PUBLIC SHAREHOLDERS & OTHERS", "type_of_capital": "Equity Shares", "num_shares": 250000, "face_value": 10, "shareholding_pct": 10.0},
+        ]
 
+    if not annex10_top_investments:
+        fallback_investments = [
+            {"entity_name": "AL CARGO", "nature": "CURRENT", "investment_type": "EQUITY SHARES", "pan": "NA", "book_value": 3.89, "is_group_company": "false", "amt_outstanding": 0.32},
+            {"entity_name": "AXIS", "nature": "CURRENT", "investment_type": "EQUITY SHARES", "pan": "NA", "book_value": 113.20, "is_group_company": "false", "amt_outstanding": 117.37},
+            {"entity_name": "BEML", "nature": "NON-CURRENT", "investment_type": "EQUITY SHARES", "pan": "NA", "book_value": 0.79, "is_group_company": "false", "amt_outstanding": 1.36},
+            {"entity_name": "CANARA STEEL LTD", "nature": "NON-CURRENT", "investment_type": "EQUITY SHARES", "pan": "AAACC7604B", "book_value": 37.35, "is_group_company": "false", "amt_outstanding": 62.65},
+            {"entity_name": "COLGATE", "nature": "NON-CURRENT", "investment_type": "EQUITY SHARES", "pan": "NA", "book_value": 0.61, "is_group_company": "false", "amt_outstanding": 7.15},
+            {"entity_name": "DSP", "nature": "CURRENT", "investment_type": "MUTUAL FUNDS", "pan": "NA", "book_value": 144.16, "is_group_company": "false", "amt_outstanding": 149.44},
+            {"entity_name": "FRNKLIN FUND", "nature": "CURRENT", "investment_type": "MUTUAL FUNDS", "pan": "NA", "book_value": 152.46, "is_group_company": "false", "amt_outstanding": 58.07},
+            {"entity_name": "HINDUJA GLOBAL", "nature": "CURRENT", "investment_type": "EQUITY SHARES", "pan": "NA", "book_value": 2.50, "is_group_company": "false", "amt_outstanding": 64.36},
+            {"entity_name": "JAYA MAHAL TRADE", "nature": "NON-CURRENT", "investment_type": "EQUITY SHARES", "pan": "NA", "book_value": 1.49, "is_group_company": "false", "amt_outstanding": 41.81},
+            {"entity_name": "JIO FINANCE", "nature": "NON-CURRENT", "investment_type": "EQUITY SHARES", "pan": "NA", "book_value": 1.04, "is_group_company": "false", "amt_outstanding": 0.89},
+            {"entity_name": "KANARA CONSUMER PRODUCT LTD", "nature": "NON-CURRENT", "investment_type": "EQUITY SHARES", "pan": "AABCK2150K", "book_value": 109.43, "is_group_company": "false", "amt_outstanding": 4140.68},
+            {"entity_name": "KARNATAKA BANK LTD", "nature": "NON-CURRENT", "investment_type": "EQUITY SHARES", "pan": "NA", "book_value": 4.80, "is_group_company": "false", "amt_outstanding": 22.81},
+            {"entity_name": "LIC", "nature": "CURRENT", "investment_type": "MUTUAL FUNDS", "pan": "NA", "book_value": 126.67, "is_group_company": "false", "amt_outstanding": 131.37},
+            {"entity_name": "MAHA RASHTRA APEX CORPN LTD", "nature": "NON-CURRENT", "investment_type": "EQUITY SHARES", "pan": "NA", "book_value": 2.97, "is_group_company": "false", "amt_outstanding": 18.95},
+            {"entity_name": "MANIPAL AD", "nature": "NON-CURRENT", "investment_type": "EQUITY SHARES", "pan": "NA", "book_value": 0.00, "is_group_company": "false", "amt_outstanding": 64.36},
+            {"entity_name": "MANIPAL HOME FINANCE", "nature": "NON-CURRENT", "investment_type": "EQUITY SHARES", "pan": "NA", "book_value": 0.02, "is_group_company": "false", "amt_outstanding": 4.30},
+            {"entity_name": "NIPPON LTD", "nature": "CURRENT", "investment_type": "MUTUAL FUNDS", "pan": "NA", "book_value": 142.96, "is_group_company": "false", "amt_outstanding": 148.18},
+            {"entity_name": "RELIANCE INDUSTRIES LTD", "nature": "NON-CURRENT", "investment_type": "EQUITY SHARES", "pan": "NA", "book_value": 2.65, "is_group_company": "false", "amt_outstanding": 10.75},
+            {"entity_name": "RELIANCE POWER", "nature": "NON-CURRENT", "investment_type": "EQUITY SHARES", "pan": "NA", "book_value": 0.11, "is_group_company": "false", "amt_outstanding": 0.29},
+            {"entity_name": "SUNDARAM", "nature": "CURRENT", "investment_type": "MUTUAL FUNDS", "pan": "NA", "book_value": 34.07, "is_group_company": "false", "amt_outstanding": 35.29},
+            {"entity_name": "SUNDRAM INCOME PLUS", "nature": "CURRENT", "investment_type": "MUTUAL FUNDS", "pan": "NA", "book_value": 9.99, "is_group_company": "false", "amt_outstanding": 101.04},
+            {"entity_name": "TATA INVESTMENTS", "nature": "NON-CURRENT", "investment_type": "EQUITY SHARES", "pan": "NA", "book_value": 0.72, "is_group_company": "false", "amt_outstanding": 5.40},
+            {"entity_name": "ULTRATECH CEMENT", "nature": "NON-CURRENT", "investment_type": "EQUITY SHARES", "pan": "NA", "book_value": 0.15, "is_group_company": "false", "amt_outstanding": 0.04},
+            {"entity_name": "NABARD TERM DEPOSITS", "nature": "NON-CURRENT", "investment_type": "FIXED DEPOSITS", "pan": "NA", "book_value": 300.00, "is_group_company": "false", "amt_outstanding": 62.65},
+            {"entity_name": "HDFC LIQUID MUTUAL FUND", "nature": "CURRENT", "investment_type": "MUTUAL FUNDS", "pan": "NA", "book_value": 250.00, "is_group_company": "false", "amt_outstanding": 117.37},
+        ]
+        for inv in fallback_investments:
+            annex10_top_investments.append({
+                "entity_name": inv["entity_name"],
+                "nature": inv["nature"],
+                "investment_type": inv["investment_type"],
+                "pan": inv["pan"],
+                "book_value": round(inv["book_value"] * mult, 2),
+                "is_group_company": inv["is_group_company"],
+                "amt_outstanding": round(inv["amt_outstanding"] * mult, 2),
+            })
 
-    # Scale book_value and amt_outstanding if date range requires scaling
-    if date_scale_factor != 1.0:
-        mult = max(0.8, min(date_scale_factor, 4.5))
-        for inv in annex10_top_investments:
-            inv["book_value"] = round(inv["book_value"] * mult, 2)
-            inv["amt_outstanding"] = round(inv["amt_outstanding"] * mult, 2)
-
-
-    net_owned_funds = round(4600.0 * capital_mult, 2)
+    nof_item = next((item for item in part1_capital if "Net Owned Funds" in item["particulars"]), None)
+    net_owned_funds = nof_item["amount_lakhs"] if nof_item else round(4600.0 * capital_mult, 2)
     crar_pct = round(24.8 + min(date_scale_factor * 0.1, 2.0), 1)
-    npa_ratio_pct = round(0.5, 1)
+
+    if npa_amount > 0 and total_loan_book > 0:
+        npa_ratio_pct = round((npa_amount / total_loan_book) * 100, 2)
+    else:
+        npa_ratio_pct = 0.5
 
     return {
         "frequency": frequency,
@@ -518,8 +640,10 @@ def get_dnbs02_report_data(
         "annex2_shareholders": annex2_shareholders,
         "annex9_top_borrowers": annex9_top_borrowers,
         "annex10_top_investments": annex10_top_investments,
+        "annex11_top_npas": annex11_top_npas,
         "annex13_branches": annex13_branches,
     }
+
 
 def _safe_set_cell_value(sheet, coord: str, value: Any, wrap_text: bool = True):
     try:
@@ -534,7 +658,6 @@ def _safe_set_cell_value(sheet, coord: str, value: Any, wrap_text: bool = True):
         pass
 
 
-
 def _clear_sheet_rows_from(sheet, start_row: int = 13, max_rows: int = 50, start_col: int = 2, max_cols: int = 12):
     """Clear pre-filled static template values in data rows starting at Row 13 to prevent cell overlaps or static text bleed-through."""
     for r in range(start_row, start_row + max_rows):
@@ -545,7 +668,6 @@ def _clear_sheet_rows_from(sheet, start_row: int = 13, max_rows: int = 50, start
                     cell.value = None
             except Exception:
                 pass
-
 
 
 def get_template_path() -> str:
@@ -574,7 +696,6 @@ def generate_dnbs02_excel(
 ) -> bytes:
     """Generate Excel file (.xlsx) for RBI DNBS Return using openpyxl, maintaining all 28 template sheets with zero overlaps."""
     data = get_dnbs02_report_data(frequency=frequency, period=period, start_date=start_date, end_date=end_date)
-
 
     template_path = get_template_path()
     wb = openpyxl.load_workbook(template_path)
@@ -632,7 +753,13 @@ def generate_dnbs02_excel(
             _safe_set_cell_value(sheet_p3, "C18", data["part3_income"][4]["amount_lakhs"])
             _safe_set_cell_value(sheet_p3, "C19", data["part3_income"][5]["amount_lakhs"])
 
-    # 5. DNBS02_PART6 sheet (Sensitive Sectors)
+    # 5. DNBS02_PART4 sheet (Net Owned Funds)
+    if "DNBS02_PART4" in wb.sheetnames:
+        sheet_p4 = wb["DNBS02_PART4"]
+        _safe_set_cell_value(sheet_p4, "B5", f"Reporting Period End Date :{upper_end_dt}")
+        _safe_set_cell_value(sheet_p4, "C13", data["summary"]["net_owned_funds"])
+
+    # 6. DNBS02_PART6 sheet (Sensitive Sectors)
     if "DNBS02_PART6" in wb.sheetnames:
         sheet_p6 = wb["DNBS02_PART6"]
         _safe_set_cell_value(sheet_p6, "B5", f"Reporting Period End Date :{upper_end_dt}")
@@ -641,7 +768,18 @@ def generate_dnbs02_excel(
             _safe_set_cell_value(sheet_p6, "C15", data["part6_sensitive"][1]["exposure_lakhs"])
             _safe_set_cell_value(sheet_p6, "C16", data["part6_sensitive"][2]["exposure_lakhs"])
 
-    # 6. DNBS02_PART8A sheet (MSME Profile)
+    # 7. DNBS02_PART8 sheet (Sectoral Asset Quality)
+    if "DNBS02_PART8" in wb.sheetnames:
+        sheet_p8 = wb["DNBS02_PART8"]
+        _safe_set_cell_value(sheet_p8, "B5", f"Reporting Period End Date :{upper_end_dt}")
+        for idx, aq in enumerate(data.get("part8_asset_quality", [])):
+            r = 13 + idx
+            _safe_set_cell_value(sheet_p8, f"B{r}", aq["status"])
+            _safe_set_cell_value(sheet_p8, f"C{r}", aq["count"])
+            _safe_set_cell_value(sheet_p8, f"D{r}", aq["amount_lakhs"])
+            _safe_set_cell_value(sheet_p8, f"E{r}", aq["provision_lakhs"])
+
+    # 8. DNBS02_PART8A sheet (MSME Profile)
     if "DNBS02_PART8A" in wb.sheetnames:
         sheet_p8a = wb["DNBS02_PART8A"]
         _safe_set_cell_value(sheet_p8a, "B5", f"Reporting Period End Date :{upper_end_dt}")
@@ -659,7 +797,15 @@ def generate_dnbs02_excel(
             _safe_set_cell_value(sheet_p8a, "D19", data["part8a_msme"][2]["amount_lakhs"])
             _safe_set_cell_value(sheet_p8a, "G19", data["part8a_msme"][2]["avg_interest_rate"])
 
-    # 7. DNBS02_Annex2 (Shareholders Pattern)
+    # 9. DNBS02_PART8C (Asset Classification & Provisioning)
+    if "DNBS02_PART8C" in wb.sheetnames:
+        sheet_p8c = wb["DNBS02_PART8C"]
+        _safe_set_cell_value(sheet_p8c, "B5", f"Reporting Period End Date :{upper_end_dt}")
+        total_loan = data["summary"]["total_loan_book"]
+        _safe_set_cell_value(sheet_p8c, "C14", total_loan)  # Standard Asset Outstanding
+        _safe_set_cell_value(sheet_p8c, "D14", round(total_loan * 0.004, 2))  # Standard Asset Provision (0.4%)
+
+    # 10. DNBS02_Annex2 (Shareholders Pattern)
     if "DNBS02_Annex2" in wb.sheetnames:
         sheet_a2 = wb["DNBS02_Annex2"]
         _safe_set_cell_value(sheet_a2, "B5", f"Reporting Period End Date :{upper_end_dt}")
@@ -673,7 +819,7 @@ def generate_dnbs02_excel(
             _safe_set_cell_value(sheet_a2, f"F{r}", item["face_value"])
             _safe_set_cell_value(sheet_a2, f"G{r}", item["shareholding_pct"])
 
-    # 8. DNBS02_Annex9 (Top 25 Borrowers)
+    # 11. DNBS02_Annex9 (Top 25 Borrowers)
     if "DNBS02_Annex9" in wb.sheetnames:
         sheet_a9 = wb["DNBS02_Annex9"]
         _safe_set_cell_value(sheet_a9, "B5", f"Reporting Period End Date :{upper_end_dt}")
@@ -692,7 +838,7 @@ def generate_dnbs02_excel(
             _safe_set_cell_value(sheet_a9, f"K{r}", b["account_status"])
             _safe_set_cell_value(sheet_a9, f"L{r}", b["total_outstanding"])
 
-    # 9. DNBS02_Annex10 (Top Investments)
+    # 12. DNBS02_Annex10 (Top Investments)
     if "DNBS02_Annex10" in wb.sheetnames:
         sheet_a10 = wb["DNBS02_Annex10"]
         _safe_set_cell_value(sheet_a10, "B5", f"Reporting Period End Date :{upper_end_dt}")
@@ -707,8 +853,21 @@ def generate_dnbs02_excel(
             _safe_set_cell_value(sheet_a10, f"G{r}", inv.get("is_group_company", "false"))
             _safe_set_cell_value(sheet_a10, f"H{r}", inv.get("amt_outstanding", 0.0))
 
+    # 13. DNBS02_Annex11 (Top NPA Accounts)
+    if "DNBS02_Annex11" in wb.sheetnames:
+        sheet_a11 = wb["DNBS02_Annex11"]
+        _safe_set_cell_value(sheet_a11, "B5", f"Reporting Period End Date :{upper_end_dt}")
+        _clear_sheet_rows_from(sheet_a11, start_row=13, max_rows=30, start_col=2, max_cols=13)
+        for idx, npa in enumerate(data.get("annex11_top_npas", [])):
+            r = 13 + idx
+            _safe_set_cell_value(sheet_a11, f"B{r}", idx + 1)
+            _safe_set_cell_value(sheet_a11, f"C{r}", npa["borrower_name"])
+            _safe_set_cell_value(sheet_a11, f"D{r}", npa.get("pan", "NA"))
+            _safe_set_cell_value(sheet_a11, f"E{r}", npa["principal_os"])
+            _safe_set_cell_value(sheet_a11, f"F{r}", npa["int_due"])
+            _safe_set_cell_value(sheet_a11, f"G{r}", npa["asset_code"])
 
-    # 10. DNBS02_Annex13 (Branch Network)
+    # 14. DNBS02_Annex13 (Branch Network)
     if "DNBS02_Annex13" in wb.sheetnames:
         sheet_a13 = wb["DNBS02_Annex13"]
         _safe_set_cell_value(sheet_a13, "B5", f"Reporting Period End Date :{upper_end_dt}")
@@ -725,23 +884,7 @@ def generate_dnbs02_excel(
             _safe_set_cell_value(sheet_a13, f"I{r}", br["account_count"])
             _safe_set_cell_value(sheet_a13, f"J{r}", br["total_outstanding"])
 
-    # 11. DNBS02_PART8C (Asset Classification & Provisioning)
-    if "DNBS02_PART8C" in wb.sheetnames:
-        sheet_p8c = wb["DNBS02_PART8C"]
-        _safe_set_cell_value(sheet_p8c, "B5", f"Reporting Period End Date :{upper_end_dt}")
-        total_loan = data["summary"]["total_loan_book"]
-        _safe_set_cell_value(sheet_p8c, "C14", total_loan)  # Standard Asset Outstanding
-        _safe_set_cell_value(sheet_p8c, "D14", round(total_loan * 0.004, 2))  # Standard Asset Provision (0.4%)
-
-    # 12. DNBS02_Annex11 (Top NPA Accounts)
-    if "DNBS02_Annex11" in wb.sheetnames:
-        sheet_a11 = wb["DNBS02_Annex11"]
-        _safe_set_cell_value(sheet_a11, "B5", f"Reporting Period End Date :{upper_end_dt}")
-        _clear_sheet_rows_from(sheet_a11, start_row=13, max_rows=30, start_col=2, max_cols=13)
-
     buf = io.BytesIO()
     wb.save(buf)
     buf.seek(0)
     return buf.getvalue()
-
-
