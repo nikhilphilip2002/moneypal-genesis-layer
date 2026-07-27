@@ -1,5 +1,5 @@
 import re
-from typing import Literal
+from typing import Literal, Optional
 
 from fastapi import APIRouter, HTTPException, Response
 from pydantic import BaseModel
@@ -55,30 +55,43 @@ def get_alerts():
     return regulatory.regulatory_alerts()
 
 
+@router.get("/dnbs02/periods")
+def list_dnbs02_periods():
+    """Reporting periods the warehouse can actually back with data."""
+    return dnbs02_service.get_reportable_periods()
+
+
 @router.get("/dnbs02")
 def get_dnbs02_report(
     frequency: str = "monthly",
-    period: str = "2026-05",
-    start_date: str = None,
-    end_date: str = None,
+    period: str = "",
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
 ):
     """Retrieve RBI DNBS-02 Return metrics for specified date frequency (monthly/quarterly/yearly) or custom date range."""
-    return dnbs02_service.get_dnbs02_report_data(
-        frequency=frequency, period=period, start_date=start_date, end_date=end_date
-    )
+    try:
+        return dnbs02_service.get_dnbs02_report_data(
+            frequency=frequency, period=period, start_date=start_date, end_date=end_date
+        )
+    except dnbs02_service.PeriodError as exc:
+        # A period we cannot back with data is a client error, not a reason to invent one.
+        raise HTTPException(400, str(exc)) from exc
 
 
 @router.get("/dnbs02/export")
 def export_dnbs02_excel(
     frequency: str = "monthly",
-    period: str = "2026-05",
-    start_date: str = None,
-    end_date: str = None,
+    period: str = "",
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
 ):
     """Export RBI DNBS-02 Return as an Excel workbook (.xlsx)."""
-    excel_bytes = dnbs02_service.generate_dnbs02_excel(
-        frequency=frequency, period=period, start_date=start_date, end_date=end_date
-    )
+    try:
+        excel_bytes = dnbs02_service.generate_dnbs02_excel(
+            frequency=frequency, period=period, start_date=start_date, end_date=end_date
+        )
+    except dnbs02_service.PeriodError as exc:
+        raise HTTPException(400, str(exc)) from exc
     fn_period = f"{start_date}_to_{end_date}" if (start_date and end_date) else period
     filename = f"RBI_DNBS02_Return_{fn_period}_{frequency}.xlsx"
     return Response(

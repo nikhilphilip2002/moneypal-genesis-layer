@@ -9,6 +9,8 @@ dependencies = [
     "genesis-core",
     "uvicorn[standard]>=0.49.0",
     "openpyxl>=3.1.0",
+    "psycopg2-binary>=2.9.9",
+    "pg8000>=1.31.2",
 ]
 
 

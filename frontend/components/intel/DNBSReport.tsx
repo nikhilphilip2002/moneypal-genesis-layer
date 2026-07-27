@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { regulatory, type DNBS02ReportData } from '@/lib/api';
+import { regulatory, type DNBS02ReportData, type DNBS02Periods } from '@/lib/api';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -24,15 +24,11 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
+// Monthly options are loaded from the API so the picker can only offer periods the
+// warehouse actually holds a snapshot for. Quarterly and yearly remain static because
+// they additionally depend on a period-end snapshot landing on the quarter/year end.
 const PERIOD_OPTIONS = {
-  monthly: [
-    { label: 'May 2026 (2026-05)', value: '2026-05' },
-    { label: 'April 2026 (2026-04)', value: '2026-04' },
-    { label: 'March 2026 (2026-03)', value: '2026-03' },
-    { label: 'February 2026 (2026-02)', value: '2026-02' },
-    { label: 'January 2026 (2026-01)', value: '2026-01' },
-    { label: 'December 2025 (2025-12)', value: '2025-12' },
-  ],
+  monthly: [] as { label: string; value: string }[],
   quarterly: [
     { label: 'Q1 FY26 (Apr - Jun 2026)', value: '2026-Q1' },
     { label: 'Q4 FY25 (Jan - Mar 2026)', value: '2025-Q4' },
@@ -61,15 +57,46 @@ const REPORT_SECTION_OPTIONS = [
 
 export default function DNBSReport() {
   const [frequency, setFrequency] = useState<'monthly' | 'quarterly' | 'yearly' | 'custom'>('monthly');
-  const [period, setPeriod] = useState<string>('2026-05');
-  const [startDate, setStartDate] = useState<string>('2026-05-01');
-  const [endDate, setEndDate] = useState<string>('2026-05-31');
+  const [period, setPeriod] = useState<string>('');
+  const [startDate, setStartDate] = useState<string>('');
+  const [endDate, setEndDate] = useState<string>('');
+  const [periods, setPeriods] = useState<DNBS02Periods | null>(null);
   const [report, setReport] = useState<DNBS02ReportData | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
   const [activeSubTab, setActiveSubTab] = useState<string>('part1');
 
+  // Discover reportable periods first, then default to the most recent one.
+  useEffect(() => {
+    let cancelled = false;
+    regulatory
+      .dnbsPeriods()
+      .then((p) => {
+        if (cancelled) return;
+        setPeriods(p);
+        const latest = p.monthly[0];
+        if (latest) {
+          setPeriod(latest.value);
+          setStartDate(`${latest.value}-01`);
+          setEndDate(latest.end_date);
+        } else {
+          setError('The warehouse holds no portfolio snapshots to report on.');
+          setLoading(false);
+        }
+      })
+      .catch((err: any) => {
+        if (!cancelled) {
+          setError(err?.message || 'Failed to load reportable periods');
+          setLoading(false);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const fetchReport = async () => {
+    if (!period && !(startDate && endDate)) return;
     setLoading(true);
     setError(null);
     try {
@@ -86,12 +113,22 @@ export default function DNBSReport() {
     fetchReport();
   }, [frequency, period, startDate, endDate]);
 
+  const periodOptions =
+    frequency === 'monthly'
+      ? (periods?.monthly ?? []).map((m) => ({ label: `${m.label} (${m.value})`, value: m.value }))
+      : frequency === 'custom'
+        ? []
+        : PERIOD_OPTIONS[frequency];
+
   const handleFrequencyChange = (newFreq: 'monthly' | 'quarterly' | 'yearly' | 'custom') => {
     setFrequency(newFreq);
     if (newFreq !== 'custom') {
-      const p = PERIOD_OPTIONS[newFreq][0].value;
-      setPeriod(p);
-      updateDatesForPeriod(newFreq, p);
+      const opts = newFreq === 'monthly' ? (periods?.monthly ?? []) : PERIOD_OPTIONS[newFreq];
+      const p = opts[0]?.value;
+      if (p) {
+        setPeriod(p);
+        updateDatesForPeriod(newFreq, p);
+      }
     }
   };
 
@@ -147,15 +184,17 @@ export default function DNBSReport() {
               <div className="flex items-center gap-2">
                 <FileSpreadsheet className="h-5 w-5 text-primary" />
                 <h2 className="text-lg font-semibold tracking-tight">RBI DNBS Report Generator</h2>
-                {report?.is_live_pg ? (
+                {/* Reflects per-section provenance, not merely whether a connection opened. */}
+                {report && (report.is_live_pg ? (
                   <Badge variant="outline" className="gap-1 bg-emerald-500/10 text-emerald-600 dark:bg-emerald-500/20 dark:text-emerald-400 border-none text-[11px]">
-                    <Database className="h-3 w-3" /> Live PG Database
+                    <Database className="h-3 w-3" /> All sections live
                   </Badge>
                 ) : (
-                  <Badge variant="outline" className="gap-1 bg-blue-500/10 text-blue-600 dark:bg-blue-500/20 dark:text-blue-400 border-none text-[11px]">
-                    <Database className="h-3 w-3" /> GICC Staged Ledger
+                  <Badge variant="outline" className="gap-1 bg-amber-500/10 text-amber-600 dark:bg-amber-500/20 dark:text-amber-400 border-none text-[11px]">
+                    <AlertCircle className="h-3 w-3" />
+                    {report.live_sections.length} live / {report.degraded_sections.length} unavailable
                   </Badge>
-                )}
+                ))}
                 {report && (
                   <Badge variant="outline" className="gap-1 text-[11px] bg-primary/10 text-primary border-none">
                     📅 {report.start_date} to {report.end_date} ({report.duration_days ?? 31} Days)
@@ -208,7 +247,7 @@ export default function DNBSReport() {
                 onChange={(e) => handlePeriodChange(e.target.value)}
                 className="h-9 rounded-xl border-0 bg-accent text-foreground px-3 text-xs font-medium focus:outline-none focus:ring-1 focus:ring-primary shadow-none"
               >
-                {PERIOD_OPTIONS[frequency as 'monthly' | 'quarterly' | 'yearly']?.map((opt) => (
+                {periodOptions.map((opt) => (
                   <option key={opt.value} value={opt.value}>
                     {opt.label}
                   </option>
@@ -244,6 +283,70 @@ export default function DNBSReport() {
         </div>
       </Card>
 
+      {/* Data-quality disclosure. A regulatory return must state what is behind each
+          figure and what has no source, rather than presenting gaps as numbers. */}
+      {report && (report.degraded_sections.length > 0 || report.coverage?.uncovered_accounts > 0) && (
+        <Card className="dashboard-surface rounded-[1.5rem] border-amber-500/40 p-4 md:p-5 shadow-none">
+          <div className="flex items-start gap-3">
+            <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400" />
+            <div className="space-y-3 text-xs">
+              <p className="font-semibold text-amber-700 dark:text-amber-400">
+                Data limitations for this period
+              </p>
+
+              {report.coverage?.uncovered_accounts > 0 && (
+                <p className="text-muted-foreground">
+                  Point-in-time figures cover{' '}
+                  <span className="font-semibold text-foreground">
+                    {report.coverage.covered_accounts.toLocaleString('en-IN')} accounts
+                    (₹{report.coverage.covered_lakhs.toLocaleString('en-IN')} Lakhs,{' '}
+                    {report.coverage.covered_pct}% of the open book)
+                  </span>
+                  . A further{' '}
+                  {report.coverage.uncovered_accounts.toLocaleString('en-IN')} open accounts
+                  (₹{report.coverage.uncovered_lakhs.toLocaleString('en-IN')} Lakhs) have no
+                  dated snapshot on {report.snapshot_date} and are excluded.
+                </p>
+              )}
+
+              {/* Sections that did resolve but come with a caveat. */}
+              {Object.entries(report.provenance).some(([, v]) => v.note) && (
+                <div className="space-y-1">
+                  <p className="text-muted-foreground">Sourcing caveats:</p>
+                  <ul className="space-y-1">
+                    {Object.entries(report.provenance)
+                      .filter(([, v]) => v.note)
+                      .map(([name, v]) => (
+                        <li key={name} className="flex flex-col gap-0.5 sm:flex-row sm:gap-2">
+                          <span className="font-mono font-medium shrink-0">{name}</span>
+                          <span className="text-muted-foreground">{v.note}</span>
+                        </li>
+                      ))}
+                  </ul>
+                </div>
+              )}
+
+              {report.degraded_sections.length > 0 && (
+                <div className="space-y-1">
+                  <p className="text-muted-foreground">
+                    These sections have no data behind them and are rendered blank:
+                  </p>
+                  <ul className="space-y-1">
+                    {report.degraded_sections.map((name) => (
+                      <li key={name} className="flex flex-col gap-0.5 sm:flex-row sm:gap-2">
+                        <span className="font-mono font-medium shrink-0">{name}</span>
+                        <span className="text-muted-foreground">
+                          {report.provenance[name]?.error || report.provenance[name]?.status}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </div>
+          </div>
+        </Card>
+      )}
 
       {/* Main Content States */}
       {loading && <LoadingCard lines={10} />}
@@ -269,9 +372,9 @@ export default function DNBSReport() {
             <Card className="dashboard-surface rounded-[1.25rem] border-border/70 p-4 shadow-none">
               <div className="flex items-start justify-between">
                 <div className="space-y-1">
-                  <p className="text-xs text-muted-foreground">Net Owned Funds (NOF)</p>
-                  <p className="text-xl font-bold tracking-tight">₹{report.summary.net_owned_funds.toLocaleString('en-IN')} Lakhs</p>
-                  <p className="text-[11px] text-emerald-600 dark:text-emerald-400 font-medium">Compliant with RBI Limit</p>
+                  <p className="text-xs text-muted-foreground">Owned Funds</p>
+                  <p className="text-xl font-bold tracking-tight">₹{report.summary.owned_funds.toLocaleString('en-IN')} Lakhs</p>
+                  <p className="text-[11px] text-muted-foreground">GL trial balance, FY {report.gl_year}</p>
                 </div>
                 <div className="rounded-xl bg-emerald-500/10 p-2 text-emerald-600 dark:text-emerald-400">
                   <ShieldCheck className="h-5 w-5" />
@@ -283,8 +386,14 @@ export default function DNBSReport() {
               <div className="flex items-start justify-between">
                 <div className="space-y-1">
                   <p className="text-xs text-muted-foreground">Capital Adequacy (CRAR)</p>
-                  <p className="text-xl font-bold tracking-tight">{report.summary.crar_pct}%</p>
-                  <p className="text-[11px] text-muted-foreground">Min RBI threshold: 15%</p>
+                  <p className="text-xl font-bold tracking-tight">
+                    {report.summary.crar_pct === null ? '—' : `${report.summary.crar_pct}%`}
+                  </p>
+                  <p className="text-[11px] text-muted-foreground">
+                    {report.summary.crar_pct === null
+                      ? 'Not derivable: no risk-weighted assets source'
+                      : 'Min RBI threshold: 15%'}
+                  </p>
                 </div>
                 <div className="rounded-xl bg-blue-500/10 p-2 text-blue-600 dark:text-blue-400">
                   <TrendingUp className="h-5 w-5" />
@@ -296,8 +405,10 @@ export default function DNBSReport() {
               <div className="flex items-start justify-between">
                 <div className="space-y-1">
                   <p className="text-xs text-muted-foreground">Gross NPA Ratio</p>
-                  <p className="text-xl font-bold tracking-tight text-emerald-600 dark:text-emerald-400">{report.summary.npa_ratio_pct}%</p>
-                  <p className="text-[11px] text-muted-foreground">Sub-standard & Doubtful</p>
+                  <p className="text-xl font-bold tracking-tight text-emerald-600 dark:text-emerald-400">{report.summary.gross_npa_pct}%</p>
+                  <p className="text-[11px] text-muted-foreground">
+                    ₹{report.summary.gross_npa_amount.toLocaleString('en-IN')} Lakhs sub-standard, doubtful &amp; loss
+                  </p>
                 </div>
                 <div className="rounded-xl bg-amber-500/10 p-2 text-amber-600 dark:text-amber-400">
                   <AlertCircle className="h-5 w-5" />
@@ -339,15 +450,15 @@ export default function DNBSReport() {
                   <table className="w-full text-left text-xs">
                     <thead className="bg-muted/50 text-muted-foreground uppercase font-semibold text-[10px]">
                       <tr>
-                        <th className="px-4 py-3">Code</th>
+                        <th className="px-4 py-3">GL Group</th>
                         <th className="px-4 py-3">Particulars</th>
                         <th className="px-4 py-3 text-right">Amount (₹ in Lakhs)</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-border/50">
                       {report.part1_capital.map((row, idx) => (
-                        <tr key={idx} className={cn('hover:bg-accent/40', row.code === '1.6' && 'bg-primary/5 font-semibold')}>
-                          <td className="px-4 py-3 font-mono">{row.code}</td>
+                        <tr key={idx} className={cn('hover:bg-accent/40', row.gl_group === 'TOTAL' && 'bg-primary/5 font-semibold')}>
+                          <td className="px-4 py-3 font-mono">{row.gl_group}</td>
                           <td className="px-4 py-3">{row.particulars}</td>
                           <td className="px-4 py-3 text-right font-mono font-medium">₹{row.amount_lakhs.toLocaleString('en-IN')}</td>
                         </tr>
@@ -424,17 +535,17 @@ export default function DNBSReport() {
                   <table className="w-full text-left text-xs">
                     <thead className="bg-muted/50 text-muted-foreground uppercase font-semibold text-[10px]">
                       <tr>
-                        <th className="px-4 py-3">Sensitive Sector Description</th>
+                        <th className="px-4 py-3">Sector</th>
+                        <th className="px-4 py-3">GL Head</th>
                         <th className="px-4 py-3 text-right">Total Exposure (₹ Lakhs)</th>
-                        <th className="px-4 py-3 text-right">RBI Risk Weight (%)</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-border/50">
                       {report.part6_sensitive.map((row, idx) => (
                         <tr key={idx} className="hover:bg-accent/40">
                           <td className="px-4 py-3 font-medium">{row.sector}</td>
+                          <td className="px-4 py-3 text-muted-foreground">{row.particulars}</td>
                           <td className="px-4 py-3 text-right font-mono">₹{row.exposure_lakhs.toLocaleString('en-IN')}</td>
-                          <td className="px-4 py-3 text-right font-mono font-semibold">{row.risk_weight_pct}%</td>
                         </tr>
                       ))}
                     </tbody>
@@ -487,7 +598,8 @@ export default function DNBSReport() {
                         <th className="px-4 py-3">MSME Enterprise Category</th>
                         <th className="px-4 py-3 text-right">Account Count</th>
                         <th className="px-4 py-3 text-right">Total Outstanding (₹ Lakhs)</th>
-                        <th className="px-4 py-3 text-right">Weighted Avg Interest Rate (%)</th>
+                        <th className="px-4 py-3 text-right">Min / Max Rate (%)</th>
+                        <th className="px-4 py-3 text-right">Weighted Avg Rate (%)</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-border/50">
@@ -496,7 +608,8 @@ export default function DNBSReport() {
                           <td className="px-4 py-3 font-medium">{row.category}</td>
                           <td className="px-4 py-3 text-right font-mono">{row.account_count.toLocaleString()}</td>
                           <td className="px-4 py-3 text-right font-mono">₹{row.amount_lakhs.toLocaleString('en-IN')}</td>
-                          <td className="px-4 py-3 text-right font-mono font-semibold">{row.avg_interest_rate}%</td>
+                          <td className="px-4 py-3 text-right font-mono">{row.min_interest_rate}% / {row.max_interest_rate}%</td>
+                          <td className="px-4 py-3 text-right font-mono font-semibold">{row.weighted_avg_interest_rate}%</td>
                         </tr>
                       ))}
                     </tbody>
@@ -630,7 +743,7 @@ export default function DNBSReport() {
                   <table className="w-full text-left text-xs">
                     <thead className="bg-muted/50 text-muted-foreground uppercase font-semibold text-[10px]">
                       <tr>
-                        <th className="px-4 py-3">Code</th>
+                        <th className="px-4 py-3">GL Group</th>
                         <th className="px-4 py-3">District Branch Name</th>
                         <th className="px-4 py-3 text-right">Borrowers</th>
                         <th className="px-4 py-3 text-right">Active Accounts</th>

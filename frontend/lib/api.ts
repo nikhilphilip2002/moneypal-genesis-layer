@@ -57,42 +57,131 @@ export type RegulatoryAlert = {
   ai_note: string;
 };
 
+export type SectionProvenance = {
+  status: 'ok' | 'empty' | 'error' | 'no_source';
+  row_count: number;
+  /** Why the section produced nothing. */
+  error?: string;
+  /** Caveat about data that did resolve, e.g. an undated source. */
+  note?: string;
+};
+
 export type DNBS02ReportData = {
   frequency: 'monthly' | 'quarterly' | 'yearly' | 'custom';
   period: string;
   start_date: string;
   end_date: string;
+  /** Date of the bronze.genln_rpt_day snapshot the point-in-time sections are measured on. */
+  snapshot_date: string;
+  /** Year of the bronze.glbbal trial balance backing Parts 1/3/4. */
+  gl_year: number;
   duration_days?: number;
-  is_live_pg: boolean;
   generated_at: string;
+
+  /** Per-section outcome. A section is only trustworthy when its status is 'ok'. */
+  provenance: Record<string, SectionProvenance>;
+  live_sections: string[];
+  degraded_sections: string[];
+  /** True only when every section resolved from the database. */
+  is_live_pg: boolean;
+
+  /** Portion of the open loan book that has a dated snapshot behind it. */
+  coverage: {
+    covered_accounts: number;
+    covered_lakhs: number;
+    uncovered_accounts: number;
+    uncovered_lakhs: number;
+    covered_pct: number;
+  };
 
   summary: {
     total_loan_book: number;
-    net_owned_funds: number;
-    crar_pct: number;
-    npa_ratio_pct: number;
+    accrued_interest: number;
+    account_count: number;
+    borrower_count: number;
+    owned_funds: number;
+    provision_held: number;
+    gross_npa_amount: number;
+    gross_npa_pct: number;
+    /** null when risk-weighted assets have no source. */
+    crar_pct: number | null;
   };
-  part1_capital: { code: string; particulars: string; amount_lakhs: number }[];
-  part2_loans: { category: string; amount_lakhs: number; share_pct: number }[];
+  part1_capital: { gl_group: string; particulars: string; amount_lakhs: number }[];
+  part2_loans: { category: string; account_count: number; amount_lakhs: number; share_pct: number }[];
+  part2_maturity: { bucket: string; account_count: number; amount_lakhs: number }[];
   part3_income: { head: string; amount_lakhs: number }[];
-  part6_sensitive: { sector: string; exposure_lakhs: number; risk_weight_pct: number }[];
-  part8_asset_quality: { status: string; count: number; amount_lakhs: number; provision_lakhs: number }[];
-  part8a_msme: { category: string; account_count: number; amount_lakhs: number; avg_interest_rate: number }[];
+  part4_nof: { particulars: string; amount_lakhs: number }[];
+  part6_sensitive: { sector: string; particulars: string; exposure_lakhs: number }[];
+  part8_asset_quality: {
+    asset_code: string;
+    status: string;
+    is_npa: boolean;
+    count: number;
+    amount_lakhs: number;
+    provision_lakhs: number;
+  }[];
+  part8a_msme: {
+    category: string;
+    account_count: number;
+    amount_lakhs: number;
+    min_interest_rate: number;
+    max_interest_rate: number;
+    weighted_avg_interest_rate: number;
+  }[];
   annex2_shareholders: { name: string; type_of_capital: string; num_shares: number; face_value: number; shareholding_pct: number }[];
   annex9_top_borrowers: {
+    cust_id: string;
     borrower_name: string;
     pan: string;
     borrower_type: string;
+    account_count: number;
     sanctioned_amt: number;
     disbursed_amt: number;
+    undisbursed_amt: number;
     principal_outstanding: number;
     accrued_interest: number;
     account_status: string;
     total_outstanding: number;
   }[];
-  annex10_top_investments: { entity_name: string; nature?: string; investment_type: string; pan?: string; book_value: number; is_group_company?: string; amt_outstanding: number }[];
+  annex10_top_investments: {
+    entity_name: string;
+    gl_head: string;
+    nature: string;
+    investment_type: string;
+    pan: string;
+    book_value: number;
+    is_group_company: string;
+    amt_outstanding: number;
+  }[];
+  annex11_top_npas: {
+    borrower_name: string;
+    pan: string;
+    borrower_type: string;
+    principal_os: number;
+    int_due: number;
+    asset_code: string;
+    npa_date: string;
+    last_payment_date: string;
+    sanctioned_amt: number;
+  }[];
+  annex13_branches: {
+    branch_code: string;
+    branch_name: string;
+    address: string;
+    city: string;
+    state: string;
+    district: string;
+    customer_count: number;
+    account_count: number;
+    total_outstanding: number;
+  }[];
+};
 
-  annex13_branches: { branch_code: string; branch_name: string; customer_count: number; account_count: number; total_outstanding: number }[];
+export type DNBS02Periods = {
+  monthly: { value: string; label: string; end_date: string }[];
+  snapshot_dates: string[];
+  gl_years: number[];
+  note: string;
 };
 
 
@@ -244,13 +333,14 @@ export const regulatory = {
   detail: (id: string, refresh?: boolean): Promise<IntelligenceResponse> =>
     apiRequest(`/regulatory/${encodeURIComponent(id)}${refresh ? '?refresh=1' : ''}`),
   alerts: (): Promise<RegulatoryAlert[]> => apiRequest('/regulatory/alerts'),
-  dnbsReport: (frequency: string = 'monthly', period: string = '2026-05', startDate?: string, endDate?: string): Promise<DNBS02ReportData> => {
+  dnbsPeriods: (): Promise<DNBS02Periods> => apiRequest('/regulatory/dnbs02/periods'),
+  dnbsReport: (frequency: string = 'monthly', period: string = '', startDate?: string, endDate?: string): Promise<DNBS02ReportData> => {
     let url = `/regulatory/dnbs02?frequency=${encodeURIComponent(frequency)}&period=${encodeURIComponent(period)}`;
     if (startDate) url += `&start_date=${encodeURIComponent(startDate)}`;
     if (endDate) url += `&end_date=${encodeURIComponent(endDate)}`;
     return apiRequest(url);
   },
-  getDnbsExcelUrl: (frequency: string = 'monthly', period: string = '2026-05', startDate?: string, endDate?: string): string => {
+  getDnbsExcelUrl: (frequency: string = 'monthly', period: string = '', startDate?: string, endDate?: string): string => {
     let url = `${API_URL}/regulatory/dnbs02/export?frequency=${encodeURIComponent(frequency)}&period=${encodeURIComponent(period)}`;
     if (startDate) url += `&start_date=${encodeURIComponent(startDate)}`;
     if (endDate) url += `&end_date=${encodeURIComponent(endDate)}`;

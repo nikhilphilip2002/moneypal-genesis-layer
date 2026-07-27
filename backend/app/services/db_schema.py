@@ -1,9 +1,22 @@
 import os
-try:
-    import psycopg2
-except ImportError:
-    psycopg2 = None
+import logging
 from typing import Dict, Any, List, Optional
+
+logger = logging.getLogger(__name__)
+
+# psycopg2 is the deployment driver (see backend/Dockerfile). pg8000 is a pure-Python
+# fallback for environments where psycopg2's compiled extension cannot load (e.g. NixOS,
+# where it fails on libz). Both expose the DB-API "format" paramstyle, so the %s
+# placeholders used throughout this package work unchanged on either.
+try:
+    import psycopg2 as _driver
+except ImportError:
+    try:
+        import pg8000.dbapi as _driver
+    except ImportError:
+        _driver = None
+
+psycopg2 = _driver
 
 NODE_TYPE_STYLES = {
     "executive": {"color": "#4c1d95", "label": "Portfolio Master (GICCPROD_NEW)", "size": 32},
@@ -17,8 +30,10 @@ NODE_TYPE_STYLES = {
 }
 
 def get_connection():
-    if psycopg2 is None:
-        raise RuntimeError("psycopg2 module not available")
+    if _driver is None:
+        raise RuntimeError(
+            "No PostgreSQL driver available. Install psycopg2-binary (preferred) or pg8000."
+        )
     host = os.environ.get("POSTGRES_HOST", "192.168.1.183")
 
     if host.startswith("http://"):
@@ -31,14 +46,16 @@ def get_connection():
     user = os.environ.get("POSTGRES_USER", "moneypal")
     password = os.environ.get("POSTGRES_PASSWORD", "moneypal123")
     
-    return psycopg2.connect(
-        host=host,
-        port=port,
-        dbname=dbname,
-        user=user,
-        password=password,
-        connect_timeout=3
-    )
+    kwargs: Dict[str, Any] = {
+        "host": host,
+        "port": port,
+        "database": dbname,
+        "user": user,
+        "password": password,
+    }
+    # The two drivers spell the connect timeout differently.
+    kwargs["connect_timeout" if _driver.__name__.startswith("psycopg2") else "timeout"] = 3
+    return _driver.connect(**kwargs)
 
 def get_branch_info_from_db(cur, raw_code: Any) -> Dict[str, str]:
     if raw_code is None:

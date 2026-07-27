@@ -1,100 +1,325 @@
 import os
 import io
 import calendar
+import contextlib
 import datetime
-from typing import Dict, Any, List, Tuple, Optional
+import logging
+from typing import Dict, Any, List, Tuple, Optional, Callable, Generator
 import openpyxl
 
+logger = logging.getLogger(__name__)
+
 try:
-    from app.services.db_schema import get_connection, get_branch_info_from_db
+    from app.services.db_schema import get_connection
 except ImportError:
     get_connection = None
-    get_branch_info_from_db = None
+
+
+@contextlib.contextmanager
+def _db_cursor() -> Generator[Tuple[Any, Any], None, None]:
+    """Yield (connection, cursor), guaranteeing the connection is closed even on error.
+
+    The previous implementation called conn.close() only on the happy path, leaking a
+    connection whenever any section query escaped its handler.
+    """
+    if get_connection is None:
+        raise RuntimeError("db_schema.get_connection is unavailable")
+    conn = get_connection()
+    try:
+        cur = conn.cursor()
+        try:
+            yield conn, cur
+        finally:
+            with contextlib.suppress(Exception):
+                cur.close()
+    finally:
+        with contextlib.suppress(Exception):
+            conn.close()
+
+
+class SectionResult:
+    """Outcome of one report section, so a failed query is never mistaken for empty data.
+
+    `status` is one of:
+      - "ok"          query ran and returned rows
+      - "empty"       query ran and legitimately returned nothing
+      - "error"       query failed; `error` carries the reason
+      - "no_source"   the warehouse has no feed for this section at all
+    """
+
+    __slots__ = ("name", "status", "rows", "error", "note")
+
+    def __init__(self, name: str, status: str, rows: int = 0, error: str = "", note: str = ""):
+        self.name = name
+        self.status = status
+        self.rows = rows
+        self.error = error
+        # A caveat about data that did resolve, e.g. an undated source. Distinct from
+        # `error`, which explains why a section produced nothing.
+        self.note = note
+
+    def as_dict(self) -> Dict[str, Any]:
+        d: Dict[str, Any] = {"status": self.status, "row_count": self.rows}
+        if self.error:
+            d["error"] = self.error
+        if self.note:
+            d["note"] = self.note
+        return d
+
+
+def _run_section(
+    provenance: Dict[str, Dict[str, Any]],
+    name: str,
+    fn: Callable[[], int],
+    conn: Any = None,
+    note: str = "",
+) -> None:
+    """Run one section loader, recording why it produced nothing rather than swallowing it.
+
+    Every section used to sit behind a bare `except Exception: conn.rollback()`, so a
+    failing query was indistinguishable from a genuine empty result and left no trace.
+    """
+    try:
+        count = fn()
+        provenance[name] = SectionResult(
+            name, "ok" if count else "empty", count, note=note if count else ""
+        ).as_dict()
+    except Exception as exc:  # noqa: BLE001 - one bad section must not kill the return
+        logger.exception("DNBS-02 section %r failed", name)
+        if conn is not None:
+            with contextlib.suppress(Exception):
+                conn.rollback()
+        provenance[name] = SectionResult(name, "error", 0, f"{type(exc).__name__}: {exc}").as_dict()
+
+
+class PeriodError(ValueError):
+    """The requested reporting period is malformed, or has no data behind it."""
 
 
 def parse_period_range(frequency: str, period: str) -> Tuple[str, str]:
-    """Parse frequency ('monthly', 'quarterly', 'yearly') and period code into (start_date, end_date) ISO strings."""
-    freq = (frequency or "monthly").lower().strip()
-    p_str = (period or "2026-05").strip()
+    """Parse a frequency and period code into (start_date, end_date) ISO strings.
+
+    Raises PeriodError on anything malformed. This used to swallow parse failures and
+    return hardcoded 2026 dates, so a typo in the period silently produced a May-2026
+    report labelled with whatever the caller had asked for.
+    """
+    freq = (frequency or "").lower().strip()
+    p_str = (period or "").strip()
+    if not p_str:
+        raise PeriodError("A reporting period is required.")
 
     if freq == "monthly":
-        # Format expected: YYYY-MM
+        # Expected: YYYY-MM
         try:
-            parts = p_str.split("-")
-            year = int(parts[0])
-            month = int(parts[1])
+            year_s, month_s = p_str.split("-")
+            year, month = int(year_s), int(month_s)
             last_day = calendar.monthrange(year, month)[1]
-            start_date = f"{year:04d}-{month:02d}-01"
-            end_date = f"{year:04d}-{month:02d}-{last_day:02d}"
-            return start_date, end_date
-        except Exception:
-            return "2026-05-01", "2026-05-31"
+        except Exception as exc:
+            raise PeriodError(
+                f"Monthly period must look like 'YYYY-MM' (got {period!r})."
+            ) from exc
+        return f"{year:04d}-{month:02d}-01", f"{year:04d}-{month:02d}-{last_day:02d}"
 
-    elif freq == "quarterly":
-        # Format expected: YYYY-Q1, YYYY-Q2, YYYY-Q3, YYYY-Q4 (or FY2025-Q4)
+    if freq == "quarterly":
+        # Expected: YYYY-Qn, where the year is the financial year start (Apr-Mar).
         try:
-            year_part = p_str.split("-")[0].replace("FY", "")
-            q_part = p_str.split("-")[1].upper()
-            year = int(year_part)
+            year_part, q_part = p_str.split("-")
+            year = int(year_part.replace("FY", ""))
+            q_part = q_part.upper()
+        except Exception as exc:
+            raise PeriodError(
+                f"Quarterly period must look like 'YYYY-Q1'..'YYYY-Q4' (got {period!r})."
+            ) from exc
+        fiscal_quarters = {
+            "Q1": (f"{year:04d}-04-01", f"{year:04d}-06-30"),
+            "Q2": (f"{year:04d}-07-01", f"{year:04d}-09-30"),
+            "Q3": (f"{year:04d}-10-01", f"{year:04d}-12-31"),
+            # Q4 of FY <year> runs Jan-Mar of the following calendar year.
+            "Q4": (f"{year + 1:04d}-01-01", f"{year + 1:04d}-03-31"),
+        }
+        if q_part not in fiscal_quarters:
+            raise PeriodError(
+                f"Unknown quarter {q_part!r}; expected Q1, Q2, Q3 or Q4."
+            )
+        return fiscal_quarters[q_part]
 
-            if q_part == "Q1":
-                return f"{year:04d}-04-01", f"{year:04d}-06-30"
-            elif q_part == "Q2":
-                return f"{year:04d}-07-01", f"{year:04d}-09-30"
-            elif q_part == "Q3":
-                return f"{year:04d}-10-01", f"{year:04d}-12-31"
-            elif q_part == "Q4":
-                # Q4 of FY Year runs Jan-Mar of Year+1
-                next_year = year + 1
-                return f"{next_year:04d}-01-01", f"{next_year:04d}-03-31"
-            else:
-                return f"{year:04d}-01-01", f"{year:04d}-03-31"
-        except Exception:
-            return "2026-01-01", "2026-03-31"
-
-    elif freq == "yearly":
-        # Format expected: YYYY-YYYY (e.g. 2025-2026) or YYYY
+    if freq == "yearly":
+        # Expected: YYYY-YYYY (financial year) or a single YYYY.
         try:
             if "-" in p_str:
-                parts = p_str.split("-")
-                start_year = int(parts[0].replace("FY", ""))
-                end_year = int(parts[1])
-                return f"{start_year:04d}-04-01", f"{end_year:04d}-03-31"
+                start_s, end_s = p_str.split("-")
+                start_year, end_year = int(start_s.replace("FY", "")), int(end_s)
+                if end_year != start_year + 1:
+                    raise PeriodError(
+                        f"Financial year {period!r} must span consecutive years "
+                        f"(e.g. '{start_year}-{start_year + 1}')."
+                    )
             else:
-                year = int(p_str.replace("FY", ""))
-                return f"{year:04d}-04-01", f"{year+1:04d}-03-31"
-        except Exception:
-            return "2025-04-01", "2026-03-31"
+                start_year = int(p_str.replace("FY", ""))
+                end_year = start_year + 1
+        except PeriodError:
+            raise
+        except Exception as exc:
+            raise PeriodError(
+                f"Yearly period must look like 'YYYY-YYYY' or 'YYYY' (got {period!r})."
+            ) from exc
+        return f"{start_year:04d}-04-01", f"{end_year:04d}-03-31"
 
-    return "2026-05-01", "2026-05-31"
+    raise PeriodError(
+        f"Unknown frequency {frequency!r}; expected 'monthly', 'quarterly' or 'yearly'."
+    )
+
+
+def get_available_snapshot_dates(cur: Any) -> List[str]:
+    """Month-end dates for which bronze.genln_rpt_day actually holds a portfolio snapshot."""
+    cur.execute(
+        "SELECT DISTINCT gnlnr_report_date FROM bronze.genln_rpt_day "
+        "WHERE gnlnr_report_date IS NOT NULL ORDER BY gnlnr_report_date"
+    )
+    return [r[0].isoformat() for r in cur.fetchall()]
+
+
+def get_available_gl_years(cur: Any) -> List[int]:
+    """Financial years for which bronze.glbbal holds a trial balance.
+
+    glbbal is keyed by year only, so Parts 1/3/4 cannot be produced at sub-annual
+    granularity from this warehouse.
+    """
+    cur.execute(
+        "SELECT DISTINCT glbbal_year FROM bronze.glbbal "
+        "WHERE glbbal_year IS NOT NULL ORDER BY glbbal_year"
+    )
+    return [int(r[0]) for r in cur.fetchall()]
+
+
+def resolve_snapshot_date(cur: Any, end_date: str) -> str:
+    """Return the snapshot date to report on, or explain why the period is unusable.
+
+    DNBS-02 point-in-time fields are measured as at the period end, so the warehouse must
+    hold a snapshot on exactly that date. Silently reporting the nearest earlier snapshot
+    would mislabel the return.
+    """
+    available = get_available_snapshot_dates(cur)
+    if not available:
+        raise PeriodError("bronze.genln_rpt_day holds no portfolio snapshots at all.")
+    if end_date in available:
+        return end_date
+    raise PeriodError(
+        f"No portfolio snapshot exists for period end {end_date}. "
+        f"bronze.genln_rpt_day holds month-end snapshots for: {', '.join(available)}."
+    )
+
+# ---------------------------------------------------------------------------
+# GL classification.
+#
+# bronze.extgl's own classification flags (extgl_int_income, extgl_operational_exps,
+# extgl_int_expenses, ...) are NULL on all 723 rows, so they cannot be used. The only
+# usable structure is the leading segment of extgl_access_code. See
+# docs/DNBS02_EDA_REPORT.md section 5.
+# ---------------------------------------------------------------------------
+GL_SHARE_CAPITAL = "1001"
+GL_BORROWINGS = "1002"
+GL_FIXED_ASSETS = "1003"
+GL_INCOME = "1007"
+GL_INVESTMENTS = "1009"
+GL_PROVISIONS = "1022"
+GL_RESERVES = "1033"
+
+# Asset codes that represent a non-performing asset under IRACP. SMA-0/1/2 are
+# *standard* assets under stress and must never be counted here - the previous
+# implementation used an ELSE catch-all that swept SMA-2 into "Doubtful / Loss" and
+# provisioned it at 100%.
+NPA_ASSET_CODES = ("SUB", "NPA", "DBT", "D1", "D2", "D3", "LOSS")
+STANDARD_ASSET_CODES = ("STD", "SMA0", "SMA1", "SMA2")
+
+ASSET_CODE_LABELS = {
+    "STD": "Standard Assets",
+    "SMA0": "SMA-0 (1-30 days)",
+    "SMA1": "SMA-1 (31-60 days)",
+    "SMA2": "SMA-2 (61-90 days)",
+    "SUB": "Sub-Standard Assets",
+    "DBT": "Doubtful Assets",
+    "D1": "Doubtful Assets - up to 1 year",
+    "D2": "Doubtful Assets - 1 to 3 years",
+    "D3": "Doubtful Assets - over 3 years",
+    "LOSS": "Loss Assets",
+    "NPA": "Non-Performing Assets",
+}
+
+
+def _f(value: Any) -> float:
+    """Coerce a DB numeric (Decimal, None) to float."""
+    return float(value or 0)
+
+
+def get_reportable_periods() -> Dict[str, Any]:
+    """Periods the warehouse can actually back, so the UI cannot offer unbacked ones.
+
+    The period dropdown used to list fixed options regardless of what the database held;
+    picking an unbacked one silently produced fabricated figures.
+    """
+    with _db_cursor() as (_conn, cur):
+        snapshots = get_available_snapshot_dates(cur)
+        gl_years = get_available_gl_years(cur)
+    monthly = [
+        {"value": s[:7], "label": datetime.date.fromisoformat(s).strftime("%B %Y"), "end_date": s}
+        for s in snapshots
+    ]
+    return {
+        "monthly": list(reversed(monthly)),
+        "snapshot_dates": snapshots,
+        "gl_years": gl_years,
+        # Quarterly and yearly returns need a period-end snapshot on the quarter/year end.
+        "note": (
+            "Point-in-time sections require a bronze.genln_rpt_day snapshot dated exactly "
+            "on the period end. Parts 1, 3 and 4 come from bronze.glbbal, which is keyed "
+            "by year only and therefore cannot be produced at sub-annual granularity."
+        ),
+    }
+
+
+def _gl_year_for(end_date: str) -> int:
+    """Calendar year used to select a trial balance from bronze.glbbal.
+
+    glbbal is keyed by branch and year only - there is no date dimension - so Parts 1,
+    3 and 4 cannot be produced at sub-annual granularity from this warehouse.
+    """
+    return int(end_date[:4])
 
 
 def get_dnbs02_report_data(
     frequency: str = "monthly",
-    period: str = "2026-05",
+    period: str = "",
     start_date: Optional[str] = None,
     end_date: Optional[str] = None,
 ) -> Dict[str, Any]:
-    """Retrieve full RBI DNBS-02 report metrics from PostgreSQL or staging fallbacks, accurately filtered by date range."""
+    """Build the RBI DNBS-02 return from PostgreSQL.
+
+    Every figure is either sourced from the warehouse or left empty. There is no
+    fallback data: a section with no feed reports status "no_source" and renders blank,
+    because a plausible-looking invented number in a regulatory return is worse than a
+    gap.
+    """
     if not start_date or not end_date:
         calc_start, calc_end = parse_period_range(frequency, period)
         start_date = start_date or calc_start
         end_date = end_date or calc_end
 
-    # Calculate date range duration in days for dynamic KPI scale adjustment (fallback only)
     try:
         d1 = datetime.datetime.strptime(start_date, "%Y-%m-%d")
         d2 = datetime.datetime.strptime(end_date, "%Y-%m-%d")
-        num_days = max((d2 - d1).days + 1, 1)
-    except Exception:
-        num_days = 31
+    except ValueError as exc:
+        raise PeriodError(f"Dates must be ISO YYYY-MM-DD (got {start_date!r}..{end_date!r}).") from exc
+    if d2 < d1:
+        raise PeriodError(f"Period end {end_date} precedes period start {start_date}.")
+    num_days = (d2 - d1).days + 1
 
-    date_scale_factor = round(num_days / 31.0, 2)
-
-    is_live = False
+    provenance: Dict[str, Dict[str, Any]] = {}
+    coverage: Dict[str, Any] = {}
     part1_capital: List[Dict[str, Any]] = []
     part2_loans: List[Dict[str, Any]] = []
     part3_income: List[Dict[str, Any]] = []
+    part4_nof: List[Dict[str, Any]] = []
     part6_sensitive: List[Dict[str, Any]] = []
     part8_asset_quality: List[Dict[str, Any]] = []
     part8a_msme: List[Dict[str, Any]] = []
@@ -105,535 +330,657 @@ def get_dnbs02_report_data(
     annex13_branches: List[Dict[str, Any]] = []
 
     total_loan_book = 0.0
-    total_repaid = 0.0
+    accrued_interest = 0.0
+    provision_held = 0.0
     npa_amount = 0.0
+    owned_funds = 0.0
+    account_count = 0
+    borrower_count = 0
 
-    if get_connection is not None:
-        try:
-            conn = get_connection()
-            cur = conn.cursor()
+    def no_source(name: str, reason: str) -> None:
+        provenance[name] = SectionResult(name, "no_source", 0, reason).as_dict()
 
-            # 1. Top 25 Borrowers (Annex 9) filtered by date range
-            try:
-                cur.execute("""
-                    WITH latest_asset AS (
-                        SELECT ascd_account_num, ascd_asset_code, ascd_princ_os, ascd_int_due, ascd_charg_due
-                        FROM (
-                            SELECT ascd_account_num, ascd_asset_code, ascd_princ_os, ascd_int_due, ascd_charg_due,
-                                   ROW_NUMBER() OVER(PARTITION BY ascd_account_num ORDER BY ascd_effective_date DESC) as rn
-                            FROM bronze.asset_classify_dtls
-                            WHERE ascd_effective_date <= CAST(%s AS DATE)
-                        ) sub WHERE rn = 1
-                    )
-                    SELECT
-                        COALESCE(
-                            NULLIF(g.gnlnac_cust_name, ''),
-                            TRIM(CONCAT_WS(' ', ic.indcif_first_name, ic.indcif_midle_name, ic.indcif_last_name)),
-                            'Account #' || g.gnlnac_acnt_num
-                        ) AS borrower_name,
-                        'NA' AS pan,
-                        CASE WHEN g.gnlnac_prod_code = 16 THEN 'CORPORATE' ELSE 'INDIVIDUAL' END AS borrower_type,
-                        COALESCE(g.gnlnac_sanc_amt, 0) / 100000.0 AS sanctioned_amt,
-                        COALESCE(g.gnlnac_lndisb_amt, g.gnlnac_sanc_amt, 0) / 100000.0 AS disbursed_amt,
-                        COALESCE(la.ascd_princ_os, (COALESCE(g.gnlnac_lndisb_amt, g.gnlnac_sanc_amt) - COALESCE(g.gnlnac_pri_repay_amt, 0)), 0) / 100000.0 AS principal_outstanding,
-                        COALESCE(la.ascd_int_due, 0) / 100000.0 AS accrued_interest,
-                        CASE WHEN la.ascd_asset_code IN ('STD', 'SMA0') THEN 'Standard' ELSE COALESCE(la.ascd_asset_code, 'Standard') END AS account_status,
-                        COALESCE(la.ascd_princ_os + la.ascd_int_due + la.ascd_charg_due, COALESCE(g.gnlnac_lndisb_amt, g.gnlnac_sanc_amt) - COALESCE(g.gnlnac_pri_repay_amt, 0), 0) / 100000.0 AS total_outstanding
-                    FROM bronze.genlnacnts g
-                    LEFT JOIN bronze.indcifdata_10012025_indcifdata ic ON g.gnlnac_cust_id = ic.indcif_cust_id
-                    LEFT JOIN latest_asset la ON g.gnlnac_acnt_num = la.ascd_account_num
-                    WHERE g.gnlnac_sanc_date IS NULL OR (g.gnlnac_sanc_date <= CAST(%s AS DATE))
-                    ORDER BY total_outstanding DESC
-                    LIMIT 25;
-                """, (end_date, end_date))
-                b_rows = cur.fetchall()
-                for r in b_rows:
-                    annex9_top_borrowers.append({
-                        "borrower_name": str(r[0]),
-                        "pan": str(r[1]),
-                        "borrower_type": str(r[2]),
-                        "sanctioned_amt": round(float(r[3] or 0), 2),
-                        "disbursed_amt": round(float(r[4] or 0), 2),
-                        "principal_outstanding": round(float(r[5] or 0), 2),
-                        "accrued_interest": round(float(r[6] or 0), 2),
-                        "account_status": str(r[7]),
-                        "total_outstanding": round(float(r[8] or 0), 2),
-                    })
-            except Exception:
-                conn.rollback()
+    with _db_cursor() as (conn, cur):
+        snapshot_date = resolve_snapshot_date(cur, end_date)
+        gl_year = _gl_year_for(end_date)
+        gl_years = get_available_gl_years(cur)
+        gl_available = gl_year in gl_years
 
-            # 2. Branch Operations Breakdown (Annex 13) filtered by date range
-            try:
-                cur.execute("""
-                    SELECT 
-                        gnlnac_appl_brn_code,
-                        COUNT(DISTINCT gnlnac_cust_id),
-                        COUNT(*),
-                        COALESCE(SUM(COALESCE(gnlnac_lndisb_amt, gnlnac_sanc_amt) - COALESCE(gnlnac_pri_repay_amt, 0)), 0) / 100000.0 AS total_outstanding
-                    FROM bronze.genlnacnts
-                    WHERE gnlnac_appl_brn_code IS NOT NULL
-                      AND (gnlnac_sanc_date IS NULL OR gnlnac_sanc_date <= CAST(%s AS DATE))
-                    GROUP BY gnlnac_appl_brn_code
-                    ORDER BY total_outstanding DESC;
-                """, (end_date,))
-                br_rows = cur.fetchall()
-                for r in br_rows:
-                    br_code = str(r[0])
-                    b_info = get_branch_info_from_db(cur, br_code) if get_branch_info_from_db else {"name": f"Branch #{br_code}"}
-                    annex13_branches.append({
-                        "branch_code": br_code,
-                        "branch_name": b_info["name"],
-                        "customer_count": int(r[1]),
-                        "account_count": int(r[2]),
-                        "total_outstanding": round(float(r[3] or 0), 2)
-                    })
-            except Exception:
-                conn.rollback()
+        # -- Portfolio summary (as at the snapshot date) ----------------------
+        def _summary() -> int:
+            nonlocal total_loan_book, accrued_interest, provision_held, account_count, borrower_count
+            cur.execute(
+                """
+                SELECT COUNT(*),
+                       COUNT(DISTINCT gnlnr_cust_id),
+                       COALESCE(SUM(gnlnr_princ_os), 0) / 100000.0,
+                       COALESCE(SUM(gnlnr_int_due), 0) / 100000.0,
+                       COALESCE(SUM(gnlnr_provision_amt), 0) / 100000.0
+                FROM bronze.genln_rpt_day
+                WHERE gnlnr_report_date = CAST(%s AS DATE)
+                  AND gnlnr_closed_date IS NULL
+                """,
+                (snapshot_date,),
+            )
+            row = cur.fetchone()
+            if not row or not row[0]:
+                return 0
+            account_count = int(row[0])
+            borrower_count = int(row[1])
+            total_loan_book = round(_f(row[2]), 2)
+            accrued_interest = round(_f(row[3]), 2)
+            provision_held = round(_f(row[4]), 2)
+            return account_count
 
-            # 3. Overall Portfolio Metrics filtered by date range
-            try:
-                cur.execute("""
-                    SELECT 
-                        COALESCE(SUM(COALESCE(gnlnac_lndisb_amt, gnlnac_sanc_amt)), 0) / 100000.0,
-                        COALESCE(SUM(gnlnac_pri_repay_amt), 0) / 100000.0
-                    FROM bronze.genlnacnts
-                    WHERE gnlnac_sanc_date IS NULL OR gnlnac_sanc_date <= CAST(%s AS DATE);
-                """, (end_date,))
-                tot_row = cur.fetchone()
-                if tot_row:
-                    total_loan_book = round(float(tot_row[0] or 0), 2)
-                    total_repaid = round(float(tot_row[1] or 0), 2)
-            except Exception:
-                conn.rollback()
+        _run_section(provenance, "summary", _summary, conn)
 
-            # 4. Top 25 Investments (Annex 10) directly from PostgreSQL database
-            try:
-                cur.execute("""
-                    SELECT 
-                        entity_name,
-                        COALESCE(investment_nature, 'CURRENT') AS nature,
-                        COALESCE(investment_type, 'EQUITY SHARES') AS investment_type,
-                        COALESCE(pan, 'NA') AS pan,
-                        CASE WHEN book_value > 10000 THEN COALESCE(book_value, 0) / 100000.0 ELSE COALESCE(book_value, 0) END AS book_value,
-                        CASE WHEN is_group_company THEN 'true' ELSE 'false' END AS is_group_company,
-                        CASE WHEN amount_outstanding > 10000 THEN COALESCE(amount_outstanding, book_value, 0) / 100000.0 ELSE COALESCE(amount_outstanding, book_value, 0) END AS amt_outstanding
-                    FROM bronze.investments
-                    ORDER BY amt_outstanding DESC
-                    LIMIT 25;
-                """)
-                inv_rows = cur.fetchall()
-                for r in inv_rows:
-                    annex10_top_investments.append({
-                        "entity_name": str(r[0]),
-                        "nature": str(r[1]),
-                        "investment_type": str(r[2]),
-                        "pan": str(r[3]),
-                        "book_value": round(float(r[4] or 0), 2),
-                        "is_group_company": str(r[5]),
-                        "amt_outstanding": round(float(r[6] or 0), 2),
-                    })
-            except Exception:
-                conn.rollback()
-                try:
-                    cur.execute("""
-                        SELECT
-                            COALESCE(g.extgl_ext_head_descn, b.glbbal_glacc_code) AS entity_name,
-                            CASE WHEN g.extgl_ext_head_descn ILIKE '%%MUTUAL%%' OR g.extgl_ext_head_descn ILIKE '%%CURRENT%%' THEN 'CURRENT' ELSE 'NON-CURRENT' END AS nature,
-                            CASE 
-                                WHEN g.extgl_ext_head_descn ILIKE '%%MUTUAL%%' THEN 'MUTUAL FUNDS'
-                                WHEN g.extgl_ext_head_descn ILIKE '%%DEBENTURE%%' THEN 'CORPORATE DEBENTURES'
-                                WHEN g.extgl_ext_head_descn ILIKE '%%DEPOSIT%%' THEN 'FIXED DEPOSITS'
-                                ELSE 'EQUITY SHARES'
-                            END AS investment_type,
-                            'NA' AS pan,
-                            ABS(COALESCE(b.glbbal_bc_bal, 0)) / 100000.0 AS book_value,
-                            'false' AS is_group_company,
-                            ABS(COALESCE(b.glbbal_bc_bal, 0)) / 100000.0 AS amt_outstanding
-                        FROM bronze.glbbal b
-                        JOIN bronze.extgl g ON b.glbbal_glacc_code = g.extgl_access_code
-                        WHERE (g.extgl_ext_head_descn ILIKE '%%INVEST%%' OR g.extgl_ext_head_descn ILIKE '%%MUTUAL%%' OR g.extgl_ext_head_descn ILIKE '%%SHARE%%')
-                        LIMIT 25;
-                    """)
-                    gl_inv_rows = cur.fetchall()
+        # -- Coverage reconciliation ------------------------------------------
+        # bronze.genln_rpt_day is the only table with a genuine as-of dimension, but it
+        # does not cover the whole book: it holds product 16 only, so products 1 and 13
+        # have no dated snapshot. Falling back to bronze.genlnacnts for those would
+        # reintroduce undated balances reported as if they were period-end figures, so
+        # the uncovered portion is disclosed instead of silently dropped or back-filled.
+        def _coverage() -> int:
+            cur.execute(
+                """
+                SELECT COUNT(*) AS uncovered_accounts,
+                       COALESCE(SUM(COALESCE(a.gnlnac_lndisb_amt, a.gnlnac_sanc_amt)
+                                    - COALESCE(a.gnlnac_pri_repay_amt, 0)), 0) / 100000.0
+                           AS uncovered_lakhs
+                FROM bronze.genlnacnts a
+                WHERE a.gnlnac_closure_date IS NULL
+                  AND NOT EXISTS (
+                        SELECT 1 FROM bronze.genln_rpt_day r
+                        WHERE r.gnlnr_acnt_num = a.gnlnac_acnt_num
+                  )
+                """
+            )
+            row = cur.fetchone()
+            coverage["uncovered_accounts"] = int(row[0] or 0)
+            coverage["uncovered_lakhs"] = round(_f(row[1]), 2)
+            coverage["covered_accounts"] = account_count
+            coverage["covered_lakhs"] = total_loan_book
+            denom = total_loan_book + coverage["uncovered_lakhs"]
+            coverage["covered_pct"] = round(total_loan_book / denom * 100, 2) if denom else 0.0
+            return 1
 
-                    for r in gl_inv_rows:
-                        annex10_top_investments.append({
-                            "entity_name": str(r[0]),
-                            "nature": str(r[1]),
-                            "investment_type": str(r[2]),
-                            "pan": str(r[3]),
-                            "book_value": round(float(r[4] or 0), 2),
-                            "is_group_company": str(r[5]),
-                            "amt_outstanding": round(float(r[6] or 0), 2),
-                        })
-                except Exception:
-                    conn.rollback()
+        _run_section(provenance, "coverage", _coverage, conn)
+        if coverage.get("uncovered_accounts"):
+            logger.warning(
+                "DNBS-02 %s: %s open accounts (%.2f lakh) have no dated snapshot in "
+                "bronze.genln_rpt_day and are excluded from the return.",
+                snapshot_date,
+                coverage["uncovered_accounts"],
+                coverage["uncovered_lakhs"],
+            )
 
-            # 5. Asset Quality Breakdown (Part 8 & Part 8C)
-            try:
-                cur.execute("""
-                    WITH latest_asset AS (
-                        SELECT ascd_account_num, ascd_asset_code, ascd_princ_os, ascd_int_due, ascd_charg_due
-                        FROM (
-                            SELECT ascd_account_num, ascd_asset_code, ascd_princ_os, ascd_int_due, ascd_charg_due,
-                                   ROW_NUMBER() OVER(PARTITION BY ascd_account_num ORDER BY ascd_effective_date DESC) as rn
-                            FROM bronze.asset_classify_dtls
-                            WHERE ascd_effective_date <= CAST(%s AS DATE)
-                        ) sub WHERE rn = 1
-                    )
-                    SELECT
-                        CASE 
-                            WHEN ascd_asset_code IN ('STD', 'SMA0') THEN 'Standard Assets'
-                            WHEN ascd_asset_code = 'SMA1' THEN 'SMA-1 (31-60 days)'
-                            WHEN ascd_asset_code IN ('SUB', 'NPA') THEN 'Sub-Standard Assets (NPA)'
-                            ELSE 'Doubtful / Loss Assets'
-                        END AS status,
-                        COUNT(*),
-                        COALESCE(SUM(ascd_princ_os), 0) / 100000.0 AS amount_lakhs
-                    FROM latest_asset
-                    GROUP BY 1;
-                """, (end_date,))
-                aq_rows = cur.fetchall()
-                if aq_rows:
-                    part8_asset_quality = [
-                        {
-                            "status": str(r[0]),
-                            "count": int(r[1]),
-                            "amount_lakhs": round(float(r[2] or 0), 2),
-                            "provision_lakhs": round(float(r[2] or 0) * (0.15 if 'Sub-Standard' in str(r[0]) else (1.0 if 'Doubtful' in str(r[0]) else 0.004)), 2)
-                        }
-                        for r in aq_rows
-                    ]
-                    npa_amount = sum(item["amount_lakhs"] for item in part8_asset_quality if "NPA" in item["status"] or "Sub-Standard" in item["status"] or "Doubtful" in item["status"])
-            except Exception:
-                conn.rollback()
+        # -- Part 1: sources of funds, from the GL trial balance --------------
+        def _part1() -> int:
+            nonlocal owned_funds
+            cur.execute(
+                """
+                SELECT LEFT(g.extgl_access_code, 4) AS gl_group,
+                       g.extgl_ext_head_descn,
+                       COALESCE(SUM(b.glbbal_bc_bal), 0) / 100000.0 AS amount_lakhs
+                FROM bronze.glbbal b
+                JOIN bronze.extgl g ON b.glbbal_glacc_code = g.extgl_access_code
+                WHERE b.glbbal_year = %s
+                  AND LEFT(g.extgl_access_code, 4) IN (%s, %s, %s)
+                GROUP BY 1, 2
+                HAVING COALESCE(SUM(b.glbbal_bc_bal), 0) <> 0
+                ORDER BY 1, 3 DESC
+                """,
+                (gl_year, GL_SHARE_CAPITAL, GL_RESERVES, GL_BORROWINGS),
+            )
+            share_capital = reserves = borrowings = 0.0
+            for gl_group, descn, amount in cur.fetchall():
+                amt = round(_f(amount), 2)
+                if gl_group == GL_SHARE_CAPITAL:
+                    share_capital += amt
+                elif gl_group == GL_RESERVES:
+                    reserves += amt
+                else:
+                    borrowings += amt
+                part1_capital.append(
+                    {
+                        "gl_group": gl_group,
+                        "particulars": (descn or "").strip(),
+                        "amount_lakhs": amt,
+                    }
+                )
+            owned_funds = round(share_capital + reserves, 2)
+            if part1_capital:
+                part1_capital.append(
+                    {"gl_group": "TOTAL", "particulars": "Share Capital", "amount_lakhs": round(share_capital, 2)}
+                )
+                part1_capital.append(
+                    {"gl_group": "TOTAL", "particulars": "Reserves and Surplus", "amount_lakhs": round(reserves, 2)}
+                )
+                part1_capital.append(
+                    {"gl_group": "TOTAL", "particulars": "Borrowings", "amount_lakhs": round(borrowings, 2)}
+                )
+                part1_capital.append(
+                    {"gl_group": "TOTAL", "particulars": "Owned Funds", "amount_lakhs": owned_funds}
+                )
+            return len(part1_capital)
 
-            # 6. MSME Credit Profile (Part 8A) directly from bronze.genlnacnts
-            try:
-                cur.execute("""
-                    SELECT
-                        CASE 
-                            WHEN COALESCE(g.gnlnac_sanc_amt, 0) <= 2500000 THEN 'Micro Enterprises (< ₹25 Lakhs Limit)'
-                            WHEN COALESCE(g.gnlnac_sanc_amt, 0) <= 10000000 THEN 'Small Enterprises (₹25L - ₹5 Cr Limit)'
-                            ELSE 'Medium Enterprises (₹5 Cr - ₹10 Cr Limit)'
-                        END AS category,
-                        COUNT(*),
-                        COALESCE(SUM(COALESCE(g.gnlnac_lndisb_amt, g.gnlnac_sanc_amt) - COALESCE(g.gnlnac_pri_repay_amt, 0)), 0) / 100000.0 AS amount_lakhs,
-                        COALESCE(AVG(g.gnlnac_int_rate), 17.5) AS avg_rate
-                    FROM bronze.genlnacnts g
-                    WHERE g.gnlnac_sanc_date IS NULL OR g.gnlnac_sanc_date <= CAST(%s AS DATE)
-                    GROUP BY 1;
-                """, (end_date,))
-                msme_rows = cur.fetchall()
-                if msme_rows:
-                    part8a_msme = [
-                        {
-                            "category": str(r[0]),
-                            "account_count": int(r[1]),
-                            "amount_lakhs": round(float(r[2] or 0), 2),
-                            "avg_interest_rate": round(float(r[3] or 17.5), 1)
-                        }
-                        for r in msme_rows
-                    ]
-            except Exception:
-                conn.rollback()
+        if gl_available:
+            _run_section(provenance, "part1_capital", _part1, conn)
+        else:
+            no_source(
+                "part1_capital",
+                f"bronze.glbbal has no trial balance for year {gl_year} (available: {gl_years}).",
+            )
 
-            # 7. Shareholders Pattern (Annex 2) directly from bronze.mig_share_details
-            try:
-                cur.execute("""
-                    SELECT 
-                        COALESCE(share_customer_name, 'PUBLIC SHAREHOLDERS') AS name,
-                        'Equity Shares' AS type_of_capital,
-                        SUM(COALESCE(share_no_of_units, 1)) AS num_shares,
-                        COALESCE(AVG(share_face_value), 10) AS face_value,
-                        SUM(COALESCE(share_no_of_units, 1) * COALESCE(share_face_value, 10)) / 100000.0 AS total_val
-                    FROM bronze.mig_share_details
-                    GROUP BY share_customer_name
-                    ORDER BY total_val DESC
-                    LIMIT 10;
-                """)
-                sh_rows = cur.fetchall()
-                if sh_rows:
-                    tot_cap = sum(float(r[4] or 0) for r in sh_rows) or 1.0
-                    annex2_shareholders = [
-                        {
-                            "name": str(r[0]),
-                            "type_of_capital": str(r[1]),
-                            "num_shares": int(r[2]),
-                            "face_value": round(float(r[3] or 10), 2),
-                            "shareholding_pct": round((float(r[4] or 0) / tot_cap) * 100, 1)
-                        }
-                        for r in sh_rows
-                    ]
-            except Exception:
-                conn.rollback()
+        # -- Part 2: application of funds -------------------------------------
+        def _part2() -> int:
+            cur.execute(
+                """
+                SELECT COALESCE(s.lnschm_schm_name, 'Scheme ' || COALESCE(r.gnlnr_schm_code, 'unmapped'))
+                           AS category,
+                       COUNT(*) AS account_count,
+                       COALESCE(SUM(r.gnlnr_princ_os), 0) / 100000.0 AS amount_lakhs
+                FROM bronze.genln_rpt_day r
+                LEFT JOIN bronze.nbfclnscheme s
+                       ON s.lnschm_schm_code = r.gnlnr_schm_code
+                      AND s.lnschm_prod_code = r.gnlnr_prod_code
+                WHERE r.gnlnr_report_date = CAST(%s AS DATE)
+                  AND r.gnlnr_closed_date IS NULL
+                GROUP BY 1
+                ORDER BY 3 DESC
+                """,
+                (snapshot_date,),
+            )
+            rows = cur.fetchall()
+            total = sum(_f(r[2]) for r in rows) or 1.0
+            for category, cnt, amount in rows:
+                part2_loans.append(
+                    {
+                        "category": category,
+                        "account_count": int(cnt),
+                        "amount_lakhs": round(_f(amount), 2),
+                        "share_pct": round(_f(amount) / total * 100, 2),
+                    }
+                )
+            return len(part2_loans)
 
-            # 8. Product Breakdown for Part 2 Loans
-            try:
-                cur.execute("""
-                    SELECT 
-                        CASE 
-                            WHEN gnlnac_prod_code = 16 THEN 'Secured MSME & Business Loans (Product 16)'
-                            WHEN gnlnac_prod_code = 1 THEN 'Retail Gold Loans (Product 1)'
-                            WHEN gnlnac_prod_code = 13 THEN 'Microfinance & JLG Loans (Product 13)'
-                            ELSE 'Other Commercial Loans (Product ' || COALESCE(gnlnac_prod_code, 0) || ')'
-                        END AS category,
-                        COALESCE(SUM(COALESCE(gnlnac_lndisb_amt, gnlnac_sanc_amt) - COALESCE(gnlnac_pri_repay_amt, 0)), 0) / 100000.0 AS amount_lakhs
-                    FROM bronze.genlnacnts
-                    WHERE gnlnac_sanc_date IS NULL OR gnlnac_sanc_date <= CAST(%s AS DATE)
-                    GROUP BY 1;
-                """, (end_date,))
-                p2_rows = cur.fetchall()
-                if p2_rows:
-                    tot_p2 = sum(float(r[1] or 0) for r in p2_rows) or 1.0
-                    part2_loans = [
-                        {
-                            "category": str(r[0]),
-                            "amount_lakhs": round(float(r[1] or 0), 2),
-                            "share_pct": round((float(r[1] or 0) / tot_p2) * 100, 1)
-                        }
-                        for r in p2_rows
-                    ]
-            except Exception:
-                conn.rollback()
+        _run_section(provenance, "part2_loans", _part2, conn)
 
-            # 9. Top NPAs (Annex 11)
-            try:
-                cur.execute("""
-                    WITH latest_asset AS (
-                        SELECT ascd_account_num, ascd_asset_code, ascd_princ_os, ascd_int_due, ascd_charg_due
-                        FROM (
-                            SELECT ascd_account_num, ascd_asset_code, ascd_princ_os, ascd_int_due, ascd_charg_due,
-                                   ROW_NUMBER() OVER(PARTITION BY ascd_account_num ORDER BY ascd_effective_date DESC) as rn
-                            FROM bronze.asset_classify_dtls
-                            WHERE ascd_effective_date <= CAST(%s AS DATE)
-                        ) sub WHERE rn = 1
-                    )
-                    SELECT
-                        COALESCE(NULLIF(g.gnlnac_cust_name, ''), 'Borrower #' || g.gnlnac_cust_id) AS borrower_name,
-                        'NA' AS pan,
-                        COALESCE(la.ascd_princ_os, 0) / 100000.0 AS principal_os,
-                        COALESCE(la.ascd_int_due, 0) / 100000.0 AS int_due,
-                        COALESCE(la.ascd_asset_code, 'NPA') AS asset_code
-                    FROM bronze.genlnacnts g
-                    JOIN latest_asset la ON g.gnlnac_acnt_num = la.ascd_account_num
-                    WHERE la.ascd_asset_code IN ('SUB', 'NPA', 'DBT', 'LOSS', 'SMA2')
-                    ORDER BY (la.ascd_princ_os + la.ascd_int_due) DESC
-                    LIMIT 25;
-                """, (end_date,))
-                npa_rows = cur.fetchall()
-                for r in npa_rows:
-                    annex11_top_npas.append({
-                        "borrower_name": str(r[0]),
-                        "pan": str(r[1]),
-                        "principal_os": round(float(r[2] or 0), 2),
-                        "int_due": round(float(r[3] or 0), 2),
-                        "asset_code": str(r[4])
-                    })
-            except Exception:
-                conn.rollback()
+        # -- Part 2 maturity buckets, from the amortisation schedule ----------
+        part2_maturity: List[Dict[str, Any]] = []
 
-            conn.close()
-            is_live = True
-        except Exception:
-            is_live = False
+        def _part2_maturity() -> int:
+            cur.execute(
+                """
+                SELECT CASE
+                           WHEN r.gnlnr_maturity_dt IS NULL THEN 'Unspecified maturity'
+                           WHEN r.gnlnr_maturity_dt <= CAST(%s AS DATE) + INTERVAL '3 months'
+                               THEN 'Receivable within 3 months'
+                           WHEN r.gnlnr_maturity_dt <= CAST(%s AS DATE) + INTERVAL '12 months'
+                               THEN 'Receivable in 3 to 12 months'
+                           ELSE 'Receivable after 12 months'
+                       END AS bucket,
+                       COUNT(*),
+                       COALESCE(SUM(r.gnlnr_princ_os), 0) / 100000.0
+                FROM bronze.genln_rpt_day r
+                WHERE r.gnlnr_report_date = CAST(%s AS DATE)
+                  AND r.gnlnr_closed_date IS NULL
+                GROUP BY 1
+                ORDER BY 3 DESC
+                """,
+                (snapshot_date, snapshot_date, snapshot_date),
+            )
+            for bucket, cnt, amount in cur.fetchall():
+                part2_maturity.append(
+                    {"bucket": bucket, "account_count": int(cnt), "amount_lakhs": round(_f(amount), 2)}
+                )
+            return len(part2_maturity)
 
-    # -----------------------------------------------------------------------------
-    # FALLBACK / STAGING DATA MATRIX (USED ONLY WHEN DB DOES NOT RETURN RESULTS)
-    # -----------------------------------------------------------------------------
-    mult = max(0.8, min(date_scale_factor, 4.5))
+        _run_section(provenance, "part2_maturity", _part2_maturity, conn)
 
-    if not annex9_top_borrowers:
-        fallback_borrowers = [
-            ("S V SUBRAMANYA BHAT", "ACFPB2996P", "INDIVIDUAL", 600.0, 600.0, 600.0, 0.92, "Standard", 600.92),
-            ("MEGHARAJ H P", "AWNPM3131F", "INDIVIDUAL", 200.0, 200.0, 200.0, 2.61, "Standard", 202.61),
-            ("DIVYA B C", "BZWPC0018A", "INDIVIDUAL", 150.0, 150.0, 150.0, 1.92, "Standard", 151.92),
-            ("PRAKASH H R", "BGOPP3657D", "INDIVIDUAL", 150.0, 150.0, 150.0, 1.92, "Standard", 151.92),
-            ("RAMESH KUMAR S", "APBPK1234F", "INDIVIDUAL", 450.0, 450.0, 380.0, 12.5, "Standard", 392.5),
-            ("VENKATESH NAVADA", "BZWPC9918A", "INDIVIDUAL", 320.0, 320.0, 290.0, 8.2, "Standard", 298.2),
-            ("SURESH GOWDA K", "BGOPP4457D", "INDIVIDUAL", 180.0, 180.0, 165.0, 4.1, "Standard", 169.1),
-            ("KAVITHA RANI M", "AYDPS8981R", "INDIVIDUAL", 250.0, 250.0, 210.0, 6.0, "Standard", 216.0),
-            ("NAGARAJU SHETTY B", "AABPN4512E", "INDIVIDUAL", 210.0, 210.0, 195.0, 5.5, "Standard", 200.5),
-            ("SAMPATH KUMAR H", "ACSPK8721N", "INDIVIDUAL", 195.0, 195.0, 175.0, 4.8, "Standard", 179.8),
-            ("CHANDRASEKHAR MURTHY", "ABCPC9123L", "INDIVIDUAL", 340.0, 340.0, 310.0, 9.1, "Standard", 319.1),
-            ("ANAND KULKARNI", "ADFPK3451M", "INDIVIDUAL", 280.0, 280.0, 240.0, 7.3, "Standard", 247.3),
-            ("PRADEEP SHARMA", "AIXPP5612K", "INDIVIDUAL", 170.0, 170.0, 155.0, 3.2, "Standard", 158.2),
-            ("SUNITHA PRABHU", "BKGPM8923Q", "INDIVIDUAL", 220.0, 220.0, 205.0, 5.1, "Standard", 210.1),
-            ("MAHESH BHAT", "AMBPB4512D", "INDIVIDUAL", 190.0, 190.0, 175.0, 4.2, "Standard", 179.2),
-            ("GEO ENGINEERING CO", "AAACG4155D", "CORPORATE", 215.0, 215.0, 123.9, 91.1, "Standard", 215.0),
-            ("RHINESTONE LLP", "AYDPS8981R", "CORPORATE", 150.0, 150.0, 37.89, 27.0, "Standard", 64.89),
-            ("DIVYA HEGDE", "BZWPD1128H", "INDIVIDUAL", 140.0, 140.0, 130.0, 2.9, "Standard", 132.9),
-            ("PRAKASH RAO N", "BGOPR3997S", "INDIVIDUAL", 160.0, 160.0, 148.0, 3.5, "Standard", 151.5),
-            ("GANESH PRASAD S", "ASGPG7621T", "INDIVIDUAL", 175.0, 175.0, 160.0, 4.0, "Standard", 164.0),
-            ("KRISHNA MURTHY V", "AKMPK5512L", "INDIVIDUAL", 185.0, 185.0, 170.0, 4.3, "Standard", 174.3),
-            ("SRI MANJUNATHA TRADERS", "ACKPS9012P", "INDIVIDUAL", 130.0, 130.0, 118.0, 2.5, "Standard", 120.5),
-            ("UDUPI ENTERPRISES", "AAACU3456L", "INDIVIDUAL", 145.0, 145.0, 132.0, 3.0, "Standard", 135.0),
-            ("MANDYA AGRO SERVICES", "AAACM7890R", "INDIVIDUAL", 155.0, 155.0, 142.0, 3.4, "Standard", 145.4),
-            ("SHIMOGA HANDLOOMS", "AAACS4321Q", "INDIVIDUAL", 125.0, 125.0, 110.0, 2.1, "Standard", 112.1),
-        ]
-        for name, pan, b_type, sanc, disb, prin, accr, status, tot in fallback_borrowers:
-            annex9_top_borrowers.append({
-                "borrower_name": name,
-                "pan": pan,
-                "borrower_type": b_type,
-                "sanctioned_amt": round(sanc * mult, 2),
-                "disbursed_amt": round(disb * mult, 2),
-                "principal_outstanding": round(prin * mult, 2),
-                "accrued_interest": round(accr * mult, 2),
-                "account_status": status,
-                "total_outstanding": round(tot * mult, 2)
-            })
+        # -- Part 3: income, from the GL trial balance ------------------------
+        def _part3() -> int:
+            cur.execute(
+                """
+                SELECT g.extgl_ext_head_descn,
+                       COALESCE(SUM(b.glbbal_bc_bal), 0) / 100000.0 AS amount_lakhs
+                FROM bronze.glbbal b
+                JOIN bronze.extgl g ON b.glbbal_glacc_code = g.extgl_access_code
+                WHERE b.glbbal_year = %s
+                  AND LEFT(g.extgl_access_code, 4) = %s
+                GROUP BY 1
+                HAVING COALESCE(SUM(b.glbbal_bc_bal), 0) <> 0
+                ORDER BY 2 DESC
+                """,
+                (gl_year, GL_INCOME),
+            )
+            for descn, amount in cur.fetchall():
+                part3_income.append(
+                    {"head": (descn or "").strip(), "amount_lakhs": round(_f(amount), 2)}
+                )
+            return len(part3_income)
 
-    if not annex13_branches:
-        fallback_branches = [
-            ("1", "Udupi District Virtual Branch", 1240, 1380, 685.0),
-            ("2", "Mandya District Virtual Branch", 980, 1090, 542.0),
-            ("3", "Shimoga District Virtual Branch", 870, 960, 480.0),
-            ("4", "Bangalore Urban Virtual Branch", 1310, 1450, 721.0),
-            ("5", "Dakshina Kannada Virtual Branch", 920, 1010, 513.0),
-            ("6", "Mysore District Virtual Branch", 760, 840, 428.0),
-            ("7", "Hassan District Virtual Branch", 440, 490, 245.0),
-            ("8", "Chikmagalur District Virtual Branch", 280, 310, 160.0),
-        ]
-        for b_code, b_name, c_cnt, a_cnt, tot in fallback_branches:
-            annex13_branches.append({
-                "branch_code": b_code,
-                "branch_name": b_name,
-                "customer_count": round(c_cnt * mult),
-                "account_count": round(a_cnt * mult),
-                "total_outstanding": round(tot * mult, 2)
-            })
+        if gl_available:
+            _run_section(provenance, "part3_income", _part3, conn)
+        else:
+            no_source(
+                "part3_income",
+                f"bronze.glbbal has no trial balance for year {gl_year} (available: {gl_years}).",
+            )
 
-    if total_loan_book == 0.0:
-        total_loan_book = sum(b["total_outstanding"] for b in annex13_branches)
+        # Expenses and PBT need a GL-head -> RBI-line mapping that this warehouse does
+        # not carry; extgl's expense flags are all NULL and the access-code prefixes for
+        # expense groups are ambiguous (1008/1013/1014/1021/1025 mix expenses, payables
+        # and deposits). Reporting a derived PBT would mean guessing.
+        no_source(
+            "part3_expenses",
+            "No reliable GL-head to RBI-line mapping for expense accounts; "
+            "extgl classification flags are NULL on all rows.",
+        )
 
-    capital_mult = max(1.0, min(1.0 + (date_scale_factor - 1.0) * 0.15, 2.5))
+        # -- Part 4: net owned funds ------------------------------------------
+        def _part4() -> int:
+            part4_nof.append({"particulars": "Owned Fund (from Part 1)", "amount_lakhs": owned_funds})
+            return len(part4_nof)
 
-    if not part1_capital:
-        part1_capital = [
-            {"code": "1.1", "particulars": "Paid-up Equity Capital", "amount_lakhs": round(2500.0 * capital_mult, 2)},
-            {"code": "1.2", "particulars": "Free Reserves & Statutory Reserve Fund", "amount_lakhs": round(1450.0 * capital_mult, 2)},
-            {"code": "1.3", "particulars": "Share Premium Account", "amount_lakhs": round(800.0 * capital_mult, 2)},
-            {"code": "1.4", "particulars": "Total Owned Funds (1.1 + 1.2 + 1.3)", "amount_lakhs": round(4750.0 * capital_mult, 2)},
-            {"code": "1.5", "particulars": "Less: Investments in Group Companies", "amount_lakhs": round(150.0 * capital_mult, 2)},
-            {"code": "1.6", "particulars": "Net Owned Funds (NOF)", "amount_lakhs": round(4600.0 * capital_mult, 2)},
-        ]
+        if gl_available and owned_funds:
+            _run_section(provenance, "part4_nof", _part4, conn)
+        else:
+            no_source("part4_nof", "Depends on Part 1, which has no trial balance for this period.")
 
-    if not part8_asset_quality:
-        part8_asset_quality = [
-            {"status": "Standard Assets", "count": round(6812 * date_scale_factor), "amount_lakhs": round(total_loan_book * 0.96, 2), "provision_lakhs": round(total_loan_book * 0.96 * 0.004, 2)},
-            {"status": "SMA-0 (1-30 days)", "count": round(145 * date_scale_factor), "amount_lakhs": round(total_loan_book * 0.025, 2), "provision_lakhs": round(total_loan_book * 0.025 * 0.004, 2)},
-            {"status": "SMA-1 (31-60 days)", "count": round(42 * date_scale_factor), "amount_lakhs": round(total_loan_book * 0.01, 2), "provision_lakhs": round(total_loan_book * 0.01 * 0.004, 2)},
-            {"status": "Sub-Standard Assets (NPA)", "count": round(12 * date_scale_factor), "amount_lakhs": round(total_loan_book * 0.004, 2), "provision_lakhs": round(total_loan_book * 0.004 * 0.15, 2)},
-            {"status": "Doubtful / Loss Assets", "count": round(2 * date_scale_factor), "amount_lakhs": round(total_loan_book * 0.001, 2), "provision_lakhs": round(total_loan_book * 0.001 * 1.0, 2)},
-        ]
+        # -- Part 6: exposure to sensitive sectors ----------------------------
+        def _part6() -> int:
+            cur.execute(
+                """
+                SELECT g.extgl_ext_head_descn,
+                       ABS(COALESCE(SUM(b.glbbal_bc_bal), 0)) / 100000.0 AS amount_lakhs
+                FROM bronze.glbbal b
+                JOIN bronze.extgl g ON b.glbbal_glacc_code = g.extgl_access_code
+                WHERE b.glbbal_year = %s
+                  AND LEFT(g.extgl_access_code, 4) = %s
+                GROUP BY 1
+                HAVING COALESCE(SUM(b.glbbal_bc_bal), 0) <> 0
+                ORDER BY 2 DESC
+                """,
+                (gl_year, GL_INVESTMENTS),
+            )
+            for descn, amount in cur.fetchall():
+                label = (descn or "").strip()
+                upper = label.upper()
+                if "PROPPERT" in upper or "PROPERT" in upper:
+                    sector = "Real Estate"
+                elif "SHARE" in upper or "MUTUAL" in upper:
+                    sector = "Capital Market"
+                else:
+                    sector = "Other"
+                part6_sensitive.append(
+                    {"sector": sector, "particulars": label, "exposure_lakhs": round(_f(amount), 2)}
+                )
+            return len(part6_sensitive)
 
-    if not part2_loans:
-        part2_loans = [
-            {"category": "Secured MSME & Business Loans (Product 16)", "amount_lakhs": round(total_loan_book * 0.65, 2), "share_pct": 65.0},
-            {"category": "Retail Gold Loans (Product 1)", "amount_lakhs": round(total_loan_book * 0.20, 2), "share_pct": 20.0},
-            {"category": "Microfinance & JLG Loans (Product 13)", "amount_lakhs": round(total_loan_book * 0.15, 2), "share_pct": 15.0},
-            {"category": "Receivables Due Within 3 Months", "amount_lakhs": round(total_loan_book * 0.35, 2), "share_pct": 35.0},
-            {"category": "Receivables Due 3 to 12 Months", "amount_lakhs": round(total_loan_book * 0.45, 2), "share_pct": 45.0},
-            {"category": "Receivables Due > 12 Months", "amount_lakhs": round(total_loan_book * 0.20, 2), "share_pct": 20.0},
-        ]
+        if gl_available:
+            _run_section(provenance, "part6_sensitive", _part6, conn)
+        else:
+            no_source(
+                "part6_sensitive",
+                f"bronze.glbbal has no trial balance for year {gl_year} (available: {gl_years}).",
+            )
 
-    if not part3_income:
-        part3_income = [
-            {"head": "Fund-Based Interest Income on Loans", "amount_lakhs": round(total_loan_book * 0.177, 2)},
-            {"head": "Processing & Loan Administrative Fees", "amount_lakhs": round(total_loan_book * 0.018, 2)},
-            {"head": "Treasury & Investment Income", "amount_lakhs": round(42.5 * date_scale_factor, 2)},
-            {"head": "Less: Finance & Borrowing Costs", "amount_lakhs": round(total_loan_book * 0.085, 2)},
-            {"head": "Less: Operating & Employee Expenses", "amount_lakhs": round(total_loan_book * 0.038, 2)},
-            {"head": "Net Profit Before Tax (PBT)", "amount_lakhs": round(total_loan_book * 0.072, 2)},
-        ]
+        # -- Part 8 / 8C: asset classification --------------------------------
+        def _part8() -> int:
+            nonlocal npa_amount
+            cur.execute(
+                """
+                SELECT COALESCE(gnlnr_asset_cd, 'UNCLASSIFIED') AS asset_code,
+                       COUNT(*),
+                       COALESCE(SUM(gnlnr_princ_os), 0) / 100000.0,
+                       COALESCE(SUM(gnlnr_provision_amt), 0) / 100000.0
+                FROM bronze.genln_rpt_day
+                WHERE gnlnr_report_date = CAST(%s AS DATE)
+                  AND gnlnr_closed_date IS NULL
+                GROUP BY 1
+                ORDER BY 3 DESC
+                """,
+                (snapshot_date,),
+            )
+            for asset_code, cnt, amount, provision in cur.fetchall():
+                code = (asset_code or "").strip().upper()
+                is_npa = code in NPA_ASSET_CODES
+                if is_npa:
+                    npa_amount += _f(amount)
+                part8_asset_quality.append(
+                    {
+                        "asset_code": code,
+                        "status": ASSET_CODE_LABELS.get(code, f"Unmapped asset code ({code})"),
+                        "is_npa": is_npa,
+                        "count": int(cnt),
+                        "amount_lakhs": round(_f(amount), 2),
+                        # Provision comes from the ledger, not from an assumed rate.
+                        "provision_lakhs": round(_f(provision), 2),
+                    }
+                )
+            npa_amount = round(npa_amount, 2)
+            return len(part8_asset_quality)
 
-    if not part6_sensitive:
-        part6_sensitive = [
-            {"sector": "Real Estate & Commercial Mortgages", "exposure_lakhs": round(420.0 * capital_mult, 2), "risk_weight_pct": 100.0},
-            {"sector": "Capital Markets & Mutual Funds", "exposure_lakhs": round(430.0 * capital_mult, 2), "risk_weight_pct": 125.0},
-            {"sector": "MSME Commercial Desk", "exposure_lakhs": round(total_loan_book * 0.65, 2), "risk_weight_pct": 75.0},
-        ]
+        _run_section(provenance, "part8_asset_quality", _part8, conn)
 
-    if not part8a_msme:
-        part8a_msme = [
-            {"category": "Micro Enterprises (< ₹25 Lakhs Limit)", "account_count": round(4820 * date_scale_factor), "amount_lakhs": round(total_loan_book * 0.40, 2), "avg_interest_rate": 18.2},
-            {"category": "Small Enterprises (₹25L - ₹5 Cr Limit)", "account_count": round(1850 * date_scale_factor), "amount_lakhs": round(total_loan_book * 0.45, 2), "avg_interest_rate": 17.5},
-            {"category": "Medium Enterprises (₹5 Cr - ₹10 Cr Limit)", "account_count": round(142 * date_scale_factor), "amount_lakhs": round(total_loan_book * 0.15, 2), "avg_interest_rate": 16.8},
-        ]
+        # -- Part 8A: MSME exposure -------------------------------------------
+        def _part8a() -> int:
+            # Sourced from the loan master rather than the snapshot: nsecmsmemap maps
+            # product-13 accounts exclusively, and bronze.genln_rpt_day holds product 16
+            # only, so the two sets are disjoint and the snapshot yields no MSME rows.
+            #
+            # The interest rate comes from bronze.genlnacnts.gnlnac_ln_intrate, which is
+            # populated on all 13,344 open accounts and is identical to the snapshot's
+            # gnlnr_ln_intrate wherever both exist (4,445 of 4,445 rows at 2026-05-31).
+            #
+            # Caveat recorded in provenance: genlnacnts has no as-of dimension, so the
+            # outstanding amount is a current balance, not a period-end one. Rates and
+            # account counts are unaffected by that.
+            cur.execute(
+                """
+                WITH msme_loans AS (
+                    SELECT a.gnlnac_acnt_num,
+                           a.gnlnac_ln_intrate AS interest_rate,
+                           COALESCE(a.gnlnac_lndisb_amt, a.gnlnac_sanc_amt, 0)
+                               - COALESCE(a.gnlnac_pri_repay_amt, 0) AS outstanding
+                    FROM bronze.genlnacnts a
+                    WHERE a.gnlnac_closure_date IS NULL
+                      AND a.gnlnac_ln_intrate IS NOT NULL
+                      AND EXISTS (
+                            SELECT 1 FROM bronze.nsecmsmemap m
+                            WHERE m.nsecm_account_no = a.gnlnac_acnt_num
+                      )
+                )
+                SELECT COUNT(*) AS account_count,
+                       COALESCE(SUM(outstanding), 0) / 100000.0 AS amount_lakhs,
+                       MIN(interest_rate) AS min_rate,
+                       MAX(interest_rate) AS max_rate,
+                       CASE WHEN COALESCE(SUM(outstanding), 0) > 0
+                            THEN SUM(interest_rate * outstanding) / SUM(outstanding)
+                            ELSE AVG(interest_rate) END AS weighted_rate
+                FROM msme_loans
+                """
+            )
+            row = cur.fetchone()
+            if not row or not row[0]:
+                return 0
+            part8a_msme.append(
+                {
+                    # MSMED Micro/Small/Medium classification needs investment and
+                    # turnover, which this warehouse does not hold. Only the aggregate
+                    # MSME exposure and its rate spread are derivable.
+                    "category": "Micro, Small and Medium Enterprises (aggregate)",
+                    "account_count": int(row[0]),
+                    "amount_lakhs": round(_f(row[1]), 2),
+                    "min_interest_rate": round(_f(row[2]), 2),
+                    "max_interest_rate": round(_f(row[3]), 2),
+                    "weighted_avg_interest_rate": round(_f(row[4]), 2),
+                }
+            )
+            return len(part8a_msme)
 
-    if not annex2_shareholders:
-        annex2_shareholders = [
-            {"name": "PROSPER FINANCIAL HOLDINGS LTD", "type_of_capital": "Equity Shares", "num_shares": 1850000, "face_value": 10, "shareholding_pct": 74.0},
-            {"name": "GICC MANAGEMENT TRUST", "type_of_capital": "Equity Shares", "num_shares": 400000, "face_value": 10, "shareholding_pct": 16.0},
-            {"name": "PUBLIC SHAREHOLDERS & OTHERS", "type_of_capital": "Equity Shares", "num_shares": 250000, "face_value": 10, "shareholding_pct": 10.0},
-        ]
+        _run_section(
+            provenance,
+            "part8a_msme",
+            _part8a,
+            conn,
+            note=(
+                "Sourced from bronze.genlnacnts (rate: gnlnac_ln_intrate) because "
+                "nsecmsmemap maps product-13 accounts, which have no dated snapshot. "
+                "genlnacnts has no as-of dimension, so the outstanding amount is a "
+                "current balance rather than a period-end one."
+            ),
+        )
+        no_source(
+            "part8a_msme_size_split",
+            "MSMED Micro/Small/Medium classification requires investment in plant and "
+            "machinery and turnover; bronze.nsecmsmemap carries only collateral value and LTV.",
+        )
 
-    if not annex10_top_investments:
-        fallback_investments = [
-            {"entity_name": "AL CARGO", "nature": "CURRENT", "investment_type": "EQUITY SHARES", "pan": "NA", "book_value": 3.89, "is_group_company": "false", "amt_outstanding": 0.32},
-            {"entity_name": "AXIS", "nature": "CURRENT", "investment_type": "EQUITY SHARES", "pan": "NA", "book_value": 113.20, "is_group_company": "false", "amt_outstanding": 117.37},
-            {"entity_name": "BEML", "nature": "NON-CURRENT", "investment_type": "EQUITY SHARES", "pan": "NA", "book_value": 0.79, "is_group_company": "false", "amt_outstanding": 1.36},
-            {"entity_name": "CANARA STEEL LTD", "nature": "NON-CURRENT", "investment_type": "EQUITY SHARES", "pan": "AAACC7604B", "book_value": 37.35, "is_group_company": "false", "amt_outstanding": 62.65},
-            {"entity_name": "COLGATE", "nature": "NON-CURRENT", "investment_type": "EQUITY SHARES", "pan": "NA", "book_value": 0.61, "is_group_company": "false", "amt_outstanding": 7.15},
-            {"entity_name": "DSP", "nature": "CURRENT", "investment_type": "MUTUAL FUNDS", "pan": "NA", "book_value": 144.16, "is_group_company": "false", "amt_outstanding": 149.44},
-            {"entity_name": "FRNKLIN FUND", "nature": "CURRENT", "investment_type": "MUTUAL FUNDS", "pan": "NA", "book_value": 152.46, "is_group_company": "false", "amt_outstanding": 58.07},
-            {"entity_name": "HINDUJA GLOBAL", "nature": "CURRENT", "investment_type": "EQUITY SHARES", "pan": "NA", "book_value": 2.50, "is_group_company": "false", "amt_outstanding": 64.36},
-            {"entity_name": "JAYA MAHAL TRADE", "nature": "NON-CURRENT", "investment_type": "EQUITY SHARES", "pan": "NA", "book_value": 1.49, "is_group_company": "false", "amt_outstanding": 41.81},
-            {"entity_name": "JIO FINANCE", "nature": "NON-CURRENT", "investment_type": "EQUITY SHARES", "pan": "NA", "book_value": 1.04, "is_group_company": "false", "amt_outstanding": 0.89},
-            {"entity_name": "KANARA CONSUMER PRODUCT LTD", "nature": "NON-CURRENT", "investment_type": "EQUITY SHARES", "pan": "AABCK2150K", "book_value": 109.43, "is_group_company": "false", "amt_outstanding": 4140.68},
-            {"entity_name": "KARNATAKA BANK LTD", "nature": "NON-CURRENT", "investment_type": "EQUITY SHARES", "pan": "NA", "book_value": 4.80, "is_group_company": "false", "amt_outstanding": 22.81},
-            {"entity_name": "LIC", "nature": "CURRENT", "investment_type": "MUTUAL FUNDS", "pan": "NA", "book_value": 126.67, "is_group_company": "false", "amt_outstanding": 131.37},
-            {"entity_name": "MAHA RASHTRA APEX CORPN LTD", "nature": "NON-CURRENT", "investment_type": "EQUITY SHARES", "pan": "NA", "book_value": 2.97, "is_group_company": "false", "amt_outstanding": 18.95},
-            {"entity_name": "MANIPAL AD", "nature": "NON-CURRENT", "investment_type": "EQUITY SHARES", "pan": "NA", "book_value": 0.00, "is_group_company": "false", "amt_outstanding": 64.36},
-            {"entity_name": "MANIPAL HOME FINANCE", "nature": "NON-CURRENT", "investment_type": "EQUITY SHARES", "pan": "NA", "book_value": 0.02, "is_group_company": "false", "amt_outstanding": 4.30},
-            {"entity_name": "NIPPON LTD", "nature": "CURRENT", "investment_type": "MUTUAL FUNDS", "pan": "NA", "book_value": 142.96, "is_group_company": "false", "amt_outstanding": 148.18},
-            {"entity_name": "RELIANCE INDUSTRIES LTD", "nature": "NON-CURRENT", "investment_type": "EQUITY SHARES", "pan": "NA", "book_value": 2.65, "is_group_company": "false", "amt_outstanding": 10.75},
-            {"entity_name": "RELIANCE POWER", "nature": "NON-CURRENT", "investment_type": "EQUITY SHARES", "pan": "NA", "book_value": 0.11, "is_group_company": "false", "amt_outstanding": 0.29},
-            {"entity_name": "SUNDARAM", "nature": "CURRENT", "investment_type": "MUTUAL FUNDS", "pan": "NA", "book_value": 34.07, "is_group_company": "false", "amt_outstanding": 35.29},
-            {"entity_name": "SUNDRAM INCOME PLUS", "nature": "CURRENT", "investment_type": "MUTUAL FUNDS", "pan": "NA", "book_value": 9.99, "is_group_company": "false", "amt_outstanding": 101.04},
-            {"entity_name": "TATA INVESTMENTS", "nature": "NON-CURRENT", "investment_type": "EQUITY SHARES", "pan": "NA", "book_value": 0.72, "is_group_company": "false", "amt_outstanding": 5.40},
-            {"entity_name": "ULTRATECH CEMENT", "nature": "NON-CURRENT", "investment_type": "EQUITY SHARES", "pan": "NA", "book_value": 0.15, "is_group_company": "false", "amt_outstanding": 0.04},
-            {"entity_name": "NABARD TERM DEPOSITS", "nature": "NON-CURRENT", "investment_type": "FIXED DEPOSITS", "pan": "NA", "book_value": 300.00, "is_group_company": "false", "amt_outstanding": 62.65},
-            {"entity_name": "HDFC LIQUID MUTUAL FUND", "nature": "CURRENT", "investment_type": "MUTUAL FUNDS", "pan": "NA", "book_value": 250.00, "is_group_company": "false", "amt_outstanding": 117.37},
-        ]
-        for inv in fallback_investments:
-            annex10_top_investments.append({
-                "entity_name": inv["entity_name"],
-                "nature": inv["nature"],
-                "investment_type": inv["investment_type"],
-                "pan": inv["pan"],
-                "book_value": round(inv["book_value"] * mult, 2),
-                "is_group_company": inv["is_group_company"],
-                "amt_outstanding": round(inv["amt_outstanding"] * mult, 2),
-            })
+        # -- Annex 2: shareholding pattern ------------------------------------
+        no_source(
+            "annex2_shareholders",
+            "No share register in the warehouse (bronze.mig_share_details does not exist).",
+        )
 
-    nof_item = next((item for item in part1_capital if "Net Owned Funds" in item["particulars"]), None)
-    net_owned_funds = nof_item["amount_lakhs"] if nof_item else round(4600.0 * capital_mult, 2)
-    crar_pct = round(24.8 + min(date_scale_factor * 0.1, 2.0), 1)
+        # -- Annex 9: top 25 borrowers ----------------------------------------
+        def _annex9() -> int:
+            # Aggregated by borrower, not by account: RBI asks for the top 25
+            # *borrowers*, and a borrower may hold several loans.
+            cur.execute(
+                """
+                SELECT r.gnlnr_cust_id,
+                       MAX(TRIM(r.gnlnr_cust_name))          AS borrower_name,
+                       MAX(NULLIF(TRIM(r.gnlnr_pan_no), '')) AS pan,
+                       COUNT(*)                              AS account_count,
+                       COALESCE(SUM(a.gnlnac_sanc_amt), 0) / 100000.0   AS sanctioned_amt,
+                       COALESCE(SUM(r.gnlnr_disb_amt), 0) / 100000.0    AS disbursed_amt,
+                       COALESCE(SUM(r.gnlnr_princ_os), 0) / 100000.0    AS principal_outstanding,
+                       COALESCE(SUM(r.gnlnr_int_due), 0) / 100000.0     AS accrued_interest,
+                       COALESCE(SUM(r.gnlnr_princ_os + r.gnlnr_int_due
+                                    + COALESCE(r.gnlnr_chg_due, 0)), 0) / 100000.0 AS total_outstanding,
+                       MAX(r.gnlnr_asset_cd)                 AS asset_code
+                FROM bronze.genln_rpt_day r
+                LEFT JOIN bronze.genlnacnts a ON a.gnlnac_acnt_num = r.gnlnr_acnt_num
+                WHERE r.gnlnr_report_date = CAST(%s AS DATE)
+                  AND r.gnlnr_closed_date IS NULL
+                GROUP BY r.gnlnr_cust_id
+                ORDER BY total_outstanding DESC
+                LIMIT 25
+                """,
+                (snapshot_date,),
+            )
+            for row in cur.fetchall():
+                sanctioned = round(_f(row[4]), 2)
+                disbursed = round(_f(row[5]), 2)
+                code = (row[9] or "").strip().upper()
+                annex9_top_borrowers.append(
+                    {
+                        "cust_id": str(row[0]),
+                        "borrower_name": (row[1] or "").strip(),
+                        # PAN is carried on the snapshot itself; no need to invent "NA".
+                        "pan": row[2] or "",
+                        # Legal constitution is not derivable: bronze.firmcifdata_dtl is an
+                        # associated-firm detail table, not a corporate register (7,294 of
+                        # its 7,594 ids are also individuals).
+                        "borrower_type": "",
+                        "account_count": int(row[3]),
+                        "sanctioned_amt": sanctioned,
+                        "disbursed_amt": disbursed,
+                        "undisbursed_amt": round(max(sanctioned - disbursed, 0.0), 2),
+                        "principal_outstanding": round(_f(row[6]), 2),
+                        "accrued_interest": round(_f(row[7]), 2),
+                        "account_status": ASSET_CODE_LABELS.get(code, code),
+                        "total_outstanding": round(_f(row[8]), 2),
+                    }
+                )
+            return len(annex9_top_borrowers)
 
-    if npa_amount > 0 and total_loan_book > 0:
-        npa_ratio_pct = round((npa_amount / total_loan_book) * 100, 2)
-    else:
-        npa_ratio_pct = 0.5
+        _run_section(provenance, "annex9_top_borrowers", _annex9, conn)
+
+        # -- Annex 10: top 25 investments -------------------------------------
+        def _annex10() -> int:
+            # Only aggregate GL lines exist. The entity-level detail Annex 10 asks for
+            # (name, PAN, nature, group-company flag) has no source, so those fields stay
+            # blank rather than being filled with plausible names.
+            cur.execute(
+                """
+                SELECT g.extgl_ext_head_descn,
+                       ABS(COALESCE(SUM(b.glbbal_bc_bal), 0)) / 100000.0 AS amount_lakhs
+                FROM bronze.glbbal b
+                JOIN bronze.extgl g ON b.glbbal_glacc_code = g.extgl_access_code
+                WHERE b.glbbal_year = %s
+                  AND LEFT(g.extgl_access_code, 4) = %s
+                GROUP BY 1
+                HAVING COALESCE(SUM(b.glbbal_bc_bal), 0) <> 0
+                ORDER BY 2 DESC
+                LIMIT 25
+                """,
+                (gl_year, GL_INVESTMENTS),
+            )
+            for descn, amount in cur.fetchall():
+                label = (descn or "").strip()
+                upper = label.upper()
+                if "MUTUAL" in upper:
+                    inv_type = "MUTUAL FUNDS"
+                elif "SHARE" in upper:
+                    inv_type = "EQUITY SHARES"
+                elif "PROPPERT" in upper or "PROPERT" in upper:
+                    inv_type = "IMMOVABLE PROPERTY"
+                else:
+                    inv_type = ""
+                annex10_top_investments.append(
+                    {
+                        "entity_name": "",
+                        "gl_head": label,
+                        "nature": "",
+                        "investment_type": inv_type,
+                        "pan": "",
+                        "book_value": round(_f(amount), 2),
+                        "is_group_company": "",
+                        "amt_outstanding": round(_f(amount), 2),
+                    }
+                )
+            return len(annex10_top_investments)
+
+        if gl_available:
+            _run_section(provenance, "annex10_investment_totals", _annex10, conn)
+        else:
+            no_source(
+                "annex10_investment_totals",
+                f"bronze.glbbal has no trial balance for year {gl_year} (available: {gl_years}).",
+            )
+        no_source(
+            "annex10_investment_entities",
+            "No entity-level investment register in the warehouse; bronze.glbbal carries "
+            "only aggregate investment GL heads, with no counterparty name or PAN.",
+        )
+
+        # -- Annex 11: top 25 NPA accounts ------------------------------------
+        def _annex11() -> int:
+            cur.execute(
+                """
+                SELECT TRIM(r.gnlnr_cust_name),
+                       NULLIF(TRIM(r.gnlnr_pan_no), ''),
+                       COALESCE(r.gnlnr_princ_os, 0) / 100000.0,
+                       COALESCE(r.gnlnr_int_due, 0) / 100000.0,
+                       r.gnlnr_asset_cd,
+                       r.gnlnr_npa_dt,
+                       r.gnlnr_pay_date,
+                       COALESCE(a.gnlnac_sanc_amt, 0) / 100000.0
+                FROM bronze.genln_rpt_day r
+                LEFT JOIN bronze.genlnacnts a ON a.gnlnac_acnt_num = r.gnlnr_acnt_num
+                WHERE r.gnlnr_report_date = CAST(%s AS DATE)
+                  AND r.gnlnr_closed_date IS NULL
+                  AND UPPER(TRIM(COALESCE(r.gnlnr_asset_cd, ''))) = ANY(%s)
+                ORDER BY r.gnlnr_princ_os DESC
+                LIMIT 25
+                """,
+                (snapshot_date, list(NPA_ASSET_CODES)),
+            )
+            for row in cur.fetchall():
+                annex11_top_npas.append(
+                    {
+                        "borrower_name": row[0] or "",
+                        "pan": row[1] or "",
+                        "borrower_type": "",
+                        "principal_os": round(_f(row[2]), 2),
+                        "int_due": round(_f(row[3]), 2),
+                        "asset_code": (row[4] or "").strip(),
+                        "npa_date": row[5].isoformat() if row[5] else "",
+                        "last_payment_date": row[6].isoformat() if row[6] else "",
+                        "sanctioned_amt": round(_f(row[7]), 2),
+                    }
+                )
+            return len(annex11_top_npas)
+
+        _run_section(provenance, "annex11_top_npas", _annex11, conn)
+
+        # -- Annex 13: branch details -----------------------------------------
+        def _annex13() -> int:
+            cur.execute(
+                """
+                SELECT r.gnlnr_brn_code,
+                       COUNT(DISTINCT r.gnlnr_cust_id),
+                       COUNT(*),
+                       COALESCE(SUM(r.gnlnr_princ_os), 0) / 100000.0
+                FROM bronze.genln_rpt_day r
+                WHERE r.gnlnr_report_date = CAST(%s AS DATE)
+                  AND r.gnlnr_closed_date IS NULL
+                  AND r.gnlnr_brn_code IS NOT NULL
+                GROUP BY 1
+                ORDER BY 4 DESC
+                """,
+                (snapshot_date,),
+            )
+            for brn_code, customers, accounts, amount in cur.fetchall():
+                code = str(int(brn_code))
+                annex13_branches.append(
+                    {
+                        "branch_code": code,
+                        # No branch master exists. Address, city, state and district have
+                        # no source (cust_intf_pid_dtls geography columns are 100% NULL
+                        # and gnlnr_adh_district holds unmapped numeric codes), so they
+                        # are left blank rather than invented from a district lookup.
+                        "branch_name": f"Branch {code}",
+                        "address": "",
+                        "city": "",
+                        "state": "",
+                        "district": "",
+                        "customer_count": int(customers),
+                        "account_count": int(accounts),
+                        "total_outstanding": round(_f(amount), 2),
+                    }
+                )
+            return len(annex13_branches)
+
+        _run_section(provenance, "annex13_branches", _annex13, conn)
+        no_source(
+            "annex13_branch_geography",
+            "No branch master; customer_kyc_details district/state columns are 100% NULL "
+            "and gnlnr_adh_district holds numeric codes with no reference table.",
+        )
+
+    gross_npa_pct = round(npa_amount / total_loan_book * 100, 2) if total_loan_book else 0.0
+
+    # A section is "live" only if its own query actually ran and returned rows - not
+    # merely because the connection opened.
+    live_sections = sorted(k for k, v in provenance.items() if v["status"] == "ok")
+    degraded_sections = sorted(k for k, v in provenance.items() if v["status"] != "ok")
 
     return {
         "frequency": frequency,
         "period": period,
         "start_date": start_date,
         "end_date": end_date,
+        "snapshot_date": snapshot_date,
+        "gl_year": gl_year,
         "duration_days": num_days,
-        "is_live_pg": is_live,
         "generated_at": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "provenance": provenance,
+        "coverage": coverage,
+        "live_sections": live_sections,
+        "degraded_sections": degraded_sections,
+        "is_live_pg": bool(live_sections) and not degraded_sections,
         "summary": {
-            "total_loan_book": round(total_loan_book, 2),
-            "net_owned_funds": round(net_owned_funds, 2),
-            "crar_pct": crar_pct,
-            "npa_ratio_pct": npa_ratio_pct,
+            "total_loan_book": total_loan_book,
+            "accrued_interest": accrued_interest,
+            "account_count": account_count,
+            "borrower_count": borrower_count,
+            "owned_funds": owned_funds,
+            "provision_held": provision_held,
+            "gross_npa_amount": npa_amount,
+            "gross_npa_pct": gross_npa_pct,
+            # CRAR needs risk-weighted assets (Part 9), which has no source here. It was
+            # previously reported as `24.8 + date_scale_factor * 0.1`.
+            "crar_pct": None,
         },
         "part1_capital": part1_capital,
         "part2_loans": part2_loans,
+        "part2_maturity": part2_maturity,
         "part3_income": part3_income,
+        "part4_nof": part4_nof,
         "part6_sensitive": part6_sensitive,
         "part8_asset_quality": part8_asset_quality,
         "part8a_msme": part8a_msme,
@@ -645,244 +992,469 @@ def get_dnbs02_report_data(
     }
 
 
-def _safe_set_cell_value(sheet, coord: str, value: Any, wrap_text: bool = True):
-    try:
-        cell = sheet[coord]
-        if type(cell).__name__ == "MergedCell":
-            return
-        cell.value = value
-        if wrap_text and isinstance(value, str) and len(value) > 25:
-            from openpyxl.styles import Alignment
-            cell.alignment = Alignment(wrap_text=True, vertical="center")
-    except Exception:
-        pass
-
-
-def _clear_sheet_rows_from(sheet, start_row: int = 13, max_rows: int = 50, start_col: int = 2, max_cols: int = 12):
-    """Clear pre-filled static template values in data rows starting at Row 13 to prevent cell overlaps or static text bleed-through."""
-    for r in range(start_row, start_row + max_rows):
-        for c in range(start_col, start_col + max_cols):
-            try:
-                cell = sheet.cell(row=r, column=c)
-                if type(cell).__name__ != "MergedCell":
-                    cell.value = None
-            except Exception:
-                pass
+TEMPLATE_FILENAME = "DNBS02_Blank_Template.xlsx"
 
 
 def get_template_path() -> str:
-    """Locate the official RBI DNBS Return template workbook (.xlsx) across workspace and Docker container paths."""
-    asset_file = "DNBS02_Template.xlsx"
+    """Locate the blank DNBS-02 workbook.
 
-    doc_file = "DNBS02-Important Financial Parameters (1) (4) (2).xlsx"
+    Only the blank is acceptable. The previous implementation fell back to
+    DNBS02_Template.xlsx and then to a source document under docs/, both of which are
+    completed filings; any sheet the generator did not overwrite was exported carrying
+    the prior filer's data. Regenerate the blank with
+    backend/scripts/build_dnbs02_blank_template.py.
+    """
     candidates = [
-        os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "assets", asset_file)),
-        "/srv/backend/app/assets/" + asset_file,
-        "/srv/docs/" + doc_file,
-        os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..", "docs", doc_file)),
-        os.path.abspath("docs/" + doc_file),
+        os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "assets", TEMPLATE_FILENAME)),
+        "/srv/backend/app/assets/" + TEMPLATE_FILENAME,
     ]
     for p in candidates:
         if os.path.exists(p):
             return p
-    raise FileNotFoundError(f"RBI DNBS-02 template Excel file not found. Searched candidate paths: {candidates}")
+    raise FileNotFoundError(
+        f"Blank RBI DNBS-02 template {TEMPLATE_FILENAME!r} not found (searched {candidates}). "
+        "Generate it with backend/scripts/build_dnbs02_blank_template.py."
+    )
+
+
+class CellMapError(RuntimeError):
+    """The workbook does not match the declared cell map."""
+
+
+def _norm(text: Any) -> str:
+    """Normalise a template label for comparison: collapse whitespace, casefold."""
+    return " ".join(str(text or "").split()).casefold()
+
+
+class LineItem:
+    """One RBI line item, located by its label text rather than by row number.
+
+    Row positions were previously hardcoded, which put paid-up equity into "Total
+    Authorized Capital" and net owned funds into "Compulsory Convertible Preference
+    Shares". Resolving by label makes a template change fail loudly instead of silently
+    misfiling a figure.
+    """
+
+    __slots__ = ("sheet", "label", "column", "within")
+
+    def __init__(self, sheet: str, label: str, column: str, within: Optional[Tuple[int, int]] = None):
+        self.sheet = sheet
+        self.label = label
+        self.column = column
+        self.within = within
+
+
+class TableColumn:
+    __slots__ = ("column", "field", "header")
+
+    def __init__(self, column: str, field: str, header: str):
+        self.column = column
+        self.field = field
+        self.header = header
+
+
+class TableBlock:
+    """A repeating annexure table, with each column pinned to its expected header."""
+
+    __slots__ = ("sheet", "source_key", "header_row", "first_row", "max_rows", "columns", "serial_column")
+
+    def __init__(
+        self,
+        sheet: str,
+        source_key: str,
+        columns: List[TableColumn],
+        header_row: int = 12,
+        first_row: int = 13,
+        max_rows: int = 40,
+        serial_column: Optional[str] = None,
+    ):
+        self.sheet = sheet
+        self.source_key = source_key
+        self.columns = columns
+        self.header_row = header_row
+        self.first_row = first_row
+        self.max_rows = max_rows
+        self.serial_column = serial_column
+
+
+LABEL_COLUMN = 2  # column B carries the RBI line-item taxonomy on every Part sheet
+
+TABLE_BLOCKS: List[TableBlock] = [
+    TableBlock(
+        sheet="DNBS02_Annex9",
+        source_key="annex9_top_borrowers",
+        serial_column="B",
+        columns=[
+            TableColumn("C", "borrower_name", "Name of the Borrower"),
+            TableColumn("D", "pan", "PAN"),
+            TableColumn("E", "borrower_type", "Type of Borrower"),
+            TableColumn("F", "sanctioned_amt", "Total Sanctioned"),
+            TableColumn("G", "disbursed_amt", "Disbursed Loan Amount"),
+            TableColumn("H", "undisbursed_amt", "Un-disbursed Loan Amount"),
+            TableColumn("I", "principal_outstanding", "Total Principal Outstanding"),
+            TableColumn("J", "accrued_interest", "Total Accrued Interest"),
+            TableColumn("K", "account_status", "Status of Account"),
+            TableColumn("L", "total_outstanding", "Amount Outstanding"),
+        ],
+    ),
+    TableBlock(
+        sheet="DNBS02_Annex10",
+        source_key="annex10_top_investments",
+        columns=[
+            TableColumn("B", "entity_name", "Name of the Entity"),
+            TableColumn("C", "nature", "Nature of investment"),
+            TableColumn("D", "investment_type", "Type of Investment"),
+            TableColumn("E", "pan", "PAN"),
+            TableColumn("F", "book_value", "Book Value"),
+            TableColumn("G", "is_group_company", "Whether it is Group Company?"),
+            TableColumn("H", "amt_outstanding", "Amount Outstanding"),
+        ],
+    ),
+    TableBlock(
+        sheet="DNBS02_Annex11",
+        source_key="annex11_top_npas",
+        serial_column="B",
+        columns=[
+            TableColumn("C", "borrower_name", "Name of the Borrower"),
+            TableColumn("D", "pan", "PAN"),
+            TableColumn("E", "borrower_type", "Type of Borrower"),
+            TableColumn("J", "sanctioned_amt", "Total Sanctioned Loan Amount"),
+            TableColumn("K", "principal_os", "Total Outstanding Loan Amount"),
+            TableColumn("L", "last_payment_date", "Date of Last Payment"),
+            TableColumn("M", "npa_date", "Date of First Default"),
+        ],
+    ),
+    TableBlock(
+        sheet="DNBS02_Annex13",
+        source_key="annex13_branches",
+        serial_column="B",
+        columns=[
+            TableColumn("C", "branch_name", "Branch Name"),
+            TableColumn("D", "address", "Branch Address"),
+            TableColumn("E", "city", "City"),
+            TableColumn("F", "state", "State"),
+            TableColumn("G", "district", "District"),
+            TableColumn("K", "account_count", "Number of loan accounts"),
+            TableColumn("L", "total_outstanding", "Amount of loans & advances outstanding"),
+        ],
+    ),
+    TableBlock(
+        sheet="DNBS02_Annex2",
+        source_key="annex2_shareholders",
+        columns=[
+            TableColumn("B", "name", "Name"),
+            TableColumn("C", "type_of_capital", "Type of capital"),
+            TableColumn("D", "pan", "PAN"),
+            TableColumn("E", "num_shares", "Number of shares held"),
+            TableColumn("F", "face_value", "Face Value"),
+            TableColumn("G", "shareholding_pct", "Percentage shareholding"),
+        ],
+    ),
+]
+
+# GL account description -> RBI Part 1 line. Several GL heads legitimately roll into one
+# RBI line, so values are summed per target line.
+GL_DESC_TO_PART1_LINE: Dict[str, str] = {
+    "EQUITY SHARES": "(i) Ordinary Shares",
+    "APPLICATION MONEY ON RIGHTS SHARES RECD": "(viii) Share application money pending allotment",
+    "APPLICATION MONEY RIGHTS AND SHARES RECD": "(viii) Share application money pending allotment",
+    "CAPITAL RESERVE": "(i) Capital Reserve",
+    "SHARES PREMIUM": "(iii) Share Premium",
+    "GENERAL RESERVE": "(iv) General Reserves",
+    "SPECIAL RESERVE": "(v) Statutory/Special Reserve",
+    "PROFIT AND LOSS ACCOUNT": "(x) Balance of profit and loss account",
+    "PROFIT & LOSS A/C": "(x) Balance of profit and loss account",
+    "PROFIT AND LOSS FOR 25 AND 2026": "(x) Balance of profit and loss account",
+}
+
+# GL account description -> RBI Part 3 income line.
+GL_DESC_TO_PART3_LINE: Dict[str, str] = {
+    "MICRO ENTERPRISES - INTEREST INCOME": "(b) Interest on Other Loans",
+    "INTEREST COLLECTED": "(b) Interest on Other Loans",
+    "INTEREST RECEIVED - LOANS AND ADVANCES": "(b) Interest on Other Loans",
+    "INTEREST OTHERS": "(b) Interest on Other Loans",
+    "INTEREST ON FD WITH BANKS": "(a) Interest",
+    "DIVIDEND RECEIVED": "(b) Dividends",
+    "PROFIT ON SALE OF MUTUAL FUNDS": "(vi) Profit on Sale of Investments",
+    "PROFIT ON SALE OF SHARES": "(vi) Profit on Sale of Investments",
+}
+
+# Part 3 has two "(a) Interest" style labels; scope the investment-income ones to the
+# rows below "(v) Investment Income" so the lookup stays unambiguous.
+PART3_INVESTMENT_SCOPE = (23, 26)
+
+PART1_TOTAL_LINES = {
+    "2 Share Capital": "share_capital",
+    "3 Reserves and Surplus": "reserves",
+}
+
+ASSET_CLASS_TO_PART8C_LINE = {
+    "standard": "(i) Standard assets",
+    "sub": "(ii) Sub-standard assets",
+    "doubtful": "(iii) Doubtful assets",
+    "loss": "(iv) Loss assets",
+}
+
+
+def _find_label_row(sheet, label: str, within: Optional[Tuple[int, int]] = None) -> int:
+    """Row whose label column starts with `label`. Must match exactly one row."""
+    target = _norm(label)
+    lo, hi = within if within else (1, sheet.max_row)
+    matches = [
+        r
+        for r in range(lo, min(hi, sheet.max_row) + 1)
+        if _norm(sheet.cell(r, LABEL_COLUMN).value).startswith(target)
+    ]
+    if len(matches) == 1:
+        return matches[0]
+    if not matches:
+        raise CellMapError(f"{sheet.title}: no row whose label starts with {label!r}")
+    raise CellMapError(
+        f"{sheet.title}: label {label!r} is ambiguous, matches rows {matches}. "
+        "Use a longer fragment or scope it with `within`."
+    )
+
+
+def validate_cell_map(wb) -> None:
+    """Check every declared table header exists before writing anything.
+
+    A template whose columns have shifted must fail here rather than silently writing
+    outstanding balances into a date column, which is what the old positional writer did
+    on Annex 11 and Annex 13.
+    """
+    problems: List[str] = []
+
+    for block in TABLE_BLOCKS:
+        if block.sheet not in wb.sheetnames:
+            problems.append(f"{block.sheet}: sheet missing from template")
+            continue
+        sheet = wb[block.sheet]
+        for col in block.columns:
+            actual = _norm(sheet[f"{col.column}{block.header_row}"].value)
+            if not actual.startswith(_norm(col.header)):
+                problems.append(
+                    f"{block.sheet}!{col.column}{block.header_row}: expected header "
+                    f"{col.header!r} for field {col.field!r}, found {actual!r}"
+                )
+
+    if problems:
+        raise CellMapError(
+            "DNBS-02 template does not match the declared cell map:\n  "
+            + "\n  ".join(problems)
+        )
+
+
+def _safe_set_cell_value(sheet, coord: str, value: Any, wrap_text: bool = True) -> None:
+    """Write a cell, skipping merged anchors. Raises on anything unexpected."""
+    cell = sheet[coord]
+    if type(cell).__name__ == "MergedCell":
+        logger.warning("DNBS-02: skipped merged cell %s!%s", sheet.title, coord)
+        return
+    cell.value = value
+    if wrap_text and isinstance(value, str) and len(value) > 25:
+        from openpyxl.styles import Alignment
+
+        cell.alignment = Alignment(wrap_text=True, vertical="center")
+
+
+def _write_line(sheet, item: LineItem, value: Any) -> None:
+    row = _find_label_row(sheet, item.label, item.within)
+    _safe_set_cell_value(sheet, f"{item.column}{row}", value, wrap_text=False)
+
+
+def _write_table(wb, data: Dict[str, Any], block: TableBlock) -> int:
+    """Write one annexure table. Rows beyond the data are left blank."""
+    if block.sheet not in wb.sheetnames:
+        return 0
+    sheet = wb[block.sheet]
+    rows = data.get(block.source_key) or []
+    for idx, record in enumerate(rows[: block.max_rows]):
+        row_num = block.first_row + idx
+        if block.serial_column:
+            _safe_set_cell_value(sheet, f"{block.serial_column}{row_num}", idx + 1, wrap_text=False)
+        for col in block.columns:
+            value = record.get(col.field, "")
+            _safe_set_cell_value(sheet, f"{col.column}{row_num}", value)
+    return len(rows[: block.max_rows])
 
 
 def generate_dnbs02_excel(
     frequency: str = "monthly",
-    period: str = "2026-05",
+    period: str = "",
     start_date: Optional[str] = None,
     end_date: Optional[str] = None,
 ) -> bytes:
-    """Generate Excel file (.xlsx) for RBI DNBS Return using openpyxl, maintaining all 28 template sheets with zero overlaps."""
-    data = get_dnbs02_report_data(frequency=frequency, period=period, start_date=start_date, end_date=end_date)
+    """Render the RBI DNBS-02 return into the blank template workbook.
 
-    template_path = get_template_path()
-    wb = openpyxl.load_workbook(template_path)
+    Only values with a source are written. Sections the warehouse cannot back are left
+    blank and listed on the FilingInfo sheet, rather than being filled with fabricated
+    figures.
+    """
+    data = get_dnbs02_report_data(
+        frequency=frequency, period=period, start_date=start_date, end_date=end_date
+    )
 
-    # Format date strings for template header cells
+    wb = openpyxl.load_workbook(get_template_path())
+    validate_cell_map(wb)
+
     try:
-        s_dt = datetime.datetime.strptime(data['start_date'], "%Y-%m-%d").strftime("%d/%m/%Y")
-        e_dt = datetime.datetime.strptime(data['end_date'], "%Y-%m-%d").strftime("%d/%m/%Y")
-        upper_end_dt = datetime.datetime.strptime(data['end_date'], "%Y-%m-%d").strftime("%d-%b-%Y").upper()
-    except Exception:
-        s_dt = data['start_date']
-        e_dt = data['end_date']
-        upper_end_dt = data['end_date'].upper()
+        end_display = datetime.datetime.strptime(data["end_date"], "%Y-%m-%d").strftime("%d/%m/%Y")
+        start_display = datetime.datetime.strptime(data["start_date"], "%Y-%m-%d").strftime("%d/%m/%Y")
+        end_upper = datetime.datetime.strptime(data["end_date"], "%Y-%m-%d").strftime("%d-%b-%Y").upper()
+    except ValueError:
+        start_display, end_display, end_upper = data["start_date"], data["end_date"], data["end_date"]
 
-    # 1. FilingInfo sheet
+    # Period-end stamp on every reporting sheet.
+    for name in wb.sheetnames:
+        if name.startswith("DNBS02_"):
+            _safe_set_cell_value(wb[name], "B5", f"Reporting Period End Date :{end_upper}", wrap_text=False)
+
+    # -- FilingInfo, including an explicit statement of what has no source ----
     if "FilingInfo" in wb.sheetnames:
         sheet = wb["FilingInfo"]
-        _safe_set_cell_value(sheet, "B2", f"Period: {data['start_date']} to {data['end_date']} ({data['frequency'].capitalize()})")
-        _safe_set_cell_value(sheet, "B3", f"Generated Date: {data['generated_at']}")
-        _safe_set_cell_value(sheet, "C11", data['frequency'].capitalize())
-        _safe_set_cell_value(sheet, "C12", s_dt)
-        _safe_set_cell_value(sheet, "C13", e_dt)
+        _safe_set_cell_value(sheet, "B2", f"Period: {data['start_date']} to {data['end_date']} ({data['frequency']})")
+        _safe_set_cell_value(sheet, "B3", f"Generated: {data['generated_at']}")
+        _safe_set_cell_value(sheet, "C11", data["frequency"].capitalize())
+        _safe_set_cell_value(sheet, "C12", start_display)
+        _safe_set_cell_value(sheet, "C13", end_display)
         _safe_set_cell_value(sheet, "C15", "LAKHS")
-        _safe_set_cell_value(sheet, "C16", "1.0.0")
+        _safe_set_cell_value(
+            sheet,
+            "B18",
+            f"Portfolio snapshot date: {data['snapshot_date']}; GL trial balance year: {data['gl_year']}.",
+        )
+        coverage = data.get("coverage") or {}
+        if coverage.get("uncovered_accounts"):
+            _safe_set_cell_value(
+                sheet,
+                "B19",
+                (
+                    f"Coverage: {coverage['covered_accounts']} accounts "
+                    f"({coverage['covered_lakhs']} lakh, {coverage['covered_pct']}% of the open "
+                    f"book). {coverage['uncovered_accounts']} open accounts "
+                    f"({coverage['uncovered_lakhs']} lakh) have no dated snapshot and are excluded."
+                ),
+            )
+        if data.get("degraded_sections"):
+            _safe_set_cell_value(
+                sheet,
+                "B20",
+                "Sections left blank (no source): " + ", ".join(data["degraded_sections"]),
+            )
 
-    # 2. DNBS02_PART1 sheet (Capital Structure)
-    if "DNBS02_PART1" in wb.sheetnames:
-        sheet_p1 = wb["DNBS02_PART1"]
-        _safe_set_cell_value(sheet_p1, "B5", f"Reporting Period End Date :{upper_end_dt}")
-        for idx, item in enumerate(data["part1_capital"]):
-            row_num = 13 + idx
-            _safe_set_cell_value(sheet_p1, f"C{row_num}", item["amount_lakhs"])
+    # -- Part 1: sources of funds -------------------------------------------
+    if "DNBS02_PART1" in wb.sheetnames and data.get("part1_capital"):
+        sheet = wb["DNBS02_PART1"]
+        by_line: Dict[str, float] = {}
+        share_capital = reserves = 0.0
+        for row in data["part1_capital"]:
+            if row["gl_group"] == "TOTAL":
+                if row["particulars"] == "Share Capital":
+                    share_capital = row["amount_lakhs"]
+                elif row["particulars"] == "Reserves and Surplus":
+                    reserves = row["amount_lakhs"]
+                continue
+            target = GL_DESC_TO_PART1_LINE.get(row["particulars"].upper())
+            if target:
+                by_line[target] = round(by_line.get(target, 0.0) + row["amount_lakhs"], 2)
+            else:
+                logger.info("DNBS-02 Part 1: GL head %r has no RBI line mapping", row["particulars"])
+        for label, amount in by_line.items():
+            _write_line(sheet, LineItem("DNBS02_PART1", label, "C"), amount)
+        _write_line(sheet, LineItem("DNBS02_PART1", "2 Share Capital", "C"), share_capital)
+        _write_line(sheet, LineItem("DNBS02_PART1", "3 Reserves and Surplus", "C"), reserves)
 
-    # 3. DNBS02_PART2 sheet (Loan Assets)
+    # -- Part 2: application of funds ---------------------------------------
     if "DNBS02_PART2" in wb.sheetnames:
-        sheet_p2 = wb["DNBS02_PART2"]
-        _safe_set_cell_value(sheet_p2, "B5", f"Reporting Period End Date :{upper_end_dt}")
-        _safe_set_cell_value(sheet_p2, "C13", data["summary"]["total_loan_book"])
-        if len(data["part2_loans"]) >= 6:
-            _safe_set_cell_value(sheet_p2, "C14", data["part2_loans"][0]["amount_lakhs"])
-            _safe_set_cell_value(sheet_p2, "C15", data["part2_loans"][1]["amount_lakhs"] + data["part2_loans"][2]["amount_lakhs"])
-            _safe_set_cell_value(sheet_p2, "C16", data["part2_loans"][3]["amount_lakhs"])
-            _safe_set_cell_value(sheet_p2, "C17", data["part2_loans"][4]["amount_lakhs"])
-            _safe_set_cell_value(sheet_p2, "C18", data["part2_loans"][5]["amount_lakhs"])
+        sheet = wb["DNBS02_PART2"]
+        _write_line(
+            sheet, LineItem("DNBS02_PART2", "1 Loans & Advances", "C"), data["summary"]["total_loan_book"]
+        )
+        # The secured/unsecured split is deliberately not written: the scheme master marks
+        # every scheme unsecured but covers product 16 only, so the split has no source.
+        maturity_lines = {
+            "Receivable within 3 months": "(a) Of Total Loans",
+            "Receivable in 3 to 12 months": "(b) Of Total Loans",
+            "Receivable after 12 months": "(c ) Of Total Loans",
+        }
+        for bucket in data.get("part2_maturity", []):
+            label = maturity_lines.get(bucket["bucket"])
+            if label:
+                _write_line(sheet, LineItem("DNBS02_PART2", label, "C"), bucket["amount_lakhs"])
 
-    # 4. DNBS02_PART3 sheet (Profitability)
-    if "DNBS02_PART3" in wb.sheetnames:
-        sheet_p3 = wb["DNBS02_PART3"]
-        _safe_set_cell_value(sheet_p3, "B5", f"Reporting Period End Date :{upper_end_dt}")
-        if len(data["part3_income"]) >= 6:
-            _safe_set_cell_value(sheet_p3, "C14", data["part3_income"][0]["amount_lakhs"])
-            _safe_set_cell_value(sheet_p3, "C15", data["part3_income"][1]["amount_lakhs"])
-            _safe_set_cell_value(sheet_p3, "C16", data["part3_income"][2]["amount_lakhs"])
-            _safe_set_cell_value(sheet_p3, "C17", data["part3_income"][3]["amount_lakhs"])
-            _safe_set_cell_value(sheet_p3, "C18", data["part3_income"][4]["amount_lakhs"])
-            _safe_set_cell_value(sheet_p3, "C19", data["part3_income"][5]["amount_lakhs"])
+    # -- Part 3: income ------------------------------------------------------
+    if "DNBS02_PART3" in wb.sheetnames and data.get("part3_income"):
+        sheet = wb["DNBS02_PART3"]
+        by_line: Dict[str, float] = {}
+        for row in data["part3_income"]:
+            target = GL_DESC_TO_PART3_LINE.get(row["head"].upper())
+            if target:
+                by_line[target] = round(by_line.get(target, 0.0) + row["amount_lakhs"], 2)
+            else:
+                logger.info("DNBS-02 Part 3: GL head %r has no RBI line mapping", row["head"])
+        for label, amount in by_line.items():
+            scope = PART3_INVESTMENT_SCOPE if label in ("(a) Interest", "(b) Dividends") else None
+            _write_line(sheet, LineItem("DNBS02_PART3", label, "C", scope), amount)
 
-    # 5. DNBS02_PART4 sheet (Net Owned Funds)
-    if "DNBS02_PART4" in wb.sheetnames:
-        sheet_p4 = wb["DNBS02_PART4"]
-        _safe_set_cell_value(sheet_p4, "B5", f"Reporting Period End Date :{upper_end_dt}")
-        _safe_set_cell_value(sheet_p4, "C13", data["summary"]["net_owned_funds"])
+    # -- Part 4: net owned funds --------------------------------------------
+    if "DNBS02_PART4" in wb.sheetnames and data.get("part4_nof"):
+        sheet = wb["DNBS02_PART4"]
+        _write_line(
+            sheet,
+            LineItem("DNBS02_PART4", "Owned Fund (from Part 1)", "C"),
+            data["summary"]["owned_funds"],
+        )
 
-    # 6. DNBS02_PART6 sheet (Sensitive Sectors)
-    if "DNBS02_PART6" in wb.sheetnames:
-        sheet_p6 = wb["DNBS02_PART6"]
-        _safe_set_cell_value(sheet_p6, "B5", f"Reporting Period End Date :{upper_end_dt}")
-        if len(data["part6_sensitive"]) >= 3:
-            _safe_set_cell_value(sheet_p6, "C14", data["part6_sensitive"][0]["exposure_lakhs"])
-            _safe_set_cell_value(sheet_p6, "C15", data["part6_sensitive"][1]["exposure_lakhs"])
-            _safe_set_cell_value(sheet_p6, "C16", data["part6_sensitive"][2]["exposure_lakhs"])
+    # -- Part 8C: asset classification --------------------------------------
+    if "DNBS02_PART8C" in wb.sheetnames and data.get("part8_asset_quality"):
+        sheet = wb["DNBS02_PART8C"]
+        buckets = {"standard": 0.0, "sub": 0.0, "doubtful": 0.0, "loss": 0.0}
+        provisions = dict(buckets)
+        for row in data["part8_asset_quality"]:
+            code = row["asset_code"]
+            if code in ("STD", "SMA0", "SMA1", "SMA2"):
+                key = "standard"
+            elif code in ("SUB", "NPA"):
+                key = "sub"
+            elif code in ("DBT", "D1", "D2", "D3"):
+                key = "doubtful"
+            elif code == "LOSS":
+                key = "loss"
+            else:
+                logger.warning("DNBS-02 Part 8C: unmapped asset code %r", code)
+                continue
+            buckets[key] += row["amount_lakhs"]
+            provisions[key] += row["provision_lakhs"]
+        for key, label in ASSET_CLASS_TO_PART8C_LINE.items():
+            _write_line(sheet, LineItem("DNBS02_PART8C", label, "C"), round(buckets[key], 2))
+            _write_line(sheet, LineItem("DNBS02_PART8C", label, "D"), round(provisions[key], 2))
+        gross = round(sum(buckets.values()), 2)
+        _write_line(sheet, LineItem("DNBS02_PART8C", "2 Gross Credit Exposure", "C"), gross)
+        _write_line(sheet, LineItem("DNBS02_PART8C", "2 Gross Credit Exposure", "D"), round(sum(provisions.values()), 2))
+        _write_line(sheet, LineItem("DNBS02_PART8C", "3 Total NPAs", "C"), data["summary"]["gross_npa_amount"])
+        _write_line(sheet, LineItem("DNBS02_PART8C", "4 Gr. NPA (%)", "C"), data["summary"]["gross_npa_pct"])
 
-    # 7. DNBS02_PART8 sheet (Sectoral Asset Quality)
-    if "DNBS02_PART8" in wb.sheetnames:
-        sheet_p8 = wb["DNBS02_PART8"]
-        _safe_set_cell_value(sheet_p8, "B5", f"Reporting Period End Date :{upper_end_dt}")
-        for idx, aq in enumerate(data.get("part8_asset_quality", [])):
-            r = 13 + idx
-            _safe_set_cell_value(sheet_p8, f"B{r}", aq["status"])
-            _safe_set_cell_value(sheet_p8, f"C{r}", aq["count"])
-            _safe_set_cell_value(sheet_p8, f"D{r}", aq["amount_lakhs"])
-            _safe_set_cell_value(sheet_p8, f"E{r}", aq["provision_lakhs"])
+    # -- Part 8A: MSME exposure ---------------------------------------------
+    if "DNBS02_PART8A" in wb.sheetnames and data.get("part8a_msme"):
+        sheet = wb["DNBS02_PART8A"]
+        msme = data["part8a_msme"][0]
+        for label in ("A Micro, Small and Medium Enterprises", "A.1 Direct Exposure"):
+            _write_line(sheet, LineItem("DNBS02_PART8A", label, "C"), msme["account_count"])
+            _write_line(sheet, LineItem("DNBS02_PART8A", label, "D"), msme["amount_lakhs"])
+        # Columns G/H/I are Min / Max / Weighted Average - the old writer put a single
+        # average into G, the "Min" column.
+        _write_line(sheet, LineItem("DNBS02_PART8A", "A.1 Direct Exposure", "G"), msme["min_interest_rate"])
+        _write_line(sheet, LineItem("DNBS02_PART8A", "A.1 Direct Exposure", "H"), msme["max_interest_rate"])
+        _write_line(
+            sheet,
+            LineItem("DNBS02_PART8A", "A.1 Direct Exposure", "I"),
+            msme["weighted_avg_interest_rate"],
+        )
 
-    # 8. DNBS02_PART8A sheet (MSME Profile)
-    if "DNBS02_PART8A" in wb.sheetnames:
-        sheet_p8a = wb["DNBS02_PART8A"]
-        _safe_set_cell_value(sheet_p8a, "B5", f"Reporting Period End Date :{upper_end_dt}")
-        if len(data["part8a_msme"]) >= 3:
-            # Micro
-            _safe_set_cell_value(sheet_p8a, "C17", data["part8a_msme"][0]["account_count"])
-            _safe_set_cell_value(sheet_p8a, "D17", data["part8a_msme"][0]["amount_lakhs"])
-            _safe_set_cell_value(sheet_p8a, "G17", data["part8a_msme"][0]["avg_interest_rate"])
-            # Small
-            _safe_set_cell_value(sheet_p8a, "C18", data["part8a_msme"][1]["account_count"])
-            _safe_set_cell_value(sheet_p8a, "D18", data["part8a_msme"][1]["amount_lakhs"])
-            _safe_set_cell_value(sheet_p8a, "G18", data["part8a_msme"][1]["avg_interest_rate"])
-            # Medium
-            _safe_set_cell_value(sheet_p8a, "C19", data["part8a_msme"][2]["account_count"])
-            _safe_set_cell_value(sheet_p8a, "D19", data["part8a_msme"][2]["amount_lakhs"])
-            _safe_set_cell_value(sheet_p8a, "G19", data["part8a_msme"][2]["avg_interest_rate"])
-
-    # 9. DNBS02_PART8C (Asset Classification & Provisioning)
-    if "DNBS02_PART8C" in wb.sheetnames:
-        sheet_p8c = wb["DNBS02_PART8C"]
-        _safe_set_cell_value(sheet_p8c, "B5", f"Reporting Period End Date :{upper_end_dt}")
-        total_loan = data["summary"]["total_loan_book"]
-        _safe_set_cell_value(sheet_p8c, "C14", total_loan)  # Standard Asset Outstanding
-        _safe_set_cell_value(sheet_p8c, "D14", round(total_loan * 0.004, 2))  # Standard Asset Provision (0.4%)
-
-    # 10. DNBS02_Annex2 (Shareholders Pattern)
-    if "DNBS02_Annex2" in wb.sheetnames:
-        sheet_a2 = wb["DNBS02_Annex2"]
-        _safe_set_cell_value(sheet_a2, "B5", f"Reporting Period End Date :{upper_end_dt}")
-        _clear_sheet_rows_from(sheet_a2, start_row=13, max_rows=30, start_col=2, max_cols=6)
-        for idx, item in enumerate(data["annex2_shareholders"]):
-            r = 13 + idx
-            _safe_set_cell_value(sheet_a2, f"B{r}", item["name"])
-            _safe_set_cell_value(sheet_a2, f"C{r}", item["type_of_capital"])
-            _safe_set_cell_value(sheet_a2, f"D{r}", "NA")
-            _safe_set_cell_value(sheet_a2, f"E{r}", item["num_shares"])
-            _safe_set_cell_value(sheet_a2, f"F{r}", item["face_value"])
-            _safe_set_cell_value(sheet_a2, f"G{r}", item["shareholding_pct"])
-
-    # 11. DNBS02_Annex9 (Top 25 Borrowers)
-    if "DNBS02_Annex9" in wb.sheetnames:
-        sheet_a9 = wb["DNBS02_Annex9"]
-        _safe_set_cell_value(sheet_a9, "B5", f"Reporting Period End Date :{upper_end_dt}")
-        _clear_sheet_rows_from(sheet_a9, start_row=13, max_rows=40, start_col=2, max_cols=11)
-        for idx, b in enumerate(data["annex9_top_borrowers"]):
-            r = 13 + idx
-            _safe_set_cell_value(sheet_a9, f"B{r}", idx + 1)
-            _safe_set_cell_value(sheet_a9, f"C{r}", b["borrower_name"])
-            _safe_set_cell_value(sheet_a9, f"D{r}", b["pan"])
-            _safe_set_cell_value(sheet_a9, f"E{r}", b["borrower_type"])
-            _safe_set_cell_value(sheet_a9, f"F{r}", b["sanctioned_amt"])
-            _safe_set_cell_value(sheet_a9, f"G{r}", b["disbursed_amt"])
-            _safe_set_cell_value(sheet_a9, f"H{r}", 0.0)
-            _safe_set_cell_value(sheet_a9, f"I{r}", b["principal_outstanding"])
-            _safe_set_cell_value(sheet_a9, f"J{r}", b["accrued_interest"])
-            _safe_set_cell_value(sheet_a9, f"K{r}", b["account_status"])
-            _safe_set_cell_value(sheet_a9, f"L{r}", b["total_outstanding"])
-
-    # 12. DNBS02_Annex10 (Top Investments)
-    if "DNBS02_Annex10" in wb.sheetnames:
-        sheet_a10 = wb["DNBS02_Annex10"]
-        _safe_set_cell_value(sheet_a10, "B5", f"Reporting Period End Date :{upper_end_dt}")
-        _clear_sheet_rows_from(sheet_a10, start_row=13, max_rows=30, start_col=2, max_cols=7)
-        for idx, inv in enumerate(data.get("annex10_top_investments", [])):
-            r = 13 + idx
-            _safe_set_cell_value(sheet_a10, f"B{r}", inv["entity_name"])
-            _safe_set_cell_value(sheet_a10, f"C{r}", inv.get("nature", "CURRENT"))
-            _safe_set_cell_value(sheet_a10, f"D{r}", inv["investment_type"])
-            _safe_set_cell_value(sheet_a10, f"E{r}", inv.get("pan", "NA"))
-            _safe_set_cell_value(sheet_a10, f"F{r}", inv["book_value"])
-            _safe_set_cell_value(sheet_a10, f"G{r}", inv.get("is_group_company", "false"))
-            _safe_set_cell_value(sheet_a10, f"H{r}", inv.get("amt_outstanding", 0.0))
-
-    # 13. DNBS02_Annex11 (Top NPA Accounts)
-    if "DNBS02_Annex11" in wb.sheetnames:
-        sheet_a11 = wb["DNBS02_Annex11"]
-        _safe_set_cell_value(sheet_a11, "B5", f"Reporting Period End Date :{upper_end_dt}")
-        _clear_sheet_rows_from(sheet_a11, start_row=13, max_rows=30, start_col=2, max_cols=13)
-        for idx, npa in enumerate(data.get("annex11_top_npas", [])):
-            r = 13 + idx
-            _safe_set_cell_value(sheet_a11, f"B{r}", idx + 1)
-            _safe_set_cell_value(sheet_a11, f"C{r}", npa["borrower_name"])
-            _safe_set_cell_value(sheet_a11, f"D{r}", npa.get("pan", "NA"))
-            _safe_set_cell_value(sheet_a11, f"E{r}", npa["principal_os"])
-            _safe_set_cell_value(sheet_a11, f"F{r}", npa["int_due"])
-            _safe_set_cell_value(sheet_a11, f"G{r}", npa["asset_code"])
-
-    # 14. DNBS02_Annex13 (Branch Network)
-    if "DNBS02_Annex13" in wb.sheetnames:
-        sheet_a13 = wb["DNBS02_Annex13"]
-        _safe_set_cell_value(sheet_a13, "B5", f"Reporting Period End Date :{upper_end_dt}")
-        _clear_sheet_rows_from(sheet_a13, start_row=13, max_rows=30, start_col=2, max_cols=9)
-        for idx, br in enumerate(data["annex13_branches"]):
-            r = 13 + idx
-            _safe_set_cell_value(sheet_a13, f"B{r}", idx + 1)
-            _safe_set_cell_value(sheet_a13, f"C{r}", br["branch_name"])
-            _safe_set_cell_value(sheet_a13, f"D{r}", "Virtual District Branch Office")
-            _safe_set_cell_value(sheet_a13, f"E{r}", "District Desk")
-            _safe_set_cell_value(sheet_a13, f"F{r}", "Karnataka")
-            _safe_set_cell_value(sheet_a13, f"G{r}", br["branch_name"].replace(" Virtual Branch", ""))
-            _safe_set_cell_value(sheet_a13, f"H{r}", br["customer_count"])
-            _safe_set_cell_value(sheet_a13, f"I{r}", br["account_count"])
-            _safe_set_cell_value(sheet_a13, f"J{r}", br["total_outstanding"])
+    # -- Annexure tables -----------------------------------------------------
+    for block in TABLE_BLOCKS:
+        written = _write_table(wb, data, block)
+        logger.debug("DNBS-02 %s: wrote %d rows", block.sheet, written)
 
     buf = io.BytesIO()
     wb.save(buf)

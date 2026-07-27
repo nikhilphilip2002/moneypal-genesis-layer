@@ -1,0 +1,374 @@
+--- PAGE 1 ---
+Moneypal  Genesis  Intelligence  Layer  
+Sprint  1  Briefing  
+July  14  –  August  3,  2026  
+Sprint  Theme  
+From  Data  to  Intelligence  
+ 
+Why  are  we  building  this?  
+Every  lender  today  has  data.  
+Very  few  have  intelligence.  
+Core  systems  such  as  Loan  Origination  Systems  (LOS),  Loan  Management  Systems  (LMS)  
+and
+ 
+Accounting
+ 
+Systems
+ 
+record
+ 
+transactions
+ 
+extremely
+ 
+well.
+ 
+They
+ 
+answer
+ 
+questions
+ 
+like:
+ 
+●  Who  borrowed?  ●  How  much  was  disbursed?  ●  Was  repayment  received?  ●  What  is  the  ledger  balance?  
+They  do  not  answer  the  questions  management  asks  every  morning.  
+●  Is  the  business  becoming  stronger?  ●  Are  our  investments  creating  value?  ●  What  would  our  regulator  worry  about  if  they  walked  in  today?  
+The  Genesis  Intelligence  Layer  sits  above  operational  systems  and  continuously  answers  
+these
+ 
+questions.
+ 
+This  sprint  is  the  first  step  towards  building  that  capability.  
+     
+--- PAGE 2 ---
+Scope  
+This  sprint  focuses  on  one  institution  type  only.  
+Institution  
+Lender  
+The  architecture  should  be  generic  enough  to  support  two  other  types  of  clients  Moneypal  
+would
+ 
+have
+ 
+-
+ 
+Banks
+ 
+and
+ 
+Marketplace
+ 
+Operators.
+ 
+This
+ 
+can
+ 
+be
+ 
+covered
+ 
+in
+ 
+future
+ 
+sprints,
+ 
+but
+ 
+Sprint
+ 
+1
+ 
+delivers
+ 
+intelligence
+ 
+only
+ 
+for
+ 
+Lenders
+ 
+(specifically
+ 
+GICC,
+ 
+Ltd).
+ 
+ 
+Data  Sources  
+The  team  will  work  with  two  systems.  
+Prosper  
+Loan  Origination  System  /  Loan  Management  System  
+Source:  
+Oracle  Data  Dump  
+Snapshot  Date:  
+30  June  2026  
+Contains:  
+●  Customers  ●  Loans  ●  Repayments  ●  Collections  ●  Loan  lifecycle  ●  Portfolio  information  
+ 
+Tally  ERP  
+General  Ledger  
+--- PAGE 3 ---
+Contains:  
+●  Chart  of  Accounts  ●  Trial  Balance  ●  Journal  Entries  ●  Profit  &  Loss  ●  Balance  Sheet  ●  Financial  transactions  
+ 
+Genesis  is  not  another  transaction  system.  
+Genesis  reads  operational  data  and  converts  it  into  management  intelligence.  
+ 
+The  Three  Personas  that  Genesis  
+Intelligence
+ 
+is
+ 
+being
+ 
+built
+ 
+for
+ 
+Every  screen,  report  and  dashboard  should  answer  a  real  person's  question.  
+ 
+Business  
+Question:  
+"How  is  my  business  doing?"  
+Business  users  care  about:  
+Portfolio  growth  -  Where  is  the  growth  coming  from?  What's  holding  us  back  or  slowing  
+down?
+ 
+Disbursements  -  Who  did  well?  Are  we  becoming  efficient?  
+Collections  -  Who  did  well?  Who  did  not?  Are  we  becoming  efficient?  
+Customer  growth  -  Where  is  this  coming  from?  What  are  customers  saying  about  us?  
+Product  performance  -  Which  is  doing  well?  Which  is  pulling  us  back?  
+Branch  performance  -   
+Portfolio  quality  
+--- PAGE 4 ---
+Early  warning  indicators  -  Defaults,  missed  repayments  and  possibility  of  this  signalling  that  
+others
+ 
+with
+ 
+similar
+ 
+characteristics
+ 
+might
+ 
+default
+ 
+Business  trends  
+What  are  my  competitors  saying?  
+What  are  others  saying  about  me  and  my  competitors?  Note:  Articles  comparing  the  client’s  
+organization
+ 
+with
+ 
+others
+ 
+is
+ 
+especially
+ 
+important
+ 
+ 
+Finance  
+Question:  
+"How  are  our  investments  doing?"  
+Finance  users  care  about:  
+Financial  metrics  (ROI  for  various  portfolios)  
+ 
+Governance,  Risk  &  Compliance  (GRC)  
+Question:  
+"What  does  the  regulator  think  about  us?"  
+GRC  users  care  about:  
+What  reports/data  submissions  are  due  to  which  regulator  and  “Generate  as-on  
+date/projected
+ 
+return
+ 
+for
+ 
+X
+ 
+date”
+ 
+or
+ 
+“Give
+ 
+me
+ 
+the
+ 
+filed
+ 
+return
+ 
+from
+ 
+X
+ 
+date”
+ 
+Regulatory  ratios  
+Portfolio  concentration  
+Overdue  accounts  
+Provisioning  
+Internal  controls  
+Policy  breaches  
+Risk  indicators  
+Audit  readiness  
+--- PAGE 5 ---
+Compliance  status  
+The  GRC  dashboard  should  feel  like  a  regulator  looking  over  the  institution's  shoulder.  
+ 
+Sprint  Deliverables  
+Three  Intelligence  Modules.  
+ 
+Module  1  
+Economic  Intelligence  
+Purpose  
+Understand  the  health  of  the  lending  business.  
+Typical  questions  
+Is  lending  growing?  
+Where  are  we  growing?  
+Which  products  perform  best?  
+What  is  happening  to  collections?  
+Where  is  risk  increasing?  
+ 
+Expected  output  
+Business  Dashboard  
+Portfolio  Dashboard  
+Growth  Dashboard  
+Collections  Dashboard  
+ 
+Module  2  
+--- PAGE 6 ---
+Competitive  Intelligence  
+Purpose  
+Understand  institutional  performance.  
+This  is  not  competitor  benchmarking  in  Sprint  1.  
+Instead,  
+compare  the  institution  against  itself.  
+Examples  
+Current  month  vs  previous  month  
+Current  quarter  vs  previous  quarter  
+Current  year  vs  previous  year  
+Branch  comparisons  
+Product  comparisons  
+Officer  comparisons  
+Expected  output  
+Trend  analysis  
+Variance  reports  
+Performance  rankings  
+ 
+Module  3  
+Regulatory  Intelligence  
+Purpose  
+Generate  DNBS  report  as  on  30-06-2026  (Important  Note:  While  the  other  modules  can  be  
+carried
+ 
+forward
+ 
+into
+ 
+the
+ 
+next
+ 
+sprint,
+ 
+the
+ 
+delivery
+ 
+of
+ 
+this
+ 
+is
+ 
+not).
+ 
+  
+--- PAGE 7 ---
+What  the  Developers  Should  Remember  
+You  are  not  building  reports.  
+You  are  building  answers.  
+Every  chart  must  answer  one  management  question.  
+Every  screen  must  reduce  decision-making  time.  
+Every  number  should  lead  naturally  to  the  next  question.  
+Think  less  like  database  developers.  
+Think  more  like  executive  advisors.  
+ 
+Technical  Architecture  
+Prosper  (LOS/LMS)                  \                   \                    --->  Genesis  Intelligence  Layer                   /                  /          Tally  ERP  (GL)                       ↓           Business  Intelligence           Finance  Intelligence           Regulatory  Intelligence   
+Genesis  does  not  modify  source  systems.  
+It  continuously  interprets  them.  
+ 
+Definition  of  Done  
+By  the  end  of  Sprint  1,  
+--- PAGE 8 ---
+a  lender  should  be  able  to  log  into  Genesis  and  immediately  answer:  
+Business  
+"How  is  my  business  doing?"  
+ 
+Finance  
+"How  are  our  investments  doing?"  
+ 
+GRC  
+"If  the  regulator  visited  today,  what  would  concern  them?"  
+If  Genesis  answers  these  three  questions  clearly,  Sprint  1  has  succeeded.  
+ 
+Out  of  Scope  
+The  following  are  not  part  of  Sprint  1.  
+●  Banks  ●  Marketplace  Operators  ●  AI-generated  recommendations  ●  Predictive  analytics  ●  Industry  benchmarking  ●  Credit  bureau  integration  ●  RBI  reporting  automation  ●  Workflow  automation  ●  Mobile  applications  
+These  will  be  considered  in  future  sprints.  
+ 
+Sprint  Success  
+Success  is  not  measured  by  the  number  of  dashboards  built.  
+--- PAGE 9 ---
+Success  is  measured  by  whether  a  CEO,  CFO  and  Compliance  Officer  can  each  spend  five  
+minutes
+ 
+with
+ 
+Genesis
+ 
+and
+ 
+leave
+ 
+with
+ 
+a
+ 
+better
+ 
+understanding
+ 
+of
+ 
+their
+ 
+institution
+ 
+than
+ 
+they
+ 
+had
+ 
+before
+ 
+opening
+ 
+it.
+ 
+The  objective  of  Sprint  1  is  simple:  
+Transform  operational  data  into  management  intelligence.  
+Everything  else  builds  on  that  foundation.  
+ 

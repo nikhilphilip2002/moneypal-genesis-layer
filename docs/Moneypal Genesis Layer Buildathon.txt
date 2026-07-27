@@ -1,0 +1,408 @@
+--- PAGE 1 ---
+Moneypal  Genesis  Layer  Buildathon  
+Developer  Brief  
+Building  the  Moneypal  Genesis  Intelligence  Console  
+Client:  Moneypal  Digital  Services  Pvt.  Ltd.  
+Institution:
+ 
+GICC
+ 
+(GICCLtd.com)
+ 
+Technology
+ 
+Partner:
+ 
+Aroha
+ 
+Technologies
+ 
+Duration:
+ 
+24
+ 
+Hours
+ 
+Participants:
+ 
+7
+ 
+Engineers
+ 
+(Aroha
+ 
+Technologies)
+ 
+Selection:
+ 
+4
+ 
+Engineers
+ 
+will
+ 
+be
+ 
+selected
+ 
+to
+ 
+join
+ 
+the
+ 
+Moneypal
+ 
+Genesis
+ 
+Layer
+ 
+development
+ 
+team.
+ 
+ 
+1.  Purpose  
+The  Moneypal  Genesis  Layer  is  responsible  for  onboarding  financial  institutions  onto  the  
+Moneypal
+ 
+platform
+ 
+by
+ 
+transforming
+ 
+legacy
+ 
+information
+ 
+into
+ 
+structured
+ 
+institutional
+ 
+intelligence
+ 
+and,
+ 
+in
+ 
+later
+ 
+phases,
+ 
+migrating
+ 
+operational
+ 
+data
+ 
+into
+ 
+the
+ 
+NEST
+ 
+platform.
+ 
+This  Buildathon  is  not  a  coding  competition.  
+It  is  an  opportunity  to  demonstrate  product  thinking,  software  architecture,  AI  engineering  
+and
+ 
+user
+ 
+experience.
+ 
+At  the  end  of  the  Buildathon,  the  team  should  have  built  a  working  Genesis  Intelligence  
+Console
+ 
+that
+ 
+becomes
+ 
+the
+ 
+foundation
+ 
+for
+ 
+the
+ 
+production
+ 
+Genesis
+ 
+Layer.
+ 
+The  Buildathon  will  begin  with  the  Aroha  Corporate  Intelligence  Framework  and  its  
+Retrieval-Augmented
+ 
+Generation
+ 
+(RAG)
+ 
+tools.
+ 
+Teams
+ 
+are
+ 
+expected
+ 
+to
+ 
+use
+ 
+these
+ 
+capabilities
+ 
+to
+ 
+ingest,
+ 
+organize,
+ 
+summarize
+ 
+and
+ 
+present
+ 
+intelligence
+ 
+rather
+ 
+than
+ 
+manually
+ 
+curate
+ 
+information.
+ 
+ 
+2.  Application  
+Build  a  web-based  Moneypal  Genesis  Intelligence  Console  by  extending  the  existing  
+Aroha
+ 
+Corporate
+ 
+Intelligence
+ 
+Web
+ 
+Console
+.
+ 
+--- PAGE 2 ---
+The  application  shall  prominently  display:  
+●  Moneypal  logo  ●  GICC  logo  (GICCLtd.com)  
+The  interface  should  present  the  Genesis  Layer  as  a  joint  onboarding  environment  for  
+Moneypal
+ 
+and
+ 
+GICC.
+ 
+ 
+3.  Users  
+The  application  shall  support  four  user  roles.  
+Moneypal  Administrator  
+●  Platform  administration  ●  Client  onboarding  ●  Intelligence  management  
+GICC  Administrator  
+●  Institution  administration  ●  Dashboard  ●  Intelligence  review  
+GICC  Policy  Maker  
+●  Competitive  analysis  ●  Policy  formulation  ●  Regulatory  review  
+GICC  Director  
+●  Executive  dashboard  ●  Strategic  insights  ●  AI  briefings  
+ 
+4.  Dashboard  
+The  landing  page  should  answer  one  question:  
+"What  should  the  GICC  leadership  know  today?"  
+--- PAGE 3 ---
+Suggested  widgets:  
+●  Economic  Snapshot  ●  Karnataka  Lending  Landscape  ●  Regulatory  Alerts  ●  AI  Executive  Brief  ●  Recently  Updated  Intelligence  ●  Action  Items  
+ 
+5.  Buildathon  Modules  
+The  seven  engineers  should  organize  into  three  teams  (approximately  two  developers  per  
+module,
+ 
+with
+ 
+one
+ 
+developer
+ 
+supporting
+ 
+integration
+ 
+and
+ 
+UI
+ 
+consistency).
+ 
+Module  1  —  Macro-economic  Intelligence  
+Objective  
+Provide  business  context  for  MSME  lending  in  Karnataka.  
+Suggested  information  includes:  
+●  Indian  Economic  Survey  ●  MSME  trends  ●  GDP  growth  ●  Inflation  ●  Employment  ●  Credit  growth  ●  Karnataka  economy  ●  Manufacturing  ●  Agriculture  ●  Services  ●  Financial  inclusion  ●  Government  initiatives  
+The  objective  is  to  create  an  executive  briefing  rather  than  a  data  warehouse.  
+ 
+Module  2  —  Competitive  Intelligence  
+This  module  should  provide  an  executive  understanding  of  the  competitive  lending  
+landscape.
+ 
+--- PAGE 4 ---
+Initial  focus:  
+Karnataka.  
+Suggested  institutions  include:  
+●  Karnataka  State  Financial  Corporation  ●  Karnataka  State  Co-operative  Apex  Bank  ●  Kinara  Capital  ●  National  Co-operative  Bank  ●  Belagavi  District  Central  Co-operative  Bank  ●  Belgaum  Industrial  Co-operative  Bank  ●  Kaujalgi  Urban  Co-operative  Bank  ●  Bellary  Urban  Co-operative  Bank  ●  Bhatkal  Urban  Co-operative  Bank  ●  South  Canara  District  Central  Co-operative  Bank  ●  SIDBI  (MSME  ecosystem  benchmark)  
+For  each  institution  provide:  
+●  Institution  profile  ●  Products  ●  MSME  focus  ●  Public  financial  highlights  ●  Geographic  presence  ●  AI-generated  SWOT  ●  Strategic  observations  ●  Links  to  source  documents  
+The  architecture  should  allow  institutions  to  be  added  without  software  changes.  
+ 
+Module  3  —  Regulatory  Intelligence  
+Provide  an  executive  view  of  RBI  regulations  applicable  to  NBFCs  with  assets  below  ₹500  
+crore.
+ 
+Suggested  categories:  
+●  Master  Directions  ●  Prudential  Norms  ●  Fair  Practices  Code  ●  KYC  /  AML  ●  Digital  Lending  ●  Outsourcing  ●  Governance  ●  Information  Security  ●  Circulars  
+--- PAGE 5 ---
+●  Notifications  
+For  each  regulation  provide:  
+●  Executive  Summary  ●  Applicability  ●  Business  Impact  ●  Compliance  Actions  ●  Effective  Date  ●  Source  Reference  
+ 
+6.  AI  Expectations  
+The  solution  shall  use  the  Aroha  Corporate  Intelligence  RAG  Framework  to:  
+●  Ingest  documents  ●  Index  content  ●  Perform  semantic  search  ●  Generate  executive  summaries  ●  Compare  competitors  ●  Produce  AI  briefings  ●  Link  every  summary  back  to  its  source  
+The  application  should  demonstrate  explainable  AI  rather  than  chatbot-style  responses.  
+ 
+7.  Technology  
+Teams  may  choose  their  preferred  technology  stack.  
+The  focus  is  on:  
+●  Modular  architecture  ●  Clean  APIs  ●  Responsive  UI  ●  Extensible  design  ●  Maintainable  code  
+Authentication  may  be  implemented  using  demonstration  credentials.  
+ 
+--- PAGE 6 ---
+8.  Evaluation  
+Selection  of  engineers  will  be  based  on:  
+Area  Weight  
+Software  Architecture  30%  
+Product  Thinking  20%  
+User  Experience  20%  
+AI  Integration  15%  
+Engineering  Quality  15%  
+We  are  looking  for  engineers  who  can  build  production  platforms—not  simply  hackathon  
+prototypes.
+ 
+ 
+9.  What  Happens  Next  
+Following  the  Buildathon,  the  selected  team  will  extend  the  Genesis  Layer  to  include:  
+●  Prosper  migration  ●  Tally  migration  ●  Canonical  Business  Objects  ●  NEST  Aggregate  Block  creation  ●  Business  Intelligence  ●  Regulatory  Information  Model  (RIM)  ●  DNBS  reporting  ●  Institutional  onboarding  workflows  
+The  Buildathon  Console  will  therefore  evolve  directly  into  the  production  Genesis  Platform.  
+ 
+Appendix  A  —  Approved  Information  
+Sources
+ 
+Developers  shall  use  the  Aroha  Corporate  Intelligence  Framework  to  ingest,  index  and  
+summarize
+ 
+information
+ 
+from
+ 
+the
+ 
+following
+ 
+sources.
+ 
+--- PAGE 7 ---
+Module  1  —  Macro-economic  Intelligence  
+●  Government  of  India  Economic  Survey  https://www.indiabudget.gov.in/economicsurvey/ ●  EPWRF  India  Time  Series  /  Economic  Database  https://epwrfits.in/ ●  Ministry  of  Statistics  and  Programme  Implementation  (MOSPI)  https://www.mospi.gov.in/ ●  Indian  Economy  presentation  (DocSend  reference  provided)  https://docsend.com/view/8ygfx6p36qmhpniu 
+ 
+Module  2  —  Competitive  Intelligence  
+Official  websites  and  public  disclosures  of:  
+●  Karnataka  State  Financial  Corporation  ●  Karnataka  State  Co-operative  Apex  Bank  ●  Kinara  Capital  ●  National  Co-operative  Bank  ●  Belagavi  District  Central  Co-operative  Bank  ●  Belgaum  Industrial  Co-operative  Bank  ●  Kaujalgi  Urban  Co-operative  Bank  ●  Bellary  Urban  Co-operative  Bank  ●  Bhatkal  Urban  Co-operative  Bank  ●  South  Canara  District  Central  Co-operative  Bank  https://scdcc.bank.in/ ●  SIDBI  https://www.sidbi.in/en/ 
+Additional  public  sources:  
+●  Annual  Reports  ●  Credit  Rating  Reports  ●  Investor  Presentations  ●  News  Articles  ●  Public  Financial  Statements  
+ 
+Module  3  —  Regulatory  Intelligence  
+Primary  source:  
+Reserve  Bank  of  India  –  Master  Directions  
+--- PAGE 8 ---
+https://rbi.org.in/scripts/BS_ViewMasterDirections.aspx?did=411 
+Additional  RBI  resources:  
+●  Circulars  ●  Notifications  ●  Press  Releases  ●  FAQs  ●  Speeches  ●  Annual  Reports  ●  Financial  Stability  Reports  
+ 
+AI  Principles  
+Every  AI-generated  insight  shall:  
+●  Cite  its  originating  document.  ●  Link  users  back  to  the  original  source.  ●  Distinguish  factual  information  from  AI  interpretation.  ●  Present  concise  executive  summaries  suitable  for  directors,  policy  makers  and  
+administrators.
+ 
+The  objective  is  to  demonstrate  how  the  Aroha  Corporate  Intelligence  Framework  can  
+become
+ 
+the
+ 
+intelligence
+ 
+foundation
+ 
+of
+ 
+the
+ 
+Moneypal
+ 
+Genesis
+ 
+Layer,
+ 
+enabling
+ 
+institutions
+ 
+such
+ 
+as
+ 
+GICC
+ 
+to
+ 
+onboard
+ 
+faster,
+ 
+make
+ 
+better
+ 
+strategic
+ 
+decisions
+ 
+and
+ 
+prepare
+ 
+for
+ 
+migration
+ 
+to
+ 
+the
+ 
+Moneypal
+ 
+NEST
+ 
+platform.
+ 
+ 
