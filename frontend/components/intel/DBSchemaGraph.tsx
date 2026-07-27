@@ -986,7 +986,8 @@ export default function DBSchemaGraph() {
                       <TrendingUp className="h-2.5 w-2.5 text-purple-500" /> Efficiency
                     </span>
                     <span className="font-mono font-bold text-purple-600 dark:text-purple-400 mt-0.5 text-xs">
-                      {selectedNode.details["Recovery Rate"] || selectedNode.details["Collection Efficiency"] || "Compliant"}
+                      {selectedNode.details["Collection Efficiency (paid/due)"] ||
+                       selectedNode.details["Principal Repaid"] || "—"}
                     </span>
                   </div>
                 </div>
@@ -1184,7 +1185,9 @@ export default function DBSchemaGraph() {
                     <div className="bg-muted/40 p-3 rounded-xl border">
                       <p className="text-[10px] text-muted-foreground uppercase font-semibold">Avg MoM Volume Growth</p>
                       <p className="text-lg font-bold text-blue-600 dark:text-blue-400 mt-1">
-                        +{momData.institution_improvement?.average_mom_growth_pct}%
+                        {momData.institution_improvement?.average_mom_growth_pct == null
+                          ? '—'
+                          : `+${momData.institution_improvement.average_mom_growth_pct}%`}
                       </p>
                       <p className="text-[10px] text-muted-foreground mt-0.5">Average monthly rate</p>
                     </div>
@@ -1228,14 +1231,14 @@ export default function DBSchemaGraph() {
                             <td className="p-2.5 font-mono">{c.borrowers_onboarded?.toLocaleString()}</td>
                             <td className="p-2.5 font-bold font-mono">₹{(c.volume_sanctioned / 10000000).toFixed(2)} Cr</td>
                             <td className="p-2.5 font-mono">
-                              <span className={`px-1.5 py-0.5 rounded text-[10px] font-semibold ${c.mom_growth_pct > 0 ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400' : 'bg-muted text-muted-foreground'}`}>
-                                {c.mom_growth_pct > 0 ? `+${c.mom_growth_pct}%` : `${c.mom_growth_pct}%`}
+                              <span className={`px-1.5 py-0.5 rounded text-[10px] font-semibold ${c.mom_growth_pct != null && c.mom_growth_pct > 0 ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400' : 'bg-muted text-muted-foreground'}`}>
+                                {c.mom_growth_pct == null ? '—' : c.mom_growth_pct > 0 ? `+${c.mom_growth_pct}%` : `${c.mom_growth_pct}%`}
                               </span>
                             </td>
-                            <td className="p-2.5 font-mono">{c.avg_interest_rate}%</td>
+                            <td className="p-2.5 font-mono">{c.avg_interest_rate == null ? '—' : `${c.avg_interest_rate}%`}</td>
                             <td className="p-2.5">
                               <Badge variant="outline" className="text-[10px]">
-                                {c.institution_status}
+                                {c.principal_repaid_pct != null ? `${c.principal_repaid_pct}% repaid` : '—'}
                               </Badge>
                             </td>
                           </tr>

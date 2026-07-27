@@ -1,6 +1,14 @@
-import os
+"""Enterprise Curiosity Graph - a navigable view of the loan book in PostgreSQL.
+
+Every node and edge in this graph is derived from `bronze` tables. Where the warehouse
+has no source for something (branch geography, for instance) the field is omitted rather
+than filled with a plausible-looking placeholder.
+"""
+
+import contextlib
 import logging
-from typing import Dict, Any, List, Optional
+import os
+from typing import Any, Callable, Dict, Generator, List, Optional, Sequence, Tuple
 
 logger = logging.getLogger(__name__)
 
@@ -19,15 +27,24 @@ except ImportError:
 psycopg2 = _driver
 
 NODE_TYPE_STYLES = {
-    "executive": {"color": "#4c1d95", "label": "Portfolio Master (GICCPROD_NEW)", "size": 32},
+    "executive": {"color": "#4c1d95", "label": "Portfolio Master", "size": 32},
     "zonal": {"color": "#6d28d9", "label": "Product Division", "size": 28},
-    "manager": {"color": "#4338ca", "label": "District Virtual Branch", "size": 24},
-    "agent": {"color": "#0284c7", "label": "Lending Scheme Desk", "size": 20},
-    "customer": {"color": "#0f766e", "label": "Borrower Profile", "size": 18},
-    "account": {"color": "#075fac", "label": "Loan Account Master", "size": 18},
-    "disbursement": {"color": "#ea580c", "label": "Payout Disbursement", "size": 14},
-    "repayment": {"color": "#10b981", "label": "Repayment Receipt", "size": 14},
+    "manager": {"color": "#4338ca", "label": "Branch", "size": 24},
+    "agent": {"color": "#0284c7", "label": "Lending Scheme", "size": 20},
+    "customer": {"color": "#0f766e", "label": "Borrower", "size": 18},
+    "account": {"color": "#075fac", "label": "Loan Account", "size": 18},
+    "disbursement": {"color": "#ea580c", "label": "Disbursement", "size": 14},
+    "repayment": {"color": "#10b981", "label": "Repayment", "size": 14},
 }
+
+# Product codes present in bronze.genlnacnts. Names come from the client's product
+# taxonomy (see docs/PROSPER_EDA_REPORT.md section 2A); anything else shows its bare code.
+PRODUCT_NAMES = {
+    "1": "Gold Loans",
+    "13": "Microfinance / Retail EMI",
+    "16": "Business & MSME Loans",
+}
+
 
 def get_connection():
     if _driver is None:
@@ -40,12 +57,12 @@ def get_connection():
         host = host[7:]
     if host.endswith("/"):
         host = host[:-1]
-    
+
     port = int(os.environ.get("POSTGRES_PORT", "5432"))
     dbname = os.environ.get("POSTGRES_DB", "moneypaldb")
     user = os.environ.get("POSTGRES_USER", "moneypal")
     password = os.environ.get("POSTGRES_PASSWORD", "moneypal123")
-    
+
     kwargs: Dict[str, Any] = {
         "host": host,
         "port": port,
@@ -57,353 +74,439 @@ def get_connection():
     kwargs["connect_timeout" if _driver.__name__.startswith("psycopg2") else "timeout"] = 3
     return _driver.connect(**kwargs)
 
-def get_branch_info_from_db(cur, raw_code: Any) -> Dict[str, str]:
-    if raw_code is None:
-        raw_code = "1"
-    code_str = str(raw_code).strip()
-    if code_str.endswith(".0"):
-        code_str = code_str[:-2]
 
-    district_map = {
-        "1": {"name": "Udupi District", "manager": "District Lead - Udupi", "city": "Udupi, Karnataka"},
-        "2": {"name": "Mandya District", "manager": "District Lead - Mandya", "city": "Mandya, Karnataka"},
-        "3": {"name": "Shimoga District", "manager": "District Lead - Shimoga", "city": "Shimoga, Karnataka"},
-        "4": {"name": "Bangalore Urban District", "manager": "District Lead - Bangalore", "city": "Bangalore, Karnataka"},
-        "5": {"name": "Dakshina Kannada District", "manager": "District Lead - Mangalore", "city": "Mangalore, Karnataka"},
-        "6": {"name": "Mysore District", "manager": "District Lead - Mysore", "city": "Mysore, Karnataka"},
-        "7": {"name": "Hassan District", "manager": "District Lead - Hassan", "city": "Hassan, Karnataka"},
-        "8": {"name": "Chikmagalur District", "manager": "District Lead - Chikmagalur", "city": "Chikmagalur, Karnataka"},
-    }
-
-    if code_str in district_map:
-        return district_map[code_str]
-
-    districts = list(district_map.values())
+@contextlib.contextmanager
+def db_cursor() -> Generator[Tuple[Any, Any], None, None]:
+    """Yield (connection, cursor), guaranteeing the connection is closed even on error."""
+    conn = get_connection()
     try:
-        val = int(code_str)
-        d = districts[val % len(districts)]
-    except ValueError:
-        idx = abs(hash(code_str)) % len(districts)
-        d = districts[idx]
+        cur = conn.cursor()
+        try:
+            yield conn, cur
+        finally:
+            with contextlib.suppress(Exception):
+                cur.close()
+    finally:
+        with contextlib.suppress(Exception):
+            conn.close()
 
+
+class SectionResult:
+    """Outcome of one query, so a failure is never mistaken for an empty result.
+
+    `status` is one of "ok", "empty", "error", "no_source".
+    """
+
+    __slots__ = ("name", "status", "rows", "error", "note")
+
+    def __init__(self, name: str, status: str, rows: int = 0, error: str = "", note: str = ""):
+        self.name = name
+        self.status = status
+        self.rows = rows
+        self.error = error
+        self.note = note
+
+    def as_dict(self) -> Dict[str, Any]:
+        d: Dict[str, Any] = {"status": self.status, "row_count": self.rows}
+        if self.error:
+            d["error"] = self.error
+        if self.note:
+            d["note"] = self.note
+        return d
+
+
+def run_section(
+    provenance: Dict[str, Dict[str, Any]],
+    name: str,
+    fn: Callable[[], int],
+    conn: Any = None,
+    note: str = "",
+) -> None:
+    """Run one loader, recording why it produced nothing rather than swallowing it."""
+    try:
+        count = fn()
+        provenance[name] = SectionResult(
+            name, "ok" if count else "empty", count, note=note if count else ""
+        ).as_dict()
+    except Exception as exc:  # noqa: BLE001 - one bad section must not kill the graph
+        logger.exception("Curiosity graph section %r failed", name)
+        if conn is not None:
+            with contextlib.suppress(Exception):
+                conn.rollback()
+        provenance[name] = SectionResult(name, "error", 0, f"{type(exc).__name__}: {exc}").as_dict()
+
+
+def _f(value: Any) -> float:
+    return float(value or 0)
+
+
+def _code(raw: Any) -> str:
+    """Normalise a numeric code that may arrive as 4, '4', 4.0 or Decimal('4')."""
+    if raw is None:
+        return ""
+    s = str(raw).strip()
+    if s.endswith(".0"):
+        s = s[:-2]
+    return s
+
+
+def branch_label(raw_code: Any) -> str:
+    """Identify a branch by its code.
+
+    There is no branch master in PostgreSQL *or* in the Oracle source - the search for one
+    across all 9,545 GICCPROD_NEW tables turned up only BRANCH_MERGE_V2, a 93-row merge
+    map (see docs/ORACLE_VS_POSTGRES_GAP_ANALYSIS.md section 3.2). Branch name, address,
+    city, state and district have no source, so this returns the code alone. It previously
+    returned a hardcoded district map, falling through to `districts[int(code) % 8]`, which
+    reported branch 1002 as "Mandya District".
+    """
+    code = _code(raw_code)
+    return f"Branch {code}" if code else "Unassigned Branch"
+
+
+def get_scheme_name_map(cur) -> Dict[str, str]:
+    """Real scheme names from bronze.nbfclnscheme, keyed by scheme code.
+
+    Only 15 schemes (all product 16) have a master row; 45 further codes are in use
+    without one. Those keep their bare code rather than being given an invented
+    category name.
+    """
+    cur.execute(
+        "SELECT lnschm_schm_code, lnschm_schm_name FROM bronze.nbfclnscheme "
+        "WHERE lnschm_schm_code IS NOT NULL"
+    )
+    return {str(c).strip(): (n or "").strip() for c, n in cur.fetchall() if (n or "").strip()}
+
+
+def scheme_title(code: Any, name_map: Dict[str, str]) -> str:
+    c = _code(code)
+    if not c:
+        return "Unassigned Scheme"
+    name = name_map.get(c)
+    return f"{name} (Scheme #{c})" if name else f"Scheme #{c}"
+
+
+def product_title(code: Any) -> str:
+    c = _code(code)
+    name = PRODUCT_NAMES.get(c)
+    return f"Product {c}: {name}" if name else f"Product {c}"
+
+
+def _repaid_pct(repaid: float, disbursed: float) -> float:
+    """Cumulative principal repaid as a share of principal disbursed.
+
+    Deliberately *not* called collection efficiency: it compares repayments to the whole
+    disbursed book rather than to the amount actually due, so a young loan looks like a
+    default. True collection efficiency comes from bronze.loanrepay (due vs paid) - see
+    get_collection_efficiency.
+    """
+    return round(repaid / disbursed * 100, 1) if disbursed else 0.0
+
+
+def get_collection_efficiency(cur, account_nums: Optional[Sequence[Any]] = None) -> Dict[str, Any]:
+    """True collection efficiency: instalments paid over instalments due.
+
+    bronze.loanrepay carries both sides - lnrepay_prin_amt / lnrepay_int_amt are amounts
+    due, lnrepay_prin_pdamt / lnrepay_int_pdamt are amounts actually received.
+    """
+    sql = """
+        SELECT COALESCE(SUM(lnrepay_prin_amt + lnrepay_int_amt), 0) AS due,
+               COALESCE(SUM(lnrepay_prin_pdamt + lnrepay_int_pdamt), 0) AS paid,
+               COUNT(*)
+        FROM bronze.loanrepay
+    """
+    params: Tuple[Any, ...] = ()
+    if account_nums:
+        sql += " WHERE lnrepay_acnt_no = ANY(%s)"
+        params = (list(account_nums),)
+    cur.execute(sql, params)
+    due, paid, n = cur.fetchone()
+    due_f, paid_f = _f(due), _f(paid)
     return {
-        "name": f"{d['name']} (District Code #{code_str})",
-        "manager": f"District Lead #{code_str}",
-        "city": d["city"]
+        "instalments": int(n or 0),
+        "amount_due": round(due_f, 2),
+        "amount_paid": round(paid_f, 2),
+        "efficiency_pct": round(paid_f / due_f * 100, 1) if due_f else 0.0,
     }
 
 
-def get_scheme_name(raw_code: Any) -> str:
-    """Map raw scheme code into a descriptive, human-readable Scheme Desk title."""
-    if raw_code is None:
-        return "Lending Scheme Desk"
-    code_str = str(raw_code).strip()
-    if code_str.endswith(".0"):
-        code_str = code_str[:-2]
-
-    scheme_map = {
-        "1610": "MSME Priority Credit Desk",
-        "1601": "Commercial Term Loan Desk",
-        "1620": "Working Capital Loan Desk",
-        "1301": "Microfinance JLG Credit Desk",
-        "1302": "Self-Help Group Credit Desk",
-        "101": "Retail Gold Loan Desk",
-        "1001": "Gold Express Credit Desk",
-    }
-    if code_str in scheme_map:
-        return f"{scheme_map[code_str]} (Scheme #{code_str})"
-
-    if code_str.startswith("16"):
-        return f"MSME Credit Desk (Scheme #{code_str})"
-    elif code_str.startswith("13"):
-        return f"Microfinance Desk (Scheme #{code_str})"
-    elif code_str.startswith("1"):
-        return f"Gold Loan Desk (Scheme #{code_str})"
-
-    return f"Lending Scheme Desk #{code_str}"
-
+# --------------------------------------------------------------------------- #
+# Search
+# --------------------------------------------------------------------------- #
 
 def search_entities(query_str: str, entity_type: str = "all") -> List[Dict[str, Any]]:
-    results = []
-    if not query_str or not query_str.strip():
+    """Find products, branches and borrowers.
+
+    Codes are matched exactly. They used to be matched with LIKE '%term%', so searching
+    branch "1" returned 15 branches and 7,943 accounts instead of one branch and 7,803,
+    and searching product "1" returned products 1, 13 and 16. Names still match on
+    substring, which is what a name search should do.
+    """
+    results: List[Dict[str, Any]] = []
+    term = (query_str or "").strip()
+    if not term:
         return results
 
-    term = query_str.strip().lower()
+    like = f"%{term.lower()}%"
+    is_numeric = term.isdigit()
 
     try:
-        conn = get_connection()
-        cur = conn.cursor()
+        with db_cursor() as (conn, cur):
+            if is_numeric and entity_type in ("all", "zonal"):
+                cur.execute(
+                    """
+                    SELECT gnlnac_prod_code, COUNT(DISTINCT gnlnac_cust_id), COUNT(*)
+                    FROM bronze.genlnacnts
+                    WHERE CAST(gnlnac_prod_code AS TEXT) = %s
+                    GROUP BY gnlnac_prod_code
+                    """,
+                    (term,),
+                )
+                for prod, custs, accts in cur.fetchall():
+                    code = _code(prod)
+                    results.append(
+                        {
+                            "id": f"ZONE-PROD-{code}",
+                            "title": product_title(code),
+                            "subtitle": f"{custs:,} Borrowers • {accts:,} Loans",
+                            "type": "zonal",
+                            "view_level": "zonal",
+                            "zonal_id": f"ZONE-PROD-{code}",
+                        }
+                    )
 
-        if entity_type in ["all", "zonal"]:
-            cur.execute("""
-                SELECT gnlnac_prod_code, COUNT(DISTINCT gnlnac_cust_id), COUNT(*), SUM(gnlnac_sanc_amt)
-                FROM bronze.genlnacnts
-                WHERE CAST(gnlnac_prod_code AS TEXT) LIKE %s
-                GROUP BY gnlnac_prod_code;
-            """, (f"%{term}%",))
-            p_rows = cur.fetchall()
-            for r in p_rows:
-                p_code = str(r[0])
-                results.append({
-                    "id": f"ZONE-PROD-{p_code}",
-                    "title": f"Product Division {p_code}",
-                    "subtitle": f"{r[1]:,} Borrowers • {r[2]:,} Loans",
-                    "type": "zonal",
-                    "view_level": "zonal",
-                    "zonal_id": f"ZONE-PROD-{p_code}"
-                })
+            if is_numeric and entity_type in ("all", "manager"):
+                cur.execute(
+                    """
+                    SELECT gnlnac_appl_brn_code, COUNT(DISTINCT gnlnac_cust_id), COUNT(*)
+                    FROM bronze.genlnacnts
+                    WHERE CAST(gnlnac_appl_brn_code AS TEXT) = %s
+                    GROUP BY gnlnac_appl_brn_code
+                    """,
+                    (term,),
+                )
+                for brn, custs, accts in cur.fetchall():
+                    code = _code(brn)
+                    results.append(
+                        {
+                            "id": f"BRN-{code}",
+                            "title": branch_label(code),
+                            "subtitle": f"{custs:,} Borrowers • {accts:,} Loans",
+                            "type": "manager",
+                            "view_level": "manager",
+                            "manager_id": f"BRN-{code}",
+                        }
+                    )
 
-        if entity_type in ["all", "manager"]:
-            cur.execute("""
-                SELECT gnlnac_appl_brn_code, COUNT(DISTINCT gnlnac_cust_id), COUNT(*), SUM(gnlnac_sanc_amt)
-                FROM bronze.genlnacnts
-                WHERE CAST(gnlnac_appl_brn_code AS TEXT) LIKE %s
-                GROUP BY gnlnac_appl_brn_code;
-            """, (f"%{term}%",))
-            b_rows = cur.fetchall()
-            for r in b_rows:
-                b_code = str(r[0])
-                b_info = get_branch_info_from_db(cur, b_code)
-                results.append({
-                    "id": f"BRN-{b_code}",
-                    "title": b_info["name"],
-                    "subtitle": f"Branch #{b_code} • {r[1]:,} Borrowers",
-                    "type": "manager",
-                    "view_level": "manager",
-                    "manager_id": f"BRN-{b_code}"
-                })
-
-        if entity_type in ["all", "customer"]:
-            cur.execute("""
-                SELECT g.gnlnac_cust_id,
-                       COALESCE(
-                           NULLIF(TRIM(g.gnlnac_cust_name), ''),
-                           NULLIF(TRIM(CONCAT_WS(' ', ic.indcif_first_name, ic.indcif_midle_name, ic.indcif_last_name)), ''),
-                           'Borrower #' || g.gnlnac_cust_id
-                       ) AS borrower_name,
-                       MAX(g.gnlnac_acnt_num),
-                       SUM(COALESCE(NULLIF(g.gnlnac_lndisb_amt, 0), g.gnlnac_sanc_amt)),
-                       MAX(g.gnlnac_appl_brn_code)
-                FROM bronze.genlnacnts g
-                LEFT JOIN bronze.indcifdata_10012025_indcifdata ic ON g.gnlnac_cust_id = ic.indcif_cust_id
-                WHERE LOWER(g.gnlnac_cust_name) LIKE %s 
-                   OR LOWER(CONCAT_WS(' ', ic.indcif_first_name, ic.indcif_midle_name, ic.indcif_last_name)) LIKE %s
-                   OR CAST(g.gnlnac_cust_id AS TEXT) LIKE %s 
-                   OR CAST(g.gnlnac_acnt_num AS TEXT) LIKE %s
-                GROUP BY g.gnlnac_cust_id, borrower_name
-                LIMIT 12;
-            """, (f"%{term}%", f"%{term}%", f"%{term}%", f"%{term}%"))
-            c_rows = cur.fetchall()
-            for r in c_rows:
-                br_code = str(r[4] or "1")
-                b_info = get_branch_info_from_db(cur, br_code)
-                results.append({
-                    "id": f"CUST-{r[0]}",
-                    "title": str(r[1]),
-                    "subtitle": f"Customer ID: #{r[0]} • Account #{r[2]} • {b_info['name']}",
-                    "type": "customer",
-                    "view_level": "customer",
-                    "customer_id": str(r[0])
-                })
-        conn.close()
+            if entity_type in ("all", "customer"):
+                # Borrower names come from genlnacnts directly. The customer master
+                # (indcifdata) is deliberately not joined: its names agree with the loan
+                # tables on only 59% of rows (7,836 of 13,253), so joining it attaches the
+                # wrong person's name to a loan.
+                cur.execute(
+                    """
+                    SELECT g.gnlnac_cust_id,
+                           MAX(TRIM(g.gnlnac_cust_name)) AS borrower_name,
+                           COUNT(*) AS account_count,
+                           COALESCE(SUM(COALESCE(NULLIF(g.gnlnac_lndisb_amt, 0),
+                                                 g.gnlnac_sanc_amt)), 0) AS disbursed,
+                           MAX(g.gnlnac_appl_brn_code) AS brn_code
+                    FROM bronze.genlnacnts g
+                    WHERE LOWER(TRIM(g.gnlnac_cust_name)) LIKE %s
+                       OR CAST(g.gnlnac_cust_id AS TEXT) = %s
+                       OR CAST(g.gnlnac_acnt_num AS TEXT) = %s
+                    GROUP BY g.gnlnac_cust_id
+                    ORDER BY disbursed DESC
+                    LIMIT 12
+                    """,
+                    (like, term, term),
+                )
+                for cust_id, name, accts, disbursed, brn in cur.fetchall():
+                    results.append(
+                        {
+                            "id": f"CUST-{cust_id}",
+                            "title": (name or f"Borrower #{cust_id}").strip(),
+                            "subtitle": (
+                                f"Customer #{cust_id} • {accts} account(s) • {branch_label(brn)}"
+                            ),
+                            "type": "customer",
+                            "view_level": "customer",
+                            "customer_id": _code(cust_id),
+                        }
+                    )
     except Exception:
-        pass
+        logger.exception("Curiosity graph search failed for %r", query_str)
+        return []
 
     return results[:15]
 
 
+# --------------------------------------------------------------------------- #
+# Monthly aggregates
+# --------------------------------------------------------------------------- #
+
 def get_monthly_breakdown(selected_month: Optional[str] = None) -> Dict[str, Any]:
-    """Dynamically query monthly loan sanctions, disbursements, and repayments from database."""
-    monthly_series = []
-    selected_metrics = None
+    """Monthly sanction / disbursement / repayment aggregates.
 
-    try:
-        conn = get_connection()
-        cur = conn.cursor()
+    Returns an empty series if the query fails rather than a fabricated one - this used to
+    fall back to nine months of invented figures on any error.
+    """
+    monthly_series: List[Dict[str, Any]] = []
+    provenance: Dict[str, Dict[str, Any]] = {}
 
-        cur.execute("""
-            SELECT 
-                TO_CHAR(gnlnac_sanc_date, 'YYYY-MM') AS month_str,
-                COUNT(*) AS loan_count,
-                COUNT(DISTINCT gnlnac_cust_id) AS cust_count,
-                COALESCE(SUM(gnlnac_sanc_amt), 0) AS total_sanctioned,
-                COALESCE(SUM(COALESCE(NULLIF(gnlnac_lndisb_amt, 0), gnlnac_sanc_amt)), 0) AS total_disbursed,
-                COALESCE(SUM(gnlnac_pri_repay_amt), 0) AS total_repaid,
-                COUNT(CASE WHEN gnlnac_prod_code = 16 THEN 1 END) AS msme_count,
-                COUNT(CASE WHEN gnlnac_prod_code = 13 THEN 1 END) AS mfi_count,
-                COUNT(CASE WHEN gnlnac_prod_code = 1 THEN 1 END) AS gold_count
+    def _load() -> int:
+        cur.execute(
+            """
+            SELECT TO_CHAR(gnlnac_sanc_date, 'YYYY-MM') AS month_str,
+                   COUNT(*),
+                   COUNT(DISTINCT gnlnac_cust_id),
+                   COALESCE(SUM(gnlnac_sanc_amt), 0),
+                   COALESCE(SUM(COALESCE(NULLIF(gnlnac_lndisb_amt, 0), gnlnac_sanc_amt)), 0),
+                   COALESCE(SUM(gnlnac_pri_repay_amt), 0),
+                   COUNT(*) FILTER (WHERE gnlnac_prod_code = 16),
+                   COUNT(*) FILTER (WHERE gnlnac_prod_code = 13),
+                   COUNT(*) FILTER (WHERE gnlnac_prod_code = 1)
             FROM bronze.genlnacnts
             WHERE gnlnac_sanc_date IS NOT NULL
-            GROUP BY TO_CHAR(gnlnac_sanc_date, 'YYYY-MM')
-            ORDER BY month_str DESC;
-        """)
-        rows = cur.fetchall()
-        for r in rows:
-            m_code = str(r[0])
-            sanctioned = float(r[3] or 0)
-            disbursed = float(r[4] or 0)
-            repaid = float(r[5] or 0)
-            item = {
-                "month": m_code,
-                "loan_count": r[1],
-                "cust_count": r[2],
-                "total_sanctioned": sanctioned,
-                "total_disbursed": disbursed,
-                "total_repaid": repaid,
-                "msme_count": r[6],
-                "mfi_count": r[7],
-                "gold_count": r[8],
-                "collection_efficiency": round((repaid / (disbursed or 1)) * 100, 1)
-            }
-            monthly_series.append(item)
+            GROUP BY 1
+            ORDER BY 1 DESC
+            """
+        )
+        for row in cur.fetchall():
+            disbursed = _f(row[4])
+            repaid = _f(row[5])
+            monthly_series.append(
+                {
+                    "month": str(row[0]),
+                    "loan_count": int(row[1]),
+                    "cust_count": int(row[2]),
+                    "total_sanctioned": _f(row[3]),
+                    "total_disbursed": disbursed,
+                    "total_repaid": repaid,
+                    "msme_count": int(row[6]),
+                    "mfi_count": int(row[7]),
+                    "gold_count": int(row[8]),
+                    "principal_repaid_pct": _repaid_pct(repaid, disbursed),
+                }
+            )
+        return len(monthly_series)
 
-        conn.close()
-    except Exception:
-        pass
+    try:
+        with db_cursor() as (conn, cur):
+            run_section(provenance, "monthly_series", _load, conn)
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("Monthly breakdown unavailable")
+        provenance["monthly_series"] = SectionResult(
+            "monthly_series", "error", 0, f"{type(exc).__name__}: {exc}"
+        ).as_dict()
 
-    if not monthly_series:
-        months = ["2026-06", "2026-05", "2026-04", "2026-03", "2026-02", "2026-01", "2025-12", "2025-11", "2025-10"]
-        for idx, m in enumerate(months):
-            sanc = 49130000.0 - (idx * 4500000.0)
-            disb = max(sanc * 0.98, 11000000.0)
-            repay = round(disb * 0.952, 2)
-            monthly_series.append({
-                "month": m,
-                "loan_count": max(1021 - (idx * 90), 21),
-                "cust_count": max(950 - (idx * 80), 20),
-                "total_sanctioned": sanc,
-                "total_disbursed": disb,
-                "total_repaid": repay,
-                "msme_count": max(1021 - (idx * 90), 21),
-                "mfi_count": 0,
-                "gold_count": 0,
-                "collection_efficiency": round((repay / (disb or 1)) * 100, 1)
-            })
-
-    if selected_month:
-        selected_metrics = next((m for m in monthly_series if m["month"] == selected_month), monthly_series[0] if monthly_series else None)
-    else:
-        selected_metrics = monthly_series[0] if monthly_series else None
+    selected_metrics = None
+    if monthly_series:
+        selected_metrics = next(
+            (m for m in monthly_series if m["month"] == selected_month), monthly_series[0]
+        )
 
     return {
         "monthly_series": monthly_series,
         "selected_month": selected_month or (monthly_series[0]["month"] if monthly_series else None),
         "selected_metrics": selected_metrics,
-        "total_months": len(monthly_series)
+        "total_months": len(monthly_series),
+        "provenance": provenance,
     }
 
 
 def get_mom_loan_start_analysis() -> Dict[str, Any]:
-    """Month-on-month loan start date analysis tracking institution growth and portfolio improvement over time."""
-    monthly_cohorts = []
-    
-    try:
-        conn = get_connection()
-        cur = conn.cursor()
-        
-        cur.execute("""
-            SELECT 
-                TO_CHAR(gnlnac_sanc_date, 'YYYY-MM') AS start_month,
-                COUNT(*) AS loans_started,
-                COUNT(DISTINCT gnlnac_cust_id) AS borrowers_onboarded,
-                COALESCE(SUM(gnlnac_sanc_amt), 0) AS volume_sanctioned,
-                COALESCE(SUM(COALESCE(NULLIF(gnlnac_lndisb_amt, 0), gnlnac_sanc_amt)), 0) AS volume_disbursed,
-                COALESCE(SUM(gnlnac_pri_repay_amt), 0) AS volume_repaid,
-                COALESCE(AVG(gnlnac_int_rate), 17.7) AS avg_roi,
-                COALESCE(AVG(gnlnac_sanc_amt), 0) AS avg_ticket_size
+    """Month-on-month origination cohorts by sanction date.
+
+    The rate column is bronze.genlnacnts.gnlnac_ln_intrate. This function used to
+    reference gnlnac_int_rate, which does not exist, so the query threw on every run and
+    the whole result came from a hardcoded nine-month series.
+    """
+    monthly_cohorts: List[Dict[str, Any]] = []
+    provenance: Dict[str, Dict[str, Any]] = {}
+
+    def _load() -> int:
+        cur.execute(
+            """
+            SELECT TO_CHAR(gnlnac_sanc_date, 'YYYY-MM') AS start_month,
+                   COUNT(*),
+                   COUNT(DISTINCT gnlnac_cust_id),
+                   COALESCE(SUM(gnlnac_sanc_amt), 0),
+                   COALESCE(SUM(COALESCE(NULLIF(gnlnac_lndisb_amt, 0), gnlnac_sanc_amt)), 0),
+                   COALESCE(SUM(gnlnac_pri_repay_amt), 0),
+                   AVG(gnlnac_ln_intrate),
+                   AVG(gnlnac_sanc_amt)
             FROM bronze.genlnacnts
             WHERE gnlnac_sanc_date IS NOT NULL
-            GROUP BY TO_CHAR(gnlnac_sanc_date, 'YYYY-MM')
-            ORDER BY start_month ASC;
-        """)
-        rows = cur.fetchall()
-        prev_vol = None
-        for r in rows:
-            m_code = str(r[0])
-            loans = int(r[1])
-            borrowers = int(r[2])
-            vol_sanc = float(r[3] or 0)
-            vol_disb = float(r[4] or 0)
-            vol_repay = float(r[5] or 0)
-            avg_roi = round(float(r[6] or 17.7), 2)
-            avg_ticket = float(r[7] or 0)
-            
-            mom_growth_pct = 0.0
-            if prev_vol and prev_vol > 0:
-                mom_growth_pct = round(((vol_sanc - prev_vol) / prev_vol) * 100, 1)
-            prev_vol = vol_sanc
-            
-            status = "Expansion Phase" if mom_growth_pct > 0 else "Stabilization"
-            if m_code < "2024-11": status = "Legacy Book Run-off"
-            elif m_code == "2026-05": status = "Peak Origination"
+            GROUP BY 1
+            ORDER BY 1 ASC
+            """
+        )
+        prev_volume: Optional[float] = None
+        for row in cur.fetchall():
+            sanctioned = _f(row[3])
+            disbursed = _f(row[4])
+            repaid = _f(row[5])
+            growth = (
+                round((sanctioned - prev_volume) / prev_volume * 100, 1)
+                if prev_volume
+                else None
+            )
+            prev_volume = sanctioned
+            monthly_cohorts.append(
+                {
+                    "start_month": str(row[0]),
+                    "loans_started": int(row[1]),
+                    "borrowers_onboarded": int(row[2]),
+                    "volume_sanctioned": sanctioned,
+                    "volume_disbursed": disbursed,
+                    "volume_repaid": repaid,
+                    # Real average rate, no 17.7 default.
+                    "avg_interest_rate": round(_f(row[6]), 2) if row[6] is not None else None,
+                    "avg_ticket_size": round(_f(row[7]), 2),
+                    # None for the first cohort: there is no prior month to grow from.
+                    "mom_growth_pct": growth,
+                    "principal_repaid_pct": _repaid_pct(repaid, disbursed),
+                }
+            )
+        return len(monthly_cohorts)
 
-            monthly_cohorts.append({
-                "start_month": m_code,
-                "loans_started": loans,
-                "borrowers_onboarded": borrowers,
-                "volume_sanctioned": vol_sanc,
-                "volume_disbursed": vol_disb,
-                "volume_repaid": vol_repay,
-                "avg_interest_rate": avg_roi,
-                "avg_ticket_size": avg_ticket,
-                "mom_growth_pct": mom_growth_pct,
-                "repayment_rate": round((vol_repay / (vol_disb or 1)) * 100, 1),
-                "institution_status": status
-            })
-            
-        conn.close()
-    except Exception:
-        pass
+    try:
+        with db_cursor() as (conn, cur):
+            run_section(provenance, "monthly_cohorts", _load, conn)
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("MoM loan start analysis unavailable")
+        provenance["monthly_cohorts"] = SectionResult(
+            "monthly_cohorts", "error", 0, f"{type(exc).__name__}: {exc}"
+        ).as_dict()
 
-    if not monthly_cohorts:
-        data_points = [
-            ("2025-10", 21, 11300000.0, 17.5, "MSME Relaunch"),
-            ("2025-11", 143, 52000000.0, 17.6, "Rapid Scaling"),
-            ("2025-12", 380, 130800000.0, 17.7, "Commercial Growth"),
-            ("2026-01", 560, 188200000.0, 17.8, "Expanding Footprint"),
-            ("2026-02", 628, 233700000.0, 17.8, "Steady Acceleration"),
-            ("2026-03", 832, 325000000.0, 17.7, "Q4 Push"),
-            ("2026-04", 922, 377400000.0, 17.7, "FY27 Kickoff"),
-            ("2026-05", 1148, 491300000.0, 17.7, "Peak All-Time High"),
-            ("2026-06", 1021, 431800000.0, 17.7, "Consolidation")
-        ]
-        prev_vol = None
-        for m, loans, vol, roi, status in data_points:
-            mom = round(((vol - prev_vol) / prev_vol) * 100, 1) if prev_vol else 0.0
-            prev_vol = vol
-            disb = vol * 0.98
-            repay = round(disb * 0.952, 2)
-            monthly_cohorts.append({
-                "start_month": m,
-                "loans_started": loans,
-                "borrowers_onboarded": round(loans * 0.94),
-                "volume_sanctioned": vol,
-                "volume_disbursed": disb,
-                "volume_repaid": repay,
-                "avg_interest_rate": roi,
-                "avg_ticket_size": round(vol / loans),
-                "mom_growth_pct": mom,
-                "repayment_rate": round((repay / (disb or 1)) * 100, 1),
-                "institution_status": status
-            })
-
-    first_cohort = monthly_cohorts[0] if monthly_cohorts else None
-    latest_cohort = monthly_cohorts[-1] if monthly_cohorts else None
-    
-    total_new_originations = sum(c["volume_sanctioned"] for c in monthly_cohorts)
-    avg_growth = round(sum(c["mom_growth_pct"] for c in monthly_cohorts) / max(len(monthly_cohorts), 1), 1)
+    first = monthly_cohorts[0] if monthly_cohorts else None
+    latest = monthly_cohorts[-1] if monthly_cohorts else None
+    growths = [c["mom_growth_pct"] for c in monthly_cohorts if c["mom_growth_pct"] is not None]
 
     return {
         "monthly_cohorts": list(reversed(monthly_cohorts)),
         "institution_improvement": {
-            "start_period": first_cohort["start_month"] if first_cohort else "2025-10",
-            "latest_period": latest_cohort["start_month"] if latest_cohort else "2026-06",
-            "origination_growth_multiplier": round((latest_cohort["volume_sanctioned"] / (first_cohort["volume_sanctioned"] or 1)), 1) if first_cohort and latest_cohort else 38.2,
-            "average_mom_growth_pct": avg_growth,
-            "total_new_volume_started": total_new_originations,
-            "portfolio_health_trend": "Controlled Delinquency & Scaled Originations"
-        }
+            "start_period": first["start_month"] if first else None,
+            "latest_period": latest["start_month"] if latest else None,
+            "origination_growth_multiplier": (
+                round(latest["volume_sanctioned"] / first["volume_sanctioned"], 1)
+                if first and latest and first["volume_sanctioned"]
+                else None
+            ),
+            "average_mom_growth_pct": round(sum(growths) / len(growths), 1) if growths else None,
+            "total_new_volume_started": sum(c["volume_sanctioned"] for c in monthly_cohorts),
+        },
+        "provenance": provenance,
     }
+
+
+# --------------------------------------------------------------------------- #
+# Graph
+# --------------------------------------------------------------------------- #
+
+def _money(value: float) -> str:
+    return f"₹{value:,.0f}"
 
 
 def get_db_schema_graph(
@@ -415,794 +518,827 @@ def get_db_schema_graph(
     agent_id: Optional[str] = None,
     customer_id: Optional[str] = None,
     month: Optional[str] = None,
-    limit: int = 40
+    limit: int = 40,
 ) -> Dict[str, Any]:
-    is_live = False
-    nodes = []
-    edges = []
-    
-    real_branches = []
-    real_products = []
-    total_customers_count = 0
-    total_accounts_count = 0
-    total_disbursed_amt = 0.0
-    total_repaid_amt = 0.0
+    """Build the curiosity graph for the requested drill-down level."""
+    nodes: List[Dict[str, Any]] = []
+    edges: List[Dict[str, Any]] = []
+    provenance: Dict[str, Dict[str, Any]] = {}
+
+    products: List[Dict[str, Any]] = []
+    branches: List[Dict[str, Any]] = []
+    branch_product_links: List[Dict[str, Any]] = []
+    scheme_names: Dict[str, str] = {}
+
+    totals = {"customers": 0, "accounts": 0, "disbursed": 0.0, "repaid": 0.0}
 
     executive_info = {
         "id": "EXEC-PORTFOLIO",
         "name": "Moneypal Core Loan Book",
-        "role": "Oracle GICCPROD_NEW System Database",
-        "org": "Moneypal GICC Holdings Ltd"
+        # The module reads PostgreSQL; it previously described itself as Oracle.
+        "role": "PostgreSQL warehouse (schema: bronze)",
+        "org": "Moneypal GICC Holdings Ltd",
     }
 
-    try:
-        conn = get_connection()
-        cur = conn.cursor()
-        
-        where_month = "WHERE TO_CHAR(gnlnac_sanc_date, 'YYYY-MM') = %s" if month else ""
-        month_params = (month,) if month else ()
+    month_filter = "WHERE TO_CHAR(gnlnac_sanc_date, 'YYYY-MM') = %s" if month else ""
+    month_params: Tuple[Any, ...] = (month,) if month else ()
 
-        cur.execute(f"""
-            SELECT COUNT(*), COUNT(DISTINCT gnlnac_cust_id), 
-                   COALESCE(SUM(COALESCE(NULLIF(gnlnac_lndisb_amt, 0), gnlnac_sanc_amt)), 0), 
-                   COALESCE(SUM(gnlnac_pri_repay_amt), 0) 
-            FROM bronze.genlnacnts {where_month};
-        """, month_params)
-        counts = cur.fetchone()
-        if counts:
-            total_accounts_count = counts[0] or 0
-            total_customers_count = counts[1] or 0
-            total_disbursed_amt = float(counts[2] or 0)
-            total_repaid_amt = float(counts[3] or 0)
+    with db_cursor() as (conn, cur):
 
-        # 1. FETCH ALL PRODUCTS DYNAMICALLY FROM DATABASE
-        cur.execute("""
-            SELECT gnlnac_prod_code, COUNT(DISTINCT gnlnac_cust_id), COUNT(*), 
-                   COALESCE(SUM(COALESCE(NULLIF(gnlnac_lndisb_amt, 0), gnlnac_sanc_amt)), 0),
-                   COALESCE(SUM(gnlnac_pri_repay_amt), 0)
-            FROM bronze.genlnacnts
-            WHERE gnlnac_prod_code IS NOT NULL
-            GROUP BY gnlnac_prod_code
-            ORDER BY COUNT(DISTINCT gnlnac_cust_id) DESC;
-        """)
-        p_rows = cur.fetchall()
-        for r in p_rows:
-            p_code = str(r[0])
-            p_name = f"Product {p_code}"
-            if p_code == "16": p_name = "Product 16: Business & MSME Loans"
-            elif p_code == "13": p_name = "Product 13: Microfinance & JLG Loans"
-            elif p_code == "1": p_name = "Product 1: Retail Gold Loans"
+        def _totals() -> int:
+            cur.execute(
+                f"""
+                SELECT COUNT(*), COUNT(DISTINCT gnlnac_cust_id),
+                       COALESCE(SUM(COALESCE(NULLIF(gnlnac_lndisb_amt, 0), gnlnac_sanc_amt)), 0),
+                       COALESCE(SUM(gnlnac_pri_repay_amt), 0)
+                FROM bronze.genlnacnts {month_filter}
+                """,
+                month_params,
+            )
+            row = cur.fetchone()
+            totals["accounts"] = int(row[0] or 0)
+            totals["customers"] = int(row[1] or 0)
+            totals["disbursed"] = _f(row[2])
+            totals["repaid"] = _f(row[3])
+            return totals["accounts"]
 
-            disb = float(r[3] or 0)
-            repay = float(r[4] or 0)
-            eff = round((repay / (disb or 1)) * 100, 1)
+        run_section(provenance, "portfolio_totals", _totals, conn)
 
-            real_products.append({
-                "id": f"ZONE-PROD-{p_code}",
-                "code": p_code,
-                "name": p_name,
-                "director": f"Oracle Product Manager #{p_code}",
-                "cust_count": r[1] or 0,
-                "acnt_count": r[2] or 0,
-                "total_vol": disb,
-                "repay_vol": repay,
-                "eff_pct": eff
-            })
-
-        # 2. FETCH ALL BRANCHES DYNAMICALLY FROM DATABASE
-        cur.execute("""
-            SELECT gnlnac_appl_brn_code, COUNT(DISTINCT gnlnac_cust_id), COUNT(*), 
-                   COALESCE(SUM(COALESCE(NULLIF(gnlnac_lndisb_amt, 0), gnlnac_sanc_amt)), 0),
-                   COALESCE(SUM(gnlnac_pri_repay_amt), 0)
-            FROM bronze.genlnacnts 
-            WHERE gnlnac_appl_brn_code IS NOT NULL 
-            GROUP BY gnlnac_appl_brn_code 
-            ORDER BY COUNT(DISTINCT gnlnac_cust_id) DESC;
-        """)
-        branch_rows = cur.fetchall()
-        for i, r in enumerate(branch_rows):
-            brn_code = str(r[0])
-            b_info = get_branch_info_from_db(cur, brn_code)
-            p_obj = real_products[i % len(real_products)] if real_products else {"id": "ZONE-PROD-16", "name": "Product 16"}
-            disb = float(r[3] or 0)
-            repay = float(r[4] or 0)
-            eff = round((repay / (disb or 1)) * 100, 1)
-
-            real_branches.append({
-                "id": f"BRN-{brn_code}",
-                "code": brn_code,
-                "name": b_info["name"],
-                "display_title": b_info["name"],
-                "manager": b_info["manager"],
-                "cust_count": r[1] or 0,
-                "acnt_count": r[2] or 0,
-                "total_vol": disb,
-                "repay_vol": repay,
-                "eff_pct": eff,
-                "zone_id": p_obj["id"],
-                "zone_name": p_obj["name"]
-            })
-
-        conn.close()
-        is_live = True
-    except Exception:
-        is_live = False
-
-    # FALLBACK / DEFAULT STANDALONE DATA MATRIX IF DATABASE UNREACHABLE OR EMPTY
-    if not real_products:
-        real_products = [
-            {"id": "ZONE-PROD-16", "code": "16", "name": "Product 16: Business & MSME Loans", "director": "MSME Division Lead", "cust_count": 3450, "acnt_count": 3820, "total_vol": 245800000.0, "repay_vol": 234001600.0, "eff_pct": 95.2},
-            {"id": "ZONE-PROD-13", "code": "13", "name": "Product 13: Microfinance & JLG Loans", "director": "MFI Credit Director", "cust_count": 1820, "acnt_count": 2100, "total_vol": 88400000.0, "repay_vol": 84156800.0, "eff_pct": 95.2},
-            {"id": "ZONE-PROD-1", "code": "1", "name": "Product 1: Retail Gold Loans", "director": "Gold Desk Manager", "cust_count": 890, "acnt_count": 950, "total_vol": 43200000.0, "repay_vol": 41126400.0, "eff_pct": 95.2}
-        ]
-
-    if not real_branches:
-        fallback_district_branches = [
-            ("1", "Udupi District", "ZONE-PROD-16", 1240, 1380, 68500000.0, 65212000.0),
-            ("2", "Mandya District", "ZONE-PROD-16", 980, 1090, 54200000.0, 51598400.0),
-            ("3", "Shimoga District", "ZONE-PROD-13", 870, 960, 48000000.0, 45696000.0),
-            ("4", "Bangalore Urban District", "ZONE-PROD-16", 1310, 1450, 72100000.0, 68783400.0),
-            ("5", "Dakshina Kannada District", "ZONE-PROD-1", 920, 1010, 51300000.0, 48888900.0),
-            ("6", "Mysore District", "ZONE-PROD-16", 760, 840, 42800000.0, 40742800.0),
-            ("7", "Hassan District", "ZONE-PROD-13", 440, 490, 24500000.0, 23324000.0),
-            ("8", "Chikmagalur District", "ZONE-PROD-1", 280, 310, 16000000.0, 15232000.0),
-        ]
-        for b_code, b_name, z_id, c_cnt, a_cnt, d_amt, r_amt in fallback_district_branches:
-            eff = round((r_amt / (d_amt or 1)) * 100, 1)
-            real_branches.append({
-                "id": f"BRN-{b_code}",
-                "code": b_code,
-                "name": b_name,
-                "display_title": b_name,
-                "manager": f"District Lead - {b_name.split()[0]}",
-                "cust_count": c_cnt,
-                "acnt_count": a_cnt,
-                "total_vol": d_amt,
-                "repay_vol": r_amt,
-                "eff_pct": eff,
-                "zone_id": z_id,
-                "zone_name": "Product Division"
-            })
-
-    if total_disbursed_amt == 0.0:
-        total_disbursed_amt = sum(b["total_vol"] for b in real_branches)
-        total_repaid_amt = sum(b["repay_vol"] for b in real_branches)
-        total_customers_count = sum(b["cust_count"] for b in real_branches)
-        total_accounts_count = sum(b["acnt_count"] for b in real_branches)
-
-    exec_eff_pct = round((total_repaid_amt / (total_disbursed_amt or 1)) * 100, 1)
-
-    current_level = view_level or "executive"
-    selected_zonal = None
-    selected_mgr = None
-    selected_agent = None
-    selected_customer = None
-
-    if search_term and search_term.strip():
-        search_res = search_entities(search_term, entity_type=entity_type or "all")
-        if search_res:
-            top_match = search_res[0]
-            current_level = top_match["view_level"]
-            if "zonal_id" in top_match: zonal_id = top_match["zonal_id"]
-            if "manager_id" in top_match: manager_id = top_match["manager_id"]
-            if "agent_id" in top_match: agent_id = top_match["agent_id"]
-            if "customer_id" in top_match: customer_id = top_match["customer_id"]
-
-    # -------------------------------------------------------------
-    # TIER 0: EXECUTIVE / PORTFOLIO VIEW
-    # -------------------------------------------------------------
-    if current_level == "executive":
-        nodes.append({
-            "id": executive_info["id"],
-            "type": "executive",
-            "title": executive_info["name"],
-            "subtitle": executive_info["role"],
-            "node_label": "Portfolio Master",
-            "color": NODE_TYPE_STYLES["executive"]["color"],
-            "size": NODE_TYPE_STYLES["executive"]["size"],
-            "details": {
-                "System Database": "GICCPROD_NEW (Oracle Core Lending)",
-                "System Type": executive_info["role"],
-                "Holding Entity": executive_info["org"],
-                "Active Oracle Branches": f"{len(real_branches)} Virtual District Branches",
-                "Total Borrowers": f"{total_customers_count:,}",
-                "Total Loan Accounts": f"{total_accounts_count:,} Active Loans",
-                "Total Disbursed": f"₹{total_disbursed_amt:,.0f}",
-                "Total Repaid": f"₹{total_repaid_amt:,.0f}",
-                "Collection Efficiency": f"{exec_eff_pct:.1f}%"
-            }
-        })
-
-        for p in real_products:
-            p_brs = [b for b in real_branches if b["zone_id"] == p["id"]]
-            nodes.append({
-                "id": p["id"],
-                "type": "zonal",
-                "title": p["name"],
-                "subtitle": f"Code #{p['code']} • {p['cust_count']:,} Borrowers • {p['acnt_count']:,} Loans",
-                "node_label": "Product Division",
-                "color": NODE_TYPE_STYLES["zonal"]["color"],
-                "size": NODE_TYPE_STYLES["zonal"]["size"],
-                "zonal_id": p["id"],
-                "details": {
-                    "Product Code": p["code"],
-                    "Product Category": p["name"],
-                    "Active Oracle Branches": f"{len(p_brs)} Branches",
-                    "Total Borrowers": f"{p['cust_count']:,}",
-                    "Total Loan Accounts": f"{p['acnt_count']:,} Accounts",
-                    "Total Disbursed": f"₹{p['total_vol']:,.0f}",
-                    "Total Repaid": f"₹{p['repay_vol']:,.0f}",
-                    "Collection Efficiency": f"{p['eff_pct']:.1f}%"
-                }
-            })
-            edges.append({
-                "source": executive_info["id"],
-                "target": p["id"],
-                "weight": 9,
-                "label": "PRODUCT_DIVISION",
-                "purpose": "Portfolio Division"
-            })
-
-    # -------------------------------------------------------------
-    # TIER 1: PRODUCT DIVISION VIEW
-    # -------------------------------------------------------------
-    elif current_level == "zonal" or (zonal_id and not manager_id and not agent_id and not customer_id):
-        target_zonal_id = zonal_id or (real_products[0]["id"] if real_products else "ZONE-PROD-16")
-        selected_zonal = next((p for p in real_products if p["id"] == target_zonal_id), real_products[0] if real_products else None)
-
-        assigned_brs = [b for b in real_branches if selected_zonal and b["zone_id"] == selected_zonal["id"]]
-        if not assigned_brs:
-            assigned_brs = real_branches[:4]
-
-        if selected_zonal:
-            nodes.append({
-                "id": selected_zonal["id"],
-                "type": "zonal",
-                "title": selected_zonal["name"],
-                "subtitle": f"Code #{selected_zonal['code']}",
-                "node_label": "Product Division",
-                "color": NODE_TYPE_STYLES["zonal"]["color"],
-                "size": 28,
-                "zonal_id": selected_zonal["id"],
-                "details": {
-                    "Product Code": selected_zonal["code"],
-                    "Product Category": selected_zonal["name"],
-                    "Active Oracle Branches": f"{len(assigned_brs)} Branches",
-                    "Total Borrowers": f"{selected_zonal['cust_count']:,}",
-                    "Total Disbursed": f"₹{selected_zonal['total_vol']:,.0f}",
-                    "Total Repaid": f"₹{selected_zonal['repay_vol']:,.0f}",
-                    "Collection Efficiency": f"{selected_zonal['eff_pct']:.1f}%"
-                }
-            })
-
-        for br in assigned_brs:
-            nodes.append({
-                "id": br["id"],
-                "type": "manager",
-                "title": br["display_title"],
-                "subtitle": f"Branch Code #{br['code']} • {br['cust_count']:,} Borrowers",
-                "node_label": "Oracle Branch",
-                "color": NODE_TYPE_STYLES["manager"]["color"],
-                "size": NODE_TYPE_STYLES["manager"]["size"],
-                "manager_id": br["id"],
-                "details": {
-                    "Branch Name": br["display_title"],
-                    "Oracle Branch Code": br["code"],
-                    "Total Borrowers": f"{br['cust_count']:,}",
-                    "Active Loan Accounts": f"{br['acnt_count']:,} Accounts",
-                    "Total Disbursed": f"₹{br['total_vol']:,.0f}",
-                    "Total Repaid": f"₹{br['repay_vol']:,.0f}",
-                    "Collection Efficiency": f"{br['eff_pct']:.1f}%"
-                }
-            })
-            if selected_zonal:
-                edges.append({
-                    "source": selected_zonal["id"],
-                    "target": br["id"],
-                    "weight": 8,
-                    "label": "HOSTS_BRANCH",
-                    "purpose": "Branch Operations"
-                })
-
-    # -------------------------------------------------------------
-    # TIER 2: DISTRICT VIRTUAL BRANCH VIEW
-    # -------------------------------------------------------------
-    elif current_level == "manager" or (manager_id and not agent_id and not customer_id):
-        target_mgr_id = manager_id or (real_branches[0]["id"] if real_branches else "BRN-1")
-        selected_mgr = next((b for b in real_branches if b["id"] == target_mgr_id), real_branches[0] if real_branches else None)
-        selected_zonal = next((p for p in real_products if selected_mgr and p["id"] == selected_mgr["zone_id"]), real_products[0] if real_products else None)
-
-        if selected_mgr:
-            if selected_zonal:
-                nodes.append({
-                    "id": selected_zonal["id"],
-                    "type": "zonal",
-                    "title": selected_zonal["name"],
-                    "subtitle": f"Code #{selected_zonal['code']}",
-                    "node_label": "Product Division",
-                    "color": NODE_TYPE_STYLES["zonal"]["color"],
-                    "size": 24,
-                    "zonal_id": selected_zonal["id"],
-                    "details": {
-                        "Product Category": selected_zonal["name"],
-                        "Total Disbursed": f"₹{selected_zonal['total_vol']:,.0f}",
-                        "Total Repaid": f"₹{selected_zonal['repay_vol']:,.0f}",
-                        "Collection Efficiency": f"{selected_zonal['eff_pct']:.1f}%"
+        def _products() -> int:
+            cur.execute(
+                f"""
+                SELECT gnlnac_prod_code, COUNT(DISTINCT gnlnac_cust_id), COUNT(*),
+                       COALESCE(SUM(COALESCE(NULLIF(gnlnac_lndisb_amt, 0), gnlnac_sanc_amt)), 0),
+                       COALESCE(SUM(gnlnac_pri_repay_amt), 0)
+                FROM bronze.genlnacnts
+                {month_filter or 'WHERE TRUE'} AND gnlnac_prod_code IS NOT NULL
+                GROUP BY gnlnac_prod_code
+                ORDER BY 2 DESC
+                """,
+                month_params,
+            )
+            for prod, custs, accts, disbursed, repaid in cur.fetchall():
+                code = _code(prod)
+                products.append(
+                    {
+                        "id": f"ZONE-PROD-{code}",
+                        "code": code,
+                        "name": product_title(code),
+                        "cust_count": int(custs or 0),
+                        "acnt_count": int(accts or 0),
+                        "total_vol": _f(disbursed),
+                        "repay_vol": _f(repaid),
+                        "repaid_pct": _repaid_pct(_f(repaid), _f(disbursed)),
                     }
-                })
+                )
+            return len(products)
 
-            nodes.append({
-                "id": selected_mgr["id"],
-                "type": "manager",
-                "title": selected_mgr["display_title"],
-                "subtitle": f"Branch Code #{selected_mgr['code']}",
-                "node_label": "Oracle Branch",
-                "color": NODE_TYPE_STYLES["manager"]["color"],
-                "size": 26,
-                "manager_id": selected_mgr["id"],
-                "details": {
-                    "Branch Name": selected_mgr["display_title"],
-                    "Oracle Branch Code": selected_mgr["code"],
-                    "Total Borrowers": f"{selected_mgr['cust_count']:,}",
-                    "Active Loan Accounts": f"{selected_mgr['acnt_count']:,} Accounts",
-                    "Total Disbursed": f"₹{selected_mgr['total_vol']:,.0f}",
-                    "Total Repaid": f"₹{selected_mgr['repay_vol']:,.0f}",
-                    "Collection Efficiency": f"{selected_mgr['eff_pct']:.1f}%"
+        run_section(provenance, "products", _products, conn)
+
+        def _branches() -> int:
+            cur.execute(
+                f"""
+                SELECT gnlnac_appl_brn_code, COUNT(DISTINCT gnlnac_cust_id), COUNT(*),
+                       COALESCE(SUM(COALESCE(NULLIF(gnlnac_lndisb_amt, 0), gnlnac_sanc_amt)), 0),
+                       COALESCE(SUM(gnlnac_pri_repay_amt), 0)
+                FROM bronze.genlnacnts
+                {month_filter or 'WHERE TRUE'} AND gnlnac_appl_brn_code IS NOT NULL
+                GROUP BY gnlnac_appl_brn_code
+                ORDER BY 2 DESC
+                """,
+                month_params,
+            )
+            for brn, custs, accts, disbursed, repaid in cur.fetchall():
+                code = _code(brn)
+                branches.append(
+                    {
+                        "id": f"BRN-{code}",
+                        "code": code,
+                        "name": branch_label(code),
+                        "display_title": branch_label(code),
+                        "cust_count": int(custs or 0),
+                        "acnt_count": int(accts or 0),
+                        "total_vol": _f(disbursed),
+                        "repay_vol": _f(repaid),
+                        "repaid_pct": _repaid_pct(_f(repaid), _f(disbursed)),
+                        # Filled in by _links below from the real product mix.
+                        "zone_id": "",
+                        "zone_ids": [],
+                        "zone_name": "",
+                    }
+                )
+            return len(branches)
+
+        run_section(provenance, "branches", _branches, conn)
+
+        def _links() -> int:
+            """The real branch-to-product relationship.
+
+            Branches used to be attached to products by round-robin list index
+            (`real_products[i % len(real_products)]`), so every edge in this tier was
+            fabricated. A branch can carry several products, so this is many-to-many.
+            """
+            cur.execute(
+                f"""
+                SELECT gnlnac_appl_brn_code, gnlnac_prod_code, COUNT(*),
+                       COALESCE(SUM(COALESCE(NULLIF(gnlnac_lndisb_amt, 0), gnlnac_sanc_amt)), 0),
+                       COALESCE(SUM(gnlnac_pri_repay_amt), 0)
+                FROM bronze.genlnacnts
+                {month_filter or 'WHERE TRUE'}
+                  AND gnlnac_appl_brn_code IS NOT NULL AND gnlnac_prod_code IS NOT NULL
+                GROUP BY 1, 2
+                ORDER BY 3 DESC
+                """,
+                month_params,
+            )
+            by_branch: Dict[str, List[Dict[str, Any]]] = {}
+            for brn, prod, accts, disbursed, repaid in cur.fetchall():
+                b_code, p_code = _code(brn), _code(prod)
+                link = {
+                    "branch_id": f"BRN-{b_code}",
+                    "branch_code": b_code,
+                    "zone_id": f"ZONE-PROD-{p_code}",
+                    "product_code": p_code,
+                    "acnt_count": int(accts or 0),
+                    "total_vol": _f(disbursed),
+                    "repay_vol": _f(repaid),
                 }
-            })
+                branch_product_links.append(link)
+                by_branch.setdefault(b_code, []).append(link)
 
+            for branch in branches:
+                links = sorted(
+                    by_branch.get(branch["code"], []), key=lambda x: -x["acnt_count"]
+                )
+                branch["zone_ids"] = [link_["zone_id"] for link_ in links]
+                if links:
+                    # zone_id keeps the single-value shape the UI expects; it is the
+                    # branch's dominant product by account count, and zone_ids carries
+                    # the full set.
+                    branch["zone_id"] = links[0]["zone_id"]
+                    branch["zone_name"] = product_title(links[0]["product_code"])
+            return len(branch_product_links)
+
+        run_section(provenance, "branch_product_links", _links, conn)
+
+        def _schemes() -> int:
+            nonlocal scheme_names
+            scheme_names = get_scheme_name_map(cur)
+            return len(scheme_names)
+
+        run_section(provenance, "scheme_names", _schemes, conn)
+
+        # Search may redirect the requested level.
+        current_level = view_level or "executive"
+        if search_term and search_term.strip():
+            matches = search_entities(search_term, entity_type=entity_type or "all")
+            if matches:
+                top = matches[0]
+                current_level = top["view_level"]
+                zonal_id = top.get("zonal_id", zonal_id)
+                manager_id = top.get("manager_id", manager_id)
+                agent_id = top.get("agent_id", agent_id)
+                customer_id = top.get("customer_id", customer_id)
+
+        selected_zonal = None
+        selected_mgr = None
+        selected_agent = None
+        selected_customer = None
+
+        def product_by_id(pid: Optional[str]) -> Optional[Dict[str, Any]]:
+            return next((p for p in products if p["id"] == pid), None)
+
+        def branch_by_id(bid: Optional[str]) -> Optional[Dict[str, Any]]:
+            return next((b for b in branches if b["id"] == bid), None)
+
+        # ---------------- Tier 0: executive ----------------
+        if current_level == "executive":
+            nodes.append(
+                {
+                    "id": executive_info["id"],
+                    "type": "executive",
+                    "title": executive_info["name"],
+                    "subtitle": executive_info["role"],
+                    "node_label": NODE_TYPE_STYLES["executive"]["label"],
+                    "color": NODE_TYPE_STYLES["executive"]["color"],
+                    "size": NODE_TYPE_STYLES["executive"]["size"],
+                    "details": {
+                        "Source": "PostgreSQL bronze.genlnacnts",
+                        "Holding Entity": executive_info["org"],
+                        "Branches": f"{len(branches)}",
+                        "Total Borrowers": f"{totals['customers']:,}",
+                        "Total Loan Accounts": f"{totals['accounts']:,}",
+                        "Total Disbursed": _money(totals["disbursed"]),
+                        "Total Repaid": _money(totals["repaid"]),
+                        "Principal Repaid": f"{_repaid_pct(totals['repaid'], totals['disbursed']):.1f}%",
+                    },
+                }
+            )
+            for product in products:
+                linked = {l["branch_code"] for l in branch_product_links if l["zone_id"] == product["id"]}
+                nodes.append(_product_node(product, len(linked)))
+                edges.append(
+                    {
+                        "source": executive_info["id"],
+                        "target": product["id"],
+                        "weight": 9,
+                        "label": "PRODUCT_DIVISION",
+                        "purpose": "Portfolio Division",
+                    }
+                )
+
+        # ---------------- Tier 1: product division ----------------
+        elif current_level == "zonal" or (zonal_id and not manager_id and not agent_id and not customer_id):
+            selected_zonal = product_by_id(zonal_id) or (products[0] if products else None)
             if selected_zonal:
-                edges.append({
-                    "source": selected_zonal["id"],
-                    "target": selected_mgr["id"],
-                    "weight": 8,
-                    "label": "HOSTS_BRANCH",
-                    "purpose": "Branch Operations"
-                })
+                # Only branches that genuinely originate this product.
+                linked_codes = [
+                    l["branch_code"]
+                    for l in branch_product_links
+                    if l["zone_id"] == selected_zonal["id"]
+                ]
+                assigned = [b for b in branches if b["code"] in set(linked_codes)]
+                nodes.append(_product_node(selected_zonal, len(assigned)))
+                for branch in assigned:
+                    link = next(
+                        (
+                            l
+                            for l in branch_product_links
+                            if l["branch_code"] == branch["code"]
+                            and l["zone_id"] == selected_zonal["id"]
+                        ),
+                        None,
+                    )
+                    nodes.append(_branch_node(branch, link))
+                    edges.append(
+                        {
+                            "source": selected_zonal["id"],
+                            "target": branch["id"],
+                            "weight": 8,
+                            "label": "ORIGINATES_AT",
+                            "purpose": f"{link['acnt_count']:,} accounts" if link else "Branch",
+                        }
+                    )
 
-            # FETCH SCHEMES FOR THIS BRANCH DYNAMICALLY FROM DATABASE
-            db_schemes = []
-            try:
-                conn = get_connection()
-                cur = conn.cursor()
-                cur.execute("""
-                    SELECT gnlnac_schm_code, COUNT(DISTINCT gnlnac_cust_id), COUNT(*), 
-                           COALESCE(SUM(COALESCE(NULLIF(gnlnac_lndisb_amt, 0), gnlnac_sanc_amt)), 0),
-                           COALESCE(SUM(gnlnac_pri_repay_amt), 0)
-                    FROM bronze.genlnacnts
-                    WHERE CAST(gnlnac_appl_brn_code AS TEXT) = %s AND gnlnac_schm_code IS NOT NULL
-                    GROUP BY gnlnac_schm_code
-                    ORDER BY COUNT(*) DESC LIMIT 5;
-                """, (selected_mgr["code"],))
-                s_rows = cur.fetchall()
-                for r in s_rows:
-                    disb = float(r[3] or 0)
-                    repay = float(r[4] or 0)
-                    eff = round((repay / (disb or 1)) * 100, 1)
-                    db_schemes.append({
-                        "schm_code": str(r[0]),
-                        "cust_count": r[1] or 0,
-                        "acnt_count": r[2] or 0,
-                        "total_vol": disb,
-                        "repay_vol": repay,
-                        "eff_pct": eff
-                    })
-                conn.close()
-            except Exception:
-                pass
+        # ---------------- Tier 2: branch ----------------
+        elif current_level == "manager" or (manager_id and not agent_id and not customer_id):
+            selected_mgr = branch_by_id(manager_id) or (branches[0] if branches else None)
+            if selected_mgr:
+                selected_zonal = product_by_id(selected_mgr["zone_id"])
+                if selected_zonal:
+                    nodes.append(_product_node(selected_zonal, None))
+                nodes.append(_branch_node(selected_mgr, None))
+                if selected_zonal:
+                    edges.append(
+                        {
+                            "source": selected_zonal["id"],
+                            "target": selected_mgr["id"],
+                            "weight": 8,
+                            "label": "ORIGINATES_AT",
+                            "purpose": "Branch Operations",
+                        }
+                    )
 
-            if not db_schemes:
-                disb = selected_mgr["total_vol"]
-                repay = selected_mgr["repay_vol"]
-                eff = selected_mgr["eff_pct"]
-                db_schemes = [{
-                    "schm_code": "1610", 
-                    "cust_count": selected_mgr["cust_count"], 
-                    "acnt_count": selected_mgr["acnt_count"], 
-                    "total_vol": disb,
-                    "repay_vol": repay,
-                    "eff_pct": eff
-                }]
+                branch_schemes: List[Dict[str, Any]] = []
 
-            for sch in db_schemes:
-                s_code = sch["schm_code"]
-                scheme_title = get_scheme_name(s_code)
-                agt_id = f"SCHM-{selected_mgr['code']}-{s_code}"
-                nodes.append({
-                    "id": agt_id,
+                def _branch_schemes() -> int:
+                    # Exact branch match; this used to be a LIKE '%code%' substring.
+                    cur.execute(
+                        """
+                        SELECT gnlnac_schm_code, COUNT(DISTINCT gnlnac_cust_id), COUNT(*),
+                               COALESCE(SUM(COALESCE(NULLIF(gnlnac_lndisb_amt, 0),
+                                                     gnlnac_sanc_amt)), 0),
+                               COALESCE(SUM(gnlnac_pri_repay_amt), 0)
+                        FROM bronze.genlnacnts
+                        WHERE CAST(gnlnac_appl_brn_code AS TEXT) = %s
+                          AND gnlnac_schm_code IS NOT NULL
+                        GROUP BY gnlnac_schm_code
+                        ORDER BY 3 DESC
+                        LIMIT 8
+                        """,
+                        (selected_mgr["code"],),
+                    )
+                    for schm, custs, accts, disbursed, repaid in cur.fetchall():
+                        branch_schemes.append(
+                            {
+                                "schm_code": _code(schm),
+                                "cust_count": int(custs or 0),
+                                "acnt_count": int(accts or 0),
+                                "total_vol": _f(disbursed),
+                                "repay_vol": _f(repaid),
+                            }
+                        )
+                    return len(branch_schemes)
+
+                run_section(provenance, "branch_schemes", _branch_schemes, conn)
+
+                for scheme in branch_schemes:
+                    title = scheme_title(scheme["schm_code"], scheme_names)
+                    node_id = f"SCHM-{selected_mgr['code']}-{scheme['schm_code']}"
+                    nodes.append(
+                        {
+                            "id": node_id,
+                            "type": "agent",
+                            "title": title,
+                            "subtitle": f"{scheme['cust_count']:,} Borrowers • {scheme['acnt_count']:,} Loans",
+                            "node_label": NODE_TYPE_STYLES["agent"]["label"],
+                            "color": NODE_TYPE_STYLES["agent"]["color"],
+                            "size": NODE_TYPE_STYLES["agent"]["size"],
+                            "agent_id": node_id,
+                            "manager_id": selected_mgr["id"],
+                            "details": {
+                                "Scheme Name": title,
+                                "Scheme Code": scheme["schm_code"],
+                                "Branch": selected_mgr["display_title"],
+                                "Total Borrowers": f"{scheme['cust_count']:,}",
+                                "Loan Accounts": f"{scheme['acnt_count']:,}",
+                                "Total Disbursed": _money(scheme["total_vol"]),
+                                "Total Repaid": _money(scheme["repay_vol"]),
+                                "Principal Repaid": f"{_repaid_pct(scheme['repay_vol'], scheme['total_vol']):.1f}%",
+                            },
+                        }
+                    )
+                    edges.append(
+                        {
+                            "source": selected_mgr["id"],
+                            "target": node_id,
+                            "weight": 7,
+                            "label": "OFFERS_SCHEME",
+                            "purpose": "Credit Facility",
+                        }
+                    )
+
+        # ---------------- Tier 3: scheme desk ----------------
+        elif current_level == "agent" or (agent_id and not customer_id):
+            parts = (agent_id or "").split("-")
+            brn_code = parts[1] if len(parts) > 1 else (branches[0]["code"] if branches else "")
+            schm_code = parts[2] if len(parts) > 2 else ""
+            selected_mgr = next((b for b in branches if b["code"] == brn_code), None)
+
+            borrowers: List[Dict[str, Any]] = []
+
+            def _borrowers() -> int:
+                # Filters on BOTH branch and scheme. The scheme code used to be parsed
+                # from agent_id and then used only in the node title, so every scheme
+                # desk under a branch showed an identical borrower list.
+                sql = """
+                    SELECT g.gnlnac_cust_id,
+                           MAX(TRIM(g.gnlnac_cust_name)),
+                           COUNT(*),
+                           COALESCE(SUM(COALESCE(NULLIF(g.gnlnac_lndisb_amt, 0),
+                                                 g.gnlnac_sanc_amt)), 0),
+                           COALESCE(SUM(g.gnlnac_pri_repay_amt), 0),
+                           MAX(g.gnlnac_sanc_date)
+                    FROM bronze.genlnacnts g
+                    WHERE CAST(g.gnlnac_appl_brn_code AS TEXT) = %s
+                """
+                params: List[Any] = [brn_code]
+                if schm_code:
+                    sql += " AND CAST(g.gnlnac_schm_code AS TEXT) = %s"
+                    params.append(schm_code)
+                sql += " GROUP BY g.gnlnac_cust_id ORDER BY 4 DESC LIMIT %s"
+                params.append(limit)
+                cur.execute(sql, tuple(params))
+                for cust_id, name, accts, disbursed, repaid, last_date in cur.fetchall():
+                    borrowers.append(
+                        {
+                            "cust_id": _code(cust_id),
+                            "cust_name": (name or f"Borrower #{_code(cust_id)}").strip(),
+                            "account_count": int(accts or 0),
+                            "disb_amt": _f(disbursed),
+                            "repay_amt": _f(repaid),
+                            "sanc_date": last_date.isoformat() if last_date else "",
+                        }
+                    )
+                return len(borrowers)
+
+            run_section(provenance, "scheme_borrowers", _borrowers, conn)
+
+            title = scheme_title(schm_code, scheme_names)
+            agent_disb = sum(b["disb_amt"] for b in borrowers)
+            agent_repay = sum(b["repay_amt"] for b in borrowers)
+            selected_agent = {
+                "id": agent_id or f"SCHM-{brn_code}-{schm_code}",
+                "name": title,
+                "role": "Lending Scheme",
+                "manager_id": selected_mgr["id"] if selected_mgr else "",
+                "cust_count": len(borrowers),
+                "total_disbursed": agent_disb,
+                "total_repaid": agent_repay,
+            }
+
+            if selected_mgr:
+                nodes.append(_branch_node(selected_mgr, None))
+            nodes.append(
+                {
+                    "id": selected_agent["id"],
                     "type": "agent",
-                    "title": scheme_title,
-                    "subtitle": f"{sch['cust_count']:,} Borrowers • {sch['acnt_count']:,} Loans",
-                    "node_label": "Lending Scheme Desk",
+                    "title": title,
+                    "subtitle": f"{len(borrowers):,} Borrowers",
+                    "node_label": NODE_TYPE_STYLES["agent"]["label"],
                     "color": NODE_TYPE_STYLES["agent"]["color"],
-                    "size": NODE_TYPE_STYLES["agent"]["size"],
-                    "agent_id": agt_id,
-                    "manager_id": selected_mgr["id"],
+                    "size": 24,
+                    "agent_id": selected_agent["id"],
                     "details": {
-                        "Scheme Name": scheme_title,
-                        "Scheme Code": s_code,
-                        "Branch Location": selected_mgr["display_title"],
-                        "Total Borrowers": f"{sch['cust_count']:,}",
-                        "Active Accounts": f"{sch['acnt_count']:,} Loans",
-                        "Total Disbursed": f"₹{sch['total_vol']:,.0f}",
-                        "Total Repaid": f"₹{sch['repay_vol']:,.0f}",
-                        "Collection Efficiency": f"{sch['eff_pct']:.1f}%"
+                        "Scheme Name": title,
+                        "Scheme Code": schm_code or "—",
+                        "Branch": selected_mgr["display_title"] if selected_mgr else "—",
+                        "Total Borrowers": f"{len(borrowers):,}",
+                        "Total Disbursed": _money(agent_disb),
+                        "Total Repaid": _money(agent_repay),
+                        "Principal Repaid": f"{_repaid_pct(agent_repay, agent_disb):.1f}%",
+                    },
+                }
+            )
+            if selected_mgr:
+                edges.append(
+                    {
+                        "source": selected_mgr["id"],
+                        "target": selected_agent["id"],
+                        "weight": 7,
+                        "label": "OFFERS_SCHEME",
+                        "purpose": "Credit Facility",
                     }
-                })
-                edges.append({
-                    "source": selected_mgr["id"],
-                    "target": agt_id,
-                    "weight": 7,
-                    "label": "OFFERS_SCHEME",
-                    "purpose": "Credit Facility"
-                })
+                )
 
-    # -------------------------------------------------------------
-    # TIER 3: LENDING SCHEME / DESK VIEW (REAL BORROWER NAMES)
-    # -------------------------------------------------------------
-    elif current_level == "agent" or (agent_id and not customer_id):
-        brn_code = agent_id.split("-")[1] if agent_id and "-" in agent_id else (real_branches[0]["code"] if real_branches else "1")
-        schm_code = agent_id.split("-")[2] if agent_id and agent_id.count("-") >= 2 else "1610"
-        selected_mgr = next((b for b in real_branches if b["code"] == brn_code), real_branches[0] if real_branches else None)
-
-        all_branch_customers = []
-        try:
-            conn = get_connection()
-            cur = conn.cursor()
-            cur.execute("""
-                SELECT g.gnlnac_cust_id,
-                       COALESCE(
-                           NULLIF(TRIM(g.gnlnac_cust_name), ''),
-                           NULLIF(TRIM(CONCAT_WS(' ', ic.indcif_first_name, ic.indcif_midle_name, ic.indcif_last_name)), ''),
-                           'Borrower #' || g.gnlnac_cust_id
-                       ) AS cust_name,
-                       MAX(g.gnlnac_acnt_num),
-                       COALESCE(SUM(COALESCE(NULLIF(g.gnlnac_lndisb_amt, 0), g.gnlnac_sanc_amt)), 0), 
-                       MAX(g.gnlnac_loan_type),
-                       MAX(g.gnlnac_sanc_date),
-                       COALESCE(SUM(g.gnlnac_pri_repay_amt), 0)
-                FROM bronze.genlnacnts g
-                LEFT JOIN bronze.indcifdata_10012025_indcifdata ic ON g.gnlnac_cust_id = ic.indcif_cust_id
-                WHERE CAST(g.gnlnac_appl_brn_code AS TEXT) LIKE %s
-                GROUP BY g.gnlnac_cust_id, cust_name
-                ORDER BY SUM(g.gnlnac_sanc_amt) DESC LIMIT %s;
-            """, (f"%{brn_code}%", limit))
-            c_rows = cur.fetchall()
-            for r in c_rows:
-                disb = float(r[3] or 0)
-                repay = float(r[6] or 0)
-                eff = round((repay / (disb or 1)) * 100, 1)
-                all_branch_customers.append({
-                    "cust_id": str(r[0]),
-                    "cust_name": str(r[1]),
-                    "acnt_num": str(r[2]),
-                    "sanc_amt": disb,
-                    "disb_amt": disb,
-                    "repay_amt": repay,
-                    "eff_pct": eff,
-                    "loan_type": str(r[4] or "Term Loan"),
-                    "sanc_date": str(r[5] or "2025-10-01")
-                })
-            conn.close()
-        except Exception:
-            pass
-
-        if not all_branch_customers and selected_mgr:
-            fallback_names = [
-                "S V SUBRAMANYA BHAT",
-                "MEGHARAJ H P",
-                "DIVYA B C",
-                "PRAKASH H R",
-                "RAMESH KUMAR S"
-            ]
-            for idx in range(1, 6):
-                d_amt = 500000.0 * idx
-                r_amt = round(d_amt * 0.952, 2)
-                b_name = fallback_names[idx - 1] if idx <= len(fallback_names) else f"Enterprise Borrower #{selected_mgr['code']}{idx}"
-                all_branch_customers.append({
-                    "cust_id": f"{selected_mgr['code']}00{idx}",
-                    "cust_name": b_name,
-                    "acnt_num": f"161099{selected_mgr['code']}{idx}",
-                    "sanc_amt": d_amt,
-                    "disb_amt": d_amt,
-                    "repay_amt": r_amt,
-                    "eff_pct": 95.2,
-                    "loan_type": "MSME Term Loan",
-                    "sanc_date": "2025-11-15"
-                })
-
-        agent_disb = sum(c["disb_amt"] for c in all_branch_customers)
-        agent_repay = sum(c["repay_amt"] for c in all_branch_customers)
-        agent_eff = round((agent_repay / (agent_disb or 1)) * 100, 1)
-
-        scheme_title = get_scheme_name(schm_code)
-        selected_agent = {
-            "id": agent_id or f"SCHM-{brn_code}-{schm_code}",
-            "name": scheme_title,
-            "role": "Lending Facility",
-            "manager_id": selected_mgr["id"] if selected_mgr else "BRN-1",
-            "cust_count": len(all_branch_customers),
-            "total_disbursed": agent_disb,
-            "total_repaid": agent_repay,
-            "eff_pct": agent_eff
-        }
-
-        if selected_mgr:
-            nodes.append({
-                "id": selected_mgr["id"],
-                "type": "manager",
-                "title": selected_mgr["display_title"],
-                "subtitle": f"Branch Code #{selected_mgr['code']}",
-                "node_label": "Oracle Branch",
-                "color": NODE_TYPE_STYLES["manager"]["color"],
-                "size": 24,
-                "manager_id": selected_mgr["id"],
-                "details": {
-                    "Branch Name": selected_mgr["display_title"],
-                    "Oracle Branch Code": selected_mgr["code"],
-                    "Total Disbursed": f"₹{selected_mgr['total_vol']:,.0f}",
-                    "Total Repaid": f"₹{selected_mgr['repay_vol']:,.0f}",
-                    "Collection Efficiency": f"{selected_mgr['eff_pct']:.1f}%"
-                }
-            })
-
-            nodes.append({
-                "id": selected_agent["id"],
-                "type": "agent",
-                "title": selected_agent["name"],
-                "subtitle": f"Branch Code #{selected_mgr['code']}",
-                "node_label": "Lending Scheme Desk",
-                "color": NODE_TYPE_STYLES["agent"]["color"],
-                "size": 24,
-                "agent_id": selected_agent["id"],
-                "details": {
-                    "Scheme Name": scheme_title,
-                    "Scheme Code": schm_code,
-                    "Branch Location": selected_mgr["display_title"],
-                    "Total Borrowers": f"{len(all_branch_customers):,}",
-                    "Total Disbursed": f"₹{selected_agent['total_disbursed']:,.0f}",
-                    "Total Repaid": f"₹{selected_agent['total_repaid']:,.0f}",
-                    "Collection Efficiency": f"{selected_agent['eff_pct']:.1f}%"
-                }
-            })
-
-            edges.append({
-                "source": selected_mgr["id"],
-                "target": selected_agent["id"],
-                "weight": 7,
-                "label": "OFFERS_SCHEME",
-                "purpose": "Credit Facility"
-            })
-
-            for c in all_branch_customers:
-                cust_node_id = f"CUST-{c['cust_id']}"
-                nodes.append({
-                    "id": cust_node_id,
-                    "type": "customer",
-                    "title": c["cust_name"],
-                    "subtitle": f"Customer ID #{c['cust_id']} • ₹{c['sanc_amt']:,.0f}",
-                    "node_label": "Borrower Profile",
-                    "color": NODE_TYPE_STYLES["customer"]["color"],
-                    "size": NODE_TYPE_STYLES["customer"]["size"],
-                    "customer_id": c["cust_id"],
-                    "details": {
-                        "Customer Name": c["cust_name"],
-                        "Customer ID": c["cust_id"],
-                        "Branch Hub": selected_mgr["display_title"],
-                        "Account Number": c["acnt_num"],
-                        "Total Disbursed": f"₹{c['disb_amt']:,.0f}",
-                        "Total Repaid": f"₹{c['repay_amt']:,.0f}",
-                        "Collection Efficiency": f"{c['eff_pct']:.1f}%",
-                        "Approval Date": c["sanc_date"]
+            for borrower in borrowers:
+                node_id = f"CUST-{borrower['cust_id']}"
+                nodes.append(
+                    {
+                        "id": node_id,
+                        "type": "customer",
+                        "title": borrower["cust_name"],
+                        "subtitle": f"#{borrower['cust_id']} • {_money(borrower['disb_amt'])}",
+                        "node_label": NODE_TYPE_STYLES["customer"]["label"],
+                        "color": NODE_TYPE_STYLES["customer"]["color"],
+                        "size": NODE_TYPE_STYLES["customer"]["size"],
+                        "customer_id": borrower["cust_id"],
+                        "details": {
+                            "Borrower Name": borrower["cust_name"],
+                            "Customer ID": borrower["cust_id"],
+                            "Branch": selected_mgr["display_title"] if selected_mgr else "—",
+                            "Loan Accounts": f"{borrower['account_count']:,}",
+                            "Total Disbursed": _money(borrower["disb_amt"]),
+                            "Total Repaid": _money(borrower["repay_amt"]),
+                            "Principal Repaid": f"{_repaid_pct(borrower['repay_amt'], borrower['disb_amt']):.1f}%",
+                        },
                     }
-                })
+                )
+                edges.append(
+                    {
+                        "source": selected_agent["id"],
+                        "target": node_id,
+                        "weight": 6,
+                        "label": "BORROWER",
+                        "purpose": "Loan Portfolio",
+                    }
+                )
 
-                edges.append({
-                    "source": selected_agent["id"],
-                    "target": cust_node_id,
-                    "weight": 6,
-                    "label": "BORROWER_ACCOUNT",
-                    "purpose": "Loan Portfolio"
-                })
+        # ---------------- Tier 4: borrower detail ----------------
+        elif current_level == "customer" or customer_id:
+            accounts: List[Dict[str, Any]] = []
+            borrower: Dict[str, Any] = {}
 
-    # -------------------------------------------------------------
-    # TIER 4: BORROWER DETAIL VIEW (REAL BORROWER NAMES)
-    # -------------------------------------------------------------
-    elif current_level == "customer" or customer_id:
-        target_cust = None
-        try:
-            conn = get_connection()
-            cur = conn.cursor()
-            cur.execute("""
-                SELECT g.gnlnac_cust_id,
-                       COALESCE(
-                           NULLIF(TRIM(g.gnlnac_cust_name), ''),
-                           NULLIF(TRIM(CONCAT_WS(' ', ic.indcif_first_name, ic.indcif_midle_name, ic.indcif_last_name)), ''),
-                           'Borrower #' || g.gnlnac_cust_id
-                       ) AS cust_name,
-                       g.gnlnac_acnt_num, g.gnlnac_sanc_amt, g.gnlnac_loan_type, g.gnlnac_sanc_date, g.gnlnac_appl_brn_code,
-                       g.gnlnac_pri_repay_amt, COALESCE(NULLIF(g.gnlnac_lndisb_amt, 0), g.gnlnac_sanc_amt)
-                FROM bronze.genlnacnts g
-                LEFT JOIN bronze.indcifdata_10012025_indcifdata ic ON g.gnlnac_cust_id = ic.indcif_cust_id
-                WHERE CAST(g.gnlnac_cust_id AS TEXT) = %s LIMIT 1;
-            """, (customer_id or "261",))
-            c_row = cur.fetchone()
-            if c_row:
-                br_code_str = str(c_row[6] or "1")
-                b_info = get_branch_info_from_db(cur, br_code_str)
-                d_amt = float(c_row[8] or c_row[3] or 0)
-                r_amt = float(c_row[7] or 0)
-                eff = round((r_amt / (d_amt or 1)) * 100, 1)
-                target_cust = {
-                    "cust_id": str(c_row[0]),
-                    "cust_name": str(c_row[1]),
-                    "acnt_num": str(c_row[2]),
-                    "sanc_amt": float(c_row[3] or 0),
-                    "loan_type": str(c_row[4] or "Term Loan"),
-                    "sanc_date": str(c_row[5] or "2025-10-01"),
-                    "brn_code": br_code_str,
-                    "brn_name": b_info["name"],
-                    "repay_amt": r_amt,
-                    "disb_amt": d_amt,
-                    "eff_pct": eff
+            def _accounts() -> int:
+                # All of the borrower's accounts. This used to be LIMIT 1, understating
+                # every one of the 1,990 borrowers who hold more than one loan.
+                cur.execute(
+                    """
+                    SELECT g.gnlnac_acnt_num, TRIM(g.gnlnac_cust_name), g.gnlnac_sanc_amt,
+                           COALESCE(NULLIF(g.gnlnac_lndisb_amt, 0), g.gnlnac_sanc_amt),
+                           g.gnlnac_pri_repay_amt, g.gnlnac_sanc_date, g.gnlnac_appl_brn_code,
+                           g.gnlnac_schm_code, g.gnlnac_loan_type, g.gnlnac_closure_date
+                    FROM bronze.genlnacnts g
+                    WHERE CAST(g.gnlnac_cust_id AS TEXT) = %s
+                    ORDER BY g.gnlnac_sanc_date DESC
+                    """,
+                    (customer_id or "",),
+                )
+                for row in cur.fetchall():
+                    accounts.append(
+                        {
+                            "acnt_num": _code(row[0]),
+                            "name": (row[1] or "").strip(),
+                            "sanc_amt": _f(row[2]),
+                            "disb_amt": _f(row[3]),
+                            "repay_amt": _f(row[4]),
+                            "sanc_date": row[5].isoformat() if row[5] else "",
+                            "brn_code": _code(row[6]),
+                            "schm_code": _code(row[7]),
+                            "loan_type": (row[8] or "").strip(),
+                            "closed": bool(row[9]),
+                        }
+                    )
+                return len(accounts)
+
+            run_section(provenance, "borrower_accounts", _accounts, conn)
+
+            if accounts:
+                account_nums = [int(a["acnt_num"]) for a in accounts if a["acnt_num"].isdigit()]
+                borrower = {
+                    "cust_id": customer_id,
+                    "cust_name": next((a["name"] for a in accounts if a["name"]), f"Borrower #{customer_id}"),
+                    "account_count": len(accounts),
+                    "disb_amt": sum(a["disb_amt"] for a in accounts),
+                    "repay_amt": sum(a["repay_amt"] for a in accounts),
+                    "brn_code": accounts[0]["brn_code"],
                 }
-            conn.close()
-        except Exception:
-            pass
+                selected_customer = borrower
+                cust_node_id = f"CUST-{customer_id}"
+                nodes.append(
+                    {
+                        "id": cust_node_id,
+                        "type": "customer",
+                        "title": borrower["cust_name"],
+                        "subtitle": f"Customer #{customer_id} • {borrower['account_count']} account(s)",
+                        "node_label": NODE_TYPE_STYLES["customer"]["label"],
+                        "color": NODE_TYPE_STYLES["customer"]["color"],
+                        "size": 24,
+                        "customer_id": str(customer_id),
+                        "details": {
+                            "Borrower Name": borrower["cust_name"],
+                            "Customer ID": str(customer_id),
+                            "Branch": branch_label(borrower["brn_code"]),
+                            "Loan Accounts": f"{borrower['account_count']:,}",
+                            "Total Disbursed": _money(borrower["disb_amt"]),
+                            "Total Repaid": _money(borrower["repay_amt"]),
+                            "Principal Repaid": f"{_repaid_pct(borrower['repay_amt'], borrower['disb_amt']):.1f}%",
+                        },
+                    }
+                )
 
-        if not target_cust:
-            cid = customer_id or "261"
-            d_amt = 1500000.0
-            r_amt = 1428000.0
-            target_cust = {
-                "cust_id": cid,
-                "cust_name": "S V SUBRAMANYA BHAT",
-                "acnt_num": f"16109900{cid}",
-                "sanc_amt": d_amt,
-                "loan_type": "MSME Commercial Term Loan",
-                "sanc_date": "2025-10-15",
-                "brn_code": "1",
-                "brn_name": "Udupi District Virtual Branch",
-                "disb_amt": d_amt,
-                "repay_amt": r_amt,
-                "eff_pct": round((r_amt / d_amt) * 100, 1)
-            }
+                disbursements: List[Dict[str, Any]] = []
+                repayments: List[Dict[str, Any]] = []
 
-        selected_customer = target_cust
-        cust_node_id = f"CUST-{target_cust['cust_id']}"
+                def _disbursements() -> int:
+                    # Real disbursement transactions. The graph used to synthesise a
+                    # single node per account from aggregate columns, dated at the
+                    # sanction date, while bronze.genlndisb went unqueried.
+                    if not account_nums:
+                        return 0
+                    cur.execute(
+                        """
+                        SELECT genlndisb_acnt_num, genlndisb_disb_sl, genlndisb_disb_date,
+                               genlndisb_disb_amt, genlndisb_net_pay_amt, genlndisb_tot_chgs_amt
+                        FROM bronze.genlndisb
+                        WHERE genlndisb_acnt_num = ANY(%s)
+                        ORDER BY genlndisb_disb_date, genlndisb_disb_sl
+                        """,
+                        (account_nums,),
+                    )
+                    for row in cur.fetchall():
+                        disbursements.append(
+                            {
+                                "acnt_num": _code(row[0]),
+                                "sl": _code(row[1]),
+                                "date": row[2].isoformat() if row[2] else "",
+                                "amount": _f(row[3]),
+                                "net_paid": _f(row[4]),
+                                "charges": _f(row[5]),
+                            }
+                        )
+                    return len(disbursements)
 
-        nodes.append({
-            "id": cust_node_id,
-            "type": "customer",
-            "title": target_cust["cust_name"],
-            "subtitle": f"Customer ID: #{target_cust['cust_id']}",
-            "node_label": "Borrower Profile",
-            "color": NODE_TYPE_STYLES["customer"]["color"],
-            "size": 24,
-            "customer_id": target_cust["cust_id"],
-            "details": {
-                "Customer Name": target_cust["cust_name"],
-                "Customer ID": str(target_cust["cust_id"]),
-                "Branch Hub": target_cust["brn_name"],
-                "Account Number": target_cust["acnt_num"],
-                "Total Disbursed": f"₹{target_cust['disb_amt']:,.0f}",
-                "Total Repaid": f"₹{target_cust['repay_amt']:,.0f}",
-                "Collection Efficiency": f"{target_cust['eff_pct']:.1f}%"
-            }
-        })
+                def _repayments() -> int:
+                    # Real repayment instalments from bronze.loanrepay, which carries both
+                    # the amount due and the amount actually received.
+                    if not account_nums:
+                        return 0
+                    cur.execute(
+                        """
+                        SELECT lnrepay_acnt_no, lnrepay_sl_no, lnrepay_repay_date,
+                               lnrepay_prin_amt, lnrepay_int_amt,
+                               lnrepay_prin_pdamt, lnrepay_int_pdamt
+                        FROM bronze.loanrepay
+                        WHERE lnrepay_acnt_no = ANY(%s)
+                          AND (lnrepay_prin_pdamt > 0 OR lnrepay_int_pdamt > 0)
+                        ORDER BY lnrepay_repay_date, lnrepay_sl_no
+                        """,
+                        (account_nums,),
+                    )
+                    for row in cur.fetchall():
+                        repayments.append(
+                            {
+                                "acnt_num": _code(row[0]),
+                                "sl": _code(row[1]),
+                                "date": row[2].isoformat() if row[2] else "",
+                                "principal_due": _f(row[3]),
+                                "interest_due": _f(row[4]),
+                                "principal_paid": _f(row[5]),
+                                "interest_paid": _f(row[6]),
+                            }
+                        )
+                    return len(repayments)
 
-        acnt_node_id = f"ACNT-{target_cust['acnt_num']}"
-        nodes.append({
-            "id": acnt_node_id,
-            "type": "account",
-            "title": f"Account #{target_cust['acnt_num']}",
-            "subtitle": f"Sanction: ₹{target_cust['sanc_amt']:,}",
-            "node_label": "Loan Master",
-            "color": NODE_TYPE_STYLES["account"]["color"],
-            "size": 22,
-            "details": {
-                "Account Number": str(target_cust["acnt_num"]),
-                "Borrower Name": target_cust["cust_name"],
-                "Total Disbursed": f"₹{target_cust['disb_amt']:,.0f}",
-                "Total Repaid": f"₹{target_cust['repay_amt']:,.0f}",
-                "Collection Efficiency": f"{target_cust['eff_pct']:.1f}%",
-                "Approval Date": target_cust["sanc_date"]
-            }
-        })
+                run_section(provenance, "disbursements", _disbursements, conn)
+                run_section(provenance, "repayments", _repayments, conn)
 
-        edges.append({
-            "source": cust_node_id,
-            "target": acnt_node_id,
-            "weight": 8,
-            "label": "OWNS_ACCOUNT",
-            "purpose": "Primary Loan Ownership"
-        })
+                for account in accounts:
+                    acnt_node_id = f"ACNT-{account['acnt_num']}"
+                    nodes.append(
+                        {
+                            "id": acnt_node_id,
+                            "type": "account",
+                            "title": f"Account #{account['acnt_num']}",
+                            "subtitle": f"Sanction: {_money(account['sanc_amt'])}",
+                            "node_label": NODE_TYPE_STYLES["account"]["label"],
+                            "color": NODE_TYPE_STYLES["account"]["color"],
+                            "size": 22,
+                            "details": {
+                                "Account Number": account["acnt_num"],
+                                "Borrower Name": borrower["cust_name"],
+                                "Scheme": scheme_title(account["schm_code"], scheme_names),
+                                "Sanctioned": _money(account["sanc_amt"]),
+                                "Total Disbursed": _money(account["disb_amt"]),
+                                "Total Repaid": _money(account["repay_amt"]),
+                                "Sanction Date": account["sanc_date"],
+                                "Status": "Closed" if account["closed"] else "Open",
+                            },
+                        }
+                    )
+                    edges.append(
+                        {
+                            "source": cust_node_id,
+                            "target": acnt_node_id,
+                            "weight": 8,
+                            "label": "OWNS_ACCOUNT",
+                            "purpose": "Loan Ownership",
+                        }
+                    )
 
-        disb_node_id = f"DISB-{target_cust['acnt_num']}-1"
-        nodes.append({
-            "id": disb_node_id,
-            "type": "disbursement",
-            "title": f"Disbursement: ₹{target_cust['disb_amt']:,}",
-            "subtitle": f"Date: {target_cust['sanc_date']}",
-            "node_label": "Payout",
-            "color": NODE_TYPE_STYLES["disbursement"]["color"],
-            "size": 16,
-            "details": {
-                "Disbursement Payout": f"₹{target_cust['disb_amt']:,}",
-                "Date": target_cust["sanc_date"],
-                "Payee": target_cust["cust_name"]
-            }
-        })
-        edges.append({
-            "source": acnt_node_id,
-            "target": disb_node_id,
-            "weight": 6,
-            "label": "DISBURSED",
-            "purpose": "Capital Payout"
-        })
+                for idx, disb in enumerate(disbursements):
+                    node_id = f"DISB-{disb['acnt_num']}-{disb['sl'] or idx}"
+                    nodes.append(
+                        {
+                            "id": node_id,
+                            "type": "disbursement",
+                            "title": f"Disbursement {_money(disb['amount'])}",
+                            "subtitle": disb["date"],
+                            "node_label": NODE_TYPE_STYLES["disbursement"]["label"],
+                            "color": NODE_TYPE_STYLES["disbursement"]["color"],
+                            "size": 16,
+                            "details": {
+                                "Account Number": disb["acnt_num"],
+                                "Disbursed Amount": _money(disb["amount"]),
+                                "Net Paid to Borrower": _money(disb["net_paid"]),
+                                "Charges Deducted": _money(disb["charges"]),
+                                "Disbursement Date": disb["date"],
+                                "Source": "bronze.genlndisb",
+                            },
+                        }
+                    )
+                    edges.append(
+                        {
+                            "source": f"ACNT-{disb['acnt_num']}",
+                            "target": node_id,
+                            "weight": 6,
+                            "label": "DISBURSED",
+                            "purpose": "Capital Payout",
+                        }
+                    )
 
-        repay_node_id = f"REPAY-{target_cust['acnt_num']}-1"
-        nodes.append({
-            "id": repay_node_id,
-            "type": "repayment",
-            "title": f"Repayment: ₹{target_cust['repay_amt']:,}",
-            "subtitle": "Receipt Paid",
-            "node_label": "Credit Receipt",
-            "color": NODE_TYPE_STYLES["repayment"]["color"],
-            "size": 16,
-            "details": {
-                "Repayment Amount": f"₹{target_cust['repay_amt']:,}",
-                "Collection Efficiency": f"{target_cust['eff_pct']:.1f}%",
-                "Posting Status": "Cleared"
-            }
-        })
-        edges.append({
-            "source": repay_node_id,
-            "target": acnt_node_id,
-            "weight": 6,
-            "label": "PAID_REPAYMENT",
-            "purpose": "Credit Receipt"
-        })
+                for idx, repay in enumerate(repayments):
+                    node_id = f"REPAY-{repay['acnt_num']}-{repay['sl'] or idx}"
+                    paid = repay["principal_paid"] + repay["interest_paid"]
+                    due = repay["principal_due"] + repay["interest_due"]
+                    nodes.append(
+                        {
+                            "id": node_id,
+                            "type": "repayment",
+                            "title": f"Repayment {_money(paid)}",
+                            "subtitle": repay["date"],
+                            "node_label": NODE_TYPE_STYLES["repayment"]["label"],
+                            "color": NODE_TYPE_STYLES["repayment"]["color"],
+                            "size": 16,
+                            "details": {
+                                "Account Number": repay["acnt_num"],
+                                "Instalment Due": _money(due),
+                                "Amount Received": _money(paid),
+                                "Principal Received": _money(repay["principal_paid"]),
+                                "Interest Received": _money(repay["interest_paid"]),
+                                "Repayment Date": repay["date"],
+                                "Source": "bronze.loanrepay",
+                            },
+                        }
+                    )
+                    edges.append(
+                        {
+                            "source": node_id,
+                            "target": f"ACNT-{repay['acnt_num']}",
+                            "weight": 6,
+                            "label": "REPAID",
+                            "purpose": "Credit Receipt",
+                        }
+                    )
 
-    # GUARANTEE UNIQUE NODES & 100% CONNECTED GRAPH
-    unique_nodes = []
-    seen_ids = set()
-    for n in nodes:
-        if n["id"] not in seen_ids:
-            seen_ids.add(n["id"])
-            unique_nodes.append(n)
+                # A genuine collection efficiency for this borrower: received over due.
+                def _efficiency() -> int:
+                    borrower["collection_efficiency"] = get_collection_efficiency(cur, account_nums)
+                    return 1
 
-    connected_node_ids = set()
-    for e in edges:
-        src = e["source"] if isinstance(e["source"], str) else e["source"]["id"]
-        tgt = e["target"] if isinstance(e["target"], str) else e["target"]["id"]
-        connected_node_ids.add(src)
-        connected_node_ids.add(tgt)
+                run_section(provenance, "collection_efficiency", _efficiency, conn)
+                eff = borrower.get("collection_efficiency") or {}
+                if eff.get("instalments"):
+                    for node in nodes:
+                        if node["id"] == cust_node_id:
+                            node["details"]["Collection Efficiency (paid/due)"] = (
+                                f"{eff['efficiency_pct']:.1f}%"
+                            )
 
-    if len(unique_nodes) > 1 and connected_node_ids:
-        unique_nodes = [n for n in unique_nodes if n["id"] in connected_node_ids]
+        monthly_summary = get_monthly_breakdown(month)
+
+    # Keep only nodes that participate in an edge, and de-duplicate.
+    unique_nodes: List[Dict[str, Any]] = []
+    seen: set = set()
+    for node in nodes:
+        if node["id"] not in seen:
+            seen.add(node["id"])
+            unique_nodes.append(node)
+
+    connected = {e["source"] for e in edges} | {e["target"] for e in edges}
+    if len(unique_nodes) > 1 and connected:
+        unique_nodes = [n for n in unique_nodes if n["id"] in connected]
+
+    live = sorted(k for k, v in provenance.items() if v["status"] == "ok")
+    degraded = sorted(k for k, v in provenance.items() if v["status"] not in ("ok", "empty"))
 
     return {
         "nodes": unique_nodes,
         "edges": edges,
         "view_level": current_level,
         "executive_info": executive_info,
-        "zonals": real_products,
+        "zonals": products,
         "selected_zonal": selected_zonal,
-        "branches": real_branches,
+        "branches": branches,
+        "branch_product_links": branch_product_links,
         "selected_manager": selected_mgr,
         "selected_agent": selected_agent,
         "selected_customer": selected_customer,
         "total_database_metrics": {
-            "total_customers": total_customers_count,
-            "total_accounts": total_accounts_count,
-            "total_branches": len(real_branches)
+            "total_customers": totals["customers"],
+            "total_accounts": totals["accounts"],
+            "total_branches": len(branches),
         },
-        "monthly_summary": get_monthly_breakdown(month),
+        "monthly_summary": monthly_summary,
+        "provenance": provenance,
         "metadata": {
-            "is_live": is_live,
+            # True only when every query resolved with rows - not merely because the
+            # connection opened, which is what this used to mean.
+            "is_live": bool(live) and not degraded,
+            "live_sections": live,
+            "degraded_sections": degraded,
             "schema": "bronze",
             "total_nodes": len(unique_nodes),
-            "total_edges": len(edges)
-        }
+            "total_edges": len(edges),
+        },
+    }
+
+
+def _product_node(product: Dict[str, Any], branch_count: Optional[int]) -> Dict[str, Any]:
+    details = {
+        "Product Code": product["code"],
+        "Product": product["name"],
+        "Total Borrowers": f"{product['cust_count']:,}",
+        "Loan Accounts": f"{product['acnt_count']:,}",
+        "Total Disbursed": _money(product["total_vol"]),
+        "Total Repaid": _money(product["repay_vol"]),
+        "Principal Repaid": f"{product['repaid_pct']:.1f}%",
+    }
+    if branch_count is not None:
+        details["Originating Branches"] = f"{branch_count}"
+    return {
+        "id": product["id"],
+        "type": "zonal",
+        "title": product["name"],
+        "subtitle": f"Code #{product['code']} • {product['cust_count']:,} Borrowers",
+        "node_label": NODE_TYPE_STYLES["zonal"]["label"],
+        "color": NODE_TYPE_STYLES["zonal"]["color"],
+        "size": NODE_TYPE_STYLES["zonal"]["size"],
+        "zonal_id": product["id"],
+        "details": details,
+    }
+
+
+def _branch_node(branch: Dict[str, Any], link: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    details = {
+        "Branch Code": branch["code"],
+        "Total Borrowers": f"{branch['cust_count']:,}",
+        "Loan Accounts": f"{branch['acnt_count']:,}",
+        "Total Disbursed": _money(branch["total_vol"]),
+        "Total Repaid": _money(branch["repay_vol"]),
+        "Principal Repaid": f"{branch['repaid_pct']:.1f}%",
+    }
+    if link:
+        details["Accounts in this Product"] = f"{link['acnt_count']:,}"
+        details["Disbursed in this Product"] = _money(link["total_vol"])
+    return {
+        "id": branch["id"],
+        "type": "manager",
+        "title": branch["display_title"],
+        "subtitle": f"Branch #{branch['code']} • {branch['cust_count']:,} Borrowers",
+        "node_label": NODE_TYPE_STYLES["manager"]["label"],
+        "color": NODE_TYPE_STYLES["manager"]["color"],
+        "size": NODE_TYPE_STYLES["manager"]["size"],
+        "manager_id": branch["id"],
+        "details": details,
     }
