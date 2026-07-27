@@ -1,95 +1,21 @@
 import os
 import io
 import calendar
-import contextlib
 import datetime
 import logging
-from typing import Dict, Any, List, Tuple, Optional, Callable, Generator
+from typing import Dict, Any, List, Tuple, Optional
 import openpyxl
 
 logger = logging.getLogger(__name__)
 
-try:
-    from app.services.db_schema import get_connection
-except ImportError:
-    get_connection = None
-
-
-@contextlib.contextmanager
-def _db_cursor() -> Generator[Tuple[Any, Any], None, None]:
-    """Yield (connection, cursor), guaranteeing the connection is closed even on error.
-
-    The previous implementation called conn.close() only on the happy path, leaking a
-    connection whenever any section query escaped its handler.
-    """
-    if get_connection is None:
-        raise RuntimeError("db_schema.get_connection is unavailable")
-    conn = get_connection()
-    try:
-        cur = conn.cursor()
-        try:
-            yield conn, cur
-        finally:
-            with contextlib.suppress(Exception):
-                cur.close()
-    finally:
-        with contextlib.suppress(Exception):
-            conn.close()
-
-
-class SectionResult:
-    """Outcome of one report section, so a failed query is never mistaken for empty data.
-
-    `status` is one of:
-      - "ok"          query ran and returned rows
-      - "empty"       query ran and legitimately returned nothing
-      - "error"       query failed; `error` carries the reason
-      - "no_source"   the warehouse has no feed for this section at all
-    """
-
-    __slots__ = ("name", "status", "rows", "error", "note")
-
-    def __init__(self, name: str, status: str, rows: int = 0, error: str = "", note: str = ""):
-        self.name = name
-        self.status = status
-        self.rows = rows
-        self.error = error
-        # A caveat about data that did resolve, e.g. an undated source. Distinct from
-        # `error`, which explains why a section produced nothing.
-        self.note = note
-
-    def as_dict(self) -> Dict[str, Any]:
-        d: Dict[str, Any] = {"status": self.status, "row_count": self.rows}
-        if self.error:
-            d["error"] = self.error
-        if self.note:
-            d["note"] = self.note
-        return d
-
-
-def _run_section(
-    provenance: Dict[str, Dict[str, Any]],
-    name: str,
-    fn: Callable[[], int],
-    conn: Any = None,
-    note: str = "",
-) -> None:
-    """Run one section loader, recording why it produced nothing rather than swallowing it.
-
-    Every section used to sit behind a bare `except Exception: conn.rollback()`, so a
-    failing query was indistinguishable from a genuine empty result and left no trace.
-    """
-    try:
-        count = fn()
-        provenance[name] = SectionResult(
-            name, "ok" if count else "empty", count, note=note if count else ""
-        ).as_dict()
-    except Exception as exc:  # noqa: BLE001 - one bad section must not kill the return
-        logger.exception("DNBS-02 section %r failed", name)
-        if conn is not None:
-            with contextlib.suppress(Exception):
-                conn.rollback()
-        provenance[name] = SectionResult(name, "error", 0, f"{type(exc).__name__}: {exc}").as_dict()
+# Connection handling and section provenance are shared with the curiosity graph so a
+# change to either is made once. Aliased to the private names this module already used.
+from app.services.db_schema import (
+    get_connection,
+    db_cursor as _db_cursor,
+    run_section as _run_section,
+    SectionResult,
+)
 
 
 class PeriodError(ValueError):
@@ -1244,6 +1170,46 @@ def validate_cell_map(wb) -> None:
         )
 
 
+DEFAULT_COLUMN_WIDTH = 8.43
+DEFAULT_ROW_HEIGHT = 15.0
+MAX_ROW_HEIGHT = 220.0
+
+
+def _effective_width(sheet, cell) -> float:
+    """Usable width for a cell, summing the columns it spans if it is merged."""
+    from openpyxl.utils import get_column_letter
+
+    first_col, last_col = cell.column, cell.column
+    for rng in sheet.merged_cells.ranges:
+        if rng.min_row <= cell.row <= rng.max_row and rng.min_col <= cell.column <= rng.max_col:
+            first_col, last_col = rng.min_col, rng.max_col
+            break
+    total = 0.0
+    for col in range(first_col, last_col + 1):
+        dim = sheet.column_dimensions.get(get_column_letter(col))
+        total += (dim.width if dim and dim.width else DEFAULT_COLUMN_WIDTH)
+    return max(total, 1.0)
+
+
+def _fit_row_height(sheet, cell, text: str) -> None:
+    """Grow the row so wrapped text is fully visible.
+
+    Turning on wrap_text without adjusting the row height is what made long values
+    overlap the rows beneath them: the text rewraps onto several lines but the row stays
+    one line tall, so it renders clipped and bleeds over the labels below.
+    """
+    width = _effective_width(sheet, cell)
+    lines = 0
+    for paragraph in str(text).split("\n"):
+        # ~1.1 characters per width unit at the default font.
+        chars_per_line = max(int(width * 1.1), 1)
+        lines += max(1, -(-len(paragraph) // chars_per_line))
+    needed = min(DEFAULT_ROW_HEIGHT * lines, MAX_ROW_HEIGHT)
+    current = sheet.row_dimensions[cell.row].height or DEFAULT_ROW_HEIGHT
+    if needed > current:
+        sheet.row_dimensions[cell.row].height = needed
+
+
 def _safe_set_cell_value(sheet, coord: str, value: Any, wrap_text: bool = True) -> None:
     """Write a cell, skipping merged anchors. Raises on anything unexpected."""
     cell = sheet[coord]
@@ -1251,10 +1217,21 @@ def _safe_set_cell_value(sheet, coord: str, value: Any, wrap_text: bool = True) 
         logger.warning("DNBS-02: skipped merged cell %s!%s", sheet.title, coord)
         return
     cell.value = value
-    if wrap_text and isinstance(value, str) and len(value) > 25:
+    if not isinstance(value, str):
+        return
+
+    # The cell may already wrap because the template styles it that way - short values in
+    # narrow columns (e.g. "SMA-0 (1-30 days)" in Annex 9 column K) rewrap onto two lines
+    # without this module touching the alignment. Any wrapped cell needs its row sized,
+    # whoever turned the wrapping on.
+    wrapped = bool(cell.alignment and cell.alignment.wrap_text)
+    if wrap_text and not wrapped and len(value) > 25:
         from openpyxl.styles import Alignment
 
-        cell.alignment = Alignment(wrap_text=True, vertical="center")
+        cell.alignment = Alignment(wrap_text=True, vertical="top")
+        wrapped = True
+    if wrapped:
+        _fit_row_height(sheet, cell, value)
 
 
 def _write_line(sheet, item: LineItem, value: Any) -> None:
@@ -1318,29 +1295,32 @@ def generate_dnbs02_excel(
         _safe_set_cell_value(sheet, "C12", start_display)
         _safe_set_cell_value(sheet, "C13", end_display)
         _safe_set_cell_value(sheet, "C15", "LAKHS")
-        _safe_set_cell_value(
-            sheet,
-            "B18",
-            f"Portfolio snapshot date: {data['snapshot_date']}; GL trial balance year: {data['gl_year']}.",
-        )
+
+        # The disclosures go in the value column of the template's own "General remarks"
+        # row. They previously went into B18/B19/B20, which are inside the sheet's
+        # label column and sit directly above the "General remarks" and "Scoping
+        # Question" labels, so the text overlapped them.
+        remarks = [
+            f"Portfolio snapshot date: {data['snapshot_date']}; "
+            f"GL trial balance year: {data['gl_year']}."
+        ]
         coverage = data.get("coverage") or {}
         if coverage.get("uncovered_accounts"):
-            _safe_set_cell_value(
-                sheet,
-                "B19",
-                (
-                    f"Coverage: {coverage['covered_accounts']} accounts "
-                    f"({coverage['covered_lakhs']} lakh, {coverage['covered_pct']}% of the open "
-                    f"book). {coverage['uncovered_accounts']} open accounts "
-                    f"({coverage['uncovered_lakhs']} lakh) have no dated snapshot and are excluded."
-                ),
+            remarks.append(
+                f"Coverage: {coverage['covered_accounts']} accounts "
+                f"({coverage['covered_lakhs']} lakh, {coverage['covered_pct']}% of the open "
+                f"book). {coverage['uncovered_accounts']} open accounts "
+                f"({coverage['uncovered_lakhs']} lakh) have no dated snapshot and are excluded."
             )
         if data.get("degraded_sections"):
-            _safe_set_cell_value(
-                sheet,
-                "B20",
-                "Sections left blank (no source): " + ", ".join(data["degraded_sections"]),
+            remarks.append(
+                "Sections left blank (no source): " + ", ".join(data["degraded_sections"])
             )
+        try:
+            remarks_row = _find_label_row(sheet, "General remarks")
+            _safe_set_cell_value(sheet, f"C{remarks_row}", "\n".join(remarks))
+        except CellMapError:
+            logger.warning("FilingInfo has no 'General remarks' row; disclosures omitted")
 
     # -- Part 1: sources of funds -------------------------------------------
     if "DNBS02_PART1" in wb.sheetnames and data.get("part1_capital"):

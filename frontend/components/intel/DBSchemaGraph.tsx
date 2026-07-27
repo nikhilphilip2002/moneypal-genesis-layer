@@ -81,8 +81,13 @@ interface GraphEdge {
 interface ZonalItem {
   id: string;
   name: string;
-  director: string;
   code: string;
+  cust_count: number;
+  acnt_count: number;
+  total_vol: number;
+  repay_vol: number;
+  /** Cumulative principal repaid as a share of principal disbursed. */
+  repaid_pct: number;
 }
 
 interface BranchItem {
@@ -90,11 +95,34 @@ interface BranchItem {
   code: string;
   name: string;
   display_title: string;
-  manager: string;
   cust_count: number;
   acnt_count: number;
   total_vol: number;
+  repay_vol: number;
+  repaid_pct: number;
+  /** The branch's dominant product by account count. */
   zone_id: string;
+  /** Every product this branch actually originates - a branch may carry several. */
+  zone_ids: string[];
+  zone_name: string;
+}
+
+/** One real branch-to-product relationship, straight from GROUP BY branch, product. */
+interface BranchProductLink {
+  branch_id: string;
+  branch_code: string;
+  zone_id: string;
+  product_code: string;
+  acnt_count: number;
+  total_vol: number;
+  repay_vol: number;
+}
+
+interface SectionProvenance {
+  status: 'ok' | 'empty' | 'error' | 'no_source';
+  row_count: number;
+  error?: string;
+  note?: string;
 }
 
 interface SearchResultItem {
@@ -122,6 +150,7 @@ interface HierarchicalGraphPayload {
   zonals: ZonalItem[];
   selected_zonal?: ZonalItem | null;
   branches: BranchItem[];
+  branch_product_links: BranchProductLink[];
   selected_manager?: BranchItem | null;
   selected_agent?: any;
   selected_customer?: any;
@@ -131,8 +160,12 @@ interface HierarchicalGraphPayload {
     total_branches: number;
   };
   monthly_summary?: any;
+  provenance: Record<string, SectionProvenance>;
   metadata: {
+    /** True only when every query resolved with rows. */
     is_live: boolean;
+    live_sections: string[];
+    degraded_sections: string[];
     schema: string;
     total_nodes: number;
     total_edges: number;

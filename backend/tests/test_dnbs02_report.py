@@ -370,6 +370,47 @@ class TestExcelExport:
         sheet = workbook["DNBS02_Annex11"]
         assert all(sheet.cell(13, col).value is None for col in range(2, 14))
 
+    def test_no_written_cell_overflows_its_row(self, workbook):
+        """Wrapped text must fit the row it sits in.
+
+        Enabling wrap_text without growing the row height made long values render
+        clipped and bleed over the rows beneath - on FilingInfo the disclosures
+        overlapped the template's own "General remarks" and "Scoping Question" labels.
+        Template-authored cells are excluded: their layout is the official one and this
+        generator must not resize it.
+        """
+        blank = openpyxl.load_workbook(get_template_path())
+        offenders = []
+        for name in workbook.sheetnames:
+            sheet, template = workbook[name], blank[name]
+            for row in sheet.iter_rows():
+                for cell in row:
+                    if not isinstance(cell.value, str):
+                        continue
+                    if template[cell.coordinate].value is not None:
+                        continue  # the template wrote this, not us
+                    if not (cell.alignment and cell.alignment.wrap_text):
+                        continue
+                    width = svc._effective_width(sheet, cell)
+                    per_line = max(int(width * 1.1), 1)
+                    lines = sum(
+                        max(1, -(-len(part) // per_line)) for part in cell.value.split("\n")
+                    )
+                    height = sheet.row_dimensions[cell.row].height or svc.DEFAULT_ROW_HEIGHT
+                    if lines * svc.DEFAULT_ROW_HEIGHT > height + 0.5:
+                        offenders.append(f"{name}!{cell.coordinate} ({cell.value[:30]!r})")
+        assert not offenders, "wrapped cells overflow their row: " + "; ".join(offenders[:8])
+
+    def test_disclosures_do_not_collide_with_template_labels(self, workbook):
+        """The disclosures belong in the General remarks value cell, not in the label
+        column rows that already carry "Tool version" / "Report status" / "Date of Audit"."""
+        sheet = workbook["FilingInfo"]
+        remarks_row = _find_label_row(sheet, "General remarks")
+        assert sheet[f"C{remarks_row}"].value, "disclosures must land in General remarks"
+        # Those label rows must still read as the template wrote them.
+        for label in ("Tool version", "Report status", "Date of Audit"):
+            assert _find_label_row(sheet, label)
+
     def test_filinginfo_states_the_limitations(self, workbook, report):
         sheet = workbook["FilingInfo"]
         text = " ".join(
