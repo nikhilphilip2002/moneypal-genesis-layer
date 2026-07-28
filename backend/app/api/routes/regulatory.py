@@ -8,7 +8,7 @@ from genesis_core import IntelligenceResponse
 
 from app.services import brief_cache, regulatory
 from app.services import reg_loader as rl
-from app.services import dnbs02_service
+from app.services import dnbs02_service, dnbs02_lineage
 
 router = APIRouter(prefix="/regulatory", tags=["regulatory"])
 
@@ -84,16 +84,30 @@ def export_dnbs02_excel(
     period: str = "",
     start_date: Optional[str] = None,
     end_date: Optional[str] = None,
+    format: str = "filing",
 ):
-    """Export RBI DNBS-02 Return as an Excel workbook (.xlsx)."""
+    """Export the RBI DNBS-02 Return as an Excel workbook (.xlsx).
+
+    `format=lineage` returns the audit companion instead: the same completed template,
+    with the source table, columns, filter, derivation and query for every field
+    alongside it. It is a separate workbook so the filed return stays untouched.
+    """
+    if format not in ("filing", "lineage"):
+        raise HTTPException(400, f"Unknown format {format!r}; expected 'filing' or 'lineage'.")
     try:
-        excel_bytes = dnbs02_service.generate_dnbs02_excel(
-            frequency=frequency, period=period, start_date=start_date, end_date=end_date
-        )
+        if format == "lineage":
+            excel_bytes = dnbs02_lineage.generate_dnbs02_lineage_excel(
+                frequency=frequency, period=period, start_date=start_date, end_date=end_date
+            )
+        else:
+            excel_bytes = dnbs02_service.generate_dnbs02_excel(
+                frequency=frequency, period=period, start_date=start_date, end_date=end_date
+            )
     except dnbs02_service.PeriodError as exc:
         raise HTTPException(400, str(exc)) from exc
     fn_period = f"{start_date}_to_{end_date}" if (start_date and end_date) else period
-    filename = f"RBI_DNBS02_Return_{fn_period}_{frequency}.xlsx"
+    stem = "RBI_DNBS02_Return" if format == "filing" else "RBI_DNBS02_Lineage"
+    filename = f"{stem}_{fn_period}_{frequency}.xlsx"
     return Response(
         content=excel_bytes,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",

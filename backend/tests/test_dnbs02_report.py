@@ -12,6 +12,8 @@ import openpyxl
 import pytest
 
 from app.services import dnbs02_service as svc
+from app.services import dnbs02_spec as spec
+from app.services.dnbs02_lineage import generate_dnbs02_lineage_excel
 from app.services.dnbs02_service import (
     CellMapError,
     PeriodError,
@@ -419,3 +421,142 @@ class TestExcelExport:
         assert report["snapshot_date"] in text
         if report["degraded_sections"]:
             assert "no source" in text.lower()
+
+
+# ---------------------------------------------------------------------------
+# Registry integrity.
+#
+# These are the anti-drift guards. The report writer and the lineage workbook both read
+# dnbs02_spec, so a spec that no longer matches the template produces both a wrong filing
+# and a wrong audit document - it must fail here rather than in a filed return.
+# ---------------------------------------------------------------------------
+
+
+class TestSpecRegistry:
+    def test_every_line_spec_resolves_to_exactly_one_template_row(self):
+        """A label matching no row, or several, is a misfiled figure waiting to happen."""
+        wb = openpyxl.load_workbook(get_template_path())
+        problems = []
+        for fs in spec.FIELD_SPECS:
+            if fs.kind != spec.KIND_LINE:
+                continue
+            if fs.sheet not in wb.sheetnames:
+                problems.append(f"{fs.sheet}: sheet missing from template")
+                continue
+            try:
+                _find_label_row(wb[fs.sheet], fs.rbi_line, fs.within)
+            except CellMapError as exc:
+                problems.append(str(exc))
+        assert not problems, "unresolvable field specs:\n  " + "\n  ".join(problems)
+
+    def test_every_spec_names_a_real_section(self):
+        known = set(svc.SECTIONS_BY_KEY) | set(spec.SOURCES) | {"_bindings"}
+        gaps = {fs.section for fs in spec.FIELD_SPECS if fs.kind == spec.KIND_NO_SOURCE}
+        unknown = {
+            fs.section
+            for fs in spec.FIELD_SPECS
+            if fs.section not in known and fs.section not in gaps
+        }
+        assert not unknown, f"specs reference unknown sections: {sorted(unknown)}"
+
+    def test_section_dependencies_are_declared_and_ordered(self):
+        seen = set()
+        for section in svc.SECTIONS:
+            for dep in section.requires:
+                assert dep in svc.SECTIONS_BY_KEY, f"{section.key} requires unknown {dep!r}"
+                assert dep in seen, (
+                    f"{section.key} requires {dep!r}, which runs after it - the pipeline "
+                    "would silently use an unpopulated value"
+                )
+            seen.add(section.key)
+
+    def test_every_source_declares_one_bind_per_placeholder(self):
+        for key, source in spec.SOURCES.items():
+            assert source.sql.count("%s") == len(source.binds), (
+                f"{key}: SQL has {source.sql.count('%s')} placeholders but "
+                f"{len(source.binds)} binds declared"
+            )
+
+    def test_unfilled_sheets_are_declared_deliberately(self):
+        """Adding coverage for a new sheet must be a conscious edit, not a surprise.
+
+        DNBS-02 has 28 sheets and this warehouse can back 9 of them. The rest are listed
+        so that filling one - or accidentally dropping one - shows up as a test change
+        rather than passing unnoticed.
+        """
+        wb = openpyxl.load_workbook(get_template_path())
+        covered = {
+            fs.sheet for fs in spec.FIELD_SPECS
+            if fs.kind in (spec.KIND_LINE, spec.KIND_TABLE)
+        }
+        uncovered = sorted(n for n in wb.sheetnames if n.startswith("DNBS02_") and n not in covered)
+        assert uncovered == [
+            "DNBS02_Annex1", "DNBS02_Annex12", "DNBS02_Annex3", "DNBS02_Annex4",
+            "DNBS02_Annex5", "DNBS02_Annex6", "DNBS02_Annex7", "DNBS02_Annex8",
+            "DNBS02_PART5", "DNBS02_PART6", "DNBS02_PART7", "DNBS02_PART7A",
+            "DNBS02_PART8", "DNBS02_PART8B", "DNBS02_PART9",
+        ], f"sheet coverage changed: {uncovered}"
+
+    def test_documented_gaps_carry_a_reason(self):
+        for fs in spec.FIELD_SPECS:
+            if fs.kind == spec.KIND_NO_SOURCE:
+                assert fs.no_source_reason.strip(), f"{fs.sheet}/{fs.rbi_line} states no reason"
+
+    @requires_db
+    def test_gates_name_real_report_keys(self, report):
+        for fs in spec.FIELD_SPECS:
+            if fs.gate:
+                assert fs.gate in report, (
+                    f"{fs.sheet}/{fs.rbi_line}: gate {fs.gate!r} is not a report key"
+                )
+
+
+@pytest.fixture(scope="module")
+def lineage():
+    return openpyxl.load_workbook(
+        io.BytesIO(generate_dnbs02_lineage_excel(frequency="monthly", period="2026-05"))
+    )
+
+
+@requires_db
+class TestLineageWorkbook:
+    def test_leads_with_bindings_and_sections(self, lineage):
+        assert lineage.sheetnames[0] == "_Bindings"
+        assert lineage.sheetnames[1] == "_Sections"
+
+    def test_bindings_sheet_states_every_query_bind(self, lineage, report):
+        text = "\n".join(
+            str(c.value) for row in lineage["_Bindings"].iter_rows() for c in row if c.value
+        )
+        for bind in ("start_date", "end_date", "snapshot_date", "gl_year"):
+            assert bind in text, f"_Bindings does not document {bind}"
+        assert str(report["snapshot_date"]) in text
+        assert str(report["gl_year"]) in text
+
+    def test_every_documented_gap_appears_with_its_reason(self, lineage):
+        text = "\n".join(
+            str(c.value) for name in lineage.sheetnames
+            for row in lineage[name].iter_rows() for c in row if c.value
+        )
+        for fs in spec.FIELD_SPECS:
+            if fs.kind == spec.KIND_NO_SOURCE:
+                assert fs.rbi_line in text, f"gap {fs.rbi_line!r} missing from lineage workbook"
+                assert fs.no_source_reason.split(";")[0][:40] in text
+
+    def test_each_sheet_carries_the_sql_behind_it(self, lineage):
+        for name in ("DNBS02_PART8C", "DNBS02_Annex9", "DNBS02_PART1"):
+            text = "\n".join(
+                str(c.value) for row in lineage[name].iter_rows() for c in row if c.value
+            )
+            assert "SELECT" in text, f"{name} carries no query text"
+            assert "FROM bronze." in text
+
+    def test_mirrors_the_filing_rather_than_recomputing_it(self, lineage, workbook):
+        for name in ("DNBS02_PART8C", "DNBS02_PART1", "DNBS02_PART4"):
+            filed, mirrored = workbook[name], lineage[name]
+            for row in filed.iter_rows(min_row=6):
+                for cell in row:
+                    if isinstance(cell.value, (int, float)):
+                        assert mirrored[cell.coordinate].value == cell.value, (
+                            f"{name}!{cell.coordinate} differs between filing and lineage"
+                        )
