@@ -24,8 +24,7 @@ import {
     Settings2,
     ClipboardCheck,
     FileText,
-    Database,
-} from 'lucide-react';
+    Database, MessageCircleQuestion } from 'lucide-react';
 
 interface NavItem {
     title: string;
@@ -35,6 +34,7 @@ interface NavItem {
 
 const ALL_NAV_ITEMS: NavItem[] = [
     { title: 'Executive Dashboard', url: '/', icon: LayoutDashboard },
+    { title: 'Ask Genesis', url: '/ask', icon: MessageCircleQuestion },
     { title: 'Macro Intelligence', url: '/macro', icon: TrendingUp },
     { title: 'Competitive Intelligence', url: '/competitive', icon: Building },
     { title: 'Regulatory Intelligence', url: '/regulatory', icon: Scale },

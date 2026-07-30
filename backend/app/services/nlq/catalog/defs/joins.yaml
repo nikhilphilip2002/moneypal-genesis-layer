@@ -1,0 +1,107 @@
+# Genesis NLQ — declared join paths.
+#
+# The compiler will only join tables listed here, only on these keys, and only when exactly
+# one path connects the tables a query needs. An ambiguous path is an error, never a guess
+# (§2.5 rule 3) — and `cardinality` is what the fan-out gate reads to decide whether a SUM
+# would double-count (rule 4).
+#
+# The graph is deliberately a star with loan_account_master at the centre. Every fact table
+# reaches product / scheme / branch through it, so there is exactly one route to any
+# dimension and no join can be inferred two different ways.
+#
+# entity_num is part of every key. It takes two values (1 and 9) in the loan book, and
+# omitting it silently mixes two entities' accounts that share an account number.
+
+- id: acd_to_loan
+  left: silver.asset_classification_details
+  right: silver.loan_account_master
+  on_columns:
+    - [ascd_entity_num, gnlnac_entity_num]
+    - [ascd_account_num, gnlnac_acnt_num]
+  cardinality: many_to_one
+  join_type: inner
+  verified: 5238 of 5238 classified accounts match a loan account (2026-07-29)
+  description: >
+    Risk facts to the loan book, so PAR and DPD can be sliced by product, scheme or branch.
+    Many-to-one only *after* the as-of collapse: the raw table holds up to 5 classification
+    events per account, so joining it un-collapsed and summing principal outstanding would
+    count some accounts up to five times. The compiler always applies the point-in-time
+    DISTINCT ON before this join.
+
+- id: disb_to_loan
+  left: silver.loan_disbursement_transactions
+  right: silver.loan_account_master
+  on_columns:
+    - [genlndisb_entity_num, gnlnac_entity_num]
+    - [genlndisb_acnt_num, gnlnac_acnt_num]
+  cardinality: many_to_one
+  join_type: inner
+  description: Disbursement events to their account, for slicing payouts by dimension.
+
+- id: repay_to_loan
+  left: silver.loan_repayment_transactions
+  right: silver.loan_account_master
+  on_columns:
+    - [lnrepay_entity_num, gnlnac_entity_num]
+    - [lnrepay_acnt_no, gnlnac_acnt_num]
+  cardinality: many_to_one
+  join_type: inner
+  description: Instalments to their account, for collection efficiency by dimension.
+
+- id: sched_to_loan
+  left: silver.loan_repayment_schedule
+  right: silver.loan_account_master
+  on_columns:
+    - [lnsched_entity_num, gnlnac_entity_num]
+    - [lnsched_acnt_no, gnlnac_acnt_num]
+  cardinality: many_to_one
+  join_type: inner
+  description: Scheduled instalments to their account.
+
+- id: loan_to_scheme
+  left: silver.loan_account_master
+  right: silver.loan_product_scheme_master
+  on_columns:
+    - [gnlnac_entity_num, lnschm_entity_num]
+    - [gnlnac_prod_code, lnschm_prod_code]
+    - [gnlnac_schm_code, lnschm_schm_code]
+  cardinality: many_to_one
+  join_type: left
+  description: >
+    Scheme names. LEFT because only the 15 product-16 schemes have a master row — an inner
+    join here would silently drop every gold and microfinance account, which is 58% of the
+    book.
+
+- id: loan_to_individual_customer
+  left: silver.loan_account_master
+  right: silver.individual_customer_master
+  on_columns:
+    - [gnlnac_entity_num, indcif_entity_num]
+    - [gnlnac_cust_id, indcif_cust_id]
+  cardinality: many_to_one
+  join_type: left
+  contains_pii: true
+  description: >
+    Borrower details. Gated: any query crossing this edge is flagged in the audit log, and
+    PII columns are masked unless the caller's role permits them (§7.4).
+
+- id: loan_to_corporate_customer
+  left: silver.loan_account_master
+  right: silver.corporate_customer_master
+  on_columns:
+    - [gnlnac_entity_num, firmd_entity_num]
+    - [gnlnac_cust_id, firmd_cust_id]
+  cardinality: one_to_many
+  join_type: left
+  contains_pii: true
+  description: >
+    ONE-TO-MANY — corporate_customer_master is keyed by (cust_id, dtl_sl) and holds a row
+    per director/signatory. Joining it and summing any loan amount multiplies that amount
+    by the number of directors. The fan-out gate rejects such a query; a pre-aggregated
+    subquery is required instead.
+
+# --- Deliberately absent ----------------------------------------------------------------
+# There is NO join between gl_daily_balances and the loan book. GL branch codes are a
+# different coding system from loan branch codes, and no account-level GL mapping exists in
+# silver. A question like "GL balance by product" is therefore unanswerable, and the
+# compiler must reject it rather than produce a plausible-looking join on branch code.

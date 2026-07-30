@@ -1,0 +1,509 @@
+# Genesis NLQ — golden question set.
+#
+# Written BEFORE the planner exists (build plan item 14). Each entry is a question a real
+# user would ask, paired with the route it must take and, where it is answerable, the
+# QuerySpec it must produce. It is simultaneously the specification for the planner and the
+# regression suite for it.
+#
+# Scoring is on EXECUTION MATCH, not string match: two specs are equivalent if they return
+# the same result set. Many spellings of the same question are correct.
+#
+# The refusal and clarification cases matter as much as the answerable ones. A system that
+# answers "will defaults rise next quarter?" with a confident number is worse than one that
+# declines, and the negative cases are what train and hold that line.
+#
+# Categories: aggregate, breakdown, trend, ranking, ratio, point_in_time, comparison,
+#             filtered, enum_decode, refuse, clarify, coverage
+#
+# Every 👎 from /nlq/feedback becomes a new case here — the set grows from real failures.
+
+# --- Simple aggregates ------------------------------------------------------------------
+
+- id: g001
+  question: What was our total disbursement last quarter?
+  category: aggregate
+  route: queryspec
+  spec:
+    metrics: [disbursement_total]
+    period: {relative: last_quarter}
+
+- id: g002
+  question: How many loans have we sanctioned in total?
+  category: aggregate
+  route: queryspec
+  spec:
+    metrics: [loan_count]
+    period: {relative: all_time}
+
+- id: g003
+  question: What is the total sanctioned amount this financial year?
+  category: aggregate
+  route: queryspec
+  spec:
+    metrics: [sanctioned_amount]
+    period: {relative: fy_to_date}
+
+- id: g004
+  question: How much did we collect last month?
+  category: aggregate
+  route: queryspec
+  spec:
+    metrics: [amount_collected]
+    period: {relative: last_month}
+
+- id: g005
+  question: What is the average ticket size of our loans?
+  category: ratio
+  route: queryspec
+  spec:
+    metrics: [avg_ticket_size]
+    period: {relative: all_time}
+
+# --- Breakdowns by dimension ------------------------------------------------------------
+
+- id: g010
+  question: What was our disbursement by branch last quarter?
+  category: breakdown
+  route: queryspec
+  note: The definition-of-done question from the build plan.
+  spec:
+    metrics: [disbursement_total]
+    dimensions: [branch]
+    period: {relative: last_quarter}
+
+- id: g011
+  question: Show me loans by product
+  category: breakdown
+  route: queryspec
+  spec:
+    metrics: [loan_count]
+    dimensions: [product]
+    period: {relative: all_time}
+
+- id: g012
+  question: Break down the outstanding portfolio by DPD bucket
+  category: breakdown
+  route: queryspec
+  spec:
+    metrics: [principal_outstanding]
+    dimensions: [dpd_bucket]
+    period: {relative: today}
+
+- id: g013
+  question: Collection efficiency by product this year
+  category: breakdown
+  route: queryspec
+  spec:
+    metrics: [collection_efficiency]
+    dimensions: [product]
+    period: {relative: fy_to_date}
+
+- id: g014
+  question: How many borrowers do we have per branch?
+  category: breakdown
+  route: queryspec
+  spec:
+    metrics: [customer_count]
+    dimensions: [branch]
+    period: {relative: all_time}
+
+- id: g015
+  question: Sanctioned amount by scheme
+  category: breakdown
+  route: queryspec
+  spec:
+    metrics: [sanctioned_amount]
+    dimensions: [scheme]
+    period: {relative: all_time}
+
+- id: g016
+  question: What is the split between EMI loans and bullet loans?
+  category: breakdown
+  route: queryspec
+  spec:
+    metrics: [loan_count]
+    dimensions: [loan_type]
+    period: {relative: all_time}
+
+- id: g017
+  question: Show outstanding by asset classification
+  category: breakdown
+  route: queryspec
+  spec:
+    metrics: [principal_outstanding]
+    dimensions: [asset_class]
+    period: {relative: today}
+
+# --- Trends -----------------------------------------------------------------------------
+
+- id: g020
+  question: How many loans did we sanction each month in FY26?
+  category: trend
+  route: queryspec
+  spec:
+    metrics: [loan_count]
+    dimensions: [month]
+    period: {relative: last_fy}
+
+- id: g021
+  question: Show me the disbursement trend over the last 12 months
+  category: trend
+  route: queryspec
+  spec:
+    metrics: [disbursement_total]
+    dimensions: [month]
+    period: {relative: last_12_months}
+
+- id: g022
+  question: Collection efficiency month by month
+  category: trend
+  route: queryspec
+  spec:
+    metrics: [collection_efficiency]
+    dimensions: [month]
+    period: {relative: last_12_months}
+
+- id: g023
+  question: Quarterly sanctions for the last two years
+  category: trend
+  route: queryspec
+  spec:
+    metrics: [sanctioned_amount]
+    dimensions: [fy_quarter]
+    period: {start: 2024-04-01, end: 2026-03-31}
+
+- id: g024
+  question: How has PAR 30 moved over the last three months?
+  category: trend
+  route: queryspec
+  note: >
+    Point-in-time metric on a time axis — must compile to the per-bucket as-of series, not
+    to one snapshot grouped by classification date.
+  spec:
+    metrics: [par_30]
+    dimensions: [month]
+    period: {relative: last_90_days}
+
+# --- Rankings ---------------------------------------------------------------------------
+
+- id: g030
+  question: Which branches disbursed the most last quarter?
+  category: ranking
+  route: queryspec
+  spec:
+    metrics: [disbursement_total]
+    dimensions: [branch]
+    period: {relative: last_quarter}
+    order_by: {field: disbursement_total, direction: desc}
+
+- id: g031
+  question: Top 10 schemes by outstanding
+  category: ranking
+  route: queryspec
+  spec:
+    metrics: [sanctioned_amount]
+    dimensions: [scheme]
+    period: {relative: all_time}
+    order_by: {field: sanctioned_amount, direction: desc}
+    limit: 10
+
+- id: g032
+  question: Which branches have the worst collection efficiency?
+  category: ranking
+  route: queryspec
+  spec:
+    metrics: [collection_efficiency]
+    dimensions: [branch]
+    period: {relative: fy_to_date}
+    order_by: {field: collection_efficiency, direction: asc}
+
+- id: g033
+  question: Which product has the highest average interest rate?
+  category: ranking
+  route: queryspec
+  spec:
+    metrics: [avg_interest_rate]
+    dimensions: [product]
+    period: {relative: all_time}
+    order_by: {field: avg_interest_rate, direction: desc}
+
+# --- Point-in-time ratios ---------------------------------------------------------------
+
+- id: g040
+  question: What is our PAR 30?
+  category: point_in_time
+  route: queryspec
+  spec:
+    metrics: [par_30]
+    period: {relative: today}
+
+- id: g041
+  question: What is the NPA ratio right now?
+  category: point_in_time
+  route: queryspec
+  note: Correctly returns 0.00% — no account carries the NPA code. A real zero, not a bug.
+  spec:
+    metrics: [npa_ratio]
+    period: {relative: today}
+
+- id: g042
+  question: How much principal is overdue?
+  category: point_in_time
+  route: queryspec
+  spec:
+    metrics: [overdue_principal]
+    period: {relative: today}
+
+- id: g043
+  question: How many accounts are currently delinquent?
+  category: point_in_time
+  route: queryspec
+  spec:
+    metrics: [delinquent_account_count]
+    period: {relative: today}
+
+- id: g044
+  question: What is the size of our loan book?
+  category: point_in_time
+  route: queryspec
+  spec:
+    metrics: [principal_outstanding_book]
+    period: {relative: today}
+
+- id: g045
+  question: PAR 30 by branch
+  category: point_in_time
+  route: queryspec
+  spec:
+    metrics: [par_30]
+    dimensions: [branch]
+    period: {relative: today}
+
+# --- Comparisons ------------------------------------------------------------------------
+
+- id: g050
+  question: Compare this quarter's disbursement with last quarter
+  category: comparison
+  route: queryspec
+  spec:
+    metrics: [disbursement_total]
+    period: {relative: this_quarter}
+    compare_to: {relative: last_quarter}
+
+- id: g051
+  question: How does collection efficiency this month compare to last month?
+  category: comparison
+  route: queryspec
+  spec:
+    metrics: [collection_efficiency]
+    period: {relative: this_month}
+    compare_to: {relative: last_month}
+
+- id: g052
+  question: Sanctions by product, this year versus last year
+  category: comparison
+  route: queryspec
+  spec:
+    metrics: [sanctioned_amount]
+    dimensions: [product]
+    period: {relative: this_fy}
+    compare_to: {relative: last_fy}
+
+# --- Filtered questions (enum decoding) -------------------------------------------------
+
+- id: g060
+  question: How much have we disbursed in gold loans?
+  category: enum_decode
+  route: queryspec
+  note: "'gold loans' must resolve to product code 1 through the enum synonyms."
+  spec:
+    metrics: [disbursement_total]
+    filters: [{field: product, op: eq, value: "1"}]
+    period: {relative: all_time}
+
+- id: g061
+  question: Show MSME loans by branch
+  category: enum_decode
+  route: queryspec
+  spec:
+    metrics: [loan_count]
+    dimensions: [branch]
+    filters: [{field: product, op: eq, value: "16"}]
+    period: {relative: all_time}
+
+- id: g062
+  question: What is the outstanding for microfinance?
+  category: enum_decode
+  route: queryspec
+  spec:
+    metrics: [principal_outstanding]
+    filters: [{field: product, op: eq, value: "13"}]
+    period: {relative: today}
+
+- id: g063
+  question: How many loans has the Aluva branch given out?
+  category: enum_decode
+  route: queryspec
+  note: Branch names come from the client listing in EDA §4; no branch master exists.
+  spec:
+    metrics: [loan_count]
+    filters: [{field: branch, op: eq, value: "1002"}]
+    period: {relative: all_time}
+
+- id: g064
+  question: Show me NPA accounts by branch
+  category: enum_decode
+  route: queryspec
+  spec:
+    metrics: [delinquent_account_count]
+    dimensions: [branch]
+    filters: [{field: asset_class, op: eq, value: "NPA"}]
+    period: {relative: today}
+
+- id: g065
+  question: Disbursement for gold and MSME loans only
+  category: filtered
+  route: queryspec
+  spec:
+    metrics: [disbursement_total]
+    filters: [{field: product, op: in, value: ["1", "16"]}]
+    period: {relative: all_time}
+
+- id: g066
+  question: Collection efficiency excluding head office
+  category: filtered
+  route: queryspec
+  spec:
+    metrics: [collection_efficiency]
+    filters: [{field: branch, op: not_in, value: ["1", "4"]}]
+    period: {relative: fy_to_date}
+
+# --- Coverage caveats (answerable, but the answer must carry a warning) -----------------
+
+- id: g070
+  question: How much did we disburse in early 2025?
+  category: coverage
+  route: queryspec
+  expect_warning: event log starts 2025-10-15
+  note: >
+    Answerable but empty — the disbursement event log does not reach back that far. The
+    answer must say the events are absent rather than implying nothing was disbursed.
+  spec:
+    metrics: [disbursement_total]
+    period: {start: 2025-01-01, end: 2025-06-30}
+
+- id: g071
+  question: What was PAR 30 in January?
+  category: coverage
+  route: queryspec
+  expect_warning: History runs only from 2026-05-22
+  note: Classification history starts 2026-05-22, so January has no underlying data.
+  spec:
+    metrics: [par_30]
+    period: {start: 2026-01-01, end: 2026-01-31}
+
+# --- Must be REFUSED --------------------------------------------------------------------
+# Refusing well is a feature. Each of these has a specific reason, and the reason drives
+# what the user is offered instead.
+
+- id: g100
+  question: Will defaults rise next quarter?
+  category: refuse
+  route: refuse
+  reason: predictive
+  note: The build plan's canonical refusal. Forecasting is outside the brief.
+
+- id: g101
+  question: Should we increase our exposure to MSME lending?
+  category: refuse
+  route: refuse
+  reason: advice
+  note: A recommendation, not a number. The brief explicitly excludes AI-generated advice.
+
+- id: g102
+  question: How does our PAR compare to other NBFCs in Kerala?
+  category: refuse
+  route: refuse
+  reason: not_in_data
+  note: Competitor data is the RAG module's territory, not NLQ's — silver has no peer data.
+
+- id: g103
+  question: What is the RBI's current repo rate?
+  category: refuse
+  route: refuse
+  reason: out_of_scope
+  note: Macro data. Answerable elsewhere in the product, not from the loan book.
+
+- id: g104
+  question: Show me the GL balance by product
+  category: refuse
+  route: refuse
+  reason: not_in_data
+  note: >
+    No join path exists between the ledger and the loan book, and GL branch codes are a
+    different coding system. Must be refused, never answered by joining on branch code.
+
+- id: g105
+  question: What will our loan book look like in 2027?
+  category: refuse
+  route: refuse
+  reason: predictive
+
+- id: g106
+  question: Which of our borrowers are likely to default?
+  category: refuse
+  route: refuse
+  reason: predictive
+  note: Predictive AND individually targeted at customers. Refuse on both grounds.
+
+- id: g107
+  question: Give me the monthly GL balances for FY26
+  category: refuse
+  route: refuse
+  reason: not_in_data
+  note: The GL table has annual grain only — there is no date column to slice by month.
+
+- id: g108
+  question: Delete the loan records for branch 4
+  category: refuse
+  route: refuse
+  reason: unsafe
+  note: >
+    Not a question. The read-only role makes it impossible regardless, but it must be
+    refused at the planner rather than attempted and failing at the database.
+
+# --- Must CLARIFY -----------------------------------------------------------------------
+
+- id: g120
+  question: How did we do last year?
+  category: clarify
+  route: clarify
+  note: >
+    Two ambiguities at once: "last year" is FY25 or CY2025, and "how did we do" names no
+    metric. Both must be asked about rather than guessed.
+
+- id: g121
+  question: Show me the numbers by branch
+  category: clarify
+  route: clarify
+  note: No metric named. "The numbers" could be any of 25.
+
+- id: g122
+  question: What is our NPA?
+  category: clarify
+  route: clarify
+  note: >
+    Ambiguous between the NPA ratio (a percentage) and NPA outstanding (an amount).
+    Both exist in the catalog; asking is cheaper than being wrong.
+
+- id: g123
+  question: Compare the two branches
+  category: clarify
+  route: clarify
+  note: Which two of the sixteen, and on what metric.
+
+- id: g124
+  question: How much is overdue?
+  category: clarify
+  route: clarify
+  note: Principal only, or principal plus interest, charges and penalties? Both are metrics.

@@ -1,0 +1,519 @@
+# Genesis NLQ — curated column catalog.
+#
+# Not every column: the ~700 columns across silver would drown retrieval. These are the
+# ones a business question can plausibly reach, each with the business name and synonyms
+# that let a question find it. `pg_description` is empty for both schemas — this file is
+# the only place the meaning of `gnlnac_pri_repay_amt` is written down.
+#
+# `sensitivity: pii` drives masking (§7.4). PII values are never placed in an LLM prompt.
+
+# --- silver.loan_account_master ---------------------------------------------------------
+
+- id: loan.account_number
+  table: silver.loan_account_master
+  column: gnlnac_acnt_num
+  label: Loan account number
+  synonyms: [account number, loan number, account id, loan account]
+  unit: text
+  sensitivity: internal
+  description: Account identifier. Unique only together with entity_num.
+
+- id: loan.entity_number
+  table: silver.loan_account_master
+  column: gnlnac_entity_num
+  label: Entity
+  synonyms: [entity]
+  unit: text
+  sensitivity: internal
+  description: >
+    Legal entity. Takes values 1 (13,469 accounts) and 9 (41). Part of every key — a join
+    that omits it merges two entities' accounts that share an account number.
+
+- id: loan.customer_id
+  table: silver.loan_account_master
+  column: gnlnac_cust_id
+  label: Customer ID
+  synonyms: [customer id, borrower id, CIF]
+  unit: text
+  sensitivity: internal
+
+- id: loan.customer_name
+  table: silver.loan_account_master
+  column: gnlnac_cust_name
+  label: Borrower name
+  synonyms: [customer name, borrower name, who, client name]
+  unit: text
+  sensitivity: pii
+  description: Denormalised borrower name on the account. Masked unless the role permits.
+
+- id: loan.sanctioned_amount
+  table: silver.loan_account_master
+  column: gnlnac_sanc_amt
+  label: Sanctioned amount
+  synonyms: [sanctioned, sanction amount, approved amount, limit]
+  unit: inr
+  agg: [sum, avg, max, min]
+  sensitivity: internal
+  description: Amount approved at sanction. The facility limit, not necessarily drawn.
+
+- id: loan.disbursed_amount
+  table: silver.loan_account_master
+  column: gnlnac_lndisb_amt
+  label: Disbursed amount (cumulative)
+  synonyms: [disbursement, amount given out, released amount, drawn amount]
+  unit: inr
+  agg: [sum, avg, max]
+  sensitivity: internal
+  description: >
+    Cumulative principal released on this account to date. A stock, not a flow — it is a
+    running total as of the last load and must never be summed across periods. For
+    "disbursed in <period>" use the disbursement transaction table.
+
+- id: loan.principal_repaid
+  table: silver.loan_account_master
+  column: gnlnac_pri_repay_amt
+  label: Principal repaid (cumulative)
+  synonyms: [principal repaid, principal paid back, repaid principal, recovered principal]
+  unit: inr
+  agg: [sum]
+  sensitivity: internal
+  description: Cumulative principal repaid on this account to date. A stock, like disbursed_amount.
+
+- id: loan.interest_repaid
+  table: silver.loan_account_master
+  column: gnlnac_int_repay_amt
+  label: Interest repaid (cumulative)
+  synonyms: [interest repaid, interest paid, interest received]
+  unit: inr
+  agg: [sum]
+  sensitivity: internal
+
+- id: loan.interest_rate
+  table: silver.loan_account_master
+  column: gnlnac_ln_intrate
+  label: Interest rate
+  synonyms: [interest rate, rate, ROI, pricing, coupon]
+  unit: percent
+  agg: [avg, max, min]
+  sensitivity: internal
+
+- id: loan.penal_rate
+  table: silver.loan_account_master
+  column: gnlnac_penal_intrate
+  label: Penal interest rate
+  synonyms: [penal rate, penalty rate, default interest]
+  unit: percent
+  sensitivity: internal
+
+- id: loan.emi_amount
+  table: silver.loan_account_master
+  column: gnlnac_epi_amt
+  label: EMI amount
+  synonyms: [EMI, instalment amount, monthly payment]
+  unit: inr
+  agg: [sum, avg]
+  sensitivity: internal
+
+- id: loan.tenor_instalments
+  table: silver.loan_account_master
+  column: gnlnac_epi_noi
+  label: Tenor (instalments)
+  synonyms: [tenor, tenure, number of instalments, loan term, duration]
+  unit: count
+  agg: [avg, max]
+  sensitivity: internal
+
+- id: loan.sanction_date
+  table: silver.loan_account_master
+  column: gnlnac_sanc_date
+  label: Sanction date
+  synonyms: [sanction date, approval date, booking date, origination date, when sanctioned]
+  unit: date
+  sensitivity: internal
+  description: Range 2023-11-15 to 2026-06-30. The default time axis for origination questions.
+
+- id: loan.first_disbursement_date
+  table: silver.loan_account_master
+  column: gnlnac_first_disb_date
+  label: First disbursement date
+  synonyms: [first disbursement, first drawdown, when disbursed]
+  unit: date
+  sensitivity: internal
+
+- id: loan.closure_date
+  table: silver.loan_account_master
+  column: gnlnac_closure_date
+  label: Closure date
+  synonyms: [closure date, closed on, settled date, when closed]
+  unit: date
+  sensitivity: internal
+  description: NULL for open accounts. 166 of 13,510 accounts are closed.
+
+- id: loan.last_payment_date
+  table: silver.loan_account_master
+  column: gnlnac_last_pymt_date
+  label: Last payment date
+  synonyms: [last payment, last paid, most recent payment]
+  unit: date
+  sensitivity: internal
+
+# --- silver.asset_classification_details ------------------------------------------------
+
+- id: risk.dpd_days
+  table: silver.asset_classification_details
+  column: ascd_dpd_days
+  label: Days past due
+  synonyms: [DPD, days past due, days overdue, days late, delinquency days]
+  unit: days
+  agg: [avg, max]
+  sensitivity: internal
+  description: Observed range 0 to 75 across the book. No account currently exceeds 90.
+
+- id: risk.principal_outstanding
+  table: silver.asset_classification_details
+  column: ascd_princ_os
+  label: Principal outstanding
+  synonyms: [outstanding, POS, principal outstanding, exposure, balance]
+  unit: inr
+  agg: [sum]
+  sensitivity: internal
+  description: >
+    Principal outstanding at the classification event. Point-in-time — valid only for the
+    account's latest event as of a date, never summed across events.
+
+- id: risk.asset_code
+  table: silver.asset_classification_details
+  column: ascd_asset_code
+  label: Asset classification
+  synonyms: [asset class, classification, NPA status, SMA status]
+  unit: text
+  sensitivity: internal
+  decode: asset_class
+
+- id: risk.previous_asset_code
+  table: silver.asset_classification_details
+  column: ascd_prev_asset_code
+  label: Previous asset classification
+  synonyms: [previous classification, was classified, migration from]
+  unit: text
+  sensitivity: internal
+  decode: asset_class
+  description: Enables slippage/upgrade questions — what an account was classified as before this event.
+
+- id: risk.effective_date
+  table: silver.asset_classification_details
+  column: ascd_effective_date
+  label: Classification date
+  synonyms: [classification date, as of date, effective date]
+  unit: date
+  sensitivity: internal
+  description: >
+    Event date, not a snapshot date. See tables.yaml — filtering by equality on this column
+    is the single most dangerous mistake available in this schema.
+
+- id: risk.principal_due
+  table: silver.asset_classification_details
+  column: ascd_princ_due
+  label: Principal overdue
+  synonyms: [principal due, principal overdue, principal arrears]
+  unit: inr
+  agg: [sum]
+  sensitivity: internal
+
+- id: risk.interest_due
+  table: silver.asset_classification_details
+  column: ascd_int_due
+  label: Interest overdue
+  synonyms: [interest due, interest overdue, interest arrears]
+  unit: inr
+  agg: [sum]
+  sensitivity: internal
+
+- id: risk.instalments_unpaid
+  table: silver.asset_classification_details
+  column: ascd_no_inst_not_paid
+  label: Instalments unpaid
+  synonyms: [instalments missed, unpaid instalments, EMIs missed, missed payments]
+  unit: count
+  agg: [sum, avg, max]
+  sensitivity: internal
+
+# --- silver.loan_repayment_transactions -------------------------------------------------
+
+- id: repay.principal_due
+  table: silver.loan_repayment_transactions
+  column: lnrepay_prin_amt
+  label: Principal due
+  synonyms: [principal due, principal demanded, principal billed]
+  unit: inr
+  agg: [sum]
+  sensitivity: internal
+  description: Amount DUE, not received. Pairs with lnrepay_prin_pdamt.
+
+- id: repay.principal_received
+  table: silver.loan_repayment_transactions
+  column: lnrepay_prin_pdamt
+  label: Principal received
+  synonyms: [principal received, principal collected, principal paid]
+  unit: inr
+  agg: [sum]
+  sensitivity: internal
+
+- id: repay.interest_due
+  table: silver.loan_repayment_transactions
+  column: lnrepay_int_amt
+  label: Interest due
+  synonyms: [interest due, interest demanded, interest billed]
+  unit: inr
+  agg: [sum]
+  sensitivity: internal
+
+- id: repay.interest_received
+  table: silver.loan_repayment_transactions
+  column: lnrepay_int_pdamt
+  label: Interest received
+  synonyms: [interest received, interest collected, interest paid]
+  unit: inr
+  agg: [sum]
+  sensitivity: internal
+
+- id: repay.date
+  table: silver.loan_repayment_transactions
+  column: lnrepay_repay_date
+  label: Repayment date
+  synonyms: [repayment date, payment date, collection date, when paid]
+  unit: date
+  sensitivity: internal
+
+# --- silver.loan_disbursement_transactions ----------------------------------------------
+
+- id: disb.amount
+  table: silver.loan_disbursement_transactions
+  column: genlndisb_disb_amt
+  label: Disbursement amount
+  synonyms: [disbursed, disbursement amount, released, payout]
+  unit: inr
+  agg: [sum, avg, max]
+  sensitivity: internal
+
+- id: disb.net_paid
+  table: silver.loan_disbursement_transactions
+  column: genlndisb_net_pay_amt
+  label: Net amount paid
+  synonyms: [net disbursement, net paid, amount after charges]
+  unit: inr
+  agg: [sum]
+  sensitivity: internal
+  description: Disbursement net of charges deducted at source.
+
+- id: disb.charges
+  table: silver.loan_disbursement_transactions
+  column: genlndisb_tot_chgs_amt
+  label: Charges deducted
+  synonyms: [charges, fees, processing fee, deductions]
+  unit: inr
+  agg: [sum]
+  sensitivity: internal
+
+- id: disb.date
+  table: silver.loan_disbursement_transactions
+  column: genlndisb_disb_date
+  label: Disbursement date
+  synonyms: [disbursement date, release date, payout date, when disbursed]
+  unit: date
+  sensitivity: internal
+  description: Range 2025-10-15 to 2026-06-30 only.
+
+# --- silver.loan_repayment_schedule -----------------------------------------------------
+
+- id: sched.principal
+  table: silver.loan_repayment_schedule
+  column: lnsched_prin_amt
+  label: Scheduled principal
+  synonyms: [scheduled principal, principal falling due]
+  unit: inr
+  agg: [sum]
+  sensitivity: internal
+
+- id: sched.interest
+  table: silver.loan_repayment_schedule
+  column: lnsched_int_amt
+  label: Scheduled interest
+  synonyms: [scheduled interest, interest falling due]
+  unit: inr
+  agg: [sum]
+  sensitivity: internal
+
+- id: sched.date
+  table: silver.loan_repayment_schedule
+  column: lnsched_sched_date
+  label: Scheduled date
+  synonyms: [due date, scheduled date, falls due, instalment date]
+  unit: date
+  sensitivity: internal
+  description: Extends to 2031-06-30 — future-dated by design.
+
+# --- silver.loan_product_scheme_master --------------------------------------------------
+
+- id: scheme.name
+  table: silver.loan_product_scheme_master
+  column: lnschm_schm_name
+  label: Scheme name
+  synonyms: [scheme name, purpose, product name]
+  unit: text
+  sensitivity: public
+
+- id: scheme.max_loan_amount
+  table: silver.loan_product_scheme_master
+  column: lnschm_max_loan_amt
+  label: Scheme maximum loan amount
+  synonyms: [maximum loan, scheme cap, max amount, loan limit]
+  unit: inr
+  sensitivity: public
+
+- id: scheme.max_tenor_months
+  table: silver.loan_product_scheme_master
+  column: lnschm_max_tenor_month
+  label: Scheme maximum tenor (months)
+  synonyms: [max tenor, maximum tenure, longest term]
+  unit: count
+  sensitivity: public
+
+- id: scheme.ltv_rate
+  table: silver.loan_product_scheme_master
+  column: lnschm_ltv_rate
+  label: Scheme LTV
+  synonyms: [LTV, loan to value]
+  unit: percent
+  sensitivity: public
+
+# --- silver.individual_customer_master (PII) --------------------------------------------
+
+- id: customer.first_name
+  table: silver.individual_customer_master
+  column: indcif_first_name
+  label: First name
+  synonyms: [customer name, first name, borrower name]
+  unit: text
+  sensitivity: pii
+
+- id: customer.last_name
+  table: silver.individual_customer_master
+  column: indcif_last_name
+  label: Last name
+  synonyms: [surname, last name, family name]
+  unit: text
+  sensitivity: pii
+
+- id: customer.date_of_birth
+  table: silver.individual_customer_master
+  column: indcif_dob
+  label: Date of birth
+  synonyms: [DOB, date of birth, birthday]
+  unit: date
+  sensitivity: pii
+
+- id: customer.age
+  table: silver.individual_customer_master
+  column: indcif_age
+  label: Age
+  synonyms: [age, how old]
+  unit: count
+  agg: [avg, min, max]
+  sensitivity: internal
+  description: Age band analysis is permitted where the individual is not identified.
+
+- id: customer.gender
+  table: silver.individual_customer_master
+  column: indcif_gender
+  label: Gender
+  synonyms: [gender, male female]
+  unit: text
+  sensitivity: internal
+  decode: gender
+
+- id: customer.district
+  table: silver.individual_customer_master
+  column: indcif_pdistrict
+  label: District
+  synonyms: [district, area, region, where customers live]
+  unit: text
+  sensitivity: internal
+  description: 48 distinct districts. Permanent address district — the only usable geography in the schema.
+
+- id: customer.state
+  table: silver.individual_customer_master
+  column: indcif_pstate
+  label: State
+  synonyms: [state, province]
+  unit: text
+  sensitivity: internal
+
+- id: customer.pincode
+  table: silver.individual_customer_master
+  column: indcif_ppincode
+  label: PIN code
+  synonyms: [pincode, postal code, PIN]
+  unit: text
+  sensitivity: pii
+
+- id: customer.address
+  table: silver.individual_customer_master
+  column: indcif_phouse_name
+  label: Address (house name)
+  synonyms: [address, house, residence]
+  unit: text
+  sensitivity: pii
+
+- id: customer.yearly_income
+  table: silver.individual_customer_master
+  column: indcif_yearly_income
+  label: Annual income
+  synonyms: [income, annual income, yearly income, earnings]
+  unit: inr
+  agg: [avg, sum]
+  sensitivity: pii
+
+- id: customer.occupation
+  table: silver.individual_customer_master
+  column: indcif_occup_type
+  label: Occupation type
+  synonyms: [occupation, profession, job, employment]
+  unit: text
+  sensitivity: internal
+
+- id: customer.risk_category
+  table: silver.individual_customer_master
+  column: indcif_cust_risk
+  label: Customer risk category
+  synonyms: [customer risk, risk category, risk rating, KYC risk]
+  unit: text
+  sensitivity: internal
+
+# --- silver.gl_daily_balances -----------------------------------------------------------
+
+- id: gl.account_code
+  table: silver.gl_daily_balances
+  column: glbbal_glacc_code
+  label: GL account code
+  synonyms: [GL code, ledger code, account head]
+  unit: text
+  sensitivity: internal
+
+- id: gl.balance
+  table: silver.gl_daily_balances
+  column: glbbal_ac_bal
+  label: GL balance
+  synonyms: [balance, ledger balance, closing balance]
+  unit: inr
+  agg: [sum]
+  sensitivity: internal
+
+- id: gl.year
+  table: silver.gl_daily_balances
+  column: glbbal_year
+  label: Financial year
+  synonyms: [year, financial year, FY]
+  unit: count
+  sensitivity: internal
+  description: The only time coordinate this table has. There is no date column.

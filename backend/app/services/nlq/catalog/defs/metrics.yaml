@@ -1,0 +1,381 @@
+# Genesis NLQ — metric registry.
+#
+# `grain` is the most important field in this file. It prevents the most dangerous class of
+# wrong answer:
+#   flow          — a rate of movement. Sums across periods. Disbursement, collections.
+#   point_in_time — a stock. Must NOT be summed across dates; needs a pinned as-of date.
+#                   The compiler resolves these as "latest row per account as of the date",
+#                   never by date equality (see tables.yaml on asset_classification_details).
+#   ratio         — recomputed from numerator/denominator at the requested grain. Never
+#                   averaged from sub-totals; the average of ratios is not the ratio.
+#
+# `requires_signoff: true` means the definition is defensible but not yet ratified by the
+# client. Those render with a "definition pending sign-off" badge until confirmed.
+#
+# Every figure in the `verified` notes was computed against the live database on 2026-07-29
+# and is reproduced by backend/tests/nlq/test_metrics_fixtures.py.
+
+# --- Origination (flows) ----------------------------------------------------------------
+
+- id: disbursement_total
+  label: Disbursement
+  unit: inr
+  grain: flow
+  base_table: silver.loan_disbursement_transactions
+  date_column: genlndisb_disb_date
+  expression: "SUM({t}.genlndisb_disb_amt)"
+  formula: Sum of disbursement transaction amounts in the period
+  synonyms: [disbursement, disbursed, released, paid out, money given out, payouts, drawdown]
+  description: >
+    Principal actually released to borrowers, from the event log — the correct metric for
+    any period-scoped disbursement question.
+  caveat: >
+    The event log starts 2025-10-15 and totals ₹217.1 Cr, against ₹296.1 Cr of cumulative
+    disbursement on the loan master. Anything asked about a period before Oct 2025 will
+    read as zero because the events are absent, not because nothing was disbursed.
+  verified: 2170758902.00 over the full table
+
+- id: disbursement_count
+  label: Number of disbursements
+  unit: count
+  grain: flow
+  base_table: silver.loan_disbursement_transactions
+  date_column: genlndisb_disb_date
+  expression: "COUNT(*)"
+  formula: Count of disbursement events in the period
+  synonyms: [disbursement count, number of disbursements, how many disbursements]
+  verified: 5481 rows
+
+- id: sanctioned_amount
+  label: Sanctioned amount
+  unit: inr
+  grain: flow
+  base_table: silver.loan_account_master
+  date_column: gnlnac_sanc_date
+  expression: "SUM({t}.gnlnac_sanc_amt)"
+  formula: Sum of sanctioned amounts for accounts sanctioned in the period
+  synonyms: [sanctioned, sanction, approved amount, limit sanctioned, credit approved]
+  description: >
+    What was approved, by sanction date. Differs from disbursement for partially drawn
+    facilities — ₹307.6 Cr sanctioned against ₹296.1 Cr disbursed across the book.
+  verified: 3076186367.687 across all 13510 accounts
+
+- id: loan_count
+  label: Loans sanctioned
+  unit: count
+  grain: flow
+  base_table: silver.loan_account_master
+  date_column: gnlnac_sanc_date
+  expression: "COUNT(*)"
+  formula: Count of loan accounts sanctioned in the period
+  synonyms: [loan count, number of loans, how many loans, accounts, new loans, bookings]
+  verified: 13510
+
+- id: customer_count
+  label: Borrowers
+  unit: count
+  grain: flow
+  base_table: silver.loan_account_master
+  date_column: gnlnac_sanc_date
+  expression: "COUNT(DISTINCT {t}.gnlnac_cust_id)"
+  formula: Distinct borrowers with an account sanctioned in the period
+  synonyms: [customers, borrowers, unique customers, how many borrowers, clients]
+  caveat: >
+    Distinct within the grouped period only. Summing this across months double-counts any
+    borrower who took loans in two months — the compiler blocks a total row for it.
+
+- id: avg_ticket_size
+  label: Average ticket size
+  unit: inr
+  grain: ratio
+  base_table: silver.loan_account_master
+  date_column: gnlnac_sanc_date
+  numerator: "SUM({t}.gnlnac_sanc_amt)"
+  denominator: "COUNT(*)"
+  formula: Total sanctioned / number of loans
+  synonyms: [average ticket, ticket size, average loan size, avg loan amount, mean loan]
+
+- id: avg_interest_rate
+  label: Average interest rate
+  unit: percent
+  grain: ratio
+  base_table: silver.loan_account_master
+  date_column: gnlnac_sanc_date
+  numerator: "SUM({t}.gnlnac_ln_intrate * {t}.gnlnac_sanc_amt)"
+  denominator: "SUM({t}.gnlnac_sanc_amt)"
+  formula: Sanction-amount-weighted average of the account interest rate
+  synonyms: [interest rate, average rate, yield, ROI, pricing, lending rate]
+  description: >
+    Weighted by sanctioned amount, not a plain average of rates — a ₹1 lakh loan and a ₹1 Cr
+    loan do not carry equal weight in what the book actually earns.
+  requires_signoff: true
+  signoff_note: >
+    Amount-weighted is the standard reading, but the client may expect the simple average
+    the core system reports (19.03% unweighted across the book, per EDA §3).
+
+# --- Portfolio stocks (point-in-time) ---------------------------------------------------
+
+- id: principal_outstanding
+  label: Principal outstanding
+  unit: inr
+  grain: point_in_time
+  base_table: silver.asset_classification_details
+  as_of_column: ascd_effective_date
+  as_of_key: [ascd_entity_num, ascd_account_num]
+  expression: "SUM({t}.ascd_princ_os)"
+  formula: Principal outstanding on each account's latest classification as of the date
+  synonyms: [outstanding, principal outstanding, POS, book size, exposure, portfolio outstanding, AUM]
+  caveat: >
+    Covers only classified accounts — ₹198.5 Cr across 5,238 accounts as of 2026-07-01,
+    against a ₹275.2 Cr book implied by the loan master's disbursed-minus-repaid across all
+    13,510 accounts. Use `principal_outstanding_book` for the whole-book figure.
+  verified: 1984698447.64 as of 2026-07-01
+
+- id: principal_outstanding_book
+  label: Principal outstanding (whole book)
+  unit: inr
+  grain: point_in_time
+  base_table: silver.loan_account_master
+  expression: "SUM({t}.gnlnac_lndisb_amt - {t}.gnlnac_pri_repay_amt)"
+  formula: Cumulative disbursed minus cumulative principal repaid, across all accounts
+  synonyms: [total outstanding, whole book, book size, total portfolio, loan book size]
+  description: >
+    Whole-book outstanding from the loan master's cumulative columns. Has no as-of date —
+    it is "as of the last data load" and cannot be back-dated, so a question asking for it
+    at a past date must be refused rather than answered with today's number.
+  no_time_travel: true
+  verified: 2752249524.087
+
+- id: overdue_principal
+  label: Overdue principal
+  unit: inr
+  grain: point_in_time
+  base_table: silver.asset_classification_details
+  as_of_column: ascd_effective_date
+  as_of_key: [ascd_entity_num, ascd_account_num]
+  expression: "SUM({t}.ascd_princ_due)"
+  formula: Principal past due on each account's latest classification as of the date
+  synonyms: [overdue, arrears, past due, principal due, delinquent amount]
+
+- id: overdue_total
+  label: Total overdue
+  unit: inr
+  grain: point_in_time
+  base_table: silver.asset_classification_details
+  as_of_column: ascd_effective_date
+  as_of_key: [ascd_entity_num, ascd_account_num]
+  expression: "SUM({t}.ascd_princ_due + {t}.ascd_int_due + {t}.ascd_charg_due + {t}.ascd_penal_due)"
+  formula: Principal + interest + charges + penal, all past due
+  synonyms: [total overdue, total arrears, total dues, amount overdue]
+
+- id: delinquent_account_count
+  label: Delinquent accounts
+  unit: count
+  grain: point_in_time
+  base_table: silver.asset_classification_details
+  as_of_column: ascd_effective_date
+  as_of_key: [ascd_entity_num, ascd_account_num]
+  expression: "COUNT(*) FILTER (WHERE {t}.ascd_dpd_days > 0)"
+  formula: Accounts with DPD greater than zero as of the date
+  synonyms: [delinquent accounts, accounts overdue, how many are late, defaulters]
+  verified: 244 as of 2026-07-01
+
+- id: avg_dpd
+  label: Average DPD
+  unit: days
+  grain: ratio
+  base_table: silver.asset_classification_details
+  as_of_column: ascd_effective_date
+  as_of_key: [ascd_entity_num, ascd_account_num]
+  numerator: "SUM({t}.ascd_dpd_days)"
+  denominator: "COUNT(*)"
+  formula: Mean days past due across classified accounts
+  synonyms: [average DPD, mean days past due, average delinquency]
+  caveat: Includes current accounts at 0 DPD, which pulls the mean down heavily.
+
+# --- Risk ratios ------------------------------------------------------------------------
+
+- id: par_30
+  label: PAR 30
+  unit: percent
+  grain: ratio
+  point_in_time: true
+  base_table: silver.asset_classification_details
+  as_of_column: ascd_effective_date
+  as_of_key: [ascd_entity_num, ascd_account_num]
+  numerator: "SUM({t}.ascd_princ_os) FILTER (WHERE {t}.ascd_dpd_days > 30)"
+  denominator: "SUM({t}.ascd_princ_os)"
+  scale: 100
+  formula: Principal outstanding on accounts more than 30 DPD / total principal outstanding
+  synonyms: [PAR, PAR 30, portfolio at risk, par30, risk portfolio, 30+ DPD]
+  description: >
+    Portfolio at Risk over 30 days. A point-in-time ratio: it cannot be summed across
+    periods and must not be averaged from monthly values.
+  requires_signoff: true
+  signoff_note: >
+    The denominator is principal outstanding on CLASSIFIED accounts (₹198.5 Cr), not the
+    whole book (₹275.2 Cr). Using the whole book as denominator would give a materially
+    lower PAR. The client must ratify which denominator their board pack uses.
+  verified: 0.090% as of 2026-07-01 (numerator ₹17.81 lakh, denominator ₹198.47 Cr)
+
+- id: par_60
+  label: PAR 60
+  unit: percent
+  grain: ratio
+  point_in_time: true
+  base_table: silver.asset_classification_details
+  as_of_column: ascd_effective_date
+  as_of_key: [ascd_entity_num, ascd_account_num]
+  numerator: "SUM({t}.ascd_princ_os) FILTER (WHERE {t}.ascd_dpd_days > 60)"
+  denominator: "SUM({t}.ascd_princ_os)"
+  scale: 100
+  formula: Principal outstanding on accounts more than 60 DPD / total principal outstanding
+  synonyms: [PAR 60, par60, 60+ DPD]
+  requires_signoff: true
+
+- id: par_90
+  label: PAR 90
+  unit: percent
+  grain: ratio
+  point_in_time: true
+  base_table: silver.asset_classification_details
+  as_of_column: ascd_effective_date
+  as_of_key: [ascd_entity_num, ascd_account_num]
+  numerator: "SUM({t}.ascd_princ_os) FILTER (WHERE {t}.ascd_dpd_days > 90)"
+  denominator: "SUM({t}.ascd_princ_os)"
+  scale: 100
+  formula: Principal outstanding on accounts more than 90 DPD / total principal outstanding
+  synonyms: [PAR 90, par90, 90+ DPD, NPA ratio, gross NPA, GNPA]
+  description: >
+    Currently zero across the book — the highest DPD observed is 75 days. A zero here is a
+    real finding, not a broken query, and the narrator says so explicitly.
+  requires_signoff: true
+  verified: 0.000% as of 2026-07-01
+
+- id: npa_ratio
+  label: NPA ratio
+  unit: percent
+  grain: ratio
+  point_in_time: true
+  base_table: silver.asset_classification_details
+  as_of_column: ascd_effective_date
+  as_of_key: [ascd_entity_num, ascd_account_num]
+  numerator: "SUM({t}.ascd_princ_os) FILTER (WHERE {t}.ascd_asset_code = 'NPA')"
+  denominator: "SUM({t}.ascd_princ_os)"
+  scale: 100
+  formula: Principal outstanding classified NPA / total principal outstanding
+  synonyms: [NPA ratio, gross NPA, GNPA, bad loan ratio, non performing]
+  description: Classification-based rather than DPD-based. Currently zero — no account carries the NPA code.
+  requires_signoff: true
+
+# --- Collections ------------------------------------------------------------------------
+
+- id: collection_efficiency
+  label: Collection efficiency
+  unit: percent
+  grain: ratio
+  base_table: silver.loan_repayment_transactions
+  date_column: lnrepay_repay_date
+  numerator: "SUM({t}.lnrepay_prin_pdamt + {t}.lnrepay_int_pdamt)"
+  denominator: "SUM({t}.lnrepay_prin_amt + {t}.lnrepay_int_amt)"
+  scale: 100
+  formula: (Principal + interest received) / (principal + interest due), over instalments in the period
+  synonyms: [collection efficiency, recovery rate, collections, CE, repayment rate, collection ratio]
+  description: >
+    True collection efficiency — both sides come from the same instalment rows, so it
+    compares what was received against what was actually due. This is deliberately NOT
+    repaid-over-disbursed, which makes any young loan look like a default.
+  verified: 97.93% over the full table (₹16.03 Cr received against ₹16.36 Cr due)
+
+- id: amount_collected
+  label: Amount collected
+  unit: inr
+  grain: flow
+  base_table: silver.loan_repayment_transactions
+  date_column: lnrepay_repay_date
+  expression: "SUM({t}.lnrepay_prin_pdamt + {t}.lnrepay_int_pdamt)"
+  formula: Principal plus interest actually received in the period
+  synonyms: [collected, collections, received, repayments, recovery, inflow]
+  verified: 160253845.36 over the full table
+
+- id: principal_collected
+  label: Principal collected
+  unit: inr
+  grain: flow
+  base_table: silver.loan_repayment_transactions
+  date_column: lnrepay_repay_date
+  expression: "SUM({t}.lnrepay_prin_pdamt)"
+  formula: Principal portion actually received in the period
+  synonyms: [principal collected, principal repaid, principal recovery]
+  verified: 89738859.27
+
+- id: interest_collected
+  label: Interest collected
+  unit: inr
+  grain: flow
+  base_table: silver.loan_repayment_transactions
+  date_column: lnrepay_repay_date
+  expression: "SUM({t}.lnrepay_int_pdamt)"
+  formula: Interest portion actually received in the period
+  synonyms: [interest collected, interest earned, interest income, interest recovery]
+  verified: 70514986.09
+
+- id: amount_due
+  label: Amount due
+  unit: inr
+  grain: flow
+  base_table: silver.loan_repayment_transactions
+  date_column: lnrepay_repay_date
+  expression: "SUM({t}.lnrepay_prin_amt + {t}.lnrepay_int_amt)"
+  formula: Principal plus interest falling due in the period
+  synonyms: [due, demand, billed, amount due, expected collection]
+  verified: 163635853.96
+
+- id: collection_shortfall
+  label: Collection shortfall
+  unit: inr
+  grain: flow
+  base_table: silver.loan_repayment_transactions
+  date_column: lnrepay_repay_date
+  expression: "SUM(({t}.lnrepay_prin_amt + {t}.lnrepay_int_amt) - ({t}.lnrepay_prin_pdamt + {t}.lnrepay_int_pdamt))"
+  formula: Amount due minus amount collected in the period
+  synonyms: [shortfall, gap, unpaid, missed collections, under recovery]
+
+# --- Forward schedule -------------------------------------------------------------------
+
+- id: scheduled_amount
+  label: Scheduled instalments
+  unit: inr
+  grain: flow
+  base_table: silver.loan_repayment_schedule
+  date_column: lnsched_sched_date
+  expression: "SUM({t}.lnsched_prin_amt + {t}.lnsched_int_amt)"
+  formula: Principal plus interest contractually scheduled in the period
+  synonyms: [scheduled, falling due, upcoming dues, expected inflow, amortisation, due next]
+  description: >
+    The forward book — what is contractually due and when. Extends to June 2031, so a
+    query without a bounded period mixes realised and unrealised amounts.
+  caveat: Contractual schedule only. It says nothing about what will actually be collected.
+
+# --- General ledger ---------------------------------------------------------------------
+
+- id: gl_balance
+  label: GL balance
+  unit: inr
+  grain: point_in_time
+  base_table: silver.gl_daily_balances
+  year_column: glbbal_year
+  expression: "SUM({t}.glbbal_ac_bal)"
+  formula: Sum of account-currency closing balances for the selected GL accounts and year
+  synonyms: [GL balance, ledger balance, trial balance, account balance, financials]
+  description: >
+    Annual grain — the only grain this source has. Balances net to zero across a full year,
+    as a trial balance should, so a total across all GL accounts is meaningless and this
+    metric is only useful filtered to specific accounts.
+  restrictions: >
+    Cannot be grouped by product, scheme or loan branch — no join path exists (joins.yaml).
+    Monthly and quarterly GL questions are unanswerable and must be refused.
+  requires_signoff: true
+  signoff_note: >
+    GL-code to line-item mapping lives in dnbs02_spec.py and is the authority. This metric
+    returns raw balances and does not attempt to reproduce that mapping.

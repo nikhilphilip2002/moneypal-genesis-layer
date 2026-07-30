@@ -52,6 +52,24 @@ class Settings:
         self.local_index_path = Path(get("LOCAL_INDEX_PATH", str(REPO_ROOT / "backend" / "vector_store" / "regulatory_chunks.jsonl")) or REPO_ROOT / "backend" / "vector_store" / "regulatory_chunks.jsonl")
         self.cors_origins = ["*"]
 
+        # --- NLQ (natural-language query layer) -------------------------------------
+        # Provider-agnostic by design: the GPU node is not procured yet, so llama.cpp is
+        # selected by config at deploy time and Groq carries development.
+        self.nlq_llm_provider = (get("NLQ_LLM_PROVIDER", "groq") or "groq").lower()
+        self.nlq_llm_base_url = get("NLQ_LLM_BASE_URL", "http://localhost:8080/v1") or "http://localhost:8080/v1"
+        self.nlq_llm_model = get("NLQ_LLM_MODEL", "qwen3.6-32b-instruct-q4_K_M") or "qwen3.6-32b-instruct-q4_K_M"
+        self.nlq_llm_api_key = get("NLQ_LLM_API_KEY")          # llama.cpp ignores it; kept for gateways
+        self.nlq_llm_timeout_s = float(get("NLQ_LLM_TIMEOUT_S", "30") or "30")
+        self.nlq_llm_max_retries = int(get("NLQ_LLM_MAX_RETRIES", "1") or "1")
+
+        # Read-only database role (see docs/GENESIS_NLQ_BUILD_PLAN.md §7.1). Separate
+        # credentials from the app role — this is the real security boundary, so it must
+        # never silently fall back to POSTGRES_USER.
+        self.nlq_db_user = get("NLQ_DB_USER", "nlq_readonly") or "nlq_readonly"
+        self.nlq_db_password = get("NLQ_DB_PASSWORD")
+        self.nlq_statement_timeout_ms = int(get("NLQ_STATEMENT_TIMEOUT_MS", "15000") or "15000")
+        self.nlq_max_rows = int(get("NLQ_MAX_ROWS", "5000") or "5000")
+
 
 @lru_cache
 def get_settings() -> Settings:

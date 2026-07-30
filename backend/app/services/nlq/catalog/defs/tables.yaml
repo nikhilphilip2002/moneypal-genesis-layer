@@ -1,0 +1,179 @@
+# Genesis NLQ — table catalog.
+#
+# Every silver table NLQ is allowed to touch, with the grain stated explicitly. `grain` is
+# not documentation: the compiler uses it to decide whether a join can fan out, and a
+# wrong value here produces double-counted money.
+#
+# `loan_account_master` is the hub. Every other fact table reaches a dimension through it
+# (see joins.yaml), which is what keeps the join graph unambiguous — the compiler refuses
+# to guess a path.
+#
+# Row counts and date ranges verified against the live database on 2026-07-29.
+
+- id: loan_account_master
+  table: silver.loan_account_master
+  label: Loan accounts
+  grain: one row per loan account
+  key: [gnlnac_entity_num, gnlnac_acnt_num]
+  row_count: 13510
+  is_hub: true
+  synonyms: [loans, loan book, accounts, portfolio, loan master, sanctions]
+  description: >
+    The loan book. One row per account, carrying sanction and cumulative lifetime figures
+    (disbursed to date, principal repaid to date, interest repaid to date) alongside the
+    account's product, scheme, branch and interest rate. Cumulative columns are running
+    totals as of the last data load — they are stocks, not flows, and must never be summed
+    across periods.
+  date_columns:
+    sanction: gnlnac_sanc_date
+    first_disbursement: gnlnac_first_disb_date
+    last_disbursement: gnlnac_last_disb_date
+    closure: gnlnac_closure_date
+  date_range: 2023-11-15 .. 2026-06-30 (sanction date)
+  notes: >
+    entity_num is 1 for 13,469 accounts and 9 for 41 — it is part of the key and every
+    join must carry it. 166 of 13,510 accounts have a closure date.
+
+- id: asset_classification_details
+  table: silver.asset_classification_details
+  label: Asset classification / delinquency
+  grain: one row per account per classification event
+  key: [ascd_entity_num, ascd_account_num, ascd_effective_date]
+  row_count: 6833
+  synonyms: [DPD, delinquency, asset classification, NPA, SMA, overdue, PAR, arrears, credit quality]
+  description: >
+    Days-past-due and principal-outstanding by account, with the RBI asset classification
+    (STD / SMA0 / SMA1 / SMA2 / NPA). The source of every risk metric.
+  date_columns:
+    as_of: ascd_effective_date
+  date_range: 2026-05-22 .. 2026-07-01
+  point_in_time: true
+  as_of_column: ascd_effective_date
+  notes: >
+    NOT a daily full snapshot — this is an event log. A given effective_date holds only the
+    accounts whose classification CHANGED that day (364 rows on the latest date, against
+    5,238 accounts classified overall). Reading it as a snapshot is the single most
+    dangerous mistake available in this schema: `WHERE ascd_effective_date = '2026-07-01'`
+    reports PAR 30 as NULL, where the correct as-of read reports 0.090%.
+    The compiler therefore resolves every point-in-time metric as "the latest row per
+    account with effective_date <= the as-of date" (DISTINCT ON), never by equality.
+  coverage_warning: >
+    Covers 5,238 of 13,510 accounts (₹198.5 Cr of the ₹275.2 Cr book). Risk ratios computed
+    here have the classified subset as their denominator, not the whole portfolio.
+    History runs only from 2026-05-22 — roughly six weeks — so any PAR or DPD trend before
+    that date has no underlying data and renders as an explicit gap rather than as zero.
+
+- id: loan_disbursement_transactions
+  table: silver.loan_disbursement_transactions
+  label: Disbursement transactions
+  grain: one row per disbursement event
+  key: [genlndisb_entity_num, genlndisb_acnt_num, genlndisb_disb_sl]
+  row_count: 5481
+  synonyms: [disbursements, releases, payouts, money given out, drawdowns]
+  description: >
+    Individual disbursement events with their dates — the only way to answer
+    "how much did we disburse in <period>".
+  date_columns:
+    disbursement: genlndisb_disb_date
+  date_range: 2025-10-15 .. 2026-06-30
+  notes: >
+    Partial history: ₹217.1 Cr of events against ₹296.1 Cr cumulative disbursed on the loan
+    master, and nothing before Oct 2025. Period-scoped disbursement questions must use this
+    table; whole-book cumulative totals must use loan_account_master. The two will not
+    agree, and the catalog says so rather than letting a user discover it in a meeting.
+
+- id: loan_repayment_transactions
+  table: silver.loan_repayment_transactions
+  label: Repayments (due vs received)
+  grain: one row per instalment
+  key: [lnrepay_entity_num, lnrepay_acnt_no, lnrepay_sl_no]
+  row_count: 13483
+  synonyms: [repayments, collections, instalments, EMI, recovery, receipts]
+  description: >
+    Carries both sides of each instalment: the amount due (prin_amt / int_amt) and the
+    amount actually received (prin_pdamt / int_pdamt). This pairing is what makes true
+    collection efficiency computable.
+  date_columns:
+    repayment: lnrepay_repay_date
+  date_range: 2024-03-30 .. 2026-07-01
+
+- id: loan_repayment_schedule
+  table: silver.loan_repayment_schedule
+  label: Repayment schedule (future instalments)
+  grain: one row per scheduled instalment
+  key: [lnsched_entity_num, lnsched_acnt_no, lnsched_sl_no]
+  row_count: 260437
+  synonyms: [schedule, amortisation, instalments due, future dues, EMI schedule]
+  description: >
+    The forward amortisation schedule — what is contractually due and when. Extends to
+    2031, so it answers "what falls due next quarter" but says nothing about what was paid.
+  date_columns:
+    scheduled: lnsched_sched_date
+  date_range: 2024-09-05 .. 2031-06-30
+  notes: >
+    Largest table in the schema. Contains future-dated rows by design: any query that does
+    not bound the date will mix realised and unrealised amounts.
+
+- id: loan_product_scheme_master
+  table: silver.loan_product_scheme_master
+  label: Product / scheme master
+  grain: one row per scheme
+  key: [lnschm_entity_num, lnschm_prod_code, lnschm_schm_code]
+  row_count: 15
+  synonyms: [schemes, products, scheme master, product master]
+  description: >
+    Scheme names, tenor bands and loan-amount limits. A lookup dimension, never aggregated.
+  notes: >
+    Covers only the 15 product-16 schemes. The ~45 product-1 and product-13 scheme codes in
+    use have no master row and decode to their bare code (see enums.yaml).
+
+- id: individual_customer_master
+  table: silver.individual_customer_master
+  label: Individual customers
+  grain: one row per customer
+  key: [indcif_entity_num, indcif_cust_id]
+  synonyms: [customers, borrowers, individuals, clients]
+  description: Retail borrower master. Contains PII — see the sensitivity tags in columns.yaml.
+  contains_pii: true
+
+- id: corporate_customer_master
+  table: silver.corporate_customer_master
+  label: Corporate customers
+  grain: one row per firm per detail line
+  key: [firmd_entity_num, firmd_cust_id, firmd_dtl_sl]
+  synonyms: [companies, firms, corporates, business customers]
+  description: Corporate borrower master.
+  contains_pii: true
+
+- id: customer_kyc_details
+  table: silver.customer_kyc_details
+  label: Customer KYC
+  grain: one row per customer KYC record
+  synonyms: [KYC, identity documents, PAN, Aadhaar]
+  description: KYC identifiers. Heavily PII — masked by default, never sent to an LLM.
+  contains_pii: true
+
+- id: gl_daily_balances
+  table: silver.gl_daily_balances
+  label: General ledger balances
+  grain: one row per GL account per branch per financial year
+  key: [glbbal_entity_num, glbbal_branch_code, glbbal_glacc_code, glbbal_year]
+  row_count: 1221
+  synonyms: [GL, general ledger, balances, financials, trial balance, chart of accounts]
+  description: >
+    Closing balance per GL account per year. The only financial-statement source available;
+    dnbs02_spec.py already encodes the GL-code to line-item mapping and is the authority
+    for it — do not re-derive that mapping here.
+  year_column: glbbal_year
+  point_in_time: true
+  notes: >
+    Despite the table name there is NO date column — the grain is annual
+    (`glbbal_year`), not daily, and `glbbal_last_tran_date` is the last activity on the
+    account, not a balance date. Monthly or quarterly GL questions are unanswerable from
+    this source and must be refused rather than approximated.
+    Balances net to exactly zero in every year, as a trial balance should; only 2025 (530
+    accounts) and 2026 (552) carry real breadth — 2019-2024 hold five rows each.
+  restrictions: >
+    Cannot be grouped by loan dimensions (product, scheme, loan branch) — no join path
+    exists, and the compiler rejects the attempt rather than inventing one. GL branch codes
+    are a separate coding system from loan branch codes and are NOT interchangeable.

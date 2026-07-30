@@ -437,3 +437,193 @@ export const intelligence = {
 export const health = {
   check: () => apiRequest('/health'),
 };
+
+// ─── Genesis NLQ — natural-language query layer ───
+// Mirrors backend/app/services/nlq/contracts.py. ChartSpec.rows is always populated, even
+// for kpi and line, so the table view and CSV export need no round-trip.
+
+export type ChartType =
+  | 'kpi' | 'line' | 'bar' | 'grouped_bar' | 'stacked_bar'
+  | 'table' | 'ranking' | 'variance' | 'scatter' | 'heatmap';
+
+export type Unit = 'inr' | 'percent' | 'count' | 'days' | 'ratio' | 'text' | 'date';
+
+export type Lineage = {
+  path: 'queryspec' | 'text_to_sql';
+  sql: string;
+  source_tables: string[];
+  formulas: Record<string, string>;
+  row_count: number;
+  duration_ms: number;
+  as_of: string | null;
+  warnings: string[];
+  unverified: boolean;
+  requires_signoff: string[];
+};
+
+export type ColumnSpec = {
+  name: string;
+  label: string;
+  unit: Unit;
+  format: string | null;
+  sensitivity: 'public' | 'internal' | 'pii';
+  masked: boolean;
+};
+
+export type AxisSpec = { field: string; label: string; grain: string | null; unit: Unit };
+export type SeriesSpec = { field: string; label: string; unit: Unit; axis: 'left' | 'right' };
+
+export type QuerySpec = {
+  metrics: string[];
+  dimensions: string[];
+  filters: { field: string; op: string; value: unknown }[];
+  period: { grain?: string; start?: string | null; end?: string | null; relative?: string | null };
+  compare_to?: unknown;
+  order_by?: { field: string; direction: 'asc' | 'desc' } | null;
+  limit: number;
+};
+
+export type ChartSpec = {
+  chart_type: ChartType;
+  title: string;
+  subtitle: string | null;
+  x: AxisSpec | null;
+  series: SeriesSpec[];
+  columns: ColumnSpec[];
+  rows: Record<string, unknown>[];
+  summary: string;
+  drilldown: QuerySpec | null;
+  lineage: Lineage;
+};
+
+export type NlqClarification = { route: 'clarify'; question: string; suggestions: string[] };
+export type NlqRefusal = {
+  route: 'refuse';
+  reason: 'out_of_scope' | 'not_in_data' | 'predictive' | 'advice' | 'unsafe';
+  message: string;
+  examples: string[];
+};
+
+export type NlqAskResponse = {
+  conversation_id: string;
+  turn_id: string;
+  status: 'answered' | 'clarify' | 'refused';
+  chart: ChartSpec | null;
+  clarification: NlqClarification | null;
+  refusal: NlqRefusal | null;
+  plan_summary: string;
+};
+
+export type NlqCatalogMetric = {
+  id: string; label: string; unit: Unit; grain: string; formula: string;
+  synonyms: string[]; requires_signoff: boolean; caveat: string;
+};
+
+export type NlqCatalog = {
+  version: string;
+  metrics: NlqCatalogMetric[];
+  dimensions: { id: string; label: string; type: string; synonyms: string[]; cardinality: number | null }[];
+  example_questions: string[];
+};
+
+export type NlqHealth = {
+  status: 'ok' | 'degraded';
+  llm: { status: string; provider: string; model: string; detail?: string };
+  db: { status: string; detail?: string };
+  catalog: { status: string; version?: string; metrics?: number };
+  capabilities: { execute: boolean; ask: boolean; text_to_sql: boolean };
+};
+
+// SSE stage names, in the order the backend emits them.
+export type NlqStage = 'understanding' | 'planning' | 'writing_sql' | 'querying' | 'charting';
+
+export type NlqStreamEvent =
+  | { type: 'stage'; stage: NlqStage }
+  | { type: 'rewrite'; resolved_question: string }
+  | { type: 'plan'; route: string; model: string }
+  | { type: 'chart'; response: NlqAskResponse }
+  | { type: 'clarify'; clarification: NlqClarification }
+  | { type: 'refusal'; refusal: NlqRefusal }
+  | { type: 'error'; message: string; retryable: boolean }
+  | { type: 'done' };
+
+export const nlq = {
+  health: (): Promise<NlqHealth> => apiRequest('/nlq/health'),
+  catalog: (): Promise<NlqCatalog> => apiRequest('/nlq/catalog'),
+
+  // No LLM: drill-downs, saved questions and dashboards all run through this, which is why
+  // they keep working when the assistant is offline.
+  execute: (query_spec: QuerySpec): Promise<ChartSpec> =>
+    apiRequest('/nlq/execute', { method: 'POST', body: JSON.stringify({ query_spec }) }),
+
+  conversation: (id: string) => apiRequest(`/nlq/conversations/${id}`),
+  clearConversation: (id: string) =>
+    apiRequest(`/nlq/conversations/${id}`, { method: 'DELETE' }),
+  feedback: (turn_id: string, verdict: 'up' | 'down', comment = '') =>
+    apiRequest('/nlq/feedback', { method: 'POST', body: JSON.stringify({ turn_id, verdict, comment }) }),
+  suggestions: (conversation_id?: string) =>
+    apiRequest(`/nlq/suggestions${conversation_id ? `?conversation_id=${conversation_id}` : ''}`),
+
+  // Streams SSE. Uses fetch rather than EventSource because the endpoint is a POST and
+  // needs the Authorization header.
+  async *ask(
+    question: string,
+    conversationId: string | null,
+    signal?: AbortSignal,
+  ): AsyncGenerator<NlqStreamEvent> {
+    const token = typeof window !== 'undefined' ? localStorage.getItem('access') : null;
+    const res = await fetch(`${API_URL}/nlq/ask`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify({ question, conversation_id: conversationId }),
+      signal,
+    });
+
+    if (!res.ok || !res.body) {
+      const detail = await res.text().catch(() => '');
+      throw new Error(detail || `Ask failed (${res.status})`);
+    }
+
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+
+      // SSE frames are separated by a blank line; a partial frame stays buffered.
+      let split: number;
+      while ((split = buffer.indexOf('\n\n')) !== -1) {
+        const frame = buffer.slice(0, split);
+        buffer = buffer.slice(split + 2);
+
+        let event = '';
+        let data = '';
+        for (const line of frame.split('\n')) {
+          if (line.startsWith('event: ')) event = line.slice(7).trim();
+          else if (line.startsWith('data: ')) data += line.slice(6);
+        }
+        if (!event) continue;
+
+        let payload: any = {};
+        try { payload = data ? JSON.parse(data) : {}; } catch { continue; }
+
+        switch (event) {
+          case 'stage': yield { type: 'stage', stage: payload.stage }; break;
+          case 'rewrite': yield { type: 'rewrite', resolved_question: payload.resolved_question }; break;
+          case 'plan': yield { type: 'plan', route: payload.route, model: payload.model }; break;
+          case 'chart': yield { type: 'chart', response: payload as NlqAskResponse }; break;
+          case 'clarify': yield { type: 'clarify', clarification: payload as NlqClarification }; break;
+          case 'refusal': yield { type: 'refusal', refusal: payload as NlqRefusal }; break;
+          case 'error': yield { type: 'error', message: payload.message, retryable: !!payload.retryable }; break;
+          case 'done': yield { type: 'done' }; return;
+        }
+      }
+    }
+  },
+};

@@ -1,0 +1,165 @@
+# Genesis NLQ — dimensions (the things a question can group or filter by).
+#
+# Every dimension lives on exactly one table. When a metric's base table is not that table,
+# the compiler routes through the declared join path in joins.yaml — it never guesses.
+#
+# `decode` names an enum block in enums.yaml. Decoding happens in SQL so that grouping,
+# ordering and the chart label all agree on one value.
+
+- id: branch
+  label: Branch
+  table: silver.loan_account_master
+  column: gnlnac_appl_brn_code
+  type: categorical
+  decode: branch
+  synonyms: [branch, branches, location, office, centre, region, by branch]
+  description: >
+    The branch that originated the account. 16 distinct codes. Note this is the
+    *application* branch — the book has no separate servicing-branch column.
+  cardinality: 16
+
+- id: product
+  label: Product
+  table: silver.loan_account_master
+  column: gnlnac_prod_code
+  type: categorical
+  decode: product
+  synonyms: [product, product line, loan type, business line, portfolio, segment]
+  description: The three lending products — Gold, Microfinance/Retail EMI, Business/MSME.
+  cardinality: 3
+
+- id: scheme
+  label: Scheme
+  table: silver.loan_account_master
+  column: gnlnac_schm_code
+  type: categorical
+  decode: scheme
+  synonyms: [scheme, sub-product, product scheme, loan scheme, purpose]
+  description: >
+    Scheme code within a product — the lending purpose (tractor, LAP, poultry, ...).
+    60 codes in use. Only the 15 product-16 schemes have names in the scheme master; the
+    rest render as "Scheme #1328".
+  cardinality: 60
+
+- id: asset_class
+  label: Asset classification
+  table: silver.asset_classification_details
+  column: ascd_asset_code
+  type: categorical
+  decode: asset_class
+  synonyms: [asset class, classification, NPA status, SMA, standard, credit quality, bucket]
+  description: RBI asset classification of the account at its latest classification event.
+  point_in_time: true
+  cardinality: 5
+
+- id: dpd_bucket
+  label: DPD bucket
+  table: silver.asset_classification_details
+  column: ascd_dpd_days
+  type: categorical
+  expression: >
+    CASE WHEN {col} = 0 THEN '0 (current)'
+         WHEN {col} BETWEEN 1 AND 30 THEN '1-30'
+         WHEN {col} BETWEEN 31 AND 60 THEN '31-60'
+         WHEN {col} BETWEEN 61 AND 90 THEN '61-90'
+         ELSE '90+' END
+  sort_expression: >
+    CASE WHEN {col} = 0 THEN 0 WHEN {col} <= 30 THEN 1 WHEN {col} <= 60 THEN 2
+         WHEN {col} <= 90 THEN 3 ELSE 4 END
+  synonyms: [DPD bucket, ageing, overdue bucket, days past due band, delinquency bucket]
+  description: >
+    Standard ageing bands. Sorted by band, not alphabetically — "1-30" must not sort
+    before "0 (current)".
+  point_in_time: true
+
+- id: loan_type
+  label: Loan type
+  table: silver.loan_account_master
+  column: gnlnac_loan_type
+  type: categorical
+  decode: loan_type
+  synonyms: [loan type, EMI or bullet, amortisation type, repayment type]
+  description: E = EMI term loan (13,370 accounts), C = non-EMI demand/bullet loan (140).
+  cardinality: 2
+
+- id: account_status
+  label: Account status
+  table: silver.loan_account_master
+  column: gnlnac_closure_date
+  type: categorical
+  expression: "CASE WHEN {col} IS NULL THEN 'Open' ELSE 'Closed' END"
+  synonyms: [status, open or closed, active, closed accounts, live accounts]
+  description: Derived — 166 of 13,510 accounts carry a closure date.
+
+- id: gl_account
+  label: GL account
+  table: silver.gl_daily_balances
+  column: glbbal_glacc_code
+  type: categorical
+  synonyms: [GL code, ledger account, account head, GL account]
+  description: General-ledger account code. Only combinable with GL metrics.
+  cardinality: 552
+
+- id: gl_branch
+  label: GL branch
+  table: silver.gl_daily_balances
+  column: glbbal_branch_code
+  type: categorical
+  synonyms: [GL branch, ledger branch]
+  description: >
+    Branch code in the ledger's own coding system. NOT the same coding as the loan-book
+    `branch` dimension — the two must never be joined or compared.
+  cardinality: 5
+
+# --- Time -------------------------------------------------------------------------------
+# Time is not a column: each metric declares its own date column (metrics.yaml), and the
+# compiler truncates that column to the requested grain. These entries exist so a question
+# can say "by month" without naming a table.
+
+- id: month
+  label: Month
+  type: time
+  grain: month
+  synonyms: [month, monthly, by month, month on month, MoM]
+
+- id: quarter
+  label: Quarter
+  type: time
+  grain: quarter
+  synonyms: [quarter, quarterly, by quarter, QoQ]
+  description: Calendar quarters. For fiscal quarters use `fy_quarter`.
+
+- id: fy_quarter
+  label: Fiscal quarter
+  type: time
+  grain: fy_quarter
+  synonyms: [fiscal quarter, FY quarter, Q1 FY26, financial quarter]
+  description: Indian fiscal quarters — Q1 is Apr-Jun.
+
+- id: fy
+  label: Financial year
+  type: time
+  grain: fy
+  synonyms: [financial year, fiscal year, FY, year]
+  description: >
+    Indian FY, 1 April to 31 March, labelled by the ending year (FY26 = Apr 2025-Mar 2026).
+    "Last year" without qualification is ambiguous between this and the calendar year, and
+    is a clarify trigger rather than a guess.
+
+- id: year
+  label: Calendar year
+  type: time
+  grain: year
+  synonyms: [calendar year, CY, per year]
+
+- id: week
+  label: Week
+  type: time
+  grain: week
+  synonyms: [week, weekly, by week]
+
+- id: day
+  label: Day
+  type: time
+  grain: day
+  synonyms: [day, daily, by day, date, per day]

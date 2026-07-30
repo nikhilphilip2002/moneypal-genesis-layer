@@ -1,0 +1,139 @@
+# Genesis NLQ — code dictionaries.
+#
+# The warehouse stores codes; people ask in words. These blocks are what let "gold loans"
+# reach `gnlnac_prod_code = 1`, and what turns a result row back into a readable label.
+#
+# Sources are named per block. Where no source exists the code is shown bare — a plausible
+# invented name is worse than a code, because it cannot be spotted as wrong.
+#
+# Values are structurally escaped when injected into a prompt, never interpolated into
+# instruction text (§7.3).
+
+- dimension: product
+  column: gnlnac_prod_code
+  source: docs/PROSPER_EDA_REPORT.md §2A (client's product taxonomy)
+  values:
+    1:
+      label: Gold Loans
+      synonyms: [gold, gold loan, gold loans, jewel loan, ornament loan]
+      note: Collateral-backed retail gold. Run-off — no new originations since Oct 2024. 140 accounts.
+    13:
+      label: Microfinance / Retail EMI
+      synonyms: [microfinance, MFI, JLG, joint liability, retail EMI, consumer credit, vehicle loans]
+      note: JLG, clean consumer credit and vehicle retail. Run-off since Oct 2024. 7,715 accounts.
+    16:
+      label: Business & MSME Loans
+      synonyms: [business, MSME, SME, commercial, business loans, msme loans]
+      note: Commercial asset-backed and unsecured business lending. The only active book (from Oct 2025). 5,655 accounts.
+
+- dimension: asset_class
+  column: ascd_asset_code
+  source: docs/PROSPER_EDA_REPORT.md §2E (RBI classification)
+  values:
+    STD:
+      label: Standard
+      synonyms: [standard, performing, current, good book]
+      note: Performing. 0 DPD or under 30 DPD.
+    SMA0:
+      label: SMA-0
+      synonyms: [SMA0, SMA 0, special mention 0, early stress]
+      note: 1-30 DPD.
+    SMA1:
+      label: SMA-1
+      synonyms: [SMA1, SMA 1, special mention 1]
+      note: 31-60 DPD.
+    SMA2:
+      label: SMA-2
+      synonyms: [SMA2, SMA 2, special mention 2]
+      note: 61-90 DPD.
+    NPA:
+      label: NPA
+      synonyms: [NPA, non performing, non-performing asset, bad loan, default]
+      note: >
+        Over 90 DPD. Defined for completeness — NO account in the current data carries this
+        code, and the maximum DPD observed is 75. A question about NPAs should be answered
+        with an explicit "none in the book" rather than an empty chart.
+
+- dimension: branch
+  column: gnlnac_appl_brn_code
+  source: docs/PROSPER_EDA_REPORT.md §4. No branch master exists in silver, bronze or the
+    Oracle source (see ORACLE_VS_POSTGRES_GAP_ANALYSIS.md §3.2) — these names come from the
+    client's own branch listing, and codes absent from it render as "Branch <code>".
+  values:
+    1:
+      label: Head Office
+      synonyms: [head office, HO, headquarters]
+      note: Centralised hub for the microfinance book. 7,803 accounts.
+    4:
+      label: Head Office — Credit Division
+      synonyms: [credit division, HO credit, central credit]
+      note: All centralised MSME lending. 5,567 accounts, 75.4% of the outstanding book.
+    1001: {label: Thripunithura, synonyms: [thripunithura, tripunithura]}
+    1002: {label: Aluva, synonyms: [aluva, alwaye]}
+    1006: {label: Nilambur, synonyms: [nilambur]}
+    1007: {label: Kozhikode, synonyms: [kozhikode, calicut]}
+    1008: {label: Chalakudy, synonyms: [chalakudy, chalakkudy]}
+    1010: {label: Pathanamthitta, synonyms: [pathanamthitta]}
+    1012: {label: Kanhangad, synonyms: [kanhangad]}
+    1013: {label: Angamally, synonyms: [angamally, angamaly]}
+    1014: {label: Kanjikuzhy, synonyms: [kanjikuzhy]}
+    1016: {label: Karamana, synonyms: [karamana]}
+    1017: {label: Gudallur, synonyms: [gudallur, gudalur]}
+    1018: {label: Muvattupuzha, synonyms: [muvattupuzha]}
+    1020: {label: Kattapana, synonyms: [kattapana]}
+    1021: {label: Kanjirapally, synonyms: [kanjirapally, kanjirappally]}
+  note: >
+    Branches 1001-1021 are retail branches handling gold loans exclusively. Because the two
+    head-office codes carry 99.8% of accounts, "by branch" charts are dominated by two bars
+    — the narrator says so rather than letting the reader assume a long tail.
+
+- dimension: loan_type
+  column: gnlnac_loan_type
+  source: docs/PROSPER_EDA_REPORT.md §2C
+  values:
+    E:
+      label: EMI term loan
+      synonyms: [EMI, term loan, amortising, instalment loan]
+      note: Monthly amortisation over a fixed tenor. 13,370 accounts.
+    C:
+      label: Non-EMI demand / bullet loan
+      synonyms: [bullet, demand loan, non-EMI, lump sum]
+      note: Principal and interest at maturity or on demand. Gold loans. 140 accounts.
+
+- dimension: scheme
+  column: gnlnac_schm_code
+  source: silver.loan_product_scheme_master (live lookup) + docs/PROSPER_EDA_REPORT.md §2B
+  lookup:
+    table: silver.loan_product_scheme_master
+    code_column: lnschm_schm_code
+    label_column: lnschm_schm_name
+    join: loan_to_scheme
+  fallback_label: "Scheme #{code}"
+  values:
+    # Product 1 (Gold) — no master rows; names from EDA §2B.
+    '1001': {label: Standard Retail Gold Loan, synonyms: [standard gold, retail gold]}
+    '1005': {label: High-Value Special Gold Loan, synonyms: [high value gold, special gold]}
+    # Product 13 (Microfinance) — no master rows. Only these carry a documented meaning;
+    # the other ~38 codes in use are legacy JLG groups and keep their bare code.
+    '1342': {label: FTG Patharamattu Scheme, synonyms: [FTG, patharamattu, flexi term gold]}
+    '1352': {label: CCF Low ROI Scheme, synonyms: [CCF, consumer credit facility]}
+    '1353': {label: CCF Low ROI Scheme (variant), synonyms: [CCF, consumer credit facility]}
+    '1354': {label: EV Retail Scheme, synonyms: [EV, electric vehicle]}
+    '1355': {label: EV Retail Scheme (variant), synonyms: [EV, electric vehicle]}
+    '1356': {label: EV Retail Scheme (variant), synonyms: [EV, electric vehicle]}
+  note: >
+    60 scheme codes are in use; 15 (all product 16) resolve through the scheme master and
+    are the authoritative names. Codes 1303-1351 are legacy micro-lending / JLG groups with
+    no documented name — they render as "Scheme #1328", which is honest, rather than being
+    grouped into an invented category.
+
+- dimension: gender
+  column: indcif_gender
+  source: silver.individual_customer_master (observed values)
+  values:
+    M: {label: Male}
+    F: {label: Female}
+    T: {label: Transgender}
+  note: >
+    365 customers have NULL and 8 have a blank. These render as "Not recorded" and are
+    never silently folded into another category.

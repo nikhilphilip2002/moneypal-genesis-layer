@@ -7,4 +7,7 @@ uvicorn[standard]
 openpyxl
 psycopg2-binary
 pg8000
+sqlalchemy
+sqlglot
+pyyaml
 

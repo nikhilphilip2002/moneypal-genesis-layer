@@ -7,7 +7,7 @@ Run (from backend/):  uvicorn app.main:app --port 8000 --reload
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api.routes import admin, auth, competitive, intelligence, macro, policy, regulatory, review
+from app.api.routes import admin, auth, competitive, intelligence, macro, nlq, policy, regulatory, review
 from app.core.config import settings
 
 
@@ -29,6 +29,7 @@ def create_app() -> FastAPI:
     app.include_router(review.router)
     app.include_router(policy.router)
     app.include_router(intelligence.router)
+    app.include_router(nlq.router)
 
     @app.get("/health")
     def health():
