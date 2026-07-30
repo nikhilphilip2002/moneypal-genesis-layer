@@ -549,7 +549,7 @@ class TestLineageWorkbook:
                 str(c.value) for row in lineage[name].iter_rows() for c in row if c.value
             )
             assert "SELECT" in text, f"{name} carries no query text"
-            assert "FROM bronze." in text
+            assert "FROM silver." in text
 
     def test_mirrors_the_filing_rather_than_recomputing_it(self, lineage, workbook):
         for name in ("DNBS02_PART8C", "DNBS02_PART1", "DNBS02_PART4"):

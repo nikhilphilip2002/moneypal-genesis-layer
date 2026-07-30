@@ -22,7 +22,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 # ---------------------------------------------------------------------------
 # GL classification.
 #
-# bronze.extgl's own classification flags (extgl_int_income, extgl_operational_exps,
+# silver.external_gl_master's own classification flags (extgl_int_income, extgl_operational_exps,
 # extgl_int_expenses, ...) are NULL on all 723 rows, so they cannot be used. The only
 # usable structure is the leading segment of extgl_access_code. See
 # docs/DNBS02_EDA_REPORT.md section 5.
@@ -65,14 +65,14 @@ ASSET_CODE_LABELS = {
 
 SNAPSHOT_DATES_SQL = """
 SELECT DISTINCT gnlnr_report_date
-FROM bronze.genln_rpt_day
+FROM silver.loan_daily_snapshot_summary
 WHERE gnlnr_report_date IS NOT NULL
 ORDER BY gnlnr_report_date
 """
 
 GL_YEARS_SQL = """
 SELECT DISTINCT glbbal_year
-FROM bronze.glbbal
+FROM silver.gl_daily_balances
 WHERE glbbal_year IS NOT NULL
 ORDER BY glbbal_year
 """
@@ -83,7 +83,7 @@ SELECT COUNT(*),
        COALESCE(SUM(gnlnr_princ_os), 0) / 100000.0,
        COALESCE(SUM(gnlnr_int_due), 0) / 100000.0,
        COALESCE(SUM(gnlnr_provision_amt), 0) / 100000.0
-FROM bronze.genln_rpt_day
+FROM silver.loan_daily_snapshot_summary
 WHERE gnlnr_report_date = CAST(%s AS DATE)
   AND gnlnr_closed_date IS NULL
 """
@@ -93,10 +93,10 @@ SELECT COUNT(*) AS uncovered_accounts,
        COALESCE(SUM(COALESCE(a.gnlnac_lndisb_amt, a.gnlnac_sanc_amt)
                     - COALESCE(a.gnlnac_pri_repay_amt, 0)), 0) / 100000.0
            AS uncovered_lakhs
-FROM bronze.genlnacnts a
+FROM silver.loan_account_master a
 WHERE a.gnlnac_closure_date IS NULL
   AND NOT EXISTS (
-        SELECT 1 FROM bronze.genln_rpt_day r
+        SELECT 1 FROM silver.loan_daily_snapshot_summary r
         WHERE r.gnlnr_acnt_num = a.gnlnac_acnt_num
   )
 """
@@ -105,8 +105,8 @@ PART1_SQL = """
 SELECT LEFT(g.extgl_access_code, 4) AS gl_group,
        g.extgl_ext_head_descn,
        COALESCE(SUM(b.glbbal_bc_bal), 0) / 100000.0 AS amount_lakhs
-FROM bronze.glbbal b
-JOIN bronze.extgl g ON b.glbbal_glacc_code = g.extgl_access_code
+FROM silver.gl_daily_balances b
+JOIN silver.external_gl_master g ON b.glbbal_glacc_code = g.extgl_access_code
 WHERE b.glbbal_year = %s
   AND LEFT(g.extgl_access_code, 4) IN (%s, %s, %s)
 GROUP BY 1, 2
@@ -119,8 +119,8 @@ SELECT COALESCE(s.lnschm_schm_name, 'Scheme ' || COALESCE(r.gnlnr_schm_code, 'un
            AS category,
        COUNT(*) AS account_count,
        COALESCE(SUM(r.gnlnr_princ_os), 0) / 100000.0 AS amount_lakhs
-FROM bronze.genln_rpt_day r
-LEFT JOIN bronze.nbfclnscheme s
+FROM silver.loan_daily_snapshot_summary r
+LEFT JOIN silver.loan_product_scheme_master s
        ON s.lnschm_schm_code = r.gnlnr_schm_code
       AND s.lnschm_prod_code = r.gnlnr_prod_code
 WHERE r.gnlnr_report_date = CAST(%s AS DATE)
@@ -140,7 +140,7 @@ SELECT CASE
        END AS bucket,
        COUNT(*),
        COALESCE(SUM(r.gnlnr_princ_os), 0) / 100000.0
-FROM bronze.genln_rpt_day r
+FROM silver.loan_daily_snapshot_summary r
 WHERE r.gnlnr_report_date = CAST(%s AS DATE)
   AND r.gnlnr_closed_date IS NULL
 GROUP BY 1
@@ -150,8 +150,8 @@ ORDER BY 3 DESC
 PART3_SQL = """
 SELECT g.extgl_ext_head_descn,
        COALESCE(SUM(b.glbbal_bc_bal), 0) / 100000.0 AS amount_lakhs
-FROM bronze.glbbal b
-JOIN bronze.extgl g ON b.glbbal_glacc_code = g.extgl_access_code
+FROM silver.gl_daily_balances b
+JOIN silver.external_gl_master g ON b.glbbal_glacc_code = g.extgl_access_code
 WHERE b.glbbal_year = %s
   AND LEFT(g.extgl_access_code, 4) = %s
 GROUP BY 1
@@ -162,8 +162,8 @@ ORDER BY 2 DESC
 PART6_SQL = """
 SELECT g.extgl_ext_head_descn,
        ABS(COALESCE(SUM(b.glbbal_bc_bal), 0)) / 100000.0 AS amount_lakhs
-FROM bronze.glbbal b
-JOIN bronze.extgl g ON b.glbbal_glacc_code = g.extgl_access_code
+FROM silver.gl_daily_balances b
+JOIN silver.external_gl_master g ON b.glbbal_glacc_code = g.extgl_access_code
 WHERE b.glbbal_year = %s
   AND LEFT(g.extgl_access_code, 4) = %s
 GROUP BY 1
@@ -176,7 +176,7 @@ SELECT COALESCE(gnlnr_asset_cd, 'UNCLASSIFIED') AS asset_code,
        COUNT(*),
        COALESCE(SUM(gnlnr_princ_os), 0) / 100000.0,
        COALESCE(SUM(gnlnr_provision_amt), 0) / 100000.0
-FROM bronze.genln_rpt_day
+FROM silver.loan_daily_snapshot_summary
 WHERE gnlnr_report_date = CAST(%s AS DATE)
   AND gnlnr_closed_date IS NULL
 GROUP BY 1
@@ -189,11 +189,11 @@ WITH msme_loans AS (
            a.gnlnac_ln_intrate AS interest_rate,
            COALESCE(a.gnlnac_lndisb_amt, a.gnlnac_sanc_amt, 0)
                - COALESCE(a.gnlnac_pri_repay_amt, 0) AS outstanding
-    FROM bronze.genlnacnts a
+    FROM silver.loan_account_master a
     WHERE a.gnlnac_closure_date IS NULL
       AND a.gnlnac_ln_intrate IS NOT NULL
       AND EXISTS (
-            SELECT 1 FROM bronze.nsecmsmemap m
+            SELECT 1 FROM silver.msme_sector_classification_mapping m
             WHERE m.nsecm_account_no = a.gnlnac_acnt_num
       )
 )
@@ -207,6 +207,12 @@ SELECT COUNT(*) AS account_count,
 FROM msme_loans
 """
 
+# The three "top 25" queries below (Annex 9, 10, 11) each carry an explicit tiebreaker on
+# a unique key. Without one the filed list is not reproducible: at 2026-06-30, 37 borrowers
+# tie at exactly 10.00 lakh total outstanding, so ranks 6-25 were 20 arbitrary picks out of
+# 37, resolved by whatever physical row order the heap happened to have. Re-running the
+# same return after a VACUUM, a re-ingest, or a plan change would file a different set of
+# names against identical amounts.
 ANNEX9_SQL = """
 SELECT r.gnlnr_cust_id,
        MAX(TRIM(r.gnlnr_cust_name))          AS borrower_name,
@@ -219,25 +225,25 @@ SELECT r.gnlnr_cust_id,
        COALESCE(SUM(r.gnlnr_princ_os + r.gnlnr_int_due
                     + COALESCE(r.gnlnr_chg_due, 0)), 0) / 100000.0 AS total_outstanding,
        MAX(r.gnlnr_asset_cd)                 AS asset_code
-FROM bronze.genln_rpt_day r
-LEFT JOIN bronze.genlnacnts a ON a.gnlnac_acnt_num = r.gnlnr_acnt_num
+FROM silver.loan_daily_snapshot_summary r
+LEFT JOIN silver.loan_account_master a ON a.gnlnac_acnt_num = r.gnlnr_acnt_num
 WHERE r.gnlnr_report_date = CAST(%s AS DATE)
   AND r.gnlnr_closed_date IS NULL
 GROUP BY r.gnlnr_cust_id
-ORDER BY total_outstanding DESC
+ORDER BY total_outstanding DESC, r.gnlnr_cust_id
 LIMIT 25
 """
 
 ANNEX10_SQL = """
 SELECT g.extgl_ext_head_descn,
        ABS(COALESCE(SUM(b.glbbal_bc_bal), 0)) / 100000.0 AS amount_lakhs
-FROM bronze.glbbal b
-JOIN bronze.extgl g ON b.glbbal_glacc_code = g.extgl_access_code
+FROM silver.gl_daily_balances b
+JOIN silver.external_gl_master g ON b.glbbal_glacc_code = g.extgl_access_code
 WHERE b.glbbal_year = %s
   AND LEFT(g.extgl_access_code, 4) = %s
 GROUP BY 1
 HAVING COALESCE(SUM(b.glbbal_bc_bal), 0) <> 0
-ORDER BY 2 DESC
+ORDER BY 2 DESC, 1
 LIMIT 25
 """
 
@@ -250,12 +256,12 @@ SELECT TRIM(r.gnlnr_cust_name),
        r.gnlnr_npa_dt,
        r.gnlnr_pay_date,
        COALESCE(a.gnlnac_sanc_amt, 0) / 100000.0
-FROM bronze.genln_rpt_day r
-LEFT JOIN bronze.genlnacnts a ON a.gnlnac_acnt_num = r.gnlnr_acnt_num
+FROM silver.loan_daily_snapshot_summary r
+LEFT JOIN silver.loan_account_master a ON a.gnlnac_acnt_num = r.gnlnr_acnt_num
 WHERE r.gnlnr_report_date = CAST(%s AS DATE)
   AND r.gnlnr_closed_date IS NULL
   AND UPPER(TRIM(COALESCE(r.gnlnr_asset_cd, ''))) = ANY(%s)
-ORDER BY r.gnlnr_princ_os DESC
+ORDER BY r.gnlnr_princ_os DESC, r.gnlnr_acnt_num
 LIMIT 25
 """
 
@@ -264,7 +270,7 @@ SELECT r.gnlnr_brn_code,
        COUNT(DISTINCT r.gnlnr_cust_id),
        COUNT(*),
        COALESCE(SUM(r.gnlnr_princ_os), 0) / 100000.0
-FROM bronze.genln_rpt_day r
+FROM silver.loan_daily_snapshot_summary r
 WHERE r.gnlnr_report_date = CAST(%s AS DATE)
   AND r.gnlnr_closed_date IS NULL
   AND r.gnlnr_brn_code IS NOT NULL
@@ -297,7 +303,7 @@ class Source:
 
 SOURCES: Dict[str, Source] = {
     "summary": Source(
-        tables=("bronze.genln_rpt_day",),
+        tables=("silver.loan_daily_snapshot_summary",),
         columns=(
             "gnlnr_cust_id",
             "gnlnr_princ_os",
@@ -310,7 +316,7 @@ SOURCES: Dict[str, Source] = {
         grain="one row per open account on the snapshot date, aggregated to a single row",
     ),
     "coverage": Source(
-        tables=("bronze.genlnacnts", "bronze.genln_rpt_day"),
+        tables=("silver.loan_account_master", "silver.loan_daily_snapshot_summary"),
         columns=("gnlnac_lndisb_amt", "gnlnac_sanc_amt", "gnlnac_pri_repay_amt"),
         sql=COVERAGE_SQL,
         filters="gnlnac_closure_date IS NULL AND NOT EXISTS (matching row in genln_rpt_day)",
@@ -322,7 +328,7 @@ SOURCES: Dict[str, Source] = {
         ),
     ),
     "part1_capital": Source(
-        tables=("bronze.glbbal", "bronze.extgl"),
+        tables=("silver.gl_daily_balances", "silver.external_gl_master"),
         columns=("glbbal_bc_bal", "glbbal_glacc_code", "extgl_access_code", "extgl_ext_head_descn"),
         sql=PART1_SQL,
         binds=("gl_year", "GL_SHARE_CAPITAL", "GL_RESERVES", "GL_BORROWINGS"),
@@ -337,7 +343,7 @@ SOURCES: Dict[str, Source] = {
         ),
     ),
     "part2_loans": Source(
-        tables=("bronze.genln_rpt_day", "bronze.nbfclnscheme"),
+        tables=("silver.loan_daily_snapshot_summary", "silver.loan_product_scheme_master"),
         columns=("gnlnr_princ_os", "gnlnr_schm_code", "gnlnr_prod_code", "lnschm_schm_name"),
         sql=PART2_SQL,
         binds=("snapshot_date",),
@@ -345,7 +351,7 @@ SOURCES: Dict[str, Source] = {
         grain="one row per loan scheme",
     ),
     "part2_maturity": Source(
-        tables=("bronze.genln_rpt_day",),
+        tables=("silver.loan_daily_snapshot_summary",),
         columns=("gnlnr_maturity_dt", "gnlnr_princ_os"),
         sql=PART2_MATURITY_SQL,
         binds=("snapshot_date", "snapshot_date", "snapshot_date"),
@@ -353,7 +359,7 @@ SOURCES: Dict[str, Source] = {
         grain="one row per residual-maturity bucket, measured from the snapshot date",
     ),
     "part3_income": Source(
-        tables=("bronze.glbbal", "bronze.extgl"),
+        tables=("silver.gl_daily_balances", "silver.external_gl_master"),
         columns=("glbbal_bc_bal", "extgl_access_code", "extgl_ext_head_descn"),
         sql=PART3_SQL,
         binds=("gl_year", "GL_INCOME"),
@@ -361,7 +367,7 @@ SOURCES: Dict[str, Source] = {
         grain="one row per income GL head, non-zero balances only",
     ),
     "part4_nof": Source(
-        tables=("bronze.glbbal", "bronze.extgl"),
+        tables=("silver.gl_daily_balances", "silver.external_gl_master"),
         columns=("glbbal_bc_bal",),
         sql=PART1_SQL,
         binds=("gl_year", "GL_SHARE_CAPITAL", "GL_RESERVES", "GL_BORROWINGS"),
@@ -373,7 +379,7 @@ SOURCES: Dict[str, Source] = {
         ),
     ),
     "part6_sensitive": Source(
-        tables=("bronze.glbbal", "bronze.extgl"),
+        tables=("silver.gl_daily_balances", "silver.external_gl_master"),
         columns=("glbbal_bc_bal", "extgl_access_code", "extgl_ext_head_descn"),
         sql=PART6_SQL,
         binds=("gl_year", "GL_INVESTMENTS"),
@@ -381,7 +387,7 @@ SOURCES: Dict[str, Source] = {
         grain="one row per investment GL head",
     ),
     "part8_asset_quality": Source(
-        tables=("bronze.genln_rpt_day",),
+        tables=("silver.loan_daily_snapshot_summary",),
         columns=("gnlnr_asset_cd", "gnlnr_princ_os", "gnlnr_provision_amt"),
         sql=PART8_SQL,
         binds=("snapshot_date",),
@@ -393,7 +399,7 @@ SOURCES: Dict[str, Source] = {
         ),
     ),
     "part8a_msme": Source(
-        tables=("bronze.genlnacnts", "bronze.nsecmsmemap"),
+        tables=("silver.loan_account_master", "silver.msme_sector_classification_mapping"),
         columns=(
             "gnlnac_ln_intrate",
             "gnlnac_lndisb_amt",
@@ -412,7 +418,7 @@ SOURCES: Dict[str, Source] = {
         ),
     ),
     "annex9_top_borrowers": Source(
-        tables=("bronze.genln_rpt_day", "bronze.genlnacnts"),
+        tables=("silver.loan_daily_snapshot_summary", "silver.loan_account_master"),
         columns=(
             "gnlnr_cust_id",
             "gnlnr_cust_name",
@@ -429,7 +435,7 @@ SOURCES: Dict[str, Source] = {
         grain="top 25 by total outstanding, aggregated per borrower (not per account)",
     ),
     "annex10_investment_totals": Source(
-        tables=("bronze.glbbal", "bronze.extgl"),
+        tables=("silver.gl_daily_balances", "silver.external_gl_master"),
         columns=("glbbal_bc_bal", "extgl_ext_head_descn"),
         sql=ANNEX10_SQL,
         binds=("gl_year", "GL_INVESTMENTS"),
@@ -437,7 +443,7 @@ SOURCES: Dict[str, Source] = {
         grain="top 25 investment GL heads by book value",
     ),
     "annex11_top_npas": Source(
-        tables=("bronze.genln_rpt_day", "bronze.genlnacnts"),
+        tables=("silver.loan_daily_snapshot_summary", "silver.loan_account_master"),
         columns=(
             "gnlnr_asset_cd",
             "gnlnr_cust_name",
@@ -456,7 +462,7 @@ SOURCES: Dict[str, Source] = {
         grain="top 25 NPA accounts by principal outstanding",
     ),
     "annex13_branches": Source(
-        tables=("bronze.genln_rpt_day",),
+        tables=("silver.loan_daily_snapshot_summary",),
         columns=("gnlnr_brn_code", "gnlnr_cust_id", "gnlnr_princ_os"),
         sql=ANNEX13_SQL,
         binds=("snapshot_date",),
@@ -1185,7 +1191,7 @@ FIELD_SPECS: List[FieldSpec] = (
             kind=KIND_NO_SOURCE,
             section="part2_security_split",
             no_source_reason=(
-                "bronze.nbfclnscheme marks every scheme unsecured and covers product 16 "
+                "silver.loan_product_scheme_master marks every scheme unsecured and covers product 16 "
                 "only, so the split would be an artefact of missing reference data."
             ),
         ),
@@ -1208,7 +1214,7 @@ FIELD_SPECS: List[FieldSpec] = (
             section="part8a_msme_size_split",
             no_source_reason=(
                 "MSMED classification requires investment in plant and machinery and "
-                "turnover; bronze.nsecmsmemap carries only collateral value and LTV."
+                "turnover; silver.msme_sector_classification_mapping carries only collateral value and LTV."
             ),
         ),
         FieldSpec(
@@ -1217,7 +1223,10 @@ FIELD_SPECS: List[FieldSpec] = (
             kind=KIND_NO_SOURCE,
             section="annex2_shareholders",
             no_source_reason=(
-                "No share register in the warehouse (bronze.mig_share_details does not exist)."
+                "Share register exists (silver.customer_share_holdings, 4,079 holdings "
+                "across 3,889 members, 76.26 lakh subscribed) but carries no shareholder "
+                "category, so the RBI shareholding-pattern split cannot be derived from it. "
+                "Note the bronze copy triplicates every row - do not source this from bronze."
             ),
         ),
         FieldSpec(
@@ -1226,7 +1235,7 @@ FIELD_SPECS: List[FieldSpec] = (
             kind=KIND_NO_SOURCE,
             section="annex10_investment_entities",
             no_source_reason=(
-                "No entity-level investment register; bronze.glbbal carries only "
+                "No entity-level investment register; silver.gl_daily_balances carries only "
                 "aggregate investment GL heads, with no counterparty name or PAN."
             ),
         ),
@@ -1236,7 +1245,7 @@ FIELD_SPECS: List[FieldSpec] = (
             kind=KIND_NO_SOURCE,
             section="annex9_borrower_type",
             no_source_reason=(
-                "bronze.firmcifdata_dtl is an associated-firm detail table, not a "
+                "silver.corporate_customer_master is an associated-firm detail table, not a "
                 "corporate register: 7,294 of its 7,594 ids are also individuals."
             ),
         ),

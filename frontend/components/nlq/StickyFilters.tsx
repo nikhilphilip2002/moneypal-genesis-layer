@@ -2,6 +2,8 @@
 
 import { useEffect, useState } from 'react';
 import { nlq } from '@/lib/api';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { X } from 'lucide-react';
 
 // Carried-over conversation state, always visible and always dismissible.
@@ -37,25 +39,23 @@ export default function StickyFilters({ conversationId }: { conversationId: stri
   };
 
   return (
-    <div className="flex flex-wrap items-center gap-2 rounded-lg border border-border/60 bg-muted/30 px-3 py-2">
+    <div className="flex flex-wrap items-center gap-2 rounded-xl border border-border bg-muted/30 px-3 py-2">
       <span className="text-xs text-muted-foreground">Applied to follow-ups:</span>
       {chips.map((chip) => (
-        <span
-          key={chip.field}
-          className="inline-flex items-center gap-1 rounded-full border border-border bg-background px-2 py-0.5 text-xs"
-        >
+        <Badge key={chip.field} variant="outline" className="gap-1 font-normal">
           <span className="text-muted-foreground">{chip.label}:</span>
           <span className="font-medium text-foreground">{chip.display}</span>
-        </span>
+        </Badge>
       ))}
-      <button
-        type="button"
+      <Button
+        variant="ghost"
+        size="sm"
         onClick={clearAll}
-        className="ml-auto inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+        className="ml-auto h-7 gap-1 px-2 text-xs text-muted-foreground hover:text-foreground"
       >
         <X className="h-3 w-3" />
         Clear context
-      </button>
+      </Button>
     </div>
   );
 }

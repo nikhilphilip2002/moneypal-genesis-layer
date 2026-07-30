@@ -2,6 +2,8 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { nlq, type NlqCatalog, type NlqHealth } from '@/lib/api';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { Loader2, Search, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -52,55 +54,65 @@ export default function AskBar({ onAsk, busy, onCancel, compact }: Props) {
         }}
         className="relative"
       >
-        <div
-          className={cn(
-            'flex items-center gap-2 rounded-xl border bg-background px-3 shadow-sm transition-colors',
-            offline ? 'border-border/60 opacity-70' : 'border-border focus-within:border-primary',
-            compact ? 'h-10' : 'h-12',
-          )}
-        >
-          <Search className="h-4 w-4 shrink-0 text-muted-foreground" />
-          <input
-            ref={inputRef}
-            value={value}
-            disabled={offline}
-            onChange={(e) => setValue(e.target.value)}
-            onFocus={() => setFocused(true)}
-            onBlur={() => setTimeout(() => setFocused(false), 120)}
-            placeholder={
-              offline
-                ? 'Assistant offline — dashboards and saved questions still work'
-                : 'Ask about the loan book — “disbursement by branch last quarter”'
-            }
-            className="h-full flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed"
-          />
+        <Search className="pointer-events-none absolute left-3 top-1/2 z-10 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+        <Input
+          ref={inputRef}
+          value={value}
+          disabled={offline}
+          onChange={(e) => setValue(e.target.value)}
+          onFocus={() => setFocused(true)}
+          onBlur={() => setTimeout(() => setFocused(false), 120)}
+          placeholder={
+            offline
+              ? 'Assistant offline — dashboards and saved questions still work'
+              : 'Ask about the loan book — “disbursement by branch last quarter”'
+          }
+          className={cn('pl-9 pr-24', compact ? 'h-10' : 'h-12', offline && 'opacity-70')}
+        />
+
+        <div className="absolute right-2 top-1/2 z-10 -translate-y-1/2">
           {busy ? (
-            <button
+            <Button
               type="button"
+              variant="ghost"
+              size="sm"
               onClick={onCancel}
-              className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+              className="h-7 gap-1 px-2 text-xs text-muted-foreground hover:text-foreground"
             >
               <Loader2 className="h-3.5 w-3.5 animate-spin" />
               Stop
-            </button>
+            </Button>
           ) : (
             value && (
-              <button type="button" onClick={() => setValue('')} aria-label="Clear">
-                <X className="h-4 w-4 text-muted-foreground hover:text-foreground" />
-              </button>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                aria-label="Clear"
+                onClick={() => setValue('')}
+                className="h-7 w-7 text-muted-foreground hover:text-foreground"
+              >
+                <X className="h-4 w-4" />
+              </Button>
             )
           )}
         </div>
 
         {focused && !offline && suggestions.length > 0 && (
-          <ul className="absolute z-20 mt-1 w-full overflow-hidden rounded-lg border border-border bg-popover shadow-lg">
+          <ul
+            className={cn(
+              'absolute z-20 mt-1 w-full overflow-hidden rounded-xl border border-border shadow-lg',
+              'bg-popover/85 backdrop-blur-[20px] [backdrop-filter:saturate(180%)_blur(20px)]',
+              '[-webkit-backdrop-filter:saturate(180%)_blur(20px)]',
+            )}
+          >
             {suggestions.map((suggestion) => (
               <li key={suggestion}>
                 <button
                   type="button"
                   onMouseDown={(e) => e.preventDefault()}
                   onClick={() => submit(suggestion)}
-                  className="w-full px-3 py-2 text-left text-sm hover:bg-muted"
+                  className="w-full px-3 py-2 text-left text-sm transition-colors hover:bg-accent hover:text-accent-foreground"
                 >
                   {suggestion}
                 </button>
@@ -120,14 +132,16 @@ export default function AskBar({ onAsk, busy, onCancel, compact }: Props) {
       {!value && !busy && !offline && catalog && (
         <div className="mt-3 flex flex-wrap gap-2">
           {catalog.example_questions.slice(0, 4).map((question) => (
-            <button
+            <Button
               key={question}
               type="button"
+              variant="outline"
+              size="sm"
               onClick={() => submit(question)}
-              className="rounded-full border border-border px-3 py-1 text-xs text-muted-foreground hover:border-primary hover:text-foreground"
+              className="h-7 rounded-full text-xs font-normal text-muted-foreground hover:text-foreground"
             >
               {question}
-            </button>
+            </Button>
           ))}
         </div>
       )}

@@ -6,6 +6,12 @@ import {
   Tooltip, XAxis, YAxis,
 } from 'recharts';
 import type { ChartSpec, ColumnSpec } from '@/lib/api';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Card } from '@/components/ui/card';
+import {
+  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
+} from '@/components/ui/table';
 import { MAX_SERIES, formatTick, formatValue, ink, seriesColor, useChartMode } from './chartTheme';
 import { cn } from '@/lib/utils';
 
@@ -37,13 +43,15 @@ export default function ChartRenderer({ chart, onDrilldown }: Props) {
           )}
         </div>
         {chart.chart_type !== 'table' && chart.chart_type !== 'variance' && (
-          <button
+          <Button
             type="button"
+            variant="outline"
+            size="sm"
             onClick={() => setAsTable((v) => !v)}
-            className="shrink-0 rounded border border-border px-2 py-1 text-xs text-muted-foreground hover:bg-muted"
+            className="h-7 shrink-0 text-xs font-normal text-muted-foreground hover:text-foreground"
           >
             {asTable ? 'Chart' : 'Table'}
-          </button>
+          </Button>
         )}
       </div>
 
@@ -88,14 +96,14 @@ function KpiTiles({ chart }: { chart: ChartSpec }) {
   return (
     <div className="flex flex-wrap gap-4">
       {chart.series.map((series) => (
-        <div key={series.field} className="min-w-[10rem] rounded-lg border border-border p-4">
+        <Card key={series.field} className="min-w-[10rem] p-4">
           <div className="text-xs uppercase tracking-wide text-muted-foreground">
             {series.label}
           </div>
           <div className="mt-1 text-3xl font-semibold tabular-nums text-foreground">
             {formatValue(row[series.field], series.unit)}
           </div>
-        </div>
+        </Card>
       ))}
     </div>
   );
@@ -264,7 +272,13 @@ function BarView({
 function ChartTooltip({ chart, active, payload, label }: any) {
   if (!active || !payload?.length) return null;
   return (
-    <div className="rounded-md border border-border bg-popover px-3 py-2 text-xs shadow-md">
+    <div
+      className={cn(
+        'rounded-xl border border-border px-3 py-2 text-xs shadow-md',
+        'bg-popover/85 backdrop-blur-[20px] [backdrop-filter:saturate(180%)_blur(20px)]',
+        '[-webkit-backdrop-filter:saturate(180%)_blur(20px)]',
+      )}
+    >
       <div className="mb-1 font-medium text-foreground">{label}</div>
       {payload.map((entry: any) => {
         const series = chart.series.find((s: any) => s.field === entry.dataKey);
@@ -289,45 +303,44 @@ function ChartTooltip({ chart, active, payload, label }: any) {
 
 function TableView({ chart }: { chart: ChartSpec }) {
   return (
-    <div className="max-h-[26rem] overflow-auto rounded-lg border border-border">
-      <table className="w-full text-sm">
-        <thead className="sticky top-0 bg-muted/60 backdrop-blur">
-          <tr>
+    <div className="max-h-[26rem] overflow-auto rounded-xl border border-border">
+      <Table>
+        <TableHeader className="sticky top-0 z-10 bg-muted/60 backdrop-blur">
+          <TableRow>
             {chart.columns.map((column) => (
-              <th
-                key={column.name}
-                className={cn(
-                  'px-3 py-2 text-left font-medium text-muted-foreground',
-                  isNumeric(column) && 'text-right',
-                )}
-              >
+              <TableHead key={column.name} className={cn(isNumeric(column) && 'text-right')}>
                 {column.label}
                 {column.masked && (
-                  <span className="ml-1 text-[10px] uppercase text-amber-600">masked</span>
+                  <Badge
+                    variant="outline"
+                    className="ml-1 px-1.5 py-0 text-[10px] font-normal uppercase text-amber-700 dark:text-amber-400"
+                  >
+                    masked
+                  </Badge>
                 )}
-              </th>
+              </TableHead>
             ))}
-          </tr>
-        </thead>
-        <tbody>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
           {chart.rows.map((row, index) => (
-            <tr key={index} className="border-t border-border/60">
+            <TableRow key={index}>
               {chart.columns.map((column) => (
-                <td
+                <TableCell
                   key={column.name}
                   className={cn(
-                    'px-3 py-2 text-foreground',
+                    'text-foreground',
                     isNumeric(column) && 'text-right tabular-nums',
                     column.name === 'delta' && deltaTone(row[column.name]),
                   )}
                 >
                   {formatValue(row[column.name], column.unit)}
-                </td>
+                </TableCell>
               ))}
-            </tr>
+            </TableRow>
           ))}
-        </tbody>
-      </table>
+        </TableBody>
+      </Table>
     </div>
   );
 }
@@ -344,7 +357,7 @@ function deltaTone(value: unknown): string {
 
 function EmptyState({ summary }: { summary: string }) {
   return (
-    <div className="rounded-lg border border-dashed border-border p-6 text-center">
+    <div className="rounded-xl border border-dashed border-border p-6 text-center">
       <p className="text-sm text-muted-foreground">{summary || 'No rows matched this question.'}</p>
     </div>
   );

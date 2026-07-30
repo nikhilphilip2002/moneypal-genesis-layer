@@ -149,13 +149,13 @@ def parse_period_range(frequency: str, period: str) -> Tuple[str, str]:
 
 
 def get_available_snapshot_dates(cur: Any) -> List[str]:
-    """Month-end dates for which bronze.genln_rpt_day actually holds a portfolio snapshot."""
+    """Month-end dates for which silver.loan_daily_snapshot_summary actually holds a portfolio snapshot."""
     cur.execute(spec.SNAPSHOT_DATES_SQL)
     return [r[0].isoformat() for r in cur.fetchall()]
 
 
 def get_available_gl_years(cur: Any) -> List[int]:
-    """Financial years for which bronze.glbbal holds a trial balance.
+    """Financial years for which silver.gl_daily_balances holds a trial balance.
 
     glbbal is keyed by year only, so Parts 1/3/4 cannot be produced at sub-annual
     granularity from this warehouse.
@@ -173,12 +173,12 @@ def resolve_snapshot_date(cur: Any, end_date: str) -> str:
     """
     available = get_available_snapshot_dates(cur)
     if not available:
-        raise PeriodError("bronze.genln_rpt_day holds no portfolio snapshots at all.")
+        raise PeriodError("silver.loan_daily_snapshot_summary holds no portfolio snapshots at all.")
     if end_date in available:
         return end_date
     raise PeriodError(
         f"No portfolio snapshot exists for period end {end_date}. "
-        f"bronze.genln_rpt_day holds month-end snapshots for: {', '.join(available)}."
+        f"silver.loan_daily_snapshot_summary holds month-end snapshots for: {', '.join(available)}."
     )
 
 
@@ -206,15 +206,15 @@ def get_reportable_periods() -> Dict[str, Any]:
         "gl_years": gl_years,
         # Quarterly and yearly returns need a period-end snapshot on the quarter/year end.
         "note": (
-            "Point-in-time sections require a bronze.genln_rpt_day snapshot dated exactly "
-            "on the period end. Parts 1, 3 and 4 come from bronze.glbbal, which is keyed "
+            "Point-in-time sections require a silver.loan_daily_snapshot_summary snapshot dated exactly "
+            "on the period end. Parts 1, 3 and 4 come from silver.gl_daily_balances, which is keyed "
             "by year only and therefore cannot be produced at sub-annual granularity."
         ),
     }
 
 
 def _gl_year_for(end_date: str) -> int:
-    """Calendar year used to select a trial balance from bronze.glbbal.
+    """Calendar year used to select a trial balance from silver.gl_daily_balances.
 
     glbbal is keyed by branch and year only - there is no date dimension - so Parts 1,
     3 and 4 cannot be produced at sub-annual granularity from this warehouse.
@@ -286,7 +286,7 @@ class Ctx:
 
 def _gl_reason(ctx: Ctx) -> str:
     return (
-        f"bronze.glbbal has no trial balance for year {ctx.gl_year} "
+        f"silver.gl_daily_balances has no trial balance for year {ctx.gl_year} "
         f"(available: {ctx.gl_years})."
     )
 
@@ -305,9 +305,9 @@ def _sec_summary(ctx: Ctx) -> int:
 
 
 def _sec_coverage(ctx: Ctx) -> int:
-    # bronze.genln_rpt_day is the only table with a genuine as-of dimension, but it does
+    # silver.loan_daily_snapshot_summary is the only table with a genuine as-of dimension, but it does
     # not cover the whole book: it holds product 16 only, so products 1 and 13 have no
-    # dated snapshot. Falling back to bronze.genlnacnts for those would reintroduce
+    # dated snapshot. Falling back to silver.loan_account_master for those would reintroduce
     # undated balances reported as if they were period-end figures, so the uncovered
     # portion is disclosed instead of silently dropped or back-filled.
     ctx.cur.execute(spec.COVERAGE_SQL)
@@ -602,7 +602,7 @@ SECTIONS: List[Section] = [
         run=_sec_part6,
         precondition=_gl_available,
         precondition_reason=lambda ctx: (
-            f"bronze.glbbal has no trial balance for year {ctx.gl_year} "
+            f"silver.gl_daily_balances has no trial balance for year {ctx.gl_year} "
             f"(available: {ctx.gl_years})."
         ),
     ),
@@ -612,7 +612,7 @@ SECTIONS: List[Section] = [
         source=SOURCES["part8a_msme"],
         run=_sec_part8a,
         note=(
-            "Sourced from bronze.genlnacnts (rate: gnlnac_ln_intrate) because "
+            "Sourced from silver.loan_account_master (rate: gnlnac_ln_intrate) because "
             "nsecmsmemap maps product-13 accounts, which have no dated snapshot. "
             "genlnacnts has no as-of dimension, so the outstanding amount is a "
             "current balance rather than a period-end one."
@@ -622,13 +622,13 @@ SECTIONS: List[Section] = [
         "part8a_msme_size_split",
         no_source_reason=(
             "MSMED Micro/Small/Medium classification requires investment in plant and "
-            "machinery and turnover; bronze.nsecmsmemap carries only collateral value and LTV."
+            "machinery and turnover; silver.msme_sector_classification_mapping carries only collateral value and LTV."
         ),
     ),
     Section(
         "annex2_shareholders",
         no_source_reason=(
-            "No share register in the warehouse (bronze.mig_share_details does not exist)."
+            "No share register in the warehouse (silver.customer_share_holdings does not exist)."
         ),
     ),
     Section("annex9_top_borrowers", source=SOURCES["annex9_top_borrowers"], run=_sec_annex9),
@@ -642,7 +642,7 @@ SECTIONS: List[Section] = [
     Section(
         "annex10_investment_entities",
         no_source_reason=(
-            "No entity-level investment register in the warehouse; bronze.glbbal carries "
+            "No entity-level investment register in the warehouse; silver.gl_daily_balances carries "
             "only aggregate investment GL heads, with no counterparty name or PAN."
         ),
     ),
@@ -753,7 +753,7 @@ def get_dnbs02_report_data(
     if ctx.coverage.get("uncovered_accounts"):
         logger.warning(
             "DNBS-02 %s: %s open accounts (%.2f lakh) have no dated snapshot in "
-            "bronze.genln_rpt_day and are excluded from the return.",
+            "silver.loan_daily_snapshot_summary and are excluded from the return.",
             ctx.snapshot_date,
             ctx.coverage["uncovered_accounts"],
             ctx.coverage["uncovered_lakhs"],

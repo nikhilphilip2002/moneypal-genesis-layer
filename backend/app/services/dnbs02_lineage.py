@@ -239,12 +239,12 @@ def _write_bindings_sheet(wb, data: Dict[str, Any]) -> None:
          "(Q1 = Apr-Jun, Q4 = Jan-Mar of the following calendar year)."),
         ("snapshot_date", b.get("snapshot_date", ""), "resolve_snapshot_date(end_date)",
          "gnlnr_report_date = %s",
-         "Must equal the period end exactly. If bronze.genln_rpt_day holds no snapshot "
+         "Must equal the period end exactly. If silver.loan_daily_snapshot_summary holds no snapshot "
          "on that date the report is refused rather than silently reported on the "
          "nearest earlier snapshot."),
         ("gl_year", b.get("gl_year", ""), "_gl_year_for(end_date) = int(end_date[:4])",
          "glbbal_year = %s",
-         "bronze.glbbal is keyed by branch and year only - no date dimension - so Parts "
+         "silver.gl_daily_balances is keyed by branch and year only - no date dimension - so Parts "
          "1, 3, 4, 6 and Annex 10 are annual figures however short the selected period."),
     ]
     for name, value, derived_by, used_as, meaning in derivations:
@@ -272,7 +272,7 @@ def _write_bindings_sheet(wb, data: Dict[str, Any]) -> None:
             f"({cov.get('covered_lakhs')} lakh, {cov.get('covered_pct')}% of the open book) "
             f"are in the return. {cov.get('uncovered_accounts')} open accounts "
             f"({cov.get('uncovered_lakhs')} lakh) have no dated snapshot in "
-            f"bronze.genln_rpt_day and are excluded."
+            f"silver.loan_daily_snapshot_summary and are excluded."
         )
     if data.get("degraded_sections"):
         notes.append("Sections with no data: " + ", ".join(data["degraded_sections"]))

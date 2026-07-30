@@ -9,6 +9,8 @@ import {
   type NlqStage,
   type QuerySpec,
 } from '@/lib/api';
+import { Card, CardContent } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
 import ChartRenderer from './ChartRenderer';
 import LineagePanel from './LineagePanel';
 import StickyFilters from './StickyFilters';
@@ -97,7 +99,13 @@ export default function ChatThread({
       {turns.map((turn) => (
         <div key={turn.id} className="space-y-2">
           <div className="flex justify-end">
-            <div className="max-w-[85%] rounded-2xl rounded-br-sm bg-primary px-4 py-2 text-sm text-primary-foreground">
+            <div
+              className={cn(
+                'max-w-[85%] rounded-2xl rounded-br-md bg-primary px-4 py-2 text-sm text-primary-foreground',
+                'shadow-[0_4px_16px_rgba(0,93,170,0.30),0_1px_0_rgba(255,255,255,0.20)_inset]',
+                'dark:shadow-[0_4px_16px_rgba(0,0,0,0.40),0_1px_0_rgba(255,255,255,0.10)_inset]',
+              )}
+            >
               {turn.question}
             </div>
           </div>
@@ -108,30 +116,30 @@ export default function ChatThread({
             </p>
           )}
 
-          <div className="rounded-2xl rounded-bl-sm border border-border bg-card p-4">
-            {!turn.done && turn.stage && <StageIndicator stage={turn.stage} />}
+          <Card className="rounded-bl-md">
+            <CardContent className="p-4">
+              {!turn.done && turn.stage && <StageIndicator stage={turn.stage} />}
 
-            {turn.chart && (
-              <>
-                <ChartRenderer
-                  chart={turn.chart}
-                  onDrilldown={(spec) => drilldown(spec, turn)}
-                />
-                <LineagePanel chart={turn.chart} />
-                <Feedback turn={turn} onRate={rate} />
-              </>
-            )}
+              {turn.chart && (
+                <>
+                  <ChartRenderer
+                    chart={turn.chart}
+                    onDrilldown={(spec) => drilldown(spec, turn)}
+                  />
+                  <LineagePanel chart={turn.chart} />
+                  <Feedback turn={turn} onRate={rate} />
+                </>
+              )}
 
-            {turn.clarification && (
-              <Clarification clarification={turn.clarification} onPick={onAsk} />
-            )}
+              {turn.clarification && (
+                <Clarification clarification={turn.clarification} onPick={onAsk} />
+              )}
 
-            {turn.refusal && <Refusal refusal={turn.refusal} />}
+              {turn.refusal && <Refusal refusal={turn.refusal} />}
 
-            {turn.error && (
-              <p className="text-sm text-muted-foreground">{turn.error}</p>
-            )}
-          </div>
+              {turn.error && <p className="text-sm text-muted-foreground">{turn.error}</p>}
+            </CardContent>
+          </Card>
         </div>
       ))}
       <div ref={endRef} />
@@ -149,7 +157,7 @@ function StageIndicator({ stage }: { stage: NlqStage }) {
           <span
             key={s}
             className={cn(
-              'h-1.5 w-6 rounded-full transition-colors',
+              'h-1.5 w-6 rounded-full transition-colors duration-200',
               i <= index ? 'bg-primary' : 'bg-muted',
             )}
           />
@@ -170,14 +178,16 @@ function Clarification({
       <p className="text-sm text-foreground">{clarification.question}</p>
       <div className="mt-3 flex flex-wrap gap-2">
         {clarification.suggestions.map((suggestion) => (
-          <button
+          <Button
             key={suggestion}
             type="button"
+            variant="outline"
+            size="sm"
             onClick={() => onPick(suggestion)}
-            className="rounded-full border border-border px-3 py-1 text-xs hover:border-primary"
+            className="h-7 rounded-full text-xs font-normal"
           >
             {suggestion}
-          </button>
+          </Button>
         ))}
       </div>
     </div>
@@ -222,27 +232,28 @@ function Feedback({
 }: { turn: Turn; onRate: (turn: Turn, verdict: 'up' | 'down') => void }) {
   if (!turn.turnId) return null;
   return (
-    <div className="mt-2 flex items-center gap-2">
-      <span className="text-xs text-muted-foreground">Was this right?</span>
-      <button
+    <div className="mt-2 flex items-center gap-1">
+      <span className="mr-1 text-xs text-muted-foreground">Was this right?</span>
+      <Button
         type="button"
+        variant="ghost"
+        size="icon"
         aria-label="Helpful"
         onClick={() => onRate(turn, 'up')}
-        className={cn(
-          'rounded p-1 hover:bg-muted',
-          turn.feedback === 'up' && 'text-emerald-600',
-        )}
+        className={cn('h-7 w-7', turn.feedback === 'up' && 'text-emerald-600 dark:text-emerald-400')}
       >
         <ThumbsUp className="h-3.5 w-3.5" />
-      </button>
-      <button
+      </Button>
+      <Button
         type="button"
+        variant="ghost"
+        size="icon"
         aria-label="Not helpful"
         onClick={() => onRate(turn, 'down')}
-        className={cn('rounded p-1 hover:bg-muted', turn.feedback === 'down' && 'text-red-600')}
+        className={cn('h-7 w-7', turn.feedback === 'down' && 'text-red-600 dark:text-red-400')}
       >
         <ThumbsDown className="h-3.5 w-3.5" />
-      </button>
+      </Button>
     </div>
   );
 }

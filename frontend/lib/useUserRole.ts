@@ -20,11 +20,14 @@ export const ROLE_LABELS: Record<UserRole, string> = {
 // Routes each role may see, in nav order (first entry = landing page).
 // Role workspaces from the developer brief: admin → platform administration,
 // gicc_admin → intelligence review, gicc_policy → policy formulation.
+// `/ask` (Genesis NLQ) is loan-book analytics, so it goes to the two GICC business roles
+// and to platform admin — not to gicc_policy, whose workspace is regulatory text rather
+// than the portfolio. Kept off the front of every list: homeRoute() lands on entry [0].
 export const ROLE_ROUTES: Record<UserRole, string[]> = {
-  admin: ['/', '/macro', '/competitive', '/regulatory', '/admin'],
-  gicc_admin: ['/', '/competitive', '/regulatory', '/review'],
+  admin: ['/', '/ask', '/macro', '/competitive', '/regulatory', '/admin'],
+  gicc_admin: ['/', '/ask', '/competitive', '/regulatory', '/review'],
   gicc_policy: ['/regulatory', '/competitive', '/policy'],
-  gicc_director: ['/'],
+  gicc_director: ['/', '/ask'],
 }
 
 // Landing page after login, per role.
