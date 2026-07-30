@@ -3,7 +3,10 @@ FROM python:3.11-slim
 
 WORKDIR /srv
 COPY packages/genesis_core /srv/packages/genesis_core
-RUN pip install --no-cache-dir /srv/packages/genesis_core fastapi "uvicorn[standard]" psycopg2-binary pg8000 openpyxl
+# sqlglot parses generated SQL for the NLQ validator's AST allowlist; pyyaml loads the
+# semantic catalog. Both are imported at app.main import time via the nlq router, so a
+# missing one is a crash loop, not a degraded feature.
+RUN pip install --no-cache-dir /srv/packages/genesis_core fastapi "uvicorn[standard]" psycopg2-binary pg8000 openpyxl sqlglot pyyaml
 
 
 COPY backend /srv/backend
