@@ -209,6 +209,34 @@ class TestAskEndpoint:
         response = client.post("/nlq/ask", json={"question": "Will defaults rise?"})
         assert dict(self._events(response))["refusal"]["message"] == "I do not forecast."
 
+    def test_a_second_clarification_in_a_row_becomes_a_way_out(self, client, monkeypatch):
+        """Answering a clarification arrives as a new question. A planner that clarifies
+        again traps the user: every tapped suggestion produces the next question. The
+        first clarify has to be persisted for the second one to know it happened."""
+        from app.services.nlq import conversation
+        from app.services.nlq import planner as planner_module
+        from app.services.nlq.contracts import ClarifyPlan
+
+        self._stub_planner(
+            monkeypatch,
+            ClarifyPlan(question="Which measure?", suggestions=["Disbursement by branch"]),
+        )
+        cid = "loop-test-conversation"
+        conversation.clear(cid)
+
+        first = client.post(
+            "/nlq/ask", json={"question": "show me the numbers", "conversation_id": cid}
+        )
+        assert "clarify" in dict(self._events(first))
+
+        second = client.post(
+            "/nlq/ask", json={"question": "Disbursement by branch", "conversation_id": cid}
+        )
+        events = dict(self._events(second))
+        assert "clarify" not in events
+        assert events["refusal"]["examples"] == planner_module.refusal_examples()
+        conversation.clear(cid)
+
     def test_clarification_streams_tappable_suggestions(self, client, monkeypatch):
         from app.services.nlq.contracts import ClarifyPlan
 

@@ -126,6 +126,11 @@ def choose_chart_type(
                 return "small_multiples"
             if spec.as_share and _is_flow(metrics[0], cat):
                 return "stacked_area"
+            if spec.as_share and _is_additive(metrics[0], cat):
+                # A stock has no area to fill — nothing accumulates between two dates — but
+                # the balances at each date do sum across categories, so the composition is
+                # a stack of bars per period rather than a band.
+                return "stacked_bar"
             return "line"
         if len(cat_dims) == 1:
             if spec.as_share and n_rows <= MAX_DONUT_SLICES and _is_additive(metrics[0], cat):

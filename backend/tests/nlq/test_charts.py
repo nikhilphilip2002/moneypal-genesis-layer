@@ -172,6 +172,41 @@ class TestChartTypeRules:
         ]
         assert chart_for(spec, rows, catalog).chart_type == "stacked_area"
 
+    def test_share_of_a_stock_over_time_is_a_stacked_bar(self, catalog):
+        """Outstanding does not accumulate between two dates, so there is no area to fill —
+        but the balances at each date do sum across products."""
+        spec = QuerySpec(
+            metrics=["principal_outstanding"],
+            dimensions=["month", "product"],
+            period=Period(relative="last_fy"),
+            as_share=True,
+        )
+        rows = [
+            {"month": "2026-01-01", "product": p, "principal_outstanding": 10.0}
+            for p in (1, 13, 16)
+        ]
+        assert chart_for(spec, rows, catalog).chart_type == "stacked_bar"
+
+    def test_every_declared_chart_type_is_reachable(self):
+        """A form the backend can never choose is dead code that looks like a feature —
+        `heatmap` rendered as a spreadsheet for exactly this reason."""
+        import re
+        from pathlib import Path
+
+        from app.services.nlq.contracts import ChartType
+
+        source = Path(charts.__file__).read_text()
+        # Every literal on a return line, not just the first — several rules choose with a
+        # conditional expression (`return "bar" if ... else "ranking"`).
+        chosen = {
+            literal
+            for line in source.splitlines()
+            if line.lstrip().startswith("return ")
+            for literal in re.findall(r'"(\w+)"', line)
+        }
+        declared = set(ChartType.__args__)  # type: ignore[attr-defined]
+        assert declared - chosen == set(), f"unreachable chart types: {declared - chosen}"
+
     def test_many_series_over_time_becomes_small_multiples(self, catalog):
         """Sixteen branches on one time axis is a hairball, and stacking them answers a
         question about the total that nobody asked."""

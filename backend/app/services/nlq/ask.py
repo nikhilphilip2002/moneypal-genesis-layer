@@ -58,6 +58,11 @@ def sse(event: str, data: Any) -> str:
     return f"event: {event}\ndata: {json.dumps(data, default=str)}\n\n"
 
 
+def _clarified_last_turn(state) -> bool:
+    turns = getattr(state, "turns", None)
+    return bool(turns) and turns[-1].route == "clarify"
+
+
 async def ask_stream(ctx: AskContext, catalog: Catalog | None = None) -> AsyncIterator[str]:
     """Run one question, yielding SSE frames."""
     cat = catalog or get_catalog()
@@ -116,9 +121,32 @@ async def ask_stream(ctx: AskContext, catalog: Catalog | None = None) -> AsyncIt
     )
 
     if isinstance(plan, ClarifyPlan):
+        # Answering a clarification arrives as an ordinary new question, so a planner that
+        # clarifies again leaves the user in a loop with no exit — tapping a suggestion
+        # produces the next question, forever. Two in a row means the question is not
+        # going to resolve, and saying so is the only honest way out.
+        if _clarified_last_turn(state):
+            audit.record(turn_id=turn_id, ctx=ctx, resolved=resolved, route="clarify",
+                         outcome="clarify_loop", plan=outcome)
+            conversation.append_turn(state, ctx.question, resolved, "refuse", None, 0)
+            conversation.save(state)
+            yield sse(
+                "refusal",
+                {
+                    "route": "refuse",
+                    "reason": "not_in_data",
+                    "message": "I asked for a clarification and still could not pin that "
+                               "down. Try one of these, which name a measure and a period "
+                               "outright.",
+                    "examples": planner.refusal_examples(),
+                },
+            )
+            yield sse("done", {"turn_id": turn_id})
+            return
         audit.record(turn_id=turn_id, ctx=ctx, resolved=resolved, route="clarify",
                      outcome="clarify", plan=outcome)
         conversation.append_turn(state, ctx.question, resolved, "clarify", None, 0)
+        conversation.save(state)
         yield sse("clarify", plan.model_dump(mode="json"))
         yield sse("done", {"turn_id": turn_id})
         return
