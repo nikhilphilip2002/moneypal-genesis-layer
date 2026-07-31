@@ -171,6 +171,44 @@ class TestAskEndpoint:
         assert len(events["refusal"]["examples"]) == 3
         assert "done" in events
 
+    def test_model_authored_examples_are_discarded(self, client, monkeypatch):
+        """A refusal once suggested "Equity shareholding breakdown by shareholder" — a
+        subject with no table, no metric and no dimension behind it — in the same breath
+        as saying the warehouse could not answer. Suggestions come from the catalog."""
+        from app.services.nlq import ask as ask_module
+        from app.services.nlq import planner as planner_module
+        from app.services.nlq.catalog import get_catalog
+        from app.services.nlq.contracts import RefusalPlan
+
+        self._stub_planner(
+            monkeypatch,
+            RefusalPlan(
+                reason="not_in_data",
+                message="No shareholding is linked to the lending book.",
+                examples=["Equity shareholding breakdown by shareholder"],
+            ),
+        )
+        response = client.post("/nlq/ask", json={"question": "top shareholders"})
+        refusal = dict(self._events(response))["refusal"]
+
+        assert "shareholding" not in " ".join(refusal["examples"]).lower()
+        assert refusal["examples"] == planner_module.refusal_examples()
+        # And it must not narrate the warehouse's contents on its own authority.
+        assert refusal["message"] == ask_module.NOT_IN_DATA_MESSAGE
+        catalog = get_catalog()
+        assert catalog.metrics and "shareholding" not in str(sorted(catalog.metrics))
+
+    def test_judgement_refusals_keep_their_own_message(self, client, monkeypatch):
+        """Only `not_in_data` asserts something about the data. "I do not forecast" is a
+        statement about the question, and the model may make it."""
+        from app.services.nlq.contracts import RefusalPlan
+
+        self._stub_planner(
+            monkeypatch, RefusalPlan(reason="predictive", message="I do not forecast.")
+        )
+        response = client.post("/nlq/ask", json={"question": "Will defaults rise?"})
+        assert dict(self._events(response))["refusal"]["message"] == "I do not forecast."
+
     def test_clarification_streams_tappable_suggestions(self, client, monkeypatch):
         from app.services.nlq.contracts import ClarifyPlan
 

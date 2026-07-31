@@ -62,15 +62,26 @@ from numerator/denominator at the requested grain, never averaged from sub-total
 ChartType = Literal[
     "kpi",
     "line",
+    "area",
+    "stacked_area",
     "bar",
     "grouped_bar",
     "stacked_bar",
     "table",
     "ranking",
+    "donut",
     "variance",
+    "dumbbell",
     "scatter",
     "heatmap",
+    "small_multiples",
 ]
+"""Every form the renderer knows. The backend picks one deterministically from the result's
+shape, so the same question always looks the same — the model never chooses a chart.
+
+Absent on purpose: any dual-axis form (two y-scales on one plot is the single most
+misleading chart there is — mixed units fall back to a table instead), and waterfall,
+treemap, radar and sankey, which have no question behind them in this catalog."""
 
 
 class _Model(BaseModel):
@@ -141,6 +152,16 @@ class QuerySpec(_Model):
     )
     order_by: OrderBy | None = None
     limit: int = Field(default=200, ge=1, le=5000)
+    as_share: bool = Field(
+        default=False,
+        description="The question asks for a mix, share or composition rather than a "
+        "comparison of magnitudes ('split of the book by product', 'what share is gold'). "
+        "Selects part-to-whole forms; it does not change the numbers.",
+    )
+    """Part-to-whole is an intent, not a shape: the same rows answer "disbursement by
+    product" and "our product mix", and only the question says which. Without this the
+    backend can never justify a donut, because every donut candidate is also a perfectly
+    good bar — and a donut chosen by shape alone would replace better bars everywhere."""
 
     @model_validator(mode="after")
     def _check_no_duplicates(self) -> "QuerySpec":
@@ -244,7 +265,9 @@ class SeriesSpec(_Model):
     field: str = Field(description="Row key holding this series' value.")
     label: str
     unit: Unit = "count"
-    axis: Literal["left", "right"] = "left"
+    # No `axis` field. It existed, was never set to "right" by the compiler and never read
+    # by the renderer — a dual-axis affordance waiting to be discovered. Two measures of
+    # different scale get two charts or a common index, never two y-scales on one plot.
 
 
 class ChartSpec(_Model):
@@ -255,6 +278,12 @@ class ChartSpec(_Model):
     title: str
     subtitle: str | None = None
     x: AxisSpec | None = None
+    series_by: AxisSpec | None = Field(
+        default=None,
+        description="Dimension that splits `rows` into one series per value — the second "
+        "axis of a heatmap, the facet of a small-multiples grid. Rows arrive long-format; "
+        "this names the column to pivot on so the renderer never has to guess.",
+    )
     series: list[SeriesSpec] = Field(default_factory=list)
     columns: list[ColumnSpec] = Field(default_factory=list)
     rows: list[dict[str, Any]] = Field(default_factory=list)

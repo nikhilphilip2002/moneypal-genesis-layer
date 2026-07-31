@@ -43,6 +43,10 @@ def format_value(value: Any, unit: str) -> str:
     return f"{value:,.2f}"
 
 
+TIME_CHARTS = frozenset({"line", "area", "stacked_area", "small_multiples"})
+"""Forms whose x-axis is time, so the summary should describe movement rather than rank."""
+
+
 def narrate(
     spec: QuerySpec,
     compiled: CompiledQuery,
@@ -61,16 +65,16 @@ def narrate(
 
     if chart_type == "kpi":
         parts.append(_kpi_sentence(spec, compiled, rows, cat))
-    elif chart_type == "variance":
+    elif chart_type in ("variance", "dumbbell"):
         parts.append(_variance_sentence(compiled, rows, metric))
-    elif chart_type == "line":
+    elif chart_type in TIME_CHARTS:
         parts.append(_trend_sentence(spec, compiled, rows, metric, cat))
     else:
         parts.append(_ranking_sentence(spec, compiled, rows, metric, cat))
 
     # A KPI tile already states the single value; repeating "every value is zero" adds
     # nothing. On a chart with several bars it is the point worth making.
-    if chart_type not in ("kpi", "variance"):
+    if chart_type not in ("kpi", "variance", "dumbbell"):
         zero_note = _all_zero_note(rows, metric)
         if zero_note:
             parts.append(zero_note)

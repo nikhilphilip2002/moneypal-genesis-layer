@@ -443,8 +443,10 @@ export const health = {
 // for kpi and line, so the table view and CSV export need no round-trip.
 
 export type ChartType =
-  | 'kpi' | 'line' | 'bar' | 'grouped_bar' | 'stacked_bar'
-  | 'table' | 'ranking' | 'variance' | 'scatter' | 'heatmap';
+  | 'kpi' | 'line' | 'area' | 'stacked_area'
+  | 'bar' | 'grouped_bar' | 'stacked_bar' | 'ranking' | 'donut'
+  | 'variance' | 'dumbbell' | 'scatter' | 'heatmap' | 'small_multiples'
+  | 'table';
 
 export type Unit = 'inr' | 'percent' | 'count' | 'days' | 'ratio' | 'text' | 'date';
 
@@ -471,7 +473,9 @@ export type ColumnSpec = {
 };
 
 export type AxisSpec = { field: string; label: string; grain: string | null; unit: Unit };
-export type SeriesSpec = { field: string; label: string; unit: Unit; axis: 'left' | 'right' };
+// No `axis`. Two measures of different scale get two charts or a common index — never two
+// y-scales on one plot, which is the one chart mistake that invents a correlation.
+export type SeriesSpec = { field: string; label: string; unit: Unit };
 
 export type QuerySpec = {
   metrics: string[];
@@ -481,6 +485,7 @@ export type QuerySpec = {
   compare_to?: unknown;
   order_by?: { field: string; direction: 'asc' | 'desc' } | null;
   limit: number;
+  as_share?: boolean;
 };
 
 export type ChartSpec = {
@@ -488,6 +493,9 @@ export type ChartSpec = {
   title: string;
   subtitle: string | null;
   x: AxisSpec | null;
+  // Names the column that splits long-format rows into one series per value, so the
+  // renderer pivots on a declared key rather than inferring one from the data.
+  series_by: AxisSpec | null;
   series: SeriesSpec[];
   columns: ColumnSpec[];
   rows: Record<string, unknown>[];

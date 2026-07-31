@@ -33,6 +33,17 @@ logger = logging.getLogger(__name__)
 
 HARD_CEILING_S = 20.0
 
+NOT_IN_DATA_MESSAGE = (
+    "The loan book does not hold what that question needs. It covers origination, "
+    "outstanding balances, delinquency, collections and the general ledger."
+)
+"""Fixed, because the alternative is the model narrating the shape of a warehouse it has
+only seen a catalogue listing of. A wrong explanation of *why* an answer is unavailable is
+as damaging as a wrong answer: the user plans around it."""
+
+COVERAGE_REASONS = frozenset({"not_in_data", "out_of_scope"})
+"""The refusal reasons that assert something about the data rather than the question."""
+
 
 @dataclass(slots=True)
 class AskContext:
@@ -114,8 +125,19 @@ async def ask_stream(ctx: AskContext, catalog: Catalog | None = None) -> AsyncIt
 
     if isinstance(plan, RefusalPlan):
         payload = plan.model_dump(mode="json")
-        if not payload.get("examples"):
-            payload["examples"] = planner.refusal_examples()
+        # The examples are never the model's to write. Asked why it cannot answer, it will
+        # invent a neighbouring question that sounds answerable and is not — one refusal
+        # here offered "Equity shareholding breakdown by shareholder", a subject the
+        # warehouse has no data on at all, immediately after saying so. Every suggestion
+        # shown must be one the catalog can actually serve.
+        payload["examples"] = planner.refusal_examples()
+        if plan.reason in COVERAGE_REASONS:
+            # These two are claims about the warehouse's contents, and the model knows the
+            # catalog only as a list. It has asserted things that are plainly false ("no
+            # standalone principal outstanding metric" — there is one). The remaining
+            # reasons judge the *question* — predictive, advice, unsafe — which the model
+            # is entitled to do in its own words.
+            payload["message"] = NOT_IN_DATA_MESSAGE
         audit.record(turn_id=turn_id, ctx=ctx, resolved=resolved, route="refuse",
                      outcome=plan.reason, plan=outcome)
         conversation.append_turn(state, ctx.question, resolved, "refuse", None, 0)

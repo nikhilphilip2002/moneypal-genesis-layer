@@ -94,6 +94,12 @@ def plan_schema(catalog: Catalog | None = None) -> dict[str, Any]:
                 "additionalProperties": False,
             },
             "limit": {"type": "integer", "minimum": 1, "maximum": 5000},
+            "as_share": {
+                "type": "boolean",
+                "description": "True when the question asks for a mix, share, split or "
+                "composition rather than a comparison of magnitudes. Selects a "
+                "part-to-whole chart; it does not change the numbers.",
+            },
         },
         "required": ["metrics", "period"],
         "additionalProperties": False,
@@ -159,10 +165,10 @@ def plan_schema(catalog: Catalog | None = None) -> dict[str, Any]:
                             "out_of_scope", "not_in_data", "predictive", "advice", "unsafe",
                         ],
                     },
-                    "message": {"type": "string"},
-                    "examples": {
-                        "type": "array", "items": {"type": "string"}, "maxItems": 3,
-                    },
+                    "message": {"type": "string", "maxLength": 200},
+                    # No `examples` field: the "try instead" list is served from the
+                    # catalog, so letting the model write one only invites it to invent
+                    # questions the warehouse cannot answer (see ask.py).
                 },
                 "required": ["route", "reason"],
                 "additionalProperties": False,

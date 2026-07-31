@@ -47,13 +47,22 @@ cover. Emit `intent` and `tables`.
 - "clarify": genuinely ambiguous. Emit `question` and up to 3 concrete `suggestions`. \
 Use this when no metric is named ("show me the numbers"), when a term maps to two \
 different metrics, or when "last year" could mean the financial or calendar year.
-- "refuse": emit `reason` and up to 3 answerable `examples`.
+- "refuse": emit `reason`, and a short `message` only for a judgement about the question \
+itself (predictive, advice, unsafe). Never describe what the warehouse does or does not \
+contain, and never suggest alternative questions — the application supplies both from the \
+catalog.
     - "predictive": any forecast, projection, or "will/likely to" question.
     - "advice": any "should we", recommendation, or strategy question.
     - "not_in_data": competitor data, macroeconomic data, or a breakdown the warehouse \
 cannot support (for example GL balances by product — no such link exists).
     - "out_of_scope": not about this lending book at all.
     - "unsafe": any request to modify, delete or export data.
+
+SHAPE
+- Set `as_share` true only when the question asks for a mix, share, split or composition \
+("what is our product mix", "what share of the book is gold", "break the portfolio down \
+by asset class"). "Disbursement by branch" is a comparison, not a share — leave it false. \
+It selects a part-to-whole chart and changes no numbers.
 
 PERIODS
 - Default to "all_time" only when the question is explicitly about the whole book.
@@ -124,6 +133,12 @@ FEW_SHOTS: list[tuple[str, str]] = [
         '"period":{"grain":"month","start":"2025-04-01","end":"2026-03-31"}}}',
     ),
     (
+        "What is our product mix by outstanding?",
+        '{"route":"queryspec","confidence":0.94,"reasoning":"composition, not comparison",'
+        '"spec":{"metrics":["principal_outstanding"],"dimensions":["product"],'
+        '"period":{"relative":"today"},"as_share":true}}',
+    ),
+    (
         "What is our PAR 30 right now?",
         '{"route":"queryspec","confidence":0.97,"reasoning":"point-in-time ratio, no breakdown",'
         '"spec":{"metrics":["par_30"],"period":{"relative":"today"}}}',
@@ -151,22 +166,17 @@ FEW_SHOTS: list[tuple[str, str]] = [
     (
         "Will defaults rise next quarter?",
         '{"route":"refuse","reason":"predictive","message":"I report what the loan book shows '
-        'and do not forecast.","examples":["What is our PAR 30 today?",'
-        '"How has PAR 30 moved over the last three months?",'
-        '"Which branches have the most overdue principal?"]}',
+        'and do not forecast."}',
     ),
     (
         "Should we lend more to the MSME segment?",
-        '{"route":"refuse","reason":"advice","message":"I do not make lending recommendations.",'
-        '"examples":["What is our MSME outstanding?","Collection efficiency by product",'
-        '"Disbursement by product over the last 12 months"]}',
+        '{"route":"refuse","reason":"advice","message":"I do not make lending recommendations."}',
     ),
     (
+        # No `message` here: the application writes it. Left to itself the model explains
+        # the gap by describing a warehouse it cannot see, and gets it wrong.
         "Show me the GL balance by product",
-        '{"route":"refuse","reason":"not_in_data","message":"The ledger has no link to the loan '
-        'book, so GL figures cannot be split by product.","examples":['
-        '"What is the outstanding by product?","GL balances for this financial year",'
-        '"Sanctioned amount by product"]}',
+        '{"route":"refuse","reason":"not_in_data"}',
     ),
     (
         "How did we do last year?",

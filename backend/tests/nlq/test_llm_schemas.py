@@ -63,6 +63,13 @@ class TestPlanSchemaIsTagged:
         """An uncapped free-text field on a thinking model eats the whole token budget."""
         assert _branch(schema, "queryspec")["properties"]["reasoning"]["maxLength"] <= 300
 
+    def test_share_intent_is_reachable_by_the_planner(self, schema):
+        """Part-to-whole is an intent, not a shape — nothing in the rows distinguishes
+        "disbursement by product" from "our product mix". If the planner cannot express
+        it, the donut is unreachable code."""
+        spec = _branch(schema, "queryspec")["properties"]["spec"]
+        assert spec["properties"]["as_share"]["type"] == "boolean"
+
     def test_metric_enum_comes_from_the_catalog(self, schema):
         metrics = _branch(schema, "queryspec")["properties"]["spec"]["properties"]["metrics"]
         assert set(metrics["items"]["enum"]) == set(get_catalog().metrics)

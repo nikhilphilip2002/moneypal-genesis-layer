@@ -44,11 +44,21 @@ class TestChartTypeRules:
         spec = QuerySpec(metrics=["loan_count"], period=Period(relative="all_time"))
         assert chart_for(spec, [{"loan_count": 13510}], catalog).chart_type == "kpi"
 
-    def test_one_metric_one_time_dimension_is_a_line(self, catalog):
+    def test_a_flow_over_time_is_an_area(self, catalog):
+        """Filling under the curve claims the values accumulate. For a flow they do."""
         spec = QuerySpec(
             metrics=["loan_count"], dimensions=["month"], period=Period(relative="last_fy")
         )
         rows = [{"month": "2026-01-01", "loan_count": 5}, {"month": "2026-02-01", "loan_count": 8}]
+        assert chart_for(spec, rows, catalog).chart_type == "area"
+
+    def test_a_stock_over_time_stays_a_line(self, catalog):
+        """PAR 30 is a percentage of a book at a moment. Area under it would imply that
+        three months of PAR sum to something, and nothing sums there."""
+        spec = QuerySpec(
+            metrics=["par_30"], dimensions=["month"], period=Period(relative="last_fy")
+        )
+        rows = [{"month": "2026-01-01", "par_30": 4.1}, {"month": "2026-02-01", "par_30": 4.6}]
         assert chart_for(spec, rows, catalog).chart_type == "line"
 
     def test_few_categories_is_a_bar(self, catalog):
@@ -67,7 +77,8 @@ class TestChartTypeRules:
         rows = [{"scheme": str(1300 + i), "sanctioned_amount": i} for i in range(30)]
         assert chart_for(spec, rows, catalog).chart_type == "ranking"
 
-    def test_compare_to_forces_a_variance_table(self, catalog):
+    def test_compare_to_per_item_is_a_dumbbell(self, catalog):
+        """Before and after for each product: two dots and the gap between them."""
         spec = QuerySpec(
             metrics=["sanctioned_amount"],
             dimensions=["product"],
@@ -77,9 +88,26 @@ class TestChartTypeRules:
         rows = [{"product": 16, "sanctioned_amount": 100.0}]
         prior = result_of([{"product": 16, "sanctioned_amount": 80.0}])
         chart = chart_for(spec, rows, catalog, prior=prior)
-        assert chart.chart_type == "variance"
+        assert chart.chart_type == "dumbbell"
         assert chart.rows[0]["delta"] == 20.0
         assert chart.rows[0]["delta_pct"] == 25.0
+        # The series must address the merged columns, not the metric id, or the chart
+        # renders empty.
+        assert [s.field for s in chart.series] == ["previous", "current"]
+
+    def test_compare_to_over_time_is_a_variance_bar(self, catalog):
+        spec = QuerySpec(
+            metrics=["sanctioned_amount"],
+            dimensions=["month"],
+            period=Period(relative="last_fy"),
+            compare_to=Period(relative="last_quarter"),
+        )
+        rows = [{"month": "2026-01-01", "sanctioned_amount": 100.0}]
+        prior = result_of([{"month": "2026-01-01", "sanctioned_amount": 120.0}])
+        chart = chart_for(spec, rows, catalog, prior=prior)
+        assert chart.chart_type == "variance"
+        assert [s.field for s in chart.series] == ["delta"]
+        assert chart.rows[0]["delta"] == -20.0
 
     def test_two_categorical_dimensions_is_a_heatmap(self, catalog):
         spec = QuerySpec(
@@ -89,6 +117,103 @@ class TestChartTypeRules:
         )
         rows = [{"branch": 1, "product": 13, "loan_count": 5}]
         assert chart_for(spec, rows, catalog).chart_type == "heatmap"
+
+    def test_share_intent_over_few_categories_is_a_donut(self, catalog):
+        spec = QuerySpec(
+            metrics=["sanctioned_amount"],
+            dimensions=["product"],
+            period=Period(relative="all_time"),
+            as_share=True,
+        )
+        rows = [{"product": c, "sanctioned_amount": 10.0} for c in (1, 13, 16)]
+        assert chart_for(spec, rows, catalog).chart_type == "donut"
+
+    def test_the_same_rows_without_share_intent_stay_a_bar(self, catalog):
+        """Part-to-whole is what the question asked for, not what the rows look like."""
+        spec = QuerySpec(
+            metrics=["sanctioned_amount"],
+            dimensions=["product"],
+            period=Period(relative="all_time"),
+        )
+        rows = [{"product": c, "sanctioned_amount": 10.0} for c in (1, 13, 16)]
+        assert chart_for(spec, rows, catalog).chart_type == "bar"
+
+    def test_a_ratio_is_never_a_donut(self, catalog):
+        """Three collection-efficiency percentages have no total to be shares of."""
+        spec = QuerySpec(
+            metrics=["collection_efficiency"],
+            dimensions=["product"],
+            period=Period(relative="all_time"),
+            as_share=True,
+        )
+        rows = [{"product": c, "collection_efficiency": 90.0} for c in (1, 13, 16)]
+        assert chart_for(spec, rows, catalog).chart_type == "bar"
+
+    def test_too_many_slices_is_not_a_donut(self, catalog):
+        spec = QuerySpec(
+            metrics=["sanctioned_amount"],
+            dimensions=["scheme"],
+            period=Period(relative="all_time"),
+            as_share=True,
+        )
+        rows = [{"scheme": str(1300 + i), "sanctioned_amount": 1.0} for i in range(9)]
+        assert chart_for(spec, rows, catalog).chart_type == "bar"
+
+    def test_share_of_a_flow_over_time_is_a_stacked_area(self, catalog):
+        spec = QuerySpec(
+            metrics=["disbursement_total"],
+            dimensions=["month", "product"],
+            period=Period(relative="last_fy"),
+            as_share=True,
+        )
+        rows = [
+            {"month": "2026-01-01", "product": p, "disbursement_total": 10.0}
+            for p in (1, 13, 16)
+        ]
+        assert chart_for(spec, rows, catalog).chart_type == "stacked_area"
+
+    def test_many_series_over_time_becomes_small_multiples(self, catalog):
+        """Sixteen branches on one time axis is a hairball, and stacking them answers a
+        question about the total that nobody asked."""
+        spec = QuerySpec(
+            metrics=["disbursement_total"],
+            dimensions=["month", "branch"],
+            period=Period(relative="last_fy"),
+        )
+        rows = [
+            {"month": "2026-01-01", "branch": b, "disbursement_total": 1.0} for b in range(1, 17)
+        ]
+        assert chart_for(spec, rows, catalog).chart_type == "small_multiples"
+
+    def test_two_metrics_across_one_dimension_is_a_scatter(self, catalog):
+        """Genuinely independent x and y — not the dual-axis trap, which needs a shared x
+        to align a second y-scale against. Mixed units are legitimate here, and only here.
+
+        Both metrics must live on one table: the registry refuses a cross-fact join
+        rather than double-count, so a scatter is always within a single fact.
+        """
+        spec = QuerySpec(
+            metrics=["avg_ticket_size", "avg_interest_rate"],
+            dimensions=["branch"],
+            period=Period(relative="all_time"),
+        )
+        rows = [
+            {"branch": b, "avg_ticket_size": 1.0, "avg_interest_rate": 2.0} for b in (1, 2, 3)
+        ]
+        assert chart_for(spec, rows, catalog).chart_type == "scatter"
+
+    def test_mixed_units_on_a_shared_axis_is_still_a_table(self, catalog):
+        """Three metrics cannot become a scatter, and rupees beside percent cannot share
+        a y-axis. A second axis is not the answer."""
+        spec = QuerySpec(
+            metrics=["sanctioned_amount", "avg_interest_rate", "loan_count"],
+            dimensions=["branch"],
+            period=Period(relative="all_time"),
+        )
+        rows = [
+            {"branch": 1, "sanctioned_amount": 1.0, "avg_interest_rate": 2.0, "loan_count": 3}
+        ]
+        assert chart_for(spec, rows, catalog).chart_type == "table"
 
 
 class TestDecoding:
