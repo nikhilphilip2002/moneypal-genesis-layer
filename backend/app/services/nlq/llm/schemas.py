@@ -101,7 +101,12 @@ def plan_schema(catalog: Catalog | None = None) -> dict[str, Any]:
                 "part-to-whole chart; it does not change the numbers.",
             },
         },
-        "required": ["metrics", "period"],
+        # `dimensions` is required even though an empty list is valid. Optional properties
+        # are skippable under constrained decoding, and models take the shortest legal path
+        # through the grammar — "collection efficiency by product" came back with no
+        # dimensions, one row, and a KPI tile where a bar chart belonged. Requiring the key
+        # forces the model to state the grouping, including stating that there is none.
+        "required": ["metrics", "dimensions", "period"],
         "additionalProperties": False,
     }
 

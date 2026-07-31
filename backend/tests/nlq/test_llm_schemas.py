@@ -63,6 +63,13 @@ class TestPlanSchemaIsTagged:
         """An uncapped free-text field on a thinking model eats the whole token budget."""
         assert _branch(schema, "queryspec")["properties"]["reasoning"]["maxLength"] <= 300
 
+    def test_grouping_must_be_stated(self, schema):
+        """"by product" is the most common thing a question asks for and the easiest field
+        for a grammar to skip. Omitting it yields one row, which is a KPI tile — a silent
+        downgrade from the chart the user asked for, with no error anywhere."""
+        spec = _branch(schema, "queryspec")["properties"]["spec"]
+        assert "dimensions" in spec["required"]
+
     def test_share_intent_is_reachable_by_the_planner(self, schema):
         """Part-to-whole is an intent, not a shape — nothing in the rows distinguishes
         "disbursement by product" from "our product mix". If the planner cannot express
