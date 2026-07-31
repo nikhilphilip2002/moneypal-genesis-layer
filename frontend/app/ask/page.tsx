@@ -58,11 +58,15 @@ export default function AskPage() {
             case 'rewrite':
               patch({ resolvedQuestion: event.resolved_question });
               break;
+            case 'plan':
+              patch({ planRoute: event.route, planModel: event.model });
+              break;
             case 'chart':
               setConversationId(event.response.conversation_id);
               patch({
                 chart: event.response.chart ?? undefined,
                 turnId: event.response.turn_id,
+                planSummary: event.response.plan_summary,
                 done: true,
                 stage: undefined,
               });
