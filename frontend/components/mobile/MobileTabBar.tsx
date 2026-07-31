@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { LayoutDashboard, TrendingUp, Building, Scale, Settings2, ClipboardCheck, FileText, User } from 'lucide-react'
+import { LayoutDashboard, TrendingUp, Building, Scale, Settings2, ClipboardCheck, FileText, User, MessageCircleQuestion } from 'lucide-react'
 import { useUserRole, ROLE_ROUTES, type UserRole } from '@/lib/useUserRole'
 import { cn } from '@/lib/utils'
 
@@ -14,6 +14,7 @@ type TabDef = {
 
 const MODULE_TABS: TabDef[] = [
   { href: '/', label: 'Home', icon: LayoutDashboard },
+  { href: '/ask', label: 'Ask', icon: MessageCircleQuestion },
   { href: '/macro', label: 'Macro', icon: TrendingUp },
   { href: '/competitive', label: 'Compete', icon: Building },
   { href: '/regulatory', label: 'Regulatory', icon: Scale },

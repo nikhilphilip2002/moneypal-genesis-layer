@@ -18,6 +18,7 @@ import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 
 const NAV_LABELS: Record<string, string> = {
   '/': 'Dashboard',
+  '/ask': 'Ask',
   '/macro': 'Macro',
   '/competitive': 'Competitive',
   '/regulatory': 'Regulatory',
