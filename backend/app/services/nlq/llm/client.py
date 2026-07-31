@@ -50,6 +50,9 @@ class LLMResult:
     completion_tokens: int = 0
     duration_ms: int = 0
     finish_reason: str = ""
+    reasoning: str = ""
+    """Whatever the server split out as chain of thought. Never parsed — kept only so an
+    empty `text` can be diagnosed as "it thought instead of answering"."""
 
     def json(self) -> Any:
         """Parse the completion as JSON, tolerating the wrappers small models add.
@@ -57,6 +60,21 @@ class LLMResult:
         Under `json_schema` decoding this is a plain `json.loads`. The salvage path only
         matters for providers without grammar support.
         """
+        if not self.text.strip():
+            # A thinking model that runs out of budget mid-trace answers 200 OK with an
+            # empty `content`. Saying so is the difference between a fixable report and
+            # "the model did not return JSON: ''".
+            raise LLMError(
+                "model returned no content"
+                + (f" (finish_reason={self.finish_reason})" if self.finish_reason else "")
+                + (
+                    f"; it spent the budget on {len(self.reasoning)} chars of reasoning — "
+                    "disable thinking for this model (NLQ_LLM_THINKING=false) or raise "
+                    "max_tokens"
+                    if self.reasoning
+                    else ""
+                )
+            )
         try:
             return json.loads(self.text)
         except json.JSONDecodeError:
@@ -101,6 +119,10 @@ class _ProviderProfile:
     supports_json_schema: bool
     health_path: str
     health_method: str = "GET"
+    chat_template_kwargs: dict[str, Any] | None = None
+    """Extra arguments for the server-side chat template. llama.cpp uses these to switch a
+    hybrid-reasoning model out of thinking mode; providers that do not know the field
+    ignore it, so it is only sent where it is known to be honoured."""
 
 
 @dataclass
@@ -188,6 +210,8 @@ class OpenAICompatibleClient:
             "max_tokens": max_tokens,
             "stream": False,
         }
+        if self.profile.chat_template_kwargs:
+            payload["chat_template_kwargs"] = dict(self.profile.chat_template_kwargs)
         response_format = self._response_format(json_schema)
         if response_format:
             payload["response_format"] = response_format
@@ -222,8 +246,10 @@ class OpenAICompatibleClient:
             body = resp.json()
             choice = (body.get("choices") or [{}])[0]
             usage = body.get("usage") or {}
+            message = choice.get("message") or {}
             return LLMResult(
-                text=(choice.get("message") or {}).get("content") or "",
+                text=message.get("content") or "",
+                reasoning=message.get("reasoning_content") or "",
                 model=body.get("model", self.model),
                 provider=self.provider,
                 prompt_tokens=usage.get("prompt_tokens", 0),
@@ -264,6 +290,10 @@ def _profile(provider: str) -> _ProviderProfile:
             supports_json_schema=True,
             # llama-server exposes /health at the server root, one level above /v1.
             health_path=settings.nlq_llm_base_url.rstrip("/").removesuffix("/v1") + "/health",
+            # Qwen3-class models think first and answer second. The plan is a form to fill
+            # in, not a problem to reason about, and the trace costs the whole token budget
+            # before a single character of JSON is emitted.
+            chat_template_kwargs=None if settings.nlq_llm_thinking else {"enable_thinking": False},
         )
     if provider == "groq":
         return _ProviderProfile(

@@ -99,27 +99,75 @@ def plan_schema(catalog: Catalog | None = None) -> dict[str, Any]:
         "additionalProperties": False,
     }
 
+    confidence = {"type": "number", "minimum": 0, "maximum": 1}
+    reasoning = {"type": "string", "maxLength": 200}
+
+    # A real tagged union, one branch per route. Flattening these into one object with
+    # `required: ["route"]` looks equivalent and is not: the grammar would then let the
+    # model open `{"route":"queryspec"`, emit `confidence` and `reasoning`, and close —
+    # a structurally valid plan with no spec in it, which is a silent demotion to
+    # text-to-SQL and, from the user's seat, "not answerable from the loan book".
+    #
+    # Field order is load-bearing too. Constrained decoding emits properties in schema
+    # order, so the payload that decides the answer is written before the prose about it;
+    # if generation is cut short it is the commentary that is lost, not the spec.
     return {
         "title": "PlanResult",
-        "type": "object",
-        "properties": {
-            "route": {"type": "string", "enum": ["queryspec", "sql", "clarify", "refuse"]},
-            "spec": query_spec,
-            "intent": {"type": "string"},
-            "tables": {"type": "array", "items": {"type": "string"}},
-            "question": {"type": "string"},
-            "suggestions": {"type": "array", "items": {"type": "string"}, "maxItems": 3},
-            "reason": {
-                "type": "string",
-                "enum": ["out_of_scope", "not_in_data", "predictive", "advice", "unsafe"],
+        "anyOf": [
+            {
+                "type": "object",
+                "properties": {
+                    "route": {"const": "queryspec"},
+                    "spec": query_spec,
+                    "confidence": confidence,
+                    "reasoning": reasoning,
+                },
+                "required": ["route", "spec", "confidence"],
+                "additionalProperties": False,
             },
-            "message": {"type": "string"},
-            "examples": {"type": "array", "items": {"type": "string"}, "maxItems": 3},
-            "confidence": {"type": "number", "minimum": 0, "maximum": 1},
-            "reasoning": {"type": "string", "maxLength": 300},
-        },
-        "required": ["route"],
-        "additionalProperties": False,
+            {
+                "type": "object",
+                "properties": {
+                    "route": {"const": "sql"},
+                    "intent": {"type": "string"},
+                    "tables": {"type": "array", "items": {"type": "string"}},
+                    "confidence": confidence,
+                    "reasoning": reasoning,
+                },
+                "required": ["route", "intent", "tables"],
+                "additionalProperties": False,
+            },
+            {
+                "type": "object",
+                "properties": {
+                    "route": {"const": "clarify"},
+                    "question": {"type": "string"},
+                    "suggestions": {
+                        "type": "array", "items": {"type": "string"}, "maxItems": 3,
+                    },
+                },
+                "required": ["route", "question"],
+                "additionalProperties": False,
+            },
+            {
+                "type": "object",
+                "properties": {
+                    "route": {"const": "refuse"},
+                    "reason": {
+                        "type": "string",
+                        "enum": [
+                            "out_of_scope", "not_in_data", "predictive", "advice", "unsafe",
+                        ],
+                    },
+                    "message": {"type": "string"},
+                    "examples": {
+                        "type": "array", "items": {"type": "string"}, "maxItems": 3,
+                    },
+                },
+                "required": ["route", "reason"],
+                "additionalProperties": False,
+            },
+        ],
     }
 
 

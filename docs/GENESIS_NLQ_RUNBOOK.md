@@ -35,6 +35,7 @@ NLQ_LLM_BASE_URL=http://<gpu-private-ip>:8080/v1
 NLQ_LLM_MODEL=qwen3.6-32b-instruct-q4_K_M
 NLQ_LLM_TIMEOUT_S=30
 NLQ_LLM_MAX_RETRIES=1
+NLQ_LLM_THINKING=false
 
 NLQ_DB_USER=nlq_readonly
 NLQ_DB_PASSWORD=<different from POSTGRES_PASSWORD>
@@ -55,6 +56,12 @@ Pin the exact GGUF SHA-256 here when the node is provisioned, so a rebuild is re
 model: qwen3.6-32b-instruct-q4_K_M.gguf
 sha256: <fill in at provisioning>
 ```
+
+`NLQ_LLM_THINKING` must stay `false` for any hybrid-reasoning model (the Qwen3 family, and
+anything else llama-server answers with a `reasoning_content` field). The planner fills in a
+form under a JSON grammar; deliberation buys nothing and costs everything, because the trace
+consumes `max_tokens` before the first character of the plan is emitted and `content` comes
+back empty.
 
 **Network:** private VPC IP only, never internet-exposed — the endpoint is unauthenticated.
 Security group allows 8080 from the app node alone. Customer data never leaves the app node:
@@ -143,6 +150,7 @@ WHERE feedback = 'down' ORDER BY ts DESC;
 |---|---|---|
 | `db.status = "unconfigured"` | `NLQ_DB_PASSWORD` unset | Create the role, set the variable. NLQ deliberately refuses to fall back to the app role |
 | Every question refuses | Catalog failed to load | `/nlq/health` → `catalog.status`; check the YAML |
+| Every question refuses, catalog and DB healthy | The planner is failing and demoting to text-to-SQL, which then declines. The `plan` SSE frame shows `route: "sql", attempts: 2, repaired: true` | Read the `NLQ plan rejected on attempt N` log line — it carries the exact reason. A thinking model with `NLQ_LLM_THINKING=true` spends the whole token budget on `reasoning_content` and returns empty `content` |
 | `ask: false`, `execute: true` | LLM unreachable | Expected degradation. The ask bar says so; dashboards keep working |
 | PAR looks impossibly low | Denominator is the classified subset (₹198.5 Cr), not the whole book (₹275.2 Cr) | Working as documented — see the coverage warning on every PAR answer, and §7 below |
 | Disbursement reads zero before Oct 2025 | The event log starts 2025-10-15 | Working as documented; the answer says so |

@@ -61,6 +61,13 @@ class Settings:
         self.nlq_llm_api_key = get("NLQ_LLM_API_KEY")          # llama.cpp ignores it; kept for gateways
         self.nlq_llm_timeout_s = float(get("NLQ_LLM_TIMEOUT_S", "30") or "30")
         self.nlq_llm_max_retries = int(get("NLQ_LLM_MAX_RETRIES", "1") or "1")
+        # Qwen3 and its relatives think by default, and llama-server returns that trace in
+        # `reasoning_content` with `content` left empty — the planner then sees no JSON at
+        # all. Nothing on this path wants free-form reasoning, so thinking is off unless a
+        # deployment explicitly asks for it.
+        self.nlq_llm_thinking = (get("NLQ_LLM_THINKING", "false") or "false").lower() in (
+            "1", "true", "yes", "on",
+        )
 
         # Read-only database role (see docs/GENESIS_NLQ_BUILD_PLAN.md §7.1). Separate
         # credentials from the app role — this is the real security boundary, so it must

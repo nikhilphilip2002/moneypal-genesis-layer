@@ -70,6 +70,85 @@ class TestJsonSalvage:
             LLMResult(text="I cannot help with that.", model="m", provider="p").json()
 
 
+class TestThinkingModels:
+    """A hybrid-reasoning model that thinks past its token budget answers 200 OK with an
+    empty `content` and the whole trace in `reasoning_content`. That produced a planner
+    demotion to text-to-SQL and, to the user, "not answerable from the loan book"."""
+
+    def test_empty_content_names_the_cause(self):
+        result = LLMResult(
+            text="",
+            model="m",
+            provider="llamacpp",
+            finish_reason="length",
+            reasoning="Here's a thinking process: " + "x" * 2000,
+        )
+        with pytest.raises(LLMError) as exc:
+            result.json()
+        message = str(exc.value)
+        assert "no content" in message
+        assert "reasoning" in message
+        assert "length" in message
+
+    @pytest.mark.anyio
+    async def test_reasoning_content_is_captured(self):
+        def handler(request):
+            return httpx.Response(
+                200,
+                json={
+                    "model": "m",
+                    "choices": [
+                        {
+                            "message": {"content": "", "reasoning_content": "thinking..."},
+                            "finish_reason": "length",
+                        }
+                    ],
+                    "usage": {"prompt_tokens": 10, "completion_tokens": 700},
+                },
+            )
+
+        result = await _client(handler).complete(messages=[{"role": "user", "content": "hi"}])
+        assert result.text == ""
+        assert result.reasoning == "thinking..."
+
+    @pytest.mark.anyio
+    async def test_chat_template_kwargs_are_sent_when_declared(self):
+        seen = {}
+
+        def handler(request):
+            seen.update(json.loads(request.content))
+            return _ok('{"route":"refuse"}')
+
+        profile = _ProviderProfile(
+            name="llamacpp",
+            base_url="http://stub/v1",
+            api_key=None,
+            supports_json_schema=True,
+            health_path="/health",
+            chat_template_kwargs={"enable_thinking": False},
+        )
+        client = OpenAICompatibleClient(profile=profile, model="m")
+        client._client = httpx.AsyncClient(
+            base_url="http://stub/v1", transport=httpx.MockTransport(handler)
+        )
+        await client.complete(messages=[{"role": "user", "content": "hi"}])
+        assert seen["chat_template_kwargs"] == {"enable_thinking": False}
+
+    @pytest.mark.anyio
+    async def test_chat_template_kwargs_absent_by_default(self):
+        """Groq and friends must not receive a llama.cpp-specific field."""
+        seen = {}
+
+        def handler(request):
+            seen.update(json.loads(request.content))
+            return _ok('{"route":"refuse"}')
+
+        await _client(handler, supports_json_schema=False, name="groq").complete(
+            messages=[{"role": "user", "content": "hi"}]
+        )
+        assert "chat_template_kwargs" not in seen
+
+
 class TestResponseFormat:
     @pytest.mark.anyio
     async def test_json_schema_is_passed_when_supported(self):

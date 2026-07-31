@@ -16,7 +16,7 @@ from __future__ import annotations
 
 from app.services.nlq.catalog import Catalog, get_catalog
 
-PROMPT_VERSION = "planner-v1"
+PROMPT_VERSION = "planner-v2"
 
 SYSTEM_PROMPT = """\
 You translate questions about an Indian co-operative bank's lending book into structured \
@@ -59,6 +59,10 @@ PERIODS
 - Default to "all_time" only when the question is explicitly about the whole book.
 - "this year" in a banking context means the financial year: use "fy_to_date".
 - Bare "last year" is ambiguous — clarify rather than picking one.
+- A *named* financial year (FY24, FY26, "financial year 2025-26") is not a relative \
+period. Emit explicit `start` and `end` dates: FY26 is 2025-04-01 to 2026-03-31, FY25 is \
+2024-04-01 to 2025-03-31. Never map a named year onto "this_fy" or "fy_to_date" — those \
+follow today's date and will silently answer about a different year.
 """
 
 
@@ -112,9 +116,12 @@ FEW_SHOTS: list[tuple[str, str]] = [
     ),
     (
         "How many loans did we sanction each month in FY26?",
+        # Explicit dates, not "last_fy": FY26 is only the previous fiscal year while today
+        # happens to fall in FY27, and a few-shot that encodes today's calendar teaches the
+        # model to answer about the wrong year every April.
         '{"route":"queryspec","confidence":0.93,"reasoning":"count over a monthly time axis",'
         '"spec":{"metrics":["loan_count"],"dimensions":["month"],'
-        '"period":{"relative":"last_fy"}}}',
+        '"period":{"grain":"month","start":"2025-04-01","end":"2026-03-31"}}}',
     ),
     (
         "What is our PAR 30 right now?",
