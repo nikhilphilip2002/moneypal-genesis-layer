@@ -18,7 +18,7 @@ import { homeRoute, type UserRole } from '@/lib/useUserRole';
 import { useIntel } from '@/lib/useIntel';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import AIBriefPanel from '@/components/intel/AIBriefPanel';
+import StreamingBrief from '@/components/intel/StreamingBrief';
 import IntelligenceCard from '@/components/intel/IntelligenceCard';
 import LoadingCard from '@/components/intel/LoadingCard';
 import WidgetError from '@/components/intel/WidgetError';
@@ -125,7 +125,6 @@ export default function Dashboard() {
       .catch(() => router.replace('/login'));
   }, [router]);
 
-  const briefing = useIntel<IntelligenceResponse>('macro:briefing', macro.briefing);
   const alerts = useIntel<RegulatoryAlert[]>('regulatory:alerts', regulatory.alerts);
   const snapshot = useIntel<IntelligenceResponse>('macro:snapshot', macro.snapshot);
   const landscape = useIntel<IntelligenceResponse>('competitive:landscape', competitive.landscape);
@@ -165,9 +164,7 @@ export default function Dashboard() {
           </p>
           <div className="grid gap-4 lg:grid-cols-[2fr_1fr]">
             <div>
-              {briefing.loading && <LoadingCard lines={8} className="h-full" showStatus />}
-              {briefing.error && <WidgetError title="AI Executive Brief" onRetry={briefing.reload} className="h-full" />}
-              {briefing.data && <AIBriefPanel data={briefing.data} className="h-full" onRefresh={briefing.reload} />}
+              <StreamingBrief className="h-full" />
             </div>
 
             <Card className="dashboard-surface rounded-[1.5rem] border-border/70 shadow-none">

@@ -284,6 +284,50 @@ def _chat(messages: list[dict], temperature: float) -> str:
     raise last_error  # type: ignore[misc]
 
 
+def _chat_stream(messages: list[dict], temperature: float):
+    """Streaming counterpart of _chat. Yields content deltas.
+
+    Fails over to the secondary key only if the primary errors *before* emitting
+    any token — once a stream has started producing text, restarting on a second
+    key would duplicate the answer, so a mid-stream failure just ends the stream.
+    """
+    import time
+
+    keys = _api_keys()
+    if not keys:
+        raise RuntimeError("GROQ_API_KEY is not configured")
+
+    ordered = list(keys)
+    if len(keys) > 1 and time.time() < _key_state["primary_blocked_until"]:
+        ordered = keys[1:] + keys[:1]
+
+    last_error: Exception | None = None
+    for key in ordered:
+        started = False
+        try:
+            stream = _groq_client(key).chat.completions.create(
+                model=settings.groq_model,
+                temperature=temperature,
+                messages=messages,
+                stream=True,
+            )
+            for chunk in stream:
+                delta = chunk.choices[0].delta.content
+                if delta:
+                    started = True
+                    yield delta
+            return
+        except Exception as exc:  # 429 / transient failure -> try the next key
+            last_error = exc
+            if started:
+                raise  # already emitted tokens; don't regenerate on another key
+            if key == keys[0]:
+                daily = "per day" in str(exc).lower() or "tpd" in str(exc).lower()
+                cooldown = 900.0 if daily else _PRIMARY_COOLDOWN
+                _key_state["primary_blocked_until"] = time.time() + cooldown
+    raise last_error  # type: ignore[misc]
+
+
 DEFAULT_SYSTEM = (
     "You are the senior intelligence analyst of the Moneypal Genesis Console, briefing "
     "the leadership of GICC — a Karnataka co-operative bank with assets under Rs 500 "
@@ -302,13 +346,8 @@ DEFAULT_SYSTEM = (
 )
 
 
-def generate(
-    prompt: str,
-    context_chunks: list[dict],
-    system: str = DEFAULT_SYSTEM,
-    temperature: float = 0.3,
-) -> str:
-    """Generate an answer grounded in retrieved context chunks."""
+def _context_user(prompt: str, context_chunks: list[dict]) -> str:
+    """Build the grounded user turn shared by generate() and generate_stream()."""
 
     def label(c: dict) -> str:
         page = c.get("page")
@@ -318,11 +357,36 @@ def generate(
         return f"[Source: {c.get('source')}, p.{page}]"
 
     context = "\n\n".join(f"{label(c)}\n{c.get('text', '')}" for c in context_chunks)
-    user = f"CONTEXT:\n{context}\n\n---\n\nTASK:\n{prompt}"
+    return f"CONTEXT:\n{context}\n\n---\n\nTASK:\n{prompt}"
+
+
+def generate(
+    prompt: str,
+    context_chunks: list[dict],
+    system: str = DEFAULT_SYSTEM,
+    temperature: float = 0.3,
+) -> str:
+    """Generate an answer grounded in retrieved context chunks."""
     return _chat(
         [
             {"role": "system", "content": system},
-            {"role": "user", "content": user},
+            {"role": "user", "content": _context_user(prompt, context_chunks)},
+        ],
+        temperature,
+    )
+
+
+def generate_stream(
+    prompt: str,
+    context_chunks: list[dict],
+    system: str = DEFAULT_SYSTEM,
+    temperature: float = 0.3,
+):
+    """Stream a grounded answer token-by-token. Yields text deltas as they arrive."""
+    yield from _chat_stream(
+        [
+            {"role": "system", "content": system},
+            {"role": "user", "content": _context_user(prompt, context_chunks)},
         ],
         temperature,
     )

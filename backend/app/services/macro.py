@@ -59,14 +59,33 @@ def msme():
     )
 
 
+# Shared so the cached and streamed briefing paths produce an identical envelope.
+_BRIEFING_META = dict(
+    title="Macro Intelligence",
+    key_points=["Credit environment", "Karnataka opportunity", "Risk watch", "Strategic move for GICC"],
+    document="Economic Survey + RBI Annual Report + MSME Ministry",
+    url="https://www.indiabudget.gov.in/economicsurvey/",
+    ai_note="",
+    confidence="high",
+)
+
+
+def briefing_response(summary: str, sources: list[dict]):
+    """Wrap a (streamed or batch) briefing body in the standard response envelope."""
+    page = str(sources[0]["page"]) if sources and sources[0].get("page") else None
+    return make_response(summary=summary, page=page, **_BRIEFING_META)
+
+
 def briefing():
-    return _brief(
-        "Macro Intelligence",
-        prompts.BRIEFING,
-        ["Credit environment", "Karnataka opportunity", "Risk watch", "Strategic move for GICC"],
-        "Economic Survey + RBI Annual Report + MSME Ministry",
-        "https://www.indiabudget.gov.in/economicsurvey/",
-        "",
-        confidence="high",
-        queries=prompts.BRIEFING_QUERIES,
-    )
+    answer, sources = rag.ask(MACRO_COLLECTION, prompts.BRIEFING, queries=prompts.BRIEFING_QUERIES)
+    return briefing_response(answer, sources)
+
+
+def briefing_stream():
+    """Retrieve context, then return (sources, token_generator) for the briefing.
+
+    Retrieval runs up front so the caller can build the final response envelope
+    from the same sources once streaming completes.
+    """
+    sources = rag.search_multi(MACRO_COLLECTION, prompts.BRIEFING_QUERIES)
+    return sources, rag.generate_stream(prompts.BRIEFING, sources)

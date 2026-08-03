@@ -314,6 +314,78 @@ export const macro = {
   briefing: (refresh?: boolean): Promise<IntelligenceResponse> => apiRequest(`/macro/briefing${refresh ? '?refresh=1' : ''}`),
 };
 
+export type BriefStreamHandlers = {
+  onToken: (text: string) => void;
+  onDone: (data: IntelligenceResponse) => void;
+  onError: (message: string) => void;
+};
+
+// Consumes the /macro/briefing/stream SSE endpoint. Uses fetch (not EventSource)
+// so the Bearer token can be sent. A cached brief arrives as a single `done`
+// event; a freshly generated one streams `token` events first.
+export async function streamBriefing(
+  { refresh, signal }: { refresh?: boolean; signal?: AbortSignal },
+  { onToken, onDone, onError }: BriefStreamHandlers,
+): Promise<void> {
+  const token = getToken();
+  let response: Response;
+  try {
+    response = await fetch(`${API_URL}/macro/briefing/stream${refresh ? '?refresh=1' : ''}`, {
+      headers: { ...(token && { Authorization: `Bearer ${token}` }) },
+      signal,
+    });
+  } catch (err: any) {
+    if (err?.name !== 'AbortError') onError('Could not reach the briefing service.');
+    return;
+  }
+
+  if (!response.ok || !response.body) {
+    if (response.status === 401) redirectToLogin();
+    onError(`Briefing stream failed (status ${response.status}).`);
+    return;
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+
+  const dispatch = (frame: string) => {
+    let event = 'message';
+    const dataLines: string[] = [];
+    for (const line of frame.split('\n')) {
+      if (line.startsWith('event:')) event = line.slice(6).trim();
+      else if (line.startsWith('data:')) dataLines.push(line.slice(5).trim());
+    }
+    if (!dataLines.length) return;
+    let payload: any;
+    try {
+      payload = JSON.parse(dataLines.join('\n'));
+    } catch {
+      return;
+    }
+    if (event === 'token') onToken(payload.t ?? '');
+    else if (event === 'done') onDone(payload as IntelligenceResponse);
+    else if (event === 'error') onError(payload.message || 'Generation failed.');
+  };
+
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      let sep: number;
+      // SSE frames are separated by a blank line.
+      while ((sep = buffer.indexOf('\n\n')) !== -1) {
+        const frame = buffer.slice(0, sep);
+        buffer = buffer.slice(sep + 2);
+        if (frame.trim()) dispatch(frame);
+      }
+    }
+  } catch (err: any) {
+    if (err?.name !== 'AbortError') onError('The briefing stream was interrupted.');
+  }
+}
+
 // ─── Module 2: Competitive intelligence ───
 
 export const competitive = {

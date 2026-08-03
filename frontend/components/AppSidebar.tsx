@@ -76,18 +76,18 @@ export default function AppSidebar() {
                             className="h-auto rounded-md border border-sidebar-border/70 p-3 group-data-[collapsible=icon]:!size-8 group-data-[collapsible=icon]:!p-0 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:border-0"
                         >
                             <Link href="/">
-                                <div className="flex h-12 w-32 shrink-0 items-center justify-center group-data-[collapsible=icon]:h-8 group-data-[collapsible=icon]:w-8 overflow-hidden group-data-[collapsible=icon]:justify-start">
+                                <div className="flex h-11 w-[104px] shrink-0 items-center justify-center group-data-[collapsible=icon]:h-8 group-data-[collapsible=icon]:w-8 overflow-hidden group-data-[collapsible=icon]:justify-center">
                                     <Image
                                         src="/moneypal.png"
                                         alt="Moneypal"
                                         width={256}
                                         height={128}
-                                        className="h-12 w-[120px] object-contain group-data-[collapsible=icon]:h-8 group-data-[collapsible=icon]:w-[64px] group-data-[collapsible=icon]:object-cover group-data-[collapsible=icon]:object-left"
+                                        className="h-11 w-[104px] object-contain group-data-[collapsible=icon]:h-8 group-data-[collapsible=icon]:w-8"
                                     />
                                 </div>
-                                <div className="grid flex-1 text-left text-sm leading-tight group-data-[collapsible=icon]:hidden">
-                                    <span className="truncate font-semibold tracking-tight text-[13px]">Moneypal</span>
-                                    <span className="truncate font-mono text-[9px] uppercase tracking-widest text-sidebar-foreground/40">Genesis Console</span>
+                                <div className="grid flex-1 text-left leading-tight group-data-[collapsible=icon]:hidden">
+                                    <span className="truncate text-[13px] font-semibold tracking-tight text-sidebar-foreground">Moneypal</span>
+                                    <span className="truncate text-[11px] font-medium tracking-wide text-sidebar-foreground/70">Genesis Console</span>
                                 </div>
                             </Link>
                         </SidebarMenuButton>
