@@ -512,10 +512,13 @@ export default function DBSchemaGraph() {
       ctx.stroke();
 
       const titleText = String(node.title || '');
-      const baseFontSize = isHovered || isSelected ? 13 : 11;
-      const scaledFontSize = Math.min(baseFontSize / Math.max(globalScale * 0.5, 0.35), baseFontSize * 1.5);
-      
-      ctx.font = `${isSelected || isHovered ? '600' : '500'} ${scaledFontSize}px Inter, system-ui, sans-serif`;
+      const isRootNode = node.type === 'executive';
+      // Keep labels a near-constant on-screen size so they stay legible when zoomed
+      // out; the root/portfolio node is drawn a step larger and always bold.
+      const baseFontSize = isRootNode ? 16 : isHovered || isSelected ? 13 : 11;
+      const scaledFontSize = Math.min(baseFontSize / globalScale, baseFontSize * 3);
+
+      ctx.font = `${isRootNode || isSelected || isHovered ? '700' : '500'} ${scaledFontSize}px Inter, system-ui, sans-serif`;
       const textWidth = ctx.measureText(titleText).width;
       const textHeight = scaledFontSize * 1.2;
       const textY = node.y! + size + 5;

@@ -76,13 +76,13 @@ export default function AppSidebar() {
                             className="h-auto rounded-md border border-sidebar-border/70 p-3 group-data-[collapsible=icon]:!size-8 group-data-[collapsible=icon]:!p-0 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:border-0"
                         >
                             <Link href="/">
-                                <div className="flex h-10 w-20 shrink-0 items-center justify-center group-data-[collapsible=icon]:h-8 group-data-[collapsible=icon]:w-8 overflow-hidden group-data-[collapsible=icon]:justify-start">
+                                <div className="flex h-12 w-32 shrink-0 items-center justify-center group-data-[collapsible=icon]:h-8 group-data-[collapsible=icon]:w-8 overflow-hidden group-data-[collapsible=icon]:justify-start">
                                     <Image
                                         src="/moneypal.png"
                                         alt="Moneypal"
-                                        width={160}
-                                        height={80}
-                                        className="h-9 w-[72px] object-contain group-data-[collapsible=icon]:h-8 group-data-[collapsible=icon]:w-[64px] group-data-[collapsible=icon]:object-cover group-data-[collapsible=icon]:object-left"
+                                        width={256}
+                                        height={128}
+                                        className="h-12 w-[120px] object-contain group-data-[collapsible=icon]:h-8 group-data-[collapsible=icon]:w-[64px] group-data-[collapsible=icon]:object-cover group-data-[collapsible=icon]:object-left"
                                     />
                                 </div>
                                 <div className="grid flex-1 text-left text-sm leading-tight group-data-[collapsible=icon]:hidden">
@@ -124,14 +124,14 @@ export default function AppSidebar() {
                 {/* GICC partner mark */}
                 <SidebarGroup className="mt-auto px-3 py-2 group-data-[collapsible=icon]:hidden">
                     <SidebarGroupContent>
-                        <div className="flex items-center gap-2 rounded-md border border-sidebar-border/70 p-2.5">
-                            <div className="flex size-8 shrink-0 items-center justify-center overflow-hidden">
+                        <div className="flex items-center gap-2.5 rounded-md border border-sidebar-border/70 p-2.5">
+                            <div className="flex size-12 shrink-0 items-center justify-center overflow-hidden">
                                 <Image
                                     src="/gicc.png"
                                     alt="GICC"
-                                    width={32}
-                                    height={32}
-                                    className="size-8 object-contain"
+                                    width={48}
+                                    height={48}
+                                    className="size-12 object-contain"
                                 />
                             </div>
                             <div className="grid text-left leading-tight">

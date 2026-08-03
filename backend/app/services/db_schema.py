@@ -534,7 +534,7 @@ def get_db_schema_graph(
 
     executive_info = {
         "id": "EXEC-PORTFOLIO",
-        "name": "Moneypal Core Loan Book",
+        "name": "GICC Loanbook",
         # The module reads PostgreSQL; it previously described itself as Oracle.
         "role": "PostgreSQL warehouse (schema: bronze)",
         "org": "Moneypal GICC Holdings Ltd",

@@ -25,20 +25,19 @@ import {
 import { cn } from '@/lib/utils';
 
 // Monthly options are loaded from the API so the picker can only offer periods the
-// warehouse actually holds a snapshot for. Quarterly and yearly remain static because
-// they additionally depend on a period-end snapshot landing on the quarter/year end.
+// warehouse actually holds a snapshot for. Quarterly and yearly are restricted to the
+// periods the snapshot window (Oct 2025 – Jun 2026) actually covers: quarters Q3, Q4
+// and Q1, and the single fiscal year FY 2025-2026. Periods with no snapshot behind them
+// are not offered.
 const PERIOD_OPTIONS = {
   monthly: [] as { label: string; value: string }[],
   quarterly: [
     { label: 'Q1 FY26 (Apr - Jun 2026)', value: '2026-Q1' },
     { label: 'Q4 FY25 (Jan - Mar 2026)', value: '2025-Q4' },
     { label: 'Q3 FY25 (Oct - Dec 2025)', value: '2025-Q3' },
-    { label: 'Q2 FY25 (Jul - Sep 2025)', value: '2025-Q2' },
-    { label: 'Q1 FY25 (Apr - Jun 2025)', value: '2025-Q1' },
   ],
   yearly: [
     { label: 'FY 2025-2026 (Annual Return)', value: '2025-2026' },
-    { label: 'FY 2024-2025 (Annual Return)', value: '2024-2025' },
   ],
 };
 
@@ -349,7 +348,7 @@ export default function DNBSReport() {
       )}
 
       {/* Main Content States */}
-      {loading && <LoadingCard lines={10} />}
+      {loading && <LoadingCard lines={10} stages={['Querying warehouse snapshot', 'Mapping RBI return sections', 'Compiling report']} />}
       {error && <WidgetError title="DNBS-02 Report Builder" onRetry={fetchReport} />}
 
       {report && !loading && (

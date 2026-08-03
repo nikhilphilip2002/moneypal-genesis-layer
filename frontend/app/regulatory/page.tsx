@@ -34,7 +34,7 @@ function CategoryDetail({ category }: { category: RegulationCategory }) {
   );
   return (
     <>
-      {detail.loading && <LoadingCard lines={8} className="border-0 shadow-none" />}
+      {detail.loading && <LoadingCard lines={8} className="border-0 shadow-none" showStatus />}
       {detail.error && <WidgetError title={category.display_name} onRetry={detail.reload} className="border-0 shadow-none" />}
       {detail.data && <IntelligenceCard data={detail.data} className="border-0 shadow-none" onRefresh={detail.reload} />}
     </>

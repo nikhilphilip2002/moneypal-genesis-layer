@@ -165,7 +165,7 @@ export default function Dashboard() {
           </p>
           <div className="grid gap-4 lg:grid-cols-[2fr_1fr]">
             <div>
-              {briefing.loading && <LoadingCard lines={8} className="h-full" />}
+              {briefing.loading && <LoadingCard lines={8} className="h-full" showStatus />}
               {briefing.error && <WidgetError title="AI Executive Brief" onRetry={briefing.reload} className="h-full" />}
               {briefing.data && <AIBriefPanel data={briefing.data} className="h-full" onRefresh={briefing.reload} />}
             </div>
@@ -198,12 +198,12 @@ export default function Dashboard() {
           </p>
           <div className="grid gap-4 lg:grid-cols-2">
             <div>
-              {snapshot.loading && <LoadingCard className="h-full" />}
+              {snapshot.loading && <LoadingCard className="h-full" showStatus />}
               {snapshot.error && <WidgetError title="Economic Snapshot" onRetry={snapshot.reload} className="h-full" />}
               {snapshot.data && <IntelligenceCard data={snapshot.data} className="h-full" onRefresh={snapshot.reload} collapsible />}
             </div>
             <div>
-              {landscape.loading && <LoadingCard className="h-full" />}
+              {landscape.loading && <LoadingCard className="h-full" showStatus />}
               {landscape.error && <WidgetError title="Karnataka Lending Landscape" onRetry={landscape.reload} className="h-full" />}
               {landscape.data && <IntelligenceCard data={landscape.data} className="h-full" onRefresh={landscape.reload} collapsible />}
             </div>
