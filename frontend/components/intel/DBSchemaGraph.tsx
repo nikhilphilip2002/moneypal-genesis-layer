@@ -28,7 +28,6 @@ import {
   RotateCcw,
   Move,
   ChevronRight,
-  ChevronDown,
   ShieldCheck,
   UserCheck,
   Award,
@@ -37,8 +36,7 @@ import {
   Database,
   TrendingUp,
   DollarSign,
-  Users,
-  Filter
+  Users
 } from 'lucide-react';
 
 const ForceGraph2D = dynamic(() => import('react-force-graph-2d'), {
@@ -192,8 +190,9 @@ export default function DBSchemaGraph() {
   const [hoverNode, setHoverNode] = useState<GraphNode | null>(null);
   
   // Search & Lucide Dropdown State
-  const [searchEntityType, setSearchEntityType] = useState<string>('all');
-  const [isEntityTypeDropdownOpen, setIsEntityTypeDropdownOpen] = useState(false);
+  // Search is fixed to borrowers — matched by name or customer ID. The entity-type
+  // selector (branch/officer/zone) was removed; name + customer ID is all that's needed.
+  const searchEntityType = 'customer';
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<SearchResultItem[]>([]);
   const [isSearchOpen, setIsSearchOpen] = useState(false);
@@ -650,31 +649,6 @@ export default function DBSchemaGraph() {
     }
   };
 
-  const getEntityTypeIcon = (type: string) => {
-    switch (type) {
-      case 'customer':
-        return <Building2 className="h-3.5 w-3.5 text-teal-500" />;
-      case 'agent':
-        return <UserCheck className="h-3.5 w-3.5 text-sky-500" />;
-      case 'manager':
-        return <Building className="h-3.5 w-3.5 text-indigo-500" />;
-      case 'zonal':
-        return <Globe2 className="h-3.5 w-3.5 text-violet-500" />;
-      default:
-        return <Filter className="h-3.5 w-3.5 text-primary" />;
-    }
-  };
-
-  const getEntityTypeLabel = (type: string) => {
-    switch (type) {
-      case 'customer': return 'Customer';
-      case 'agent': return 'Officer';
-      case 'manager': return 'Branch';
-      case 'zonal': return 'Zone VP';
-      default: return 'All Types';
-    }
-  };
-
   const m = data?.total_database_metrics;
 
   const graphContent = (
@@ -704,64 +678,10 @@ export default function DBSchemaGraph() {
         {/* SEARCH WITH LUCIDE ENTITY DROPDOWN & LIVE AUTOCOMPLETE */}
         <div className="flex items-center gap-2 relative flex-wrap">
           <form onSubmit={handleSearchSubmit} className="flex items-center gap-1.5 relative">
-            
-            {/* Custom Lucide Dropdown Selector */}
-            <div className="relative">
-              <button
-                type="button"
-                onClick={() => setIsEntityTypeDropdownOpen((v) => !v)}
-                className="h-8 text-xs px-2.5 rounded-xl border border-border/80 bg-background hover:bg-muted text-foreground font-medium flex items-center gap-1.5 transition-all shadow-sm"
-              >
-                {getEntityTypeIcon(searchEntityType)}
-                <span className="capitalize">{getEntityTypeLabel(searchEntityType)}</span>
-                <ChevronDown className="h-3 w-3 text-muted-foreground ml-0.5" />
-              </button>
-
-              {isEntityTypeDropdownOpen && (
-                <div className="absolute top-9 left-0 z-50 w-[180px] bg-card rounded-xl border shadow-xl p-1 text-xs space-y-0.5">
-                  <button
-                    type="button"
-                    onClick={() => { setSearchEntityType('all'); setIsEntityTypeDropdownOpen(false); }}
-                    className="w-full text-left p-2 rounded-lg hover:bg-muted flex items-center gap-2 font-medium"
-                  >
-                    <Filter className="h-3.5 w-3.5 text-primary" /> All Types
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => { setSearchEntityType('customer'); setIsEntityTypeDropdownOpen(false); }}
-                    className="w-full text-left p-2 rounded-lg hover:bg-muted flex items-center gap-2 font-medium"
-                  >
-                    <Building2 className="h-3.5 w-3.5 text-teal-500" /> Customer / Borrower
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => { setSearchEntityType('agent'); setIsEntityTypeDropdownOpen(false); }}
-                    className="w-full text-left p-2 rounded-lg hover:bg-muted flex items-center gap-2 font-medium"
-                  >
-                    <UserCheck className="h-3.5 w-3.5 text-sky-500" /> Officer / Agent
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => { setSearchEntityType('manager'); setIsEntityTypeDropdownOpen(false); }}
-                    className="w-full text-left p-2 rounded-lg hover:bg-muted flex items-center gap-2 font-medium"
-                  >
-                    <Building className="h-3.5 w-3.5 text-indigo-500" /> Branch Manager
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => { setSearchEntityType('zonal'); setIsEntityTypeDropdownOpen(false); }}
-                    className="w-full text-left p-2 rounded-lg hover:bg-muted flex items-center gap-2 font-medium"
-                  >
-                    <Globe2 className="h-3.5 w-3.5 text-violet-500" /> Zonal VP
-                  </button>
-                </div>
-              )}
-            </div>
-
             <div className="relative">
               <Search className="h-3.5 w-3.5 absolute left-2.5 top-2.5 text-muted-foreground" />
               <Input
-                placeholder="Search name, customer ID, or branch..."
+                placeholder="Search by name or customer ID..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 onFocus={() => {
