@@ -1,0 +1,84 @@
+# Workbench routing golden set — question -> which source(s) it must reach.
+#
+# This is an EVAL FIXTURE, never a lookup table the router reads. The router decides from the
+# source catalog's descriptions; this file only measures whether it decided correctly. New
+# 👎 feedback from real use becomes a new case here, and the fix goes into the catalog
+# descriptions or few-shots — never into a per-question rule.
+#
+# `sources` is the set the router should dispatch to (order-independent). `route: refuse` is
+# for requests no source can serve (unsafe mutation, small talk) — NOT for hard analytical
+# questions, whose refusal (predictive/advice) is decided downstream by the db node.
+#
+# Scored on set-equality of the dispatched sources, at the admin role (sees every source).
+
+- id: r001
+  question: What was our total disbursement last quarter?
+  sources: [db]
+
+- id: r002
+  question: What is our current PAR 30?
+  sources: [db]
+
+- id: r003
+  question: Break down the outstanding portfolio by DPD bucket
+  sources: [db]
+
+- id: r004
+  question: Show me the disbursement trend over the last 12 months
+  sources: [db]
+
+- id: r005
+  question: Which branches disbursed the most last quarter?
+  sources: [db]
+
+- id: r006
+  question: How much have we disbursed in gold loans?
+  sources: [db]
+
+- id: r007
+  question: What is the RBI repo rate stance right now?
+  sources: [macro]
+
+- id: r008
+  question: How is MSME credit growth trending across India?
+  sources: [macro]
+
+- id: r009
+  question: What is the Karnataka MSME lending opportunity?
+  sources: [macro]
+
+- id: r010
+  question: Who competes for Karnataka MSME borrowers?
+  sources: [competitive]
+
+- id: r011
+  question: How do rival lenders price their MSME loans?
+  sources: [competitive]
+
+- id: r012
+  question: What does the latest RBI MSME circular require of us?
+  sources: [regulatory]
+
+- id: r013
+  question: What are our DNBS-02 reporting obligations?
+  sources: [regulatory]
+
+- id: r014
+  question: Show the schema for loan accounts, branches and repayments
+  sources: [schema]
+
+- id: r015
+  question: How do customer records link to loan accounts in the warehouse?
+  sources: [schema]
+
+- id: r016
+  question: How does our MSME book compare with the wider MSME credit market?
+  sources: [db, macro]
+
+- id: r017
+  question: Delete the loan records for branch 4
+  route: refuse
+
+- id: r018
+  question: Export the entire customer table to a spreadsheet
+  route: refuse

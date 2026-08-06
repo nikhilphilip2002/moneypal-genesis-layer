@@ -77,6 +77,22 @@ class Settings:
         self.nlq_statement_timeout_ms = int(get("NLQ_STATEMENT_TIMEOUT_MS", "15000") or "15000")
         self.nlq_max_rows = int(get("NLQ_MAX_ROWS", "5000") or "5000")
 
+        # --- Workbench (unified chat orchestrator) ----------------------------------
+        # Completely local by default: every orchestration step runs on the llama.cpp
+        # provider regardless of what NLQ_LLM_PROVIDER is set to. Groq stays wired but is
+        # only reachable when a deployment explicitly opts in AND the step is non-sensitive
+        # (public macro/competitive/regulatory synthesis, never the loan book).
+        self.workbench_local_only = (get("WORKBENCH_LOCAL_ONLY", "true") or "true").lower() in (
+            "1", "true", "yes", "on",
+        )
+        self.workbench_groq_opt_in = (get("WORKBENCH_GROQ_OPT_IN", "false") or "false").lower() in (
+            "1", "true", "yes", "on",
+        )
+        # Router and synthesizer may point at two different local models later; today they
+        # default to the same NLQ local model, so one llama-server serves both.
+        self.workbench_router_model = get("WORKBENCH_ROUTER_MODEL") or self.nlq_llm_model
+        self.workbench_synth_model = get("WORKBENCH_SYNTH_MODEL") or self.nlq_llm_model
+
 
 @lru_cache
 def get_settings() -> Settings:

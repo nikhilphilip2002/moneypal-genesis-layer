@@ -707,3 +707,144 @@ export const nlq = {
     }
   },
 };
+
+// --- Workbench (unified chat orchestrator) --------------------------------------------
+// One chat that routes each question to the right source (loan book, macro, ...) and
+// streams back a card per source. Mirrors the nlq SSE client; the event set is richer
+// because a single turn can fan out to several sources.
+
+export type WorkbenchSource = {
+  id: string;
+  label: string;
+  describes: string;
+  sensitive: boolean;
+};
+
+export type WorkbenchCard = {
+  source: string;
+  card_type: 'chart' | 'brief' | 'schema' | 'clarify' | 'refusal' | 'error';
+  payload: any;
+};
+
+export type WorkbenchConversation = {
+  conversation_id: string;
+  title: string;
+  updated_at: string;
+  turn_count: number;
+};
+
+export type WorkbenchStreamEvent =
+  | { type: 'conversation'; conversation_id: string }
+  | { type: 'stage'; stage: string }
+  | { type: 'route'; sources: string[]; intent: string; model: string }
+  | { type: 'source_start'; source: string }
+  | { type: 'source_card'; card: WorkbenchCard }
+  | { type: 'synthesis'; text: string }
+  | { type: 'refusal'; refusal: { reason: string; message: string } }
+  | { type: 'error'; message: string; retryable: boolean }
+  | { type: 'done' };
+
+export type WorkbenchTool = {
+  id: string;
+  label: string;
+  description: string;
+  kind: string;
+  params: Record<string, any>;
+};
+
+export const workbench = {
+  sources: (): Promise<{ mode: string; sources: WorkbenchSource[] }> =>
+    apiRequest('/workbench/sources'),
+
+  tools: (): Promise<{ tools: WorkbenchTool[] }> => apiRequest('/workbench/tools'),
+
+  conversations: (): Promise<{ conversations: WorkbenchConversation[] }> =>
+    apiRequest('/workbench/conversations'),
+
+  conversation: (id: string): Promise<{
+    conversation_id: string;
+    title: string;
+    updated_at: string;
+    turns: { question: string; sources: string[]; at: string }[];
+  }> => apiRequest(`/workbench/conversations/${id}`),
+
+  runTool: async (toolId: string, params: Record<string, any> = {}): Promise<WorkbenchCard> => {
+    const { source, card_type, ...payload } = await apiRequest(`/workbench/tool/${toolId}`, {
+      method: 'POST',
+      body: JSON.stringify({ params }),
+    });
+    return { source, card_type, payload };
+  },
+
+  async *ask(
+    question: string,
+    conversationId: string | null,
+    pinnedSource?: string | null,
+    signal?: AbortSignal,
+  ): AsyncGenerator<WorkbenchStreamEvent> {
+    const token = typeof window !== 'undefined' ? localStorage.getItem('access') : null;
+    const res = await fetch(`${API_URL}/workbench/ask`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify({
+        question,
+        conversation_id: conversationId,
+        pinned_source: pinnedSource ?? null,
+      }),
+      signal,
+    });
+
+    if (!res.ok || !res.body) {
+      const detail = await res.text().catch(() => '');
+      throw new Error(detail || `Ask failed (${res.status})`);
+    }
+
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+
+      let split: number;
+      while ((split = buffer.indexOf('\n\n')) !== -1) {
+        const frame = buffer.slice(0, split);
+        buffer = buffer.slice(split + 2);
+
+        let event = '';
+        let data = '';
+        for (const line of frame.split('\n')) {
+          if (line.startsWith('event: ')) event = line.slice(7).trim();
+          else if (line.startsWith('data: ')) data += line.slice(6);
+        }
+        if (!event) continue;
+
+        let payload: any = {};
+        try { payload = data ? JSON.parse(data) : {}; } catch { continue; }
+
+        switch (event) {
+          case 'conversation': yield { type: 'conversation', conversation_id: payload.conversation_id }; break;
+          case 'stage': yield { type: 'stage', stage: payload.stage }; break;
+          case 'route':
+            yield { type: 'route', sources: payload.sources || [], intent: payload.intent || '', model: payload.model || '' };
+            break;
+          case 'source_start': yield { type: 'source_start', source: payload.source }; break;
+          case 'source_card': {
+            const { source, card_type, ...rest } = payload;
+            yield { type: 'source_card', card: { source, card_type, payload: rest } };
+            break;
+          }
+          case 'synthesis': yield { type: 'synthesis', text: payload.text }; break;
+          case 'refusal': yield { type: 'refusal', refusal: { reason: payload.reason, message: payload.message } }; break;
+          case 'error': yield { type: 'error', message: payload.message, retryable: !!payload.retryable }; break;
+          case 'done': yield { type: 'done' }; return;
+        }
+      }
+    }
+  },
+};

@@ -18,13 +18,10 @@ import {
 import { useUserRole, ROLE_ROUTES, type UserRole } from '@/lib/useUserRole';
 import {
     LayoutDashboard,
-    TrendingUp,
-    Building,
-    Scale,
     Settings2,
     ClipboardCheck,
     FileText,
-    Database, MessageCircleQuestion } from 'lucide-react';
+    Sparkles } from 'lucide-react';
 
 interface NavItem {
     title: string;
@@ -34,10 +31,10 @@ interface NavItem {
 
 const ALL_NAV_ITEMS: NavItem[] = [
     { title: 'Executive Dashboard', url: '/', icon: LayoutDashboard },
-    { title: 'Ask Genesis', url: '/ask', icon: MessageCircleQuestion },
-    { title: 'Macro Intelligence', url: '/macro', icon: TrendingUp },
-    { title: 'Competitive Intelligence', url: '/competitive', icon: Building },
-    { title: 'Regulatory Intelligence', url: '/regulatory', icon: Scale },
+    { title: 'Workbench', url: '/workbench', icon: Sparkles },
+    // Ask Genesis, Macro, Competitive and Regulatory are all answered inside the Workbench
+    // now (as the db/macro/competitive/regulatory sources), so they are no longer separate
+    // nav destinations. Their routes still resolve for bookmarks and deep links.
     { title: 'Administration', url: '/admin', icon: Settings2 },
     { title: 'Intelligence Review', url: '/review', icon: ClipboardCheck },
     { title: 'Policy Workspace', url: '/policy', icon: FileText },

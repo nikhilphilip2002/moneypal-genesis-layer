@@ -24,15 +24,18 @@ export const ROLE_LABELS: Record<UserRole, string> = {
 // and to platform admin — not to gicc_policy, whose workspace is regulatory text rather
 // than the portfolio. Kept off the front of every list: homeRoute() lands on entry [0].
 export const ROLE_ROUTES: Record<UserRole, string[]> = {
-  admin: ['/', '/ask', '/macro', '/competitive', '/regulatory', '/admin'],
-  gicc_admin: ['/', '/ask', '/competitive', '/regulatory', '/review'],
-  gicc_policy: ['/regulatory', '/competitive', '/policy'],
-  gicc_director: ['/', '/ask'],
+  admin: ['/', '/workbench', '/ask', '/macro', '/competitive', '/regulatory', '/admin'],
+  gicc_admin: ['/', '/workbench', '/ask', '/competitive', '/regulatory', '/review'],
+  gicc_policy: ['/regulatory', '/competitive', '/policy', '/workbench'],
+  gicc_director: ['/', '/workbench', '/ask'],
 }
 
-// Landing page after login, per role.
+// Landing page after login, per role. The Workbench is the primary surface now, so it is
+// the landing page wherever the role can see it; otherwise fall back to the role's first
+// permitted route.
 export function homeRoute(role: UserRole): string {
-  return ROLE_ROUTES[role][0]
+  const routes = ROLE_ROUTES[role]
+  return routes.includes('/workbench') ? '/workbench' : routes[0]
 }
 
 export function canAccess(role: UserRole, route: string): boolean {
