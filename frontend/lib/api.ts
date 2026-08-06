@@ -782,7 +782,7 @@ export const workbench = {
     pinnedSource?: string | null,
     signal?: AbortSignal,
   ): AsyncGenerator<WorkbenchStreamEvent> {
-    const token = typeof window !== 'undefined' ? localStorage.getItem('access') : null;
+    const token = getToken();
     const res = await fetch(`${API_URL}/workbench/ask`, {
       method: 'POST',
       headers: {
