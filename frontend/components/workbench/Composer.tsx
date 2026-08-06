@@ -158,35 +158,6 @@ function PlusMenu({
     </DropdownMenu>
   );
 }
-
-        <DropdownMenuItem disabled className="gap-2 text-sm">
-          <Paperclip className="size-4" /> Attach a file <SoonTag />
-        </DropdownMenuItem>
-
-        <DropdownMenuSub>
-          <DropdownMenuSubTrigger className="gap-2 text-sm">
-            <Filter className="size-4" /> Pin a source
-          </DropdownMenuSubTrigger>
-          <DropdownMenuSubContent className="w-52">
-            <DropdownMenuItem className="gap-2 text-sm" onClick={() => onPin(null)}>
-              <Check className={cn('size-4', pinned ? 'opacity-0' : 'opacity-100')} /> Auto (let it route)
-            </DropdownMenuItem>
-            <DropdownMenuSeparator />
-            {sources.map((s) => (
-              <DropdownMenuItem key={s.id} className="gap-2 text-sm" onClick={() => onPin(s.id)}>
-                <Check className={cn('size-4', pinned === s.id ? 'opacity-100' : 'opacity-0')} /> {s.label}
-              </DropdownMenuItem>
-            ))}
-          </DropdownMenuSubContent>
-        </DropdownMenuSub>
-
-        <DropdownMenuSeparator />
-        <DropdownMenuLabel className="flex items-center gap-2 text-xs font-normal text-muted-foreground">
-          <Cpu className="size-3.5" /> Model: <span className="font-medium capitalize text-foreground">{mode}</span>
-        </DropdownMenuLabel>
-      </DropdownMenuContent>
-    </DropdownMenu>
-  );
 }
 
 function SoonTag() {
