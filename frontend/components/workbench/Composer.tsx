@@ -158,7 +158,6 @@ function PlusMenu({
     </DropdownMenu>
   );
 }
-}
 
 function SoonTag() {
   return <span className="ml-auto text-[9px] uppercase tracking-wide text-muted-foreground">soon</span>;
