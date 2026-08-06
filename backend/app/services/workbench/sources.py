@@ -43,15 +43,14 @@ SOURCES: dict[str, Source] = {
         # the portfolio, so in the workbench it sees only the public macro source.
         roles=frozenset({"admin", "gicc_admin", "gicc_director"}),
         describes=(
-            "The bank's own lending warehouse: disbursement and sanctions, count of loans "
-            "sanctioned, outstanding balances, delinquency and DPD, collections and collection "
-            "efficiency, PAR and NPA ratios, the general ledger — sliced by branch, product, "
-            "scheme, asset class and time. Any question about *our* numbers, portfolio, "
-            "sanction volumes, or performance."
+            "The bank's own lending warehouse: disbursement and sanctions, repayments and "
+            "repayment history, outstanding balances, delinquency and DPD, collections and "
+            "collection efficiency, PAR and NPA ratios, the general ledger — sliced by "
+            "borrower, branch, product, scheme, asset class and time. Any question about *our* "
+            "numbers, portfolio, transaction records, or performance."
         ),
         example_intents=(
             "disbursement by branch last quarter",
-            "how many loans did we sanction each month in FY26",
             "what is our PAR 30 right now",
             "collection efficiency by product this year",
         ),
@@ -113,9 +112,9 @@ SOURCES: dict[str, Source] = {
         # access, not the public sources'.
         roles=frozenset({"admin", "gicc_admin", "gicc_director"}),
         describes=(
-            "The shape of the loan-book warehouse itself: which tables exist (customers, "
-            "accounts, disbursements, repayments, asset classification), how they relate, "
-            "and the keys that join them. Answers 'how is the data organised', not a figure."
+            "The structure and ER diagrams of the loan-book database itself: table definitions, "
+            "relationships, and join keys. Answers 'how is the data organised' or 'show table structures', "
+            "never individual transaction records or figures."
         ),
         example_intents=(
             "show the schema for loan accounts and repayments",
