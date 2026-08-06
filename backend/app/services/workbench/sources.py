@@ -43,13 +43,15 @@ SOURCES: dict[str, Source] = {
         # the portfolio, so in the workbench it sees only the public macro source.
         roles=frozenset({"admin", "gicc_admin", "gicc_director"}),
         describes=(
-            "The bank's own lending warehouse: disbursement and sanctions, outstanding "
-            "balances, delinquency and DPD, collections and collection efficiency, PAR and "
-            "NPA ratios, the general ledger — sliced by branch, product, scheme, asset "
-            "class and time. Any question about *our* numbers, portfolio or performance."
+            "The bank's own lending warehouse: disbursement and sanctions, count of loans "
+            "sanctioned, outstanding balances, delinquency and DPD, collections and collection "
+            "efficiency, PAR and NPA ratios, the general ledger — sliced by branch, product, "
+            "scheme, asset class and time. Any question about *our* numbers, portfolio, "
+            "sanction volumes, or performance."
         ),
         example_intents=(
             "disbursement by branch last quarter",
+            "how many loans did we sanction each month in FY26",
             "what is our PAR 30 right now",
             "collection efficiency by product this year",
         ),
@@ -192,6 +194,10 @@ ROUTER_FEW_SHOTS: list[tuple[str, str]] = [
     (
         "What was our disbursement by branch last quarter?",
         '{"route":"dispatch","sources":["db"],"intent":"disbursement by branch last quarter"}',
+    ),
+    (
+        "How many loans did we sanction each month in FY26?",
+        '{"route":"dispatch","sources":["db"],"intent":"monthly sanctioned loan counts for FY26"}',
     ),
     (
         "What is the RBI repo rate stance right now?",

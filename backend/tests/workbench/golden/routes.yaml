@@ -82,3 +82,7 @@
 - id: r018
   question: Export the entire customer table to a spreadsheet
   route: refuse
+
+- id: r019
+  question: How many loans did we sanction each month in FY26?
+  sources: [db]
