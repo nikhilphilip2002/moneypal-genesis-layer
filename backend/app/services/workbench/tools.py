@@ -59,6 +59,18 @@ async def _competitor_landscape(params: dict) -> SourceResult:
     return await nodes.run_competitive("competitive landscape")
 
 
+async def _macro_brief(params: dict) -> SourceResult:
+    from app.services.workbench import nodes
+
+    return await nodes.run_macro("India and Karnataka macroeconomic outlook, MSME credit conditions, and interest rates")
+
+
+async def _regulatory_alerts(params: dict) -> SourceResult:
+    from app.services.workbench import nodes
+
+    return await nodes.run_regulatory("latest RBI regulatory guidelines, prudential norms, and MSME circulars")
+
+
 TOOLS: dict[str, Tool] = {
     "show_schema": Tool(
         id="show_schema",
@@ -75,6 +87,22 @@ TOOLS: dict[str, Tool] = {
         description="Pull the current Karnataka MSME lending landscape brief.",
         kind="card",
         handler=_competitor_landscape,
+        roles=frozenset({"admin", "gicc_admin", "gicc_policy"}),
+    ),
+    "macro_brief": Tool(
+        id="macro_brief",
+        label="Macroeconomic brief",
+        description="Fetch latest macroeconomic indicators and MSME credit conditions.",
+        kind="card",
+        handler=_macro_brief,
+        roles=None,
+    ),
+    "regulatory_alerts": Tool(
+        id="regulatory_alerts",
+        label="Regulatory compliance brief",
+        description="Pull recent RBI circulars, MSME guidelines, and prudential norms.",
+        kind="card",
+        handler=_regulatory_alerts,
         roles=frozenset({"admin", "gicc_admin", "gicc_policy"}),
     ),
 }
