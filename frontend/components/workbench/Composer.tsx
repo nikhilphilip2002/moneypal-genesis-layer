@@ -33,9 +33,13 @@ export default function Composer({ onAsk, busy, onCancel, pinned, onPin, onRunTo
   const [mode, setMode] = useState<string>('local');
   const ref = useRef<HTMLTextAreaElement>(null);
 
-  useEffect(() => {
+  const loadData = () => {
     workbench.sources().then((r) => { setSources(r.sources); setMode(r.mode); }).catch(() => {});
     workbench.tools().then((r) => setToolList(r.tools)).catch(() => {});
+  };
+
+  useEffect(() => {
+    loadData();
   }, []);
 
   const submit = () => {
@@ -64,7 +68,7 @@ export default function Composer({ onAsk, busy, onCancel, pinned, onPin, onRunTo
         </div>
       )}
       <div className="flex items-end gap-1.5 p-2">
-        <PlusMenu sources={sources} tools={toolList} mode={mode} pinned={pinned} onPin={onPin} onRunTool={onRunTool} />
+        <PlusMenu sources={sources} tools={toolList} mode={mode} pinned={pinned} onPin={onPin} onRunTool={onRunTool} onOpen={loadData} />
         <textarea
           ref={ref}
           value={value}
@@ -91,7 +95,7 @@ export default function Composer({ onAsk, busy, onCancel, pinned, onPin, onRunTo
 }
 
 function PlusMenu({
-  sources, tools, mode, pinned, onPin, onRunTool,
+  sources, tools, mode, pinned, onPin, onRunTool, onOpen,
 }: {
   sources: WorkbenchSource[];
   tools: WorkbenchTool[];
@@ -99,37 +103,61 @@ function PlusMenu({
   pinned: string | null;
   onPin: (s: string | null) => void;
   onRunTool: (t: WorkbenchTool) => void;
+  onOpen: () => void;
 }) {
   return (
-    <DropdownMenu>
+    <DropdownMenu onOpenChange={(open) => { if (open) onOpen(); }}>
       <DropdownMenuTrigger asChild>
         <Button size="icon" variant="ghost" className="size-8 shrink-0" aria-label="Add">
           <Plus className="size-4" />
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="start" side="top" className="w-56">
-        <DropdownMenuLabel className="text-xs">Add to this question</DropdownMenuLabel>
-
-        {tools.length > 0 ? (
-          <DropdownMenuSub>
-            <DropdownMenuSubTrigger className="gap-2 text-sm">
-              <Wrench className="size-4" /> Tools & actions
-            </DropdownMenuSubTrigger>
-            <DropdownMenuSubContent className="w-60">
-              {tools.map((t) => (
-                <DropdownMenuItem key={t.id} className="flex-col items-start gap-0.5 text-sm"
-                                  onClick={() => onRunTool(t)}>
-                  <span>{t.label}</span>
-                  <span className="text-[10px] text-muted-foreground">{t.description}</span>
-                </DropdownMenuItem>
-              ))}
-            </DropdownMenuSubContent>
-          </DropdownMenuSub>
-        ) : (
-          <DropdownMenuItem disabled className="gap-2 text-sm">
-            <Wrench className="size-4" /> Tools & actions <SoonTag />
-          </DropdownMenuItem>
+      <DropdownMenuContent align="start" side="top" className="w-64 max-h-[400px] overflow-y-auto">
+        {tools.length > 0 && (
+          <>
+            <DropdownMenuLabel className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              <Wrench className="size-3.5" /> Tools & Actions
+            </DropdownMenuLabel>
+            {tools.map((t) => (
+              <DropdownMenuItem key={t.id} className="flex-col items-start gap-0.5 text-sm cursor-pointer"
+                                onClick={() => onRunTool(t)}>
+                <span className="font-medium text-foreground">{t.label}</span>
+                <span className="text-[10px] text-muted-foreground">{t.description}</span>
+              </DropdownMenuItem>
+            ))}
+            <DropdownMenuSeparator />
+          </>
         )}
+
+        <DropdownMenuSub>
+          <DropdownMenuSubTrigger className="gap-2 text-sm">
+            <Filter className="size-4" /> Pin a source
+          </DropdownMenuSubTrigger>
+          <DropdownMenuSubContent className="w-52">
+            <DropdownMenuItem className="gap-2 text-sm" onClick={() => onPin(null)}>
+              <Check className={cn('size-4', pinned ? 'opacity-0' : 'opacity-100')} /> Auto (let it route)
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            {sources.map((s) => (
+              <DropdownMenuItem key={s.id} className="gap-2 text-sm" onClick={() => onPin(s.id)}>
+                <Check className={cn('size-4', pinned === s.id ? 'opacity-100' : 'opacity-0')} /> {s.label}
+              </DropdownMenuItem>
+            ))}
+          </DropdownMenuSubContent>
+        </DropdownMenuSub>
+
+        <DropdownMenuItem disabled className="gap-2 text-sm">
+          <Paperclip className="size-4" /> Attach a file <SoonTag />
+        </DropdownMenuItem>
+
+        <DropdownMenuSeparator />
+        <DropdownMenuLabel className="flex items-center gap-2 text-xs font-normal text-muted-foreground">
+          <Cpu className="size-3.5" /> Model: <span className="font-medium capitalize text-foreground">{mode}</span>
+        </DropdownMenuLabel>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
 
         <DropdownMenuItem disabled className="gap-2 text-sm">
           <Paperclip className="size-4" /> Attach a file <SoonTag />
