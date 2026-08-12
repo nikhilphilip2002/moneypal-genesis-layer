@@ -10,7 +10,8 @@ export default function PWARegister() {
 
     const register = () => {
       navigator.serviceWorker
-        .register('/sw.js', { scope: '/' })
+        .register('/sw.js', { scope: '/', updateViaCache: 'none' })
+        .then((registration) => registration.update())
         .catch((err) => console.warn('[PWA] SW registration failed', err))
     }
 

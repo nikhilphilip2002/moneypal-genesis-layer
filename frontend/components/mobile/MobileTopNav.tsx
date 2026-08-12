@@ -54,7 +54,13 @@ export default function MobileTopNav() {
           </button>
         ) : (
           <div className="relative h-10 w-20 shrink-0 overflow-hidden">
-            <Image src="/moneypal.png" alt="Moneypal" fill className="object-contain p-0.5" priority />
+            <Image
+              src="/moneypal.png"
+              alt="Moneypal"
+              fill
+              sizes="80px"
+              className="object-contain p-0.5"
+            />
           </div>
         )}
         <h1 className="truncate text-[15px] font-semibold tracking-tight">{title}</h1>

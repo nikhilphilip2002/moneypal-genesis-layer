@@ -168,8 +168,12 @@ export default function DNBSReport() {
   };
 
   useEffect(() => {
+    // Date inputs are edited one at a time, so auto-fetching a custom range can send a
+    // transient invalid pair (for example Jul 1 through Jun 30). Custom reports run
+    // only when the user presses Generate.
+    if (reportMode === 'custom') return;
     fetchReport();
-  }, [selectedReport, reportMode, frequency, period, startDate, endDate, genericPeriods]);
+  }, [selectedReport, reportMode, frequency, period, genericPeriods]);
 
   const periodOptions = selectedReport !== 'dnbs02'
     ? ((frequency === 'monthly' ? genericPeriods?.monthly : genericPeriods?.quarterly) ?? [])
@@ -187,6 +191,8 @@ export default function DNBSReport() {
   const handleModeChange = (mode: ReportMode) => {
     setReportMode(mode);
     setError(null);
+    setReport(null);
+    setGenericReport(null);
     if (mode === 'regulatory' && periodOptions[0]) {
       setPeriod(periodOptions[0].value);
       updateDatesForPeriod(frequency, periodOptions[0].value);
@@ -220,10 +226,12 @@ export default function DNBSReport() {
 
   const handleCustomStartDateChange = (val: string) => {
     setStartDate(val);
+    setError(null);
   };
 
   const handleCustomEndDateChange = (val: string) => {
     setEndDate(val);
+    setError(null);
   };
 
   const handleExcelDownload = () => {
@@ -298,9 +306,15 @@ export default function DNBSReport() {
             </div>
 
             <div className="flex flex-wrap items-center gap-3">
-              <Button variant="outline" size="sm" onClick={fetchReport} className="h-9 rounded-xl gap-1.5 text-xs">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={fetchReport}
+                disabled={loading || (reportMode === 'custom' && !customDatesValid)}
+                className="h-9 rounded-xl gap-1.5 text-xs"
+              >
                 <RefreshCw className={cn('h-3.5 w-3.5', loading && 'animate-spin')} />
-                Refresh
+                {reportMode === 'custom' ? 'Generate' : 'Refresh'}
               </Button>
 
               <Button
@@ -463,7 +477,13 @@ export default function DNBSReport() {
 
       {/* Main Content States */}
       {loading && <LoadingCard lines={10} stages={['Querying warehouse snapshot', 'Mapping RBI return sections', 'Compiling report']} />}
-      {error && <WidgetError title="DNBS-02 Report Builder" onRetry={fetchReport} />}
+      {error && (
+        <WidgetError
+          title="DNBS Report Builder"
+          message={error}
+          onRetry={reportMode === 'custom' && !customDatesValid ? undefined : fetchReport}
+        />
+      )}
 
       {report && !loading && (
         <div className="space-y-6">
