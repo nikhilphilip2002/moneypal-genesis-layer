@@ -126,7 +126,9 @@ def run_section(
     try:
         count = fn()
         provenance[name] = SectionResult(
-            name, "ok" if count else "empty", count, note=note if count else ""
+            # Preserve caveats for an empty result as well: an auditor still needs to
+            # know why a valid query produced a blank regulatory section.
+            name, "ok" if count else "empty", count, note=note
         ).as_dict()
     except Exception as exc:  # noqa: BLE001 - one bad section must not kill the graph
         logger.exception("Curiosity graph section %r failed", name)

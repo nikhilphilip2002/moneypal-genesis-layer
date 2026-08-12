@@ -151,7 +151,13 @@ def parse_period_range(frequency: str, period: str) -> Tuple[str, str]:
 def get_available_snapshot_dates(cur: Any) -> List[str]:
     """Month-end dates for which silver.loan_daily_snapshot_summary actually holds a portfolio snapshot."""
     cur.execute(spec.SNAPSHOT_DATES_SQL)
-    return [r[0].isoformat() for r in cur.fetchall()]
+    # The silver migration correctly models Oracle DATE as a PostgreSQL timestamp.
+    # Normalise midnight timestamps to date-only strings before comparing them with the
+    # UI's YYYY-MM-DD period end.
+    return [
+        (r[0].date() if isinstance(r[0], datetime.datetime) else r[0]).isoformat()
+        for r in cur.fetchall()
+    ]
 
 
 def get_available_gl_years(cur: Any) -> List[int]:
@@ -162,6 +168,11 @@ def get_available_gl_years(cur: Any) -> List[int]:
     """
     cur.execute(spec.GL_YEARS_SQL)
     return [int(r[0]) for r in cur.fetchall()]
+
+
+def get_available_gl_dates(cur: Any) -> List[str]:
+    cur.execute(spec.GL_DATES_SQL)
+    return [_date_only.isoformat() for row in cur.fetchall() for _date_only in [row[0]]]
 
 
 def resolve_snapshot_date(cur: Any, end_date: str) -> str:
@@ -236,7 +247,7 @@ class Ctx:
     """
 
     def __init__(self, cur, conn, start_date: str, end_date: str, snapshot_date: str,
-                 gl_year: int, gl_years: List[int]):
+                 gl_year: int, gl_years: List[int], gl_dates: List[str]):
         self.cur = cur
         self.conn = conn
         self.start_date = start_date
@@ -244,7 +255,8 @@ class Ctx:
         self.snapshot_date = snapshot_date
         self.gl_year = gl_year
         self.gl_years = gl_years
-        self.gl_available = gl_year in gl_years
+        self.gl_dates = gl_dates
+        self.gl_available = end_date in gl_dates
 
         # Section outputs, keyed exactly as they appear in the returned report.
         self.rows: Dict[str, List[Dict[str, Any]]] = {
@@ -286,8 +298,8 @@ class Ctx:
 
 def _gl_reason(ctx: Ctx) -> str:
     return (
-        f"silver.gl_daily_balances has no trial balance for year {ctx.gl_year} "
-        f"(available: {ctx.gl_years})."
+        f"silver.gl_balance_history has no exact balance for {ctx.end_date} "
+        f"(latest: {ctx.gl_dates[-1] if ctx.gl_dates else 'none'})."
     )
 
 
@@ -326,7 +338,7 @@ def _sec_coverage(ctx: Ctx) -> int:
 
 def _sec_part1(ctx: Ctx) -> int:
     ctx.cur.execute(
-        spec.PART1_SQL, (ctx.gl_year, GL_SHARE_CAPITAL, GL_RESERVES, GL_BORROWINGS)
+        spec.PART1_SQL, (ctx.end_date, GL_SHARE_CAPITAL, GL_RESERVES, GL_BORROWINGS)
     )
     out = ctx.rows["part1_capital"]
     share_capital = reserves = borrowings = 0.0
@@ -378,7 +390,7 @@ def _sec_part2_maturity(ctx: Ctx) -> int:
 
 
 def _sec_part3(ctx: Ctx) -> int:
-    ctx.cur.execute(spec.PART3_SQL, (ctx.gl_year, GL_INCOME))
+    ctx.cur.execute(spec.PART3_SQL, (ctx.end_date, GL_INCOME))
     for descn, amount in ctx.cur.fetchall():
         ctx.rows["part3_income"].append(
             {"head": (descn or "").strip(), "amount_lakhs": round(_f(amount), 2)}
@@ -394,7 +406,7 @@ def _sec_part4(ctx: Ctx) -> int:
 
 
 def _sec_part6(ctx: Ctx) -> int:
-    ctx.cur.execute(spec.PART6_SQL, (ctx.gl_year, GL_INVESTMENTS))
+    ctx.cur.execute(spec.PART6_SQL, (ctx.end_date, GL_INVESTMENTS))
     for descn, amount in ctx.cur.fetchall():
         label = (descn or "").strip()
         upper = label.upper()
@@ -454,6 +466,27 @@ def _sec_part8a(ctx: Ctx) -> int:
     return len(ctx.rows["part8a_msme"])
 
 
+def _sec_annex2(ctx: Ctx) -> int:
+    """Top shareholders from the migrated share register.
+
+    The register has no PAN or capital-type column. Those cells remain blank; only the
+    name, units, face value and percentage that PostgreSQL can prove are written.
+    """
+    ctx.cur.execute(spec.ANNEX2_SQL)
+    for name, units, face_value, pct in ctx.cur.fetchall():
+        ctx.rows["annex2_shareholders"].append(
+            {
+                "name": (name or "").strip(),
+                "type_of_capital": "Equity shares",
+                "pan": "",
+                "num_shares": int(units or 0),
+                "face_value": round(_f(face_value), 2),
+                "shareholding_pct": round(_f(pct), 4),
+            }
+        )
+    return len(ctx.rows["annex2_shareholders"])
+
+
 def _sec_annex9(ctx: Ctx) -> int:
     # Aggregated by borrower, not by account: RBI asks for the top 25 *borrowers*, and a
     # borrower may hold several loans.
@@ -488,7 +521,7 @@ def _sec_annex10(ctx: Ctx) -> int:
     # Only aggregate GL lines exist. The entity-level detail Annex 10 asks for (name,
     # PAN, nature, group-company flag) has no source, so those fields stay blank rather
     # than being filled with plausible names.
-    ctx.cur.execute(spec.ANNEX10_SQL, (ctx.gl_year, GL_INVESTMENTS))
+    ctx.cur.execute(spec.ANNEX10_SQL, (ctx.end_date, GL_INVESTMENTS))
     for descn, amount in ctx.cur.fetchall():
         label = (descn or "").strip()
         upper = label.upper()
@@ -602,8 +635,7 @@ SECTIONS: List[Section] = [
         run=_sec_part6,
         precondition=_gl_available,
         precondition_reason=lambda ctx: (
-            f"silver.gl_daily_balances has no trial balance for year {ctx.gl_year} "
-            f"(available: {ctx.gl_years})."
+            f"silver.gl_balance_history has no exact balance for {ctx.end_date}."
         ),
     ),
     Section("part8_asset_quality", source=SOURCES["part8_asset_quality"], run=_sec_part8),
@@ -627,9 +659,9 @@ SECTIONS: List[Section] = [
     ),
     Section(
         "annex2_shareholders",
-        no_source_reason=(
-            "No share register in the warehouse (silver.customer_share_holdings does not exist)."
-        ),
+        source=SOURCES["annex2_shareholders"],
+        run=_sec_annex2,
+        note="Share register has no PAN; PAN cells remain blank.",
     ),
     Section("annex9_top_borrowers", source=SOURCES["annex9_top_borrowers"], run=_sec_annex9),
     Section(
@@ -747,6 +779,7 @@ def get_dnbs02_report_data(
             snapshot_date=snapshot_date,
             gl_year=_gl_year_for(end_date),
             gl_years=get_available_gl_years(cur),
+            gl_dates=get_available_gl_dates(cur),
         )
         _run_pipeline(ctx, provenance)
 

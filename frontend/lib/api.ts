@@ -184,6 +184,37 @@ export type DNBS02Periods = {
   note: string;
 };
 
+export type RegulatoryReportDefinition = {
+  id: 'dnbs02' | 'dnbs13' | 'dnbs4a' | 'dnbs4b_structural' | 'dnbs4b_irs';
+  return_code: string;
+  name: string;
+  frequency: 'monthly' | 'quarterly';
+  description: string;
+  workbook_output: string;
+};
+
+export type RegulatoryReportData = {
+  report_id: string;
+  return_code: string;
+  name: string;
+  frequency: string;
+  start_date: string;
+  end_date: string;
+  generated_at: string;
+  source: string;
+  source_date?: string;
+  status: 'draft' | 'partial' | 'blocked';
+  provenance: Record<string, SectionProvenance>;
+  summary: Record<string, number | string>;
+};
+
+export type RegulatoryReportPeriods = {
+  monthly?: { value: string; label: string; end_date: string }[];
+  quarterly?: { value: string; label: string; end_date: string }[];
+  source_dates?: string[];
+  note: string;
+};
+
 
 export type DemoUser = {
   username: string;
@@ -418,6 +449,15 @@ export const regulatory = {
     if (endDate) url += `&end_date=${encodeURIComponent(endDate)}`;
     return url;
   },
+  reports: (): Promise<RegulatoryReportDefinition[]> => apiRequest('/regulatory/reports'),
+  reportPeriods: (reportId: string): Promise<RegulatoryReportPeriods> =>
+    apiRequest(`/regulatory/reports/${encodeURIComponent(reportId)}/periods`),
+  report: (reportId: string, frequency: string, period: string): Promise<RegulatoryReportData> =>
+    apiRequest(
+      `/regulatory/reports/${encodeURIComponent(reportId)}?frequency=${encodeURIComponent(frequency)}&period=${encodeURIComponent(period)}`,
+    ),
+  getReportExcelUrl: (reportId: string, frequency: string, period: string): string =>
+    `${API_URL}/regulatory/reports/${encodeURIComponent(reportId)}/export?frequency=${encodeURIComponent(frequency)}&period=${encodeURIComponent(period)}`,
 };
 
 

@@ -207,12 +207,16 @@ class TestReportData:
 
     def test_sections_without_a_source_are_empty(self, report):
         """No fabricated stand-ins for sections the warehouse cannot back."""
-        assert report["provenance"]["annex2_shareholders"]["status"] == "no_source"
-        assert report["annex2_shareholders"] == []
         assert report["provenance"]["annex10_investment_entities"]["status"] == "no_source"
         for inv in report["annex10_top_investments"]:
             assert inv["entity_name"] == ""
             assert inv["pan"] == ""
+
+    def test_annex2_uses_the_migrated_share_register(self, report):
+        assert report["provenance"]["annex2_shareholders"]["status"] == "ok"
+        assert 1 <= len(report["annex2_shareholders"]) <= 10
+        assert all(row["name"] and row["num_shares"] > 0 for row in report["annex2_shareholders"])
+        assert all(row["pan"] == "" for row in report["annex2_shareholders"])
 
     def test_crar_is_null_without_risk_weighted_assets(self, report):
         assert report["summary"]["crar_pct"] is None
@@ -239,17 +243,12 @@ class TestReportData:
         total = sum(row["amount_lakhs"] for row in report["part8_asset_quality"])
         assert total == pytest.approx(report["summary"]["total_loan_book"], abs=0.05)
 
-    def test_msme_uses_the_loan_master_rate_column(self, report):
-        """Part 8A is sourced from genlnacnts.gnlnac_ln_intrate; the snapshot holds
-        product 16 only while nsecmsmemap maps product 13, so the snapshot yields
-        nothing. The undated source must be disclosed as a note."""
-        assert report["provenance"]["part8a_msme"]["status"] == "ok"
+    def test_msme_empty_join_is_disclosed(self, report):
+        """The refreshed source has no account-number overlap between the MSME map and
+        loan master. It remains blank rather than being inferred from product codes."""
+        assert report["provenance"]["part8a_msme"]["status"] == "empty"
         assert "gnlnac_ln_intrate" in report["provenance"]["part8a_msme"]["note"]
-        msme = report["part8a_msme"][0]
-        assert msme["account_count"] > 0
-        assert msme["amount_lakhs"] > 0
-        assert 0 < msme["min_interest_rate"] <= msme["weighted_avg_interest_rate"]
-        assert msme["weighted_avg_interest_rate"] <= msme["max_interest_rate"]
+        assert report["part8a_msme"] == []
 
     def test_coverage_is_disclosed(self, report):
         """genln_rpt_day covers product 16 only; the excluded remainder must be stated."""
@@ -330,12 +329,15 @@ class TestExcelExport:
         """The old writer wrote a single average into G, which is the Min column."""
         sheet = workbook["DNBS02_PART8A"]
         row = _find_label_row(sheet, "A.1 Direct Exposure")
-        msme = report["part8a_msme"][0]
-        assert sheet[f"G{row}"].value == pytest.approx(msme["min_interest_rate"])
-        assert sheet[f"H{row}"].value == pytest.approx(msme["max_interest_rate"])
-        assert sheet[f"I{row}"].value == pytest.approx(msme["weighted_avg_interest_rate"])
-        assert sheet[f"C{row}"].value == msme["account_count"]
-        assert sheet[f"D{row}"].value == pytest.approx(msme["amount_lakhs"])
+        if report["part8a_msme"]:
+            msme = report["part8a_msme"][0]
+            assert sheet[f"G{row}"].value == pytest.approx(msme["min_interest_rate"])
+            assert sheet[f"H{row}"].value == pytest.approx(msme["max_interest_rate"])
+            assert sheet[f"I{row}"].value == pytest.approx(msme["weighted_avg_interest_rate"])
+            assert sheet[f"C{row}"].value == msme["account_count"]
+            assert sheet[f"D{row}"].value == pytest.approx(msme["amount_lakhs"])
+        else:
+            assert all(sheet[f"{column}{row}"].value is None for column in "CDGHI")
 
     def test_part8c_standard_and_npa_lines(self, workbook, report):
         sheet = workbook["DNBS02_PART8C"]

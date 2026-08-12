@@ -1,7 +1,14 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { regulatory, type DNBS02ReportData, type DNBS02Periods } from '@/lib/api';
+import {
+  regulatory,
+  type DNBS02ReportData,
+  type DNBS02Periods,
+  type RegulatoryReportData,
+  type RegulatoryReportDefinition,
+  type RegulatoryReportPeriods,
+} from '@/lib/api';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -55,6 +62,10 @@ const REPORT_SECTION_OPTIONS = [
 ];
 
 export default function DNBSReport() {
+  const [selectedReport, setSelectedReport] = useState<string>('dnbs02');
+  const [reportCatalog, setReportCatalog] = useState<RegulatoryReportDefinition[]>([]);
+  const [genericPeriods, setGenericPeriods] = useState<RegulatoryReportPeriods | null>(null);
+  const [genericReport, setGenericReport] = useState<RegulatoryReportData | null>(null);
   const [frequency, setFrequency] = useState<'monthly' | 'quarterly' | 'yearly' | 'custom'>('monthly');
   const [period, setPeriod] = useState<string>('');
   const [startDate, setStartDate] = useState<string>('');
@@ -65,8 +76,13 @@ export default function DNBSReport() {
   const [error, setError] = useState<string | null>(null);
   const [activeSubTab, setActiveSubTab] = useState<string>('part1');
 
+  useEffect(() => {
+    regulatory.reports().then(setReportCatalog).catch(() => setReportCatalog([]));
+  }, []);
+
   // Discover reportable periods first, then default to the most recent one.
   useEffect(() => {
+    if (selectedReport !== 'dnbs02') return;
     let cancelled = false;
     regulatory
       .dnbsPeriods()
@@ -92,15 +108,57 @@ export default function DNBSReport() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [selectedReport]);
+
+  useEffect(() => {
+    if (selectedReport === 'dnbs02') return;
+    let cancelled = false;
+    setLoading(true);
+    setError(null);
+    setReport(null);
+    setGenericReport(null);
+    regulatory
+      .reportPeriods(selectedReport)
+      .then((result) => {
+        if (cancelled) return;
+        setGenericPeriods(result);
+        const definition = reportCatalog.find((item) => item.id === selectedReport);
+        const fixedFrequency = definition?.frequency ?? (selectedReport.includes('4b') ? 'monthly' : 'quarterly');
+        setFrequency(fixedFrequency);
+        const options = result[fixedFrequency] ?? [];
+        const latest = options[0];
+        if (!latest) {
+          setError('No exact period-end silver snapshot is available for this report.');
+          setLoading(false);
+          return;
+        }
+        setPeriod(latest.value);
+        updateDatesForPeriod(fixedFrequency, latest.value);
+      })
+      .catch((err: any) => {
+        if (!cancelled) {
+          setError(err?.message || 'Failed to load reportable periods');
+          setLoading(false);
+        }
+      });
+    return () => { cancelled = true; };
+  }, [selectedReport, reportCatalog]);
 
   const fetchReport = async () => {
     if (!period && !(startDate && endDate)) return;
+    if (selectedReport !== 'dnbs02' && !genericPeriods) return;
     setLoading(true);
     setError(null);
     try {
-      const data = await regulatory.dnbsReport(frequency, period, startDate, endDate);
-      setReport(data);
+      if (selectedReport === 'dnbs02') {
+        const data = await regulatory.dnbsReport(frequency, period, startDate, endDate);
+        setReport(data);
+        setGenericReport(null);
+      } else {
+        const data = await regulatory.report(selectedReport, frequency, period);
+        setGenericReport(data);
+        setReport(null);
+      }
     } catch (err: any) {
       setError(err?.message || 'Failed to load DNBS-02 report');
     } finally {
@@ -110,10 +168,11 @@ export default function DNBSReport() {
 
   useEffect(() => {
     fetchReport();
-  }, [frequency, period, startDate, endDate]);
+  }, [selectedReport, frequency, period, startDate, endDate, genericPeriods]);
 
-  const periodOptions =
-    frequency === 'monthly'
+  const periodOptions = selectedReport !== 'dnbs02'
+    ? ((frequency === 'monthly' ? genericPeriods?.monthly : genericPeriods?.quarterly) ?? [])
+    : frequency === 'monthly'
       ? (periods?.monthly ?? []).map((m) => ({ label: `${m.label} (${m.value})`, value: m.value }))
       : frequency === 'custom'
         ? []
@@ -169,7 +228,9 @@ export default function DNBSReport() {
   };
 
   const handleExcelDownload = () => {
-    const url = regulatory.getDnbsExcelUrl(frequency, period, startDate, endDate);
+    const url = selectedReport === 'dnbs02'
+      ? regulatory.getDnbsExcelUrl(frequency, period, startDate, endDate)
+      : regulatory.getReportExcelUrl(selectedReport, frequency, period);
     window.open(url, '_blank');
   };
 
@@ -199,6 +260,19 @@ export default function DNBSReport() {
                     📅 {report.start_date} to {report.end_date} ({report.duration_days ?? 31} Days)
                   </Badge>
                 )}
+                {genericReport && (
+                  <Badge
+                    variant="outline"
+                    className={cn(
+                      'gap-1 border-none text-[11px]',
+                      genericReport.status === 'blocked'
+                        ? 'bg-red-500/10 text-red-600 dark:text-red-400'
+                        : 'bg-amber-500/10 text-amber-600 dark:text-amber-400',
+                    )}
+                  >
+                    <Database className="h-3 w-3" /> {genericReport.status}
+                  </Badge>
+                )}
               </div>
               <p className="text-xs text-muted-foreground">
                 Programmatic return mapping for Important Financial Parameters, Capital Adequacy, Asset Quality, and Top Exposure Annexures.
@@ -220,8 +294,26 @@ export default function DNBSReport() {
 
           {/* Date & Preset Filters Bar - Border-less Card Design Matching Monthly/Quarterly/Yearly Pills */}
           <div className="flex flex-wrap items-center gap-3 pt-2 border-t border-border/40">
+            <select
+              value={selectedReport}
+              onChange={(event) => {
+                setSelectedReport(event.target.value);
+                setGenericPeriods(null);
+                setGenericReport(null);
+                setReport(null);
+              }}
+              className="h-9 min-w-[260px] rounded-xl border border-input bg-background px-3 text-xs font-semibold text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
+              aria-label="Select RBI report"
+            >
+              {(reportCatalog.length ? reportCatalog : [
+                { id: 'dnbs02', name: 'DNBS02 — Important Financial Parameters' },
+              ]).map((item) => (
+                <option key={item.id} value={item.id}>{item.name}</option>
+              ))}
+            </select>
+
             {/* Frequency Selection Group */}
-            <div className="inline-flex rounded-xl bg-accent p-1 text-xs">
+            {selectedReport === 'dnbs02' ? <div className="inline-flex rounded-xl bg-accent p-1 text-xs">
               {(['monthly', 'quarterly', 'yearly', 'custom'] as const).map((f) => (
                 <button
                   key={f}
@@ -237,7 +329,11 @@ export default function DNBSReport() {
                   {f === 'custom' ? 'Custom Range' : f}
                 </button>
               ))}
-            </div>
+            </div> : (
+              <Badge variant="outline" className="h-9 rounded-xl border-none bg-accent px-3 capitalize">
+                {frequency}
+              </Badge>
+            )}
 
             {/* Period Dropdown for Monthly/Quarterly/Yearly */}
             {frequency !== 'custom' && (
@@ -255,7 +351,7 @@ export default function DNBSReport() {
             )}
 
             {/* Custom Date Pickers - Border-less bg-accent design matching toggle pills */}
-            <div className="inline-flex items-center gap-2 text-xs font-medium bg-accent rounded-xl p-1">
+            {selectedReport === 'dnbs02' && <div className="inline-flex items-center gap-2 text-xs font-medium bg-accent rounded-xl p-1">
               <span className="text-[11px] font-semibold text-foreground px-2 flex items-center gap-1">
                 <Calendar className="h-3.5 w-3.5 text-primary" /> Date Range:
               </span>
@@ -277,10 +373,53 @@ export default function DNBSReport() {
                   className="h-6 bg-transparent text-xs text-foreground font-mono focus:outline-none"
                 />
               </div>
-            </div>
+            </div>}
           </div>
         </div>
       </Card>
+
+      {genericReport && !loading && (
+        <div className="space-y-4">
+          <Card className="dashboard-surface rounded-[1.5rem] border-border/70 shadow-none">
+            <CardHeader className="border-b border-border/50">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <CardTitle className="text-base">{genericReport.name}</CardTitle>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Return {genericReport.return_code} · {genericReport.start_date} to {genericReport.end_date}
+                  </p>
+                </div>
+                <Badge variant="outline" className="rounded-full capitalize">{genericReport.status}</Badge>
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-4 p-5">
+              <div className="grid gap-3 sm:grid-cols-3">
+                {Object.entries(genericReport.summary).map(([key, value]) => (
+                  <div key={key} className="rounded-xl bg-muted/40 p-3">
+                    <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                      {key.replaceAll('_', ' ')}
+                    </p>
+                    <p className="mt-1 text-sm font-semibold">
+                      {typeof value === 'number' ? value.toLocaleString('en-IN') : value}
+                    </p>
+                  </div>
+                ))}
+              </div>
+              <div className="space-y-2">
+                {Object.entries(genericReport.provenance).map(([key, entry]) => (
+                  <div key={key} className="flex items-start justify-between gap-4 rounded-xl border border-border/60 p-3 text-xs">
+                    <div>
+                      <p className="font-semibold">{key.replaceAll('_', ' ')}</p>
+                      <p className="mt-1 text-muted-foreground">{entry.note || entry.error || 'PostgreSQL silver source resolved.'}</p>
+                    </div>
+                    <Badge variant="outline" className="shrink-0 capitalize">{entry.status.replaceAll('_', ' ')}</Badge>
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
 
       {/* Main Content States */}
       {loading && <LoadingCard lines={10} stages={['Querying warehouse snapshot', 'Mapping RBI return sections', 'Compiling report']} />}

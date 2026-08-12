@@ -8,7 +8,7 @@ from genesis_core import IntelligenceResponse
 
 from app.services import brief_cache, regulatory
 from app.services import reg_loader as rl
-from app.services import dnbs02_service, dnbs02_lineage
+from app.services import dnbs02_service, dnbs02_lineage, regulatory_reports
 
 router = APIRouter(prefix="/regulatory", tags=["regulatory"])
 
@@ -115,10 +115,62 @@ def export_dnbs02_excel(
     )
 
 
+@router.get("/reports")
+def list_report_generators():
+    """The five PostgreSQL-backed report outputs available in the DNBS generator."""
+    return regulatory_reports.list_reports()
+
+
+@router.get("/reports/{report_id}/periods")
+def list_report_periods(report_id: str):
+    try:
+        return regulatory_reports.get_periods(report_id)
+    except regulatory_reports.ReportError as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+
+@router.get("/reports/{report_id}")
+def get_regulatory_report(
+    report_id: str,
+    frequency: str = "",
+    period: str = "",
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+):
+    try:
+        return regulatory_reports.get_report_data(
+            report_id, frequency, period, start_date, end_date
+        )
+    except (regulatory_reports.ReportError, dnbs02_service.PeriodError) as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+
+@router.get("/reports/{report_id}/export")
+def export_regulatory_report(
+    report_id: str,
+    frequency: str = "",
+    period: str = "",
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+):
+    try:
+        content = regulatory_reports.generate_report_excel(
+            report_id, frequency, period, start_date, end_date
+        )
+    except (regulatory_reports.ReportError, dnbs02_service.PeriodError) as exc:
+        raise HTTPException(400, str(exc)) from exc
+    safe_period = (period or end_date or "report").replace("/", "-")
+    filename = f"RBI_{report_id.upper()}_{safe_period}.xlsx"
+    return Response(
+        content=content,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f"attachment; filename={filename}"},
+    )
+
+
 
 @router.get("/{category_id}", response_model=IntelligenceResponse)
 def get_regulation_detail(category_id: str, refresh: bool = False):
     return brief_cache.cached(
         f"regulatory:detail:{category_id}", lambda: regulatory.regulation_detail(category_id), refresh
     )
-

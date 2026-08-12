@@ -71,10 +71,17 @@ ORDER BY gnlnr_report_date
 """
 
 GL_YEARS_SQL = """
-SELECT DISTINCT glbbal_year
-FROM silver.gl_daily_balances
-WHERE glbbal_year IS NOT NULL
-ORDER BY glbbal_year
+SELECT DISTINCT EXTRACT(YEAR FROM glbalh_ason_date)::INTEGER
+FROM silver.gl_balance_history
+WHERE glbalh_ason_date IS NOT NULL
+ORDER BY 1
+"""
+
+GL_DATES_SQL = """
+SELECT DISTINCT glbalh_ason_date::date
+FROM silver.gl_balance_history
+WHERE glbalh_ason_date IS NOT NULL
+ORDER BY 1
 """
 
 SUMMARY_SQL = """
@@ -104,13 +111,13 @@ WHERE a.gnlnac_closure_date IS NULL
 PART1_SQL = """
 SELECT LEFT(g.extgl_access_code, 4) AS gl_group,
        g.extgl_ext_head_descn,
-       COALESCE(SUM(b.glbbal_bc_bal), 0) / 100000.0 AS amount_lakhs
-FROM silver.gl_daily_balances b
-JOIN silver.external_gl_master g ON b.glbbal_glacc_code = g.extgl_access_code
-WHERE b.glbbal_year = %s
+       COALESCE(SUM(b.glbalh_bc_bal), 0) / 100000.0 AS amount_lakhs
+FROM silver.gl_balance_history b
+JOIN silver.external_gl_master g ON b.glbalh_glacc_code = g.extgl_access_code
+WHERE b.glbalh_ason_date::date = CAST(%s AS DATE)
   AND LEFT(g.extgl_access_code, 4) IN (%s, %s, %s)
 GROUP BY 1, 2
-HAVING COALESCE(SUM(b.glbbal_bc_bal), 0) <> 0
+HAVING COALESCE(SUM(b.glbalh_bc_bal), 0) <> 0
 ORDER BY 1, 3 DESC
 """
 
@@ -149,25 +156,25 @@ ORDER BY 3 DESC
 
 PART3_SQL = """
 SELECT g.extgl_ext_head_descn,
-       COALESCE(SUM(b.glbbal_bc_bal), 0) / 100000.0 AS amount_lakhs
-FROM silver.gl_daily_balances b
-JOIN silver.external_gl_master g ON b.glbbal_glacc_code = g.extgl_access_code
-WHERE b.glbbal_year = %s
+       COALESCE(SUM(b.glbalh_bc_bal), 0) / 100000.0 AS amount_lakhs
+FROM silver.gl_balance_history b
+JOIN silver.external_gl_master g ON b.glbalh_glacc_code = g.extgl_access_code
+WHERE b.glbalh_ason_date::date = CAST(%s AS DATE)
   AND LEFT(g.extgl_access_code, 4) = %s
 GROUP BY 1
-HAVING COALESCE(SUM(b.glbbal_bc_bal), 0) <> 0
+HAVING COALESCE(SUM(b.glbalh_bc_bal), 0) <> 0
 ORDER BY 2 DESC
 """
 
 PART6_SQL = """
 SELECT g.extgl_ext_head_descn,
-       ABS(COALESCE(SUM(b.glbbal_bc_bal), 0)) / 100000.0 AS amount_lakhs
-FROM silver.gl_daily_balances b
-JOIN silver.external_gl_master g ON b.glbbal_glacc_code = g.extgl_access_code
-WHERE b.glbbal_year = %s
+       ABS(COALESCE(SUM(b.glbalh_bc_bal), 0)) / 100000.0 AS amount_lakhs
+FROM silver.gl_balance_history b
+JOIN silver.external_gl_master g ON b.glbalh_glacc_code = g.extgl_access_code
+WHERE b.glbalh_ason_date::date = CAST(%s AS DATE)
   AND LEFT(g.extgl_access_code, 4) = %s
 GROUP BY 1
-HAVING COALESCE(SUM(b.glbbal_bc_bal), 0) <> 0
+HAVING COALESCE(SUM(b.glbalh_bc_bal), 0) <> 0
 ORDER BY 2 DESC
 """
 
@@ -207,6 +214,28 @@ SELECT COUNT(*) AS account_count,
 FROM msme_loans
 """
 
+ANNEX2_SQL = """
+WITH holders AS (
+    SELECT prosper_customer_id,
+           MAX(TRIM(prosper_customer_name)) AS holder_name,
+           SUM(COALESCE(share_no_of_units, 0)) AS units,
+           CASE WHEN SUM(COALESCE(share_no_of_units, 0)) > 0
+                THEN SUM(COALESCE(share_amount, 0))
+                     / SUM(COALESCE(share_no_of_units, 0))
+                ELSE MAX(share_face_value) END AS face_value
+    FROM silver.migrated_shareholder_details
+    GROUP BY prosper_customer_id
+), totals AS (
+    SELECT SUM(units) AS total_units FROM holders
+)
+SELECT holder_name, units, face_value,
+       CASE WHEN total_units > 0 THEN units * 100.0 / total_units ELSE 0 END
+FROM holders CROSS JOIN totals
+WHERE units > 0
+ORDER BY units DESC, prosper_customer_id
+LIMIT 10
+"""
+
 # The three "top 25" queries below (Annex 9, 10, 11) each carry an explicit tiebreaker on
 # a unique key. Without one the filed list is not reproducible: at 2026-06-30, 37 borrowers
 # tie at exactly 10.00 lakh total outstanding, so ranks 6-25 were 20 arbitrary picks out of
@@ -236,13 +265,13 @@ LIMIT 25
 
 ANNEX10_SQL = """
 SELECT g.extgl_ext_head_descn,
-       ABS(COALESCE(SUM(b.glbbal_bc_bal), 0)) / 100000.0 AS amount_lakhs
-FROM silver.gl_daily_balances b
-JOIN silver.external_gl_master g ON b.glbbal_glacc_code = g.extgl_access_code
-WHERE b.glbbal_year = %s
+       ABS(COALESCE(SUM(b.glbalh_bc_bal), 0)) / 100000.0 AS amount_lakhs
+FROM silver.gl_balance_history b
+JOIN silver.external_gl_master g ON b.glbalh_glacc_code = g.extgl_access_code
+WHERE b.glbalh_ason_date::date = CAST(%s AS DATE)
   AND LEFT(g.extgl_access_code, 4) = %s
 GROUP BY 1
-HAVING COALESCE(SUM(b.glbbal_bc_bal), 0) <> 0
+HAVING COALESCE(SUM(b.glbalh_bc_bal), 0) <> 0
 ORDER BY 2 DESC, 1
 LIMIT 25
 """
@@ -328,18 +357,17 @@ SOURCES: Dict[str, Source] = {
         ),
     ),
     "part1_capital": Source(
-        tables=("silver.gl_daily_balances", "silver.external_gl_master"),
-        columns=("glbbal_bc_bal", "glbbal_glacc_code", "extgl_access_code", "extgl_ext_head_descn"),
+        tables=("silver.gl_balance_history", "silver.external_gl_master"),
+        columns=("glbalh_bc_bal", "glbalh_glacc_code", "extgl_access_code", "extgl_ext_head_descn"),
         sql=PART1_SQL,
-        binds=("gl_year", "GL_SHARE_CAPITAL", "GL_RESERVES", "GL_BORROWINGS"),
+        binds=("end_date", "GL_SHARE_CAPITAL", "GL_RESERVES", "GL_BORROWINGS"),
         filters=(
-            "glbbal_year = {gl_year} AND LEFT(extgl_access_code,4) IN "
+            "glbalh_ason_date = {end_date} AND LEFT(extgl_access_code,4) IN "
             "('1001' share capital, '1033' reserves, '1002' borrowings)"
         ),
         grain="one row per (GL group, GL head description), non-zero balances only",
         caveat=(
-            "glbbal is keyed by branch and year only - there is no date dimension - so "
-            "Parts 1, 3 and 4 cannot be produced at sub-annual granularity."
+            "Uses the exact period-end GL history date; no nearest-date fallback is allowed."
         ),
     ),
     "part2_loans": Source(
@@ -359,18 +387,18 @@ SOURCES: Dict[str, Source] = {
         grain="one row per residual-maturity bucket, measured from the snapshot date",
     ),
     "part3_income": Source(
-        tables=("silver.gl_daily_balances", "silver.external_gl_master"),
-        columns=("glbbal_bc_bal", "extgl_access_code", "extgl_ext_head_descn"),
+        tables=("silver.gl_balance_history", "silver.external_gl_master"),
+        columns=("glbalh_bc_bal", "extgl_access_code", "extgl_ext_head_descn"),
         sql=PART3_SQL,
-        binds=("gl_year", "GL_INCOME"),
-        filters="glbbal_year = {gl_year} AND LEFT(extgl_access_code,4) = '1007' (income)",
+        binds=("end_date", "GL_INCOME"),
+        filters="glbalh_ason_date = {end_date} AND LEFT(extgl_access_code,4) = '1007' (income)",
         grain="one row per income GL head, non-zero balances only",
     ),
     "part4_nof": Source(
-        tables=("silver.gl_daily_balances", "silver.external_gl_master"),
-        columns=("glbbal_bc_bal",),
+        tables=("silver.gl_balance_history", "silver.external_gl_master"),
+        columns=("glbalh_bc_bal",),
         sql=PART1_SQL,
-        binds=("gl_year", "GL_SHARE_CAPITAL", "GL_RESERVES", "GL_BORROWINGS"),
+        binds=("end_date", "GL_SHARE_CAPITAL", "GL_RESERVES", "GL_BORROWINGS"),
         filters="derived from Part 1, not queried separately",
         grain="single figure",
         caveat=(
@@ -379,11 +407,11 @@ SOURCES: Dict[str, Source] = {
         ),
     ),
     "part6_sensitive": Source(
-        tables=("silver.gl_daily_balances", "silver.external_gl_master"),
-        columns=("glbbal_bc_bal", "extgl_access_code", "extgl_ext_head_descn"),
+        tables=("silver.gl_balance_history", "silver.external_gl_master"),
+        columns=("glbalh_bc_bal", "extgl_access_code", "extgl_ext_head_descn"),
         sql=PART6_SQL,
-        binds=("gl_year", "GL_INVESTMENTS"),
-        filters="glbbal_year = {gl_year} AND LEFT(extgl_access_code,4) = '1009' (investments)",
+        binds=("end_date", "GL_INVESTMENTS"),
+        filters="glbalh_ason_date = {end_date} AND LEFT(extgl_access_code,4) = '1009' (investments)",
         grain="one row per investment GL head",
     ),
     "part8_asset_quality": Source(
@@ -417,6 +445,14 @@ SOURCES: Dict[str, Source] = {
             "amount is a current balance rather than a period-end one."
         ),
     ),
+    "annex2_shareholders": Source(
+        tables=("silver.migrated_shareholder_details",),
+        columns=("prosper_customer_name", "share_no_of_units", "share_face_value", "share_amount"),
+        sql=ANNEX2_SQL,
+        filters="valid migrated share-register rows aggregated by customer; top 10 by units",
+        grain="one row per shareholder",
+        caveat="The source has no PAN column; PAN remains blank.",
+    ),
     "annex9_top_borrowers": Source(
         tables=("silver.loan_daily_snapshot_summary", "silver.loan_account_master"),
         columns=(
@@ -435,11 +471,11 @@ SOURCES: Dict[str, Source] = {
         grain="top 25 by total outstanding, aggregated per borrower (not per account)",
     ),
     "annex10_investment_totals": Source(
-        tables=("silver.gl_daily_balances", "silver.external_gl_master"),
-        columns=("glbbal_bc_bal", "extgl_ext_head_descn"),
+        tables=("silver.gl_balance_history", "silver.external_gl_master"),
+        columns=("glbalh_bc_bal", "extgl_ext_head_descn"),
         sql=ANNEX10_SQL,
-        binds=("gl_year", "GL_INVESTMENTS"),
-        filters="glbbal_year = {gl_year} AND LEFT(extgl_access_code,4) = '1009'",
+        binds=("end_date", "GL_INVESTMENTS"),
+        filters="glbalh_ason_date = {end_date} AND LEFT(extgl_access_code,4) = '1009'",
         grain="top 25 investment GL heads by book value",
     ),
     "annex11_top_npas": Source(
@@ -1215,18 +1251,6 @@ FIELD_SPECS: List[FieldSpec] = (
             no_source_reason=(
                 "MSMED classification requires investment in plant and machinery and "
                 "turnover; silver.msme_sector_classification_mapping carries only collateral value and LTV."
-            ),
-        ),
-        FieldSpec(
-            sheet="DNBS02_Annex2",
-            rbi_line="Shareholding pattern (all columns)",
-            kind=KIND_NO_SOURCE,
-            section="annex2_shareholders",
-            no_source_reason=(
-                "Share register exists (silver.customer_share_holdings, 4,079 holdings "
-                "across 3,889 members, 76.26 lakh subscribed) but carries no shareholder "
-                "category, so the RBI shareholding-pattern split cannot be derived from it. "
-                "Note the bronze copy triplicates every row - do not source this from bronze."
             ),
         ),
         FieldSpec(
