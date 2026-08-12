@@ -154,6 +154,9 @@ interface HierarchicalGraphPayload {
   selected_customer?: any;
   total_database_metrics?: {
     total_customers: number;
+    total_loan_borrowers?: number;
+    total_active_loan_borrowers?: number;
+    total_registered_customers?: number;
     total_accounts: number;
     total_branches: number;
   };
@@ -666,12 +669,15 @@ export default function DBSchemaGraph() {
             {m && (
               <Badge variant="secondary" className="text-xs font-mono font-medium flex items-center gap-1">
                 <Database className="h-3 w-3 text-primary" />
-                {m.total_customers.toLocaleString()} Borrowers • {m.total_branches} Named Branches
+                {(m.total_loan_borrowers ?? m.total_customers).toLocaleString()} Loan Borrowers
+                {' • '}{m.total_active_loan_borrowers?.toLocaleString() ?? '—'} Active
+                {' • '}{m.total_registered_customers?.toLocaleString() ?? '—'} Registered Customers
+                {' • '}{m.total_branches} Branches
               </Badge>
             )}
           </div>
           <p className="text-[11px] text-muted-foreground mt-0.5">
-            Querying all 11,347 customers across 16 named branches. Click any Executive, Zone, Branch, Officer, or Borrower node to inspect details on the left.
+            The graph shows customers with loan accounts; the registered CIF population is shown separately. Click any portfolio, product, branch, scheme, or borrower node to inspect details.
           </p>
         </div>
 

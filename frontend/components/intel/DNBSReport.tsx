@@ -32,10 +32,8 @@ import {
 import { cn } from '@/lib/utils';
 
 // Monthly options are loaded from the API so the picker can only offer periods the
-// warehouse actually holds a snapshot for. Quarterly and yearly are restricted to the
-// periods the snapshot window (Oct 2025 – Jun 2026) actually covers: quarters Q3, Q4
-// and Q1, and the single fiscal year FY 2025-2026. Periods with no snapshot behind them
-// are not offered.
+// report's own source tables can back. Periods with no exact required snapshot are not
+// offered even when a different silver table happens to contain newer data.
 const PERIOD_OPTIONS = {
   monthly: [] as { label: string; value: string }[],
   quarterly: [
@@ -177,6 +175,11 @@ export default function DNBSReport() {
       : frequency === 'custom'
         ? []
         : PERIOD_OPTIONS[frequency];
+
+  const latestSourceDate = selectedReport === 'dnbs02'
+    ? periods?.snapshot_dates?.at(-1)
+    : genericPeriods?.source_dates?.at(-1);
+  const latestReportablePeriod = periodOptions[0];
 
   const handleFrequencyChange = (newFreq: 'monthly' | 'quarterly' | 'yearly' | 'custom') => {
     setFrequency(newFreq);
@@ -348,6 +351,13 @@ export default function DNBSReport() {
                   </option>
                 ))}
               </select>
+            )}
+
+            {frequency !== 'custom' && latestReportablePeriod && (
+              <span className="text-[11px] text-muted-foreground">
+                Latest reportable: <span className="font-semibold text-foreground">{latestReportablePeriod.label}</span>
+                {latestSourceDate ? ` · source through ${latestSourceDate}` : ''}
+              </span>
             )}
 
             {/* Custom Date Pickers - Border-less bg-accent design matching toggle pills */}

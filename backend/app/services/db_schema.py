@@ -1,6 +1,6 @@
 """Enterprise Curiosity Graph - a navigable view of the loan book in PostgreSQL.
 
-Every node and edge in this graph is derived from `bronze` tables. Where the warehouse
+Portfolio nodes and edges are derived from semantic `silver` tables. Where the warehouse
 has no source for something (branch geography, for instance) the field is omitted rather
 than filled with a plausible-looking placeholder.
 """
@@ -37,13 +37,26 @@ NODE_TYPE_STYLES = {
     "repayment": {"color": "#10b981", "label": "Repayment", "size": 14},
 }
 
-# Product codes present in bronze.genlnacnts. Names come from the client's product
+# Product codes present in silver.loan_account_master. Names come from the client's product
 # taxonomy (see docs/PROSPER_EDA_REPORT.md section 2A); anything else shows its bare code.
 PRODUCT_NAMES = {
     "1": "Gold Loans",
     "13": "Microfinance / Retail EMI",
     "16": "Business & MSME Loans",
 }
+
+# July Oracle keeps the current product-16 book in GENLNACNTS and the unchanged
+# product-1/product-13 run-off book in GENLNACNTS_29102024. Account-level reconciliation
+# against the June dump proved all 7,855 legacy accounts match exactly. The graph uses
+# both sources without treating the dated archive as current operational activity.
+LOAN_PORTFOLIO_SQL = """(
+    SELECT live.*
+    FROM silver.loan_account_master live
+    UNION ALL
+    SELECT legacy.*
+    FROM silver.general_loan_accounts_oct_2024 legacy
+    WHERE legacy.gnlnac_prod_code IN (1, 13)
+)"""
 
 
 def get_connection():
@@ -152,18 +165,20 @@ def _code(raw: Any) -> str:
     return s
 
 
-def branch_label(raw_code: Any) -> str:
-    """Identify a branch by its code.
-
-    There is no branch master in PostgreSQL *or* in the Oracle source - the search for one
-    across all 9,545 GICCPROD_NEW tables turned up only BRANCH_MERGE_V2, a 93-row merge
-    map (see docs/ORACLE_VS_POSTGRES_GAP_ANALYSIS.md section 3.2). Branch name, address,
-    city, state and district have no source, so this returns the code alone. It previously
-    returned a hardcoded district map, falling through to `districts[int(code) % 8]`, which
-    reported branch 1002 as "Mandya District".
-    """
+def branch_label(raw_code: Any, names: Optional[Dict[str, str]] = None) -> str:
+    """Identify a branch from the migrated branch master, falling back to its code."""
     code = _code(raw_code)
+    if code and names and names.get(code):
+        return f"{names[code]} (Branch {code})"
     return f"Branch {code}" if code else "Unassigned Branch"
+
+
+def get_branch_name_map(cur) -> Dict[str, str]:
+    cur.execute(
+        "SELECT mbrn_code, mbrn_name FROM silver.branch_master "
+        "WHERE mbrn_code IS NOT NULL AND NULLIF(BTRIM(mbrn_name), '') IS NOT NULL"
+    )
+    return {_code(code): str(name).strip() for code, name in cur.fetchall()}
 
 
 def get_scheme_name_map(cur) -> Dict[str, str]:
@@ -254,11 +269,12 @@ def search_entities(query_str: str, entity_type: str = "all") -> List[Dict[str, 
 
     try:
         with db_cursor() as (conn, cur):
+            branch_names = get_branch_name_map(cur)
             if is_numeric and entity_type in ("all", "zonal"):
                 cur.execute(
-                    """
+                    f"""
                     SELECT gnlnac_prod_code, COUNT(DISTINCT gnlnac_cust_id), COUNT(*)
-                    FROM bronze.genlnacnts
+                    FROM {LOAN_PORTFOLIO_SQL} portfolio
                     WHERE CAST(gnlnac_prod_code AS TEXT) = %s
                     GROUP BY gnlnac_prod_code
                     """,
@@ -279,9 +295,9 @@ def search_entities(query_str: str, entity_type: str = "all") -> List[Dict[str, 
 
             if is_numeric and entity_type in ("all", "manager"):
                 cur.execute(
-                    """
+                    f"""
                     SELECT gnlnac_appl_brn_code, COUNT(DISTINCT gnlnac_cust_id), COUNT(*)
-                    FROM bronze.genlnacnts
+                    FROM {LOAN_PORTFOLIO_SQL} portfolio
                     WHERE CAST(gnlnac_appl_brn_code AS TEXT) = %s
                     GROUP BY gnlnac_appl_brn_code
                     """,
@@ -292,7 +308,7 @@ def search_entities(query_str: str, entity_type: str = "all") -> List[Dict[str, 
                     results.append(
                         {
                             "id": f"BRN-{code}",
-                            "title": branch_label(code),
+                            "title": branch_label(code, branch_names),
                             "subtitle": f"{custs:,} Borrowers • {accts:,} Loans",
                             "type": "manager",
                             "view_level": "manager",
@@ -301,19 +317,18 @@ def search_entities(query_str: str, entity_type: str = "all") -> List[Dict[str, 
                     )
 
             if entity_type in ("all", "customer"):
-                # Borrower names come from genlnacnts directly. The customer master
-                # (indcifdata) is deliberately not joined: its names agree with the loan
-                # tables on only 59% of rows (7,836 of 13,253), so joining it attaches the
-                # wrong person's name to a loan.
+                # Borrower names come from the loan master directly. The customer master
+                # CIF is deliberately not used for the display name: the graph represents
+                # loan borrowers and the loan master carries the account's customer name.
                 cur.execute(
-                    """
+                    f"""
                     SELECT g.gnlnac_cust_id,
                            MAX(TRIM(g.gnlnac_cust_name)) AS borrower_name,
                            COUNT(*) AS account_count,
                            COALESCE(SUM(COALESCE(NULLIF(g.gnlnac_lndisb_amt, 0),
                                                  g.gnlnac_sanc_amt)), 0) AS disbursed,
                            MAX(g.gnlnac_appl_brn_code) AS brn_code
-                    FROM bronze.genlnacnts g
+                    FROM {LOAN_PORTFOLIO_SQL} g
                     WHERE LOWER(TRIM(g.gnlnac_cust_name)) LIKE %s
                        OR CAST(g.gnlnac_cust_id AS TEXT) = %s
                        OR CAST(g.gnlnac_acnt_num AS TEXT) = %s
@@ -329,7 +344,8 @@ def search_entities(query_str: str, entity_type: str = "all") -> List[Dict[str, 
                             "id": f"CUST-{cust_id}",
                             "title": (name or f"Borrower #{cust_id}").strip(),
                             "subtitle": (
-                                f"Customer #{cust_id} • {accts} account(s) • {branch_label(brn)}"
+                                f"Customer #{cust_id} • {accts} account(s) • "
+                                f"{branch_label(brn, branch_names)}"
                             ),
                             "type": "customer",
                             "view_level": "customer",
@@ -358,7 +374,7 @@ def get_monthly_breakdown(selected_month: Optional[str] = None) -> Dict[str, Any
 
     def _load() -> int:
         cur.execute(
-            """
+            f"""
             SELECT TO_CHAR(gnlnac_sanc_date, 'YYYY-MM') AS month_str,
                    COUNT(*),
                    COUNT(DISTINCT gnlnac_cust_id),
@@ -368,7 +384,7 @@ def get_monthly_breakdown(selected_month: Optional[str] = None) -> Dict[str, Any
                    COUNT(*) FILTER (WHERE gnlnac_prod_code = 16),
                    COUNT(*) FILTER (WHERE gnlnac_prod_code = 13),
                    COUNT(*) FILTER (WHERE gnlnac_prod_code = 1)
-            FROM bronze.genlnacnts
+            FROM {LOAN_PORTFOLIO_SQL} portfolio
             WHERE gnlnac_sanc_date IS NOT NULL
             GROUP BY 1
             ORDER BY 1 DESC
@@ -420,7 +436,7 @@ def get_monthly_breakdown(selected_month: Optional[str] = None) -> Dict[str, Any
 def get_mom_loan_start_analysis() -> Dict[str, Any]:
     """Month-on-month origination cohorts by sanction date.
 
-    The rate column is bronze.genlnacnts.gnlnac_ln_intrate. This function used to
+    The rate column is silver.loan_account_master.gnlnac_ln_intrate. This function used to
     reference gnlnac_int_rate, which does not exist, so the query threw on every run and
     the whole result came from a hardcoded nine-month series.
     """
@@ -429,7 +445,7 @@ def get_mom_loan_start_analysis() -> Dict[str, Any]:
 
     def _load() -> int:
         cur.execute(
-            """
+            f"""
             SELECT TO_CHAR(gnlnac_sanc_date, 'YYYY-MM') AS start_month,
                    COUNT(*),
                    COUNT(DISTINCT gnlnac_cust_id),
@@ -438,7 +454,7 @@ def get_mom_loan_start_analysis() -> Dict[str, Any]:
                    COALESCE(SUM(gnlnac_pri_repay_amt), 0),
                    AVG(gnlnac_ln_intrate),
                    AVG(gnlnac_sanc_amt)
-            FROM bronze.genlnacnts
+            FROM {LOAN_PORTFOLIO_SQL} portfolio
             WHERE gnlnac_sanc_date IS NOT NULL
             GROUP BY 1
             ORDER BY 1 ASC
@@ -532,13 +548,20 @@ def get_db_schema_graph(
     branch_product_links: List[Dict[str, Any]] = []
     scheme_names: Dict[str, str] = {}
 
-    totals = {"customers": 0, "accounts": 0, "disbursed": 0.0, "repaid": 0.0}
+    totals = {
+        "loan_borrowers": 0,
+        "active_loan_borrowers": 0,
+        "registered_customers": 0,
+        "accounts": 0,
+        "disbursed": 0.0,
+        "repaid": 0.0,
+    }
 
     executive_info = {
         "id": "EXEC-PORTFOLIO",
         "name": "GICC Loanbook",
         # The module reads PostgreSQL; it previously described itself as Oracle.
-        "role": "PostgreSQL warehouse (schema: bronze)",
+        "role": "PostgreSQL warehouse (schema: silver)",
         "org": "Moneypal GICC Holdings Ltd",
     }
 
@@ -547,21 +570,32 @@ def get_db_schema_graph(
 
     with db_cursor() as (conn, cur):
 
+        branch_names = get_branch_name_map(cur)
+
         def _totals() -> int:
             cur.execute(
                 f"""
                 SELECT COUNT(*), COUNT(DISTINCT gnlnac_cust_id),
                        COALESCE(SUM(COALESCE(NULLIF(gnlnac_lndisb_amt, 0), gnlnac_sanc_amt)), 0),
                        COALESCE(SUM(gnlnac_pri_repay_amt), 0)
-                FROM bronze.genlnacnts {month_filter}
+                FROM {LOAN_PORTFOLIO_SQL} portfolio {month_filter}
                 """,
                 month_params,
             )
             row = cur.fetchone()
             totals["accounts"] = int(row[0] or 0)
-            totals["customers"] = int(row[1] or 0)
+            totals["loan_borrowers"] = int(row[1] or 0)
             totals["disbursed"] = _f(row[2])
             totals["repaid"] = _f(row[3])
+            cur.execute(
+                "SELECT COUNT(DISTINCT gnlnac_cust_id) FROM silver.loan_account_master"
+            )
+            totals["active_loan_borrowers"] = int(cur.fetchone()[0] or 0)
+            cur.execute(
+                "SELECT COUNT(DISTINCT cifdata_cust_id) "
+                "FROM silver.customer_information_file_master"
+            )
+            totals["registered_customers"] = int(cur.fetchone()[0] or 0)
             return totals["accounts"]
 
         run_section(provenance, "portfolio_totals", _totals, conn)
@@ -572,7 +606,7 @@ def get_db_schema_graph(
                 SELECT gnlnac_prod_code, COUNT(DISTINCT gnlnac_cust_id), COUNT(*),
                        COALESCE(SUM(COALESCE(NULLIF(gnlnac_lndisb_amt, 0), gnlnac_sanc_amt)), 0),
                        COALESCE(SUM(gnlnac_pri_repay_amt), 0)
-                FROM bronze.genlnacnts
+                FROM {LOAN_PORTFOLIO_SQL} portfolio
                 {month_filter or 'WHERE TRUE'} AND gnlnac_prod_code IS NOT NULL
                 GROUP BY gnlnac_prod_code
                 ORDER BY 2 DESC
@@ -603,7 +637,7 @@ def get_db_schema_graph(
                 SELECT gnlnac_appl_brn_code, COUNT(DISTINCT gnlnac_cust_id), COUNT(*),
                        COALESCE(SUM(COALESCE(NULLIF(gnlnac_lndisb_amt, 0), gnlnac_sanc_amt)), 0),
                        COALESCE(SUM(gnlnac_pri_repay_amt), 0)
-                FROM bronze.genlnacnts
+                FROM {LOAN_PORTFOLIO_SQL} portfolio
                 {month_filter or 'WHERE TRUE'} AND gnlnac_appl_brn_code IS NOT NULL
                 GROUP BY gnlnac_appl_brn_code
                 ORDER BY 2 DESC
@@ -616,8 +650,8 @@ def get_db_schema_graph(
                     {
                         "id": f"BRN-{code}",
                         "code": code,
-                        "name": branch_label(code),
-                        "display_title": branch_label(code),
+                        "name": branch_label(code, branch_names),
+                        "display_title": branch_label(code, branch_names),
                         "cust_count": int(custs or 0),
                         "acnt_count": int(accts or 0),
                         "total_vol": _f(disbursed),
@@ -645,7 +679,7 @@ def get_db_schema_graph(
                 SELECT gnlnac_appl_brn_code, gnlnac_prod_code, COUNT(*),
                        COALESCE(SUM(COALESCE(NULLIF(gnlnac_lndisb_amt, 0), gnlnac_sanc_amt)), 0),
                        COALESCE(SUM(gnlnac_pri_repay_amt), 0)
-                FROM bronze.genlnacnts
+                FROM {LOAN_PORTFOLIO_SQL} portfolio
                 {month_filter or 'WHERE TRUE'}
                   AND gnlnac_appl_brn_code IS NOT NULL AND gnlnac_prod_code IS NOT NULL
                 GROUP BY 1, 2
@@ -725,10 +759,13 @@ def get_db_schema_graph(
                     "color": NODE_TYPE_STYLES["executive"]["color"],
                     "size": NODE_TYPE_STYLES["executive"]["size"],
                     "details": {
-                        "Source": "PostgreSQL bronze.genlnacnts",
+                        "Source": "PostgreSQL silver active + verified legacy loan portfolio",
                         "Holding Entity": executive_info["org"],
                         "Branches": f"{len(branches)}",
-                        "Total Borrowers": f"{totals['customers']:,}",
+                        "Registered CIF Customers": f"{totals['registered_customers']:,}",
+                        "Loan Borrowers": f"{totals['loan_borrowers']:,}",
+                        "Active Loan Borrowers": f"{totals['active_loan_borrowers']:,}",
+                        "Total Borrowers": f"{totals['loan_borrowers']:,}",
                         "Total Loan Accounts": f"{totals['accounts']:,}",
                         "Total Disbursed": _money(totals["disbursed"]),
                         "Total Repaid": _money(totals["repaid"]),
@@ -806,12 +843,12 @@ def get_db_schema_graph(
                 def _branch_schemes() -> int:
                     # Exact branch match; this used to be a LIKE '%code%' substring.
                     cur.execute(
-                        """
+                        f"""
                         SELECT gnlnac_schm_code, COUNT(DISTINCT gnlnac_cust_id), COUNT(*),
                                COALESCE(SUM(COALESCE(NULLIF(gnlnac_lndisb_amt, 0),
                                                      gnlnac_sanc_amt)), 0),
                                COALESCE(SUM(gnlnac_pri_repay_amt), 0)
-                        FROM bronze.genlnacnts
+                        FROM {LOAN_PORTFOLIO_SQL} portfolio
                         WHERE CAST(gnlnac_appl_brn_code AS TEXT) = %s
                           AND gnlnac_schm_code IS NOT NULL
                         GROUP BY gnlnac_schm_code
@@ -883,7 +920,7 @@ def get_db_schema_graph(
                 # Filters on BOTH branch and scheme. The scheme code used to be parsed
                 # from agent_id and then used only in the node title, so every scheme
                 # desk under a branch showed an identical borrower list.
-                sql = """
+                sql = f"""
                     SELECT g.gnlnac_cust_id,
                            MAX(TRIM(g.gnlnac_cust_name)),
                            COUNT(*),
@@ -891,7 +928,7 @@ def get_db_schema_graph(
                                                  g.gnlnac_sanc_amt)), 0),
                            COALESCE(SUM(g.gnlnac_pri_repay_amt), 0),
                            MAX(g.gnlnac_sanc_date)
-                    FROM bronze.genlnacnts g
+                    FROM {LOAN_PORTFOLIO_SQL} g
                     WHERE CAST(g.gnlnac_appl_brn_code AS TEXT) = %s
                 """
                 params: List[Any] = [brn_code]
@@ -1005,12 +1042,12 @@ def get_db_schema_graph(
                 # All of the borrower's accounts. This used to be LIMIT 1, understating
                 # every one of the 1,990 borrowers who hold more than one loan.
                 cur.execute(
-                    """
+                    f"""
                     SELECT g.gnlnac_acnt_num, TRIM(g.gnlnac_cust_name), g.gnlnac_sanc_amt,
                            COALESCE(NULLIF(g.gnlnac_lndisb_amt, 0), g.gnlnac_sanc_amt),
                            g.gnlnac_pri_repay_amt, g.gnlnac_sanc_date, g.gnlnac_appl_brn_code,
                            g.gnlnac_schm_code, g.gnlnac_loan_type, g.gnlnac_closure_date
-                    FROM bronze.genlnacnts g
+                    FROM {LOAN_PORTFOLIO_SQL} g
                     WHERE CAST(g.gnlnac_cust_id AS TEXT) = %s
                     ORDER BY g.gnlnac_sanc_date DESC
                     """,
@@ -1060,7 +1097,7 @@ def get_db_schema_graph(
                         "details": {
                             "Borrower Name": borrower["cust_name"],
                             "Customer ID": str(customer_id),
-                            "Branch": branch_label(borrower["brn_code"]),
+                            "Branch": branch_label(borrower["brn_code"], branch_names),
                             "Loan Accounts": f"{borrower['account_count']:,}",
                             "Total Disbursed": _money(borrower["disb_amt"]),
                             "Total Repaid": _money(borrower["repay_amt"]),
@@ -1093,7 +1130,11 @@ def get_db_schema_graph(
                             {
                                 "acnt_num": _code(row[0]),
                                 "sl": _code(row[1]),
-                                "date": row[2].isoformat() if row[2] else "",
+                                "date": (
+                                    row[2].date().isoformat()
+                                    if row[2] and hasattr(row[2], "date")
+                                    else (row[2].isoformat() if row[2] else "")
+                                ),
                                 "amount": _f(row[3]),
                                 "net_paid": _f(row[4]),
                                 "charges": _f(row[5]),
@@ -1123,7 +1164,11 @@ def get_db_schema_graph(
                             {
                                 "acnt_num": _code(row[0]),
                                 "sl": _code(row[1]),
-                                "date": row[2].isoformat() if row[2] else "",
+                                "date": (
+                                    row[2].date().isoformat()
+                                    if row[2] and hasattr(row[2], "date")
+                                    else (row[2].isoformat() if row[2] else "")
+                                ),
                                 "principal_due": _f(row[3]),
                                 "interest_due": _f(row[4]),
                                 "principal_paid": _f(row[5]),
@@ -1277,7 +1322,11 @@ def get_db_schema_graph(
         "selected_agent": selected_agent,
         "selected_customer": selected_customer,
         "total_database_metrics": {
-            "total_customers": totals["customers"],
+            # Backwards-compatible field: customers represented by loan nodes.
+            "total_customers": totals["loan_borrowers"],
+            "total_loan_borrowers": totals["loan_borrowers"],
+            "total_active_loan_borrowers": totals["active_loan_borrowers"],
+            "total_registered_customers": totals["registered_customers"],
             "total_accounts": totals["accounts"],
             "total_branches": len(branches),
         },
@@ -1289,7 +1338,7 @@ def get_db_schema_graph(
             "is_live": bool(live) and not degraded,
             "live_sections": live,
             "degraded_sections": degraded,
-            "schema": "bronze",
+            "schema": "silver",
             "total_nodes": len(unique_nodes),
             "total_edges": len(edges),
         },
