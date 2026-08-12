@@ -253,9 +253,18 @@ SELECT r.gnlnr_cust_id,
        COALESCE(SUM(r.gnlnr_int_due), 0) / 100000.0     AS accrued_interest,
        COALESCE(SUM(r.gnlnr_princ_os + r.gnlnr_int_due
                     + COALESCE(r.gnlnr_chg_due, 0)), 0) / 100000.0 AS total_outstanding,
-       MAX(r.gnlnr_asset_cd)                 AS asset_code
+       MAX(r.gnlnr_asset_cd)                 AS asset_code,
+       MAX(CASE
+               WHEN UPPER(TRIM(COALESCE(c.cifdata_type_flg, c.cifdata_cust_type))) = 'I'
+                   THEN 'Individual'
+               WHEN UPPER(TRIM(COALESCE(c.cifdata_type_flg, c.cifdata_cust_type))) = 'C'
+                   THEN 'Corporate'
+               ELSE NULL
+           END)                              AS borrower_type
 FROM silver.loan_daily_snapshot_summary r
 LEFT JOIN silver.loan_account_master a ON a.gnlnac_acnt_num = r.gnlnr_acnt_num
+LEFT JOIN silver.customer_information_file_master c
+       ON c.cifdata_cust_id = r.gnlnr_cust_id
 WHERE r.gnlnr_report_date = CAST(%s AS DATE)
   AND r.gnlnr_closed_date IS NULL
 GROUP BY r.gnlnr_cust_id
@@ -295,16 +304,76 @@ LIMIT 25
 """
 
 ANNEX13_SQL = """
-SELECT r.gnlnr_brn_code,
-       COUNT(DISTINCT r.gnlnr_cust_id),
-       COUNT(*),
-       COALESCE(SUM(r.gnlnr_princ_os), 0) / 100000.0
-FROM silver.loan_daily_snapshot_summary r
-WHERE r.gnlnr_report_date = CAST(%s AS DATE)
-  AND r.gnlnr_closed_date IS NULL
-  AND r.gnlnr_brn_code IS NOT NULL
-GROUP BY 1
-ORDER BY 4 DESC
+WITH portfolio AS (
+    SELECT r.gnlnr_brn_code,
+           COUNT(DISTINCT r.gnlnr_cust_id) AS customer_count,
+           COUNT(*) AS account_count,
+           COALESCE(SUM(r.gnlnr_princ_os), 0) / 100000.0 AS amount_lakhs
+    FROM silver.loan_daily_snapshot_summary r
+    WHERE r.gnlnr_report_date = CAST(%s AS DATE)
+      AND r.gnlnr_closed_date IS NULL
+      AND r.gnlnr_brn_code IS NOT NULL
+    GROUP BY r.gnlnr_brn_code
+), branches AS (
+    SELECT DISTINCT ON (mbrn_code)
+           mbrn_code,
+           NULLIF(BTRIM(mbrn_name), '') AS branch_name,
+           NULLIF(CONCAT_WS(', ',
+               NULLIF(BTRIM(mbrn_addr1), ''),
+               NULLIF(BTRIM(mbrn_addr2), ''),
+               NULLIF(BTRIM(mbrn_addr3), ''),
+               NULLIF(BTRIM(mbrn_addr4), ''),
+               NULLIF(BTRIM(mbrn_addr5), '')
+           ), '') AS branch_address,
+           mbrn_opened_on_date::date AS opening_date,
+           mbrn_closure_date::date AS closing_date,
+           NULLIF(BTRIM(mbrn_locn_code), '') AS location_code
+    FROM silver.branch_master
+    ORDER BY mbrn_code, mbrn_auth_on DESC NULLS LAST, mbrn_last_mod_on DESC NULLS LAST
+)
+SELECT p.gnlnr_brn_code,
+       b.branch_name,
+       b.branch_address,
+       b.opening_date,
+       b.closing_date,
+       b.location_code,
+       p.customer_count,
+       p.account_count,
+       p.amount_lakhs
+FROM portfolio p
+LEFT JOIN branches b ON b.mbrn_code = p.gnlnr_brn_code
+ORDER BY p.amount_lakhs DESC, p.gnlnr_brn_code
+"""
+
+
+ACCOUNT_RECONCILIATION_SQL = """
+WITH snapshot AS (
+    SELECT r.gnlnr_acnt_num,
+           MAX(r.gnlnr_cust_id) AS cust_id
+    FROM silver.loan_daily_snapshot_summary r
+    WHERE r.gnlnr_report_date = CAST(%s AS DATE)
+      AND r.gnlnr_closed_date IS NULL
+    GROUP BY r.gnlnr_acnt_num
+), core_accounts AS (
+    SELECT acnts_internal_acnum,
+           MAX(acnts_client_num) AS client_num
+    FROM silver.customer_accounts_master
+    GROUP BY acnts_internal_acnum
+), balances AS (
+    SELECT DISTINCT acntbal_internal_acnum
+    FROM silver.account_balances
+), customers AS (
+    SELECT DISTINCT cifdata_cust_id
+    FROM silver.customer_information_file_master
+)
+SELECT COUNT(*) AS snapshot_accounts,
+       COUNT(a.acnts_internal_acnum) AS core_account_matches,
+       COUNT(b.acntbal_internal_acnum) AS balance_matches,
+       COUNT(c.cifdata_cust_id) AS customer_matches
+FROM snapshot s
+LEFT JOIN core_accounts a ON a.acnts_internal_acnum = s.gnlnr_acnt_num
+LEFT JOIN balances b ON b.acntbal_internal_acnum = s.gnlnr_acnt_num
+LEFT JOIN customers c ON c.cifdata_cust_id = COALESCE(a.client_num, s.cust_id)
 """
 
 
@@ -454,7 +523,11 @@ SOURCES: Dict[str, Source] = {
         caveat="The source has no PAN column; PAN remains blank.",
     ),
     "annex9_top_borrowers": Source(
-        tables=("silver.loan_daily_snapshot_summary", "silver.loan_account_master"),
+        tables=(
+            "silver.loan_daily_snapshot_summary",
+            "silver.loan_account_master",
+            "silver.customer_information_file_master",
+        ),
         columns=(
             "gnlnr_cust_id",
             "gnlnr_cust_name",
@@ -464,11 +537,14 @@ SOURCES: Dict[str, Source] = {
             "gnlnr_chg_due",
             "gnlnr_disb_amt",
             "gnlnac_sanc_amt",
+            "cifdata_type_flg",
+            "cifdata_cust_type",
         ),
         sql=ANNEX9_SQL,
         binds=("snapshot_date",),
         filters="gnlnr_report_date = {snapshot_date} AND gnlnr_closed_date IS NULL",
         grain="top 25 by total outstanding, aggregated per borrower (not per account)",
+        caveat="CIF type I/C is mapped to Individual/Corporate; unknown codes remain blank.",
     ),
     "annex10_investment_totals": Source(
         tables=("silver.gl_balance_history", "silver.external_gl_master"),
@@ -498,12 +574,50 @@ SOURCES: Dict[str, Source] = {
         grain="top 25 NPA accounts by principal outstanding",
     ),
     "annex13_branches": Source(
-        tables=("silver.loan_daily_snapshot_summary",),
-        columns=("gnlnr_brn_code", "gnlnr_cust_id", "gnlnr_princ_os"),
+        tables=("silver.loan_daily_snapshot_summary", "silver.branch_master"),
+        columns=(
+            "gnlnr_brn_code",
+            "gnlnr_cust_id",
+            "gnlnr_princ_os",
+            "mbrn_code",
+            "mbrn_name",
+            "mbrn_addr1..mbrn_addr5",
+            "mbrn_opened_on_date",
+            "mbrn_closure_date",
+            "mbrn_locn_code",
+        ),
         sql=ANNEX13_SQL,
         binds=("snapshot_date",),
         filters="gnlnr_report_date = {snapshot_date} AND gnlnr_closed_date IS NULL",
         grain="one row per branch code",
+        caveat=(
+            "Branch master supplies name, address and opening/closing dates, but its location "
+            "code has no city/state/district reference mapping. Those geography cells stay blank."
+        ),
+    ),
+    "core_account_reconciliation": Source(
+        tables=(
+            "silver.loan_daily_snapshot_summary",
+            "silver.customer_accounts_master",
+            "silver.account_balances",
+            "silver.customer_information_file_master",
+        ),
+        columns=(
+            "gnlnr_acnt_num",
+            "gnlnr_cust_id",
+            "acnts_internal_acnum",
+            "acnts_client_num",
+            "acntbal_internal_acnum",
+            "cifdata_cust_id",
+        ),
+        sql=ACCOUNT_RECONCILIATION_SQL,
+        binds=("snapshot_date",),
+        filters="snapshot accounts open at gnlnr_report_date = {snapshot_date}",
+        grain="one reconciliation result for the requested portfolio snapshot",
+        caveat=(
+            "Core account and balance tables are current-state controls, not historical "
+            "reporting facts; they validate coverage but never replace the dated snapshot."
+        ),
     ),
 }
 
@@ -659,6 +773,8 @@ TABLE_BLOCKS: List[TableBlock] = [
             TableColumn("E", "city", "City"),
             TableColumn("F", "state", "State"),
             TableColumn("G", "district", "District"),
+            TableColumn("H", "opening_date", "Opening Date"),
+            TableColumn("I", "closing_date", "Closing Date"),
             TableColumn("K", "account_count", "Number of loan accounts"),
             TableColumn("L", "total_outstanding", "Amount of loans & advances outstanding"),
         ],
@@ -1264,23 +1380,13 @@ FIELD_SPECS: List[FieldSpec] = (
             ),
         ),
         FieldSpec(
-            sheet="DNBS02_Annex9",
-            rbi_line="Type of Borrower (legal constitution)",
-            kind=KIND_NO_SOURCE,
-            section="annex9_borrower_type",
-            no_source_reason=(
-                "silver.corporate_customer_master is an associated-firm detail table, not a "
-                "corporate register: 7,294 of its 7,594 ids are also individuals."
-            ),
-        ),
-        FieldSpec(
             sheet="DNBS02_Annex13",
-            rbi_line="Branch address, city, state, district",
+            rbi_line="City, state and district",
             kind=KIND_NO_SOURCE,
             section="annex13_branch_geography",
             no_source_reason=(
-                "No branch master; customer_kyc_details district/state columns are 100% "
-                "NULL and gnlnr_adh_district holds numeric codes with no reference table."
+                "silver.branch_master now supplies branch name, address and opening/closing dates, "
+                "but mbrn_locn_code has no approved city/state/district reference mapping."
             ),
         ),
     ]

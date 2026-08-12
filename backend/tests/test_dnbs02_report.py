@@ -239,6 +239,12 @@ class TestReportData:
         pans = [b["pan"] for b in report["annex9_top_borrowers"]]
         assert all(PAN_RE.fullmatch(p) for p in pans if p), "PANs must be real, not 'NA'"
 
+    def test_annex9_uses_cif_borrower_type(self, report):
+        borrower_types = [b["borrower_type"] for b in report["annex9_top_borrowers"]]
+        assert borrower_types
+        assert all(value in {"Individual", "Corporate", ""} for value in borrower_types)
+        assert any(borrower_types)
+
     def test_part8_amounts_reconcile_with_the_loan_book(self, report):
         total = sum(row["amount_lakhs"] for row in report["part8_asset_quality"])
         assert total == pytest.approx(report["summary"]["total_loan_book"], abs=0.05)
@@ -256,6 +262,14 @@ class TestReportData:
         assert coverage["covered_lakhs"] == report["summary"]["total_loan_book"]
         assert coverage["uncovered_accounts"] > 0
         assert 0 < coverage["covered_pct"] < 100
+
+    def test_core_accounts_are_reconciliation_only(self, report):
+        reconciliation = report["core_account_reconciliation"]
+        assert report["provenance"]["core_account_reconciliation"]["status"] == "ok"
+        assert reconciliation["snapshot_accounts"] > 0
+        for key in ("core_account_matches", "balance_matches", "customer_matches"):
+            assert 0 <= reconciliation[key] <= reconciliation["snapshot_accounts"]
+        assert "Validation only" in report["provenance"]["core_account_reconciliation"]["note"]
 
     def test_owned_funds_reconcile_with_part1(self, report):
         totals = {
@@ -360,15 +374,18 @@ class TestExcelExport:
                 first[col.field] if first[col.field] != "" else None
             )
 
-    def test_annex13_counts_are_not_in_the_date_columns(self, workbook):
-        """The old writer put account counts into 'Opening Date' and 'Closing Date'."""
+    def test_annex13_uses_branch_master_without_inventing_geography(self, workbook, report):
         sheet = workbook["DNBS02_Annex13"]
         assert _norm(sheet["H12"].value).startswith("opening date")
         assert _norm(sheet["I12"].value).startswith("closing date")
-        assert sheet["H13"].value is None
-        assert sheet["I13"].value is None
         assert _norm(sheet["K12"].value).startswith("number of loan accounts")
         assert isinstance(sheet["K13"].value, int)
+        first = report["annex13_branches"][0]
+        assert sheet["C13"].value == first["branch_name"]
+        assert sheet["D13"].value == (first["address"] or None)
+        assert sheet["H13"].value == (first["opening_date"] or None)
+        assert sheet["I13"].value == (first["closing_date"] or None)
+        assert all(sheet[f"{column}13"].value is None for column in "EFG")
 
     def test_annex11_is_empty_when_there_are_no_npas(self, workbook):
         sheet = workbook["DNBS02_Annex11"]

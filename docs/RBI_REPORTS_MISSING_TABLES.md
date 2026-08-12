@@ -50,7 +50,9 @@ The following DNBS02 gaps cannot be solved by migrating another Oracle table:
 
 - Annex 3 board/director details: create controlled institutional reference data.
 - Annex 10 investment entities and PANs: Oracle has aggregate investment GL balances but no populated entity-level investment register.
-- Annex 13 branch names, addresses, city, state, and district: no branch master exists in Oracle; obtain a client-maintained branch reference feed.
+- Annex 13 now uses Oracle `MBRN` → PostgreSQL `silver.branch_master` for branch names,
+  addresses, and opening/closing dates. `MBRN_LOCN_CODE` still has no approved location
+  reference mapping, so city, state, and district require a client-maintained reference feed.
 - Ratings, authorised signatory, group companies, overseas entities, and similar institutional disclosures: manage as effective-dated reference data with approval history.
 - Do not migrate `TEMP_CUST_MIG_WIN`; borrower PAN coverage is poor and `GENLN_RPT_DAY.GNLNR_PAN_NO` is already available in PostgreSQL.
 

@@ -66,6 +66,7 @@ from app.services.dnbs02_spec import (  # noqa: F401 - re-exported for callers a
     part8c_buckets,
 )
 from app.services import dnbs02_spec as spec
+from app.services.approved_report_values import apply_approved_values, load_approved_values
 
 TEMPLATE_FILENAME = "DNBS02_Blank_Template.xlsx"
 
@@ -275,6 +276,7 @@ class Ctx:
             "annex13_branches": [],
         }
         self.coverage: Dict[str, Any] = {}
+        self.reconciliation: Dict[str, Any] = {}
         self.totals: Dict[str, Any] = {
             "total_loan_book": 0.0,
             "accrued_interest": 0.0,
@@ -334,6 +336,30 @@ def _sec_coverage(ctx: Ctx) -> int:
         round(ctx.totals["total_loan_book"] / denom * 100, 2) if denom else 0.0
     )
     return 1
+
+
+def _sec_core_account_reconciliation(ctx: Ctx) -> int:
+    """Measure current core-account coverage without using it as period-end data."""
+    ctx.cur.execute(spec.ACCOUNT_RECONCILIATION_SQL, (ctx.snapshot_date,))
+    row = ctx.cur.fetchone()
+    if not row:
+        return 0
+    snapshot_accounts = int(row[0] or 0)
+    ctx.reconciliation.update(
+        {
+            "snapshot_accounts": snapshot_accounts,
+            "core_account_matches": int(row[1] or 0),
+            "balance_matches": int(row[2] or 0),
+            "customer_matches": int(row[3] or 0),
+        }
+    )
+    for key in ("core_account_matches", "balance_matches", "customer_matches"):
+        pct_key = key.removesuffix("_matches") + "_coverage_pct"
+        ctx.reconciliation[pct_key] = (
+            round(ctx.reconciliation[key] / snapshot_accounts * 100, 2)
+            if snapshot_accounts else 0.0
+        )
+    return 1 if snapshot_accounts else 0
 
 
 def _sec_part1(ctx: Ctx) -> int:
@@ -501,9 +527,7 @@ def _sec_annex9(ctx: Ctx) -> int:
                 "borrower_name": (row[1] or "").strip(),
                 # PAN is carried on the snapshot itself; no need to invent "NA".
                 "pan": row[2] or "",
-                # Legal constitution is not derivable - see the annex9_borrower_type gap
-                # in dnbs02_spec.FIELD_SPECS.
-                "borrower_type": "",
+                "borrower_type": (row[10] or "").strip(),
                 "account_count": int(row[3]),
                 "sanctioned_amt": sanctioned,
                 "disbursed_amt": disbursed,
@@ -569,18 +593,20 @@ def _sec_annex11(ctx: Ctx) -> int:
 
 def _sec_annex13(ctx: Ctx) -> int:
     ctx.cur.execute(spec.ANNEX13_SQL, (ctx.snapshot_date,))
-    for brn_code, customers, accounts, amount in ctx.cur.fetchall():
+    for row in ctx.cur.fetchall():
+        brn_code, name, address, opened, closed, location_code, customers, accounts, amount = row
         code = str(int(brn_code))
         ctx.rows["annex13_branches"].append(
             {
                 "branch_code": code,
-                # No branch master exists - see the annex13_branch_geography gap in
-                # dnbs02_spec.FIELD_SPECS.
-                "branch_name": f"Branch {code}",
-                "address": "",
+                "branch_name": (name or f"Branch {code}").strip(),
+                "address": (address or "").strip(),
                 "city": "",
                 "state": "",
                 "district": "",
+                "opening_date": opened.strftime("%d/%m/%Y") if opened else "",
+                "closing_date": closed.strftime("%d/%m/%Y") if closed else "",
+                "location_code": location_code or "",
                 "customer_count": int(customers),
                 "account_count": int(accounts),
                 "total_outstanding": round(_f(amount), 2),
@@ -596,6 +622,16 @@ def _gl_available(ctx: Ctx) -> bool:
 SECTIONS: List[Section] = [
     Section("summary", source=SOURCES["summary"], run=_sec_summary),
     Section("coverage", source=SOURCES["coverage"], requires=("summary",), run=_sec_coverage),
+    Section(
+        "core_account_reconciliation",
+        source=SOURCES["core_account_reconciliation"],
+        requires=("summary",),
+        run=_sec_core_account_reconciliation,
+        note=(
+            "Validation only: current-state core accounts, balances and CIF records are not "
+            "substituted for the dated portfolio snapshot."
+        ),
+    ),
     Section(
         "part1_capital",
         source=SOURCES["part1_capital"],
@@ -683,8 +719,8 @@ SECTIONS: List[Section] = [
     Section(
         "annex13_branch_geography",
         no_source_reason=(
-            "No branch master; customer_kyc_details district/state columns are 100% NULL "
-            "and gnlnr_adh_district holds numeric codes with no reference table."
+            "silver.branch_master supplies branch name, address and opening/closing dates, "
+            "but mbrn_locn_code has no approved city/state/district reference mapping."
         ),
     ),
 ]
@@ -782,6 +818,17 @@ def get_dnbs02_report_data(
             gl_dates=get_available_gl_dates(cur),
         )
         _run_pipeline(ctx, provenance)
+        approved_values = load_approved_values(cur, "dnbs02", end_date)
+
+    provenance["approved_supplemental_values"] = {
+        "status": "ok" if approved_values else "empty",
+        "row_count": len(approved_values),
+        "note": (
+            "Maker/checker-approved PostgreSQL values for fields absent from Oracle."
+            if approved_values
+            else "No approved supplemental values exist for this reporting date."
+        ),
+    }
 
     if ctx.coverage.get("uncovered_accounts"):
         logger.warning(
@@ -812,6 +859,8 @@ def get_dnbs02_report_data(
         "generated_at": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         "provenance": provenance,
         "coverage": ctx.coverage,
+        "core_account_reconciliation": ctx.reconciliation,
+        "approved_values": approved_values,
         "live_sections": live_sections,
         "degraded_sections": degraded_sections,
         "is_live_pg": bool(live_sections) and not degraded_sections,
@@ -1106,6 +1155,8 @@ def write_report_into(wb, data: Dict[str, Any]) -> None:
     for block in TABLE_BLOCKS:
         written = _write_table(wb, data, block)
         logger.debug("DNBS-02 %s: wrote %d rows", block.sheet, written)
+
+    apply_approved_values(wb, data.get("approved_values") or [])
 
 
 def generate_dnbs02_excel(

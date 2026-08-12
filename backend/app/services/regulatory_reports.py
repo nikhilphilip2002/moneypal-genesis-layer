@@ -17,6 +17,11 @@ import openpyxl
 
 from app.services.db_schema import db_cursor
 from app.services import dnbs02_service
+from app.services.approved_report_values import (
+    apply_approved_values,
+    load_approved_declaration,
+    load_approved_values,
+)
 
 
 ASSET_DIR = Path(__file__).resolve().parents[1] / "assets"
@@ -323,6 +328,48 @@ def _report_envelope(definition: ReportDefinition, start: str, end: str) -> Dict
 
 def _build_dnbs13(definition: ReportDefinition, start: str, end: str) -> Dict[str, Any]:
     data = _report_envelope(definition, start, end)
+    with db_cursor() as (_conn, cur):
+        approved_values = load_approved_values(cur, definition.id, end)
+        declaration = load_approved_declaration(cur, definition.id, end)
+    data["approved_values"] = approved_values
+    data["declaration"] = declaration
+    if declaration:
+        data["status"] = declaration["coverage_status"]
+        data["provenance"] = {
+            "approved_declaration": {
+                "status": "ok",
+                "row_count": 1,
+                "note": declaration["declaration_text"],
+            },
+            "approved_supplemental_values": {
+                "status": "ok" if approved_values else "empty",
+                "row_count": len(approved_values),
+            },
+        }
+        data["summary"] = {
+            "populated_cells": len(approved_values),
+            "message": declaration["declaration_text"],
+        }
+        return data
+    if approved_values:
+        data["status"] = "partial"
+        data["provenance"] = {
+            "approved_supplemental_values": {
+                "status": "ok",
+                "row_count": len(approved_values),
+                "note": "Maker/checker-approved PostgreSQL supplemental values.",
+            },
+            "completeness_declaration": {
+                "status": "no_source",
+                "row_count": 0,
+                "error": "Values exist, but no approved complete/not-applicable declaration exists.",
+            },
+        }
+        data["summary"] = {
+            "populated_cells": len(approved_values),
+            "message": "Approved values loaded; completeness declaration pending.",
+        }
+        return data
     data["status"] = "blocked"
     data["provenance"] = {
         "overseas_investments": {
@@ -343,7 +390,11 @@ def _build_alm_report(definition: ReportDefinition, start: str, end: str) -> Dic
     with db_cursor() as (_conn, cur):
         _require_alm_date(cur, end)
         flows = _cashflows(cur, end)
+        approved_values = load_approved_values(cur, definition.id, end)
+        declaration = load_approved_declaration(cur, definition.id, end)
     data["cashflows_thousands"] = flows
+    data["approved_values"] = approved_values
+    data["declaration"] = declaration
     data["source_date"] = end
     data["status"] = "partial"
     data["provenance"] = {
@@ -356,11 +407,15 @@ def _build_alm_report(definition: ReportDefinition, start: str, end: str) -> Dic
             ),
         },
         "non_loan_sections": {
-            "status": "no_source",
-            "row_count": 0,
-            "error": (
-                "The populated ALM fact contains loan receivables only. Unsupported liability, "
-                "investment and OBS lines remain blank."
+            "status": "ok" if approved_values else "no_source",
+            "row_count": len(approved_values),
+            **(
+                {"note": "Approved supplemental PostgreSQL values populate unsupported cells."}
+                if approved_values
+                else {"error": (
+                    "The populated ALM fact contains loan receivables only. Unsupported liability, "
+                    "investment and OBS lines remain blank."
+                )}
             ),
         },
     }
@@ -368,7 +423,15 @@ def _build_alm_report(definition: ReportDefinition, start: str, end: str) -> Dic
         "principal_thousands": round(sum(flows["P"]), 2),
         "interest_thousands": round(sum(flows["I"]), 2),
         "total_cashflows_thousands": round(sum(flows["total"]), 2),
+        "approved_supplemental_cells": len(approved_values),
     }
+    if declaration:
+        data["status"] = declaration["coverage_status"]
+        data["provenance"]["approved_declaration"] = {
+            "status": "ok",
+            "row_count": 1,
+            "note": declaration["declaration_text"],
+        }
     return data
 
 
@@ -461,6 +524,7 @@ def generate_report_excel(
         _write_dnbs4a(wb, definition, data)
     else:
         _write_dnbs4b(wb, definition, data)
+    apply_approved_values(wb, data.get("approved_values") or [])
     output = io.BytesIO()
     wb.save(output)
     return output.getvalue()
