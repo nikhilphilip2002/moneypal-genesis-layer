@@ -159,7 +159,10 @@ def export_regulatory_report(
         )
     except (regulatory_reports.ReportError, dnbs02_service.PeriodError) as exc:
         raise HTTPException(400, str(exc)) from exc
-    safe_period = (period or end_date or "report").replace("/", "-")
+    selected_period = (
+        f"{start_date}_to_{end_date}" if start_date and end_date else (period or "report")
+    )
+    safe_period = selected_period.replace("/", "-")
     filename = f"RBI_{report_id.upper()}_{safe_period}.xlsx"
     return Response(
         content=content,

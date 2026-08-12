@@ -4,6 +4,7 @@ import io
 import re
 
 import openpyxl
+import pytest
 
 from app.services import regulatory_reports as reports
 
@@ -91,3 +92,61 @@ def test_dnbs13_writer_keeps_detail_rows_blank():
     wb.save(output)
     reopened = openpyxl.load_workbook(io.BytesIO(output.getvalue()))
     assert all(reopened["DNBS13"].cell(13, col).value is None for col in range(2, 18))
+
+
+def test_custom_range_requires_both_dates():
+    definition = reports.REPORTS["dnbs4b_structural"]
+    with pytest.raises(reports.ReportError, match="both start_date and end_date"):
+        reports._parse_request(definition, "custom", "", "2026-07-01", None)
+
+
+def test_custom_range_rejects_reversed_dates():
+    definition = reports.REPORTS["dnbs4b_structural"]
+    with pytest.raises(reports.ReportError, match="precedes period start"):
+        reports._parse_request(
+            definition, "custom", "", "2026-07-31", "2026-07-01"
+        )
+
+
+def test_custom_range_accepts_iso_dates_without_changing_report_frequency():
+    definition = reports.REPORTS["dnbs4a"]
+    assert reports._parse_request(
+        definition, "custom", "", "2026-07-01", "2026-07-31"
+    ) == ("2026-07-01", "2026-07-31")
+
+
+def test_custom_report_is_explicitly_not_filing_eligible(monkeypatch):
+    monkeypatch.setattr(
+        reports,
+        "_build_alm_report",
+        lambda definition, start, end: {
+            "status": "complete",
+            "start_date": start,
+            "end_date": end,
+        },
+    )
+    data = reports.get_report_data(
+        "dnbs4b_structural",
+        "custom",
+        "",
+        "2026-07-01",
+        "2026-07-31",
+    )
+    assert data["report_mode"] == "custom"
+    assert data["filing_eligible"] is False
+    assert "internal analytical" in data["filing_note"]
+
+
+def test_custom_workbook_is_stamped_as_internal():
+    definition = reports.REPORTS["dnbs13"]
+    wb = openpyxl.load_workbook(reports.ASSET_DIR / definition.template)
+    reports._fill_common_workbook_metadata(
+        wb, definition, "2026-07-01", "2026-07-31", "custom"
+    )
+    values = {
+        str(cell.value)
+        for row in wb["FilingInfo"].iter_rows()
+        for cell in row
+        if cell.value is not None
+    }
+    assert "Custom (Internal)" in values

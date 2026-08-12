@@ -212,8 +212,35 @@ def get_reportable_periods() -> Dict[str, Any]:
         {"value": s[:7], "label": datetime.date.fromisoformat(s).strftime("%B %Y"), "end_date": s}
         for s in snapshots
     ]
+    quarter_ends = {(3, 31), (6, 30), (9, 30), (12, 31)}
+    quarterly = []
+    yearly = []
+    for snapshot in snapshots:
+        date = datetime.date.fromisoformat(snapshot)
+        if (date.month, date.day) in quarter_ends:
+            if date.month == 6:
+                fiscal_year, quarter = date.year, "Q1"
+            elif date.month == 9:
+                fiscal_year, quarter = date.year, "Q2"
+            elif date.month == 12:
+                fiscal_year, quarter = date.year, "Q3"
+            else:
+                fiscal_year, quarter = date.year - 1, "Q4"
+            quarterly.append({
+                "value": f"{fiscal_year}-{quarter}",
+                "label": f"{quarter} FY{str(fiscal_year + 1)[-2:]}",
+                "end_date": snapshot,
+            })
+        if (date.month, date.day) == (3, 31):
+            yearly.append({
+                "value": f"{date.year - 1}-{date.year}",
+                "label": f"FY {date.year - 1}-{date.year}",
+                "end_date": snapshot,
+            })
     return {
         "monthly": list(reversed(monthly)),
+        "quarterly": list(reversed(quarterly)),
+        "yearly": list(reversed(yearly)),
         "snapshot_dates": snapshots,
         "gl_years": gl_years,
         # Quarterly and yearly returns need a period-end snapshot on the quarter/year end.
@@ -789,6 +816,9 @@ def get_dnbs02_report_data(
     because a plausible-looking invented number in a regulatory return is worse than a
     gap.
     """
+    custom_request = bool(start_date or end_date) or frequency.lower().strip() == "custom"
+    if bool(start_date) != bool(end_date):
+        raise PeriodError("Custom reports require both start_date and end_date.")
     if not start_date or not end_date:
         calc_start, calc_end = parse_period_range(frequency, period)
         start_date = start_date or calc_start
@@ -848,7 +878,7 @@ def get_dnbs02_report_data(
     live_sections = sorted(k for k, v in provenance.items() if v["status"] == "ok")
     degraded_sections = sorted(k for k, v in provenance.items() if v["status"] != "ok")
 
-    return {
+    result = {
         "frequency": frequency,
         "period": period,
         "start_date": start_date,
@@ -894,6 +924,14 @@ def get_dnbs02_report_data(
         # can see how the UI's period selection became query parameters.
         "bindings": ctx.bindings,
     }
+    result["report_mode"] = "custom" if custom_request else "regulatory"
+    result["filing_eligible"] = bool(not custom_request and result["is_live_pg"])
+    result["filing_note"] = (
+        "Custom ranges are internal analytical outputs and are not marked filing-ready."
+        if custom_request
+        else "Regulatory-period output; filing eligibility still depends on complete section coverage."
+    )
+    return result
 
 
 # ---------------------------------------------------------------------------

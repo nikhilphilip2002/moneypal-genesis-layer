@@ -94,6 +94,12 @@ class TestPeriodParsing:
         with pytest.raises(PeriodError):
             parse_period_range(frequency, period)
 
+    def test_custom_range_requires_both_dates_before_opening_database(self):
+        with pytest.raises(PeriodError, match="both start_date and end_date"):
+            get_dnbs02_report_data(
+                frequency="custom", start_date="2026-06-01", end_date=None
+            )
+
 
 class TestTemplateIntegrity:
     def test_template_is_the_blank(self):

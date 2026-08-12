@@ -160,15 +160,24 @@ def _stamp_report_sheet(ws, end_date: str, *, quarter: bool = False) -> None:
     ws["B5"] = f"Reporting {'Quarter' if quarter else 'Period'} End Date :{display}"
 
 
-def _fill_common_workbook_metadata(wb, definition: ReportDefinition, start: str, end: str) -> None:
+def _fill_common_workbook_metadata(
+    wb,
+    definition: ReportDefinition,
+    start: str,
+    end: str,
+    report_mode: str = "regulatory",
+) -> None:
+    frequency_label = (
+        "Custom (Internal)" if report_mode == "custom" else definition.frequency.capitalize()
+    )
     for name in ("FilingInfo", "Filing Info"):
         if name not in wb.sheetnames:
             continue
         ws = wb[name]
         _set_label_value(ws, "Return Name", definition.name.split("—", 1)[-1].strip())
         _set_label_value(ws, "Return Code", definition.return_code)
-        _set_label_value(ws, "Reporting frequency", definition.frequency.capitalize())
-        _set_label_value(ws, "Return Reporting Frequency", definition.frequency.capitalize())
+        _set_label_value(ws, "Reporting frequency", frequency_label)
+        _set_label_value(ws, "Return Reporting Frequency", frequency_label)
         _set_label_value(ws, "Reporting start date", start)
         _set_label_value(ws, "Reporting Period Start Date", start)
         _set_label_value(ws, "Reporting end date", end)
@@ -182,8 +191,19 @@ def _parse_request(
     start_date: Optional[str],
     end_date: Optional[str],
 ) -> Tuple[str, str]:
+    if bool(start_date) != bool(end_date):
+        raise ReportError("Custom reports require both start_date and end_date.")
     if start_date and end_date:
-        return start_date, end_date
+        try:
+            start = dt.date.fromisoformat(start_date)
+            end = dt.date.fromisoformat(end_date)
+        except ValueError as exc:
+            raise ReportError(
+                f"Dates must be ISO YYYY-MM-DD (got {start_date!r}..{end_date!r})."
+            ) from exc
+        if end < start:
+            raise ReportError(f"Period end {end_date} precedes period start {start_date}.")
+        return start.isoformat(), end.isoformat()
     requested_frequency = (frequency or definition.frequency).lower()
     if requested_frequency != definition.frequency:
         raise ReportError(
@@ -445,6 +465,7 @@ def get_report_data(
     definition = REPORTS.get(report_id)
     if not definition:
         raise ReportError(f"Unknown report {report_id!r}")
+    custom_request = bool(start_date or end_date) or frequency.lower().strip() == "custom"
     if report_id == "dnbs02":
         return dnbs02_service.get_dnbs02_report_data(
             frequency=frequency or "quarterly", period=period,
@@ -452,17 +473,32 @@ def get_report_data(
         )
     start, end = _parse_request(definition, frequency, period, start_date, end_date)
     if report_id == "dnbs13":
-        return _build_dnbs13(definition, start, end)
-    return _build_alm_report(definition, start, end)
+        data = _build_dnbs13(definition, start, end)
+    else:
+        data = _build_alm_report(definition, start, end)
+    data["report_mode"] = "custom" if custom_request else "regulatory"
+    data["filing_eligible"] = bool(
+        not custom_request and data["status"] in {"complete", "not_applicable"}
+    )
+    data["filing_note"] = (
+        "Custom ranges are internal analytical outputs and are not marked filing-ready."
+        if custom_request
+        else "Regulatory-period output; filing eligibility requires an approved complete or not-applicable status."
+    )
+    return data
 
 
 def _write_dnbs13(wb, definition: ReportDefinition, data: Dict[str, Any]) -> None:
-    _fill_common_workbook_metadata(wb, definition, data["start_date"], data["end_date"])
+    _fill_common_workbook_metadata(
+        wb, definition, data["start_date"], data["end_date"], data.get("report_mode", "regulatory")
+    )
     _stamp_report_sheet(wb["DNBS13"], data["end_date"])
 
 
 def _write_dnbs4a(wb, definition: ReportDefinition, data: Dict[str, Any]) -> None:
-    _fill_common_workbook_metadata(wb, definition, data["start_date"], data["end_date"])
+    _fill_common_workbook_metadata(
+        wb, definition, data["start_date"], data["end_date"], data.get("report_mode", "regulatory")
+    )
     ws = wb["DNBS4AShortTermDynamicLiquidity"]
     _stamp_report_sheet(ws, data["end_date"], quarter=True)
     flows = data["cashflows_thousands"]
@@ -475,7 +511,9 @@ def _write_dnbs4a(wb, definition: ReportDefinition, data: Dict[str, Any]) -> Non
 
 
 def _write_dnbs4b(wb, definition: ReportDefinition, data: Dict[str, Any]) -> None:
-    _fill_common_workbook_metadata(wb, definition, data["start_date"], data["end_date"])
+    _fill_common_workbook_metadata(
+        wb, definition, data["start_date"], data["end_date"], data.get("report_mode", "regulatory")
+    )
     flows = data["cashflows_thousands"]
     total = flows["total"]
 

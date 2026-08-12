@@ -77,6 +77,9 @@ export type DNBS02ReportData = {
   gl_year: number;
   duration_days?: number;
   generated_at: string;
+  report_mode: 'regulatory' | 'custom';
+  filing_eligible: boolean;
+  filing_note: string;
 
   /** Per-section outcome. A section is only trustworthy when its status is 'ok'. */
   provenance: Record<string, SectionProvenance>;
@@ -179,6 +182,8 @@ export type DNBS02ReportData = {
 
 export type DNBS02Periods = {
   monthly: { value: string; label: string; end_date: string }[];
+  quarterly: { value: string; label: string; end_date: string }[];
+  yearly: { value: string; label: string; end_date: string }[];
   snapshot_dates: string[];
   gl_years: number[];
   note: string;
@@ -203,7 +208,10 @@ export type RegulatoryReportData = {
   generated_at: string;
   source: string;
   source_date?: string;
-  status: 'draft' | 'partial' | 'blocked';
+  report_mode: 'regulatory' | 'custom';
+  filing_eligible: boolean;
+  filing_note: string;
+  status: 'draft' | 'partial' | 'blocked' | 'complete' | 'not_applicable';
   provenance: Record<string, SectionProvenance>;
   summary: Record<string, number | string>;
 };
@@ -452,12 +460,18 @@ export const regulatory = {
   reports: (): Promise<RegulatoryReportDefinition[]> => apiRequest('/regulatory/reports'),
   reportPeriods: (reportId: string): Promise<RegulatoryReportPeriods> =>
     apiRequest(`/regulatory/reports/${encodeURIComponent(reportId)}/periods`),
-  report: (reportId: string, frequency: string, period: string): Promise<RegulatoryReportData> =>
-    apiRequest(
-      `/regulatory/reports/${encodeURIComponent(reportId)}?frequency=${encodeURIComponent(frequency)}&period=${encodeURIComponent(period)}`,
-    ),
-  getReportExcelUrl: (reportId: string, frequency: string, period: string): string =>
-    `${API_URL}/regulatory/reports/${encodeURIComponent(reportId)}/export?frequency=${encodeURIComponent(frequency)}&period=${encodeURIComponent(period)}`,
+  report: (reportId: string, frequency: string, period: string, startDate?: string, endDate?: string): Promise<RegulatoryReportData> => {
+    let url = `/regulatory/reports/${encodeURIComponent(reportId)}?frequency=${encodeURIComponent(frequency)}&period=${encodeURIComponent(period)}`;
+    if (startDate) url += `&start_date=${encodeURIComponent(startDate)}`;
+    if (endDate) url += `&end_date=${encodeURIComponent(endDate)}`;
+    return apiRequest(url);
+  },
+  getReportExcelUrl: (reportId: string, frequency: string, period: string, startDate?: string, endDate?: string): string => {
+    let url = `${API_URL}/regulatory/reports/${encodeURIComponent(reportId)}/export?frequency=${encodeURIComponent(frequency)}&period=${encodeURIComponent(period)}`;
+    if (startDate) url += `&start_date=${encodeURIComponent(startDate)}`;
+    if (endDate) url += `&end_date=${encodeURIComponent(endDate)}`;
+    return url;
+  },
 };
 
 

@@ -31,20 +31,8 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
-// Monthly options are loaded from the API so the picker can only offer periods the
-// report's own source tables can back. Periods with no exact required snapshot are not
-// offered even when a different silver table happens to contain newer data.
-const PERIOD_OPTIONS = {
-  monthly: [] as { label: string; value: string }[],
-  quarterly: [
-    { label: 'Q1 FY26 (Apr - Jun 2026)', value: '2026-Q1' },
-    { label: 'Q4 FY25 (Jan - Mar 2026)', value: '2025-Q4' },
-    { label: 'Q3 FY25 (Oct - Dec 2025)', value: '2025-Q3' },
-  ],
-  yearly: [
-    { label: 'FY 2025-2026 (Annual Return)', value: '2025-2026' },
-  ],
-};
+type ReportFrequency = 'monthly' | 'quarterly' | 'yearly';
+type ReportMode = 'regulatory' | 'custom';
 
 const REPORT_SECTION_OPTIONS = [
   { value: 'part1', label: 'Part 1: Capital Structure & Net Owned Funds (NOF)' },
@@ -64,7 +52,8 @@ export default function DNBSReport() {
   const [reportCatalog, setReportCatalog] = useState<RegulatoryReportDefinition[]>([]);
   const [genericPeriods, setGenericPeriods] = useState<RegulatoryReportPeriods | null>(null);
   const [genericReport, setGenericReport] = useState<RegulatoryReportData | null>(null);
-  const [frequency, setFrequency] = useState<'monthly' | 'quarterly' | 'yearly' | 'custom'>('monthly');
+  const [reportMode, setReportMode] = useState<ReportMode>('regulatory');
+  const [frequency, setFrequency] = useState<ReportFrequency>('quarterly');
   const [period, setPeriod] = useState<string>('');
   const [startDate, setStartDate] = useState<string>('');
   const [endDate, setEndDate] = useState<string>('');
@@ -87,11 +76,12 @@ export default function DNBSReport() {
       .then((p) => {
         if (cancelled) return;
         setPeriods(p);
-        const latest = p.monthly[0];
+        const fixedFrequency: ReportFrequency = 'quarterly';
+        setFrequency(fixedFrequency);
+        const latest = p[fixedFrequency][0];
         if (latest) {
           setPeriod(latest.value);
-          setStartDate(`${latest.value}-01`);
-          setEndDate(latest.end_date);
+          updateDatesForPeriod(fixedFrequency, latest.value);
         } else {
           setError('The warehouse holds no portfolio snapshots to report on.');
           setLoading(false);
@@ -143,22 +133,35 @@ export default function DNBSReport() {
   }, [selectedReport, reportCatalog]);
 
   const fetchReport = async () => {
-    if (!period && !(startDate && endDate)) return;
+    const custom = reportMode === 'custom';
+    if (custom && (!startDate || !endDate || endDate < startDate)) return;
+    if (!custom && !period) return;
     if (selectedReport !== 'dnbs02' && !genericPeriods) return;
     setLoading(true);
     setError(null);
     try {
       if (selectedReport === 'dnbs02') {
-        const data = await regulatory.dnbsReport(frequency, period, startDate, endDate);
+        const data = await regulatory.dnbsReport(
+          custom ? 'custom' : frequency,
+          custom ? '' : period,
+          custom ? startDate : undefined,
+          custom ? endDate : undefined,
+        );
         setReport(data);
         setGenericReport(null);
       } else {
-        const data = await regulatory.report(selectedReport, frequency, period);
+        const data = await regulatory.report(
+          selectedReport,
+          custom ? 'custom' : frequency,
+          custom ? '' : period,
+          custom ? startDate : undefined,
+          custom ? endDate : undefined,
+        );
         setGenericReport(data);
         setReport(null);
       }
     } catch (err: any) {
-      setError(err?.message || 'Failed to load DNBS-02 report');
+      setError(err?.message || 'Failed to load the selected report');
     } finally {
       setLoading(false);
     }
@@ -166,30 +169,27 @@ export default function DNBSReport() {
 
   useEffect(() => {
     fetchReport();
-  }, [selectedReport, frequency, period, startDate, endDate, genericPeriods]);
+  }, [selectedReport, reportMode, frequency, period, startDate, endDate, genericPeriods]);
 
   const periodOptions = selectedReport !== 'dnbs02'
     ? ((frequency === 'monthly' ? genericPeriods?.monthly : genericPeriods?.quarterly) ?? [])
-    : frequency === 'monthly'
-      ? (periods?.monthly ?? []).map((m) => ({ label: `${m.label} (${m.value})`, value: m.value }))
-      : frequency === 'custom'
-        ? []
-        : PERIOD_OPTIONS[frequency];
+    : (periods?.[frequency] ?? []).map((item) => ({
+        label: `${item.label} (${item.value})`,
+        value: item.value,
+        end_date: item.end_date,
+      }));
 
   const latestSourceDate = selectedReport === 'dnbs02'
     ? periods?.snapshot_dates?.at(-1)
     : genericPeriods?.source_dates?.at(-1);
   const latestReportablePeriod = periodOptions[0];
 
-  const handleFrequencyChange = (newFreq: 'monthly' | 'quarterly' | 'yearly' | 'custom') => {
-    setFrequency(newFreq);
-    if (newFreq !== 'custom') {
-      const opts = newFreq === 'monthly' ? (periods?.monthly ?? []) : PERIOD_OPTIONS[newFreq];
-      const p = opts[0]?.value;
-      if (p) {
-        setPeriod(p);
-        updateDatesForPeriod(newFreq, p);
-      }
+  const handleModeChange = (mode: ReportMode) => {
+    setReportMode(mode);
+    setError(null);
+    if (mode === 'regulatory' && periodOptions[0]) {
+      setPeriod(periodOptions[0].value);
+      updateDatesForPeriod(frequency, periodOptions[0].value);
     }
   };
 
@@ -215,27 +215,37 @@ export default function DNBSReport() {
 
   const handlePeriodChange = (newPeriod: string) => {
     setPeriod(newPeriod);
-    if (frequency !== 'custom') {
-      updateDatesForPeriod(frequency, newPeriod);
-    }
+    updateDatesForPeriod(frequency, newPeriod);
   };
 
   const handleCustomStartDateChange = (val: string) => {
     setStartDate(val);
-    setFrequency('custom');
   };
 
   const handleCustomEndDateChange = (val: string) => {
     setEndDate(val);
-    setFrequency('custom');
   };
 
   const handleExcelDownload = () => {
+    const custom = reportMode === 'custom';
     const url = selectedReport === 'dnbs02'
-      ? regulatory.getDnbsExcelUrl(frequency, period, startDate, endDate)
-      : regulatory.getReportExcelUrl(selectedReport, frequency, period);
+      ? regulatory.getDnbsExcelUrl(
+          custom ? 'custom' : frequency,
+          custom ? '' : period,
+          custom ? startDate : undefined,
+          custom ? endDate : undefined,
+        )
+      : regulatory.getReportExcelUrl(
+          selectedReport,
+          custom ? 'custom' : frequency,
+          custom ? '' : period,
+          custom ? startDate : undefined,
+          custom ? endDate : undefined,
+        );
     window.open(url, '_blank');
   };
+
+  const customDatesValid = Boolean(startDate && endDate && startDate <= endDate);
 
   return (
     <div className="space-y-6">
@@ -276,6 +286,11 @@ export default function DNBSReport() {
                     <Database className="h-3 w-3" /> {genericReport.status}
                   </Badge>
                 )}
+                {(report?.report_mode === 'custom' || genericReport?.report_mode === 'custom') && (
+                  <Badge variant="outline" className="border-none bg-blue-500/10 text-[11px] text-blue-600 dark:text-blue-400">
+                    Internal custom report
+                  </Badge>
+                )}
               </div>
               <p className="text-xs text-muted-foreground">
                 Programmatic return mapping for Important Financial Parameters, Capital Adequacy, Asset Quality, and Top Exposure Annexures.
@@ -288,7 +303,12 @@ export default function DNBSReport() {
                 Refresh
               </Button>
 
-              <Button onClick={handleExcelDownload} size="sm" className="h-9 rounded-xl gap-1.5 text-xs bg-primary text-primary-foreground">
+              <Button
+                onClick={handleExcelDownload}
+                disabled={loading || Boolean(error) || (reportMode === 'custom' && !customDatesValid)}
+                size="sm"
+                className="h-9 rounded-xl gap-1.5 text-xs bg-primary text-primary-foreground"
+              >
                 <Download className="h-3.5 w-3.5" />
                 Download Excel (.xlsx)
               </Button>
@@ -315,31 +335,32 @@ export default function DNBSReport() {
               ))}
             </select>
 
-            {/* Frequency Selection Group */}
-            {selectedReport === 'dnbs02' ? <div className="inline-flex rounded-xl bg-accent p-1 text-xs">
-              {(['monthly', 'quarterly', 'yearly', 'custom'] as const).map((f) => (
+            {/* Filing presets and analytical custom ranges are intentionally distinct. */}
+            <div className="inline-flex rounded-xl bg-accent p-1 text-xs">
+              {(['regulatory', 'custom'] as const).map((mode) => (
                 <button
-                  key={f}
+                  key={mode}
                   type="button"
-                  onClick={() => handleFrequencyChange(f)}
+                  onClick={() => handleModeChange(mode)}
                   className={cn(
                     'rounded-lg px-3 py-1.5 font-medium transition-all capitalize',
-                    frequency === f
+                    reportMode === mode
                       ? 'bg-background text-foreground shadow-sm'
                       : 'text-muted-foreground hover:text-foreground'
                   )}
                 >
-                  {f === 'custom' ? 'Custom Range' : f}
+                  {mode === 'regulatory' ? 'Regulatory Period' : 'Custom Range'}
                 </button>
               ))}
-            </div> : (
+            </div>
+
+            {reportMode === 'regulatory' && (
               <Badge variant="outline" className="h-9 rounded-xl border-none bg-accent px-3 capitalize">
                 {frequency}
               </Badge>
             )}
 
-            {/* Period Dropdown for Monthly/Quarterly/Yearly */}
-            {frequency !== 'custom' && (
+            {reportMode === 'regulatory' && (
               <select
                 value={period}
                 onChange={(e) => handlePeriodChange(e.target.value)}
@@ -353,15 +374,14 @@ export default function DNBSReport() {
               </select>
             )}
 
-            {frequency !== 'custom' && latestReportablePeriod && (
+            {reportMode === 'regulatory' && latestReportablePeriod && (
               <span className="text-[11px] text-muted-foreground">
                 Latest reportable: <span className="font-semibold text-foreground">{latestReportablePeriod.label}</span>
                 {latestSourceDate ? ` · source through ${latestSourceDate}` : ''}
               </span>
             )}
 
-            {/* Custom Date Pickers - Border-less bg-accent design matching toggle pills */}
-            {selectedReport === 'dnbs02' && <div className="inline-flex items-center gap-2 text-xs font-medium bg-accent rounded-xl p-1">
+            {reportMode === 'custom' && <div className="inline-flex items-center gap-2 text-xs font-medium bg-accent rounded-xl p-1">
               <span className="text-[11px] font-semibold text-foreground px-2 flex items-center gap-1">
                 <Calendar className="h-3.5 w-3.5 text-primary" /> Date Range:
               </span>
@@ -384,6 +404,16 @@ export default function DNBSReport() {
                 />
               </div>
             </div>}
+            {reportMode === 'custom' && !customDatesValid && (
+              <span className="text-[11px] font-medium text-red-600 dark:text-red-400">
+                Select a valid start and end date.
+              </span>
+            )}
+            {reportMode === 'custom' && customDatesValid && (
+              <span className="text-[11px] text-muted-foreground">
+                Exact {endDate} source required · exported as an internal draft
+              </span>
+            )}
           </div>
         </div>
       </Card>
