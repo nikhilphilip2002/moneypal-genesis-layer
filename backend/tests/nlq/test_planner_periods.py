@@ -28,6 +28,20 @@ class FixedPlanClient:
         )
 
 
+class WrongOverduePlanClient(FixedPlanClient):
+    async def complete(self, **kwargs):
+        self.calls.append(kwargs)
+        return LLMResult(
+            text=(
+                '{"route":"queryspec","confidence":0.95,"reasoning":"wrong ratio",'
+                '"spec":{"metrics":["par_30"],"dimensions":["asset_class"],'
+                '"period":{"relative":"today"},"as_share":false}}'
+            ),
+            model=self.model,
+            provider=self.provider,
+        )
+
+
 @pytest.mark.anyio
 async def test_last_90_days_cannot_be_replaced_with_model_guessed_dates():
     cache.clear_all()
@@ -62,3 +76,49 @@ async def test_session_history_is_sent_before_the_current_planner_question():
         *history_messages,
         {"role": "user", "content": "now by asset classification"},
     ]
+
+
+@pytest.mark.anyio
+async def test_explicit_overdue_principal_share_cannot_be_changed_to_par30():
+    cache.clear_all()
+    outcome = await plan(
+        "Show the overdue-principal share by asset classification today.",
+        client=WrongOverduePlanClient(),
+    )
+
+    assert isinstance(outcome.plan, QuerySpecPlan)
+    assert outcome.plan.spec.metrics == ["overdue_principal"]
+    assert outcome.plan.spec.dimensions == ["asset_class"]
+    assert outcome.plan.spec.as_share is True
+
+
+@pytest.mark.anyio
+async def test_donut_suffix_is_removed_and_converted_to_share_intent():
+    cache.clear_all()
+    client = WrongOverduePlanClient()
+    await plan(
+        "Show the overdue-principal share by asset classification today in a donut graph.",
+        client=client,
+    )
+
+    sent_question = client.calls[0]["messages"][-1]["content"]
+    assert "donut" not in sent_question.lower()
+    assert "share or composition" in sent_question.lower()
+
+
+@pytest.mark.anyio
+async def test_chart_only_followup_reuses_previous_user_question():
+    cache.clear_all()
+    client = WrongOverduePlanClient()
+    history_messages = [
+        {
+            "role": "user",
+            "content": "Show the overdue-principal share by asset classification today.",
+        },
+        {"role": "assistant", "content": "Previous chart result."},
+    ]
+    await plan("in a donut graph", client=client, history_messages=history_messages)
+
+    sent_question = client.calls[0]["messages"][-1]["content"]
+    assert sent_question.startswith("Show the overdue-principal share")
+    assert "share or composition" in sent_question.lower()

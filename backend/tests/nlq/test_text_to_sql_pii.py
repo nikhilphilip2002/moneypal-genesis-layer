@@ -8,8 +8,10 @@ from app.services.nlq.executor import QueryResult
 from app.services.nlq.text_to_sql import (
     NAME_PII_COLUMN_IDS,
     _context_block,
+    _named_borrower_disbursed_attempt,
     _named_borrower_principal_attempt,
     _system_prompt,
+    named_borrower_disbursed_name,
     named_borrower_principal_name,
 )
 
@@ -61,7 +63,7 @@ def test_named_borrower_principal_uses_reviewed_columns_without_an_llm():
     assert "gnlnac_pri_repay_amt" in attempt.sql
     assert "gnlnac_cust_name" in attempt.sql
     assert "gnlnac_prin" not in attempt.sql
-    assert "LIKE 'sheelavati' || '%'" in attempt.sql
+    assert "LIKE 'shelavati' || '%'" in attempt.sql
     assert "GROUP BY" in attempt.sql
     assert attempt.column_units["principal_repaid"] == "inr"
     assert attempt.pii_columns == ["gnlnac_cust_name"]
@@ -70,6 +72,29 @@ def test_named_borrower_principal_uses_reviewed_columns_without_an_llm():
 def test_named_borrower_principal_stays_blocked_for_unauthorized_roles():
     assert _named_borrower_principal_attempt(
         "principal amount paid by sheelavati",
+        get_catalog(),
+        allow_pii=False,
+    ) is None
+
+
+def test_named_borrower_disbursement_uses_reviewed_columns_without_an_llm():
+    attempt = _named_borrower_disbursed_attempt(
+        "loan amount disburdsed to shellavati",
+        get_catalog(),
+        allow_pii=True,
+    )
+
+    assert attempt is not None and attempt.validated
+    assert attempt.model == "deterministic"
+    assert "gnlnac_lndisb_amt" in attempt.sql
+    assert "gnlnac_cust_name" in attempt.sql
+    assert "LIKE 'shelavati' || '%'" in attempt.sql
+    assert attempt.column_units["disbursed_amount"] == "inr"
+
+
+def test_named_borrower_disbursement_stays_blocked_for_unauthorized_roles():
+    assert _named_borrower_disbursed_attempt(
+        "amount disbursed to Sheelavati",
         get_catalog(),
         allow_pii=False,
     ) is None
@@ -101,6 +126,8 @@ def test_name_match_normalizes_th_spelling_and_keeps_ambiguous_names_separate():
 def test_named_borrower_intent_matcher_does_not_claim_period_questions():
     assert named_borrower_principal_name("principal paid by Sheelavati") == "Sheelavati"
     assert named_borrower_principal_name("principal paid by Sheelavati last month") is None
+    assert named_borrower_disbursed_name("amount disbursed to Sheelavati") == "Sheelavati"
+    assert named_borrower_disbursed_name("amount disbursed to Sheelavati last month") is None
 
 
 def test_reviewed_unit_hint_renders_principal_as_inr():

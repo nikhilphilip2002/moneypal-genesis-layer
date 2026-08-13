@@ -168,7 +168,14 @@ def _explain(conn: Any, cur: Any, sql: str, params: list[Any]) -> float | None:
     but it is logged, because it usually means the SQL is malformed.
     """
     try:
-        cur.execute(f"EXPLAIN {sql}", params)
+        # pg8000 treats percent signs inside a literal as parameter markers whenever a
+        # parameter sequence is supplied, even an empty one. Generated SQL commonly uses
+        # LIKE 'name%' for borrower matching, so omit the second argument when there are no
+        # bound values.
+        if params:
+            cur.execute(f"EXPLAIN {sql}", params)
+        else:
+            cur.execute(f"EXPLAIN {sql}")
         text = " ".join(str(r[0]) for r in cur.fetchall())
     except Exception as exc:  # noqa: BLE001
         logger.warning("NLQ EXPLAIN failed, proceeding without the cost gate: %s", exc)

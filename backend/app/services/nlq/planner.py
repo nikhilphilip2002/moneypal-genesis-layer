@@ -29,13 +29,15 @@ from app.services.nlq.contracts import (
     PlanResult,
     Period,
     QuerySpecPlan,
-    RefusalPlan,
     SqlPlan,
 )
 from app.services.nlq.llm import LLMError, get_llm_client
 from app.services.nlq.llm.prompts import PROMPT_VERSION, build_messages
 from app.services.nlq.llm.schemas import plan_schema
-from app.services.nlq.text_to_sql import named_borrower_principal_name
+from app.services.nlq.text_to_sql import (
+    named_borrower_disbursed_name,
+    named_borrower_principal_name,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -64,10 +66,11 @@ async def plan(
 ) -> PlanOutcome:
     """Ask the model to route and structure a question."""
     cat = catalog or get_catalog()
+    planning_question = _resolve_chart_request(question, history_messages or [])
 
     # A named-borrower filter is outside QuerySpec by design. Route this reviewed intent
     # deterministically so the model cannot drop the name and answer with the whole book.
-    if named_borrower_principal_name(question):
+    if named_borrower_principal_name(question) or named_borrower_disbursed_name(question):
         return PlanOutcome(
             plan=SqlPlan(
                 intent=question,
@@ -95,7 +98,9 @@ async def plan(
 
     schema = plan_schema(cat)
 
-    messages = build_messages(question, catalog=cat, history_messages=history_messages or [])
+    messages = build_messages(
+        planning_question, catalog=cat, history_messages=history_messages or []
+    )
     total_ms = 0
     attempts = 0
     previous_raw = ""
@@ -105,7 +110,7 @@ async def plan(
         attempts += 1
         if attempt == 1:
             messages = build_messages(
-                question,
+                planning_question,
                 catalog=cat,
                 repair_error=error,
                 previous_attempt=previous_raw,
@@ -124,7 +129,8 @@ async def plan(
 
         try:
             parsed = _parse(result.json(), cat)
-            parsed = _enforce_relative_period(question, parsed)
+            parsed = _enforce_relative_period(planning_question, parsed)
+            parsed = _enforce_explicit_semantics(planning_question, parsed)
         except (PlanValidationError, ValidationError, LLMError) as exc:
             error = str(exc)
             logger.info("NLQ plan rejected on attempt %d: %s", attempts, error)
@@ -178,6 +184,68 @@ _RELATIVE_PERIOD_PHRASES = (
 _EXPLICIT_PERIOD_ANCHOR = re.compile(
     r"\b(?:ending|ended|as\s+of|up\s+to|through)\b|\b20\d{2}\b", re.I
 )
+
+_DONUT_SUFFIX = re.compile(
+    r"(?:[,.]?\s*)\b(?:in|as)\s+(?:a\s+)?donut(?:\s+(?:chart|graph))?\s*[?.!]*$",
+    re.I,
+)
+_DONUT_ONLY = re.compile(
+    r"^\s*(?:(?:show|display|render|make)\s+)?(?:(?:it|this|that)\s+)?"
+    r"(?:(?:in|as)\s+)?(?:a\s+)?donut(?:\s+(?:chart|graph))?\s*[?.!]*$",
+    re.I,
+)
+_SHARE_WORDS = re.compile(r"\b(?:share|mix|composition|split)\b", re.I)
+_OVERDUE_PRINCIPAL = re.compile(
+    r"\b(?:overdue[- ]principal|principal[- ]overdue|principal\s+(?:in\s+)?arrears)\b",
+    re.I,
+)
+_PAR_30 = re.compile(r"\bpar\s*[- ]?30\b", re.I)
+
+
+def _resolve_chart_request(
+    question: str, history_messages: list[dict[str, str]]
+) -> str:
+    """Turn presentation wording into analytic intent before it reaches the planner.
+
+    The model plans data; the application draws it. Removing a trailing chart instruction
+    prevents a capable model from replying that it cannot render graphics. A chart-only
+    follow-up reuses the previous user question from this conversation.
+    """
+    if _DONUT_ONLY.fullmatch(question):
+        previous = next(
+            (
+                str(message.get("content", "")).strip()
+                for message in reversed(history_messages)
+                if message.get("role") == "user" and str(message.get("content", "")).strip()
+            ),
+            "",
+        )
+        if previous:
+            return f"{previous} Show the result as a share or composition."
+    if _DONUT_SUFFIX.search(question):
+        base = _DONUT_SUFFIX.sub("", question).strip()
+        return f"{base} Show the result as a share or composition."
+    return question
+
+
+def _enforce_explicit_semantics(question: str, parsed: PlanResult) -> PlanResult:
+    """Protect explicit business words from plausible neighbouring-metric guesses."""
+    if not isinstance(parsed, QuerySpecPlan):
+        return parsed
+    spec = parsed.spec
+    updates: dict[str, Any] = {}
+    if _SHARE_WORDS.search(question) and not spec.as_share:
+        updates["as_share"] = True
+    if (
+        _OVERDUE_PRINCIPAL.search(question)
+        and not _PAR_30.search(question)
+        and spec.metrics != ["overdue_principal"]
+    ):
+        updates["metrics"] = ["overdue_principal"]
+    if not updates:
+        return parsed
+    corrected = spec.model_copy(update=updates)
+    return parsed.model_copy(update={"spec": corrected})
 
 
 def _enforce_relative_period(question: str, parsed: PlanResult) -> PlanResult:

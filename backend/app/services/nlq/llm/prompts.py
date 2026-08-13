@@ -16,7 +16,7 @@ from __future__ import annotations
 
 from app.services.nlq.catalog import Catalog, get_catalog
 
-PROMPT_VERSION = "planner-v2"
+PROMPT_VERSION = "planner-v3"
 
 SYSTEM_PROMPT = """\
 You translate questions about an Indian co-operative bank's lending book into structured \
@@ -65,6 +65,11 @@ SHAPE
 ("what is our product mix", "what share of the book is gold", "break the portfolio down \
 by asset class"). "Disbursement by branch" is a comparison, not a share — leave it false. \
 It selects a part-to-whole chart and changes no numbers.
+- The application renders charts itself. Words such as donut, bar, line, graph, or chart are \
+presentation requests, never a reason to refuse or claim that a graph cannot be displayed. \
+For a donut request, reuse the requested metric and dimension and set `as_share` true.
+- Keep amount metrics distinct from ratios: "overdue-principal share by asset classification" \
+means `overdue_principal` grouped by `asset_class` with `as_share=true`; it is not PAR 30.
 
 PERIODS
 - When the user says "last 30 days", "last 90 days", or "last 12 months", emit the
@@ -141,6 +146,12 @@ FEW_SHOTS: list[tuple[str, str]] = [
         "What is our product mix by outstanding?",
         '{"route":"queryspec","confidence":0.94,"reasoning":"composition, not comparison",'
         '"spec":{"metrics":["principal_outstanding"],"dimensions":["product"],'
+        '"period":{"relative":"today"},"as_share":true}}',
+    ),
+    (
+        "Show the overdue-principal share by asset classification today.",
+        '{"route":"queryspec","confidence":0.98,"reasoning":"additive overdue amount as composition",'
+        '"spec":{"metrics":["overdue_principal"],"dimensions":["asset_class"],'
         '"period":{"relative":"today"},"as_share":true}}',
     ),
     (

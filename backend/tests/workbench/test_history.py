@@ -65,6 +65,8 @@ def test_complete_cards_are_saved_and_become_assistant_context():
         "card_type": "chart",
         "payload": {
             "title": "PAR 30",
+            "chart_type": "kpi",
+            "columns": [{"name": "par_30", "label": "PAR 30"}],
             "rows": [{"par_30": 4.2}],
             "summary": "PAR 30 is 4.2%.",
             "lineage": {"sql": "must not enter model context"},
@@ -77,6 +79,7 @@ def test_complete_cards_are_saved_and_become_assistant_context():
     messages = history.transcript("c1", user="alice")
     assert messages[-2] == {"role": "user", "content": "What is PAR 30?"}
     assert "PAR 30 is 4.2%" in messages[-1]["content"]
+    assert "Chart context: type=kpi; fields=par_30" in messages[-1]["content"]
     assert "must not enter model context" not in messages[-1]["content"]
 
 

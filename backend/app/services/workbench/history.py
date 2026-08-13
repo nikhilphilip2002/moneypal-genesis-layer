@@ -405,13 +405,28 @@ def _card_text(card: dict[str, Any]) -> str:
         title = str(payload.get("title") or "Result")
         subtitle = str(payload.get("subtitle") or "")
         summary = str(payload.get("summary") or "")
+        chart_type = str(payload.get("chart_type") or "")
+        columns = payload.get("columns") if isinstance(payload.get("columns"), list) else []
+        fields = [
+            str(column.get("name")) for column in columns
+            if isinstance(column, dict) and column.get("name")
+        ]
+        chart_context = ""
+        if chart_type or fields:
+            chart_context = (
+                f"Chart context: type={chart_type or 'unspecified'}; "
+                f"fields={','.join(fields) or 'unspecified'}"
+            )
         rows = payload.get("rows") if isinstance(payload.get("rows"), list) else []
         row_lines = [json.dumps(row, default=str, ensure_ascii=False) for row in rows[:CARD_ROWS_IN_CONTEXT]]
         omitted = len(rows) - len(row_lines)
         body = "\n".join(row_lines)
         if omitted > 0:
             body += f"\n[{omitted} additional rows omitted from model context]"
-        return "\n".join(part for part in [f"[{source}] {title}", subtitle, body, summary] if part)
+        return "\n".join(
+            part for part in [f"[{source}] {title}", subtitle, chart_context, body, summary]
+            if part
+        )
     if card_type == "brief":
         summary = str(payload.get("summary") or "")
         points = payload.get("key_points") if isinstance(payload.get("key_points"), list) else []

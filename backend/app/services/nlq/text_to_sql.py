@@ -19,8 +19,6 @@ from __future__ import annotations
 import logging
 import re
 from dataclasses import dataclass, field
-from typing import Any
-
 from sqlglot import exp
 
 from app.core.config import settings
@@ -105,6 +103,11 @@ async def generate(
     """Generate and validate SQL. Returns an attempt whose `validated` flag is the gate."""
     cat = catalog or get_catalog()
     llm = client or get_llm_client()
+
+    exact = _named_borrower_disbursed_attempt(question, cat, allow_pii=allow_pii)
+    if exact is not None:
+        logger.info("NLQ selected deterministic named-borrower disbursement lookup")
+        return exact
 
     exact = _named_borrower_principal_attempt(question, cat, allow_pii=allow_pii)
     if exact is not None:
@@ -197,20 +200,99 @@ _NAMED_PRINCIPAL_RE = re.compile(
     r"(?:by|for)\s+(?P<name>[\w .'-]{2,100})\s*[?!.]*$",
     re.IGNORECASE,
 )
+_NAMED_DISBURSED_RE = re.compile(
+    r"\b(?:loan\s+amount\s+)?(?:disbur\w*|released|paid\s+out)\b\s+"
+    r"(?:to|for|by)\s+(?P<name>[\w .'-]{2,100})\s*[?!.]*$",
+    re.IGNORECASE,
+)
+
+
+def _has_period_words(question: str) -> bool:
+    return bool(re.search(
+        r"\b(?:today|yesterday|month|quarter|year|fy\d*|between|from|since|before|after)\b",
+        question,
+        re.IGNORECASE,
+    ))
 
 
 def named_borrower_principal_name(question: str) -> str | None:
     """Return the explicit borrower name for the supported cumulative-principal intent."""
-    if re.search(
-        r"\b(?:today|yesterday|month|quarter|year|fy\d*|between|from|since|before|after)\b",
-        question,
-        re.IGNORECASE,
-    ):
+    if _has_period_words(question):
         return None
     match = _NAMED_PRINCIPAL_RE.search(question.strip())
     if match is None:
         return None
     return match.group("name").strip(" .?!") or None
+
+
+def named_borrower_disbursed_name(question: str) -> str | None:
+    """Return the borrower in a current cumulative-disbursement lookup."""
+    if _has_period_words(question):
+        return None
+    match = _NAMED_DISBURSED_RE.search(question.strip())
+    if match is None:
+        return None
+    return match.group("name").strip(" .?!") or None
+
+
+def _normalized_borrower_sql(borrower: str) -> tuple[str, str, str]:
+    normalized = re.sub(r"[^a-z0-9]", "", borrower.lower()).replace("th", "t")
+    # Repeated-letter spelling varies in operational names (Sheela/Shela, double-e versus
+    # double-l typos). Collapse runs on both sides while retaining the full remaining name,
+    # which is much safer than broad substring matching.
+    normalized = re.sub(r"(.)\1+", r"\1", normalized)
+    literal = exp.Literal.string(normalized).sql(dialect="postgres")
+    stored_name = (
+        "REGEXP_REPLACE(REGEXP_REPLACE(REPLACE(LOWER(TRIM(gnlnac_cust_name)), "
+        "'th', 't'), '[^a-z0-9]', '', 'g'), '(.)\\1+', '\\1', 'g')"
+    )
+    display_name = "TRIM(REGEXP_REPLACE(gnlnac_cust_name, '\\s+', ' ', 'g'))"
+    return literal, stored_name, display_name
+
+
+def _named_borrower_disbursed_attempt(
+    question: str,
+    catalog: Catalog,
+    *,
+    allow_pii: bool,
+) -> SqlAttempt | None:
+    """Deterministic cumulative amount disbursed to one named borrower."""
+    if not allow_pii:
+        return None
+    borrower = named_borrower_disbursed_name(question)
+    if not borrower:
+        return None
+    literal, stored_name, display_name = _normalized_borrower_sql(borrower)
+    sql = (
+        f"SELECT {display_name} AS borrower_name, "
+        "SUM(gnlnac_lndisb_amt) AS disbursed_amount "
+        "FROM silver.loan_account_master "
+        f"WHERE {stored_name} LIKE {literal} || '%' "
+        "AND gnlnac_sanc_date <= CURRENT_DATE "
+        f"GROUP BY {display_name} ORDER BY disbursed_amount DESC LIMIT 20"
+    )
+    checked = validate(
+        sql,
+        catalog=catalog,
+        allow_pii=True,
+        allowed_pii_columns={"gnlnac_cust_name"},
+    )
+    return SqlAttempt(
+        sql=checked.sql,
+        tables=checked.tables,
+        explanation="Cumulative amount disbursed across the borrower's loan accounts.",
+        validated=True,
+        attempts=0,
+        model="deterministic",
+        provider="catalog",
+        warnings=[
+            "Borrowers matched after normalizing spacing, punctuation, initials and th/t spelling.",
+            "Multiple possible borrowers are shown separately rather than combined.",
+            "The amount is cumulative as of the latest loan-account data load.",
+        ],
+        pii_columns=checked.pii_columns,
+        column_units={"disbursed_amount": "inr", "borrower_name": "text"},
+    )
 
 
 def _named_borrower_principal_attempt(
@@ -235,13 +317,7 @@ def _named_borrower_principal_attempt(
     # punctuation and the common Indian-name `th`/`t` transliteration are normalized, and
     # omitted initials are accepted as a prefix. Every matching stored name remains its
     # own result row so "Sheela" cannot silently combine several people.
-    normalized = re.sub(r"[^a-z0-9]", "", borrower.lower()).replace("th", "t")
-    literal = exp.Literal.string(normalized).sql(dialect="postgres")
-    stored_name = (
-        "REGEXP_REPLACE(REPLACE(LOWER(TRIM(gnlnac_cust_name)), 'th', 't'), "
-        "'[^a-z0-9]', '', 'g')"
-    )
-    display_name = "TRIM(REGEXP_REPLACE(gnlnac_cust_name, '\\s+', ' ', 'g'))"
+    literal, stored_name, display_name = _normalized_borrower_sql(borrower)
     sql = (
         f"SELECT {display_name} AS borrower_name, "
         "SUM(gnlnac_pri_repay_amt) AS principal_repaid "
