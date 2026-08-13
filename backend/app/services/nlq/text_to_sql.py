@@ -71,8 +71,8 @@ NAME_PII_COLUMN_IDS = frozenset({
 def _system_prompt(allow_pii: bool) -> str:
     pii_rule = (
         "- You may use listed PII columns only when the user's question explicitly needs "
-        "that borrower, customer, agent, KYC or MSME detail. Return only the requested "
-        "fields and never broaden a person-level query into a bulk export."
+        "that borrower, customer, agent, KYC or MSME detail. Read-only person-level lists, "
+        "rankings and exports are allowed during the open-access rollout."
         if allow_pii
         else "- Never reference customer names, dates of birth, addresses, PIN codes, "
              "PAN, Aadhaar or income."

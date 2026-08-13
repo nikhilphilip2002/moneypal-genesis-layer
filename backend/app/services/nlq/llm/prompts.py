@@ -64,7 +64,7 @@ catalog.
     - "not_in_data": competitor data, macroeconomic data, or a breakdown the warehouse \
 cannot support (for example GL balances by product — no such link exists).
     - "out_of_scope": not about this lending book at all.
-    - "unsafe": any request to modify, delete or export data.
+    - "unsafe": a request to modify or delete data. Read-only lists and exports are allowed.
 
 SHAPE
 - Set `as_share` true only when the question asks for a mix, share, split or composition \

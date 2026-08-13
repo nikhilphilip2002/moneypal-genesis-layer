@@ -64,6 +64,20 @@ _NAMED_MONTH_RE = re.compile(
 )
 _MONTHLY_RE = re.compile(r"\b(?:monthly|each\s+month|by\s+month)\b", re.IGNORECASE)
 _BY_BRANCH_RE = re.compile(r"\bby\s+branch\b", re.IGNORECASE)
+_BY_SCHEME_RE = re.compile(r"\b(?:by\s+scheme|rank(?:ing)?\s+schemes?)\b", re.IGNORECASE)
+_COMPARE_RE = re.compile(r"\b(?:compare|versus|vs\.?|compared\s+(?:with|to))\b", re.IGNORECASE)
+_DISTINCT_BORROWERS_RE = re.compile(
+    r"\b(?:distinct|unique)\s+(?:borrowers?|customers?|clients?)\b", re.IGNORECASE
+)
+_LOAN_RECEIPT_RE = re.compile(
+    r"\b(?:received|got|were\s+sanctioned|were\s+given)\s+loans?\b|"
+    r"\bloans?\s+(?:received|sanctioned)\b",
+    re.IGNORECASE,
+)
+_TOP_BORROWERS_RE = re.compile(
+    r"\btop\s+(?P<limit>\d{1,4})\s+(?:borrowers?|customers?|clients?)\b",
+    re.IGNORECASE,
+)
 
 
 @dataclass(slots=True)
@@ -98,6 +112,48 @@ def _agent_borrower_count_plan(question: str) -> QuerySpecPlan | None:
     )
 
 
+def _named_month_borrower_count_plan(question: str) -> QuerySpecPlan | None:
+    """Distinct borrowers with sanctioned loans in one explicit calendar month."""
+    if not _DISTINCT_BORROWERS_RE.search(question) or not _LOAN_RECEIPT_RE.search(question):
+        return None
+    matches = list(_NAMED_MONTH_RE.finditer(question))
+    if len(matches) != 1:
+        return None
+    match = matches[0]
+    year = int(match.group("year"))
+    month = _MONTHS[match.group("month").lower()]
+    return QuerySpecPlan(
+        spec={
+            "metrics": ["customer_count"],
+            "period": {
+                "start": date(year, month, 1),
+                "end": date(year, month, calendar.monthrange(year, month)[1]),
+            },
+        },
+        confidence=1.0,
+        reasoning="distinct borrowers with loans sanctioned in the explicit calendar month",
+    )
+
+
+def _top_borrowers_plan(question: str) -> QuerySpecPlan | None:
+    """Default an unqualified top-borrower ranking to current principal outstanding."""
+    match = _TOP_BORROWERS_RE.search(question)
+    if match is None:
+        return None
+    limit = max(1, min(int(match.group("limit")), 5000))
+    return QuerySpecPlan(
+        spec={
+            "metrics": ["principal_outstanding"],
+            "dimensions": ["borrower"],
+            "period": {"relative": "today"},
+            "order_by": {"field": "principal_outstanding", "direction": "desc"},
+            "limit": limit,
+        },
+        confidence=1.0,
+        reasoning="top borrowers ranked by current governed principal outstanding",
+    )
+
+
 def _named_month_disbursement_plan(question: str) -> QuerySpecPlan | None:
     """Resolve explicit month bounds while preserving requested grouping dimensions."""
     if not _DISBURSEMENT_RE.search(question):
@@ -113,14 +169,31 @@ def _named_month_disbursement_plan(question: str) -> QuerySpecPlan | None:
     end_month = _MONTHS[last.group("month").lower()]
     start = date(start_year, start_month, 1)
     end = date(end_year, end_month, calendar.monthrange(end_year, end_month)[1])
+
+    if _COMPARE_RE.search(question) and len(matches) == 2:
+        first_end = date(start_year, start_month, calendar.monthrange(start_year, start_month)[1])
+        second_start = date(end_year, end_month, 1)
+        second_end = date(end_year, end_month, calendar.monthrange(end_year, end_month)[1])
+        return QuerySpecPlan(
+            spec={
+                "metrics": ["disbursement_total"],
+                "period": {"start": start, "end": first_end},
+                "compare_to": {"start": second_start, "end": second_end},
+            },
+            confidence=1.0,
+            reasoning="explicit disbursement months resolved as a period comparison",
+        )
+
     if start > end:
         return None
 
     dimensions: list[str] = []
-    if _MONTHLY_RE.search(question) or len(matches) > 1:
+    if _MONTHLY_RE.search(question):
         dimensions.append("month")
     if _BY_BRANCH_RE.search(question):
         dimensions.append("branch")
+    if _BY_SCHEME_RE.search(question):
+        dimensions.append("scheme")
     return QuerySpecPlan(
         spec={
             "metrics": ["disbursement_total"],
@@ -142,6 +215,28 @@ async def plan(
     """Ask the model to route and structure a question."""
     cat = catalog or get_catalog()
     planning_question = _resolve_chart_request(question, history_messages or [])
+
+    top_borrowers = _top_borrowers_plan(question)
+    if top_borrowers is not None:
+        return PlanOutcome(
+            plan=top_borrowers,
+            attempts=0,
+            prompt_version=PROMPT_VERSION,
+            model="deterministic",
+            provider="catalog",
+            duration_ms=0,
+        )
+
+    borrower_count = _named_month_borrower_count_plan(question)
+    if borrower_count is not None:
+        return PlanOutcome(
+            plan=borrower_count,
+            attempts=0,
+            prompt_version=PROMPT_VERSION,
+            model="deterministic",
+            provider="catalog",
+            duration_ms=0,
+        )
 
     month_disbursement = _named_month_disbursement_plan(question)
     if month_disbursement is not None:

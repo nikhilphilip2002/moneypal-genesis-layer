@@ -53,7 +53,7 @@ export default function ChartRenderer({ chart, onDrilldown }: Props) {
             onClick={() => setAsTable((v) => !v)}
             className="h-7 shrink-0 text-xs font-normal text-muted-foreground hover:text-foreground"
           >
-            {asTable ? 'Chart' : 'Table'}
+            {asTable ? 'View chart' : 'View table'}
           </Button>
         )}
       </div>

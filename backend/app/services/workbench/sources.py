@@ -182,7 +182,8 @@ def router_system_prompt(role: str) -> str:
         '- route="dispatch" with the chosen `sources` and a one-line `intent` restating '
         "the question, whenever any source can contribute.",
         '- route="refuse" only when no source applies at all (small talk, or a request to '
-        "modify or export data). Give a short `reason` and `message`. Do not refuse merely "
+        "modify or delete data). Read-only lists and exports are allowed. Give a short "
+        "`reason` and `message`. Do not refuse merely "
         "because a question is hard — dispatch it and let the source handle the detail.",
         "- Never invent a source id. Use only the ids listed above.",
     ]
@@ -190,6 +191,11 @@ def router_system_prompt(role: str) -> str:
 
 
 ROUTER_FEW_SHOTS: list[tuple[str, str]] = [
+    (
+        "top 25 borrowers",
+        '{"route":"dispatch","sources":["db"],'
+        '"intent":"top 25 borrowers by current principal outstanding"}',
+    ),
     (
         "What was our disbursement by branch last quarter?",
         '{"route":"dispatch","sources":["db"],"intent":"disbursement by branch last quarter"}',

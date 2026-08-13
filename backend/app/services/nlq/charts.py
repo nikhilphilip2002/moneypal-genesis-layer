@@ -10,7 +10,7 @@ to one decimal — so a number never appears in a unit the catalog did not decla
 
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import datetime
 from typing import Any
 
 from app.services.nlq.catalog import Catalog, get_catalog
@@ -219,8 +219,11 @@ def _columns(spec: QuerySpec, compiled: CompiledQuery, cat: Catalog) -> list[Col
     columns: list[ColumnSpec] = []
     for dim_id in spec.dimensions:
         dim = cat.dimensions[dim_id]
+        sensitivity = (
+            "pii" if (dim.table, dim.column) in cat.pii_columns() else "internal"
+        )
         columns.append(
-            ColumnSpec(name=dim_id, label=dim.label, unit="text", sensitivity="internal")
+            ColumnSpec(name=dim_id, label=dim.label, unit="text", sensitivity=sensitivity)
         )
     for metric_id in spec.metrics:
         metric = cat.metrics[metric_id]
@@ -390,7 +393,6 @@ def build_from_rows(
     rules are necessarily weaker than on the trusted path — which is one more reason these
     answers are marked unverified.
     """
-    cat = catalog or get_catalog()
     unit_hints = unit_hints or {}
     columns = result.columns
     numeric = [c for c in columns if _column_is_numeric(result.rows, c)]
