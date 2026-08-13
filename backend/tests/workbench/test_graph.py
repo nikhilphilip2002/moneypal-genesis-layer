@@ -69,6 +69,26 @@ class TestSingleSource:
         assert "synthesis" not in names
         assert names[-1] == "done"
 
+    @pytest.mark.anyio
+    async def test_db_receives_exact_user_question_not_router_paraphrase(self, monkeypatch):
+        original = "principal amount paid by sheelavati"
+        rewritten = "find total loan repayment for a named customer"
+        _stub_route(monkeypatch, router.RouteDecision(
+            route="dispatch", sources=["db"], intent=rewritten,
+        ))
+        received = {}
+
+        async def fake_db(question, **kwargs):
+            received["question"] = question
+            return SourceResult(
+                source="db", card_type="chart", payload={"title": "Principal repaid"},
+            )
+
+        monkeypatch.setattr(nodes, "run_db", fake_db)
+        await _run(question=original)
+
+        assert received["question"] == original
+
 
 class TestDispatchTable:
     @pytest.mark.anyio

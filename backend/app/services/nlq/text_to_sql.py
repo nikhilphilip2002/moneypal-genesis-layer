@@ -106,6 +106,7 @@ async def generate(
 
     exact = _named_borrower_principal_attempt(question, cat, allow_pii=allow_pii)
     if exact is not None:
+        logger.info("NLQ selected deterministic named-borrower principal lookup")
         return exact
 
     hits = retrieve(question, catalog=cat)

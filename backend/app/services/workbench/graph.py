@@ -61,8 +61,12 @@ async def _route_node(state: WorkbenchState) -> dict[str, Any]:
 
 
 async def _h_db(intent: str, state: WorkbenchState) -> SourceResult:
+    # The router may paraphrase `intent` while selecting sources. Never send that rewrite
+    # into governed NLQ: borrower names, account identifiers, periods, and distinctions
+    # such as principal vs interest must remain byte-for-byte as the user supplied them.
     return await nodes.run_db(
-        intent, conversation_id=state["conversation_id"], user=state["user"], role=state["role"],
+        state["question"],
+        conversation_id=state["conversation_id"], user=state["user"], role=state["role"],
         access_mode=state.get("data_access"),
     )
 
