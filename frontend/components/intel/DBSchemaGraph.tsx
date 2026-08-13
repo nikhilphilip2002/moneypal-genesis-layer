@@ -226,6 +226,12 @@ export default function DBSchemaGraph({ contained = false }: { contained?: boole
     setIsMounted(true);
   }, []);
 
+  // The Workbench hosts the graph in its own fullscreen workspace. Never retain the
+  // component's legacy body-portal fullscreen state in that contained mode.
+  useEffect(() => {
+    if (contained) setIsExpanded(false);
+  }, [contained]);
+
   const loadGraph = useCallback(async (opts?: {
     level?: 'executive' | 'zonal' | 'manager' | 'agent' | 'customer';
     zonalId?: string;
@@ -760,23 +766,27 @@ export default function DBSchemaGraph({ contained = false }: { contained?: boole
             <span>MoM Loan Analysis</span>
           </Button>
 
-          {/* Full Screen Toggle Button */}
-          <Button
-            variant={isExpanded ? "default" : "outline"}
-            size="sm"
-            onClick={() => setIsExpanded(p => !p)}
-            className="rounded-xl h-8 text-xs px-3 shrink-0 flex items-center gap-1.5"
-          >
-            {isExpanded ? (
-              <>
-                <Minimize2 className="h-3.5 w-3.5" /> Exit Full Screen
-              </>
-            ) : (
-              <>
-                <Maximize2 className="h-3.5 w-3.5" /> Expand Canvas
-              </>
-            )}
-          </Button>
+          {/* Workbench already supplies a fullscreen shell; the legacy nested portal is
+              only useful when this component is embedded on an ordinary page. */}
+          {!contained && (
+            <Button
+              type="button"
+              variant={isExpanded ? "default" : "outline"}
+              size="sm"
+              onClick={() => setIsExpanded((previous) => !previous)}
+              className="rounded-xl h-8 text-xs px-3 shrink-0 flex items-center gap-1.5"
+            >
+              {isExpanded ? (
+                <>
+                  <Minimize2 className="h-3.5 w-3.5" /> Exit Full Screen
+                </>
+              ) : (
+                <>
+                  <Maximize2 className="h-3.5 w-3.5" /> Expand Canvas
+                </>
+              )}
+            </Button>
+          )}
         </div>
       </div>
 

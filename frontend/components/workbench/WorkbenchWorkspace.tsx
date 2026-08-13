@@ -9,6 +9,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import { cn } from '@/lib/utils';
 
 const DBSchemaGraph = dynamic(() => import('@/components/intel/DBSchemaGraph'), {
   ssr: false,
@@ -53,7 +54,14 @@ export default function WorkbenchWorkspace({
 
   return (
     <Dialog open={view !== null} onOpenChange={onOpenChange}>
-      <DialogContent className="flex h-[96svh] w-[98vw] max-w-[1600px] grid-cols-none flex-col gap-0 overflow-hidden rounded-2xl bg-background p-0 sm:rounded-2xl">
+      <DialogContent
+        className={cn(
+          'flex grid-cols-none flex-col gap-0 overflow-hidden bg-background p-0',
+          view === 'curiosity-graph'
+            ? 'h-svh w-screen max-w-none rounded-none border-0 sm:rounded-none'
+            : 'h-[96svh] w-[98vw] max-w-[1600px] rounded-2xl sm:rounded-2xl',
+        )}
+      >
         <DialogHeader className="shrink-0 border-b bg-card px-5 py-4 pr-14 text-left">
           <DialogTitle className="flex items-center gap-2 text-base">
             {tool && <tool.icon className="size-4 text-primary" />}
@@ -62,9 +70,12 @@ export default function WorkbenchWorkspace({
           <DialogDescription className="text-xs">{tool?.description}</DialogDescription>
         </DialogHeader>
 
-        <div className="relative min-h-0 flex-1 overflow-auto p-3 sm:p-5">
+        <div className={cn(
+          'relative min-h-0 flex-1',
+          view === 'curiosity-graph' ? 'overflow-hidden p-3' : 'overflow-auto p-3 sm:p-5',
+        )}>
           {view === 'curiosity-graph' && (
-            <div className="h-full min-h-[680px] rounded-2xl border border-border/70 bg-card p-3 sm:p-5">
+            <div className="h-full min-h-0 overflow-hidden rounded-2xl border border-border/70 bg-card p-3 sm:p-4">
               <DBSchemaGraph contained />
             </div>
           )}
