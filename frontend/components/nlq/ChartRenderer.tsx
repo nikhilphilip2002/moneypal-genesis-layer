@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from 'react';
 import {
-  Area, AreaChart, Bar, BarChart, CartesianGrid, Cell, Legend, Line, LineChart, Pie, PieChart,
+  Area, AreaChart, Bar, BarChart, CartesianGrid, Cell, LabelList, Legend, Line, LineChart, Pie, PieChart,
   ReferenceLine, ResponsiveContainer, Scatter, ScatterChart, Tooltip, XAxis, YAxis, ZAxis,
 } from 'recharts';
 import type { ChartSpec, ColumnSpec, SeriesSpec } from '@/lib/api';
@@ -316,15 +316,23 @@ function BarView({
   }, [chart, xKey]);
 
   const single = chart.series.length === 1;
-  const horizontal = chart.chart_type === 'ranking';
+  // A lone vertical column expands to fill the plot and makes a simple result look much
+  // more dramatic than it is. Short category comparisons are also easier to scan as a
+  // labelled list, so keep one-to-six single-series results compact and horizontal.
+  const compactCategories = single && rows.length <= 6;
+  const horizontal = chart.chart_type === 'ranking' || compactCategories;
+  const height = horizontal
+    ? Math.max(compactCategories ? 112 : 220, rows.length * 42 + 36)
+    : 280;
 
   return (
     <>
-      <ResponsiveContainer width="100%" height={horizontal ? Math.max(220, rows.length * 34) : 280}>
+      <ResponsiveContainer width="100%" height={height}>
         <BarChart
+          accessibilityLayer
           data={rows}
           layout={horizontal ? 'vertical' : 'horizontal'}
-          margin={{ top: 8, right: 24, bottom: 4, left: horizontal ? 8 : 8 }}
+          margin={{ top: 8, right: horizontal && single ? 88 : 24, bottom: 4, left: 8 }}
           barCategoryGap="22%"
         >
           <CartesianGrid stroke={palette.grid} vertical={horizontal} horizontal={!horizontal} />
@@ -376,6 +384,7 @@ function BarView({
               key={series.field}
               dataKey={series.field}
               name={series.label}
+              maxBarSize={compactCategories ? 28 : 44}
               stackId={chart.chart_type === 'stacked_bar' ? 'stack' : undefined}
               radius={horizontal ? [0, 4, 4, 0] : [4, 4, 0, 0]}
               cursor={onDrilldown && chart.drilldown ? 'pointer' : undefined}
@@ -389,6 +398,16 @@ function BarView({
                   <Cell key={rowIndex} fill={seriesColor(0, mode)} />
                 ))}
               {!single && <Cell fill={seriesColor(seriesIndex, mode)} />}
+              {single && horizontal && (
+                <LabelList
+                  dataKey={series.field}
+                  position="right"
+                  formatter={(value: unknown) => formatValue(value, series.unit)}
+                  fill={palette.primary}
+                  fontSize={12}
+                  fontWeight={600}
+                />
+              )}
             </Bar>
           ))}
         </BarChart>
