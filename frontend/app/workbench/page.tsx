@@ -13,6 +13,7 @@ import {
   Plus,
   Scale,
   TrendingUp,
+  Wrench,
 } from 'lucide-react';
 import {
   auth,
@@ -25,6 +26,10 @@ import { clearUserRoleCache } from '@/lib/useUserRole';
 import Composer from '@/components/workbench/Composer';
 import WorkbenchTurn, { type WorkbenchTurnData } from '@/components/workbench/WorkbenchTurn';
 import HistoryRail from '@/components/workbench/HistoryRail';
+import WorkbenchWorkspace, {
+  WORKSPACE_TOOLS,
+  type WorkspaceView,
+} from '@/components/workbench/WorkbenchWorkspace';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import {
@@ -46,6 +51,7 @@ export default function WorkbenchPage() {
   const [pinned, setPinned] = useState<string | null>(null);
   const [conversations, setConversations] = useState<WorkbenchConversation[]>([]);
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [workspaceView, setWorkspaceView] = useState<WorkspaceView | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
 
@@ -201,6 +207,7 @@ export default function WorkbenchPage() {
       pinned={pinned}
       onPin={setPinned}
       onRunTool={runTool}
+      onOpenWorkspace={setWorkspaceView}
     />
   );
 
@@ -210,12 +217,13 @@ export default function WorkbenchPage() {
         user={user}
         onNew={newConversation}
         onHistory={() => setHistoryOpen(true)}
+        onOpenWorkspace={setWorkspaceView}
         onLogout={logout}
       />
 
       <main className="mx-auto flex min-h-0 w-full max-w-4xl flex-1 flex-col px-4 sm:px-6">
         {turns.length === 0 ? (
-          <EmptyState onAsk={ask}>{composer}</EmptyState>
+          <EmptyState onAsk={ask} onOpenWorkspace={setWorkspaceView}>{composer}</EmptyState>
         ) : (
           <>
             <div className="min-h-0 flex-1 overflow-y-auto py-6 sm:py-8">
@@ -244,6 +252,10 @@ export default function WorkbenchPage() {
         onNew={newConversation}
         onOpen={openConversation}
       />
+      <WorkbenchWorkspace
+        view={workspaceView}
+        onOpenChange={(open) => !open && setWorkspaceView(null)}
+      />
     </div>
   );
 }
@@ -252,11 +264,13 @@ function WorkbenchHeader({
   user,
   onNew,
   onHistory,
+  onOpenWorkspace,
   onLogout,
 }: {
   user: DemoUser | null;
   onNew: () => void;
   onHistory: () => void;
+  onOpenWorkspace: (view: WorkspaceView) => void;
   onLogout: () => void;
 }) {
   const name = user?.full_name || user?.username || 'User';
@@ -303,6 +317,42 @@ function WorkbenchHeader({
 
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="gap-2 rounded-xl text-muted-foreground shadow-none hover:bg-muted hover:text-foreground"
+              >
+                <Wrench className="size-4" />
+                <span className="hidden sm:inline">Tools</span>
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-80 bg-card">
+              <DropdownMenuLabel>
+                <span className="block text-sm">Workbench tools</span>
+                <span className="mt-0.5 block text-xs font-normal text-muted-foreground">
+                  Open the full interactive tools without leaving the conversation.
+                </span>
+              </DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              {WORKSPACE_TOOLS.map((tool) => (
+                <DropdownMenuItem
+                  key={tool.id}
+                  onClick={() => onOpenWorkspace(tool.id)}
+                  className="cursor-pointer items-start gap-2.5 rounded-lg py-2.5"
+                >
+                  <tool.icon className="mt-0.5 size-4 text-primary" />
+                  <span>
+                    <span className="block text-sm font-medium">{tool.label}</span>
+                    <span className="block text-[11px] leading-4 text-muted-foreground">{tool.description}</span>
+                  </span>
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
+
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
               <button type="button" className="ml-1 rounded-full outline-none ring-offset-2 focus-visible:ring-2 focus-visible:ring-ring">
                 <Avatar className="size-8 border border-border/70">
                   <AvatarFallback className="bg-primary text-[11px] font-semibold text-primary-foreground">
@@ -336,7 +386,15 @@ const EXAMPLES = [
   { icon: Landmark, label: 'Competitive landscape', question: 'How does our MSME portfolio compare with the wider market?' },
 ];
 
-function EmptyState({ onAsk, children }: { onAsk: (question: string) => void; children: React.ReactNode }) {
+function EmptyState({
+  onAsk,
+  onOpenWorkspace,
+  children,
+}: {
+  onAsk: (question: string) => void;
+  onOpenWorkspace: (view: WorkspaceView) => void;
+  children: React.ReactNode;
+}) {
   return (
     <div className="flex min-h-0 flex-1 flex-col items-center justify-center overflow-y-auto py-8 sm:py-12">
       <div className="w-full max-w-3xl text-center">
@@ -365,6 +423,21 @@ function EmptyState({ onAsk, children }: { onAsk: (question: string) => void; ch
               </span>
               <span className="font-medium">{label}</span>
               <ArrowUpRight className="ml-auto size-3.5 opacity-40" />
+            </button>
+          ))}
+        </div>
+
+        <div className="mt-5 flex flex-wrap items-center justify-center gap-2">
+          <span className="mr-1 text-xs font-medium text-muted-foreground">Open a tool</span>
+          {WORKSPACE_TOOLS.map((tool) => (
+            <button
+              key={tool.id}
+              type="button"
+              onClick={() => onOpenWorkspace(tool.id)}
+              className="inline-flex items-center gap-2 rounded-full border border-border/70 bg-card px-3 py-1.5 text-xs font-medium text-foreground transition hover:border-primary/30 hover:bg-accent/50"
+            >
+              <tool.icon className="size-3.5 text-primary" />
+              {tool.label}
             </button>
           ))}
         </div>

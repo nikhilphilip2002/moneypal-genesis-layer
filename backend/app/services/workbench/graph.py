@@ -108,7 +108,18 @@ async def _dispatch_node(state: WorkbenchState) -> dict[str, Any]:
             result = SourceResult(source=source_id, card_type="error",
                                   payload={"message": f"Unknown source {source_id}."})
         else:
-            result = await handler(decision.intent, state)
+            try:
+                result = await handler(decision.intent, state)
+            except Exception as exc:  # noqa: BLE001 - isolate unavailable dependencies
+                logger.exception("workbench source %s failed", source_id)
+                result = SourceResult(
+                    source=source_id,
+                    card_type="error",
+                    payload={
+                        "message": f"{source_id.title()} intelligence is temporarily unavailable.",
+                        "retryable": True,
+                    },
+                )
         await emit.put(sse("source_card", {
             "source": result.source, "card_type": result.card_type, **result.payload,
         }))

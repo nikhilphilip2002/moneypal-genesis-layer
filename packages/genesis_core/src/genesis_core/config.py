@@ -21,6 +21,8 @@ class Settings(BaseSettings):
     # Qdrant (shared instance — must be on Aroha_T1 / Aroha_G1 WiFi)
     qdrant_host: str = "192.168.1.183"
     qdrant_port: int = 6333
+    qdrant_api_key: str = ""
+    qdrant_timeout: float = 10.0
 
     # Embeddings
     embed_model: str = "BAAI/bge-m3"

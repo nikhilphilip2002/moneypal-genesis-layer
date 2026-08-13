@@ -48,7 +48,15 @@ def embed_batch(texts: list[str]) -> list[list[float]]:
 def get_qdrant():
     from qdrant_client import QdrantClient
 
-    return QdrantClient(host=settings.qdrant_host, port=settings.qdrant_port)
+    return QdrantClient(
+        host=settings.qdrant_host,
+        port=settings.qdrant_port,
+        api_key=settings.qdrant_api_key or None,
+        timeout=settings.qdrant_timeout,
+        # The shared server may trail the Python client by a few minor releases. The REST
+        # query contract used here is stable, so do not emit a warning on every request.
+        check_compatibility=False,
+    )
 
 
 def ensure_collection(name: str) -> None:

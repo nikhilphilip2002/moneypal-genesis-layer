@@ -7,6 +7,7 @@ right service and shape its output into the common `SourceResult` the graph stre
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from dataclasses import dataclass, field
 from typing import Any
@@ -80,7 +81,20 @@ async def run_macro(intent: str) -> SourceResult:
     local-only deployment stays local. Macro sources are public, so if a deployment opts
     into a Groq burst this is where it is allowed.
     """
-    chunks = rag.search_multi(MACRO_COLLECTION, [intent])
+    try:
+        # Qdrant and sentence-transformers are synchronous. Keep them off the event loop so
+        # a slow remote vector store does not freeze every active workbench stream.
+        chunks = await asyncio.to_thread(rag.search_multi, MACRO_COLLECTION, [intent])
+    except Exception as exc:  # noqa: BLE001 - external retrieval must degrade per source
+        logger.warning("workbench macro retrieval failed: %s", exc)
+        return SourceResult(
+            source="macro",
+            card_type="error",
+            payload={
+                "message": "Macro intelligence is temporarily unavailable. The vector store did not respond.",
+                "retryable": True,
+            },
+        )
     if not chunks:
         return SourceResult(
             source="macro",

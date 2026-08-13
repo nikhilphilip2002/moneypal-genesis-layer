@@ -26,6 +26,10 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { cn } from '@/lib/utils';
+import {
+  WORKSPACE_TOOLS,
+  type WorkspaceView,
+} from '@/components/workbench/WorkbenchWorkspace';
 
 type Props = {
   onAsk: (question: string) => void;
@@ -34,9 +38,18 @@ type Props = {
   pinned: string | null;
   onPin: (source: string | null) => void;
   onRunTool: (tool: WorkbenchTool) => void;
+  onOpenWorkspace: (view: WorkspaceView) => void;
 };
 
-export default function Composer({ onAsk, busy, onCancel, pinned, onPin, onRunTool }: Props) {
+export default function Composer({
+  onAsk,
+  busy,
+  onCancel,
+  pinned,
+  onPin,
+  onRunTool,
+  onOpenWorkspace,
+}: Props) {
   const [value, setValue] = useState('');
   const [sources, setSources] = useState<WorkbenchSource[]>([]);
   const [toolList, setToolList] = useState<WorkbenchTool[]>([]);
@@ -101,6 +114,7 @@ export default function Composer({ onAsk, busy, onCancel, pinned, onPin, onRunTo
             pinned={pinned}
             onPin={onPin}
             onRunTool={onRunTool}
+            onOpenWorkspace={onOpenWorkspace}
             onOpen={loadData}
           />
 
@@ -159,6 +173,7 @@ function PlusMenu({
   pinned,
   onPin,
   onRunTool,
+  onOpenWorkspace,
   onOpen,
 }: {
   sources: WorkbenchSource[];
@@ -166,6 +181,7 @@ function PlusMenu({
   pinned: string | null;
   onPin: (source: string | null) => void;
   onRunTool: (tool: WorkbenchTool) => void;
+  onOpenWorkspace: (view: WorkspaceView) => void;
   onOpen: () => void;
 }) {
   return (
@@ -182,6 +198,22 @@ function PlusMenu({
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" side="top" className="max-h-[420px] w-72 overflow-y-auto bg-card">
+        <DropdownMenuLabel className="text-xs text-muted-foreground">Workbench</DropdownMenuLabel>
+        {WORKSPACE_TOOLS.map((tool) => (
+          <DropdownMenuItem
+            key={tool.id}
+            className="cursor-pointer items-start gap-2.5 rounded-lg py-2"
+            onClick={() => onOpenWorkspace(tool.id)}
+          >
+            <tool.icon className="mt-0.5 size-4 text-primary" />
+            <span>
+              <span className="block text-sm font-medium text-foreground">{tool.label}</span>
+              <span className="block text-[11px] leading-4 text-muted-foreground">{tool.description}</span>
+            </span>
+          </DropdownMenuItem>
+        ))}
+        <DropdownMenuSeparator />
+
         {tools.length > 0 && (
           <>
             <DropdownMenuLabel className="flex items-center gap-2 text-xs text-muted-foreground">

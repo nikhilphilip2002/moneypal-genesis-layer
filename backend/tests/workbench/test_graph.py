@@ -84,6 +84,26 @@ class TestDispatchTable:
         # None fell through to an error card.
         assert all(c["card_type"] != "error" for c in cards)
 
+    @pytest.mark.anyio
+    async def test_one_source_exception_does_not_fail_the_whole_turn(self, monkeypatch):
+        _stub_route(monkeypatch, router.RouteDecision(
+            route="dispatch", sources=["macro", "regulatory"], intent="i"))
+
+        async def broken_macro(*args, **kwargs):
+            raise TimeoutError("qdrant timed out")
+
+        monkeypatch.setattr(nodes, "run_macro", broken_macro)
+        _stub_node(monkeypatch, "run_regulatory",
+                   SourceResult(source="regulatory", card_type="brief", payload={"summary": "r"}))
+
+        events = await _run()
+        cards = [data for name, data in events if name == "source_card"]
+
+        assert {card["source"] for card in cards} == {"macro", "regulatory"}
+        assert next(card for card in cards if card["source"] == "macro")["card_type"] == "error"
+        assert "error" not in _names(events)
+        assert _names(events)[-1] == "done"
+
 
 class TestMultiSource:
     @pytest.mark.anyio

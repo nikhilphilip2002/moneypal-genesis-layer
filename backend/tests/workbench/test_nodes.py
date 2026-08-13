@@ -21,6 +21,21 @@ def _intel(summary="A grounded summary.", key_points=None, title="Landscape"):
     )
 
 
+class TestMacro:
+    @pytest.mark.anyio
+    async def test_retrieval_timeout_degrades_to_an_error_card(self, monkeypatch):
+        def timeout(*args, **kwargs):
+            raise TimeoutError("vector store timed out")
+
+        monkeypatch.setattr(nodes.rag, "search_multi", timeout)
+        result = await nodes.run_macro("current repo rate outlook")
+
+        assert result.source == "macro"
+        assert result.card_type == "error"
+        assert result.payload["retryable"] is True
+        assert "vector store" in result.payload["message"].lower()
+
+
 class TestCompetitive:
     @pytest.mark.anyio
     async def test_returns_a_brief_card_from_the_landscape(self, monkeypatch):
