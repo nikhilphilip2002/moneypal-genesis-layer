@@ -48,6 +48,7 @@ def resolve(spec: QuerySpec, catalog: Catalog | None = None) -> MetricPlan:
     # Dimensions are validated first: every later check indexes into cat.dimensions, and an
     # unknown name there would surface as a KeyError traceback instead of a usable message.
     _check_dimensions_exist(spec, cat)
+    _check_having_metrics(spec)
     _check_single_base_table(metrics)
     _check_time_grain(spec, metrics, cat)
     _check_dimension_compatibility(spec, metrics, cat)
@@ -112,6 +113,17 @@ def _check_dimensions_exist(spec: QuerySpec, cat: Catalog) -> None:
         raise MetricError(
             f"unknown dimension(s): {', '.join(sorted(set(unknown)))}. "
             f"Available: {', '.join(sorted(cat.dimensions))}"
+        )
+
+
+def _check_having_metrics(spec: QuerySpec) -> None:
+    selected = set(spec.metrics)
+    unknown = [condition.field for condition in spec.having if condition.field not in selected]
+    if unknown:
+        raise MetricError(
+            "aggregate conditions may reference only selected metrics; add "
+            + ", ".join(sorted(set(unknown)))
+            + " to metrics"
         )
 
 

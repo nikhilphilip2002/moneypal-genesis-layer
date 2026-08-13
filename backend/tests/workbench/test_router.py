@@ -62,6 +62,23 @@ class TestRefuse:
         assert decision.route == "refuse"
         assert decision.reason == "unsafe"
 
+    @pytest.mark.anyio
+    @pytest.mark.parametrize(
+        "question",
+        ["top 10 agents", "Show borrowers with zero outstanding principal"],
+    )
+    async def test_catalogued_loan_book_subject_overrides_hallucinated_refusal(
+        self, monkeypatch, question
+    ):
+        _use(
+            monkeypatch,
+            FakeLLM('{"route":"refuse","reason":"out_of_scope","message":"missing"}'),
+        )
+        decision = await router.route(question, role="admin")
+        assert decision.route == "dispatch"
+        assert decision.sources == ["db"]
+        assert decision.model == "catalog"
+
 
 class TestFallback:
     @pytest.mark.anyio

@@ -82,12 +82,21 @@
 
 - id: borrower
   label: Borrower
-  table: gold.portfolio_daily_snapshot
+  table: gold.loan_account_master
   column: customer_name
   type: categorical
   synonyms: [borrower, borrower name, customer, customer name, client, top borrowers]
-  description: Borrower name on the governed portfolio snapshot.
-  cardinality: 5466
+  description: Borrower name on the governed loan account master.
+  cardinality: 17972
+
+- id: agent_profile
+  label: Agent
+  table: gold.agent_master
+  column: agent_name
+  type: categorical
+  synonyms: [agent, agent name, field agent, sales staff, top agents]
+  description: Agent name in the governed agent directory.
+  cardinality: 1014
 
 - id: gl_account
   label: GL account

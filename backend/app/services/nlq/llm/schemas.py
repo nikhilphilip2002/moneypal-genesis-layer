@@ -82,6 +82,23 @@ def plan_schema(catalog: Catalog | None = None) -> dict[str, Any]:
                     "additionalProperties": False,
                 },
             },
+            "having": {
+                "type": "array",
+                "description": "Conditions on aggregate metric results, applied after grouping.",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "field": {"type": "string", "enum": metric_ids},
+                        "op": {
+                            "type": "string",
+                            "enum": ["eq", "ne", "gt", "gte", "lt", "lte", "between", "is_null"],
+                        },
+                        "value": {},
+                    },
+                    "required": ["field", "op"],
+                    "additionalProperties": False,
+                },
+            },
             "period": period,
             "compare_to": period,
             "order_by": {

@@ -162,6 +162,29 @@ class TestValidationGates:
 
 
 class TestFilters:
+    def test_having_filters_a_grouped_metric_with_bound_value(self):
+        compiled = compile_spec(
+            spec(
+                metrics=["principal_outstanding_book"],
+                dimensions=["borrower"],
+                having=[Filter(field="principal_outstanding_book", op="eq", value=0)],
+                period=Period(relative="today"),
+            ),
+            today=TODAY,
+        )
+        assert "HAVING SUM(lam.disbursed_amount - lam.principal_repaid) = :h0" in compiled.sql
+        assert compiled.params["h0"] == 0
+
+    def test_having_rejects_a_metric_not_selected(self):
+        with pytest.raises(CompileError, match="aggregate conditions"):
+            compile_spec(
+                spec(
+                    metrics=["loan_count"],
+                    having=[Filter(field="sanctioned_amount", op="gt", value=0)],
+                ),
+                today=TODAY,
+            )
+
     def test_enum_synonym_decodes_to_a_code(self):
         compiled = compile_spec(
             spec(metrics=["loan_count"],

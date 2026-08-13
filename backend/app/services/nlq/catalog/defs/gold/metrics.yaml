@@ -91,6 +91,16 @@
     This account-level derivation is ₹213.998 Cr and does not yet reconcile to the Silver
     loan-master value of ₹213.022 Cr. Treat it as provisional.
 
+- id: agent_linked_loans
+  label: Linked loans
+  unit: count
+  grain: point_in_time
+  base_table: gold.agent_master
+  expression: SUM({t}.linked_loan_count)
+  formula: Sum of loan accounts linked to each governed agent
+  synonyms: [top agents, agent ranking, loans by agent, agent performance, linked loans]
+  no_time_travel: true
+
 - id: principal_outstanding
   label: Principal outstanding
   unit: inr

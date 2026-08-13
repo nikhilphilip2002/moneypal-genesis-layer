@@ -2,7 +2,23 @@ import pytest
 
 from app.services.nlq.compiler import compile_spec
 from app.services.nlq.contracts import QuerySpecPlan, SqlPlan
+from app.services.nlq.llm.client import LLMResult
 from app.services.nlq.planner import plan
+
+
+class RefusingClient:
+    provider = "test"
+    model = "test"
+
+    async def complete(self, **kwargs):
+        return LLMResult(
+            text=(
+                '{"route":"refuse","reason":"not_in_data",'
+                '"message":"agents are unavailable"}'
+            ),
+            model=self.model,
+            provider=self.provider,
+        )
 
 
 @pytest.mark.anyio
@@ -120,11 +136,20 @@ async def test_top_borrowers_is_a_governed_current_outstanding_ranking():
 
     assert isinstance(outcome.plan, QuerySpecPlan)
     assert outcome.model == "deterministic"
-    assert outcome.plan.spec.metrics == ["principal_outstanding"]
+    assert outcome.plan.spec.metrics == ["principal_outstanding_book"]
     assert outcome.plan.spec.dimensions == ["borrower"]
     assert outcome.plan.spec.limit == 25
     compiled = compile_spec(outcome.plan.spec)
-    assert "gold.portfolio_snapshot_as_of(:as_of)" in compiled.sql
-    assert 'portfolio."customer_name" AS borrower' in compiled.sql
-    assert "ORDER BY SUM(portfolio.principal_outstanding) DESC" in compiled.sql
+    assert "FROM gold.loan_account_master AS lam" in compiled.sql
+    assert 'lam."customer_name" AS borrower' in compiled.sql
+    assert "ORDER BY SUM(lam.disbursed_amount - lam.principal_repaid) DESC" in compiled.sql
     assert compiled.params["row_limit"] == 25
+
+
+@pytest.mark.anyio
+async def test_catalogued_agents_cannot_be_refused_as_missing_data():
+    outcome = await plan("top 10 agents", client=RefusingClient())
+
+    assert isinstance(outcome.plan, SqlPlan)
+    assert "gold.agent_master" in outcome.plan.tables
+    assert outcome.plan.intent == "top 10 agents"

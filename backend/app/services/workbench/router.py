@@ -11,6 +11,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass, field
 
+from app.services.nlq.catalog.retrieval import retrieve
 from app.services.nlq.llm import LLMError
 from app.services.workbench import models
 from app.services.workbench.sources import (
@@ -21,6 +22,20 @@ from app.services.workbench.sources import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _matches_loan_book_catalog(question: str) -> bool:
+    """Return whether curated Gold metadata substantively matches the question.
+
+    This lexical-only guard is deliberately local and cheap. It prevents a routing model
+    from claiming that a catalogued subject does not exist while leaving the NLQ planner
+    responsible for deciding whether and how it can be queried.
+    """
+    result = retrieve(question, use_vectors=False)
+    return any(
+        hit.lexical >= 1.0 and hit.doc.kind in {"table", "metric", "dimension"}
+        for hit in result.hits
+    )
 
 
 @dataclass(slots=True)
@@ -89,8 +104,14 @@ async def route(
     if not isinstance(payload, dict):
         return _fallback(role, question)
 
+    visible_ids = [s.id for s in visible_sources(role)]
+    catalog_match = "db" in visible_ids and _matches_loan_book_catalog(question)
     route_value = payload.get("route")
     if route_value == "refuse":
+        if catalog_match:
+            return RouteDecision(
+                route="dispatch", sources=["db"], intent=question, model="catalog"
+            )
         return RouteDecision(
             route="refuse",
             reason=str(payload.get("reason", "out_of_scope")),
@@ -99,11 +120,12 @@ async def route(
         )
 
     # dispatch — keep only known, role-visible source ids, in a stable order.
-    visible_ids = [s.id for s in visible_sources(role)]
     chosen = [s for s in payload.get("sources", []) if s in visible_ids]
     # De-duplicate while preserving order.
     seen: set[str] = set()
     chosen = [s for s in chosen if not (s in seen or seen.add(s))]
+    if catalog_match and "db" not in chosen:
+        chosen.insert(0, "db")
     if not chosen:
         return _fallback(role, question)
 

@@ -106,6 +106,7 @@
   contains_pii: true
   synonyms: [agents, field agents, staff, sourcing agents, collection agents]
   description: Governed staff and field-agent directory.
+  restrictions: Standalone current agent directory; linked loan counts are already aggregated.
 
 - id: kyc_document_master
   table: gold.kyc_document_master

@@ -25,12 +25,14 @@ from pydantic import TypeAdapter, ValidationError
 
 from app.services.nlq import cache
 from app.services.nlq.catalog import Catalog, get_catalog
+from app.services.nlq.catalog.retrieval import retrieve
 from app.services.nlq.compiler import CompileError, compile_spec
 from app.services.nlq.contracts import (
     ClarifyPlan,
     PlanResult,
     Period,
     QuerySpecPlan,
+    RefusalPlan,
     SqlPlan,
 )
 from app.services.nlq.llm import LLMError, get_llm_client
@@ -78,6 +80,17 @@ _TOP_BORROWERS_RE = re.compile(
     r"\btop\s+(?P<limit>\d{1,4})\s+(?:borrowers?|customers?|clients?)\b",
     re.IGNORECASE,
 )
+
+
+def _catalog_tables_for(question: str, catalog: Catalog) -> list[str]:
+    """Return Gold tables backed by a strong curated lexical match."""
+    result = retrieve(question, catalog=catalog, use_vectors=False)
+    if not any(
+        hit.lexical >= 1.0 and hit.doc.kind in {"table", "metric", "dimension"}
+        for hit in result.hits
+    ):
+        return []
+    return result.tables
 
 
 @dataclass(slots=True)
@@ -143,10 +156,10 @@ def _top_borrowers_plan(question: str) -> QuerySpecPlan | None:
     limit = max(1, min(int(match.group("limit")), 5000))
     return QuerySpecPlan(
         spec={
-            "metrics": ["principal_outstanding"],
+            "metrics": ["principal_outstanding_book"],
             "dimensions": ["borrower"],
             "period": {"relative": "today"},
-            "order_by": {"field": "principal_outstanding", "direction": "desc"},
+            "order_by": {"field": "principal_outstanding_book", "direction": "desc"},
             "limit": limit,
         },
         confidence=1.0,
@@ -323,6 +336,18 @@ async def plan(
             parsed = _parse(result.json(), cat)
             parsed = _enforce_relative_period(planning_question, parsed)
             parsed = _enforce_explicit_semantics(planning_question, parsed)
+            if isinstance(parsed, RefusalPlan) and parsed.reason in {
+                "not_in_data",
+                "out_of_scope",
+            }:
+                matched_tables = _catalog_tables_for(planning_question, cat)
+                if matched_tables:
+                    parsed = SqlPlan(
+                        intent=planning_question,
+                        tables=matched_tables,
+                        confidence=0.7,
+                        reasoning="curated Gold catalog overrides an unsupported data refusal",
+                    )
         except (PlanValidationError, ValidationError, LLMError) as exc:
             error = str(exc)
             logger.info("NLQ plan rejected on attempt %d: %s", attempts, error)

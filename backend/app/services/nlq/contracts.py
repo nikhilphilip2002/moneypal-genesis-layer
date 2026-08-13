@@ -146,6 +146,10 @@ class QuerySpec(_Model):
     metrics: list[str] = Field(min_length=1, description="Metric ids from metrics.yaml.")
     dimensions: list[str] = Field(default_factory=list, description="Dimension ids to group by.")
     filters: list[Filter] = Field(default_factory=list)
+    having: list[Filter] = Field(
+        default_factory=list,
+        description="Aggregate metric conditions applied after grouping, such as outstanding = 0.",
+    )
     period: Period
     compare_to: Period | None = Field(
         default=None, description="Present ⇒ variance output (A, B, Δ, Δ%)."

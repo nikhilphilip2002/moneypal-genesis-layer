@@ -189,6 +189,13 @@ def compile_spec(
         sql_lines.append("WHERE " + "\n  AND ".join(where_parts))
     if group_parts:
         sql_lines.append("GROUP BY " + ", ".join(dict.fromkeys(group_parts)))
+    if spec.having:
+        sql_lines.append(
+            "HAVING " + "\n  AND ".join(
+                _metric_filter_sql(cat, condition, base_alias, params, index)
+                for index, condition in enumerate(spec.having)
+            )
+        )
 
     order_sql = _order_by(spec, order_candidates, dims, plan)
     if order_sql:
@@ -486,6 +493,33 @@ def _decode_filter_value(cat: Catalog, dim: Dimension, value: Any) -> Any:
     if isinstance(value, list):
         return [_decode_one(enum, v) for v in value]
     return _decode_one(enum, value)
+
+
+def _metric_filter_sql(
+    cat: Catalog,
+    condition: Filter,
+    base_alias: str,
+    params: dict[str, Any],
+    index: int,
+) -> str:
+    metric = cat.metrics.get(condition.field)
+    if metric is None:
+        raise CompileError(f"unknown aggregate metric condition {condition.field!r}")
+    expression = metric.sql(base_alias)
+    key = f"h{index}"
+    if condition.op == "is_null":
+        return f"{expression} IS NULL"
+    if condition.op == "between":
+        values = condition.value
+        if not isinstance(values, list) or len(values) != 2:
+            raise CompileError(f"between on {condition.field!r} needs two values")
+        params[f"{key}_lo"], params[f"{key}_hi"] = values
+        return f"{expression} BETWEEN :{key}_lo AND :{key}_hi"
+    operators = {"eq": "=", "ne": "<>", "gt": ">", "gte": ">=", "lt": "<", "lte": "<="}
+    if condition.op not in operators:
+        raise CompileError(f"{condition.op!r} is not supported for aggregate conditions")
+    params[key] = condition.value
+    return f"{expression} {operators[condition.op]} :{key}"
 
 
 def _decode_one(enum, value: Any) -> Any:

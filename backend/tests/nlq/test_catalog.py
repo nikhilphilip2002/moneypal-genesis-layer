@@ -19,6 +19,8 @@ def catalog():
 class TestLoads:
     def test_catalog_loads_and_validates(self, catalog):
         assert catalog.metrics and catalog.dimensions and catalog.tables
+        assert catalog.metrics["agent_linked_loans"].base_table == "gold.agent_master"
+        assert catalog.dimensions["agent_profile"].column == "agent_name"
 
     def test_version_is_content_addressed(self, catalog):
         assert len(catalog.version) == 12

@@ -38,6 +38,8 @@ to Mar 2026). Q1 is Apr-Jun.
 RULES
 - Use only metrics and dimensions from the catalog given below. Never invent one.
 - Never invent a column, table or filter value.
+- Use `filters` for row-level dimension conditions and `having` for conditions on an \
+aggregated metric (for example borrowers whose total outstanding equals zero).
 - A question for one named borrower or account that cannot be expressed with catalog \
 dimensions belongs on the "sql" route; do not refuse it merely because it contains a name.
 - Questions naming a borrower, customer, agent or account are permitted during the current \
