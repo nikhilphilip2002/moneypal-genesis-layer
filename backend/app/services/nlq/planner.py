@@ -15,6 +15,7 @@ that produces a confident, wrong, entirely credible number. Below the floor we a
 from __future__ import annotations
 
 import logging
+import re
 from dataclasses import dataclass, replace
 from typing import Any
 
@@ -26,6 +27,7 @@ from app.services.nlq.compiler import CompileError, compile_spec
 from app.services.nlq.contracts import (
     ClarifyPlan,
     PlanResult,
+    Period,
     QuerySpecPlan,
     RefusalPlan,
     SqlPlan,
@@ -115,6 +117,7 @@ async def plan(
 
         try:
             parsed = _parse(result.json(), cat)
+            parsed = _enforce_relative_period(question, parsed)
         except (PlanValidationError, ValidationError, LLMError) as exc:
             error = str(exc)
             logger.info("NLQ plan rejected on attempt %d: %s", attempts, error)
@@ -158,6 +161,33 @@ async def plan(
 
 class PlanValidationError(ValueError):
     """The model produced a structurally valid plan that the catalog rejects."""
+
+
+_RELATIVE_PERIOD_PHRASES = (
+    (re.compile(r"\b(?:last|past|previous)\s+90\s+days?\b", re.I), "last_90_days"),
+    (re.compile(r"\b(?:last|past|previous)\s+30\s+days?\b", re.I), "last_30_days"),
+    (re.compile(r"\b(?:last|past|previous)\s+12\s+months?\b", re.I), "last_12_months"),
+)
+_EXPLICIT_PERIOD_ANCHOR = re.compile(
+    r"\b(?:ending|ended|as\s+of|up\s+to|through)\b|\b20\d{2}\b", re.I
+)
+
+
+def _enforce_relative_period(question: str, parsed: PlanResult) -> PlanResult:
+    """Keep explicit relative phrases relative instead of accepting guessed dates.
+
+    The model does not receive the wall-clock date because the stable system prompt is KV
+    cacheable. It must therefore emit the closed relative-period token; if it instead
+    invents concrete dates, the query can silently land outside the warehouse's history.
+    An explicit user-supplied anchor ("90 days ending 31 March 2026") is left alone.
+    """
+    if not isinstance(parsed, QuerySpecPlan) or _EXPLICIT_PERIOD_ANCHOR.search(question):
+        return parsed
+    for pattern, relative in _RELATIVE_PERIOD_PHRASES:
+        if pattern.search(question) and parsed.spec.period.relative != relative:
+            corrected = parsed.spec.model_copy(update={"period": Period(relative=relative)})
+            return parsed.model_copy(update={"spec": corrected})
+    return parsed
 
 
 def _parse(payload: Any, catalog: Catalog) -> PlanResult:

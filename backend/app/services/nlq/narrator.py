@@ -191,9 +191,14 @@ def _variance_sentence(compiled: CompiledQuery, rows: list[dict[str, Any]], metr
         )
     delta = totals_now - totals_before
     direction = "up" if delta > 0 else "down" if delta < 0 else "flat"
+    delta_text = (
+        f"{abs(delta):.1f} percentage points"
+        if metric.unit == "percent"
+        else format_value(abs(delta), metric.unit)
+    )
     return (
-        f"{metric.label} is {direction} {format_value(abs(delta), metric.unit)} "
-        f"({abs(delta / totals_before * 100):.1f}%) in {compiled.period_label} "
+        f"{metric.label} is {direction} {delta_text} "
+        f"({abs(delta / totals_before * 100):.1f}% relative) in {compiled.period_label} "
         f"versus {compiled.compare_label}."
     )
 

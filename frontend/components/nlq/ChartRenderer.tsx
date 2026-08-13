@@ -491,6 +491,11 @@ function VarianceView({ chart, mode }: { chart: ChartSpec; mode: 'light' | 'dark
   const field = chart.series[0]?.field ?? 'delta';
   const unit = chart.series[0]?.unit ?? 'count';
   const xKey = chart.x?.field ?? 'x';
+
+  if (chart.rows.length === 1) {
+    return <SingleVarianceView chart={chart} mode={mode} />;
+  }
+
   // Long category names go horizontal; time never does — twelve months read left to right
   // or they stop being a timeline.
   const horizontal = !chart.x?.grain && chart.rows.length > 8;
@@ -562,6 +567,68 @@ function VarianceView({ chart, mode }: { chart: ChartSpec; mode: 'light' | 'dark
         </Bar>
       </BarChart>
     </ResponsiveContainer>
+  );
+}
+
+function SingleVarianceView({
+  chart, mode,
+}: { chart: ChartSpec; mode: 'light' | 'dark' }) {
+  const row = chart.rows[0] ?? {};
+  const unit = chart.series[0]?.unit ?? 'count';
+  const previous = typeof row.previous === 'number' ? row.previous : null;
+  const current = typeof row.current === 'number' ? row.current : null;
+  const delta = typeof row.delta === 'number' ? row.delta : null;
+  const deltaPct = typeof row.delta_pct === 'number' ? row.delta_pct : null;
+  const previousLabel = chart.columns.find((column) => column.name === 'previous')?.label ?? 'Previous';
+  const currentLabel = chart.columns.find((column) => column.name === 'current')?.label ?? 'Current';
+  const max = Math.max(Math.abs(previous ?? 0), Math.abs(current ?? 0), 1);
+  const widthOf = (value: number | null) => value === null ? 0 : Math.abs(value) / max * 100;
+  const changeColor = divergingColor(delta ?? 0, mode);
+  const changeText = delta === null
+    ? 'No comparison available'
+    : `${delta > 0 ? '+' : ''}${formatValue(delta, unit)}`;
+
+  return (
+    <div
+      className="rounded-lg bg-muted/30 p-4"
+      role="img"
+      aria-label={`${previousLabel}: ${formatValue(previous, unit)}; ${currentLabel}: ${formatValue(current, unit)}; change: ${changeText}`}
+    >
+      <div className="space-y-4">
+        {[
+          { label: previousLabel, value: previous, color: seriesColor(0, mode) },
+          { label: currentLabel, value: current, color: seriesColor(1, mode) },
+        ].map((item) => (
+          <div key={item.label} className="grid grid-cols-[minmax(7rem,12rem)_1fr_auto] items-center gap-3">
+            <span className="truncate text-xs text-muted-foreground" title={item.label}>
+              {item.label}
+            </span>
+            <div className="h-3 overflow-hidden rounded-sm bg-muted">
+              {item.value !== null && (
+                <div
+                  className="h-full min-w-0 rounded-sm"
+                  style={{ width: `${widthOf(item.value)}%`, background: item.color }}
+                />
+              )}
+            </div>
+            <span className="min-w-20 text-right text-sm font-semibold tabular-nums text-foreground">
+              {formatValue(item.value, unit)}
+            </span>
+          </div>
+        ))}
+      </div>
+      <div className="mt-4 flex flex-wrap items-center justify-end gap-2 border-t border-border/60 pt-3">
+        <span className="text-xs text-muted-foreground">Change</span>
+        <Badge
+          variant="outline"
+          className="border-transparent font-semibold tabular-nums"
+          style={{ color: changeColor, backgroundColor: `${changeColor}18` }}
+        >
+          {changeText}
+          {deltaPct !== null && ` · ${deltaPct > 0 ? '+' : ''}${deltaPct.toFixed(1)}% relative`}
+        </Badge>
+      </div>
+    </div>
   );
 }
 

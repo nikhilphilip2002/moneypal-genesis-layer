@@ -329,10 +329,21 @@ def _variance_rows(
         return tuple(row.get(f"{k}__raw", row.get(k)) for k in key_fields)
 
     prior_by_key = {key_of(r): r for r in prior.rows}
+    # A bounded period comparison can still arrive with its period grain as a dimension:
+    # "this quarter vs last quarter" then produces one Q3 row and one Q2 row. Those raw
+    # time keys are necessarily different, but the singleton rows are the two sides of the
+    # comparison. Joining them by the literal quarter used to discard the prior value.
+    singleton_time_pair = (
+        len(current_rows) == 1
+        and len(prior.rows) == 1
+        and bool(key_fields)
+        and all(cat.dimensions[field].is_time for field in key_fields)
+    )
 
     rows: list[dict[str, Any]] = []
     for row in current_rows:
-        before = prior_by_key.get(key_of(row), {}).get(metric_id)
+        prior_row = prior.rows[0] if singleton_time_pair else prior_by_key.get(key_of(row), {})
+        before = prior_row.get(metric_id)
         after = row.get(metric_id)
         delta = None
         delta_pct = None

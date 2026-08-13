@@ -31,6 +31,9 @@ services:
       # The MCP server is the boundary. Its implementation uses the existing hardened
       # direct adapter and must never recursively call itself.
       POSTGRES_ACCESS_MODE: direct
+      # Do not download/load the 2GB-class embedding stack in the middle of an MCP call.
+      # The governed catalog's curated lexical synonyms remain available for SQL fallback.
+      NLQ_CATALOG_VECTORS: "false"
       REGULATIONS_DIR: /srv/Regulations
       REGISTRY_DIR: /srv/backend/registry/regulations
       LOCAL_INDEX_PATH: /srv/backend/vector_store/regulatory_chunks.jsonl

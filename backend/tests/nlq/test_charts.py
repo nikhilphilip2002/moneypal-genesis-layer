@@ -109,6 +109,39 @@ class TestChartTypeRules:
         assert [s.field for s in chart.series] == ["delta"]
         assert chart.rows[0]["delta"] == -20.0
 
+    def test_single_quarter_comparison_aligns_different_time_keys(self, catalog):
+        """Q3 and Q2 are the two comparison sides, not dimension keys to equi-join."""
+        spec = QuerySpec(
+            metrics=["loan_count"],
+            dimensions=["quarter"],
+            period=Period(relative="this_quarter"),
+            compare_to=Period(relative="last_quarter"),
+        )
+        current = [{"quarter": "2026-07-01", "loan_count": 179}]
+        prior = result_of([{"quarter": "2026-04-01", "loan_count": 151}])
+
+        chart = chart_for(spec, current, catalog, prior=prior)
+
+        assert chart.rows[0]["current"] == 179
+        assert chart.rows[0]["previous"] == 151
+        assert chart.rows[0]["delta"] == 28
+        assert chart.rows[0]["delta_pct"] == 18.5
+
+    def test_percentage_variance_distinguishes_points_from_relative_change(self, catalog):
+        spec = QuerySpec(
+            metrics=["collection_efficiency"],
+            dimensions=["quarter"],
+            period=Period(relative="this_quarter"),
+            compare_to=Period(relative="last_quarter"),
+        )
+        current = [{"quarter": "2026-07-01", "collection_efficiency": 92.0}]
+        prior = result_of([{"quarter": "2026-04-01", "collection_efficiency": 95.5}])
+
+        chart = chart_for(spec, current, catalog, prior=prior)
+
+        assert "down 3.5 percentage points" in chart.summary
+        assert "3.7% relative" in chart.summary
+
     def test_two_categorical_dimensions_is_a_heatmap(self, catalog):
         spec = QuerySpec(
             metrics=["loan_count"],

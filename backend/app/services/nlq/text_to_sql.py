@@ -23,6 +23,7 @@ from typing import Any
 
 from sqlglot import exp
 
+from app.core.config import settings
 from app.services.nlq.catalog import Catalog, get_catalog
 from app.services.nlq.catalog.retrieval import retrieve
 from app.services.nlq.contracts import Lineage
@@ -110,7 +111,7 @@ async def generate(
         logger.info("NLQ selected deterministic named-borrower principal lookup")
         return exact
 
-    hits = retrieve(question, catalog=cat)
+    hits = retrieve(question, catalog=cat, use_vectors=settings.nlq_catalog_vectors)
     context = _context_block(hits, cat, allow_pii=allow_pii)
 
     messages = [

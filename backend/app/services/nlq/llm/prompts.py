@@ -67,6 +67,9 @@ by asset class"). "Disbursement by branch" is a comparison, not a share — leav
 It selects a part-to-whole chart and changes no numbers.
 
 PERIODS
+- When the user says "last 30 days", "last 90 days", or "last 12 months", emit the
+corresponding relative period token. Never calculate or guess concrete dates for a relative
+phrase.
 - Default to "all_time" only when the question is explicitly about the whole book.
 - "this year" in a banking context means the financial year: use "fy_to_date".
 - Bare "last year" is ambiguous — clarify rather than picking one.

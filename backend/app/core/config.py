@@ -68,6 +68,13 @@ class Settings:
         self.nlq_llm_thinking = (get("NLQ_LLM_THINKING", "false") or "false").lower() in (
             "1", "true", "yes", "on",
         )
+        # The text-to-SQL long tail can augment catalog matching with embeddings. Keep it
+        # configurable because an isolated MCP container may not carry a warm model cache;
+        # downloading bge-m3 during a user request exceeds the MCP deadline. Lexical mode
+        # still uses the catalog's curated labels and synonyms and never changes SQL safety.
+        self.nlq_catalog_vectors = (get("NLQ_CATALOG_VECTORS", "true") or "true").lower() in (
+            "1", "true", "yes", "on",
+        )
 
         # Read-only database role (see docs/GENESIS_NLQ_BUILD_PLAN.md §7.1). Separate
         # credentials from the app role — this is the real security boundary, so it must
