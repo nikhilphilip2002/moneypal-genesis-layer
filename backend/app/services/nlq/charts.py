@@ -371,6 +371,7 @@ def build_from_rows(
     result: QueryResult,
     lineage: Lineage,
     catalog: Catalog | None = None,
+    unit_hints: dict[str, str] | None = None,
 ) -> ChartSpec:
     """ChartSpec for the text-to-SQL path, where there is no QuerySpec to read from.
 
@@ -379,6 +380,7 @@ def build_from_rows(
     answers are marked unverified.
     """
     cat = catalog or get_catalog()
+    unit_hints = unit_hints or {}
     columns = result.columns
     numeric = [c for c in columns if _column_is_numeric(result.rows, c)]
     labels = [c for c in columns if c not in numeric]
@@ -400,14 +402,19 @@ def build_from_rows(
         if labels
         else None,
         series=[
-            SeriesSpec(field=c, label=c.replace("_", " ").title(), unit="count")
+            SeriesSpec(
+                field=c,
+                label=c.replace("_", " ").title(),
+                unit=unit_hints.get(c, "count"),
+            )
             for c in numeric
         ],
         columns=[
             ColumnSpec(
                 name=c,
                 label=c.replace("_", " ").title(),
-                unit="count" if c in numeric else "text",
+                unit=unit_hints.get(c, "count" if c in numeric else "text"),
+                format=_format_hint(unit_hints[c]) if c in unit_hints else None,
                 sensitivity="internal",
             )
             for c in columns

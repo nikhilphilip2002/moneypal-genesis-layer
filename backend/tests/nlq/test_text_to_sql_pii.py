@@ -2,6 +2,9 @@
 
 from app.services.nlq.catalog import get_catalog
 from app.services.nlq.catalog.retrieval import RetrievalResult
+from app.services.nlq.charts import build_from_rows
+from app.services.nlq.contracts import Lineage
+from app.services.nlq.executor import QueryResult
 from app.services.nlq.text_to_sql import (
     NAME_PII_COLUMN_IDS,
     _context_block,
@@ -58,6 +61,9 @@ def test_named_borrower_principal_uses_reviewed_columns_without_an_llm():
     assert "gnlnac_pri_repay_amt" in attempt.sql
     assert "gnlnac_cust_name" in attempt.sql
     assert "gnlnac_prin" not in attempt.sql
+    assert "LIKE 'sheelavati' || '%'" in attempt.sql
+    assert "GROUP BY" in attempt.sql
+    assert attempt.column_units["principal_repaid"] == "inr"
     assert attempt.pii_columns == ["gnlnac_cust_name"]
 
 
@@ -76,9 +82,42 @@ def test_named_borrower_literal_is_safely_quoted():
         allow_pii=True,
     )
     assert attempt is not None
-    assert "O''Neil" in attempt.sql
+    assert "LIKE 'oneil' || '%'" in attempt.sql
+
+
+def test_name_match_normalizes_th_spelling_and_keeps_ambiguous_names_separate():
+    attempt = _named_borrower_principal_attempt(
+        "principal amount paid by sheelavati",
+        get_catalog(),
+        allow_pii=True,
+    )
+    assert attempt is not None
+    assert "REPLACE(LOWER" in attempt.sql
+    assert "'th', 't'" in attempt.sql
+    assert "borrower_name" in attempt.sql
+    assert "GROUP BY" in attempt.sql
 
 
 def test_named_borrower_intent_matcher_does_not_claim_period_questions():
     assert named_borrower_principal_name("principal paid by Sheelavati") == "Sheelavati"
     assert named_borrower_principal_name("principal paid by Sheelavati last month") is None
+
+
+def test_reviewed_unit_hint_renders_principal_as_inr():
+    chart = build_from_rows(
+        question="principal amount paid by Sheelavati",
+        result=QueryResult(
+            rows=[{"borrower_name": "SHEELAVATHI M K", "principal_repaid": 500000.0}],
+            columns=["borrower_name", "principal_repaid"],
+            status="ok",
+            duration_ms=1,
+            sql="SELECT 1",
+            row_count=1,
+        ),
+        lineage=Lineage(path="text_to_sql", sql="SELECT 1"),
+        unit_hints={"borrower_name": "text", "principal_repaid": "inr"},
+    )
+
+    principal = next(column for column in chart.columns if column.name == "principal_repaid")
+    assert principal.unit == "inr"
+    assert chart.series[0].unit == "inr"

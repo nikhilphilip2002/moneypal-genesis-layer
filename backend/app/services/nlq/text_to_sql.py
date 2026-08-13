@@ -91,6 +91,7 @@ class SqlAttempt:
     error: str = ""
     warnings: list[str] = field(default_factory=list)
     pii_columns: list[str] = field(default_factory=list)
+    column_units: dict[str, str] = field(default_factory=dict)
 
 
 async def generate(
@@ -229,14 +230,24 @@ def _named_borrower_principal_attempt(
     if not borrower:
         return None
 
-    # sqlglot owns literal quoting, including apostrophes; user text is never interpolated
-    # as SQL syntax.
-    literal = exp.Literal.string(borrower).sql(dialect="postgres")
+    # Match operational name formatting without merging ambiguous borrowers: whitespace,
+    # punctuation and the common Indian-name `th`/`t` transliteration are normalized, and
+    # omitted initials are accepted as a prefix. Every matching stored name remains its
+    # own result row so "Sheela" cannot silently combine several people.
+    normalized = re.sub(r"[^a-z0-9]", "", borrower.lower()).replace("th", "t")
+    literal = exp.Literal.string(normalized).sql(dialect="postgres")
+    stored_name = (
+        "REGEXP_REPLACE(REPLACE(LOWER(TRIM(gnlnac_cust_name)), 'th', 't'), "
+        "'[^a-z0-9]', '', 'g')"
+    )
+    display_name = "TRIM(REGEXP_REPLACE(gnlnac_cust_name, '\\s+', ' ', 'g'))"
     sql = (
-        "SELECT SUM(gnlnac_pri_repay_amt) AS principal_repaid "
+        f"SELECT {display_name} AS borrower_name, "
+        "SUM(gnlnac_pri_repay_amt) AS principal_repaid "
         "FROM silver.loan_account_master "
-        f"WHERE LOWER(TRIM(gnlnac_cust_name)) = LOWER({literal}) "
-        "AND gnlnac_sanc_date <= CURRENT_DATE LIMIT 5000"
+        f"WHERE {stored_name} LIKE {literal} || '%' "
+        "AND gnlnac_sanc_date <= CURRENT_DATE "
+        f"GROUP BY {display_name} ORDER BY principal_repaid DESC LIMIT 20"
     )
     checked = validate(
         sql,
@@ -253,10 +264,12 @@ def _named_borrower_principal_attempt(
         model="deterministic",
         provider="catalog",
         warnings=[
-            "Borrower matched by exact normalized name.",
+            "Borrowers matched after normalizing spacing, punctuation, initials and th/t spelling.",
+            "Multiple possible borrowers are shown separately rather than combined.",
             "The amount is cumulative as of the latest loan-account data load.",
         ],
         pii_columns=checked.pii_columns,
+        column_units={"principal_repaid": "inr", "borrower_name": "text"},
     )
 
 

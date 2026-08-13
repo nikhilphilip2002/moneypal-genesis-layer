@@ -11,6 +11,9 @@ services:
     env_file: .env
     environment:
       # Override any host paths from .env with in-container paths.
+      # Workbench reaches PostgreSQL through the governed MCP boundary by default.
+      POSTGRES_ACCESS_MODE: mcp
+      POSTGRES_MCP_URL: http://postgres-mcp:8001/mcp
       REGULATIONS_DIR: /srv/Regulations
       REGISTRY_DIR: /srv/backend/registry/regulations
       LOCAL_INDEX_PATH: /srv/backend/vector_store/regulatory_chunks.jsonl

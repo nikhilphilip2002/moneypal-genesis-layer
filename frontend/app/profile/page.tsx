@@ -20,6 +20,8 @@ interface UserProfile {
 
 const MODULE_NAMES: Record<string, string> = {
     '/': 'Executive Dashboard',
+    '/workbench': 'Intelligence Workbench',
+    '/ask': 'Loan-book Analytics',
     '/macro': 'Macro Intelligence',
     '/competitive': 'Competitive Intelligence',
     '/regulatory': 'Regulatory Intelligence',

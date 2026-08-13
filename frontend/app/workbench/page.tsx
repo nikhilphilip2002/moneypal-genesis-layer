@@ -13,6 +13,7 @@ import {
   Plus,
   Scale,
   TrendingUp,
+  UserRound,
   Wrench,
 } from 'lucide-react';
 import {
@@ -22,12 +23,13 @@ import {
   type WorkbenchConversation,
   type WorkbenchTool,
 } from '@/lib/api';
-import { clearUserRoleCache } from '@/lib/useUserRole';
+import { clearUserRoleCache, ROLE_LABELS, type UserRole } from '@/lib/useUserRole';
 import Composer from '@/components/workbench/Composer';
 import WorkbenchTurn, { type WorkbenchTurnData } from '@/components/workbench/WorkbenchTurn';
 import HistoryRail from '@/components/workbench/HistoryRail';
 import WorkbenchWorkspace, {
   WORKSPACE_TOOLS,
+  modulesForRole,
   type WorkspaceView,
 } from '@/components/workbench/WorkbenchWorkspace';
 import { Button } from '@/components/ui/button';
@@ -278,6 +280,10 @@ function WorkbenchHeader({
 }) {
   const name = user?.full_name || user?.username || 'User';
   const initials = name.split(' ').map((part) => part[0]).join('').toUpperCase().slice(0, 2);
+  const roleLabel = user?.role
+    ? ROLE_LABELS[user.role as UserRole] ?? user.role
+    : 'User';
+  const modules = modulesForRole(user?.role).filter((module) => module.id !== 'profile');
 
   return (
     <header className="shrink-0 border-b border-border/60 bg-card/95">
@@ -351,6 +357,30 @@ function WorkbenchHeader({
                   </span>
                 </DropdownMenuItem>
               ))}
+              {modules.length > 0 && (
+                <>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuLabel>
+                    <span className="block text-sm">Your modules</span>
+                    <span className="mt-0.5 block text-xs font-normal text-muted-foreground">
+                      Everything provisioned for {roleLabel} opens inside this Workbench.
+                    </span>
+                  </DropdownMenuLabel>
+                  {modules.map((module) => (
+                    <DropdownMenuItem
+                      key={module.id}
+                      onClick={() => onOpenWorkspace(module.id)}
+                      className="cursor-pointer items-start gap-2.5 rounded-lg py-2.5"
+                    >
+                      <module.icon className="mt-0.5 size-4 text-primary" />
+                      <span>
+                        <span className="block text-sm font-medium">{module.label}</span>
+                        <span className="block text-[11px] leading-4 text-muted-foreground">{module.description}</span>
+                      </span>
+                    </DropdownMenuItem>
+                  ))}
+                </>
+              )}
             </DropdownMenuContent>
           </DropdownMenu>
 
@@ -369,7 +399,15 @@ function WorkbenchHeader({
               <DropdownMenuLabel>
                 <span className="block truncate text-sm">{name}</span>
                 <span className="mt-0.5 block truncate text-xs font-normal text-muted-foreground">{user?.email}</span>
+                <span className="mt-1 block truncate text-[10px] font-medium uppercase tracking-wide text-primary">{roleLabel}</span>
               </DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
+                onClick={() => onOpenWorkspace('profile')}
+                className="cursor-pointer gap-2 rounded-lg"
+              >
+                <UserRound className="size-4" /> View profile
+              </DropdownMenuItem>
               <DropdownMenuSeparator />
               <DropdownMenuItem onClick={onLogout} className="cursor-pointer gap-2 rounded-lg">
                 <LogOut className="size-4" /> Sign out

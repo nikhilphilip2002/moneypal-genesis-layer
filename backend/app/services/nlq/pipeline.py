@@ -66,6 +66,7 @@ def run_sql(attempt, *, question: str, role: str | None, catalog: Catalog | None
         result=result,
         lineage=text_to_sql.lineage_for(attempt, result.row_count, result.duration_ms),
         catalog=cat,
+        unit_hints=getattr(attempt, "column_units", None),
     )
     return _mask(chart, role, cat)
 
