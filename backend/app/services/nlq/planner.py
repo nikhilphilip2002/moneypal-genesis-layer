@@ -33,6 +33,7 @@ from app.services.nlq.contracts import (
 from app.services.nlq.llm import LLMError, get_llm_client
 from app.services.nlq.llm.prompts import PROMPT_VERSION, build_messages
 from app.services.nlq.llm.schemas import plan_schema
+from app.services.nlq.text_to_sql import named_borrower_principal_name
 
 logger = logging.getLogger(__name__)
 
@@ -60,6 +61,24 @@ async def plan(
 ) -> PlanOutcome:
     """Ask the model to route and structure a question."""
     cat = catalog or get_catalog()
+
+    # A named-borrower filter is outside QuerySpec by design. Route this reviewed intent
+    # deterministically so the model cannot drop the name and answer with the whole book.
+    if named_borrower_principal_name(question):
+        return PlanOutcome(
+            plan=SqlPlan(
+                intent=question,
+                tables=["silver.loan_account_master"],
+                confidence=1.0,
+                reasoning="named-borrower principal lookup uses governed SQL",
+            ),
+            attempts=0,
+            prompt_version=PROMPT_VERSION,
+            model="deterministic",
+            provider="catalog",
+            duration_ms=0,
+        )
+
     llm = client or get_llm_client()
 
     # Repeated and rehearsed questions skip the model entirely. The key carries the catalog

@@ -133,6 +133,15 @@ class TestSchemaIsolation:
         with pytest.raises(ValidationError):
             validate("SELECT x FROM silver.not_a_real_table LIMIT 1")
 
+    @pytest.mark.parametrize(
+        "column",
+        ["gnlnac_prin_repay_amt", "gnlnac_prin_paid", "gnlnac_borrower_name"],
+    )
+    def test_invented_columns_are_rejected_before_explain(self, column):
+        sql = f"SELECT {column} FROM silver.loan_account_master LIMIT 1"
+        with pytest.raises(ValidationError, match="column"):
+            validate(sql, allow_pii=True)
+
     def test_a_union_arm_cannot_smuggle_a_forbidden_table(self):
         sql = (
             "SELECT gnlnac_acnt_num FROM silver.loan_account_master "

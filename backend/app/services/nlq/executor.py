@@ -70,7 +70,7 @@ def execute(
 
     try:
         with nlq_db.readonly_cursor() as (conn, cur):
-            plan_cost = _explain(cur, sql, params) if explain_gate else None
+            plan_cost = _explain(conn, cur, sql, params) if explain_gate else None
             if plan_cost is not None and plan_cost > MAX_PLAN_COST:
                 raise ExecutionError(
                     "That question is too broad to answer quickly. Try narrowing the "
@@ -129,7 +129,7 @@ def execute_raw(sql: str, *, explain_gate: bool = True) -> QueryResult:
     started = time.perf_counter()
     try:
         with nlq_db.readonly_cursor() as (conn, cur):
-            plan_cost = _explain(cur, sql, []) if explain_gate else None
+            plan_cost = _explain(conn, cur, sql, []) if explain_gate else None
             if plan_cost is not None and plan_cost > MAX_PLAN_COST:
                 raise ExecutionError(
                     "That question is too broad to answer quickly. Try narrowing the "
@@ -161,7 +161,7 @@ def execute_raw(sql: str, *, explain_gate: bool = True) -> QueryResult:
     )
 
 
-def _explain(cur: Any, sql: str, params: list[Any]) -> float | None:
+def _explain(conn: Any, cur: Any, sql: str, params: list[Any]) -> float | None:
     """Estimated total cost of the plan, or None when EXPLAIN itself fails.
 
     A failed EXPLAIN is not fatal — the statement_timeout on the role remains the backstop —
@@ -172,6 +172,12 @@ def _explain(cur: Any, sql: str, params: list[Any]) -> float | None:
         text = " ".join(str(r[0]) for r in cur.fetchall())
     except Exception as exc:  # noqa: BLE001
         logger.warning("NLQ EXPLAIN failed, proceeding without the cost gate: %s", exc)
+        # PostgreSQL marks the transaction failed after any statement error. Clear that
+        # state before the caller executes the actual statement on the same connection.
+        try:
+            conn.rollback()
+        except Exception:  # noqa: BLE001 - the subsequent execute will surface the outage
+            logger.warning("NLQ rollback after failed EXPLAIN also failed", exc_info=True)
         return None
     match = re.search(r"cost=[\d.]+\.\.([\d.]+)", text)
     return float(match.group(1)) if match else None

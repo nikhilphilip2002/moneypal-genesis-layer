@@ -77,6 +77,7 @@ def validate(
     _check_functions(tree)
     _check_no_set_operations_on_forbidden_tables(tree, cat)
     tables = _check_tables(tree, cat)
+    _check_columns(tree, cat)
     _check_joins_have_conditions(tree)
     pii = _check_pii(tree, cat, allow_pii, allowed_pii_columns)
     tree, injected = _enforce_limit(tree, max_limit)
@@ -200,6 +201,78 @@ def _check_tables(tree: exp.Expression, catalog: Catalog) -> set[str]:
     if not found:
         raise ValidationError("no known table is referenced")
     return found
+
+
+def _physical_columns(catalog: Catalog) -> dict[str, set[str]]:
+    """Columns the generated-SQL path may reference, keyed by qualified table.
+
+    The curated column catalog supplies business fields. Table keys/date fields and the
+    declared join endpoints are also real columns exposed in the prompt's join paths.
+    Anything else is an invention and must be rejected before EXPLAIN reaches Postgres.
+    """
+    allowed = {table.table: set(table.key) for table in catalog.tables.values()}
+    for table in catalog.tables.values():
+        allowed[table.table].update(table.date_columns.values())
+        if table.as_of_column:
+            allowed[table.table].add(table.as_of_column)
+        if table.year_column:
+            allowed[table.table].add(table.year_column)
+    for column in catalog.columns.values():
+        allowed.setdefault(column.table, set()).add(column.column)
+    for dimension in catalog.dimensions.values():
+        if dimension.table and dimension.column:
+            allowed.setdefault(dimension.table, set()).add(dimension.column)
+    for join in catalog.joins:
+        for left_column, right_column in join.on:
+            allowed.setdefault(join.left, set()).add(left_column)
+            allowed.setdefault(join.right, set()).add(right_column)
+    return {table: {column.lower() for column in columns} for table, columns in allowed.items()}
+
+
+def _check_columns(tree: exp.Expression, catalog: Catalog) -> None:
+    """Reject hallucinated physical column names before the database sees the query."""
+    allowed = _physical_columns(catalog)
+    aliases: dict[str, str] = {}
+    derived_aliases: set[str] = set()
+
+    for table in tree.find_all(exp.Table):
+        qualified = f"{(table.db or '').lower()}.{(table.name or '').lower()}"
+        if qualified in allowed:
+            aliases[(table.alias_or_name or table.name or "").lower()] = qualified
+
+    derived_aliases.update(
+        (cte.alias_or_name or "").lower() for cte in tree.find_all(exp.CTE)
+    )
+    derived_aliases.update(
+        (subquery.alias_or_name or "").lower()
+        for subquery in tree.find_all(exp.Subquery)
+        if subquery.alias_or_name
+    )
+    derived_aliases.update(
+        (lateral.alias_or_name or "").lower()
+        for lateral in tree.find_all(exp.Lateral)
+        if lateral.alias_or_name
+    )
+    output_aliases = {
+        (alias.alias or "").lower() for alias in tree.find_all(exp.Alias) if alias.alias
+    }
+    all_physical = set().union(*allowed.values()) if allowed else set()
+
+    for column in tree.find_all(exp.Column):
+        name = (column.name or "").lower()
+        qualifier = (column.table or "").lower()
+        if not name or name in output_aliases:
+            continue
+        if qualifier in derived_aliases:
+            continue
+        if qualifier:
+            table_name = aliases.get(qualifier)
+            if table_name is None:
+                raise ValidationError(f"column qualifier {qualifier!r} is not a known table alias")
+            if name not in allowed[table_name]:
+                raise ValidationError(f"column {name!r} does not exist on {table_name}")
+        elif name not in all_physical:
+            raise ValidationError(f"column {name!r} is not in the catalog allowlist")
 
 
 def _check_no_set_operations_on_forbidden_tables(tree: exp.Expression, catalog: Catalog) -> None:

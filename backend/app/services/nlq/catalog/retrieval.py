@@ -25,7 +25,12 @@ import re
 from dataclasses import dataclass, field
 from typing import Any
 
-from app.services.nlq.catalog.index import CatalogDoc, build_documents, collection_name
+from app.services.nlq.catalog.index import (
+    CatalogDoc,
+    build_documents,
+    collection_name,
+    index as index_catalog,
+)
 from app.services.nlq.catalog.loader import Catalog, get_catalog
 
 logger = logging.getLogger(__name__)
@@ -117,15 +122,35 @@ def _vector_hits(question: str, catalog: Catalog, limit: int) -> dict[str, float
 
     try:
         client = get_qdrant()
+        name = collection_name(catalog)
+        query = embed_text(question)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("NLQ vector preparation failed, falling back to lexical: %s", exc)
+        return {}
+    try:
         found = client.query_points(
-            collection_name=collection_name(catalog),
-            query=embed_text(question),
-            limit=limit,
-            with_payload=True,
+            collection_name=name, query=query, limit=limit, with_payload=True,
         ).points
     except Exception as exc:  # noqa: BLE001 - a ranking aid, never a hard dependency
-        logger.warning("NLQ vector retrieval failed, falling back to lexical: %s", exc)
-        return {}
+        # Catalog names are content-addressed, so every catalog edit intentionally points
+        # at a new collection. Build that tiny collection on first use rather than leaving
+        # deployments in lexical-only mode until somebody remembers a runbook command.
+        message = str(exc).lower()
+        if "collection" in message and ("doesn't exist" in message or "not found" in message):
+            try:
+                result = index_catalog(catalog)
+                logger.info("Created missing NLQ catalog collection %s", result["collection"])
+                found = client.query_points(
+                    collection_name=name, query=query, limit=limit, with_payload=True,
+                ).points
+            except Exception as index_exc:  # noqa: BLE001
+                logger.warning(
+                    "NLQ catalog auto-index failed, falling back to lexical: %s", index_exc
+                )
+                return {}
+        else:
+            logger.warning("NLQ vector retrieval failed, falling back to lexical: %s", exc)
+            return {}
 
     return {p.payload.get("doc_id", ""): float(p.score) for p in found if p.payload}
 

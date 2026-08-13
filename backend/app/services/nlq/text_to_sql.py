@@ -17,8 +17,11 @@ the user has no way to tell the two apart.
 from __future__ import annotations
 
 import logging
+import re
 from dataclasses import dataclass, field
 from typing import Any
+
+from sqlglot import exp
 
 from app.services.nlq.catalog import Catalog, get_catalog
 from app.services.nlq.catalog.retrieval import retrieve
@@ -87,6 +90,7 @@ class SqlAttempt:
     provider: str = ""
     error: str = ""
     warnings: list[str] = field(default_factory=list)
+    pii_columns: list[str] = field(default_factory=list)
 
 
 async def generate(
@@ -99,6 +103,10 @@ async def generate(
     """Generate and validate SQL. Returns an attempt whose `validated` flag is the gate."""
     cat = catalog or get_catalog()
     llm = client or get_llm_client()
+
+    exact = _named_borrower_principal_attempt(question, cat, allow_pii=allow_pii)
+    if exact is not None:
+        return exact
 
     hits = retrieve(question, catalog=cat)
     context = _context_block(hits, cat, allow_pii=allow_pii)
@@ -167,6 +175,7 @@ async def generate(
 
         attempt.sql = checked.sql
         attempt.tables = checked.tables
+        attempt.pii_columns = checked.pii_columns
         attempt.validated = True
         attempt.error = ""
         if checked.limit_injected:
@@ -178,6 +187,76 @@ async def generate(
         return attempt
 
     return attempt
+
+
+_NAMED_PRINCIPAL_RE = re.compile(
+    r"\b(?:principal|principle)\b.*\b(?:paid|repaid|collected|recovered)\b\s+"
+    r"(?:by|for)\s+(?P<name>[\w .'-]{2,100})\s*[?!.]*$",
+    re.IGNORECASE,
+)
+
+
+def named_borrower_principal_name(question: str) -> str | None:
+    """Return the explicit borrower name for the supported cumulative-principal intent."""
+    if re.search(
+        r"\b(?:today|yesterday|month|quarter|year|fy\d*|between|from|since|before|after)\b",
+        question,
+        re.IGNORECASE,
+    ):
+        return None
+    match = _NAMED_PRINCIPAL_RE.search(question.strip())
+    if match is None:
+        return None
+    return match.group("name").strip(" .?!") or None
+
+
+def _named_borrower_principal_attempt(
+    question: str,
+    catalog: Catalog,
+    *,
+    allow_pii: bool,
+) -> SqlAttempt | None:
+    """Deterministic current cumulative principal for one explicitly named borrower.
+
+    This common lookup should not depend on an LLM reproducing opaque Prosper column
+    names. More complex questions (especially those naming a period) continue through the
+    generated-SQL path.
+    """
+    if not allow_pii:
+        return None
+    borrower = named_borrower_principal_name(question)
+    if not borrower:
+        return None
+
+    # sqlglot owns literal quoting, including apostrophes; user text is never interpolated
+    # as SQL syntax.
+    literal = exp.Literal.string(borrower).sql(dialect="postgres")
+    sql = (
+        "SELECT SUM(gnlnac_pri_repay_amt) AS principal_repaid "
+        "FROM silver.loan_account_master "
+        f"WHERE LOWER(TRIM(gnlnac_cust_name)) = LOWER({literal}) "
+        "AND gnlnac_sanc_date <= CURRENT_DATE LIMIT 5000"
+    )
+    checked = validate(
+        sql,
+        catalog=catalog,
+        allow_pii=True,
+        allowed_pii_columns={"gnlnac_cust_name"},
+    )
+    return SqlAttempt(
+        sql=checked.sql,
+        tables=checked.tables,
+        explanation="Cumulative principal repaid across the borrower's loan accounts.",
+        validated=True,
+        attempts=0,
+        model="deterministic",
+        provider="catalog",
+        warnings=[
+            "Borrower matched by exact normalized name.",
+            "The amount is cumulative as of the latest loan-account data load.",
+        ],
+        pii_columns=checked.pii_columns,
+    )
 
 
 def _context_block(hits, catalog: Catalog, *, allow_pii: bool = False) -> str:
