@@ -173,7 +173,7 @@ interface HierarchicalGraphPayload {
   };
 }
 
-export default function DBSchemaGraph() {
+export default function DBSchemaGraph({ contained = false }: { contained?: boolean }) {
   const { theme } = useTheme();
   const graphRef = useRef<any>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -286,7 +286,7 @@ export default function DBSchemaGraph() {
   // Canvas Dimensions Calculation
   useEffect(() => {
     const handleResize = () => {
-      if (isExpanded) {
+      if (isExpanded && !contained) {
         setDimensions({
           width: Math.max(600, window.innerWidth - 48),
           height: Math.max(450, window.innerHeight - 170),
@@ -295,7 +295,7 @@ export default function DBSchemaGraph() {
         const rect = containerRef.current.getBoundingClientRect();
         setDimensions({
           width: Math.max(400, rect.width),
-          height: 540,
+          height: isExpanded ? Math.max(450, rect.height - 150) : 540,
         });
       }
     };
@@ -307,7 +307,7 @@ export default function DBSchemaGraph() {
       window.removeEventListener('resize', handleResize);
       clearTimeout(timeout);
     };
-  }, [data, isExpanded]);
+  }, [data, isExpanded, contained]);
 
   // Live Autocomplete Suggestions as user types
   useEffect(() => {
@@ -655,7 +655,11 @@ export default function DBSchemaGraph() {
   const m = data?.total_database_metrics;
 
   const graphContent = (
-    <div className={`flex flex-col ${isExpanded ? 'fixed inset-0 z-[9999] w-screen h-screen bg-background p-6 overflow-hidden' : 'w-full h-full min-h-[580px]'}`}>
+    <div className={`flex flex-col ${isExpanded
+      ? contained
+        ? 'absolute inset-0 z-20 h-full w-full overflow-hidden bg-background p-4'
+        : 'fixed inset-0 z-[9999] h-screen w-screen overflow-hidden bg-background p-6'
+      : 'h-full min-h-[580px] w-full'}`}>
       {/* Top Header Bar */}
       <div className="flex flex-wrap items-center justify-between border-b pb-4 mb-3 gap-3 shrink-0">
         <div>
@@ -1223,7 +1227,7 @@ export default function DBSchemaGraph() {
     </div>
   );
 
-  if (isExpanded && isMounted) {
+  if (isExpanded && isMounted && !contained) {
     return createPortal(graphContent, document.body);
   }
 

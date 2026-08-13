@@ -62,10 +62,10 @@ export default function WorkbenchWorkspace({
           <DialogDescription className="text-xs">{tool?.description}</DialogDescription>
         </DialogHeader>
 
-        <div className="min-h-0 flex-1 overflow-auto p-3 sm:p-5">
+        <div className="relative min-h-0 flex-1 overflow-auto p-3 sm:p-5">
           {view === 'curiosity-graph' && (
             <div className="h-full min-h-[680px] rounded-2xl border border-border/70 bg-card p-3 sm:p-5">
-              <DBSchemaGraph />
+              <DBSchemaGraph contained />
             </div>
           )}
           {view === 'regulatory-reports' && (

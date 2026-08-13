@@ -33,13 +33,13 @@
     {
       "name": "Regulatory Intelligence",
       "short_name": "Regulatory",
-      "url": "/regulatory",
+      "url": "/workbench",
       "icons": [{ "src": "/moneypal.png", "sizes": "192x192" }]
     },
     {
       "name": "Competitive Intelligence",
       "short_name": "Competitive",
-      "url": "/competitive",
+      "url": "/workbench",
       "icons": [{ "src": "/moneypal.png", "sizes": "192x192" }]
     }
   ]
