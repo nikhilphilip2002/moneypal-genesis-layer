@@ -14,9 +14,11 @@ that produces a confident, wrong, entirely credible number. Below the floor we a
 
 from __future__ import annotations
 
+import calendar
 import logging
 import re
 from dataclasses import dataclass, replace
+from datetime import date
 from typing import Any
 
 from pydantic import TypeAdapter, ValidationError
@@ -50,6 +52,17 @@ _BORROWER_COUNT_RE = re.compile(
     re.IGNORECASE,
 )
 _AGENT_CODE_RE = re.compile(r"\bagent\s*[-:# ]*(?P<code>[a-z0-9_-]+)\b", re.IGNORECASE)
+_MONTHS = {
+    name.lower(): number
+    for number, name in enumerate(calendar.month_name)
+    if name
+}
+_NAMED_MONTH_DISBURSEMENT_RE = re.compile(
+    r"\b(?:total\s+)?disburse(?:ment|ments|d)?\b.*?\b(?P<month>"
+    + "|".join(_MONTHS)
+    + r")\s+(?P<year>20\d{2})\b",
+    re.IGNORECASE,
+)
 
 
 @dataclass(slots=True)
@@ -84,6 +97,25 @@ def _agent_borrower_count_plan(question: str) -> QuerySpecPlan | None:
     )
 
 
+def _named_month_disbursement_plan(question: str) -> QuerySpecPlan | None:
+    """Pin an explicit calendar month without asking the LLM to calculate its bounds."""
+    match = _NAMED_MONTH_DISBURSEMENT_RE.search(question)
+    if match is None:
+        return None
+    year = int(match.group("year"))
+    month = _MONTHS[match.group("month").lower()]
+    start = date(year, month, 1)
+    end = date(year, month, calendar.monthrange(year, month)[1])
+    return QuerySpecPlan(
+        spec={
+            "metrics": ["disbursement_total"],
+            "period": {"start": start, "end": end},
+        },
+        confidence=1.0,
+        reasoning="explicit calendar-month disbursement period resolved deterministically",
+    )
+
+
 async def plan(
     question: str,
     *,
@@ -94,6 +126,17 @@ async def plan(
     """Ask the model to route and structure a question."""
     cat = catalog or get_catalog()
     planning_question = _resolve_chart_request(question, history_messages or [])
+
+    month_disbursement = _named_month_disbursement_plan(question)
+    if month_disbursement is not None:
+        return PlanOutcome(
+            plan=month_disbursement,
+            attempts=0,
+            prompt_version=PROMPT_VERSION,
+            model="deterministic",
+            provider="catalog",
+            duration_ms=0,
+        )
 
     agent_count = _agent_borrower_count_plan(question)
     if agent_count is not None:

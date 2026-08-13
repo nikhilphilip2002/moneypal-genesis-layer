@@ -8,6 +8,7 @@ import yaml
 
 from app.services.nlq.catalog import get_catalog
 from app.services.nlq.catalog.loader import ACTIVE_DEFS_DIR, DEFS_DIR
+from app.services.nlq.llm.prompts import build_messages, gold_yaml_block
 
 
 @pytest.fixture(scope="module")
@@ -34,6 +35,17 @@ class TestLoads:
         for entry in raw:
             assert "on_columns" in entry, f"{entry.get('id')} lost its join condition"
             assert True not in entry, f"{entry.get('id')} has a YAML-boolean key"
+
+    def test_complete_gold_yaml_is_sent_to_the_planner(self, catalog):
+        block = gold_yaml_block(catalog)
+        for name in (
+            "tables.yaml", "columns.yaml", "metrics.yaml", "dimensions.yaml",
+            "joins.yaml", "enums.yaml",
+        ):
+            assert f"### {name}" in block
+            assert (ACTIVE_DEFS_DIR / name).read_text(encoding="utf-8") in block
+        messages = build_messages("total disbursement in July 2026", catalog=catalog)
+        assert messages[1]["content"] == block
 
 
 class TestReferentialIntegrity:

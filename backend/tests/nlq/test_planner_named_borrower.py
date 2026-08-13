@@ -37,3 +37,17 @@ async def test_agent_borrower_count_routes_without_calling_an_llm():
     assert "gold.loan_account_master" in compiled.sql
     assert 'LOWER(lam."agent_code"::text) = ANY(:f0)' in compiled.sql
     assert compiled.params["f0"] == ["45", "agent45"]
+
+
+@pytest.mark.anyio
+async def test_named_month_disbursement_routes_without_calling_an_llm():
+    outcome = await plan("What was our total disbursement in July 2026?")
+
+    assert isinstance(outcome.plan, QuerySpecPlan)
+    assert outcome.model == "deterministic"
+    assert outcome.attempts == 0
+    assert outcome.plan.spec.metrics == ["disbursement_total"]
+    compiled = compile_spec(outcome.plan.spec)
+    assert "gold.loan_disbursement_events" in compiled.sql
+    assert compiled.params["period_start"].isoformat() == "2026-07-01"
+    assert compiled.params["period_end"].isoformat() == "2026-07-31"

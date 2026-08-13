@@ -26,6 +26,7 @@ from app.services.nlq.catalog import Catalog, get_catalog
 from app.services.nlq.catalog.retrieval import retrieve
 from app.services.nlq.contracts import Lineage
 from app.services.nlq.llm import LLMError, get_llm_client
+from app.services.nlq.llm.prompts import gold_yaml_block
 from app.services.nlq.llm.schemas import sql_schema
 from app.services.nlq.validator import ValidationError, validate
 
@@ -121,6 +122,7 @@ async def generate(
 
     messages = [
         {"role": "system", "content": _system_prompt(allow_pii)},
+        {"role": "system", "content": gold_yaml_block(cat)},
         {"role": "system", "content": context},
         *_few_shots(),
         {"role": "user", "content": question},

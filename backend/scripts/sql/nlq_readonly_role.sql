@@ -2,12 +2,13 @@
 --
 -- RUN MANUALLY, once, as a SUPERUSER:
 --
---   psql -h <host> -U postgres -d moneypaldb -v pw="'<strong-password>'" \
+--   psql -h <host> -U postgres -d moneypaldb -v pw=<strong-password> \
 --        -f backend/scripts/sql/nlq_readonly_role.sql
 --
 -- Why not a migration: CREATE ROLE is cluster-level and the application role `moneypal`
 -- has neither SUPERUSER nor CREATEROLE (verified 2026-07-29 against PostgreSQL 16.13).
--- `:'pw'` is a psql client variable — it only expands under psql, not via a driver.
+-- `:'pw'` safely adds SQL-literal quoting. Do not put quote characters in the `-v pw=`
+-- value itself, or those quotes become part of the role's actual password.
 --
 -- Afterwards put the same password in .env as NLQ_DB_PASSWORD (never in this file, and
 -- never the same credential as POSTGRES_PASSWORD).

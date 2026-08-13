@@ -14,7 +14,10 @@ and the negative examples are what hold that line.
 
 from __future__ import annotations
 
+import functools
+
 from app.services.nlq.catalog import Catalog, get_catalog
+from app.services.nlq.catalog.loader import ACTIVE_DEFS_DIR
 
 PROMPT_VERSION = "planner-v3"
 
@@ -128,7 +131,42 @@ def catalog_block(catalog: Catalog | None = None) -> str:
     return "\n".join(lines)
 
 
+_GOLD_YAML_FILES = (
+    "tables.yaml",
+    "columns.yaml",
+    "metrics.yaml",
+    "dimensions.yaml",
+    "joins.yaml",
+    "enums.yaml",
+)
+
+
+@functools.lru_cache(maxsize=4)
+def _gold_yaml_for_version(version: str) -> str:
+    """The complete active Gold catalog, cached by its content-addressed version."""
+    sections = [
+        "ACTIVE GOLD SEMANTIC CATALOG (authoritative YAML)",
+        "Use every definition below when deciding answerability and constructing a plan. "
+        "Only these Gold sources are available.",
+    ]
+    for name in _GOLD_YAML_FILES:
+        path = ACTIVE_DEFS_DIR / name
+        sections.extend((f"\n### {name}", "```yaml", path.read_text(encoding="utf-8"), "```"))
+    return "\n".join(sections)
+
+
+def gold_yaml_block(catalog: Catalog | None = None) -> str:
+    cat = catalog or get_catalog()
+    return _gold_yaml_for_version(cat.version)
+
+
 FEW_SHOTS: list[tuple[str, str]] = [
+    (
+        "What was our total disbursement in July 2026?",
+        '{"route":"queryspec","confidence":0.99,"reasoning":"explicit calendar month",'
+        '"spec":{"metrics":["disbursement_total"],'
+        '"period":{"start":"2026-07-01","end":"2026-07-31"}}}',
+    ),
     (
         "What was our disbursement by branch last quarter?",
         '{"route":"queryspec","confidence":0.95,"reasoning":"metric+dimension+period all explicit",'
@@ -228,12 +266,12 @@ def build_messages(
 ) -> list[dict[str, str]]:
     """Assemble the planner call.
 
-    The system message is the fixed prefix (cacheable); the catalog block follows it
+    The system message is the fixed prefix (cacheable); the complete Gold YAML follows it
     unchanged for a given catalog version, so it also stays cache-warm across questions.
     """
     messages = [
         {"role": "system", "content": SYSTEM_PROMPT},
-        {"role": "system", "content": catalog_block(catalog)},
+        {"role": "system", "content": gold_yaml_block(catalog)},
     ]
     for user_text, assistant_json in FEW_SHOTS:
         messages.append({"role": "user", "content": user_text})
