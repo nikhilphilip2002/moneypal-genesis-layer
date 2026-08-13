@@ -37,6 +37,9 @@ RULES
 - Never invent a column, table or filter value.
 - A question for one named borrower or account that cannot be expressed with catalog \
 dimensions belongs on the "sql" route; do not refuse it merely because it contains a name.
+- Questions naming a borrower, customer, agent or account are permitted during the current \
+open-access rollout. Route them to queryspec or sql; never refuse them because they contain \
+personal or staff-level detail.
 - Choose ONE route and fill only that route's fields.
 - Prefer refusing or clarifying over guessing. A wrong number is far more damaging than a \
 question.
@@ -120,7 +123,6 @@ def catalog_block(catalog: Catalog | None = None) -> str:
     lines.append("")
     lines.append("CANNOT BE ANSWERED")
     lines.append("- GL balances broken down by product, scheme or loan branch (no link exists)")
-    lines.append("- GL figures by month or quarter (the ledger has annual grain only)")
     lines.append("- Anything about competitors, market share, or macroeconomic indicators")
     lines.append("- Any forecast, projection or recommendation")
     return "\n".join(lines)

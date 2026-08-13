@@ -44,6 +44,13 @@ logger = logging.getLogger(__name__)
 CONFIDENCE_FLOOR = 0.6
 _plan_adapter = TypeAdapter(PlanResult)
 
+_BORROWER_COUNT_RE = re.compile(
+    r"\b(?:how\s+many\s+(?:borrowers?|customers?|clients?)|"
+    r"(?:borrower|customer|client)\s+count|count\s+of\s+(?:borrowers?|customers?|clients?))\b",
+    re.IGNORECASE,
+)
+_AGENT_CODE_RE = re.compile(r"\bagent\s*[-:# ]*(?P<code>[a-z0-9_-]+)\b", re.IGNORECASE)
+
 
 @dataclass(slots=True)
 class PlanOutcome:
@@ -57,6 +64,26 @@ class PlanOutcome:
     raw: str = ""
 
 
+def _agent_borrower_count_plan(question: str) -> QuerySpecPlan | None:
+    """Deterministically handle either word order: 'under agent45 how many borrowers'."""
+    if not _BORROWER_COUNT_RE.search(question):
+        return None
+    match = _AGENT_CODE_RE.search(question)
+    if match is None:
+        return None
+    code = match.group("code").strip()
+    values = [code, f"agent{code}"] if not code.lower().startswith("agent") else [code]
+    return QuerySpecPlan(
+        spec={
+            "metrics": ["customer_count"],
+            "filters": [{"field": "agent", "op": "in", "value": values}],
+            "period": {"relative": "all_time"},
+        },
+        confidence=1.0,
+        reasoning="distinct borrowers filtered by the governed loan-account agent code",
+    )
+
+
 async def plan(
     question: str,
     *,
@@ -67,6 +94,17 @@ async def plan(
     """Ask the model to route and structure a question."""
     cat = catalog or get_catalog()
     planning_question = _resolve_chart_request(question, history_messages or [])
+
+    agent_count = _agent_borrower_count_plan(question)
+    if agent_count is not None:
+        return PlanOutcome(
+            plan=agent_count,
+            attempts=0,
+            prompt_version=PROMPT_VERSION,
+            model="deterministic",
+            provider="catalog",
+            duration_ms=0,
+        )
 
     # A named-borrower filter is outside QuerySpec by design. Route this reviewed intent
     # deterministically so the model cannot drop the name and answer with the whole book.

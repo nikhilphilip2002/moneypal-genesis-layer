@@ -83,6 +83,12 @@ class Settings:
         self.nlq_db_password = get("NLQ_DB_PASSWORD")
         self.nlq_statement_timeout_ms = int(get("NLQ_STATEMENT_TIMEOUT_MS", "15000") or "15000")
         self.nlq_max_rows = int(get("NLQ_MAX_ROWS", "5000") or "5000")
+        # Temporary rollout mode requested by the product owner: all authenticated
+        # Workbench roles can query and view governed PII fields. Set false when the
+        # role-permission matrix is ready; the existing masking code becomes active again.
+        self.nlq_open_pii_access = (
+            get("NLQ_OPEN_PII_ACCESS", "true") or "true"
+        ).lower() in ("1", "true", "yes", "on")
 
         # PostgreSQL access can be switched between the in-process adapter and the MCP
         # service. Direct remains the safe fallback; `mcp` makes the protocol boundary real

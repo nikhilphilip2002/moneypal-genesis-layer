@@ -454,6 +454,9 @@ def _filter_sql(
         # bound rather than expanded into the statement.
         params[key] = [str(v) for v in value]
         operator = "= ANY" if flt.op == "in" else "<> ALL"
+        if dim.id == "agent":
+            params[key] = [str(v).lower() for v in value]
+            return f"LOWER({column}::text) {operator}(:{key})"
         return f"{column}::text {operator}(:{key})"
     if flt.op == "between":
         params[f"{key}_lo"], params[f"{key}_hi"] = value[0], value[1]
@@ -463,6 +466,9 @@ def _filter_sql(
         return f"{column}::text ILIKE :{key}"
 
     operators = {"eq": "=", "ne": "<>", "gt": ">", "gte": ">=", "lt": "<", "lte": "<="}
+    if dim.id == "agent" and flt.op in ("eq", "ne"):
+        params[key] = str(value).lower()
+        return f"LOWER({column}::text) {operators[flt.op]} :{key}"
     params[key] = value
     cast = "::text" if flt.op in ("eq", "ne") else ""
     return f"{column}{cast} {operators[flt.op]} :{key}"

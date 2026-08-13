@@ -72,6 +72,14 @@
   type: categorical
   synonyms: [status, open or closed, active, closed accounts, live accounts]
 
+- id: agent
+  label: Agent
+  table: gold.loan_account_master
+  column: agent_code
+  type: categorical
+  synonyms: [agent, agent code, field agent, assigned agent, sourced by, handled by, under agent]
+  description: Agent code assigned to the governed loan account.
+
 - id: gl_account
   label: GL account
   table: gold.gl_daily_balances

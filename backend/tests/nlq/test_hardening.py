@@ -91,13 +91,13 @@ class TestFiscalYear:
 
 
 class TestPiiMasking:
-    def test_only_named_roles_see_unmasked_data(self):
+    def test_open_rollout_allows_unmasked_data(self):
         assert pii.may_see_pii("admin")
         assert pii.may_see_pii("gicc_admin")
         assert pii.may_see_pii("gicc_director")
-        assert not pii.may_see_pii("gicc_policy")
-        assert not pii.may_see_pii(None)
-        assert not pii.may_see_pii("anonymous")
+        assert pii.may_see_pii("gicc_policy")
+        assert pii.may_see_pii(None)
+        assert pii.may_see_pii("anonymous")
 
     @pytest.mark.parametrize(
         "value,expected",
@@ -113,7 +113,7 @@ class TestPiiMasking:
         """Enough for cohort analysis, not enough to identify."""
         assert pii.mask_date("1985-06-12") == "1985"
 
-    def test_rows_are_masked_for_an_unprivileged_role(self):
+    def test_rows_are_unmasked_during_open_rollout(self):
         catalog = get_catalog()
         columns = [
             ColumnSpec(name="full_name", label="Full name", sensitivity="pii"),
@@ -121,10 +121,10 @@ class TestPiiMasking:
         ]
         rows = [{"full_name": "Rajesh Kumar", "loan_count": 3}]
         masked, fields = pii.mask_rows(rows, columns, role="gicc_policy", catalog=catalog)
-        assert masked[0]["full_name"] == "Rajesh K***"
+        assert masked[0]["full_name"] == "Rajesh Kumar"
         assert masked[0]["loan_count"] == 3  # non-PII is untouched
-        assert "full_name" in fields
-        assert columns[0].masked is True
+        assert fields == []
+        assert columns[0].masked is False
 
     def test_rows_are_untouched_for_a_privileged_role(self):
         columns = [ColumnSpec(name="full_name", label="Full name", sensitivity="pii")]

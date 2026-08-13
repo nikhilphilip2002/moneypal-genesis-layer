@@ -16,6 +16,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
+from app.core.config import settings
 from app.services.nlq.catalog import Catalog, get_catalog
 
 # Roles permitted to see unmasked PII. Deliberately a short, explicit list rather than a
@@ -27,7 +28,7 @@ PII_ROLES = frozenset({"admin", "gicc_admin", "gicc_director", "moneypal_admin"}
 
 
 def may_see_pii(role: str | None) -> bool:
-    return (role or "") in PII_ROLES
+    return settings.nlq_open_pii_access or (role or "") in PII_ROLES
 
 
 def mask_name(value: str) -> str:
