@@ -51,3 +51,26 @@ async def test_named_month_disbursement_routes_without_calling_an_llm():
     assert "gold.loan_disbursement_events" in compiled.sql
     assert compiled.params["period_start"].isoformat() == "2026-07-01"
     assert compiled.params["period_end"].isoformat() == "2026-07-31"
+
+
+@pytest.mark.anyio
+async def test_named_month_disbursement_preserves_branch_breakdown():
+    outcome = await plan("Show total disbursement by branch in July 2026")
+
+    assert isinstance(outcome.plan, QuerySpecPlan)
+    assert outcome.plan.spec.dimensions == ["branch"]
+    compiled = compile_spec(outcome.plan.spec)
+    assert "GROUP BY" in compiled.sql
+    assert 'lam."branch_code"' in compiled.sql
+
+
+@pytest.mark.anyio
+async def test_disbursement_month_range_preserves_monthly_series():
+    outcome = await plan("Show monthly disbursement from January 2026 through July 2026.")
+
+    assert isinstance(outcome.plan, QuerySpecPlan)
+    assert outcome.plan.spec.dimensions == ["month"]
+    compiled = compile_spec(outcome.plan.spec)
+    assert "DATE_TRUNC('month'" in compiled.sql
+    assert compiled.params["period_start"].isoformat() == "2026-01-01"
+    assert compiled.params["period_end"].isoformat() == "2026-07-31"

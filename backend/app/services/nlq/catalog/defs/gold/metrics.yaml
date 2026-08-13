@@ -10,7 +10,6 @@
   expression: SUM({t}.disbursement_amount)
   formula: Sum of disbursement event amounts in the period
   synonyms: [disbursement, disbursed, released, paid out, payouts, drawdown]
-  caveat: Disbursement-event history begins on 2025-10-15.
   verified: 2266908902.00 across 5696 events through 2026-07-31
 
 - id: disbursement_count

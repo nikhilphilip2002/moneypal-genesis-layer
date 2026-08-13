@@ -57,12 +57,13 @@ _MONTHS = {
     for number, name in enumerate(calendar.month_name)
     if name
 }
-_NAMED_MONTH_DISBURSEMENT_RE = re.compile(
-    r"\b(?:total\s+)?disburse(?:ment|ments|d)?\b.*?\b(?P<month>"
-    + "|".join(_MONTHS)
-    + r")\s+(?P<year>20\d{2})\b",
+_DISBURSEMENT_RE = re.compile(r"\bdisburse(?:ment|ments|d)?\b", re.IGNORECASE)
+_NAMED_MONTH_RE = re.compile(
+    r"\b(?P<month>" + "|".join(_MONTHS) + r")\s+(?P<year>20\d{2})\b",
     re.IGNORECASE,
 )
+_MONTHLY_RE = re.compile(r"\b(?:monthly|each\s+month|by\s+month)\b", re.IGNORECASE)
+_BY_BRANCH_RE = re.compile(r"\bby\s+branch\b", re.IGNORECASE)
 
 
 @dataclass(slots=True)
@@ -98,21 +99,36 @@ def _agent_borrower_count_plan(question: str) -> QuerySpecPlan | None:
 
 
 def _named_month_disbursement_plan(question: str) -> QuerySpecPlan | None:
-    """Pin an explicit calendar month without asking the LLM to calculate its bounds."""
-    match = _NAMED_MONTH_DISBURSEMENT_RE.search(question)
-    if match is None:
+    """Resolve explicit month bounds while preserving requested grouping dimensions."""
+    if not _DISBURSEMENT_RE.search(question):
         return None
-    year = int(match.group("year"))
-    month = _MONTHS[match.group("month").lower()]
-    start = date(year, month, 1)
-    end = date(year, month, calendar.monthrange(year, month)[1])
+    matches = list(_NAMED_MONTH_RE.finditer(question))
+    if not matches:
+        return None
+
+    first, last = matches[0], matches[-1]
+    start_year = int(first.group("year"))
+    start_month = _MONTHS[first.group("month").lower()]
+    end_year = int(last.group("year"))
+    end_month = _MONTHS[last.group("month").lower()]
+    start = date(start_year, start_month, 1)
+    end = date(end_year, end_month, calendar.monthrange(end_year, end_month)[1])
+    if start > end:
+        return None
+
+    dimensions: list[str] = []
+    if _MONTHLY_RE.search(question) or len(matches) > 1:
+        dimensions.append("month")
+    if _BY_BRANCH_RE.search(question):
+        dimensions.append("branch")
     return QuerySpecPlan(
         spec={
             "metrics": ["disbursement_total"],
+            "dimensions": dimensions,
             "period": {"start": start, "end": end},
         },
         confidence=1.0,
-        reasoning="explicit calendar-month disbursement period resolved deterministically",
+        reasoning="explicit disbursement period and breakdown resolved deterministically",
     )
 
 

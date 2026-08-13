@@ -32,6 +32,14 @@ FROM pg_views
 WHERE schemaname = 'gold'
 ORDER BY viewname
 \gexec
+
+-- The reviewed as-of function reads raw Silver tables internally. Keep Silver invisible
+-- to the runtime role while allowing this one fixed, non-dynamic function to execute with
+-- its owner's privileges. Pinning search_path prevents object-shadowing attacks.
+REVOKE ALL ON FUNCTION gold.portfolio_snapshot_as_of(date) FROM PUBLIC;
+ALTER FUNCTION gold.portfolio_snapshot_as_of(date) SECURITY DEFINER;
+ALTER FUNCTION gold.portfolio_snapshot_as_of(date)
+    SET search_path = pg_catalog, gold, silver;
 GRANT EXECUTE ON FUNCTION gold.portfolio_snapshot_as_of(date) TO nlq_readonly;
 
 -- Re-run this script after creating a new governed view. New objects are intentionally
