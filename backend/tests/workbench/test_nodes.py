@@ -27,13 +27,64 @@ class TestMacro:
         def timeout(*args, **kwargs):
             raise TimeoutError("vector store timed out")
 
+        async def run_inline(fn, *args, **kwargs):
+            return fn(*args, **kwargs)
+
         monkeypatch.setattr(nodes.rag, "search_multi", timeout)
+        monkeypatch.setattr(nodes.asyncio, "to_thread", run_inline)
         result = await nodes.run_macro("current repo rate outlook")
 
         assert result.source == "macro"
         assert result.card_type == "error"
         assert result.payload["retryable"] is True
         assert "vector store" in result.payload["message"].lower()
+
+
+class TestPostgresMCP:
+    @pytest.mark.anyio
+    async def test_db_source_can_use_mcp_without_changing_card_contract(self, monkeypatch):
+        from app.mcp import postgres_client
+
+        async def fake_ask(**kwargs):
+            return {
+                "conversation_id": kwargs["conversation_id"],
+                "turn_id": "mcp-turn",
+                "status": "refused",
+                "chart": None,
+                "clarification": None,
+                "refusal": {
+                    "route": "refuse",
+                    "reason": "not_in_data",
+                    "message": "Not in the governed catalog.",
+                    "examples": [],
+                },
+                "plan_summary": "",
+            }
+
+        monkeypatch.setattr(postgres_client, "ask_loan_book", fake_ask)
+        result = await nodes.run_db(
+            "question", conversation_id="c1", user="u", role="admin", access_mode="mcp",
+        )
+
+        assert result.source == "db"
+        assert result.card_type == "refusal"
+        assert result.payload["message"] == "Not in the governed catalog."
+
+    @pytest.mark.anyio
+    async def test_schema_source_can_use_mcp(self, monkeypatch):
+        from app.mcp import postgres_client
+
+        async def fake_graph(**kwargs):
+            return {
+                "nodes": [{"id": "portfolio", "label": "Portfolio"}],
+                "edges": [],
+            }
+
+        monkeypatch.setattr(postgres_client, "curiosity_graph", fake_graph)
+        result = await nodes.run_schema("portfolio", access_mode="mcp")
+
+        assert result.card_type == "schema"
+        assert result.payload["node_count"] == 1
 
 
 class TestCompetitive:

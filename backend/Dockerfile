@@ -8,7 +8,7 @@ COPY packages/genesis_core /srv/packages/genesis_core
 # missing one is a crash loop, not a degraded feature.
 # langgraph orchestrates the workbench chat (route -> dispatch -> synthesize); langchain-core
 # is its state/runnable base. Imported at app.main import time via the workbench router.
-RUN pip install --no-cache-dir /srv/packages/genesis_core fastapi "uvicorn[standard]" psycopg2-binary pg8000 openpyxl sqlglot pyyaml langgraph langchain-core
+RUN pip install --no-cache-dir /srv/packages/genesis_core fastapi "uvicorn[standard]" psycopg2-binary pg8000 openpyxl sqlglot pyyaml langgraph langchain-core "mcp==1.29.0"
 
 
 COPY backend /srv/backend

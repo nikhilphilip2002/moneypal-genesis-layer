@@ -36,6 +36,7 @@ class WorkbenchState(TypedDict):
     role: str
     emit: "asyncio.Queue[str | None]"
     pinned: NotRequired[str | None]
+    data_access: NotRequired[str | None]
     decision: NotRequired[router.RouteDecision]
     results: NotRequired[list[SourceResult]]
 
@@ -62,6 +63,7 @@ async def _route_node(state: WorkbenchState) -> dict[str, Any]:
 async def _h_db(intent: str, state: WorkbenchState) -> SourceResult:
     return await nodes.run_db(
         intent, conversation_id=state["conversation_id"], user=state["user"], role=state["role"],
+        access_mode=state.get("data_access"),
     )
 
 
@@ -78,7 +80,7 @@ async def _h_regulatory(intent: str, _state: WorkbenchState) -> SourceResult:
 
 
 async def _h_schema(intent: str, _state: WorkbenchState) -> SourceResult:
-    return await nodes.run_schema(intent)
+    return await nodes.run_schema(intent, access_mode=_state.get("data_access"))
 
 
 # source id -> handler. Adding a source is a new entry here plus a catalog entry — the
@@ -140,7 +142,10 @@ _SYNTH_SYSTEM = (
 
 async def _synthesize_node(state: WorkbenchState) -> dict[str, Any]:
     emit = state["emit"]
-    results = [r for r in state.get("results", []) if r.card_type in ("chart", "brief")]
+    results = [
+        r for r in state.get("results", [])
+        if r.card_type in ("chart", "brief") and r.summary.strip()
+    ]
     # Only worth a merged lead when more than one source actually contributed.
     if len(results) < 2:
         return {}
@@ -186,6 +191,7 @@ def _compiled():
 
 async def run_workbench(
     *, question: str, conversation_id: str, user: str, role: str, pinned: str | None = None,
+    data_access: str | None = None,
 ) -> AsyncIterator[str]:
     """Run one turn, yielding SSE frames as the graph produces them."""
     emit: "asyncio.Queue[str | None]" = asyncio.Queue()
@@ -197,6 +203,7 @@ async def run_workbench(
     state: WorkbenchState = {
         "question": question, "conversation_id": conversation_id,
         "user": user, "role": role, "emit": emit, "pinned": pinned,
+        "data_access": data_access,
     }
 
     async def drive() -> None:

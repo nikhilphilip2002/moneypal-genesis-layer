@@ -39,6 +39,8 @@ type Props = {
   onPin: (source: string | null) => void;
   onRunTool: (tool: WorkbenchTool) => void;
   onOpenWorkspace: (view: WorkspaceView) => void;
+  dataAccess: 'direct' | 'mcp';
+  onDataAccess: (mode: 'direct' | 'mcp') => void;
 };
 
 export default function Composer({
@@ -49,17 +51,24 @@ export default function Composer({
   onPin,
   onRunTool,
   onOpenWorkspace,
+  dataAccess,
+  onDataAccess,
 }: Props) {
   const [value, setValue] = useState('');
   const [sources, setSources] = useState<WorkbenchSource[]>([]);
   const [toolList, setToolList] = useState<WorkbenchTool[]>([]);
   const [mode, setMode] = useState('local');
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const accessInitializedRef = useRef(false);
 
   const loadData = () => {
     workbench.sources().then((result) => {
       setSources(result.sources);
       setMode(result.mode);
+      if (!accessInitializedRef.current) {
+        accessInitializedRef.current = true;
+        onDataAccess(result.data_access);
+      }
     }).catch(() => {});
     workbench.tools().then((result) => setToolList(result.tools)).catch(() => {});
   };
@@ -115,6 +124,8 @@ export default function Composer({
             onPin={onPin}
             onRunTool={onRunTool}
             onOpenWorkspace={onOpenWorkspace}
+            dataAccess={dataAccess}
+            onDataAccess={onDataAccess}
             onOpen={loadData}
           />
 
@@ -134,7 +145,9 @@ export default function Composer({
           ) : (
             <span className="hidden items-center gap-1.5 px-1.5 text-[11px] text-muted-foreground sm:flex">
               <ShieldCheck className="size-3.5 text-primary" />
-              {mode === 'local' ? 'Local and private' : mode}
+              {dataAccess === 'mcp'
+                ? 'PostgreSQL via MCP'
+                : mode === 'local' ? 'Local and private' : mode}
             </span>
           )}
         </div>
@@ -174,6 +187,8 @@ function PlusMenu({
   onPin,
   onRunTool,
   onOpenWorkspace,
+  dataAccess,
+  onDataAccess,
   onOpen,
 }: {
   sources: WorkbenchSource[];
@@ -182,6 +197,8 @@ function PlusMenu({
   onPin: (source: string | null) => void;
   onRunTool: (tool: WorkbenchTool) => void;
   onOpenWorkspace: (view: WorkspaceView) => void;
+  dataAccess: 'direct' | 'mcp';
+  onDataAccess: (mode: 'direct' | 'mcp') => void;
   onOpen: () => void;
 }) {
   return (
@@ -253,6 +270,21 @@ function PlusMenu({
                 {source.label}
               </DropdownMenuItem>
             ))}
+          </DropdownMenuSubContent>
+        </DropdownMenuSub>
+        <DropdownMenuSub>
+          <DropdownMenuSubTrigger className="gap-2 rounded-lg">
+            <Database className="size-4" /> PostgreSQL connection
+          </DropdownMenuSubTrigger>
+          <DropdownMenuSubContent className="w-56 bg-card">
+            <DropdownMenuItem className="gap-2 rounded-lg" onClick={() => onDataAccess('direct')}>
+              <Check className={cn('size-4', dataAccess === 'direct' ? 'opacity-100' : 'opacity-0')} />
+              Direct adapter
+            </DropdownMenuItem>
+            <DropdownMenuItem className="gap-2 rounded-lg" onClick={() => onDataAccess('mcp')}>
+              <Check className={cn('size-4', dataAccess === 'mcp' ? 'opacity-100' : 'opacity-0')} />
+              MCP server
+            </DropdownMenuItem>
           </DropdownMenuSubContent>
         </DropdownMenuSub>
       </DropdownMenuContent>

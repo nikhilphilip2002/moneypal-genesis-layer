@@ -49,6 +49,7 @@ export default function WorkbenchPage() {
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [pinned, setPinned] = useState<string | null>(null);
+  const [dataAccess, setDataAccess] = useState<'direct' | 'mcp'>('direct');
   const [conversations, setConversations] = useState<WorkbenchConversation[]>([]);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [workspaceView, setWorkspaceView] = useState<WorkspaceView | null>(null);
@@ -114,7 +115,7 @@ export default function WorkbenchPage() {
       setTurns((previous) => previous.map((turn) => turn.id === id ? update(turn) : turn));
 
     try {
-      for await (const event of workbench.ask(question, conversationId, pinned, controller.signal)) {
+      for await (const event of workbench.ask(question, conversationId, pinned, dataAccess, controller.signal)) {
         switch (event.type) {
           case 'conversation':
             setConversationId(event.conversation_id);
@@ -155,7 +156,7 @@ export default function WorkbenchPage() {
       abortRef.current = null;
       refreshHistory();
     }
-  }, [conversationId, pinned, refreshHistory]);
+  }, [conversationId, pinned, dataAccess, refreshHistory]);
 
   const runTool = useCallback(async (tool: WorkbenchTool) => {
     const id = `t-${Date.now()}`;
@@ -208,6 +209,8 @@ export default function WorkbenchPage() {
       onPin={setPinned}
       onRunTool={runTool}
       onOpenWorkspace={setWorkspaceView}
+      dataAccess={dataAccess}
+      onDataAccess={setDataAccess}
     />
   );
 

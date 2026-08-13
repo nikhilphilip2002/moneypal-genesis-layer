@@ -10,4 +10,4 @@ pg8000
 sqlalchemy
 sqlglot
 pyyaml
-
+mcp==1.29.0

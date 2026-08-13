@@ -15,6 +15,12 @@ from app.services.workbench.nodes import SourceResult
 from tests.workbench.conftest import FakeLLM
 
 
+@pytest.fixture(autouse=True)
+def _memory_only_history(monkeypatch):
+    """Graph protocol tests must not depend on the developer machine's remote Postgres."""
+    monkeypatch.setattr(graph.history, "record_turn", lambda *args, **kwargs: None)
+
+
 async def _collect(**kwargs) -> list[tuple[str, dict]]:
     out: list[tuple[str, dict]] = []
     async for frame in graph.run_workbench(**kwargs):

@@ -807,7 +807,7 @@ export type WorkbenchTool = {
 };
 
 export const workbench = {
-  sources: (): Promise<{ mode: string; sources: WorkbenchSource[] }> =>
+  sources: (): Promise<{ mode: string; data_access: 'direct' | 'mcp'; sources: WorkbenchSource[] }> =>
     apiRequest('/workbench/sources'),
 
   tools: (): Promise<{ tools: WorkbenchTool[] }> => apiRequest('/workbench/tools'),
@@ -834,6 +834,7 @@ export const workbench = {
     question: string,
     conversationId: string | null,
     pinnedSource?: string | null,
+    dataAccess?: 'direct' | 'mcp',
     signal?: AbortSignal,
   ): AsyncGenerator<WorkbenchStreamEvent> {
     const token = getToken();
@@ -847,6 +848,7 @@ export const workbench = {
         question,
         conversation_id: conversationId,
         pinned_source: pinnedSource ?? null,
+        data_access: dataAccess ?? null,
       }),
       signal,
     });

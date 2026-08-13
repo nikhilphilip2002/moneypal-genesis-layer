@@ -16,6 +16,24 @@ services:
       LOCAL_INDEX_PATH: /srv/backend/vector_store/regulatory_chunks.jsonl
     volumes:
       - ./Regulations:/srv/Regulations:ro
+    depends_on:
+      - postgres-mcp
+
+  postgres-mcp:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    env_file: .env
+    environment:
+      # The MCP server is the boundary. Its implementation uses the existing hardened
+      # direct adapter and must never recursively call itself.
+      POSTGRES_ACCESS_MODE: direct
+      REGULATIONS_DIR: /srv/Regulations
+      REGISTRY_DIR: /srv/backend/registry/regulations
+      LOCAL_INDEX_PATH: /srv/backend/vector_store/regulatory_chunks.jsonl
+    command: ["python", "-m", "app.mcp.postgres_server"]
+    volumes:
+      - ./Regulations:/srv/Regulations:ro
 
   frontend:
     build:

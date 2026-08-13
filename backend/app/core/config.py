@@ -77,6 +77,15 @@ class Settings:
         self.nlq_statement_timeout_ms = int(get("NLQ_STATEMENT_TIMEOUT_MS", "15000") or "15000")
         self.nlq_max_rows = int(get("NLQ_MAX_ROWS", "5000") or "5000")
 
+        # PostgreSQL access can be switched between the in-process adapter and the MCP
+        # service. Direct remains the safe fallback; `mcp` makes the protocol boundary real
+        # so deployments can measure its latency and operational trade-offs.
+        self.postgres_access_mode = (get("POSTGRES_ACCESS_MODE", "direct") or "direct").lower()
+        if self.postgres_access_mode not in ("direct", "mcp"):
+            self.postgres_access_mode = "direct"
+        self.postgres_mcp_url = get("POSTGRES_MCP_URL", "http://postgres-mcp:8001/mcp") or "http://postgres-mcp:8001/mcp"
+        self.postgres_mcp_timeout_s = float(get("POSTGRES_MCP_TIMEOUT_S", "30") or "30")
+
         # --- Workbench (unified chat orchestrator) ----------------------------------
         # Completely local by default: every orchestration step runs on the llama.cpp
         # provider regardless of what NLQ_LLM_PROVIDER is set to. Groq stays wired but is

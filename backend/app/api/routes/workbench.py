@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import logging
 import uuid
+from typing import Literal
 
 from fastapi import APIRouter, Header, HTTPException
 from fastapi.responses import StreamingResponse
@@ -17,6 +18,7 @@ from pydantic import BaseModel, Field
 from app.services.workbench import history, models, tools
 from app.services.workbench.graph import run_workbench
 from app.services.workbench.sources import visible_sources
+from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -39,6 +41,7 @@ class AskRequest(BaseModel):
     # "+" -> Pin a source. A deterministic override; the router validates it against the
     # role's visible set, so it can never widen access.
     pinned_source: str | None = None
+    data_access: Literal["direct", "mcp"] | None = None
 
 
 @router.get("/sources")
@@ -47,6 +50,7 @@ def sources(authorization: str | None = Header(default=None)):
     _, role = _identity(authorization)
     return {
         "mode": models.active_mode(),
+        "data_access": settings.postgres_access_mode,
         "sources": [
             {"id": s.id, "label": s.label, "describes": s.describes, "sensitive": s.sensitive}
             for s in visible_sources(role)
@@ -125,6 +129,7 @@ async def ask(req: AskRequest, authorization: str | None = Header(default=None))
             user=username,
             role=role,
             pinned=req.pinned_source,
+            data_access=req.data_access,
         ),
         media_type="text/event-stream",
         headers={

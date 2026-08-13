@@ -14,8 +14,9 @@ from typing import Any
 
 from genesis_core import rag
 
-from app.core.config import MACRO_COLLECTION
+from app.core.config import MACRO_COLLECTION, settings
 from app.services.nlq.ask import AskContext, ask_once
+from app.services.nlq.contracts import AskResponse
 from app.services.workbench import models
 
 logger = logging.getLogger(__name__)
@@ -30,16 +31,35 @@ class SourceResult:
     sources: list[dict] = field(default_factory=list)
 
 
-async def run_db(intent: str, *, conversation_id: str, user: str, role: str) -> SourceResult:
+async def run_db(
+    intent: str,
+    *,
+    conversation_id: str,
+    user: str,
+    role: str,
+    access_mode: str | None = None,
+) -> SourceResult:
     """Answer from the loan book via the existing NLQ pipeline.
 
     `ask_once` runs the full plan -> compile -> execute path and returns a rendered chart,
     a clarification, or a refusal — all of which are valid cards. We reuse it wholesale so
     the workbench and the legacy /nlq route can never diverge on the same question.
     """
-    ctx = AskContext(question=intent, conversation_id=conversation_id, user=user, role=role)
     try:
-        response = await ask_once(ctx)
+        effective_mode = access_mode if access_mode in ("direct", "mcp") else settings.postgres_access_mode
+        if effective_mode == "mcp":
+            from app.mcp import postgres_client
+
+            payload = await postgres_client.ask_loan_book(
+                question=intent,
+                conversation_id=conversation_id,
+                user=user,
+                role=role,
+            )
+            response = AskResponse.model_validate(payload)
+        else:
+            ctx = AskContext(question=intent, conversation_id=conversation_id, user=user, role=role)
+            response = await ask_once(ctx)
     except Exception as exc:  # noqa: BLE001 - a source failure degrades to a card, not a 500
         logger.warning("workbench db node failed: %s", exc)
         return SourceResult(
@@ -167,14 +187,20 @@ async def run_regulatory(intent: str) -> SourceResult:
     return _intel_card("regulatory", resp)
 
 
-async def run_schema(intent: str) -> SourceResult:
+async def run_schema(intent: str, *, access_mode: str | None = None) -> SourceResult:
     """Answer 'how is the data organised' from the live schema graph. The card carries a
     trimmed node/edge list — the chat shows the shape; the full interactive graph opens on
     demand — which keeps the answer inside one viewport."""
     from app.services import db_schema
 
     try:
-        graph = db_schema.get_db_schema_graph(search_term=intent or None)
+        effective_mode = access_mode if access_mode in ("direct", "mcp") else settings.postgres_access_mode
+        if effective_mode == "mcp":
+            from app.mcp import postgres_client
+
+            graph = await postgres_client.curiosity_graph(search=intent or "")
+        else:
+            graph = db_schema.get_db_schema_graph(search_term=intent or None)
     except Exception as exc:  # noqa: BLE001
         logger.warning("workbench schema node failed: %s", exc)
         return SourceResult(source="schema", card_type="error",
