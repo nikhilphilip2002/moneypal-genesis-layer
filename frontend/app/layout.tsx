@@ -1,13 +1,8 @@
 import type { Metadata } from 'next'
 import './globals.css'
-import AppSidebar from '@/components/AppSidebar'
-import ConditionalHeader from '@/components/ConditionalHeader'
-import { SidebarProvider, SidebarInset } from '@/components/ui/sidebar'
 import { Toaster } from '@/components/ui/toaster'
 import { ThemeProvider } from '@/components/ThemeProvider'
 import PWARegister from '@/components/PWARegister'
-import MobileTopNav from '@/components/mobile/MobileTopNav'
-import MobileTabBar from '@/components/mobile/MobileTabBar'
 import type { Viewport } from 'next'
 
 export const metadata: Metadata = {
@@ -60,22 +55,7 @@ export default function RootLayout({
           forcedTheme="light"
           disableTransitionOnChange
         >
-          <SidebarProvider>
-            <AppSidebar />
-            <SidebarInset>
-              <ConditionalHeader />
-              <MobileTopNav />
-              <main
-                className="flex min-h-0 flex-1 flex-col overflow-y-auto md:overflow-hidden relative pb-[calc(env(safe-area-inset-bottom,0px)+88px)] md:pb-0"
-              >
-                {children}
-              </main>
-              <footer className="hidden md:block shrink-0 px-6 py-2 text-center text-[11px] text-muted-foreground/70">
-                Powered by Aroha Corporate Intelligence Framework
-              </footer>
-              <MobileTabBar />
-            </SidebarInset>
-          </SidebarProvider>
+          {children}
           <Toaster />
         </ThemeProvider>
         <PWARegister />

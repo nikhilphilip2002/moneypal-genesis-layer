@@ -1,6 +1,6 @@
 'use client';
 
-import { Loader2, AlertTriangle, Ban, HelpCircle } from 'lucide-react';
+import { Loader2, AlertTriangle, Ban, HelpCircle, Sparkles } from 'lucide-react';
 import type { ChartSpec, WorkbenchCard as CardData } from '@/lib/api';
 import ChartRenderer from '@/components/nlq/ChartRenderer';
 import BriefRenderer from '@/components/intel/BriefRenderer';
@@ -35,69 +35,69 @@ const BRIEF_TITLES: Record<string, string> = {
 
 export default function WorkbenchTurn({ turn, onAsk }: { turn: WorkbenchTurnData; onAsk: (q: string) => void }) {
   return (
-    <div className="space-y-2.5">
-      {/* The question, right-aligned like a chat bubble but compact. */}
+    <section className="space-y-5">
       <div className="flex justify-end">
-        <div className="max-w-[85%] rounded-lg bg-primary px-3 py-1.5 text-sm text-primary-foreground">
+        <div className="max-w-[88%] rounded-2xl rounded-br-md bg-primary px-4 py-2.5 text-sm leading-6 text-primary-foreground sm:max-w-[78%]">
           {turn.question}
         </div>
       </div>
 
-      {/* Route pills + stage. */}
-      {(turn.route || turn.stage) && !turn.done && !turn.route && (
-        <div className="flex items-center gap-2 text-xs text-muted-foreground">
-          <Loader2 className="size-3.5 animate-spin" />
-          <span className="capitalize">{turn.stage ?? 'working'}…</span>
+      <div className="flex items-start gap-3">
+        <div className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-xl bg-accent text-primary">
+          <Sparkles className="size-4" />
         </div>
-      )}
-      {turn.route && (
-        <div className="flex flex-wrap items-center gap-1.5">
-          <span className="text-xs text-muted-foreground">Routed to</span>
-          {turn.route.sources.map((s) => (
-            <Badge key={s} variant="outline" className="text-[10px]">
-              {SOURCE_LABELS[s] ?? s}
-            </Badge>
+        <div className="min-w-0 flex-1 space-y-3">
+          {!turn.done && turn.stage && !turn.route && (
+            <div className="flex items-center gap-2 py-1 text-sm text-muted-foreground">
+              <Loader2 className="size-4 animate-spin" />
+              <span className="capitalize">{turn.stage}…</span>
+            </div>
+          )}
+
+          {turn.synthesis && (
+            <p className="whitespace-pre-wrap text-sm leading-7 text-foreground">{turn.synthesis}</p>
+          )}
+
+          {turn.cards.map((card, index) => (
+            <CardBody key={`${card.source}-${index}`} card={card} onAsk={onAsk} />
           ))}
+
+          {turn.pending
+            .filter((source) => !turn.cards.some((card) => card.source === source))
+            .map((source) => (
+              <div key={source} className="flex items-center gap-2 py-1 text-xs text-muted-foreground">
+                <Loader2 className="size-3.5 animate-spin" />
+                Checking {SOURCE_LABELS[source] ?? source}…
+              </div>
+            ))}
+
+          {turn.refusal && (
+            <div className="flex items-start gap-2 rounded-xl border border-amber-500/30 bg-amber-500/5 px-3 py-2.5 text-sm">
+              <Ban className="mt-0.5 size-4 shrink-0 text-amber-600" />
+              <span>{turn.refusal.message || 'That request cannot be handled here.'}</span>
+            </div>
+          )}
+
+          {turn.error && (
+            <div className="flex items-start gap-2 rounded-xl border border-destructive/30 bg-destructive/5 px-3 py-2.5 text-sm">
+              <AlertTriangle className="mt-0.5 size-4 shrink-0 text-destructive" />
+              <span>{turn.error}</span>
+            </div>
+          )}
+
+          {turn.done && turn.route && turn.route.sources.length > 0 && (
+            <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
+              <span className="text-[11px] text-muted-foreground">Sources</span>
+              {turn.route.sources.map((source) => (
+                <Badge key={source} variant="outline" className="h-5 rounded-md px-1.5 text-[10px] font-medium text-muted-foreground">
+                  {SOURCE_LABELS[source] ?? source}
+                </Badge>
+              ))}
+            </div>
+          )}
         </div>
-      )}
-
-      {/* Merged lead for multi-source answers. */}
-      {turn.synthesis && (
-        <div className="rounded-lg border bg-muted/40 px-3 py-2 text-sm leading-relaxed">
-          {turn.synthesis}
-        </div>
-      )}
-
-      {/* One card per source. */}
-      {turn.cards.map((card, i) => (
-        <CardBody key={`${card.source}-${i}`} card={card} onAsk={onAsk} />
-      ))}
-
-      {/* Sources still in flight. */}
-      {turn.pending
-        .filter((s) => !turn.cards.some((c) => c.source === s))
-        .map((s) => (
-          <div key={s} className="flex items-center gap-2 rounded-lg border border-dashed px-3 py-2 text-xs text-muted-foreground">
-            <Loader2 className="size-3.5 animate-spin" />
-            Querying {SOURCE_LABELS[s] ?? s}…
-          </div>
-        ))}
-
-      {/* Top-level refusal from the router (no source applied). */}
-      {turn.refusal && (
-        <div className="flex items-start gap-2 rounded-lg border border-amber-500/40 bg-amber-500/5 px-3 py-2 text-sm">
-          <Ban className="mt-0.5 size-4 shrink-0 text-amber-500" />
-          <span>{turn.refusal.message || 'That request cannot be handled here.'}</span>
-        </div>
-      )}
-
-      {turn.error && (
-        <div className="flex items-start gap-2 rounded-lg border border-destructive/40 bg-destructive/5 px-3 py-2 text-sm">
-          <AlertTriangle className="mt-0.5 size-4 shrink-0 text-destructive" />
-          <span>{turn.error}</span>
-        </div>
-      )}
-    </div>
+      </div>
+    </section>
   );
 }
 

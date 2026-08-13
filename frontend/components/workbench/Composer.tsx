@@ -1,21 +1,31 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { Plus, ArrowUp, Square, Paperclip, Wrench, Filter, Cpu, Check } from 'lucide-react';
+import {
+  ArrowUp,
+  Check,
+  Database,
+  Filter,
+  Plus,
+  ShieldCheck,
+  Square,
+  Wrench,
+  X,
+} from 'lucide-react';
 import { workbench, type WorkbenchSource, type WorkbenchTool } from '@/lib/api';
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
 import {
-  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel,
-  DropdownMenuSeparator, DropdownMenuSub, DropdownMenuSubContent, DropdownMenuSubTrigger,
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { cn } from '@/lib/utils';
-
-// The composer. Beyond free text it carries the "+" — the extensible surface for every use
-// case that is not a typed question: tools/actions, attachments, pinning a source, and the
-// model/privacy mode. Phase 1 wires the source list and the live mode badge; the action and
-// attachment handlers are stubbed with a clear "soon" so the surface is real but honest.
 
 type Props = {
   onAsk: (question: string) => void;
@@ -30,62 +40,111 @@ export default function Composer({ onAsk, busy, onCancel, pinned, onPin, onRunTo
   const [value, setValue] = useState('');
   const [sources, setSources] = useState<WorkbenchSource[]>([]);
   const [toolList, setToolList] = useState<WorkbenchTool[]>([]);
-  const [mode, setMode] = useState<string>('local');
-  const ref = useRef<HTMLTextAreaElement>(null);
+  const [mode, setMode] = useState('local');
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const loadData = () => {
-    workbench.sources().then((r) => { setSources(r.sources); setMode(r.mode); }).catch(() => {});
-    workbench.tools().then((r) => setToolList(r.tools)).catch(() => {});
+    workbench.sources().then((result) => {
+      setSources(result.sources);
+      setMode(result.mode);
+    }).catch(() => {});
+    workbench.tools().then((result) => setToolList(result.tools)).catch(() => {});
   };
 
   useEffect(() => {
     loadData();
   }, []);
 
-  const submit = () => {
-    const q = value.trim();
-    if (!q || busy) return;
-    onAsk(q);
-    setValue('');
-    if (ref.current) ref.current.style.height = 'auto';
+  const resize = () => {
+    const textarea = textareaRef.current;
+    if (!textarea) return;
+    textarea.style.height = '0px';
+    textarea.style.height = `${Math.min(Math.max(textarea.scrollHeight, 72), 200)}px`;
   };
 
-  const grow = () => {
-    const el = ref.current;
-    if (!el) return;
-    el.style.height = 'auto';
-    el.style.height = `${Math.min(el.scrollHeight, 200)}px`;
+  const submit = () => {
+    const question = value.trim();
+    if (!question || busy) return;
+    onAsk(question);
+    setValue('');
+    if (textareaRef.current) textareaRef.current.style.height = '72px';
   };
+
+  const pinnedLabel = sources.find((source) => source.id === pinned)?.label ?? pinned;
 
   return (
-    <div className="rounded-xl border bg-background shadow-sm">
-      {pinned && (
-        <div className="flex items-center gap-1.5 px-3 pt-2">
-          <Badge variant="secondary" className="gap-1 text-[10px]">
-            {sources.find((s) => s.id === pinned)?.label ?? pinned}
-            <button className="ml-0.5 opacity-60 hover:opacity-100" onClick={() => onPin(null)}>×</button>
-          </Badge>
+    <div className="overflow-hidden rounded-2xl border border-border/80 bg-card shadow-[0_10px_35px_rgba(0,69,129,0.08)] transition focus-within:border-primary/45 focus-within:ring-4 focus-within:ring-primary/5">
+      <textarea
+        ref={textareaRef}
+        value={value}
+        onChange={(event) => {
+          setValue(event.target.value);
+          resize();
+        }}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter' && !event.shiftKey) {
+            event.preventDefault();
+            submit();
+          }
+        }}
+        rows={1}
+        placeholder="Ask about the loan book, market, competitors, or regulations..."
+        aria-label="Ask Moneypal Workbench"
+        className="block min-h-[72px] max-h-[200px] w-full resize-none bg-transparent px-4 pb-2 pt-4 text-[15px] leading-6 outline-none placeholder:text-muted-foreground/70"
+      />
+
+      <div className="flex items-center justify-between gap-3 px-2.5 pb-2.5 pt-1">
+        <div className="flex min-w-0 items-center gap-1.5">
+          <PlusMenu
+            sources={sources}
+            tools={toolList}
+            pinned={pinned}
+            onPin={onPin}
+            onRunTool={onRunTool}
+            onOpen={loadData}
+          />
+
+          {pinned ? (
+            <span className="flex min-w-0 items-center gap-1.5 rounded-lg bg-accent px-2.5 py-1.5 text-xs font-medium text-accent-foreground">
+              <Database className="size-3.5 shrink-0" />
+              <span className="truncate">{pinnedLabel}</span>
+              <button
+                type="button"
+                onClick={() => onPin(null)}
+                className="rounded-sm text-muted-foreground hover:text-foreground"
+                aria-label="Unpin source"
+              >
+                <X className="size-3.5" />
+              </button>
+            </span>
+          ) : (
+            <span className="hidden items-center gap-1.5 px-1.5 text-[11px] text-muted-foreground sm:flex">
+              <ShieldCheck className="size-3.5 text-primary" />
+              {mode === 'local' ? 'Local and private' : mode}
+            </span>
+          )}
         </div>
-      )}
-      <div className="flex items-end gap-1.5 p-2">
-        <PlusMenu sources={sources} tools={toolList} mode={mode} pinned={pinned} onPin={onPin} onRunTool={onRunTool} onOpen={loadData} />
-        <textarea
-          ref={ref}
-          value={value}
-          onChange={(e) => { setValue(e.target.value); grow(); }}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submit(); }
-          }}
-          rows={1}
-          placeholder="Ask anything about the book, the market, or the regulations…"
-          className="max-h-[200px] flex-1 resize-none bg-transparent px-1 py-1.5 text-sm outline-none placeholder:text-muted-foreground"
-        />
+
         {busy ? (
-          <Button size="icon" variant="ghost" className="size-8 shrink-0" onClick={onCancel} aria-label="Stop">
-            <Square className="size-4" />
+          <Button
+            type="button"
+            size="icon"
+            variant="outline"
+            className="size-9 shrink-0 rounded-xl bg-card shadow-none"
+            onClick={onCancel}
+            aria-label="Stop response"
+          >
+            <Square className="size-3.5 fill-current" />
           </Button>
         ) : (
-          <Button size="icon" className="size-8 shrink-0" onClick={submit} disabled={!value.trim()} aria-label="Send">
+          <Button
+            type="button"
+            size="icon"
+            className="size-9 shrink-0 rounded-xl shadow-none"
+            onClick={submit}
+            disabled={!value.trim()}
+            aria-label="Send message"
+          >
             <ArrowUp className="size-4" />
           </Button>
         )}
@@ -95,34 +154,47 @@ export default function Composer({ onAsk, busy, onCancel, pinned, onPin, onRunTo
 }
 
 function PlusMenu({
-  sources, tools, mode, pinned, onPin, onRunTool, onOpen,
+  sources,
+  tools,
+  pinned,
+  onPin,
+  onRunTool,
+  onOpen,
 }: {
   sources: WorkbenchSource[];
   tools: WorkbenchTool[];
-  mode: string;
   pinned: string | null;
-  onPin: (s: string | null) => void;
-  onRunTool: (t: WorkbenchTool) => void;
+  onPin: (source: string | null) => void;
+  onRunTool: (tool: WorkbenchTool) => void;
   onOpen: () => void;
 }) {
   return (
-    <DropdownMenu onOpenChange={(open) => { if (open) onOpen(); }}>
+    <DropdownMenu onOpenChange={(open) => open && onOpen()}>
       <DropdownMenuTrigger asChild>
-        <Button size="icon" variant="ghost" className="size-8 shrink-0" aria-label="Add">
+        <Button
+          type="button"
+          size="icon"
+          variant="ghost"
+          className="size-9 shrink-0 rounded-xl text-muted-foreground shadow-none hover:bg-muted hover:text-foreground"
+          aria-label="Open tools"
+        >
           <Plus className="size-4" />
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="start" side="top" className="w-64 max-h-[400px] overflow-y-auto">
+      <DropdownMenuContent align="start" side="top" className="max-h-[420px] w-72 overflow-y-auto bg-card">
         {tools.length > 0 && (
           <>
-            <DropdownMenuLabel className="flex items-center gap-1.5 text-xs text-muted-foreground">
-              <Wrench className="size-3.5" /> Tools & Actions
+            <DropdownMenuLabel className="flex items-center gap-2 text-xs text-muted-foreground">
+              <Wrench className="size-3.5" /> Tools and reports
             </DropdownMenuLabel>
-            {tools.map((t) => (
-              <DropdownMenuItem key={t.id} className="flex-col items-start gap-0.5 text-sm cursor-pointer"
-                                onClick={() => onRunTool(t)}>
-                <span className="font-medium text-foreground">{t.label}</span>
-                <span className="text-[10px] text-muted-foreground">{t.description}</span>
+            {tools.map((tool) => (
+              <DropdownMenuItem
+                key={tool.id}
+                className="cursor-pointer flex-col items-start gap-0.5 rounded-lg py-2"
+                onClick={() => onRunTool(tool)}
+              >
+                <span className="text-sm font-medium text-foreground">{tool.label}</span>
+                <span className="text-[11px] leading-4 text-muted-foreground">{tool.description}</span>
               </DropdownMenuItem>
             ))}
             <DropdownMenuSeparator />
@@ -130,35 +202,28 @@ function PlusMenu({
         )}
 
         <DropdownMenuSub>
-          <DropdownMenuSubTrigger className="gap-2 text-sm">
-            <Filter className="size-4" /> Pin a source
+          <DropdownMenuSubTrigger className="gap-2 rounded-lg">
+            <Filter className="size-4" /> Choose a source
           </DropdownMenuSubTrigger>
-          <DropdownMenuSubContent className="w-52">
-            <DropdownMenuItem className="gap-2 text-sm" onClick={() => onPin(null)}>
-              <Check className={cn('size-4', pinned ? 'opacity-0' : 'opacity-100')} /> Auto (let it route)
+          <DropdownMenuSubContent className="w-56 bg-card">
+            <DropdownMenuItem className="gap-2 rounded-lg" onClick={() => onPin(null)}>
+              <Check className={cn('size-4', pinned ? 'opacity-0' : 'opacity-100')} />
+              Automatic routing
             </DropdownMenuItem>
             <DropdownMenuSeparator />
-            {sources.map((s) => (
-              <DropdownMenuItem key={s.id} className="gap-2 text-sm" onClick={() => onPin(s.id)}>
-                <Check className={cn('size-4', pinned === s.id ? 'opacity-100' : 'opacity-0')} /> {s.label}
+            {sources.map((source) => (
+              <DropdownMenuItem
+                key={source.id}
+                className="gap-2 rounded-lg"
+                onClick={() => onPin(source.id)}
+              >
+                <Check className={cn('size-4', pinned === source.id ? 'opacity-100' : 'opacity-0')} />
+                {source.label}
               </DropdownMenuItem>
             ))}
           </DropdownMenuSubContent>
         </DropdownMenuSub>
-
-        <DropdownMenuItem disabled className="gap-2 text-sm">
-          <Paperclip className="size-4" /> Attach a file <SoonTag />
-        </DropdownMenuItem>
-
-        <DropdownMenuSeparator />
-        <DropdownMenuLabel className="flex items-center gap-2 text-xs font-normal text-muted-foreground">
-          <Cpu className="size-3.5" /> Model: <span className="font-medium capitalize text-foreground">{mode}</span>
-        </DropdownMenuLabel>
       </DropdownMenuContent>
     </DropdownMenu>
   );
-}
-
-function SoonTag() {
-  return <span className="ml-auto text-[9px] uppercase tracking-wide text-muted-foreground">soon</span>;
 }

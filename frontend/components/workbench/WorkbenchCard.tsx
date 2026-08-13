@@ -40,10 +40,10 @@ export default function WorkbenchCard({
   const [open, setOpen] = useState(defaultOpen);
 
   return (
-    <div className={cn('rounded-lg border bg-card text-card-foreground shadow-sm', className)}>
+    <div className={cn('overflow-hidden rounded-xl border border-border/70 bg-card text-card-foreground shadow-none', className)}>
       <div
         className={cn(
-          'flex items-center gap-2 px-3 py-2',
+          'flex items-center gap-2 px-3.5 py-2.5',
           collapsible && 'cursor-pointer select-none',
         )}
         onClick={collapsible ? () => setOpen((o) => !o) : undefined}
@@ -61,7 +61,7 @@ export default function WorkbenchCard({
           />
         )}
       </div>
-      {open && <div className="border-t px-3 py-3">{children}</div>}
+      {open && <div className="border-t border-border/60 px-3.5 py-3.5">{children}</div>}
     </div>
   );
 }
