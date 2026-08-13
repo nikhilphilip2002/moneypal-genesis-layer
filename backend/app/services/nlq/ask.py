@@ -250,7 +250,11 @@ async def _text_to_sql_path(
         turn_id=turn_id, ctx=ctx, resolved=resolved, route="text_to_sql", outcome="answered",
         sql=attempt.sql, row_count=chart.lineage.row_count,
         duration_ms=int((time.perf_counter() - started) * 1000),
-        touches_pii=pii.touches_pii(chart.lineage.source_tables, cat),
+        # A PII column may live on an otherwise mixed/internal table (borrower name is
+        # denormalised onto loan_account_master), so table-level metadata alone is not
+        # sufficient for the audit flag.
+        touches_pii=bool(attempt.pii_columns)
+        or pii.touches_pii(chart.lineage.source_tables, cat),
     )
 
     response = AskResponse(

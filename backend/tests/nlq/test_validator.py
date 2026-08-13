@@ -196,6 +196,18 @@ class TestUncontrolledEgress:
         result = validate(sql, allow_pii=True)
         assert "indcif_first_name" in result.pii_columns
 
+    def test_pii_can_be_narrowed_to_borrower_name_columns(self):
+        sql = (
+            "SELECT indcif_first_name, indcif_dob "
+            "FROM silver.individual_customer_master LIMIT 5"
+        )
+        with pytest.raises(ValidationError, match="not permitted for this query path"):
+            validate(
+                sql,
+                allow_pii=True,
+                allowed_pii_columns={"indcif_first_name", "indcif_last_name"},
+            )
+
 
 class TestResourceBounds:
     def test_cartesian_product_is_rejected(self):

@@ -42,7 +42,7 @@ pg_catalog or information_schema.
 - Always include a LIMIT of at most 5000.
 - Always bound the query with a date filter when the table has a date column.
 - Never reference a column that is not listed in the schema below.
-- Never reference customer names, dates of birth, addresses, PAN, Aadhaar or income.
+{pii_rule}
 
 DOMAIN
 - Indian financial year runs 1 April to 31 March.
@@ -52,6 +52,27 @@ number, or rows from two entities will be merged.
 DISTINCT ON (entity, account) ... ORDER BY ... effective_date DESC with \
 effective_date <= the date. Never filter it with effective_date = a date.
 """
+
+# Named-borrower lookup is the narrow PII use case needed by the Workbench. More sensitive
+# fields stay absent from the model context even for privileged roles.
+NAME_PII_COLUMN_IDS = frozenset({
+    "loan.customer_name",
+    "customer.first_name",
+    "customer.last_name",
+})
+
+
+def _system_prompt(allow_pii: bool) -> str:
+    pii_rule = (
+        "- You may use listed borrower-name columns only when needed to identify the "
+        "borrower in the user's question. Do not return names unless the question asks "
+        "for them. Never reference dates of birth, addresses, PIN codes, PAN, Aadhaar or "
+        "income."
+        if allow_pii
+        else "- Never reference customer names, dates of birth, addresses, PIN codes, "
+             "PAN, Aadhaar or income."
+    )
+    return SYSTEM_PROMPT.format(pii_rule=pii_rule)
 
 
 @dataclass(slots=True)
@@ -80,10 +101,10 @@ async def generate(
     llm = client or get_llm_client()
 
     hits = retrieve(question, catalog=cat)
-    context = _context_block(hits, cat)
+    context = _context_block(hits, cat, allow_pii=allow_pii)
 
     messages = [
-        {"role": "system", "content": SYSTEM_PROMPT},
+        {"role": "system", "content": _system_prompt(allow_pii)},
         {"role": "system", "content": context},
         *_few_shots(),
         {"role": "user", "content": question},
@@ -116,7 +137,15 @@ async def generate(
         attempt.explanation = str(payload.get("explanation", ""))[:300]
 
         try:
-            checked = validate(candidate, catalog=cat, allow_pii=allow_pii)
+            checked = validate(
+                candidate,
+                catalog=cat,
+                allow_pii=allow_pii,
+                allowed_pii_columns={
+                    cat.columns[column_id].column for column_id in NAME_PII_COLUMN_IDS
+                    if column_id in cat.columns
+                } if allow_pii else None,
+            )
         except ValidationError as exc:
             attempt.error = str(exc)
             logger.info("NLQ text-to-SQL rejected on round %d: %s", round_number + 1, exc)
@@ -151,7 +180,7 @@ async def generate(
     return attempt
 
 
-def _context_block(hits, catalog: Catalog) -> str:
+def _context_block(hits, catalog: Catalog, *, allow_pii: bool = False) -> str:
     """Real DDL for the retrieved tables, plus the declared join paths between them.
 
     Without the join block the model sees two tables and no stated way to relate them,
@@ -166,8 +195,8 @@ def _context_block(hits, catalog: Catalog) -> str:
         if entry.notes:
             lines.append(f"  -- NOTE: {' '.join(entry.notes.split())[:300]}")
         for column in catalog.columns_for(table_name):
-            if column.is_pii:
-                continue  # PII columns are never offered to the model
+            if column.is_pii and not (allow_pii and column.id in NAME_PII_COLUMN_IDS):
+                continue
             lines.append(f"  {column.column:32} -- {column.label} ({column.unit})")
 
     if hits.joins:

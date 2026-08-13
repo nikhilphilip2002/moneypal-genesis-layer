@@ -20,7 +20,10 @@ from app.services.nlq.catalog import Catalog, get_catalog
 
 # Roles permitted to see unmasked PII. Deliberately a short, explicit list rather than a
 # permission flag: adding a role here should require thought.
-PII_ROLES = frozenset({"gicc_admin", "gicc_director", "moneypal_admin"})
+# Auth exposes the platform administrator as role="admin" (the login username is
+# "moneypal_admin"). Keep the username spelling for backwards compatibility with older
+# tokens, but authorize the role value that current requests actually carry.
+PII_ROLES = frozenset({"admin", "gicc_admin", "gicc_director", "moneypal_admin"})
 
 
 def may_see_pii(role: str | None) -> bool:

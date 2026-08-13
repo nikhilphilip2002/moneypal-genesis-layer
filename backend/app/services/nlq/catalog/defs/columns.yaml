@@ -73,7 +73,7 @@
   table: silver.loan_account_master
   column: gnlnac_pri_repay_amt
   label: Principal repaid (cumulative)
-  synonyms: [principal repaid, principal paid back, repaid principal, recovered principal]
+  synonyms: [principal repaid, principal paid back, repaid principal, recovered principal, principle paid]
   unit: inr
   agg: [sum]
   sensitivity: internal

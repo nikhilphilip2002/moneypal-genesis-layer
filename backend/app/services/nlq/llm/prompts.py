@@ -35,6 +35,8 @@ to Mar 2026). Q1 is Apr-Jun.
 RULES
 - Use only metrics and dimensions from the catalog given below. Never invent one.
 - Never invent a column, table or filter value.
+- A question for one named borrower or account that cannot be expressed with catalog \
+dimensions belongs on the "sql" route; do not refuse it merely because it contains a name.
 - Choose ONE route and fill only that route's fields.
 - Prefer refusing or clarifying over guessing. A wrong number is far more damaging than a \
 question.
@@ -149,6 +151,12 @@ FEW_SHOTS: list[tuple[str, str]] = [
         '"spec":{"metrics":["disbursement_total"],'
         '"filters":[{"field":"product","op":"eq","value":"1"}],'
         '"period":{"relative":"all_time"}}}',
+    ),
+    (
+        "What principal amount was paid by Sheelavati?",
+        '{"route":"sql","intent":"cumulative principal repaid by borrower Sheelavati",'
+        '"tables":["silver.loan_account_master"],"confidence":0.94,'
+        '"reasoning":"named-borrower filter requires validated SQL"}',
     ),
     (
         "Compare this quarter's collections with last quarter",

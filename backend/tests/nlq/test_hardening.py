@@ -92,6 +92,7 @@ class TestFiscalYear:
 
 class TestPiiMasking:
     def test_only_named_roles_see_unmasked_data(self):
+        assert pii.may_see_pii("admin")
         assert pii.may_see_pii("gicc_admin")
         assert pii.may_see_pii("gicc_director")
         assert not pii.may_see_pii("gicc_policy")

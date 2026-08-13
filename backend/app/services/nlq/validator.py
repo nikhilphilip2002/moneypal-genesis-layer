@@ -61,6 +61,7 @@ def validate(
     *,
     catalog: Catalog | None = None,
     allow_pii: bool = False,
+    allowed_pii_columns: set[str] | None = None,
     max_limit: int = MAX_LIMIT,
 ) -> ValidationResult:
     """Parse and check a generated statement. Returns the (possibly rewritten) SQL."""
@@ -77,7 +78,7 @@ def validate(
     _check_no_set_operations_on_forbidden_tables(tree, cat)
     tables = _check_tables(tree, cat)
     _check_joins_have_conditions(tree)
-    pii = _check_pii(tree, cat, allow_pii)
+    pii = _check_pii(tree, cat, allow_pii, allowed_pii_columns)
     tree, injected = _enforce_limit(tree, max_limit)
 
     return ValidationResult(
@@ -227,7 +228,12 @@ def _check_joins_have_conditions(tree: exp.Expression) -> None:
         )
 
 
-def _check_pii(tree: exp.Expression, catalog: Catalog, allow_pii: bool) -> set[str]:
+def _check_pii(
+    tree: exp.Expression,
+    catalog: Catalog,
+    allow_pii: bool,
+    allowed_pii_columns: set[str] | None = None,
+) -> set[str]:
     """Find referenced PII columns; reject them when the caller's role does not permit."""
     pii_columns = {column for _table, column in catalog.pii_columns()}
     referenced = {
@@ -240,6 +246,14 @@ def _check_pii(tree: exp.Expression, catalog: Catalog, allow_pii: bool) -> set[s
             f"references restricted columns ({', '.join(sorted(referenced))}) that this "
             "role may not read"
         )
+    if referenced and allowed_pii_columns is not None:
+        allowed = {column.lower() for column in allowed_pii_columns}
+        forbidden = referenced - allowed
+        if forbidden:
+            raise ValidationError(
+                f"references restricted columns ({', '.join(sorted(forbidden))}) that are "
+                "not permitted for this query path"
+            )
     return referenced
 
 

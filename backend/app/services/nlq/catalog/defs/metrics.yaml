@@ -306,7 +306,7 @@
   date_column: lnrepay_repay_date
   expression: "SUM({t}.lnrepay_prin_pdamt)"
   formula: Principal portion actually received in the period
-  synonyms: [principal collected, principal repaid, principal recovery]
+  synonyms: [principal collected, principal repaid, principal recovery, principle paid]
   verified: 89738859.27
 
 - id: interest_collected
