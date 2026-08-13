@@ -60,6 +60,7 @@ async def plan(
     *,
     catalog: Catalog | None = None,
     client=None,
+    history_messages: list[dict[str, str]] | None = None,
 ) -> PlanOutcome:
     """Ask the model to route and structure a question."""
     cat = catalog or get_catalog()
@@ -86,13 +87,15 @@ async def plan(
     # Repeated and rehearsed questions skip the model entirely. The key carries the catalog
     # version, so a catalog edit — which can change what a question *should* plan to —
     # invalidates every cached plan rather than serving a stale one.
-    cached = cache.get_plan(question, cat.version)
+    # A context-free plan is reusable; a context-aware plan belongs to this conversation.
+    # Reusing it in another session would be a cross-session memory leak.
+    cached = cache.get_plan(question, cat.version) if not history_messages else None
     if cached is not None:
         return replace(cached, duration_ms=0, attempts=0)
 
     schema = plan_schema(cat)
 
-    messages = build_messages(question, catalog=cat)
+    messages = build_messages(question, catalog=cat, history_messages=history_messages or [])
     total_ms = 0
     attempts = 0
     previous_raw = ""
@@ -102,7 +105,11 @@ async def plan(
         attempts += 1
         if attempt == 1:
             messages = build_messages(
-                question, catalog=cat, repair_error=error, previous_attempt=previous_raw
+                question,
+                catalog=cat,
+                repair_error=error,
+                previous_attempt=previous_raw,
+                history_messages=history_messages or [],
             )
         try:
             result = await llm.complete(
@@ -135,7 +142,7 @@ async def plan(
         )
         # Only successful plans are cached. Caching a refusal or a clarification would
         # freeze a decision the next catalog change might legitimately reverse.
-        if isinstance(parsed, QuerySpecPlan):
+        if isinstance(parsed, QuerySpecPlan) and not history_messages:
             cache.put_plan(question, cat.version, outcome)
         return outcome
 

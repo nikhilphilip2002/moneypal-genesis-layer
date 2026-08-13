@@ -819,7 +819,21 @@ export const workbench = {
     conversation_id: string;
     title: string;
     updated_at: string;
-    turns: { question: string; sources: string[]; at: string }[];
+    record_version: number;
+    turns: {
+      id: string;
+      question: string;
+      route: { sources: string[]; intent: string; model?: string };
+      sources: string[];
+      cards: WorkbenchCard[];
+      synthesis: string | null;
+      refusal: { reason: string; message: string } | null;
+      error: string | null;
+      status: 'running' | 'complete' | 'partial';
+      created_at: string | null;
+      completed_at: string | null;
+      legacy_answer_unavailable: boolean;
+    }[];
   }> => apiRequest(`/workbench/conversations/${id}`),
 
   runTool: async (toolId: string, params: Record<string, any> = {}): Promise<WorkbenchCard> => {

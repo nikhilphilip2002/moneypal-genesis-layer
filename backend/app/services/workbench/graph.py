@@ -34,6 +34,8 @@ class WorkbenchState(TypedDict):
     conversation_id: str
     user: str
     role: str
+    turn_id: str
+    history_messages: list[dict[str, str]]
     emit: "asyncio.Queue[str | None]"
     pinned: NotRequired[str | None]
     data_access: NotRequired[str | None]
@@ -46,15 +48,22 @@ async def _route_node(state: WorkbenchState) -> dict[str, Any]:
     await emit.put(sse("stage", {"stage": "routing"}))
     decision = await router.route(
         state["question"], role=state["role"], pinned=state.get("pinned"),
+        history_messages=state.get("history_messages", []),
     )
     if decision.route == "dispatch":
         await emit.put(sse("route", {"sources": decision.sources, "intent": decision.intent,
                                      "model": decision.model}))
-    # Record the turn for the History rail. Best-effort: a history failure must never break
-    # the answer, so it is swallowed here.
     try:
         chosen = decision.sources if decision.route == "dispatch" else []
-        history.record_turn(state["conversation_id"], state["question"], chosen)
+        history.set_route(
+            state["conversation_id"], state["user"], state["turn_id"],
+            sources=chosen, intent=decision.intent or state["question"], model=decision.model,
+        )
+        if decision.route == "refuse":
+            history.set_refusal(
+                state["conversation_id"], state["user"], state["turn_id"],
+                {"reason": decision.reason, "message": decision.message},
+            )
     except Exception:  # noqa: BLE001
         logger.warning("workbench history record failed", exc_info=True)
     return {"decision": decision}
@@ -68,11 +77,14 @@ async def _h_db(intent: str, state: WorkbenchState) -> SourceResult:
         state["question"],
         conversation_id=state["conversation_id"], user=state["user"], role=state["role"],
         access_mode=state.get("data_access"),
+        history_messages=state.get("history_messages", []),
     )
 
 
 async def _h_macro(intent: str, _state: WorkbenchState) -> SourceResult:
-    return await nodes.run_macro(intent)
+    return await nodes.run_macro(
+        intent, history_messages=_state.get("history_messages", []),
+    )
 
 
 async def _h_competitive(intent: str, _state: WorkbenchState) -> SourceResult:
@@ -129,6 +141,13 @@ async def _dispatch_node(state: WorkbenchState) -> dict[str, Any]:
         await emit.put(sse("source_card", {
             "source": result.source, "card_type": result.card_type, **result.payload,
         }))
+        try:
+            history.add_card(
+                state["conversation_id"], state["user"], state["turn_id"],
+                {"source": result.source, "card_type": result.card_type, "payload": result.payload},
+            )
+        except Exception:  # noqa: BLE001
+            logger.warning("workbench card persistence failed", exc_info=True)
         return result
 
     # Fan out. Results stream as each finishes; the ordered list is kept for synthesis.
@@ -160,12 +179,17 @@ async def _synthesize_node(state: WorkbenchState) -> dict[str, Any]:
         result = await client.complete(
             messages=[
                 {"role": "system", "content": _SYNTH_SYSTEM},
+                *state.get("history_messages", []),
                 {"role": "user", "content": f"Question: {state['question']}\n\nFindings:\n{findings}"},
             ],
             max_tokens=300,
             temperature=0.2,
         )
-        await emit.put(sse("synthesis", {"text": result.text.strip()}))
+        text = result.text.strip()
+        await emit.put(sse("synthesis", {"text": text}))
+        history.set_synthesis(
+            state["conversation_id"], state["user"], state["turn_id"], text,
+        )
     except Exception as exc:  # noqa: BLE001 - synthesis is a nicety; cards already streamed
         logger.warning("workbench synthesis failed: %s", exc)
     return {}
@@ -199,6 +223,8 @@ async def run_workbench(
 ) -> AsyncIterator[str]:
     """Run one turn, yielding SSE frames as the graph produces them."""
     emit: "asyncio.Queue[str | None]" = asyncio.Queue()
+    history_messages = history.transcript(conversation_id, user=user)
+    turn_id = history.begin_turn(conversation_id, user, question)
     # Announce the conversation id first so the client can thread follow-ups and the History
     # rail onto it.
     yield sse("conversation", {"conversation_id": conversation_id})
@@ -206,18 +232,27 @@ async def run_workbench(
 
     state: WorkbenchState = {
         "question": question, "conversation_id": conversation_id,
-        "user": user, "role": role, "emit": emit, "pinned": pinned,
+        "user": user, "role": role, "turn_id": turn_id,
+        "history_messages": history_messages,
+        "emit": emit, "pinned": pinned,
         "data_access": data_access,
     }
 
     async def drive() -> None:
+        partial = False
         try:
             await _compiled().ainvoke(state)
+        except asyncio.CancelledError:
+            partial = True
+            raise
         except Exception:  # noqa: BLE001 - surface as an error frame, never a 500
+            partial = True
             logger.exception("workbench graph failed")
+            history.set_error(conversation_id, user, turn_id, "The workbench hit an error.")
             await emit.put(sse("error", {"message": "The workbench hit an error.",
                                          "retryable": True}))
         finally:
+            history.complete_turn(conversation_id, user, turn_id, partial=partial)
             await emit.put(None)  # sentinel: the graph is done producing frames
 
     task = asyncio.create_task(drive())

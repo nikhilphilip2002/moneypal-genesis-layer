@@ -22,6 +22,8 @@ export type WorkbenchTurnData = {
   synthesis?: string;
   refusal?: { reason: string; message: string };
   error?: string;
+  legacyAnswerUnavailable?: boolean;
+  partial?: boolean;
   done: boolean;
 };
 
@@ -82,6 +84,22 @@ export default function WorkbenchTurn({ turn, onAsk }: { turn: WorkbenchTurnData
             <div className="flex items-start gap-2 rounded-xl border border-destructive/30 bg-destructive/5 px-3 py-2.5 text-sm">
               <AlertTriangle className="mt-0.5 size-4 shrink-0 text-destructive" />
               <span>{turn.error}</span>
+            </div>
+          )}
+
+          {turn.legacyAnswerUnavailable && !turn.error && turn.cards.length === 0 && (
+            <div className="flex items-start gap-2 rounded-xl border border-border bg-muted/40 px-3 py-2.5 text-sm text-muted-foreground">
+              <AlertTriangle className="mt-0.5 size-4 shrink-0" />
+              <span>
+                This question was saved before answer history was enabled. Its original answer card was not retained.
+              </span>
+            </div>
+          )}
+
+          {turn.partial && !turn.error && (
+            <div className="flex items-start gap-2 rounded-xl border border-amber-500/30 bg-amber-500/5 px-3 py-2.5 text-sm text-muted-foreground">
+              <AlertTriangle className="mt-0.5 size-4 shrink-0 text-amber-600" />
+              <span>This response was interrupted. Completed answer cards were retained.</span>
             </div>
           )}
 

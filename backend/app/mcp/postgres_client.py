@@ -44,12 +44,16 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> dict[str, Any]:
     return payload
 
 
-async def ask_loan_book(*, question: str, conversation_id: str, user: str, role: str) -> dict[str, Any]:
+async def ask_loan_book(
+    *, question: str, conversation_id: str, user: str, role: str,
+    history_messages: list[dict[str, str]] | None = None,
+) -> dict[str, Any]:
     return await call_tool("ask_loan_book", {
         "question": question,
         "conversation_id": conversation_id,
         "user": user,
         "role": role,
+        "history_messages": history_messages or [],
     })
 
 

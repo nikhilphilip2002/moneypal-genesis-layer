@@ -18,7 +18,10 @@ from tests.workbench.conftest import FakeLLM
 @pytest.fixture(autouse=True)
 def _memory_only_history(monkeypatch):
     """Graph protocol tests must not depend on the developer machine's remote Postgres."""
-    monkeypatch.setattr(graph.history, "record_turn", lambda *args, **kwargs: None)
+    monkeypatch.setattr(graph.history, "_ensure_table", lambda: False)
+    graph.history._MEMORY.clear()
+    yield
+    graph.history._MEMORY.clear()
 
 
 async def _collect(**kwargs) -> list[tuple[str, dict]]:
@@ -40,7 +43,7 @@ def _run(question="q", role="admin"):
 
 
 def _stub_route(monkeypatch, decision):
-    async def fake_route(question, *, role, pinned=None):
+    async def fake_route(question, *, role, pinned=None, history_messages=None):
         return decision
     monkeypatch.setattr(router, "route", fake_route)
 

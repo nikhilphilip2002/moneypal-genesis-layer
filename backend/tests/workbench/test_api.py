@@ -56,3 +56,49 @@ class TestRunTool:
         body = r.json()
         assert body["card_type"] == "schema"
         assert body["source"] == "schema"
+
+
+class TestConversationOwnership:
+    @pytest.fixture(autouse=True)
+    def _memory_history(self, monkeypatch):
+        from app.services.workbench import history
+
+        monkeypatch.setattr(history, "_ensure_table", lambda: False)
+        history._MEMORY.clear()
+        yield
+        history._MEMORY.clear()
+
+    def test_conversation_is_visible_only_to_its_owner(self, client):
+        from app.services.workbench import history
+
+        history.record_turn("private", "Policy question", ["macro"], user="gicc_policy")
+
+        owner = client.get(
+            "/workbench/conversations/private", headers=_auth("gicc_policy"),
+        )
+        other = client.get(
+            "/workbench/conversations/private", headers=_auth("gicc_director"),
+        )
+
+        assert owner.status_code == 200
+        assert other.status_code == 404
+        assert client.get(
+            "/workbench/conversations", headers=_auth("gicc_director"),
+        ).json()["conversations"] == []
+
+    def test_saved_cards_are_returned_for_ui_hydration(self, client):
+        from app.services.workbench import history
+
+        turn_id = history.begin_turn("cards", "gicc_policy", "Macro outlook")
+        history.add_card("cards", "gicc_policy", turn_id, {
+            "source": "macro", "card_type": "brief",
+            "payload": {"summary": "Growth is stable."},
+        })
+        history.complete_turn("cards", "gicc_policy", turn_id)
+
+        body = client.get(
+            "/workbench/conversations/cards", headers=_auth("gicc_policy"),
+        ).json()
+
+        assert body["record_version"] == 2
+        assert body["turns"][0]["cards"][0]["payload"]["summary"] == "Growth is stable."

@@ -10,7 +10,11 @@ class FixedPlanClient:
     provider = "test"
     model = "test"
 
-    async def complete(self, **_kwargs):
+    def __init__(self):
+        self.calls = []
+
+    async def complete(self, **kwargs):
+        self.calls.append(kwargs)
         return LLMResult(
             text=(
                 '{"route":"queryspec","confidence":0.95,"reasoning":"composition",'
@@ -36,3 +40,25 @@ async def test_last_90_days_cannot_be_replaced_with_model_guessed_dates():
     assert outcome.plan.spec.period.relative == "last_90_days"
     assert outcome.plan.spec.period.start is None
     assert outcome.plan.spec.period.end is None
+
+
+@pytest.mark.anyio
+async def test_session_history_is_sent_before_the_current_planner_question():
+    cache.clear_all()
+    client = FixedPlanClient()
+    history_messages = [
+        {"role": "user", "content": "Show principal outstanding"},
+        {"role": "assistant", "content": "Principal outstanding was ₹10 Cr."},
+    ]
+
+    await plan(
+        "now by asset classification",
+        client=client,
+        history_messages=history_messages,
+    )
+
+    sent = client.calls[0]["messages"]
+    assert sent[-3:] == [
+        *history_messages,
+        {"role": "user", "content": "now by asset classification"},
+    ]

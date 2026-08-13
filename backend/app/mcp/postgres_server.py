@@ -43,6 +43,7 @@ async def ask_loan_book(
     conversation_id: str,
     user: str = "anonymous",
     role: str = "gicc_policy",
+    history_messages: list[dict[str, str]] | None = None,
 ) -> dict[str, Any]:
     """Answer a governed loan-book question and return its chart, lineage, or refusal."""
     response = await ask_once(AskContext(
@@ -50,6 +51,7 @@ async def ask_loan_book(
         conversation_id=conversation_id,
         user=user,
         role=role,
+        history_messages=history_messages or [],
     ))
     return response.model_dump(mode="json")
 

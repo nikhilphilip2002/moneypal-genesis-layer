@@ -38,6 +38,7 @@ async def run_db(
     user: str,
     role: str,
     access_mode: str | None = None,
+    history_messages: list[dict[str, str]] | None = None,
 ) -> SourceResult:
     """Answer from the loan book via the existing NLQ pipeline.
 
@@ -55,10 +56,14 @@ async def run_db(
                 conversation_id=conversation_id,
                 user=user,
                 role=role,
+                history_messages=history_messages or [],
             )
             response = AskResponse.model_validate(payload)
         else:
-            ctx = AskContext(question=intent, conversation_id=conversation_id, user=user, role=role)
+            ctx = AskContext(
+                question=intent, conversation_id=conversation_id, user=user, role=role,
+                history_messages=history_messages or [],
+            )
             response = await ask_once(ctx)
     except Exception as exc:  # noqa: BLE001 - a source failure degrades to a card, not a 500
         logger.warning("workbench db node failed: %s", exc)
@@ -93,7 +98,9 @@ _MACRO_SYSTEM = (
 )
 
 
-async def run_macro(intent: str) -> SourceResult:
+async def run_macro(
+    intent: str, *, history_messages: list[dict[str, str]] | None = None,
+) -> SourceResult:
     """Answer from published macro intelligence: retrieve, then synthesise locally.
 
     Retrieval is the existing Qdrant store. Synthesis deliberately does NOT use
@@ -129,6 +136,7 @@ async def run_macro(intent: str) -> SourceResult:
         result = await client.complete(
             messages=[
                 {"role": "system", "content": _MACRO_SYSTEM},
+                *(history_messages or []),
                 {"role": "user", "content": f"Question: {intent}\n\nContext:\n{context}"},
             ],
             max_tokens=500,

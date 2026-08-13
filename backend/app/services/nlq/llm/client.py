@@ -247,7 +247,7 @@ class OpenAICompatibleClient:
             choice = (body.get("choices") or [{}])[0]
             usage = body.get("usage") or {}
             message = choice.get("message") or {}
-            return LLMResult(
+            result = LLMResult(
                 text=message.get("content") or "",
                 reasoning=message.get("reasoning_content") or "",
                 model=body.get("model", self.model),
@@ -257,6 +257,18 @@ class OpenAICompatibleClient:
                 duration_ms=int((asyncio.get_event_loop().time() - started) * 1000),
                 finish_reason=choice.get("finish_reason", ""),
             )
+            logger.info(
+                "LLM completion provider=%s model=%s prompt_tokens=%s completion_tokens=%s "
+                "finish_reason=%s duration_ms=%s",
+                result.provider, result.model, result.prompt_tokens, result.completion_tokens,
+                result.finish_reason, result.duration_ms,
+            )
+            if result.finish_reason == "length":
+                logger.warning(
+                    "LLM output hit max_tokens=%s (prompt=%s completion=%s)",
+                    max_tokens, result.prompt_tokens, result.completion_tokens,
+                )
+            return result
 
         raise last_exc or LLMUnavailable(f"{self.provider} failed with no diagnosis")
 

@@ -47,7 +47,13 @@ def _fallback(role: str, question: str) -> RouteDecision:
     return RouteDecision(route="dispatch", sources=[default], intent=question)
 
 
-async def route(question: str, *, role: str, pinned: str | None = None) -> RouteDecision:
+async def route(
+    question: str,
+    *,
+    role: str,
+    pinned: str | None = None,
+    history_messages: list[dict[str, str]] | None = None,
+) -> RouteDecision:
     """Decide which source(s) answer this question.
 
     A `pinned` source the role may see is a deterministic override — the user has chosen the
@@ -65,6 +71,7 @@ async def route(question: str, *, role: str, pinned: str | None = None) -> Route
     for user_text, assistant_json in ROUTER_FEW_SHOTS:
         messages.append({"role": "user", "content": user_text})
         messages.append({"role": "assistant", "content": assistant_json})
+    messages.extend(history_messages or [])
     messages.append({"role": "user", "content": question})
 
     try:

@@ -52,6 +52,7 @@ class AskContext:
     user: str = "anonymous"
     role: str = "gicc_policy"
     today: date | None = None
+    history_messages: list[dict[str, str]] | None = None
 
 
 def sse(event: str, data: Any) -> str:
@@ -91,7 +92,9 @@ async def ask_stream(ctx: AskContext, catalog: Catalog | None = None) -> AsyncIt
 
     yield sse("stage", {"stage": "planning"})
     try:
-        outcome = await planner.plan(resolved, catalog=cat)
+        outcome = await planner.plan(
+            resolved, catalog=cat, history_messages=ctx.history_messages or [],
+        )
     except LLMError as exc:
         logger.warning("NLQ ask failed at planning: %s", exc)
         audit.record(

@@ -80,15 +80,22 @@ export default function WorkbenchPage() {
   }, []);
 
   const openConversation = useCallback(async (id: string) => {
+    abortRef.current?.abort();
+    setBusy(false);
     try {
       const record = await workbench.conversation(id);
-      setTurns(record.turns.map((turn, index) => ({
-        id: `h-${id}-${index}`,
+      setTurns(record.turns.map((turn) => ({
+        id: turn.id,
         question: turn.question,
         pending: [],
-        cards: [],
-        done: true,
-        route: { sources: turn.sources, intent: turn.question },
+        cards: turn.cards,
+        synthesis: turn.synthesis ?? undefined,
+        refusal: turn.refusal ?? undefined,
+        error: turn.error ?? undefined,
+        done: turn.status !== 'running',
+        route: turn.route,
+        legacyAnswerUnavailable: turn.legacy_answer_unavailable,
+        partial: turn.status === 'partial',
       })));
       setConversationId(id);
     } catch {

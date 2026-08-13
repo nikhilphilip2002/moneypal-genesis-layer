@@ -211,6 +211,7 @@ def build_messages(
     catalog: Catalog | None = None,
     repair_error: str | None = None,
     previous_attempt: str | None = None,
+    history_messages: list[dict[str, str]] | None = None,
 ) -> list[dict[str, str]]:
     """Assemble the planner call.
 
@@ -225,6 +226,7 @@ def build_messages(
         messages.append({"role": "user", "content": user_text})
         messages.append({"role": "assistant", "content": assistant_json})
 
+    messages.extend(history_messages or [])
     messages.append({"role": "user", "content": question})
 
     if repair_error and previous_attempt:

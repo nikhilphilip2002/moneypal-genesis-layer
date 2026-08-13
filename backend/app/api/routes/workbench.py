@@ -61,27 +61,50 @@ def sources(authorization: str | None = Header(default=None)):
 @router.get("/conversations")
 def list_conversations(limit: int = 50, authorization: str | None = Header(default=None)):
     """Recent conversations for the History rail, most-recent first."""
-    _identity(authorization)
+    username, _ = _identity(authorization)
     return {
         "conversations": [
             {"conversation_id": c.conversation_id, "title": c.title,
              "updated_at": c.updated_at.isoformat(), "turn_count": c.turn_count}
-            for c in history.list_recent(limit=limit)
+            for c in history.list_recent(limit=limit, user=username)
         ],
     }
 
 
 @router.get("/conversations/{conversation_id}")
 def get_conversation(conversation_id: str, authorization: str | None = Header(default=None)):
-    _identity(authorization)
-    rec = history.get(conversation_id)
+    username, _ = _identity(authorization)
+    rec = history.get(conversation_id, user=username)
     if rec is None:
         raise HTTPException(404, "Unknown conversation.")
     return {
         "conversation_id": rec.conversation_id,
         "title": rec.title,
         "updated_at": rec.updated_at.isoformat(),
-        "turns": rec.turns,
+        "record_version": rec.record_version,
+        "turns": [_turn_for_api(turn) for turn in rec.turns],
+    }
+
+
+def _turn_for_api(turn: dict) -> dict:
+    """Normalize version-1 question/source stubs into the renderable v2 contract."""
+    question = str(turn.get("question", ""))
+    sources = list(turn.get("sources", []) or [])
+    route = turn.get("route") or {"sources": sources, "intent": question, "model": "legacy"}
+    legacy = "cards" not in turn
+    return {
+        "id": turn.get("id") or f"legacy-{abs(hash((question, turn.get('at', ''))))}",
+        "question": question,
+        "route": route,
+        "sources": sources,
+        "cards": list(turn.get("cards", []) or []),
+        "synthesis": turn.get("synthesis"),
+        "refusal": turn.get("refusal"),
+        "error": turn.get("error"),
+        "status": turn.get("status", "complete"),
+        "created_at": turn.get("created_at") or turn.get("at"),
+        "completed_at": turn.get("completed_at"),
+        "legacy_answer_unavailable": legacy,
     }
 
 
@@ -121,6 +144,14 @@ async def run_tool(tool_id: str, req: ToolRequest | None = None,
 async def ask(req: AskRequest, authorization: str | None = Header(default=None)):
     """Ask anything. The orchestrator picks the source(s) and streams cards back."""
     username, role = _identity(authorization)
+    if (
+        req.conversation_id
+        and history.exists(req.conversation_id)
+        and history.get(req.conversation_id, user=username) is None
+    ):
+        # Do not reveal whose conversation it is or permit a caller to take it over by
+        # posting the same id.
+        raise HTTPException(404, "Unknown conversation.")
     conversation_id = req.conversation_id or uuid.uuid4().hex[:12]
     return StreamingResponse(
         run_workbench(

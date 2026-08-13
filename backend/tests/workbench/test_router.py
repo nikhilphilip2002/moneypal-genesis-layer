@@ -37,6 +37,22 @@ class TestDispatch:
         decision = await router.route("q", role="admin")
         assert decision.sources == ["macro", "competitive"]
 
+    @pytest.mark.anyio
+    async def test_session_history_precedes_the_current_question(self, monkeypatch):
+        fake = FakeLLM('{"route":"dispatch","sources":["db"],"intent":"x"}')
+        _use(monkeypatch, fake)
+        history_messages = [
+            {"role": "user", "content": "What is PAR 30?"},
+            {"role": "assistant", "content": "PAR 30 is 4.2%."},
+        ]
+
+        await router.route(
+            "and by branch?", role="admin", history_messages=history_messages,
+        )
+
+        sent = fake.calls[0]["messages"]
+        assert sent[-3:] == [*history_messages, {"role": "user", "content": "and by branch?"}]
+
 
 class TestRefuse:
     @pytest.mark.anyio
