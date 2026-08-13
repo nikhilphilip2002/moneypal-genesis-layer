@@ -13,7 +13,13 @@ import { cn } from '@/lib/utils';
 // will sign off on. The collapsed state still shows the warnings, because a caveat the user
 // has to click to discover is a caveat they will not see.
 
-export default function LineagePanel({ chart }: { chart: ChartSpec }) {
+export default function LineagePanel({
+  chart,
+  sourceLabel,
+}: {
+  chart: ChartSpec;
+  sourceLabel?: string;
+}) {
   const [open, setOpen] = useState(false);
   const { lineage } = chart;
 
@@ -49,7 +55,12 @@ export default function LineagePanel({ chart }: { chart: ChartSpec }) {
         className="h-auto w-full justify-start rounded-none px-3 py-2 text-xs font-normal text-muted-foreground hover:text-foreground"
       >
         <ChevronDown className={cn('h-3.5 w-3.5 transition-transform duration-200', open && 'rotate-180')} />
-        <span>How this was calculated</span>
+        {sourceLabel && (
+          <Badge variant="secondary" className="h-5 rounded-md px-1.5 text-[10px] font-medium uppercase tracking-wide">
+            {sourceLabel}
+          </Badge>
+        )}
+        <span>{sourceLabel ? 'Source details & SQL' : 'How this was calculated'}</span>
         <span className="ml-auto tabular-nums">
           {lineage.row_count} row{lineage.row_count === 1 ? '' : 's'} · {lineage.duration_ms} ms
           {lineage.as_of ? ` · as at ${lineage.as_of}` : ''}

@@ -3,6 +3,7 @@
 import { Loader2, AlertTriangle, Ban, HelpCircle, Sparkles } from 'lucide-react';
 import type { ChartSpec, WorkbenchCard as CardData } from '@/lib/api';
 import ChartRenderer from '@/components/nlq/ChartRenderer';
+import LineagePanel from '@/components/nlq/LineagePanel';
 import BriefRenderer from '@/components/intel/BriefRenderer';
 import WorkbenchCard from './WorkbenchCard';
 import { Badge } from '@/components/ui/badge';
@@ -125,6 +126,7 @@ function CardBody({ card, onAsk }: { card: CardData; onAsk: (q: string) => void 
     return (
       <WorkbenchCard source={card.source} title={chart.title || 'Result'} subtitle={chart.subtitle ?? undefined}>
         <ChartRenderer chart={chart} />
+        <LineagePanel chart={chart} sourceLabel="Loan book" />
       </WorkbenchCard>
     );
   }

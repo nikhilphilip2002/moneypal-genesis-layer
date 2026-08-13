@@ -296,14 +296,7 @@ function WorkbenchHeader({
     <header className="shrink-0 border-b border-border/60 bg-card/95">
       <div className="mx-auto flex h-16 w-full max-w-6xl items-center justify-between px-4 sm:px-6">
         <div className="flex items-center gap-3">
-          <Image
-            src="/moneypal.png"
-            alt="Moneypal"
-            width={112}
-            height={42}
-            priority
-            className="h-9 w-auto object-contain"
-          />
+          <MoneypalLogo />
           <span className="hidden border-l pl-3 text-sm font-medium text-muted-foreground sm:block">
             Workbench
           </span>
@@ -424,6 +417,26 @@ function WorkbenchHeader({
         </div>
       </div>
     </header>
+  );
+}
+
+function MoneypalLogo() {
+  return (
+    <div
+      className="relative h-7 w-[156px] shrink-0 overflow-hidden sm:h-8 sm:w-[180px]"
+      aria-label="Moneypal"
+    >
+      {/* The source PNG has a large transparent canvas. Scale and offset it so the actual
+          wordmark fills this accessible crop instead of rendering as a tiny mark. */}
+      <Image
+        src="/moneypal.png"
+        alt=""
+        width={1774}
+        height={887}
+        priority
+        className="absolute left-[-36px] top-[-44px] h-[113px] w-[225px] max-w-none sm:left-[-42px] sm:top-[-51px] sm:h-[130px] sm:w-[260px]"
+      />
+    </div>
   );
 }
 
