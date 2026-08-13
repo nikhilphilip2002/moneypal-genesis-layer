@@ -1,0 +1,172 @@
+# Governed Gold semantic layer. Only PostgreSQL views appear here; Bronze, Public and raw
+# Silver objects are intentionally absent from the active NLQ allowlist.
+
+- id: loan_account_master
+  table: gold.loan_account_master
+  label: Loan accounts
+  grain: one row per loan account
+  key: [entity_num, loan_account_number]
+  row_count: 5753
+  is_hub: true
+  contains_pii: true
+  synonyms: [loans, loan book, accounts, sanctions, borrowers, customer loans]
+  date_columns:
+    sanction: sanction_date
+    first_disbursement: first_disbursement_date
+    closure: closure_date
+  description: Governed account-level loan view with borrower, origination and cumulative values.
+  notes: Cumulative fields are current values, not period event flows.
+
+- id: loan_disbursement_events
+  table: gold.loan_disbursement_events
+  label: Loan disbursement events
+  grain: one row per disbursement event
+  key: [entity_num, loan_account_number, disbursement_sequence]
+  row_count: 5696
+  contains_pii: true
+  synonyms: [disbursements, releases, payouts, drawdowns, loan amount disbursed]
+  date_columns: {disbursement: disbursement_date}
+  description: Governed event-level disbursement view; authoritative for period flows.
+  coverage_warning: >
+    Disbursement event log starts 2025-10-15. Earlier periods may be absent rather than
+    zero.
+
+- id: loan_repayment_events
+  table: gold.loan_repayment_events
+  label: Loan repayment events
+  grain: one row per repayment instalment event
+  key: [entity_num, loan_account_number, repayment_sequence]
+  row_count: 18836
+  contains_pii: true
+  synonyms: [repayments, collections, recovery, receipts, due versus paid]
+  date_columns: {repayment: repayment_date}
+  description: Governed event view pairing principal and interest due with amounts paid.
+
+- id: loan_schedule_events
+  table: gold.loan_schedule_events
+  label: Scheduled loan instalments
+  grain: one row per scheduled instalment
+  key: [entity_num, loan_account_number, instalment_sequence]
+  row_count: 225132
+  contains_pii: true
+  synonyms: [schedule, instalments, amortisation, future dues, EMI schedule]
+  date_columns: {scheduled: scheduled_date}
+  description: Contractual repayment schedule including future-dated instalments.
+  notes: Always use an explicit date range.
+
+- id: portfolio_daily_snapshot
+  table: gold.portfolio_daily_snapshot
+  label: Portfolio snapshot
+  grain: one row per classified loan account at the current snapshot
+  key: [entity_num, loan_account_number]
+  row_count: 5466
+  point_in_time: true
+  as_of_column: snapshot_date
+  contains_pii: true
+  synonyms: [portfolio, outstanding, overdue, DPD, PAR, NPA, asset classification]
+  description: >
+    Current governed portfolio snapshot. Historical as-of reads are produced by
+    gold.portfolio_snapshot_as_of(date), which returns the same columns.
+  coverage_warning: >
+    Covers 5,466 classified accounts out of 5,753 loans and ₹204.54 Cr of classified
+    principal outstanding as of 2026-07-31. Risk ratios use the classified subset. History
+    runs only from 2026-05-22; earlier periods render as explicit gaps rather than zero.
+
+- id: gl_daily_balances
+  table: gold.gl_daily_balances
+  label: Daily GL balances
+  grain: one row per GL account, branch, currency and balance date
+  key: [entity_num, branch_code, gl_number, currency_code, balance_date]
+  row_count: 203933
+  point_in_time: true
+  as_of_column: balance_date
+  synonyms: [GL, ledger, trial balance, daily balances, financials]
+  date_columns: {balance: balance_date}
+  description: Governed daily general-ledger balance history from 2020-02-09 onward.
+  restrictions: >
+    GL balances cannot be grouped by loan product, scheme or loan branch because no
+    account-level relationship exists.
+
+- id: customer_master
+  table: gold.customer_master
+  label: Customers
+  grain: one row per customer
+  key: [entity_num, customer_id]
+  row_count: 17972
+  contains_pii: true
+  synonyms: [customers, borrowers, clients, customer profile, contact details]
+  description: Governed customer master including PII for authorized borrower lookups.
+
+- id: agent_master
+  table: gold.agent_master
+  label: Agents
+  grain: one row per agent
+  key: [agent_code]
+  row_count: 1014
+  contains_pii: true
+  synonyms: [agents, field agents, staff, sourcing agents, collection agents]
+  description: Governed staff and field-agent directory.
+
+- id: kyc_document_master
+  table: gold.kyc_document_master
+  label: KYC documents
+  grain: one row per customer document
+  row_count: 72295
+  contains_pii: true
+  synonyms: [KYC, PAN, Aadhaar, identity document, customer documents]
+  description: Governed KYC document records for authorized customer-level questions.
+
+- id: branch_master
+  table: gold.branch_master
+  label: Branches
+  grain: one row per branch
+  key: [entity_num, branch_code]
+  row_count: 67
+  synonyms: [branches, offices, locations, IFSC]
+  description: Governed branch reference view.
+
+- id: product_master
+  table: gold.product_master
+  label: Products and schemes
+  grain: one row per product or scheme
+  key: [product_key]
+  row_count: 35
+  synonyms: [products, schemes, lending products, loan schemes]
+  description: Governed product and scheme reference view.
+
+- id: reporting_product_mapping
+  table: gold.reporting_product_mapping
+  label: Reporting product mapping
+  grain: one row per source product and scheme mapping
+  key: [entity_num, source_product_code, source_scheme_code]
+  row_count: 22
+  synonyms: [reporting product, product mapping, scheme mapping]
+  description: Provisional scheme-led reporting map pending business approval.
+
+- id: loan_reporting_attributes
+  table: gold.loan_reporting_attributes
+  label: Loan reporting attributes
+  grain: one row per loan account
+  key: [entity_num, loan_account_number]
+  row_count: 5753
+  contains_pii: true
+  synonyms: [reporting branch, servicing branch, loan agent, mapping attributes]
+  description: Governed per-loan branch and agent attributes; reporting branch is not yet populated.
+
+- id: gl_ledger_master
+  table: gold.gl_ledger_master
+  label: General-ledger accounts
+  grain: one row per GL account
+  key: [gl_number]
+  row_count: 866
+  synonyms: [GL master, chart of accounts, ledger account, account head]
+  description: Governed general-ledger account reference view.
+
+- id: msme_master
+  table: gold.msme_master
+  label: MSME leads
+  grain: one row per MSME lead
+  row_count: 9168
+  contains_pii: true
+  synonyms: [MSME, leads, applications, business borrowers]
+  description: Governed MSME lead view for authorized operational questions.

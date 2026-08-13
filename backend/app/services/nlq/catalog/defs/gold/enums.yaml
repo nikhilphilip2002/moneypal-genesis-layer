@@ -1,0 +1,64 @@
+# Governed display dictionaries for Gold dimensions. There are deliberately no dynamic
+# lookups against Silver: an unknown code is shown honestly as a code until a reviewed
+# Gold dimension supplies its label.
+
+- dimension: product
+  column: product_code
+  source: governed product taxonomy
+  values:
+    1: {label: Gold Loans, synonyms: [gold, gold loan, gold loans, jewel loan, ornament loan]}
+    13: {label: Microfinance / Retail EMI, synonyms: [microfinance, MFI, JLG, joint liability, retail EMI]}
+    16: {label: Business & MSME Loans, synonyms: [business, MSME, SME, commercial, business loans]}
+
+- dimension: asset_class
+  column: asset_code
+  source: governed RBI asset-classification taxonomy
+  values:
+    STD: {label: Standard, synonyms: [standard, performing, current, good book]}
+    SMA0: {label: SMA-0, synonyms: [SMA0, SMA 0, special mention 0, early stress]}
+    SMA1: {label: SMA-1, synonyms: [SMA1, SMA 1, special mention 1]}
+    SMA2: {label: SMA-2, synonyms: [SMA2, SMA 2, special mention 2]}
+    NPA: {label: NPA, synonyms: [NPA, non performing, non-performing asset, bad loan, default]}
+
+- dimension: branch
+  column: branch_code
+  source: governed branch taxonomy
+  fallback_label: "Branch {code}"
+  values:
+    1: {label: Head Office, synonyms: [head office, HO, headquarters]}
+    4: {label: Head Office — Credit Division, synonyms: [credit division, HO credit, central credit]}
+    1001: {label: Thripunithura, synonyms: [thripunithura, tripunithura]}
+    1002: {label: Aluva, synonyms: [aluva, alwaye]}
+    1006: {label: Nilambur, synonyms: [nilambur]}
+    1007: {label: Kozhikode, synonyms: [kozhikode, calicut]}
+    1008: {label: Chalakudy, synonyms: [chalakudy, chalakkudy]}
+    1010: {label: Pathanamthitta, synonyms: [pathanamthitta]}
+    1012: {label: Kanhangad, synonyms: [kanhangad]}
+    1013: {label: Angamally, synonyms: [angamally, angamaly]}
+    1014: {label: Kanjikuzhy, synonyms: [kanjikuzhy]}
+    1016: {label: Karamana, synonyms: [karamana]}
+    1017: {label: Gudallur, synonyms: [gudallur, gudalur]}
+    1018: {label: Muvattupuzha, synonyms: [muvattupuzha]}
+    1020: {label: Kattapana, synonyms: [kattapana]}
+    1021: {label: Kanjirapally, synonyms: [kanjirapally, kanjirappally]}
+
+- dimension: loan_type
+  column: loan_type
+  source: governed loan-account taxonomy
+  values:
+    E: {label: EMI term loan, synonyms: [EMI, term loan, amortising, instalment loan]}
+    C: {label: Non-EMI demand / bullet loan, synonyms: [bullet, demand loan, non-EMI, lump sum]}
+
+- dimension: scheme
+  column: scheme_code
+  source: governed scheme taxonomy; unknown codes render without an invented name
+  fallback_label: "Scheme #{code}"
+  values:
+    '1001': {label: Standard Retail Gold Loan, synonyms: [standard gold, retail gold]}
+    '1005': {label: High-Value Special Gold Loan, synonyms: [high value gold, special gold]}
+    '1342': {label: FTG Patharamattu Scheme, synonyms: [FTG, patharamattu, flexi term gold]}
+    '1352': {label: CCF Low ROI Scheme, synonyms: [CCF, consumer credit facility]}
+    '1353': {label: CCF Low ROI Scheme (variant), synonyms: [CCF, consumer credit facility]}
+    '1354': {label: EV Retail Scheme, synonyms: [EV, electric vehicle]}
+    '1355': {label: EV Retail Scheme (variant), synonyms: [EV, electric vehicle]}
+    '1356': {label: EV Retail Scheme (variant), synonyms: [EV, electric vehicle]}

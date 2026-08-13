@@ -22,6 +22,7 @@ from typing import Any, Iterable, Literal
 import yaml
 
 DEFS_DIR = Path(__file__).resolve().parent / "defs"
+ACTIVE_DEFS_DIR = DEFS_DIR / "gold"
 
 _WORD_RE = re.compile(r"[a-z0-9]+")
 
@@ -128,6 +129,7 @@ class Metric:
     date_column: str | None = None
     as_of_column: str | None = None
     as_of_key: tuple[str, ...] = ()
+    as_of_function: str | None = None
     year_column: str | None = None
     synonyms: tuple[str, ...] = ()
     description: str = ""
@@ -147,7 +149,7 @@ class Metric:
     def needs_as_of(self) -> bool:
         """True when the metric reads an event log that must be collapsed to one row per
         account before aggregation. This is the guard against the classification-event trap."""
-        return bool(self.as_of_column and self.as_of_key)
+        return bool(self.as_of_function or (self.as_of_column and self.as_of_key))
 
     def sql(self, alias: str) -> str:
         """Aggregate expression for this metric, qualified by table alias."""
@@ -297,7 +299,9 @@ class Catalog:
 
 
 def _read(name: str) -> list[dict[str, Any]]:
-    path = DEFS_DIR / name
+    # Gold is the only active semantic layer. Missing Gold metadata is fatal; silently
+    # falling back to the legacy Silver catalog would widen the LLM's database surface.
+    path = ACTIVE_DEFS_DIR / name
     if not path.exists():
         raise CatalogError(f"catalog file missing: {path}")
     data = yaml.safe_load(path.read_text(encoding="utf-8"))
@@ -424,6 +428,7 @@ def _load_metrics() -> dict[str, Metric]:
             date_column=raw.get("date_column"),
             as_of_column=raw.get("as_of_column"),
             as_of_key=_tuple(raw.get("as_of_key")),
+            as_of_function=raw.get("as_of_function"),
             year_column=raw.get("year_column"),
             synonyms=_tuple(raw.get("synonyms")),
             description=raw.get("description", ""),
@@ -515,13 +520,14 @@ def _cross_validate(catalog: Catalog) -> None:
         if metric.base_table not in known_tables:
             problems.append(f"metric {metric.id!r} has unknown base table {metric.base_table!r}")
         if metric.grain == "point_in_time" and not (
-            metric.as_of_column or metric.no_time_travel or metric.year_column
+            metric.as_of_column or metric.as_of_function or metric.no_time_travel
+            or metric.year_column
         ):
             problems.append(
                 f"metric {metric.id!r} is point_in_time but declares no as_of_column — the "
                 "compiler could not pin it to a date and would silently average it"
             )
-        if metric.as_of_column and not metric.as_of_key:
+        if metric.as_of_column and not metric.as_of_key and not metric.as_of_function:
             problems.append(
                 f"metric {metric.id!r} has an as_of_column but no as_of_key, so the "
                 "compiler cannot collapse the event log to one row per entity"
@@ -562,6 +568,13 @@ def _version(paths: Iterable[Path]) -> str:
 
 @functools.lru_cache(maxsize=1)
 def get_catalog() -> Catalog:
+    version_paths = [
+        ACTIVE_DEFS_DIR / name
+        for name in (
+            "tables.yaml", "columns.yaml", "dimensions.yaml", "metrics.yaml",
+            "joins.yaml", "enums.yaml",
+        )
+    ]
     catalog = Catalog(
         tables=_load_tables(),
         columns=_load_columns(),
@@ -569,7 +582,7 @@ def get_catalog() -> Catalog:
         metrics=_load_metrics(),
         joins=_load_joins(),
         enums=_load_enums(),
-        version=_version(DEFS_DIR.glob("*.yaml")),
+        version=_version(version_paths),
     )
     _cross_validate(catalog)
     return catalog

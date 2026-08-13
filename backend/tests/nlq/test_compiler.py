@@ -27,15 +27,15 @@ def sql_for(**kwargs) -> str:
 class TestGeneratedSql:
     def test_simple_aggregate(self):
         out = sql_for(metrics=["disbursement_total"])
-        assert "SUM(disb.genlndisb_disb_amt)" in out
-        assert "FROM silver.loan_disbursement_transactions AS disb" in out
+        assert "SUM(disb.disbursement_amount)" in out
+        assert "FROM gold.loan_disbursement_events AS disb" in out
         assert "LIMIT :row_limit" in out
 
     def test_group_by_joins_through_the_hub(self):
         out = sql_for(metrics=["disbursement_total"], dimensions=["branch"])
-        assert "JOIN silver.loan_account_master AS lam" in out
-        assert 'disb."genlndisb_entity_num" = lam."gnlnac_entity_num"' in out
-        assert 'lam."gnlnac_appl_brn_code"' in out
+        assert "JOIN gold.loan_account_master AS lam" in out
+        assert 'disb."entity_num" = lam."entity_num"' in out
+        assert 'lam."branch_code"' in out
 
     def test_entity_number_is_always_in_the_join(self):
         """entity_num takes two values; omitting it merges two entities' accounts that
@@ -51,7 +51,7 @@ class TestGeneratedSql:
             ),
             today=TODAY,
         )
-        assert "gold" not in compiled.sql.lower()
+        assert "gold loans" not in compiled.sql.lower()
         assert compiled.params["f0"] == "1"  # decoded to the product code
 
     def test_limit_is_capped_at_the_hard_ceiling(self):
@@ -60,7 +60,7 @@ class TestGeneratedSql:
 
     def test_time_grain_truncates_the_metrics_own_date_column(self):
         out = sql_for(metrics=["loan_count"], dimensions=["month"])
-        assert "DATE_TRUNC('month', lam.\"gnlnac_sanc_date\")" in out
+        assert "DATE_TRUNC('month', lam.\"sanction_date\")" in out
 
     def test_fiscal_year_grain_shifts_by_three_months(self):
         out = sql_for(metrics=["sanctioned_amount"], dimensions=["fy"])
@@ -75,22 +75,21 @@ class TestGeneratedSql:
 class TestPointInTimeCollapse:
     """The guard against reading an event log as a snapshot."""
 
-    def test_single_as_of_uses_distinct_on(self):
+    def test_single_as_of_uses_reviewed_gold_function(self):
         out = sql_for(metrics=["par_30"])
-        assert "DISTINCT ON" in out
-        assert '"ascd_effective_date" <= :as_of' in out
-        assert '"ascd_effective_date" DESC' in out
+        assert "gold.portfolio_snapshot_as_of(:as_of)" in out
+        assert "silver." not in out
 
     def test_never_filters_by_date_equality(self):
         """Equality reports PAR 30 as NULL where the correct answer is 0.090%."""
         out = sql_for(metrics=["par_30"])
-        assert "ascd_effective_date =" not in out.replace("<=", "")
+        assert "snapshot_date =" not in out
 
     def test_trend_builds_one_snapshot_per_bucket(self):
         out = sql_for(metrics=["par_30"], dimensions=["month"])
         assert "generate_series" in out
         assert "LATERAL" in out
-        assert "DISTINCT ON" in out
+        assert "gold.portfolio_snapshot_as_of" in out
 
     def test_trend_keeps_empty_buckets(self):
         """LEFT, not CROSS — a month with no classified accounts is a visible gap, not a

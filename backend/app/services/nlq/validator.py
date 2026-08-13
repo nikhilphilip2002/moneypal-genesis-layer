@@ -5,7 +5,7 @@ comments, casing, unicode escapes and nesting; an AST walk sees the statement th
 will actually run.
 
 **This is defence in depth, not the security boundary.** The boundary is the `nlq_readonly`
-role, which holds SELECT on `silver.*` and nothing else. Every rule here is a second lock
+role, which holds SELECT on governed `gold.*` views. Every rule here is a second lock
 on a door that is already locked — which is the right posture, because the thing on the
 other side of it is an LLM following instructions that may have come from data.
 """
@@ -38,7 +38,9 @@ BANNED_FUNCTIONS = {
 }
 
 # Schemas whose mere presence in a query is a probe.
-BANNED_SCHEMAS = {"pg_catalog", "information_schema", "pg_toast", "bronze", "public"}
+BANNED_SCHEMAS = {
+    "pg_catalog", "information_schema", "pg_toast", "bronze", "public", "silver"
+}
 
 
 class ValidationError(ValueError):
@@ -168,7 +170,7 @@ def _check_functions(tree: exp.Expression) -> None:
 
 
 def _check_tables(tree: exp.Expression, catalog: Catalog) -> set[str]:
-    """Every table must be in the catalog's silver allowlist.
+    """Every table must be in the catalog's governed Gold-view allowlist.
 
     CTE names are resolved first so a query's own `WITH` aliases are not mistaken for
     unknown tables.
@@ -190,7 +192,7 @@ def _check_tables(tree: exp.Expression, catalog: Catalog) -> set[str]:
             raise ValidationError(f"schema {schema!r} is not accessible")
         if not schema:
             raise ValidationError(
-                f"table {name!r} is not schema-qualified; use silver.<table>"
+                f"table {name!r} is not schema-qualified; use gold.<view>"
             )
 
         qualified = f"{schema}.{name}"
@@ -277,7 +279,7 @@ def _check_columns(tree: exp.Expression, catalog: Catalog) -> None:
 
 def _check_no_set_operations_on_forbidden_tables(tree: exp.Expression, catalog: Catalog) -> None:
     """A UNION arm is a whole second query and gets the same scrutiny as the first —
-    `SELECT a FROM silver.x UNION SELECT rolpassword FROM pg_authid` must not slip past a
+    `SELECT a FROM gold.x UNION SELECT rolpassword FROM pg_authid` must not slip past a
     check that only looked at the leading SELECT."""
     for node in tree.find_all(exp.Union, exp.Intersect, exp.Except):
         for side in (node.left, node.right):

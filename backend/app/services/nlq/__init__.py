@@ -1,4 +1,4 @@
-"""Genesis NLQ — natural-language query layer over `silver.*`.
+"""Genesis NLQ — natural-language query layer over governed `gold.*` views.
 
 See docs/GENESIS_NLQ_BUILD_PLAN.md. Two paths reach the database: a deterministic
 QuerySpec compiler (the trusted path) and an LLM text-to-SQL fallback behind an AST

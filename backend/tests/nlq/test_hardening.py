@@ -116,26 +116,27 @@ class TestPiiMasking:
     def test_rows_are_masked_for_an_unprivileged_role(self):
         catalog = get_catalog()
         columns = [
-            ColumnSpec(name="indcif_first_name", label="First name", sensitivity="pii"),
+            ColumnSpec(name="full_name", label="Full name", sensitivity="pii"),
             ColumnSpec(name="loan_count", label="Loans", unit="count"),
         ]
-        rows = [{"indcif_first_name": "Rajesh Kumar", "loan_count": 3}]
+        rows = [{"full_name": "Rajesh Kumar", "loan_count": 3}]
         masked, fields = pii.mask_rows(rows, columns, role="gicc_policy", catalog=catalog)
-        assert masked[0]["indcif_first_name"] == "Rajesh K***"
+        assert masked[0]["full_name"] == "Rajesh K***"
         assert masked[0]["loan_count"] == 3  # non-PII is untouched
-        assert "indcif_first_name" in fields
+        assert "full_name" in fields
         assert columns[0].masked is True
 
     def test_rows_are_untouched_for_a_privileged_role(self):
-        columns = [ColumnSpec(name="indcif_first_name", label="First name", sensitivity="pii")]
-        rows = [{"indcif_first_name": "Rajesh Kumar"}]
+        columns = [ColumnSpec(name="full_name", label="Full name", sensitivity="pii")]
+        rows = [{"full_name": "Rajesh Kumar"}]
         masked, fields = pii.mask_rows(rows, columns, role="gicc_admin")
-        assert masked[0]["indcif_first_name"] == "Rajesh Kumar"
+        assert masked[0]["full_name"] == "Rajesh Kumar"
         assert fields == []
 
     def test_pii_tables_are_detected_for_the_audit_flag(self):
-        assert pii.touches_pii(["silver.individual_customer_master"])
-        assert not pii.touches_pii(["silver.loan_account_master"])
+        assert pii.touches_pii(["gold.customer_master"])
+        assert pii.touches_pii(["gold.loan_account_master"])
+        assert not pii.touches_pii(["gold.gl_daily_balances"])
 
 
 # --------------------------------------------------------------------------------------

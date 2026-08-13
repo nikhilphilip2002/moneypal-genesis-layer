@@ -14,44 +14,56 @@
 
 \set ON_ERROR_STOP on
 
-CREATE ROLE nlq_readonly LOGIN PASSWORD :'pw';
+SELECT 'CREATE ROLE nlq_readonly LOGIN'
+WHERE NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'nlq_readonly') \gexec
+ALTER ROLE nlq_readonly LOGIN PASSWORD :'pw';
 
 REVOKE ALL ON DATABASE moneypaldb FROM nlq_readonly;
 GRANT CONNECT ON DATABASE moneypaldb TO nlq_readonly;
 
-GRANT USAGE ON SCHEMA silver TO nlq_readonly;
-GRANT SELECT ON ALL TABLES IN SCHEMA silver TO nlq_readonly;
+GRANT USAGE ON SCHEMA gold TO nlq_readonly;
 
--- FOR ROLE moneypal is load-bearing. ALTER DEFAULT PRIVILEGES only covers objects
--- created by the named role; `silver.*` is owned by `moneypal`, so without this clause
--- every table the next ingestion creates would be invisible to NLQ.
-ALTER DEFAULT PRIVILEGES FOR ROLE moneypal IN SCHEMA silver
-    GRANT SELECT ON TABLES TO nlq_readonly;
+-- Start closed, then enumerate views. PostgreSQL treats views as tables for GRANT, so
+-- `GRANT ... ON ALL TABLES` would also expose any physical Gold table added later.
+REVOKE ALL ON ALL TABLES IN SCHEMA gold FROM nlq_readonly;
+SELECT format('GRANT SELECT ON %I.%I TO nlq_readonly', schemaname, viewname)
+FROM pg_views
+WHERE schemaname = 'gold'
+ORDER BY viewname
+\gexec
+GRANT EXECUTE ON FUNCTION gold.portfolio_snapshot_as_of(date) TO nlq_readonly;
+
+-- Re-run this script after creating a new governed view. New objects are intentionally
+-- not auto-granted: adding a source to the LLM surface must be an explicit deployment.
 
 -- Belt and braces. Both schemas already have nspacl = NULL (owner-only, no PUBLIC grant),
 -- and PG15+ ships `public` without CREATE for PUBLIC, so these are no-ops today — kept so
 -- a future stray GRANT does not silently widen the role.
 REVOKE ALL ON SCHEMA bronze FROM nlq_readonly;
 REVOKE ALL ON SCHEMA public FROM nlq_readonly;
+REVOKE ALL ON SCHEMA silver FROM nlq_readonly;
 REVOKE ALL ON ALL TABLES IN SCHEMA bronze FROM nlq_readonly;
+REVOKE ALL ON ALL TABLES IN SCHEMA silver FROM nlq_readonly;
 
 -- Session defaults. NOT a security control: a session can override any of these with a
--- plain SET. The boundary is the privilege set above — SELECT on silver and nothing else.
+-- plain SET. The boundary is the privilege set above — SELECT on Gold views and nothing
+-- else. The SQL validator separately rejects non-Gold schemas.
 ALTER ROLE nlq_readonly SET default_transaction_read_only = on;
 ALTER ROLE nlq_readonly SET statement_timeout = '15s';
 ALTER ROLE nlq_readonly SET idle_in_transaction_session_timeout = '10s';
 ALTER ROLE nlq_readonly SET work_mem = '32MB';
-ALTER ROLE nlq_readonly SET search_path = 'silver';
+ALTER ROLE nlq_readonly SET search_path = 'gold';
 
 -- ---------------------------------------------------------------------------------------
 -- Verification. Each of these must behave as annotated; run them after the grants above.
 -- (\c reconnects as the new role — psql will prompt for the password.)
 -- ---------------------------------------------------------------------------------------
 -- \c moneypaldb nlq_readonly
--- SELECT count(*) FROM silver.loan_account_master;         -- expect: a number
+-- SELECT count(*) FROM gold.loan_account_master;           -- expect: a number
+-- SELECT count(*) FROM silver.loan_account_master;         -- expect: permission denied
 -- SELECT count(*) FROM bronze.genlnacnts;                  -- expect: permission denied
--- CREATE TABLE silver.x (i int);                           -- expect: permission denied
--- BEGIN READ WRITE; DELETE FROM silver.loan_account_master;-- expect: permission denied
+-- CREATE TABLE gold.x (i int);                             -- expect: permission denied
+-- BEGIN READ WRITE; DELETE FROM gold.loan_account_master;  -- expect: permission denied
 -- ROLLBACK;
 --
 -- backend/tests/nlq/test_readonly_role.py asserts all four in CI.

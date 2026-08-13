@@ -74,7 +74,7 @@ async def plan(
         return PlanOutcome(
             plan=SqlPlan(
                 intent=question,
-                tables=["silver.loan_account_master"],
+                tables=["gold.loan_account_master"],
                 confidence=1.0,
                 reasoning="named-borrower principal lookup uses governed SQL",
             ),

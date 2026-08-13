@@ -12,7 +12,7 @@ async def test_health_tool_is_discoverable_and_returns_structured_content(monkey
     monkeypatch.setattr(
         postgres_server.nlq_db,
         "health",
-        lambda: {"status": "ok", "role": "nlq_readonly", "silver_tables": 12},
+        lambda: {"status": "ok", "role": "nlq_readonly", "gold_views": 15},
     )
 
     tools = await postgres_server.mcp.list_tools()

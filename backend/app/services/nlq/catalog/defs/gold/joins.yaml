@@ -1,0 +1,40 @@
+- id: disbursement_to_loan
+  left: gold.loan_disbursement_events
+  right: gold.loan_account_master
+  on_columns: [[entity_num, entity_num], [loan_account_number, loan_account_number]]
+  cardinality: many_to_one
+  join_type: inner
+  description: Disbursement events to their loan account dimensions.
+
+- id: repayment_to_loan
+  left: gold.loan_repayment_events
+  right: gold.loan_account_master
+  on_columns: [[entity_num, entity_num], [loan_account_number, loan_account_number]]
+  cardinality: many_to_one
+  join_type: inner
+  description: Repayment events to their loan account dimensions.
+
+- id: schedule_to_loan
+  left: gold.loan_schedule_events
+  right: gold.loan_account_master
+  on_columns: [[entity_num, entity_num], [loan_account_number, loan_account_number]]
+  cardinality: many_to_one
+  join_type: inner
+  description: Scheduled instalments to their loan account dimensions.
+
+- id: portfolio_to_loan
+  left: gold.portfolio_daily_snapshot
+  right: gold.loan_account_master
+  on_columns: [[entity_num, entity_num], [loan_account_number, loan_account_number]]
+  cardinality: many_to_one
+  join_type: inner
+  description: Portfolio snapshot facts to their loan account dimensions.
+
+- id: loan_to_customer
+  left: gold.loan_account_master
+  right: gold.customer_master
+  on_columns: [[entity_num, entity_num], [customer_id, customer_id]]
+  cardinality: many_to_one
+  join_type: left
+  contains_pii: true
+  description: Loan accounts to borrower profiles.

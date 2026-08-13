@@ -1,0 +1,105 @@
+# Curated Gold columns available to validated text-to-SQL. PII is intentionally cataloged
+# for authorized borrower/agent/KYC questions; role checks, limits and audit still apply.
+
+# Loan account hub
+- {id: loan.entity_number, table: gold.loan_account_master, column: entity_num, label: Entity, unit: text}
+- {id: loan.account_number, table: gold.loan_account_master, column: loan_account_number, label: Loan account number, unit: text}
+- {id: loan.customer_id, table: gold.loan_account_master, column: customer_id, label: Customer ID, unit: text}
+- {id: loan.customer_name, table: gold.loan_account_master, column: customer_name, label: Borrower name, unit: text, sensitivity: pii, synonyms: [borrower, customer name, client]}
+- {id: loan.branch_code, table: gold.loan_account_master, column: branch_code, label: Branch, unit: text}
+- {id: loan.product_code, table: gold.loan_account_master, column: product_code, label: Product code, unit: text}
+- {id: loan.product_name, table: gold.loan_account_master, column: product_name, label: Product, unit: text}
+- {id: loan.scheme_code, table: gold.loan_account_master, column: scheme_code, label: Scheme code, unit: text}
+- {id: loan.scheme_name, table: gold.loan_account_master, column: scheme_name, label: Scheme, unit: text}
+- {id: loan.loan_type, table: gold.loan_account_master, column: loan_type, label: Loan type, unit: text}
+- {id: loan.sanction_date, table: gold.loan_account_master, column: sanction_date, label: Sanction date, unit: date}
+- {id: loan.sanction_amount, table: gold.loan_account_master, column: sanction_amount, label: Sanction amount, unit: inr, agg: [sum, avg, max, min]}
+- {id: loan.disbursed_amount, table: gold.loan_account_master, column: disbursed_amount, label: Cumulative disbursed amount, unit: inr, agg: [sum]}
+- {id: loan.first_disbursement_date, table: gold.loan_account_master, column: first_disbursement_date, label: First disbursement date, unit: date}
+- {id: loan.interest_rate, table: gold.loan_account_master, column: interest_rate, label: Interest rate, unit: percent, agg: [avg, max, min]}
+- {id: loan.emi_amount, table: gold.loan_account_master, column: emi_amount, label: EMI amount, unit: inr, agg: [sum, avg]}
+- {id: loan.principal_repaid, table: gold.loan_account_master, column: principal_repaid, label: Cumulative principal repaid, unit: inr, agg: [sum]}
+- {id: loan.interest_repaid, table: gold.loan_account_master, column: interest_repaid, label: Cumulative interest repaid, unit: inr, agg: [sum]}
+- {id: loan.last_payment_date, table: gold.loan_account_master, column: last_payment_date, label: Last payment date, unit: date}
+- {id: loan.agent_code, table: gold.loan_account_master, column: agent_code, label: Agent code, unit: text}
+- {id: loan.agent_name, table: gold.loan_account_master, column: agent_name, label: Agent name, unit: text, sensitivity: pii}
+- {id: loan.closure_date, table: gold.loan_account_master, column: closure_date, label: Closure date, unit: date}
+- {id: loan.status, table: gold.loan_account_master, column: loan_status, label: Loan status, unit: text}
+
+# Event facts
+- {id: disb.sequence, table: gold.loan_disbursement_events, column: disbursement_sequence, label: Disbursement sequence, unit: count}
+- {id: disb.date, table: gold.loan_disbursement_events, column: disbursement_date, label: Disbursement date, unit: date}
+- {id: disb.amount, table: gold.loan_disbursement_events, column: disbursement_amount, label: Disbursement amount, unit: inr, agg: [sum]}
+- {id: disb.net_amount, table: gold.loan_disbursement_events, column: net_paid_amount, label: Net amount paid, unit: inr, agg: [sum]}
+- {id: disb.customer_name, table: gold.loan_disbursement_events, column: customer_name, label: Borrower name, unit: text, sensitivity: pii}
+- {id: repay.sequence, table: gold.loan_repayment_events, column: repayment_sequence, label: Repayment sequence, unit: count}
+- {id: repay.date, table: gold.loan_repayment_events, column: repayment_date, label: Repayment date, unit: date}
+- {id: repay.principal_due, table: gold.loan_repayment_events, column: principal_due, label: Principal due, unit: inr, agg: [sum]}
+- {id: repay.interest_due, table: gold.loan_repayment_events, column: interest_due, label: Interest due, unit: inr, agg: [sum]}
+- {id: repay.total_due, table: gold.loan_repayment_events, column: total_due, label: Total due, unit: inr, agg: [sum]}
+- {id: repay.principal_paid, table: gold.loan_repayment_events, column: principal_paid, label: Principal paid, unit: inr, agg: [sum]}
+- {id: repay.interest_paid, table: gold.loan_repayment_events, column: interest_paid, label: Interest paid, unit: inr, agg: [sum]}
+- {id: repay.total_paid, table: gold.loan_repayment_events, column: total_paid, label: Total paid, unit: inr, agg: [sum]}
+- {id: repay.shortfall, table: gold.loan_repayment_events, column: collection_shortfall, label: Collection shortfall, unit: inr, agg: [sum]}
+- {id: repay.customer_name, table: gold.loan_repayment_events, column: customer_name, label: Borrower name, unit: text, sensitivity: pii}
+- {id: schedule.sequence, table: gold.loan_schedule_events, column: instalment_sequence, label: Instalment sequence, unit: count}
+- {id: schedule.date, table: gold.loan_schedule_events, column: scheduled_date, label: Scheduled date, unit: date}
+- {id: schedule.principal, table: gold.loan_schedule_events, column: scheduled_principal, label: Scheduled principal, unit: inr, agg: [sum]}
+- {id: schedule.interest, table: gold.loan_schedule_events, column: scheduled_interest, label: Scheduled interest, unit: inr, agg: [sum]}
+- {id: schedule.total, table: gold.loan_schedule_events, column: scheduled_total, label: Scheduled total, unit: inr, agg: [sum]}
+
+# Portfolio snapshot
+- {id: risk.snapshot_date, table: gold.portfolio_daily_snapshot, column: snapshot_date, label: Snapshot date, unit: date}
+- {id: risk.asset_code, table: gold.portfolio_daily_snapshot, column: asset_code, label: Asset classification, unit: text, decode: asset_class}
+- {id: risk.asset_classification, table: gold.portfolio_daily_snapshot, column: asset_classification, label: Asset classification name, unit: text}
+- {id: risk.dpd_days, table: gold.portfolio_daily_snapshot, column: dpd_days, label: Days past due, unit: days, agg: [avg, max]}
+- {id: risk.principal_outstanding, table: gold.portfolio_daily_snapshot, column: principal_outstanding, label: Principal outstanding, unit: inr, agg: [sum]}
+- {id: risk.principal_overdue, table: gold.portfolio_daily_snapshot, column: principal_overdue, label: Principal overdue, unit: inr, agg: [sum]}
+- {id: risk.interest_overdue, table: gold.portfolio_daily_snapshot, column: interest_overdue, label: Interest overdue, unit: inr, agg: [sum]}
+- {id: risk.total_overdue, table: gold.portfolio_daily_snapshot, column: total_overdue, label: Total overdue, unit: inr, agg: [sum]}
+- {id: risk.customer_name, table: gold.portfolio_daily_snapshot, column: customer_name, label: Borrower name, unit: text, sensitivity: pii}
+
+# GL
+- {id: gl.date, table: gold.gl_daily_balances, column: balance_date, label: Balance date, unit: date}
+- {id: gl.number, table: gold.gl_daily_balances, column: gl_number, label: GL number, unit: text}
+- {id: gl.name, table: gold.gl_daily_balances, column: gl_name, label: GL name, unit: text}
+- {id: gl.branch, table: gold.gl_daily_balances, column: branch_code, label: GL branch, unit: text}
+- {id: gl.balance, table: gold.gl_daily_balances, column: base_currency_balance, label: Base-currency balance, unit: inr, agg: [sum]}
+- {id: gl.debits, table: gold.gl_daily_balances, column: base_currency_debits, label: Base-currency debits, unit: inr, agg: [sum]}
+- {id: gl.credits, table: gold.gl_daily_balances, column: base_currency_credits, label: Base-currency credits, unit: inr, agg: [sum]}
+
+# Customer and KYC PII
+- {id: customer.entity, table: gold.customer_master, column: entity_num, label: Entity, unit: text}
+- {id: customer.id, table: gold.customer_master, column: customer_id, label: Customer ID, unit: text}
+- {id: customer.full_name, table: gold.customer_master, column: full_name, label: Customer name, unit: text, sensitivity: pii}
+- {id: customer.dob, table: gold.customer_master, column: date_of_birth, label: Date of birth, unit: date, sensitivity: pii}
+- {id: customer.mobile, table: gold.customer_master, column: mobile_primary, label: Mobile, unit: text, sensitivity: pii}
+- {id: customer.email, table: gold.customer_master, column: email, label: Email, unit: text, sensitivity: pii}
+- {id: customer.pan, table: gold.customer_master, column: pan_number, label: PAN, unit: text, sensitivity: pii}
+- {id: customer.aadhaar, table: gold.customer_master, column: aadhaar_number, label: Aadhaar, unit: text, sensitivity: pii}
+- {id: customer.city, table: gold.customer_master, column: city, label: City, unit: text, sensitivity: pii}
+- {id: customer.district, table: gold.customer_master, column: district, label: District, unit: text, sensitivity: pii}
+- {id: customer.pincode, table: gold.customer_master, column: pincode, label: Pincode, unit: text, sensitivity: pii}
+- {id: customer.agency_code, table: gold.customer_master, column: agency_code, label: Agency code, unit: text}
+- {id: customer.agency_name, table: gold.customer_master, column: agency_name, label: Agency name, unit: text, sensitivity: pii}
+- {id: kyc.entity, table: gold.kyc_document_master, column: entity_num, label: Entity, unit: text}
+- {id: kyc.customer_id, table: gold.kyc_document_master, column: customer_id, label: Customer ID, unit: text}
+- {id: kyc.customer_name, table: gold.kyc_document_master, column: customer_name, label: Customer name, unit: text, sensitivity: pii}
+- {id: kyc.type, table: gold.kyc_document_master, column: pid_type_desc, label: Document type, unit: text}
+- {id: kyc.number, table: gold.kyc_document_master, column: document_number, label: Document number, unit: text, sensitivity: pii}
+- {id: kyc.expiry, table: gold.kyc_document_master, column: expiry_date, label: Expiry date, unit: date, sensitivity: pii}
+
+# Agents and MSME
+- {id: agent.code, table: gold.agent_master, column: agent_code, label: Agent code, unit: text}
+- {id: agent.name, table: gold.agent_master, column: agent_name, label: Agent name, unit: text, sensitivity: pii}
+- {id: agent.type, table: gold.agent_master, column: agent_type, label: Agent type, unit: text}
+- {id: agent.mobile, table: gold.agent_master, column: mobile, label: Agent mobile, unit: text, sensitivity: pii}
+- {id: agent.email, table: gold.agent_master, column: email, label: Agent email, unit: text, sensitivity: pii}
+- {id: agent.loan_count, table: gold.agent_master, column: linked_loan_count, label: Linked loan count, unit: count, agg: [sum]}
+- {id: msme.lead_number, table: gold.msme_master, column: lead_number, label: MSME lead number, unit: text}
+- {id: msme.customer_name, table: gold.msme_master, column: customer_name, label: Customer name, unit: text, sensitivity: pii}
+- {id: msme.firm_name, table: gold.msme_master, column: firm_name, label: Firm name, unit: text, sensitivity: pii}
+- {id: msme.mobile, table: gold.msme_master, column: mobile_number, label: Mobile, unit: text, sensitivity: pii}
+- {id: msme.requested_amount, table: gold.msme_master, column: requested_amount, label: Requested amount, unit: inr, agg: [sum, avg]}
+- {id: msme.status, table: gold.msme_master, column: lead_status, label: Lead status, unit: text}
+- {id: msme.entered_on, table: gold.msme_master, column: entered_on, label: Entered date, unit: date}

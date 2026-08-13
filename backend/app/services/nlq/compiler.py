@@ -12,11 +12,9 @@ Validation runs before generation, in the order given in §2.5:
   5. grain check                                               -> metrics.resolve
   6. period resolution against the Indian fiscal calendar      -> periods.resolve_relative
 
-The point-in-time collapse deserves its own note. asset_classification_details is an event
-log, not a snapshot: a given date holds only the accounts that changed that day. Every
-point-in-time metric is therefore read through a DISTINCT ON subquery that takes each
-account's latest row on or before the as-of date. Filtering by date equality instead
-reports PAR 30 as NULL where the correct answer is 0.090%.
+Point-in-time portfolio metrics are read through the governed
+`gold.portfolio_snapshot_as_of(date)` function. That keeps the historical-collapse rule in
+the database semantic layer instead of exposing the underlying classification event log.
 """
 
 from __future__ import annotations
@@ -34,15 +32,14 @@ MAX_ROWS = 5000
 
 # Alias per table, so generated SQL is readable in the lineage panel.
 _ALIASES = {
-    "silver.loan_account_master": "lam",
-    "silver.asset_classification_details": "acd",
-    "silver.loan_disbursement_transactions": "disb",
-    "silver.loan_repayment_transactions": "repay",
-    "silver.loan_repayment_schedule": "sched",
-    "silver.loan_product_scheme_master": "schm",
-    "silver.individual_customer_master": "icm",
-    "silver.corporate_customer_master": "ccm",
-    "silver.gl_daily_balances": "gl",
+    "gold.loan_account_master": "lam",
+    "gold.portfolio_daily_snapshot": "portfolio",
+    "gold.loan_disbursement_events": "disb",
+    "gold.loan_repayment_events": "repay",
+    "gold.loan_schedule_events": "sched",
+    "gold.gl_daily_balances": "gl",
+    "gold.customer_master": "customer",
+    "gold.agent_master": "agent",
 }
 
 
@@ -276,11 +273,11 @@ def _as_of_source(
     params: dict[str, Any],
     as_of: date,
 ) -> str:
-    """The DISTINCT ON collapse: one row per entity, its latest on or before the as-of date.
-
-    This is the guard against reading an event log as a snapshot.
-    """
+    """Use the reviewed Gold as-of function, or a legacy catalog collapse definition."""
     metric = next(m for m in plan.metrics if m.needs_as_of)
+    if metric.as_of_function:
+        params["as_of"] = as_of
+        return f"{metric.as_of_function}(:as_of) AS {alias}"
     keys = ", ".join(f'"{k}"' for k in metric.as_of_key)
     params["as_of"] = as_of
     inner = (
@@ -329,6 +326,18 @@ def _as_of_series_source(
     anchor = _bucket_anchor(period.start, time_dim.grain or "month")
     params["bucket_anchor"] = anchor
     params["bucket_end"] = period.end
+
+    if metric.as_of_function:
+        source = (
+            "(SELECT generate_series(:bucket_anchor::date, :bucket_end::date,\n"
+            f"                             INTERVAL '{interval}')::date AS bucket_start) AS buckets\n"
+            "     LEFT JOIN LATERAL "
+            f"{metric.as_of_function}(\n"
+            f"       LEAST((buckets.bucket_start + INTERVAL '{interval}' - "
+            "INTERVAL '1 day')::date, :bucket_end::date)\n"
+            f"     ) AS {alias} ON TRUE"
+        )
+        return source, "buckets.bucket_start"
 
     keys = ", ".join(f'"{k}"' for k in metric.as_of_key)
     source = (

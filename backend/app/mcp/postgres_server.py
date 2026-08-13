@@ -33,7 +33,7 @@ mcp = FastMCP(
 
 @mcp.tool()
 def postgres_health() -> dict[str, Any]:
-    """Check the dedicated read-only PostgreSQL role and silver-schema availability."""
+    """Check the dedicated read-only PostgreSQL role and governed Gold-view availability."""
     return nlq_db.health()
 
 

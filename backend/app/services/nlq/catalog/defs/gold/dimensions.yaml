@@ -1,0 +1,97 @@
+- id: branch
+  label: Branch
+  table: gold.loan_account_master
+  column: branch_code
+  type: categorical
+  decode: branch
+  synonyms: [branch, branches, location, office, centre, region, by branch]
+  description: Application/origination branch. Reporting branch remains unavailable.
+  cardinality: 2
+
+- id: product
+  label: Product
+  table: gold.loan_account_master
+  column: product_code
+  type: categorical
+  decode: product
+  synonyms: [product, product line, loan type, business line, portfolio, segment]
+  description: Core product code; approved reporting-product mappings are still pending.
+  cardinality: 1
+
+- id: scheme
+  label: Scheme
+  table: gold.loan_account_master
+  column: scheme_code
+  type: categorical
+  decode: scheme
+  synonyms: [scheme, sub-product, product scheme, loan scheme, purpose]
+  description: Scheme is currently the meaningful product-level reporting breakdown.
+  cardinality: 13
+
+- id: asset_class
+  label: Asset classification
+  table: gold.portfolio_daily_snapshot
+  column: asset_code
+  type: categorical
+  decode: asset_class
+  synonyms: [asset class, classification, NPA status, SMA, standard, credit quality, bucket]
+  description: RBI asset classification at the requested snapshot date.
+  point_in_time: true
+  cardinality: 5
+
+- id: dpd_bucket
+  label: DPD bucket
+  table: gold.portfolio_daily_snapshot
+  column: dpd_days
+  type: categorical
+  expression: >
+    CASE WHEN {col} = 0 THEN '0 (current)'
+         WHEN {col} BETWEEN 1 AND 30 THEN '1-30'
+         WHEN {col} BETWEEN 31 AND 60 THEN '31-60'
+         WHEN {col} BETWEEN 61 AND 90 THEN '61-90'
+         ELSE '90+' END
+  sort_expression: >
+    CASE WHEN {col} = 0 THEN 0 WHEN {col} <= 30 THEN 1 WHEN {col} <= 60 THEN 2
+         WHEN {col} <= 90 THEN 3 ELSE 4 END
+  synonyms: [DPD bucket, ageing, overdue bucket, days past due band, delinquency bucket]
+  description: Standard ageing bands at the requested portfolio snapshot.
+  point_in_time: true
+
+- id: loan_type
+  label: Loan type
+  table: gold.loan_account_master
+  column: loan_type
+  type: categorical
+  decode: loan_type
+  synonyms: [loan type, EMI or bullet, amortisation type, repayment type]
+
+- id: account_status
+  label: Account status
+  table: gold.loan_account_master
+  column: loan_status
+  type: categorical
+  synonyms: [status, open or closed, active, closed accounts, live accounts]
+
+- id: gl_account
+  label: GL account
+  table: gold.gl_daily_balances
+  column: gl_number
+  type: categorical
+  synonyms: [GL code, ledger account, account head, GL account]
+  cardinality: 621
+
+- id: gl_branch
+  label: GL branch
+  table: gold.gl_daily_balances
+  column: branch_code
+  type: categorical
+  synonyms: [GL branch, ledger branch]
+  cardinality: 5
+
+- {id: month, label: Month, type: time, grain: month, synonyms: [month, monthly, by month, month on month, MoM]}
+- {id: quarter, label: Quarter, type: time, grain: quarter, synonyms: [quarter, quarterly, by quarter, QoQ]}
+- {id: fy_quarter, label: Fiscal quarter, type: time, grain: fy_quarter, synonyms: [fiscal quarter, FY quarter, financial quarter]}
+- {id: fy, label: Financial year, type: time, grain: fy, synonyms: [financial year, fiscal year, FY, year]}
+- {id: year, label: Calendar year, type: time, grain: year, synonyms: [calendar year, CY, per year]}
+- {id: week, label: Week, type: time, grain: week, synonyms: [week, weekly, by week]}
+- {id: day, label: Day, type: time, grain: day, synonyms: [day, daily, by day, date, per day]}

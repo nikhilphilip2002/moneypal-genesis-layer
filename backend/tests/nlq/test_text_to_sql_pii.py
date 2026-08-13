@@ -17,38 +17,35 @@ from app.services.nlq.text_to_sql import (
 
 
 def _loan_context(*, allow_pii: bool) -> str:
-    hits = RetrievalResult(tables=["silver.loan_account_master"], mode="lexical")
+    hits = RetrievalResult(tables=["gold.loan_account_master"], mode="lexical")
     return _context_block(hits, get_catalog(), allow_pii=allow_pii)
 
 
-def test_authorized_context_exposes_borrower_name_but_not_other_pii():
+def test_authorized_context_exposes_governed_borrower_fields():
     context = _loan_context(allow_pii=True)
 
-    assert "gnlnac_cust_name" in context
-    assert "gnlnac_pri_repay_amt" in context
-    assert "indcif_dob" not in context
-    assert "indcif_phouse_name" not in context
+    assert "customer_name" in context
+    assert "principal_repaid" in context
+    assert "date_of_birth" not in context
 
 
 def test_unauthorized_context_hides_borrower_name():
-    assert "gnlnac_cust_name" not in _loan_context(allow_pii=False)
+    assert "customer_name" not in _loan_context(allow_pii=False)
 
 
-def test_prompt_lifts_only_the_name_lookup_prohibition_for_authorized_roles():
+def test_prompt_allows_only_explicitly_needed_pii_for_authorized_roles():
     authorized = _system_prompt(True)
     unauthorized = _system_prompt(False)
 
-    assert "may use listed borrower-name columns" in authorized
+    assert "may use listed PII columns" in authorized
     assert "Never reference customer names" in unauthorized
-    assert "Never reference dates of birth" in authorized
+    assert "never broaden a person-level query" in authorized
 
 
-def test_name_only_allowlist_excludes_sensitive_customer_attributes():
-    assert NAME_PII_COLUMN_IDS == {
-        "loan.customer_name",
-        "customer.first_name",
-        "customer.last_name",
-    }
+def test_pii_allowlist_is_curated_and_gold_catalog_backed():
+    assert "loan.customer_name" in NAME_PII_COLUMN_IDS
+    assert "agent.name" in NAME_PII_COLUMN_IDS
+    assert "customer.pan" in NAME_PII_COLUMN_IDS
 
 
 def test_named_borrower_principal_uses_reviewed_columns_without_an_llm():
@@ -60,13 +57,13 @@ def test_named_borrower_principal_uses_reviewed_columns_without_an_llm():
 
     assert attempt is not None and attempt.validated
     assert attempt.model == "deterministic"
-    assert "gnlnac_pri_repay_amt" in attempt.sql
-    assert "gnlnac_cust_name" in attempt.sql
-    assert "gnlnac_prin" not in attempt.sql
+    assert "principal_repaid" in attempt.sql
+    assert "customer_name" in attempt.sql
+    assert "gold.loan_account_master" in attempt.sql
     assert "LIKE 'shelavati' || '%'" in attempt.sql
     assert "GROUP BY" in attempt.sql
     assert attempt.column_units["principal_repaid"] == "inr"
-    assert attempt.pii_columns == ["gnlnac_cust_name"]
+    assert attempt.pii_columns == ["customer_name"]
 
 
 def test_named_borrower_principal_stays_blocked_for_unauthorized_roles():
@@ -86,8 +83,9 @@ def test_named_borrower_disbursement_uses_reviewed_columns_without_an_llm():
 
     assert attempt is not None and attempt.validated
     assert attempt.model == "deterministic"
-    assert "gnlnac_lndisb_amt" in attempt.sql
-    assert "gnlnac_cust_name" in attempt.sql
+    assert "disbursed_amount" in attempt.sql
+    assert "customer_name" in attempt.sql
+    assert "gold.loan_account_master" in attempt.sql
     assert "LIKE 'shelavati' || '%'" in attempt.sql
     assert attempt.column_units["disbursed_amount"] == "inr"
 

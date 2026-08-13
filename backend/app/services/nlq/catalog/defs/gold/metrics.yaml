@@ -1,0 +1,294 @@
+# Metrics resolve to governed Gold views. The LLM selects metric ids; this file decides
+# the physical source and formula deterministically.
+
+- id: disbursement_total
+  label: Disbursement
+  unit: inr
+  grain: flow
+  base_table: gold.loan_disbursement_events
+  date_column: disbursement_date
+  expression: SUM({t}.disbursement_amount)
+  formula: Sum of disbursement event amounts in the period
+  synonyms: [disbursement, disbursed, released, paid out, payouts, drawdown]
+  caveat: Disbursement-event history begins on 2025-10-15.
+  verified: 2266908902.00 across 5696 events through 2026-07-31
+
+- id: disbursement_count
+  label: Number of disbursements
+  unit: count
+  grain: flow
+  base_table: gold.loan_disbursement_events
+  date_column: disbursement_date
+  expression: COUNT(*)
+  formula: Count of disbursement events in the period
+  synonyms: [disbursement count, number of disbursements, how many disbursements]
+  verified: 5696
+
+- id: sanctioned_amount
+  label: Sanctioned amount
+  unit: inr
+  grain: flow
+  base_table: gold.loan_account_master
+  date_column: sanction_date
+  expression: SUM({t}.sanction_amount)
+  formula: Sum of sanctioned amounts for accounts sanctioned in the period
+  synonyms: [sanctioned, sanction, approved amount, credit approved]
+  verified: 2290958902.00 across 5753 accounts
+
+- id: loan_count
+  label: Loans sanctioned
+  unit: count
+  grain: flow
+  base_table: gold.loan_account_master
+  date_column: sanction_date
+  expression: COUNT(*)
+  formula: Count of loan accounts sanctioned in the period
+  synonyms: [loan count, number of loans, how many loans, accounts, new loans, bookings]
+  verified: 5753
+
+- id: customer_count
+  label: Borrowers
+  unit: count
+  grain: flow
+  base_table: gold.loan_account_master
+  date_column: sanction_date
+  expression: COUNT(DISTINCT {t}.customer_id)
+  formula: Distinct borrowers with an account sanctioned in the period
+  synonyms: [customers, borrowers, unique customers, how many borrowers, clients]
+
+- id: avg_ticket_size
+  label: Average ticket size
+  unit: inr
+  grain: ratio
+  base_table: gold.loan_account_master
+  date_column: sanction_date
+  numerator: SUM({t}.sanction_amount)
+  denominator: COUNT(*)
+  formula: Total sanctioned amount divided by number of loans
+  synonyms: [average ticket, ticket size, average loan size, avg loan amount]
+
+- id: avg_interest_rate
+  label: Average interest rate
+  unit: percent
+  grain: ratio
+  base_table: gold.loan_account_master
+  date_column: sanction_date
+  numerator: SUM({t}.interest_rate * {t}.sanction_amount)
+  denominator: SUM({t}.sanction_amount)
+  formula: Sanction-amount-weighted average account interest rate
+  synonyms: [interest rate, average rate, yield, ROI, pricing]
+  requires_signoff: true
+
+- id: principal_outstanding_book
+  label: Principal outstanding (whole book)
+  unit: inr
+  grain: point_in_time
+  base_table: gold.loan_account_master
+  expression: SUM({t}.disbursed_amount - {t}.principal_repaid)
+  formula: Cumulative disbursed minus cumulative principal repaid across loan accounts
+  synonyms: [total outstanding, whole book, total portfolio, loan book size]
+  no_time_travel: true
+  caveat: >
+    This account-level derivation is ₹213.998 Cr and does not yet reconcile to the Silver
+    loan-master value of ₹213.022 Cr. Treat it as provisional.
+
+- id: principal_outstanding
+  label: Principal outstanding
+  unit: inr
+  grain: point_in_time
+  base_table: gold.portfolio_daily_snapshot
+  as_of_function: gold.portfolio_snapshot_as_of
+  expression: SUM({t}.principal_outstanding)
+  formula: Principal outstanding from each classified account at the requested snapshot
+  synonyms: [outstanding, principal outstanding, POS, book size, exposure, AUM]
+  verified: 2045394519.25 across 5466 classified accounts as of 2026-07-31
+
+- id: overdue_principal
+  label: Overdue principal
+  unit: inr
+  grain: point_in_time
+  base_table: gold.portfolio_daily_snapshot
+  as_of_function: gold.portfolio_snapshot_as_of
+  expression: SUM({t}.principal_overdue)
+  formula: Principal overdue at the requested portfolio snapshot
+  synonyms: [overdue, arrears, past due, principal due, delinquent amount]
+  verified: 1957196.06 as of 2026-07-31
+
+- id: overdue_total
+  label: Total overdue
+  unit: inr
+  grain: point_in_time
+  base_table: gold.portfolio_daily_snapshot
+  as_of_function: gold.portfolio_snapshot_as_of
+  expression: SUM({t}.total_overdue)
+  formula: Principal, interest, charges and penal overdue at the requested snapshot
+  synonyms: [total overdue, total arrears, total dues, amount overdue]
+
+- id: delinquent_account_count
+  label: Delinquent accounts
+  unit: count
+  grain: point_in_time
+  base_table: gold.portfolio_daily_snapshot
+  as_of_function: gold.portfolio_snapshot_as_of
+  expression: COUNT(*) FILTER (WHERE {t}.is_delinquent)
+  formula: Count of classified accounts with DPD greater than zero
+  synonyms: [delinquent accounts, accounts overdue, how many are late, defaulters]
+
+- id: avg_dpd
+  label: Average DPD
+  unit: days
+  grain: ratio
+  base_table: gold.portfolio_daily_snapshot
+  as_of_function: gold.portfolio_snapshot_as_of
+  numerator: SUM({t}.dpd_days)
+  denominator: COUNT(*)
+  formula: Mean days past due across classified accounts at the snapshot
+  synonyms: [average DPD, mean days past due, average delinquency]
+
+- id: par_30
+  label: PAR 30
+  unit: percent
+  grain: ratio
+  point_in_time: true
+  base_table: gold.portfolio_daily_snapshot
+  as_of_function: gold.portfolio_snapshot_as_of
+  numerator: SUM({t}.principal_outstanding) FILTER (WHERE {t}.is_par30)
+  denominator: SUM({t}.principal_outstanding)
+  scale: 100
+  formula: Principal outstanding over 30 DPD divided by classified principal outstanding
+  synonyms: [PAR, PAR 30, portfolio at risk, par30, 30+ DPD]
+  requires_signoff: true
+  signoff_note: >
+    Denominator is principal outstanding on the classified subset, currently 5,466 of
+    5,753 loan accounts. Client must ratify this denominator for board reporting.
+  verified: 0.2685526473% as of 2026-07-31
+
+- id: par_60
+  label: PAR 60
+  unit: percent
+  grain: ratio
+  point_in_time: true
+  base_table: gold.portfolio_daily_snapshot
+  as_of_function: gold.portfolio_snapshot_as_of
+  numerator: SUM({t}.principal_outstanding) FILTER (WHERE {t}.is_par60)
+  denominator: SUM({t}.principal_outstanding)
+  scale: 100
+  formula: Principal outstanding over 60 DPD divided by classified principal outstanding
+  synonyms: [PAR 60, par60, 60+ DPD]
+  requires_signoff: true
+
+- id: par_90
+  label: PAR 90
+  unit: percent
+  grain: ratio
+  point_in_time: true
+  base_table: gold.portfolio_daily_snapshot
+  as_of_function: gold.portfolio_snapshot_as_of
+  numerator: SUM({t}.principal_outstanding) FILTER (WHERE {t}.is_par90)
+  denominator: SUM({t}.principal_outstanding)
+  scale: 100
+  formula: Principal outstanding over 90 DPD divided by classified principal outstanding
+  synonyms: [PAR 90, par90, 90+ DPD]
+  requires_signoff: true
+
+- id: npa_ratio
+  label: NPA ratio
+  unit: percent
+  grain: ratio
+  point_in_time: true
+  base_table: gold.portfolio_daily_snapshot
+  as_of_function: gold.portfolio_snapshot_as_of
+  numerator: SUM({t}.principal_outstanding) FILTER (WHERE {t}.is_npa)
+  denominator: SUM({t}.principal_outstanding)
+  scale: 100
+  formula: NPA-classified principal outstanding divided by classified principal outstanding
+  synonyms: [NPA ratio, gross NPA, GNPA, bad loan ratio, non performing]
+  requires_signoff: true
+
+- id: collection_efficiency
+  label: Collection efficiency
+  unit: percent
+  grain: ratio
+  base_table: gold.loan_repayment_events
+  date_column: repayment_date
+  numerator: SUM({t}.total_paid)
+  denominator: SUM({t}.total_due)
+  scale: 100
+  formula: Total principal and interest paid divided by total principal and interest due
+  synonyms: [collection efficiency, recovery rate, collections, CE, repayment rate]
+  verified: 98.770481% over 18836 repayment events
+
+- id: amount_collected
+  label: Amount collected
+  unit: inr
+  grain: flow
+  base_table: gold.loan_repayment_events
+  date_column: repayment_date
+  expression: SUM({t}.total_paid)
+  formula: Principal plus interest paid in the period
+  synonyms: [collected, collections, received, repayments, recovery, inflow]
+  verified: 227742182.62
+
+- id: principal_collected
+  label: Principal collected
+  unit: inr
+  grain: flow
+  base_table: gold.loan_repayment_events
+  date_column: repayment_date
+  expression: SUM({t}.principal_paid)
+  formula: Principal paid in the period
+  synonyms: [principal collected, principal repaid, principal recovery, principle paid]
+
+- id: interest_collected
+  label: Interest collected
+  unit: inr
+  grain: flow
+  base_table: gold.loan_repayment_events
+  date_column: repayment_date
+  expression: SUM({t}.interest_paid)
+  formula: Interest paid in the period
+  synonyms: [interest collected, interest paid, interest recovery]
+
+- id: amount_due
+  label: Amount due
+  unit: inr
+  grain: flow
+  base_table: gold.loan_repayment_events
+  date_column: repayment_date
+  expression: SUM({t}.total_due)
+  formula: Principal plus interest due in the period
+  synonyms: [due, demand, billed, amount due, expected collection]
+  verified: 230577194.96
+
+- id: collection_shortfall
+  label: Collection shortfall
+  unit: inr
+  grain: flow
+  base_table: gold.loan_repayment_events
+  date_column: repayment_date
+  expression: SUM({t}.collection_shortfall)
+  formula: Amount due minus amount paid in the period
+  synonyms: [shortfall, gap, unpaid, missed collections, under recovery]
+
+- id: scheduled_amount
+  label: Scheduled instalments
+  unit: inr
+  grain: flow
+  base_table: gold.loan_schedule_events
+  date_column: scheduled_date
+  expression: SUM({t}.scheduled_total)
+  formula: Contractual principal plus interest scheduled in the period
+  synonyms: [scheduled, falling due, upcoming dues, expected inflow, amortisation]
+
+- id: gl_balance
+  label: GL balance
+  unit: inr
+  grain: point_in_time
+  base_table: gold.gl_daily_balances
+  as_of_column: balance_date
+  as_of_key: [entity_num, branch_code, gl_number, currency_code]
+  expression: SUM({t}.base_currency_balance)
+  formula: Base-currency GL closing balance at the requested date
+  synonyms: [GL balance, ledger balance, trial balance, account balance, financials]
+  restrictions: Cannot be grouped by loan product, scheme or loan branch.
+  requires_signoff: true

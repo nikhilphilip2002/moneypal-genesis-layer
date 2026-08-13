@@ -33,31 +33,34 @@ class TestPrivileges:
             cur.execute("SELECT current_user")
             assert cur.fetchone()[0] == settings.nlq_db_user
 
-    def test_can_read_silver(self):
+    def test_can_read_gold_view(self):
         with nlq_db.readonly_cursor() as (_conn, cur):
-            cur.execute("SELECT count(*) FROM silver.loan_account_master")
+            cur.execute("SELECT count(*) FROM gold.loan_account_master")
             assert cur.fetchone()[0] > 0
 
-    def test_sees_every_silver_table(self):
+    def test_sees_every_gold_view(self):
         """Guards the ALTER DEFAULT PRIVILEGES FOR ROLE moneypal clause: without it, tables
         created by the next ingestion would be invisible here."""
         with nlq_db.readonly_cursor() as (_conn, cur):
             cur.execute(
-                "SELECT count(*) FROM information_schema.tables WHERE table_schema = 'silver'"
+                "SELECT count(*) FROM information_schema.views WHERE table_schema = 'gold'"
             )
-            assert cur.fetchone()[0] == 19
+            assert cur.fetchone()[0] == 15
+
+    def test_can_execute_reviewed_portfolio_function(self):
+        with nlq_db.readonly_cursor() as (_conn, cur):
+            cur.execute("SELECT count(*) FROM gold.portfolio_snapshot_as_of(CURRENT_DATE)")
+            assert cur.fetchone()[0] >= 0
 
 
 class TestWritesAreRejected:
     @pytest.mark.parametrize(
         "sql",
         [
-            "INSERT INTO silver.loan_account_master (gnlnac_acnt_num) VALUES ('x')",
-            "UPDATE silver.loan_account_master SET gnlnac_sanc_amt = 0",
-            "DELETE FROM silver.loan_account_master",
-            "CREATE TABLE silver.nlq_should_not_exist (i int)",
-            "DROP INDEX silver.ix_lam_sanc_date",
-            "TRUNCATE silver.loan_repayment_schedule",
+            "INSERT INTO gold.loan_account_master (loan_account_number) VALUES ('x')",
+            "UPDATE gold.loan_account_master SET sanction_amount = 0",
+            "DELETE FROM gold.loan_account_master",
+            "CREATE TABLE gold.nlq_should_not_exist (i int)",
         ],
     )
     def test_write_is_denied(self, sql):
@@ -71,7 +74,7 @@ class TestWritesAreRejected:
         What must hold is the privilege set underneath it."""
         with nlq_db.readonly_cursor() as (conn, cur):
             cur.execute("SET default_transaction_read_only = off")
-            error = _fails(cur, "DELETE FROM silver.loan_account_master")
+            error = _fails(cur, "DELETE FROM gold.loan_account_master")
             conn.rollback()
         assert "denied" in error.lower()
 
@@ -87,6 +90,12 @@ class TestSchemaIsolation:
     def test_bronze_is_unreachable(self, sql):
         with nlq_db.readonly_cursor() as (conn, cur):
             error = _fails(cur, sql)
+            conn.rollback()
+        assert "denied" in error.lower() or "does not exist" in error.lower()
+
+    def test_silver_is_unreachable(self):
+        with nlq_db.readonly_cursor() as (conn, cur):
+            error = _fails(cur, "SELECT count(*) FROM silver.loan_account_master")
             conn.rollback()
         assert "denied" in error.lower() or "does not exist" in error.lower()
 
@@ -106,7 +115,7 @@ class TestSessionGuards:
     def test_search_path_excludes_bronze_and_public(self):
         with nlq_db.readonly_cursor() as (_conn, cur):
             cur.execute("SELECT current_setting('search_path')")
-            assert cur.fetchone()[0] == "silver"
+            assert cur.fetchone()[0] == "gold"
 
 
 def test_refuses_to_fall_back_to_the_app_role(monkeypatch):

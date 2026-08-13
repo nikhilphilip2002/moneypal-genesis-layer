@@ -399,7 +399,7 @@ class TestLineage:
         chart = chart_for(spec, [{"par_30": 0.09}], catalog)
         assert chart.lineage.sql
         assert "par_30" in chart.lineage.formulas
-        assert chart.lineage.source_tables == ["silver.asset_classification_details"]
+        assert chart.lineage.source_tables == ["gold.portfolio_daily_snapshot"]
 
     def test_queryspec_answers_are_not_marked_unverified(self, catalog):
         spec = QuerySpec(metrics=["loan_count"], period=Period(relative="all_time"))
@@ -410,7 +410,7 @@ class TestLineage:
     def test_coverage_warnings_reach_the_lineage_panel(self, catalog):
         spec = QuerySpec(metrics=["par_30"], period=Period(relative="today"))
         chart = chart_for(spec, [{"par_30": 0.09}], catalog)
-        assert any("5,238" in w for w in chart.lineage.warnings)
+        assert any("5,466" in w for w in chart.lineage.warnings)
 
 
 class TestDrilldown:

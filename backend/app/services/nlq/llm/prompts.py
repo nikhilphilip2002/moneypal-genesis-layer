@@ -169,7 +169,7 @@ FEW_SHOTS: list[tuple[str, str]] = [
     (
         "What principal amount was paid by Sheelavati?",
         '{"route":"sql","intent":"cumulative principal repaid by borrower Sheelavati",'
-        '"tables":["silver.loan_account_master"],"confidence":0.94,'
+        '"tables":["gold.loan_account_master"],"confidence":0.94,'
         '"reasoning":"named-borrower filter requires validated SQL"}',
     ),
     (

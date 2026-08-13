@@ -6,8 +6,8 @@ The catalog is the product; a silent regression here degrades every answer downs
 import pytest
 import yaml
 
-from app.services.nlq.catalog import CatalogError, get_catalog
-from app.services.nlq.catalog.loader import DEFS_DIR
+from app.services.nlq.catalog import get_catalog
+from app.services.nlq.catalog.loader import ACTIVE_DEFS_DIR, DEFS_DIR
 
 
 @pytest.fixture(scope="module")
@@ -24,13 +24,13 @@ class TestLoads:
         assert get_catalog().version == catalog.version
 
     def test_every_yaml_file_is_a_list(self):
-        for path in DEFS_DIR.glob("*.yaml"):
+        for path in (*DEFS_DIR.glob("*.yaml"), *ACTIVE_DEFS_DIR.glob("*.yaml")):
             assert isinstance(yaml.safe_load(path.read_text()), list), path.name
 
     def test_joins_yaml_avoids_the_yaml_boolean_trap(self):
         """A bare `on:` key parses as the boolean True under YAML 1.1, which would silently
         drop every join condition and turn joins into cross products."""
-        raw = yaml.safe_load((DEFS_DIR / "joins.yaml").read_text())
+        raw = yaml.safe_load((ACTIVE_DEFS_DIR / "joins.yaml").read_text())
         for entry in raw:
             assert "on_columns" in entry, f"{entry.get('id')} lost its join condition"
             assert True not in entry, f"{entry.get('id')} has a YAML-boolean key"
@@ -40,6 +40,10 @@ class TestReferentialIntegrity:
     def test_metric_base_tables_exist(self, catalog):
         for metric in catalog.metrics.values():
             assert metric.base_table in catalog.allowed_tables(), metric.id
+
+    def test_active_allowlist_contains_only_gold_views(self, catalog):
+        assert catalog.allowed_tables()
+        assert all(table.startswith("gold.") for table in catalog.allowed_tables())
 
     def test_dimension_tables_exist(self, catalog):
         for dim in catalog.dimensions.values():
@@ -71,14 +75,19 @@ class TestGrainDiscipline:
     def test_point_in_time_metrics_can_be_pinned(self, catalog):
         for metric in catalog.metrics.values():
             if metric.grain == "point_in_time":
-                assert metric.as_of_column or metric.no_time_travel or metric.year_column, (
+                assert (
+                    metric.as_of_column
+                    or metric.as_of_function
+                    or metric.no_time_travel
+                    or metric.year_column
+                ), (
                     f"{metric.id} is point_in_time but cannot be pinned to a date — it "
                     "would be silently averaged"
                 )
 
     def test_as_of_metrics_declare_a_collapse_key(self, catalog):
         for metric in catalog.metrics.values():
-            if metric.as_of_column:
+            if metric.as_of_column and not metric.as_of_function:
                 assert metric.as_of_key, (
                     f"{metric.id} reads an event log but declares no key to collapse it by"
                 )
@@ -95,31 +104,25 @@ class TestGrainDiscipline:
         assert "COALESCE(" in sql
         assert "NULLIF(" in sql
 
-    def test_classification_table_is_marked_as_an_event_log(self, catalog):
-        """The single most dangerous mistake available in this schema is documented."""
-        table = catalog.tables["asset_classification_details"]
-        assert "NOT a daily full snapshot" in table.notes
-        assert table.point_in_time and table.as_of_column
+    def test_portfolio_metrics_use_the_reviewed_as_of_function(self, catalog):
+        metric = catalog.metrics["par_30"]
+        assert metric.as_of_function == "gold.portfolio_snapshot_as_of"
+        assert metric.point_in_time
 
 
 class TestSafetyMetadata:
     def test_pii_columns_are_tagged(self, catalog):
         pii = {c.id for c in catalog.columns.values() if c.is_pii}
-        for expected in ("customer.first_name", "customer.date_of_birth", "loan.customer_name"):
+        for expected in ("customer.full_name", "customer.dob", "loan.customer_name"):
             assert expected in pii
 
-    def test_fan_out_join_is_declared(self, catalog):
-        """corporate_customer_master holds a row per director — summing across it
-        multiplies loan amounts by the board size."""
-        join = catalog.join_between(
-            "silver.loan_account_master", "silver.corporate_customer_master"
-        )
-        assert join is not None and join.fans_out
+    def test_gold_joins_do_not_fan_out_reviewed_metrics(self, catalog):
+        assert all(not join.fans_out for join in catalog.joins)
 
     def test_gl_is_isolated_from_the_loan_book(self, catalog):
         """No join path — a GL-by-product question must be refusable, not answerable."""
         assert catalog.join_between(
-            "silver.gl_daily_balances", "silver.loan_account_master"
+            "gold.gl_daily_balances", "gold.loan_account_master"
         ) is None
 
     def test_unratified_metrics_are_flagged(self, catalog):

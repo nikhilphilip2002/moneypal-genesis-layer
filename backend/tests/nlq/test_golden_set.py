@@ -114,18 +114,19 @@ class TestRefusedCasesAreNotSecretlyAnswerable:
                 )
             )
 
-    def test_monthly_gl_cannot_be_compiled(self):
-        """g107 — the GL table has annual grain and no date column."""
-        with pytest.raises(CompileError):
-            compile_spec(
-                QuerySpec.model_validate(
-                    {
-                        "metrics": ["gl_balance"],
-                        "dimensions": ["month"],
-                        "period": {"relative": "last_fy"},
-                    }
-                )
+    def test_monthly_gl_uses_the_governed_daily_balance_view(self):
+        compiled = compile_spec(
+            QuerySpec.model_validate(
+                {
+                    "metrics": ["gl_balance"],
+                    "dimensions": ["month"],
+                    "period": {"relative": "last_fy"},
+                }
             )
+        )
+        assert "gold.gl_daily_balances" in compiled.sql
+        assert "generate_series" in compiled.sql
+        assert "bucket_start" in compiled.sql
 
 
 @requires_db

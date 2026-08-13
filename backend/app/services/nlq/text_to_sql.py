@@ -37,7 +37,7 @@ lending book. You output JSON only.
 
 HARD RULES — a statement breaking any of these is discarded:
 - Exactly one SELECT statement. No semicolons, no DDL, no DML, no CTE that writes.
-- Schema-qualify every table as silver.<table>. Never reference bronze, public, \
+- Schema-qualify every source as gold.<view>. Never reference bronze, silver, public, \
 pg_catalog or information_schema.
 - Never use SELECT * or table.*. Name every column.
 - Every join must have an explicit ON condition.
@@ -50,26 +50,28 @@ DOMAIN
 - Indian financial year runs 1 April to 31 March.
 - Account keys are compound: every join must include entity_num as well as the account \
 number, or rows from two entities will be merged.
-- asset_classification_details is an EVENT LOG, not a snapshot. For an as-of figure use \
-DISTINCT ON (entity, account) ... ORDER BY ... effective_date DESC with \
-effective_date <= the date. Never filter it with effective_date = a date.
+- Gold views are the governed semantic layer. Historical portfolio questions belong on \
+the reviewed QuerySpec path; generated SQL may read the current portfolio view only.
 """
 
 # Named-borrower lookup is the narrow PII use case needed by the Workbench. More sensitive
 # fields stay absent from the model context even for privileged roles.
 NAME_PII_COLUMN_IDS = frozenset({
-    "loan.customer_name",
-    "customer.first_name",
-    "customer.last_name",
+    "loan.customer_name", "loan.agent_name", "disb.customer_name",
+    "repay.customer_name", "risk.customer_name", "customer.full_name",
+    "customer.dob", "customer.mobile", "customer.email", "customer.pan",
+    "customer.aadhaar", "customer.city", "customer.district", "customer.pincode",
+    "customer.agency_name", "kyc.customer_name", "kyc.number", "kyc.expiry",
+    "agent.name", "agent.mobile", "agent.email", "msme.customer_name",
+    "msme.firm_name", "msme.mobile",
 })
 
 
 def _system_prompt(allow_pii: bool) -> str:
     pii_rule = (
-        "- You may use listed borrower-name columns only when needed to identify the "
-        "borrower in the user's question. Do not return names unless the question asks "
-        "for them. Never reference dates of birth, addresses, PIN codes, PAN, Aadhaar or "
-        "income."
+        "- You may use listed PII columns only when the user's question explicitly needs "
+        "that borrower, customer, agent, KYC or MSME detail. Return only the requested "
+        "fields and never broaden a person-level query into a bulk export."
         if allow_pii
         else "- Never reference customer names, dates of birth, addresses, PIN codes, "
              "PAN, Aadhaar or income."
@@ -243,10 +245,10 @@ def _normalized_borrower_sql(borrower: str) -> tuple[str, str, str]:
     normalized = re.sub(r"(.)\1+", r"\1", normalized)
     literal = exp.Literal.string(normalized).sql(dialect="postgres")
     stored_name = (
-        "REGEXP_REPLACE(REGEXP_REPLACE(REPLACE(LOWER(TRIM(gnlnac_cust_name)), "
+        "REGEXP_REPLACE(REGEXP_REPLACE(REPLACE(LOWER(TRIM(customer_name)), "
         "'th', 't'), '[^a-z0-9]', '', 'g'), '(.)\\1+', '\\1', 'g')"
     )
-    display_name = "TRIM(REGEXP_REPLACE(gnlnac_cust_name, '\\s+', ' ', 'g'))"
+    display_name = "TRIM(REGEXP_REPLACE(customer_name, '\\s+', ' ', 'g'))"
     return literal, stored_name, display_name
 
 
@@ -265,17 +267,17 @@ def _named_borrower_disbursed_attempt(
     literal, stored_name, display_name = _normalized_borrower_sql(borrower)
     sql = (
         f"SELECT {display_name} AS borrower_name, "
-        "SUM(gnlnac_lndisb_amt) AS disbursed_amount "
-        "FROM silver.loan_account_master "
+        "SUM(disbursed_amount) AS disbursed_amount "
+        "FROM gold.loan_account_master "
         f"WHERE {stored_name} LIKE {literal} || '%' "
-        "AND gnlnac_sanc_date <= CURRENT_DATE "
+        "AND sanction_date <= CURRENT_DATE "
         f"GROUP BY {display_name} ORDER BY disbursed_amount DESC LIMIT 20"
     )
     checked = validate(
         sql,
         catalog=catalog,
         allow_pii=True,
-        allowed_pii_columns={"gnlnac_cust_name"},
+        allowed_pii_columns={"customer_name"},
     )
     return SqlAttempt(
         sql=checked.sql,
@@ -320,17 +322,17 @@ def _named_borrower_principal_attempt(
     literal, stored_name, display_name = _normalized_borrower_sql(borrower)
     sql = (
         f"SELECT {display_name} AS borrower_name, "
-        "SUM(gnlnac_pri_repay_amt) AS principal_repaid "
-        "FROM silver.loan_account_master "
+        "SUM(principal_repaid) AS principal_repaid "
+        "FROM gold.loan_account_master "
         f"WHERE {stored_name} LIKE {literal} || '%' "
-        "AND gnlnac_sanc_date <= CURRENT_DATE "
+        "AND sanction_date <= CURRENT_DATE "
         f"GROUP BY {display_name} ORDER BY principal_repaid DESC LIMIT 20"
     )
     checked = validate(
         sql,
         catalog=catalog,
         allow_pii=True,
-        allowed_pii_columns={"gnlnac_cust_name"},
+        allowed_pii_columns={"customer_name"},
     )
     return SqlAttempt(
         sql=checked.sql,
@@ -395,11 +397,11 @@ def _few_shots() -> list[dict[str, str]]:
         {
             "role": "assistant",
             "content": (
-                '{"sql":"SELECT gnlnac_appl_brn_code, AVG(gnlnac_ln_intrate) AS avg_rate '
-                "FROM silver.loan_account_master WHERE gnlnac_prod_code = 1 "
-                'AND gnlnac_sanc_date >= DATE \'2023-01-01\' '
-                'GROUP BY gnlnac_appl_brn_code LIMIT 100",'
-                '"tables":["silver.loan_account_master"],'
+                '{"sql":"SELECT branch_code, AVG(interest_rate) AS avg_rate '
+                "FROM gold.loan_account_master WHERE product_code = 1 "
+                'AND sanction_date >= DATE \'2023-01-01\' '
+                'GROUP BY branch_code LIMIT 100",'
+                '"tables":["gold.loan_account_master"],'
                 '"explanation":"Average rate per branch for product 1."}'
             ),
         },
@@ -410,14 +412,12 @@ def _few_shots() -> list[dict[str, str]]:
         {
             "role": "assistant",
             "content": (
-                '{"sql":"SELECT DISTINCT ON (ascd_entity_num, ascd_account_num) '
-                "ascd_account_num, ascd_no_inst_not_paid, ascd_dpd_days "
-                "FROM silver.asset_classification_details "
-                'WHERE ascd_effective_date <= CURRENT_DATE '
-                'ORDER BY ascd_entity_num, ascd_account_num, ascd_effective_date DESC '
+                '{"sql":"SELECT loan_account_number, dpd_days, total_overdue '
+                "FROM gold.portfolio_daily_snapshot "
+                'WHERE dpd_days > 0 ORDER BY dpd_days DESC, total_overdue DESC '
                 'LIMIT 100",'
-                '"tables":["silver.asset_classification_details"],'
-                '"explanation":"Latest classification per account, worst first."}'
+                '"tables":["gold.portfolio_daily_snapshot"],'
+                '"explanation":"Current delinquent accounts, worst first."}'
             ),
         },
     ]

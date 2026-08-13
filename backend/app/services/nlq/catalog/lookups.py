@@ -1,9 +1,8 @@
 """Enum values that live in a table rather than in YAML.
 
-Scheme names are the case that matters: 15 of the 60 codes in use have a real name in
-`silver.loan_product_scheme_master`, and hard-coding them would go stale the moment the
-client adds a scheme. The other 45 have no name anywhere and keep their bare code — a
-plausible invented category would be worse, because it cannot be spotted as wrong.
+Dynamic labels are supported only when an active governed catalog explicitly declares a
+lookup. The Gold catalog currently uses reviewed static dictionaries and deliberately
+declares no raw-Silver lookup.
 
 Cached for the process lifetime and keyed by catalog version, so a catalog edit cannot
 leave a stale label behind.

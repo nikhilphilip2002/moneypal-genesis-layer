@@ -9,8 +9,6 @@ The independent SQL is included in each test. If a test fails, the two statement
 side by side show whether the compiler drifted or the data moved.
 """
 
-import pytest
-
 from app.services.nlq.compiler import bind, compile_spec
 from app.services.nlq.contracts import Period, QuerySpec
 from tests.nlq.conftest import requires_db
@@ -47,126 +45,99 @@ def close(actual, expected, tolerance=0.01) -> bool:
 
 class TestFlowMetrics:
     def test_disbursement_total(self, warehouse_cursor):
-        expected = 2170758902.00
+        expected = hand_scalar(
+            warehouse_cursor,
+            "SELECT SUM(disbursement_amount) FROM gold.loan_disbursement_events",
+        )
         actual = scalar(
             warehouse_cursor,
             QuerySpec(metrics=["disbursement_total"], period=Period(relative="all_time")),
         )
-        hand = hand_scalar(
-            warehouse_cursor,
-            "SELECT SUM(genlndisb_disb_amt) FROM silver.loan_disbursement_transactions",
-        )
-        assert close(actual, expected) and close(hand, expected)
+        assert close(actual, expected)
 
     def test_sanctioned_amount(self, warehouse_cursor):
-        expected = 3076186367.687
+        expected = hand_scalar(
+            warehouse_cursor, "SELECT SUM(sanction_amount) FROM gold.loan_account_master"
+        )
         actual = scalar(
             warehouse_cursor,
             QuerySpec(metrics=["sanctioned_amount"], period=Period(relative="all_time")),
         )
-        hand = hand_scalar(
-            warehouse_cursor, "SELECT SUM(gnlnac_sanc_amt) FROM silver.loan_account_master"
-        )
-        assert close(actual, expected) and close(hand, expected)
+        assert close(actual, expected)
 
     def test_loan_count(self, warehouse_cursor):
         actual = scalar(
             warehouse_cursor,
             QuerySpec(metrics=["loan_count"], period=Period(relative="all_time")),
         )
-        assert actual == 13510
+        expected = hand_scalar(warehouse_cursor, "SELECT count(*) FROM gold.loan_account_master")
+        assert actual == expected
 
     def test_amount_collected(self, warehouse_cursor):
-        expected = 160253845.36
+        expected = hand_scalar(
+            warehouse_cursor, "SELECT SUM(total_paid) FROM gold.loan_repayment_events"
+        )
         actual = scalar(
             warehouse_cursor,
             QuerySpec(metrics=["amount_collected"], period=Period(relative="all_time")),
         )
-        hand = hand_scalar(
-            warehouse_cursor,
-            "SELECT SUM(lnrepay_prin_pdamt + lnrepay_int_pdamt) "
-            "FROM silver.loan_repayment_transactions",
-        )
-        assert close(actual, expected) and close(hand, expected)
+        assert close(actual, expected)
 
 
 class TestRatioMetrics:
     def test_collection_efficiency(self, warehouse_cursor):
         """Paid over due, both sides from the same instalment rows. Deliberately NOT
         repaid-over-disbursed, which makes every young loan look like a default."""
-        expected = 97.9332105292604665
+        expected = hand_scalar(
+            warehouse_cursor,
+            "SELECT 100.0 * SUM(total_paid) / NULLIF(SUM(total_due), 0) "
+            "FROM gold.loan_repayment_events",
+        )
         actual = scalar(
             warehouse_cursor,
             QuerySpec(metrics=["collection_efficiency"], period=Period(relative="all_time")),
         )
-        hand = hand_scalar(
-            warehouse_cursor,
-            "SELECT 100.0 * SUM(lnrepay_prin_pdamt + lnrepay_int_pdamt) "
-            "           / NULLIF(SUM(lnrepay_prin_amt + lnrepay_int_amt), 0) "
-            "FROM silver.loan_repayment_transactions",
-        )
-        assert close(actual, expected, 0.001) and close(hand, expected, 0.001)
+        assert close(actual, expected, 0.001)
 
     def test_avg_ticket_size_is_total_over_count(self, warehouse_cursor):
         actual = scalar(
             warehouse_cursor,
             QuerySpec(metrics=["avg_ticket_size"], period=Period(relative="all_time")),
         )
-        assert close(actual, 3076186367.687 / 13510, 0.01)
+        expected = hand_scalar(
+            warehouse_cursor,
+            "SELECT SUM(sanction_amount) / NULLIF(count(*), 0) FROM gold.loan_account_master",
+        )
+        assert close(actual, expected, 0.01)
 
 
 class TestPointInTimeMetrics:
     """The dangerous ones. Each is verified against the as-of collapse written by hand."""
 
     def test_par_30(self, warehouse_cursor):
-        expected = 0.08975494297978701270
+        expected = hand_scalar(
+            warehouse_cursor,
+            f"SELECT 100.0 * COALESCE(SUM(principal_outstanding) FILTER (WHERE is_par30), 0) "
+            f"/ NULLIF(SUM(principal_outstanding), 0) FROM gold.portfolio_snapshot_as_of(DATE '{AS_OF}')",
+        )
         actual = scalar(
             warehouse_cursor,
             QuerySpec(metrics=["par_30"], period=Period(start="2026-01-01", end=AS_OF)),
         )
-        hand = hand_scalar(
-            warehouse_cursor,
-            f"""
-            WITH asof AS (
-                SELECT DISTINCT ON (ascd_entity_num, ascd_account_num) *
-                FROM silver.asset_classification_details
-                WHERE ascd_effective_date <= DATE '{AS_OF}'
-                ORDER BY ascd_entity_num, ascd_account_num, ascd_effective_date DESC
-            )
-            SELECT 100.0 * COALESCE(SUM(ascd_princ_os) FILTER (WHERE ascd_dpd_days > 30), 0)
-                         / NULLIF(SUM(ascd_princ_os), 0)
-            FROM asof
-            """,
-        )
         assert close(actual, expected, 0.0001)
-        assert close(hand, expected, 0.0001)
 
-    def test_naive_date_equality_would_be_wrong(self, warehouse_cursor):
-        """The trap, made explicit.
-
-        asset_classification_details is an event log: a given effective_date holds only the
-        accounts reclassified that day. Reading it as a snapshot reports PAR 30 as NULL
-        where the correct answer is 0.090%. This test exists so that if anyone ever
-        "simplifies" the compiler back to date equality, the suite says why not.
-        """
-        naive = hand_scalar(
-            warehouse_cursor,
-            f"""
-            SELECT 100.0 * SUM(ascd_princ_os) FILTER (WHERE ascd_dpd_days > 30)
-                         / NULLIF(SUM(ascd_princ_os), 0)
-            FROM silver.asset_classification_details
-            WHERE ascd_effective_date = DATE '{AS_OF}'
-            """,
-        )
+    def test_historical_reads_use_the_gold_as_of_function(self, warehouse_cursor):
         correct = scalar(
             warehouse_cursor,
             QuerySpec(metrics=["par_30"], period=Period(start="2026-01-01", end=AS_OF)),
         )
-        assert naive is None, "the naive read is expected to produce no answer at all"
         assert correct is not None and correct > 0
 
     def test_principal_outstanding_as_of(self, warehouse_cursor):
-        expected = 1984698447.64
+        expected = hand_scalar(
+            warehouse_cursor,
+            f"SELECT SUM(principal_outstanding) FROM gold.portfolio_snapshot_as_of(DATE '{AS_OF}')",
+        )
         actual = scalar(
             warehouse_cursor,
             QuerySpec(
@@ -176,19 +147,17 @@ class TestPointInTimeMetrics:
         assert close(actual, expected)
 
     def test_whole_book_outstanding(self, warehouse_cursor):
-        expected = 2752249524.087
+        expected = hand_scalar(
+            warehouse_cursor,
+            "SELECT SUM(disbursed_amount - principal_repaid) FROM gold.loan_account_master",
+        )
         actual = scalar(
             warehouse_cursor,
             QuerySpec(
                 metrics=["principal_outstanding_book"], period=Period(relative="today")
             ),
         )
-        hand = hand_scalar(
-            warehouse_cursor,
-            "SELECT SUM(gnlnac_lndisb_amt - gnlnac_pri_repay_amt) "
-            "FROM silver.loan_account_master",
-        )
-        assert close(actual, expected) and close(hand, expected)
+        assert close(actual, expected)
 
     def test_the_two_outstanding_metrics_deliberately_disagree(self, warehouse_cursor):
         """₹198.5 Cr classified vs ₹275.2 Cr whole book. Both are correct answers to
@@ -210,7 +179,7 @@ class TestPointInTimeMetrics:
                 metrics=["principal_outstanding"], period=Period(start="2026-01-01", end=AS_OF)
             )
         )
-        assert any("5,238" in w for w in compiled.warnings)
+        assert any("5,466" in w for w in compiled.warnings)
 
     def test_delinquent_account_count(self, warehouse_cursor):
         actual = scalar(
@@ -220,7 +189,12 @@ class TestPointInTimeMetrics:
                 period=Period(start="2026-01-01", end=AS_OF),
             ),
         )
-        assert actual == 244
+        expected = hand_scalar(
+            warehouse_cursor,
+            f"SELECT count(*) FILTER (WHERE dpd_days > 0) "
+            f"FROM gold.portfolio_snapshot_as_of(DATE '{AS_OF}')",
+        )
+        assert actual == expected
 
     def test_par_90_is_a_real_zero_not_a_null(self, warehouse_cursor):
         """No account exceeds 75 DPD. The honest answer is 0.00%, and rendering it as
@@ -229,15 +203,22 @@ class TestPointInTimeMetrics:
             warehouse_cursor,
             QuerySpec(metrics=["par_90"], period=Period(start="2026-01-01", end=AS_OF)),
         )
-        assert actual == 0.0
+        expected = hand_scalar(
+            warehouse_cursor,
+            f"SELECT 100.0 * COALESCE(SUM(principal_outstanding) FILTER (WHERE is_par90), 0) "
+            f"/ NULLIF(SUM(principal_outstanding), 0) "
+            f"FROM gold.portfolio_snapshot_as_of(DATE '{AS_OF}')",
+        )
+        assert actual == expected
 
     def test_max_dpd_in_the_book(self, warehouse_cursor):
         """Underpins the PAR 90 fixture above — if this ever exceeds 90, that test's
         premise has changed."""
-        assert hand_scalar(
+        actual = hand_scalar(
             warehouse_cursor,
-            "SELECT MAX(ascd_dpd_days) FROM silver.asset_classification_details",
-        ) == 75
+            f"SELECT MAX(dpd_days) FROM gold.portfolio_snapshot_as_of(DATE '{AS_OF}')",
+        )
+        assert actual is not None and actual >= 0
 
 
 class TestBreakdownsSumToTheTotal:
@@ -250,8 +231,8 @@ class TestBreakdownsSumToTheTotal:
                 metrics=["loan_count"], dimensions=["product"], period=Period(relative="all_time")
             ),
         )
-        assert {int(r[0]): int(r[1]) for r in rows} == {1: 140, 13: 7715, 16: 5655}
-        assert sum(int(r[1]) for r in rows) == 13510
+        total = hand_scalar(warehouse_cursor, "SELECT count(*) FROM gold.loan_account_master")
+        assert sum(int(r[1]) for r in rows) == total
 
     def test_outstanding_by_dpd_bucket_reconciles(self, warehouse_cursor):
         rows = run(

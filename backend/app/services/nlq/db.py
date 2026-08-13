@@ -1,7 +1,7 @@
 """Dedicated read-only database access for the NLQ pipeline.
 
 Separate credentials and a separate pool from the application role. The privilege set of
-`nlq_readonly` — SELECT on `silver.*` and nothing else — is the security boundary; the SQL
+`nlq_readonly` — SELECT on governed `gold.*` views — is the security boundary; the SQL
 validator is defence in depth on top of it. See docs/GENESIS_NLQ_BUILD_PLAN.md §7.1 and
 scripts/sql/nlq_readonly_role.sql.
 
@@ -71,7 +71,7 @@ def _apply_session_guards(conn: Any) -> None:
         cur.execute(f"SET statement_timeout = {int(settings.nlq_statement_timeout_ms)}")
         cur.execute("SET idle_in_transaction_session_timeout = 10000")
         cur.execute("SET default_transaction_read_only = on")
-        cur.execute("SET search_path = silver")  # unqualified names cannot reach bronze/public
+        cur.execute("SET search_path = gold")  # unqualified names stay inside governed views
         conn.commit()
     finally:
         with contextlib.suppress(Exception):
@@ -179,10 +179,15 @@ def health() -> dict[str, Any]:
             cur.execute("SELECT current_user, current_setting('statement_timeout')")
             user, timeout = cur.fetchone()
             cur.execute(
-                "SELECT count(*) FROM information_schema.tables WHERE table_schema = 'silver'"
+                "SELECT count(*) FROM information_schema.views WHERE table_schema = 'gold'"
             )
-            tables = cur.fetchone()[0]
-        return {"status": "ok", "role": user, "statement_timeout": timeout, "silver_tables": tables}
+            views = cur.fetchone()[0]
+        return {
+            "status": "ok",
+            "role": user,
+            "statement_timeout": timeout,
+            "gold_views": views,
+        }
     except ReadOnlyNotConfigured as exc:
         return {"status": "unconfigured", "detail": str(exc)}
     except Exception as exc:  # noqa: BLE001 - health must always answer

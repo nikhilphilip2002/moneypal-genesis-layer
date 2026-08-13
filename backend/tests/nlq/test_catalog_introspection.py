@@ -1,6 +1,6 @@
 """Assert the catalog still describes the database it claims to describe.
 
-Build plan item 8. `pg_description` is empty for both schemas, so nothing in Postgres
+Build plan item 8. Nothing in Postgres
 enforces this: without these tests a renamed column in the next ingestion would surface as
 a broken answer in front of a user, not as a red build.
 """
@@ -22,7 +22,7 @@ def catalog():
 def live_columns(warehouse_cursor):
     warehouse_cursor.execute(
         "SELECT table_schema || '.' || table_name, column_name "
-        "FROM information_schema.columns WHERE table_schema = 'silver'"
+        "FROM information_schema.columns WHERE table_schema = 'gold'"
     )
     mapping: dict[str, set[str]] = {}
     for table, column in warehouse_cursor.fetchall():
@@ -35,11 +35,10 @@ class TestTablesExist:
         missing = [t for t in catalog.allowed_tables() if t not in live_columns]
         assert not missing, f"catalog references tables that do not exist: {missing}"
 
-    def test_no_catalog_table_is_outside_silver(self, catalog):
-        """The read-only role can only see silver; a bronze reference would be a dead entry
-        and, on the text-to-SQL path, a hole in the validator's allowlist."""
+    def test_no_catalog_table_is_outside_gold(self, catalog):
+        """Only governed Gold views may enter the LLM SQL allowlist."""
         for table in catalog.allowed_tables():
-            assert table.startswith("silver."), table
+            assert table.startswith("gold."), table
 
 
 class TestColumnsExist:
@@ -105,14 +104,9 @@ class TestDocumentedFactsStillHold:
                 drifted.append(f"{table.id}: catalog says {table.row_count}, found {actual}")
         assert not drifted, "row counts in tables.yaml are stale: " + "; ".join(drifted)
 
-    def test_classification_table_is_still_an_event_log(self, warehouse_cursor):
-        """If this ever becomes a true daily snapshot, the compiler's DISTINCT ON collapse
-        should be revisited — and this test is where that would be noticed."""
+    def test_portfolio_as_of_function_is_available(self, warehouse_cursor):
         warehouse_cursor.execute(
-            "SELECT count(*) FROM ("
-            "  SELECT ascd_account_num FROM silver.asset_classification_details"
-            "  GROUP BY 1 HAVING count(*) > 1"
-            ") t"
+            "SELECT count(*) FROM gold.portfolio_snapshot_as_of(CURRENT_DATE)"
         )
         assert warehouse_cursor.fetchone()[0] > 0
 
@@ -120,7 +114,7 @@ class TestDocumentedFactsStillHold:
         """A code documented but absent is fine (NPA is). A code in the data but missing
         from the enum renders as a bare number in a chart, which is what this catches."""
         warehouse_cursor.execute(
-            "SELECT DISTINCT gnlnac_prod_code FROM silver.loan_account_master"
+            "SELECT DISTINCT product_code FROM gold.loan_account_master"
         )
         live = {str(r[0]) for r in warehouse_cursor.fetchall()}
         documented = set(catalog.enums["product"].values)
@@ -128,7 +122,7 @@ class TestDocumentedFactsStillHold:
 
     def test_branch_codes_are_all_documented(self, catalog, warehouse_cursor):
         warehouse_cursor.execute(
-            "SELECT DISTINCT gnlnac_appl_brn_code FROM silver.loan_account_master"
+            "SELECT DISTINCT branch_code FROM gold.loan_account_master"
         )
         live = {str(r[0]) for r in warehouse_cursor.fetchall()}
         documented = set(catalog.enums["branch"].values)
