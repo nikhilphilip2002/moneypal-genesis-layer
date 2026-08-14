@@ -75,7 +75,7 @@ export default function ChartRenderer({ chart, onDrilldown, hideHeader = false }
       )}
 
       {chart.summary && (
-        <div className="mt-4 flex items-start gap-2.5 rounded-xl border border-border/60 bg-gradient-to-br from-muted/45 to-transparent px-3.5 py-3">
+        <div className="mt-4 flex items-start gap-2.5 rounded-xl border border-border/60 bg-muted/40 px-3.5 py-3">
           {/* Same icon-box rule as StatusRow: a fixed box the height of the first line, so
               the bulb centres on the eyebrow instead of floating between the two lines. */}
           <span aria-hidden className="flex h-4 shrink-0 items-center text-muted-foreground">
@@ -189,7 +189,7 @@ function KpiTiles({ chart }: { chart: ChartSpec }) {
       {chart.series.map((series) => (
         <Card
           key={series.field}
-          className="relative min-w-[12rem] overflow-hidden rounded-2xl border-border/60 bg-gradient-to-br from-muted/45 via-card to-card p-5"
+          className="relative min-w-[12rem] overflow-hidden rounded-2xl border-border/60 bg-muted/20 p-5 shadow-sm"
         >
           <span aria-hidden className="absolute inset-y-0 left-0 w-1 bg-muted-foreground/30" />
           <div className="text-[11px] font-semibold uppercase tracking-[0.13em] text-muted-foreground">
@@ -462,7 +462,7 @@ function SingleCategoryView({
   const color = seriesColor(0, mode);
   return (
     <div
-      className="overflow-hidden rounded-2xl border border-border/60 bg-gradient-to-br from-muted/45 to-background p-4 sm:p-5"
+      className="overflow-hidden rounded-2xl border border-border/60 bg-muted/20 p-4 sm:p-5"
       role="img"
       aria-label={`${label}: ${formatValue(value, unit)}`}
     >

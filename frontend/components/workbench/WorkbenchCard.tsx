@@ -51,7 +51,7 @@ export default function WorkbenchCard({
         className={cn(
           // The colour is stated rather than inherited: a <button> header would otherwise
           // fall back to the UA's `buttontext` and go dark-on-dark in the dark theme.
-          'flex min-h-[3.25rem] w-full items-center gap-2.5 bg-gradient-to-r from-muted/35 to-transparent px-4 py-3 text-left text-card-foreground',
+          'flex min-h-[3.25rem] w-full items-center gap-2.5 bg-muted/20 px-4 py-3 text-left text-card-foreground',
           collapsible && 'select-none transition-colors hover:bg-muted/25',
         )}
       >
