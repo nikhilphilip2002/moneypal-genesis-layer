@@ -297,9 +297,9 @@ function WorkbenchHeader({
       <div className="mx-auto flex h-16 w-full max-w-6xl items-center justify-between px-4 sm:px-6">
         <div className="flex items-center gap-3">
           <MoneypalLogo />
-          <span className="hidden border-l pl-3 text-sm font-medium text-muted-foreground sm:block">
-            Workbench
-          </span>
+          <div className="hidden border-l pl-3 sm:block">
+            <Image src="/gicc.png" alt="GICC" width={32} height={32} className="h-7 w-7 object-contain" />
+          </div>
         </div>
 
         <div className="flex items-center gap-1.5">

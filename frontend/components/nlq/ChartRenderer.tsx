@@ -75,14 +75,14 @@ export default function ChartRenderer({ chart, onDrilldown, hideHeader = false }
       )}
 
       {chart.summary && (
-        <div className="mt-4 flex items-start gap-2.5 rounded-xl border border-primary/10 bg-gradient-to-br from-primary/[0.055] to-transparent px-3.5 py-3">
+        <div className="mt-4 flex items-start gap-2.5 rounded-xl border border-border/60 bg-gradient-to-br from-muted/45 to-transparent px-3.5 py-3">
           {/* Same icon-box rule as StatusRow: a fixed box the height of the first line, so
               the bulb centres on the eyebrow instead of floating between the two lines. */}
-          <span aria-hidden className="flex h-4 shrink-0 items-center text-primary">
+          <span aria-hidden className="flex h-4 shrink-0 items-center text-muted-foreground">
             <Lightbulb className="size-4" />
           </span>
           <div className="min-w-0">
-            <div className="text-[10px] font-semibold uppercase leading-4 tracking-[0.14em] text-primary/80">
+            <div className="text-[10px] font-semibold uppercase leading-4 tracking-[0.14em] text-muted-foreground">
               What this shows
             </div>
             <p className="mt-1 text-sm leading-6 text-foreground/90">{chart.summary}</p>
@@ -189,9 +189,9 @@ function KpiTiles({ chart }: { chart: ChartSpec }) {
       {chart.series.map((series) => (
         <Card
           key={series.field}
-          className="relative min-w-[12rem] overflow-hidden rounded-2xl border-primary/10 bg-gradient-to-br from-primary/[0.09] via-card to-card p-5"
+          className="relative min-w-[12rem] overflow-hidden rounded-2xl border-border/60 bg-gradient-to-br from-muted/45 via-card to-card p-5"
         >
-          <span aria-hidden className="absolute inset-y-0 left-0 w-1 bg-primary" />
+          <span aria-hidden className="absolute inset-y-0 left-0 w-1 bg-muted-foreground/30" />
           <div className="text-[11px] font-semibold uppercase tracking-[0.13em] text-muted-foreground">
             {series.label}
           </div>
