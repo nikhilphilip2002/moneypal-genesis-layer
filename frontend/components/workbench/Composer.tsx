@@ -95,7 +95,10 @@ export default function Composer({
   const pinnedLabel = sources.find((source) => source.id === pinned)?.label ?? pinned;
 
   return (
-    <div className="overflow-hidden rounded-2xl border border-border/80 bg-card shadow-[0_10px_35px_rgba(0,69,129,0.08)] transition focus-within:border-primary/45 focus-within:ring-4 focus-within:ring-primary/5">
+    // Focus is neutral by design: a blue rim around a permanently visible input reads as an
+    // alert and competes with the response cards below it. Border width never changes, and
+    // the ring is drawn outside the box, so focusing shifts nothing.
+    <div className="overflow-hidden rounded-2xl border border-border/80 bg-card shadow-[0_10px_35px_rgba(0,69,129,0.08)] transition-colors focus-within:border-foreground/25 focus-within:ring-2 focus-within:ring-foreground/[0.07]">
       <textarea
         ref={textareaRef}
         value={value}
@@ -112,7 +115,7 @@ export default function Composer({
         rows={1}
         placeholder="Ask about the loan book, market, competitors, or regulations..."
         aria-label="Ask Moneypal Workbench"
-        className="block min-h-[72px] max-h-[200px] w-full resize-none bg-transparent px-4 pb-2 pt-4 text-[15px] leading-6 outline-none placeholder:text-muted-foreground/70"
+        className="composer-field block min-h-[72px] max-h-[200px] w-full resize-none bg-transparent px-4 pb-2 pt-4 text-[15px] leading-6 outline-none placeholder:text-muted-foreground/70"
       />
 
       <div className="flex items-center justify-between gap-3 px-2.5 pb-2.5 pt-1">
@@ -152,12 +155,14 @@ export default function Composer({
           )}
         </div>
 
+        {/* Send and stop are the same control in two states — same 36×36 target, same
+            icon-only treatment — so the composer does not reflow when a run starts. */}
         {busy ? (
           <Button
             type="button"
             size="icon"
-            variant="outline"
-            className="size-9 shrink-0 rounded-xl bg-card shadow-none"
+            variant="iconAction"
+            className="size-9 shrink-0 rounded-xl"
             onClick={onCancel}
             aria-label="Stop response"
           >
@@ -167,7 +172,8 @@ export default function Composer({
           <Button
             type="button"
             size="icon"
-            className="size-9 shrink-0 rounded-xl shadow-none"
+            variant="iconAction"
+            className="size-9 shrink-0 rounded-xl"
             onClick={submit}
             disabled={!value.trim()}
             aria-label="Send message"
@@ -222,7 +228,9 @@ function PlusMenu({
             className="cursor-pointer items-start gap-2.5 rounded-lg py-2"
             onClick={() => onOpenWorkspace(tool.id)}
           >
-            <tool.icon className="mt-0.5 size-4 text-primary" />
+            <span aria-hidden className="flex h-5 shrink-0 items-center">
+              <tool.icon className="size-4 text-primary" />
+            </span>
             <span>
               <span className="block text-sm font-medium text-foreground">{tool.label}</span>
               <span className="block text-[11px] leading-4 text-muted-foreground">{tool.description}</span>

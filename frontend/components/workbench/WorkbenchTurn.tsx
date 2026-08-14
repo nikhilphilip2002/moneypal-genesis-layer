@@ -8,10 +8,15 @@ import BriefRenderer from '@/components/intel/BriefRenderer';
 import WorkbenchCard from './WorkbenchCard';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import StatusRow from '@/components/ui/status-row';
+import { BLOCK_GAP, SOURCE_BADGE, SUGGESTION_CHIP, sourceLabel } from '@/lib/workbench-ui';
 
 // One conversational turn: the question, the route the orchestrator chose, an optional
 // merged synthesis lead, and a card per source. Cards stream in as each source returns, so
 // this renders progressively — a pending source shows a spinner rather than blocking.
+//
+// Every non-card message here — loading, refusal, error, partial, clarification — is a
+// StatusRow, so an icon never sits half a line below the text it belongs to.
 
 export type WorkbenchTurnData = {
   id: string;
@@ -26,11 +31,6 @@ export type WorkbenchTurnData = {
   legacyAnswerUnavailable?: boolean;
   partial?: boolean;
   done: boolean;
-};
-
-const SOURCE_LABELS: Record<string, string> = {
-  db: 'Loan book', macro: 'Macro', competitive: 'Competitive', regulatory: 'Regulatory',
-  knowledge: 'Banking concepts', schema: 'Schema',
 };
 
 const BRIEF_TITLES: Record<string, string> = {
@@ -48,15 +48,14 @@ export default function WorkbenchTurn({ turn, onAsk }: { turn: WorkbenchTurnData
       </div>
 
       <div className="flex items-start gap-3">
-        <div className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-xl bg-accent text-primary">
+        <div className="flex size-8 shrink-0 items-center justify-center rounded-xl bg-accent text-primary">
           <Sparkles className="size-4" />
         </div>
         <div className="min-w-0 flex-1 space-y-3">
           {!turn.done && turn.stage && !turn.route && (
-            <div className="flex items-center gap-2 py-1 text-sm text-muted-foreground">
-              <Loader2 className="size-4 animate-spin" />
+            <StatusRow icon={Loader2} spin className="py-1">
               <span className="capitalize">{turn.stage}…</span>
-            </div>
+            </StatusRow>
           )}
 
           {turn.synthesis && (
@@ -70,48 +69,41 @@ export default function WorkbenchTurn({ turn, onAsk }: { turn: WorkbenchTurnData
           {turn.pending
             .filter((source) => !turn.cards.some((card) => card.source === source))
             .map((source) => (
-              <div key={source} className="flex items-center gap-2 py-1 text-xs text-muted-foreground">
-                <Loader2 className="size-3.5 animate-spin" />
-                Checking {SOURCE_LABELS[source] ?? source}…
-              </div>
+              <StatusRow key={source} icon={Loader2} spin size="sm" className="py-1">
+                Checking {sourceLabel(source)}…
+              </StatusRow>
             ))}
 
           {turn.refusal && (
-            <div className="flex items-start gap-2 rounded-xl border border-amber-500/30 bg-amber-500/5 px-3 py-2.5 text-sm">
-              <Ban className="mt-0.5 size-4 shrink-0 text-amber-600" />
-              <span>{turn.refusal.message || 'That request cannot be handled here.'}</span>
-            </div>
+            <StatusRow icon={Ban} tone="warning" surface label="Not answerable:">
+              {turn.refusal.message || 'That request cannot be handled here.'}
+            </StatusRow>
           )}
 
           {turn.error && (
-            <div className="flex items-start gap-2 rounded-xl border border-destructive/30 bg-destructive/5 px-3 py-2.5 text-sm">
-              <AlertTriangle className="mt-0.5 size-4 shrink-0 text-destructive" />
-              <span>{turn.error}</span>
-            </div>
+            <StatusRow icon={AlertTriangle} tone="danger" surface>
+              {turn.error}
+            </StatusRow>
           )}
 
           {turn.legacyAnswerUnavailable && !turn.error && turn.cards.length === 0 && (
-            <div className="flex items-start gap-2 rounded-xl border border-border bg-muted/40 px-3 py-2.5 text-sm text-muted-foreground">
-              <AlertTriangle className="mt-0.5 size-4 shrink-0" />
-              <span>
-                This question was saved before answer history was enabled. Its original answer card was not retained.
-              </span>
-            </div>
+            <StatusRow icon={AlertTriangle} surface>
+              This question was saved before answer history was enabled. Its original answer card was not retained.
+            </StatusRow>
           )}
 
           {turn.partial && !turn.error && (
-            <div className="flex items-start gap-2 rounded-xl border border-amber-500/30 bg-amber-500/5 px-3 py-2.5 text-sm text-muted-foreground">
-              <AlertTriangle className="mt-0.5 size-4 shrink-0 text-amber-600" />
-              <span>This response was interrupted. Completed answer cards were retained.</span>
-            </div>
+            <StatusRow icon={AlertTriangle} tone="warning" surface className="text-muted-foreground">
+              This response was interrupted. Completed answer cards were retained.
+            </StatusRow>
           )}
 
           {turn.done && turn.route && turn.route.sources.length > 0 && (
             <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
-              <span className="text-[11px] text-muted-foreground">Sources</span>
+              <span className="text-[11px] leading-5 text-muted-foreground">Sources</span>
               {turn.route.sources.map((source) => (
-                <Badge key={source} variant="outline" className="h-5 rounded-md px-1.5 text-[10px] font-medium text-muted-foreground">
-                  {SOURCE_LABELS[source] ?? source}
+                <Badge key={source} variant="outline" className={`${SOURCE_BADGE} text-muted-foreground`}>
+                  {sourceLabel(source)}
                 </Badge>
               ))}
             </div>
@@ -143,16 +135,16 @@ function CardBody({ card, onAsk }: { card: CardData; onAsk: (q: string) => void 
       <WorkbenchCard source={card.source} title={BRIEF_TITLES[card.source] ?? 'Brief'}>
         <BriefRenderer content={summary} />
         {key_points && key_points.length > 0 && (
-          <ul className="mt-2 list-disc space-y-0.5 pl-4 text-xs text-muted-foreground">
+          <ul className={`${BLOCK_GAP} list-disc space-y-1 pl-4 text-xs leading-5 text-muted-foreground`}>
             {key_points.map((p, i) => (
               <li key={i}>{p}</li>
             ))}
           </ul>
         )}
         {sources && sources.length > 0 && (
-          <div className="mt-2 flex flex-wrap gap-1.5">
+          <div className={`${BLOCK_GAP} flex flex-wrap gap-1.5`}>
             {sources.map((s, i) => (
-              <Badge key={i} variant="outline" className="text-[10px]">
+              <Badge key={i} variant="outline" className={`${SOURCE_BADGE} normal-case tracking-normal text-muted-foreground`}>
                 {s.document}{s.page ? `, p.${s.page}` : ''}
               </Badge>
             ))}
@@ -174,11 +166,13 @@ function CardBody({ card, onAsk }: { card: CardData; onAsk: (q: string) => void 
       <WorkbenchCard source={card.source} title="Schema" subtitle={`${node_count} tables · ${edge_count} relationships`}>
         <div className="flex flex-wrap gap-1.5">
           {(nodes ?? []).map((n) => (
-            <Badge key={n.id} variant="secondary" className="font-mono text-[10px]">{n.label}</Badge>
+            <Badge key={n.id} variant="secondary" className={`${SOURCE_BADGE} font-mono normal-case tracking-normal`}>
+              {n.label}
+            </Badge>
           ))}
         </div>
         {edges && edges.length > 0 && (
-          <ul className="mt-2 space-y-0.5 text-xs text-muted-foreground">
+          <ul className={`${BLOCK_GAP} space-y-1 text-xs leading-5 text-muted-foreground`}>
             {edges.slice(0, 12).map((e, i) => (
               <li key={i} className="font-mono">
                 {labelOf(e.source)} <span className="text-foreground">→</span> {labelOf(e.target)}
@@ -195,14 +189,13 @@ function CardBody({ card, onAsk }: { card: CardData; onAsk: (q: string) => void 
     const { question, suggestions } = card.payload as { question: string; suggestions?: string[] };
     return (
       <WorkbenchCard source={card.source} title="Clarification needed" collapsible={false}>
-        <div className="flex items-start gap-2 text-sm">
-          <HelpCircle className="mt-0.5 size-4 shrink-0 text-sky-500" />
-          <span>{question}</span>
-        </div>
+        <StatusRow icon={HelpCircle} tone="info" label="Clarification needed:">
+          {question}
+        </StatusRow>
         {suggestions && suggestions.length > 0 && (
-          <div className="mt-2 flex flex-wrap gap-1.5">
+          <div className={`${BLOCK_GAP} flex flex-wrap gap-1.5`}>
             {suggestions.map((s) => (
-              <Button key={s} size="sm" variant="outline" className="h-7 text-xs" onClick={() => onAsk(s)}>
+              <Button key={s} size="sm" variant="outline" className={SUGGESTION_CHIP} onClick={() => onAsk(s)}>
                 {s}
               </Button>
             ))}
@@ -216,14 +209,13 @@ function CardBody({ card, onAsk }: { card: CardData; onAsk: (q: string) => void 
     const { message, examples } = card.payload as { message: string; examples?: string[] };
     return (
       <WorkbenchCard source={card.source} title="Not answerable" collapsible={false}>
-        <div className="flex items-start gap-2 text-sm">
-          <Ban className="mt-0.5 size-4 shrink-0 text-amber-500" />
-          <span>{message}</span>
-        </div>
+        <StatusRow icon={Ban} tone="warning" label="Not answerable:">
+          {message}
+        </StatusRow>
         {examples && examples.length > 0 && (
-          <div className="mt-2 flex flex-wrap gap-1.5">
+          <div className={`${BLOCK_GAP} flex flex-wrap gap-1.5`}>
             {examples.map((s) => (
-              <Button key={s} size="sm" variant="outline" className="h-7 text-xs" onClick={() => onAsk(s)}>
+              <Button key={s} size="sm" variant="outline" className={SUGGESTION_CHIP} onClick={() => onAsk(s)}>
                 {s}
               </Button>
             ))}
@@ -236,10 +228,9 @@ function CardBody({ card, onAsk }: { card: CardData; onAsk: (q: string) => void 
   // error
   return (
     <WorkbenchCard source={card.source} title="Error" collapsible={false}>
-      <div className="flex items-start gap-2 text-sm">
-        <AlertTriangle className="mt-0.5 size-4 shrink-0 text-destructive" />
-        <span>{(card.payload as { message?: string }).message || 'Something went wrong.'}</span>
-      </div>
+      <StatusRow icon={AlertTriangle} tone="danger">
+        {(card.payload as { message?: string }).message || 'Something went wrong.'}
+      </StatusRow>
     </WorkbenchCard>
   );
 }

@@ -13,30 +13,36 @@ const buttonVariants = cva(
         default:
           "bg-primary text-primary-foreground font-semibold " +
           "shadow-[0_4px_16px_rgba(0,93,170,0.30),0_1px_0_rgba(255,255,255,0.20)_inset] " +
-          "hover:bg-primary/92 hover:shadow-[0_6px_20px_rgba(0,93,170,0.40),0_1px_0_rgba(255,255,255,0.20)_inset] " +
+          "hover:bg-primary/[0.92] hover:shadow-[0_6px_20px_rgba(0,93,170,0.40),0_1px_0_rgba(255,255,255,0.20)_inset] " +
           "dark:shadow-[0_4px_16px_rgba(0,0,0,0.40),0_1px_0_rgba(255,255,255,0.10)_inset]",
         destructive:
           "bg-destructive text-destructive-foreground shadow-sm hover:bg-destructive/90",
         /* Glass outline — Apple vibrancy */
         outline:
-          "border border-white/70 dark:border-white/12 " +
+          "border border-white/70 dark:border-white/[0.12] " +
           "[border-top-color:rgba(255,255,255,0.92)] dark:[border-top-color:rgba(255,255,255,0.20)] " +
-          "bg-white/45 dark:bg-white/6 " +
+          "bg-white/45 dark:bg-white/[0.06] " +
           "[backdrop-filter:saturate(180%)_blur(16px)] [-webkit-backdrop-filter:saturate(180%)_blur(16px)] " +
           "shadow-[0_2px_8px_rgba(0,0,0,0.06),0_1px_0_rgba(255,255,255,0.75)_inset] " +
           "dark:shadow-[0_2px_8px_rgba(0,0,0,0.30),0_1px_0_rgba(255,255,255,0.06)_inset] " +
-          "hover:bg-white/65 dark:hover:bg-white/12 hover:border-white/90 " +
+          "hover:bg-white/65 dark:hover:bg-white/[0.12] hover:border-white/90 " +
           "hover:shadow-[0_4px_16px_rgba(0,93,170,0.08),0_1px_0_rgba(255,255,255,0.80)_inset]",
         secondary:
-          "bg-white/50 dark:bg-white/8 " +
+          "bg-white/50 dark:bg-white/[0.08] " +
           "[backdrop-filter:saturate(180%)_blur(12px)] [-webkit-backdrop-filter:saturate(180%)_blur(12px)] " +
-          "border border-white/65 dark:border-white/12 " +
+          "border border-white/65 dark:border-white/[0.12] " +
           "text-secondary-foreground shadow-sm " +
-          "hover:bg-white/70 dark:hover:bg-white/14",
+          "hover:bg-white/70 dark:hover:bg-white/[0.14]",
         ghost:
-          "hover:bg-white/50 dark:hover:bg-white/8 " +
+          "hover:bg-white/50 dark:hover:bg-white/[0.08] " +
           "[backdrop-filter:saturate(160%)_blur(12px)] [-webkit-backdrop-filter:saturate(160%)_blur(12px)] " +
           "hover:text-accent-foreground",
+        /* Icon-first action — the glyph carries the affordance, so there is no filled tile
+           sitting in the layout at rest. Used for send/stop in the composer. */
+        iconAction:
+          "bg-transparent text-primary shadow-none " +
+          "hover:bg-primary/10 active:bg-primary/[0.18] " +
+          "disabled:text-muted-foreground disabled:hover:bg-transparent",
         link: "text-primary underline-offset-4 hover:underline",
       },
       size: {

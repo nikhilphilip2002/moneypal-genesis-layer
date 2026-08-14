@@ -355,6 +355,13 @@ body {
   border-radius: calc(var(--radius) - 2px);
 }
 
+/* The composer draws its own neutral focus state on the wrapper. Without this the field
+   would stack a second, blue ring inside that wrapper the moment anyone starts typing. */
+.composer-field:focus,
+.composer-field:focus-visible {
+  outline: none;
+}
+
 /* ═══════════════════════════════════════════════════════════════════════════
    AUTH PAGE WRAPPER
 ═══════════════════════════════════════════════════════════════════════════ */

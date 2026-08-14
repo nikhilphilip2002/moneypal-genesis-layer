@@ -76,12 +76,16 @@ export default function ChartRenderer({ chart, onDrilldown, hideHeader = false }
 
       {chart.summary && (
         <div className="mt-4 flex items-start gap-2.5 rounded-xl border border-primary/10 bg-gradient-to-br from-primary/[0.055] to-transparent px-3.5 py-3">
-          <Lightbulb className="mt-0.5 size-4 shrink-0 text-primary" />
+          {/* Same icon-box rule as StatusRow: a fixed box the height of the first line, so
+              the bulb centres on the eyebrow instead of floating between the two lines. */}
+          <span aria-hidden className="flex h-4 shrink-0 items-center text-primary">
+            <Lightbulb className="size-4" />
+          </span>
           <div className="min-w-0">
-            <div className="text-[10px] font-semibold uppercase tracking-[0.14em] text-primary/80">
+            <div className="text-[10px] font-semibold uppercase leading-4 tracking-[0.14em] text-primary/80">
               What this shows
             </div>
-            <p className="mt-0.5 text-sm leading-6 text-foreground/90">{chart.summary}</p>
+            <p className="mt-1 text-sm leading-6 text-foreground/90">{chart.summary}</p>
           </div>
         </div>
       )}
@@ -185,7 +189,7 @@ function KpiTiles({ chart }: { chart: ChartSpec }) {
       {chart.series.map((series) => (
         <Card
           key={series.field}
-          className="relative min-w-[12rem] overflow-hidden rounded-2xl border-primary/10 bg-gradient-to-br from-primary/[0.09] via-card to-card p-5 shadow-sm"
+          className="relative min-w-[12rem] overflow-hidden rounded-2xl border-primary/10 bg-gradient-to-br from-primary/[0.09] via-card to-card p-5"
         >
           <span aria-hidden className="absolute inset-y-0 left-0 w-1 bg-primary" />
           <div className="text-[11px] font-semibold uppercase tracking-[0.13em] text-muted-foreground">
@@ -458,7 +462,7 @@ function SingleCategoryView({
   const color = seriesColor(0, mode);
   return (
     <div
-      className="overflow-hidden rounded-2xl border border-border/70 bg-gradient-to-br from-muted/45 to-background p-4 sm:p-5"
+      className="overflow-hidden rounded-2xl border border-border/60 bg-gradient-to-br from-muted/45 to-background p-4 sm:p-5"
       role="img"
       aria-label={`${label}: ${formatValue(value, unit)}`}
     >
@@ -662,7 +666,7 @@ function SingleVarianceView({
 
   return (
     <div
-      className="rounded-lg bg-muted/30 p-4"
+      className="rounded-xl border border-border/60 bg-muted/25 p-4"
       role="img"
       aria-label={`${previousLabel}: ${formatValue(previous, unit)}; ${currentLabel}: ${formatValue(current, unit)}; change: ${changeText}`}
     >
@@ -1061,7 +1065,8 @@ function ChartTooltip({ chart, active, payload, label, total, labelKey }: any) {
 
 function TableView({ chart }: { chart: ChartSpec }) {
   return (
-    <div className="max-h-[26rem] overflow-auto rounded-xl border border-border/70 shadow-sm">
+    // Nested inside a card that already owns an edge and a shadow — this one gets neither.
+    <div className="max-h-[26rem] overflow-auto rounded-xl border border-border/60">
       <Table>
         <TableHeader className="sticky top-0 z-10 bg-muted/80 backdrop-blur">
           <TableRow>
@@ -1122,7 +1127,7 @@ function deltaTone(value: unknown): string {
 
 function EmptyState({ summary }: { summary: string }) {
   return (
-    <div className="rounded-xl border border-dashed border-border p-6 text-center">
+    <div className="rounded-xl border border-dashed border-border/60 p-6 text-center">
       <p className="text-sm text-muted-foreground">{summary || 'No rows matched this question.'}</p>
     </div>
   );

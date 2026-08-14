@@ -4,72 +4,85 @@ import { useState } from 'react';
 import type { ChartSpec } from '@/lib/api';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { ChevronDown, Copy, Download, ShieldAlert, TriangleAlert } from 'lucide-react';
+import StatusRow from '@/components/ui/status-row';
+import { ChevronDown, Copy, Download, Info, ShieldAlert, TriangleAlert } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { SECTION_GAP, SOURCE_BADGE } from '@/lib/workbench-ui';
 
 // Every number traceable: SQL, source tables, formula, row count, as-of date.
 //
 // Non-negotiable per the build plan — it is the difference between a demo and a tool a CFO
 // will sign off on. The collapsed state still shows the warnings, because a caveat the user
 // has to click to discover is a caveat they will not see.
+//
+// This is a nested panel, never a second card: a light border, no shadow of its own, and
+// internal dividers a shade weaker than the parent card's. The card that contains it owns
+// the outer edge.
 
 export default function LineagePanel({
   chart,
   sourceLabel,
+  className,
 }: {
   chart: ChartSpec;
   sourceLabel?: string;
+  className?: string;
 }) {
   const [open, setOpen] = useState(false);
   const { lineage } = chart;
   const displayedSql = lineage.display_sql || lineage.sql;
 
   return (
-    <div className="mt-3 overflow-hidden rounded-xl border border-border bg-muted/20">
+    <div
+      className={cn(
+        SECTION_GAP,
+        'overflow-hidden rounded-xl border border-border/60 bg-muted/25',
+        className,
+      )}
+    >
       {lineage.unverified && (
-        <div className="flex items-start gap-2 border-b border-border px-3 py-2 text-xs text-amber-700 dark:text-amber-400">
-          <ShieldAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-          <span>
-            Generated query — this answer does not come from a reviewed metric definition.
-            Check the SQL before relying on it.
-          </span>
-        </div>
+        <StatusRow icon={ShieldAlert} tone="warning" size="sm" className="border-b border-border/50 px-3 py-2">
+          Generated query — this answer does not come from a reviewed metric definition.
+          Check the SQL before relying on it.
+        </StatusRow>
       )}
 
       {lineage.requires_signoff.length > 0 && (
-        <div className="flex items-start gap-2 border-b border-border px-3 py-2 text-xs text-amber-700 dark:text-amber-400">
-          <TriangleAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-          <span>Definition pending client sign-off: {lineage.requires_signoff.join(', ')}.</span>
-        </div>
+        <StatusRow icon={TriangleAlert} tone="warning" size="sm" className="border-b border-border/50 px-3 py-2">
+          Definition pending client sign-off: {lineage.requires_signoff.join(', ')}.
+        </StatusRow>
       )}
 
       {lineage.warnings.map((warning, index) => (
-        <div key={index} className="border-b border-border px-3 py-2 text-xs text-muted-foreground">
+        <StatusRow key={index} icon={Info} size="sm" className="border-b border-border/50 px-3 py-2">
           {warning}
-        </div>
+        </StatusRow>
       ))}
 
-      <Button
+      <button
         type="button"
-        variant="ghost"
         onClick={() => setOpen((v) => !v)}
-        className="h-auto w-full justify-start rounded-none px-3 py-2 text-xs font-normal text-muted-foreground hover:text-foreground"
+        aria-expanded={open}
+        className="flex w-full flex-wrap items-center gap-2 px-3 py-2.5 text-left text-xs leading-5 text-muted-foreground transition-colors hover:bg-muted/45 hover:text-foreground"
       >
-        <ChevronDown className={cn('h-3.5 w-3.5 transition-transform duration-200', open && 'rotate-180')} />
+        <ChevronDown
+          aria-hidden
+          className={cn('size-3.5 shrink-0 transition-transform duration-200', open && 'rotate-180')}
+        />
         {sourceLabel && (
-          <Badge variant="secondary" className="h-5 rounded-md px-1.5 text-[10px] font-medium uppercase tracking-wide">
+          <Badge variant="secondary" className={SOURCE_BADGE}>
             {sourceLabel}
           </Badge>
         )}
         <span>{sourceLabel ? 'Source details & SQL' : 'How this was calculated'}</span>
-        <span className="ml-auto tabular-nums">
+        <span className="ml-auto shrink-0 tabular-nums">
           {lineage.row_count} row{lineage.row_count === 1 ? '' : 's'} · {lineage.duration_ms} ms
           {lineage.as_of ? ` · as at ${lineage.as_of}` : ''}
         </span>
-      </Button>
+      </button>
 
       {open && (
-        <div className="space-y-3 border-t border-border px-3 py-3 text-xs">
+        <div className="space-y-3 border-t border-border/50 px-3 py-3 text-xs leading-5">
           {Object.keys(lineage.formulas).length > 0 && (
             <Section title="Formula">
               {Object.entries(lineage.formulas).map(([metric, formula]) => (
@@ -83,7 +96,7 @@ export default function LineagePanel({
           <Section title="Source tables">
             <div className="flex flex-wrap gap-1">
               {lineage.source_tables.map((table) => (
-                <Badge key={table} variant="secondary" className="rounded-md font-mono text-[11px] font-normal">
+                <Badge key={table} variant="secondary" className="h-5 rounded-md px-1.5 font-mono text-[11px] font-normal">
                   {table}
                 </Badge>
               ))}
@@ -158,7 +171,7 @@ function Section({
 }) {
   return (
     <div>
-      <div className="mb-1 flex items-center justify-between">
+      <div className="mb-1 flex min-h-6 flex-wrap items-center justify-between gap-2">
         <div className="font-medium uppercase tracking-wide text-muted-foreground">{title}</div>
         {action}
       </div>
