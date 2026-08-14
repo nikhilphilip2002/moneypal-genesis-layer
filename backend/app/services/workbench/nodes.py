@@ -16,7 +16,10 @@ from genesis_core import rag
 
 from app.core.config import MACRO_COLLECTION, settings
 from app.services.nlq.ask import AskContext, ask_once
+from app.services.nlq.catalog import get_catalog
+from app.services.nlq.catalog.retrieval import retrieve
 from app.services.nlq.contracts import AskResponse
+from app.services.nlq.normalization import normalize_lending_question
 from app.services.workbench import models
 
 logger = logging.getLogger(__name__)
@@ -159,6 +162,74 @@ async def run_macro(
         summary=answer,
         sources=sources,
     )
+
+
+_KNOWLEDGE_SYSTEM = (
+    "You explain stable lending and banking concepts in plain language. Answer the user's "
+    "descriptive question in 2-4 concise sentences. Define the concept, state its unit or "
+    "calculation when relevant, and distinguish easily confused terms. Use the governed "
+    "catalog context below when it applies. Do not invent bank figures, current rates, laws, "
+    "forecasts or recommendations; those belong to other sources."
+)
+
+
+async def run_knowledge(
+    intent: str, *, history_messages: list[dict[str, str]] | None = None,
+) -> SourceResult:
+    """Explain stable concepts, grounded by relevant governed metric definitions."""
+    question = normalize_lending_question(intent)
+    cat = get_catalog()
+    matched = retrieve(question, catalog=cat, use_vectors=False)
+    context_lines: list[str] = []
+    for metric_id in matched.metrics[:4]:
+        metric = cat.metrics[metric_id]
+        context_lines.append(
+            f"- {metric.label} ({metric.unit}): {metric.formula}. {metric.caveat}".strip()
+        )
+    for dimension_id in matched.dimensions[:3]:
+        dimension = cat.dimensions[dimension_id]
+        if dimension.description:
+            context_lines.append(f"- {dimension.label}: {dimension.description}")
+    context = "\n".join(context_lines) or "No catalog definition matched; explain only the stable concept."
+
+    client = models.for_step("synthesize", sensitive=False)
+    try:
+        result = await client.complete(
+            messages=[
+                {"role": "system", "content": _KNOWLEDGE_SYSTEM},
+                *(history_messages or []),
+                {"role": "user", "content": f"Question: {question}\n\nCatalog context:\n{context}"},
+            ],
+            max_tokens=350,
+            temperature=0.1,
+        )
+        answer = result.text.strip()
+    except Exception as exc:  # noqa: BLE001 - catalog fallback can still answer a definition
+        logger.warning("workbench concept explanation failed: %s", exc)
+        answer = _catalog_definition_fallback(matched.metrics, cat)
+        if not answer:
+            return SourceResult(
+                source="knowledge",
+                card_type="error",
+                payload={"message": "The concept explainer is temporarily unavailable."},
+            )
+
+    return SourceResult(
+        source="knowledge",
+        card_type="brief",
+        payload={"summary": answer, "sources": []},
+        summary=answer,
+    )
+
+
+def _catalog_definition_fallback(metric_ids: list[str], catalog) -> str:
+    if not metric_ids:
+        return ""
+    metric = catalog.metrics[metric_ids[0]]
+    answer = f"{metric.label} is measured as {metric.formula.rstrip('.').lower()}."
+    if metric.caveat:
+        answer += " " + " ".join(metric.caveat.split())
+    return answer
 
 
 async def run_competitive(intent: str) -> SourceResult:

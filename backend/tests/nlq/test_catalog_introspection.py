@@ -21,8 +21,11 @@ def catalog():
 @pytest.fixture(scope="module")
 def live_columns(warehouse_cursor):
     warehouse_cursor.execute(
-        "SELECT table_schema || '.' || table_name, column_name "
-        "FROM information_schema.columns WHERE table_schema = 'gold'"
+        "SELECT c.table_schema || '.' || c.table_name, c.column_name "
+        "FROM information_schema.columns c "
+        "JOIN information_schema.views v "
+        "ON v.table_schema = c.table_schema AND v.table_name = c.table_name "
+        "WHERE c.table_schema = 'gold'"
     )
     mapping: dict[str, set[str]] = {}
     for table, column in warehouse_cursor.fetchall():
@@ -40,6 +43,11 @@ class TestTablesExist:
         for table in catalog.allowed_tables():
             assert table.startswith("gold."), table
 
+    def test_every_gold_view_is_cataloged(self, catalog, live_columns):
+        """A newly deployed Gold view must not remain invisible to NLQ."""
+        uncataloged = sorted(set(live_columns) - catalog.allowed_tables())
+        assert not uncataloged, f"Gold views missing from tables.yaml: {uncataloged}"
+
 
 class TestColumnsExist:
     def test_curated_columns_exist(self, catalog, live_columns):
@@ -49,6 +57,18 @@ class TestColumnsExist:
             if c.column not in live_columns.get(c.table, set())
         ]
         assert not missing, f"columns.yaml references missing columns: {missing}"
+
+    def test_every_live_column_is_cataloged(self, catalog, live_columns):
+        """The Gold catalog is complete, not a partial sample of each governed view."""
+        cataloged: dict[str, set[str]] = {}
+        for column in catalog.columns.values():
+            cataloged.setdefault(column.table, set()).add(column.column)
+
+        missing = []
+        for table in sorted(catalog.allowed_tables()):
+            for column in sorted(live_columns.get(table, set()) - cataloged.get(table, set())):
+                missing.append(f"{table}.{column}")
+        assert not missing, f"live Gold columns missing from columns.yaml: {missing}"
 
     def test_dimension_columns_exist(self, catalog, live_columns):
         missing = [

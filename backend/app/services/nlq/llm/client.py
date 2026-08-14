@@ -47,6 +47,7 @@ class LLMResult:
     model: str
     provider: str
     prompt_tokens: int = 0
+    cached_prompt_tokens: int = 0
     completion_tokens: int = 0
     duration_ms: int = 0
     finish_reason: str = ""
@@ -123,6 +124,10 @@ class _ProviderProfile:
     """Extra arguments for the server-side chat template. llama.cpp uses these to switch a
     hybrid-reasoning model out of thinking mode; providers that do not know the field
     ignore it, so it is only sent where it is known to be honoured."""
+    cache_prompt: bool = False
+    cache_reuse_tokens: int = 0
+    """llama.cpp KV-cache controls. Kept provider-scoped so hosted OpenAI-compatible
+    services never receive llama.cpp extension fields."""
 
 
 @dataclass
@@ -212,6 +217,10 @@ class OpenAICompatibleClient:
         }
         if self.profile.chat_template_kwargs:
             payload["chat_template_kwargs"] = dict(self.profile.chat_template_kwargs)
+        if self.profile.cache_prompt:
+            payload["cache_prompt"] = True
+            if self.profile.cache_reuse_tokens > 0:
+                payload["n_cache_reuse"] = self.profile.cache_reuse_tokens
         response_format = self._response_format(json_schema)
         if response_format:
             payload["response_format"] = response_format
@@ -246,6 +255,7 @@ class OpenAICompatibleClient:
             body = resp.json()
             choice = (body.get("choices") or [{}])[0]
             usage = body.get("usage") or {}
+            prompt_details = usage.get("prompt_tokens_details") or {}
             message = choice.get("message") or {}
             result = LLMResult(
                 text=message.get("content") or "",
@@ -253,15 +263,17 @@ class OpenAICompatibleClient:
                 model=body.get("model", self.model),
                 provider=self.provider,
                 prompt_tokens=usage.get("prompt_tokens", 0),
+                cached_prompt_tokens=prompt_details.get("cached_tokens", 0),
                 completion_tokens=usage.get("completion_tokens", 0),
                 duration_ms=int((asyncio.get_event_loop().time() - started) * 1000),
                 finish_reason=choice.get("finish_reason", ""),
             )
             logger.info(
-                "LLM completion provider=%s model=%s prompt_tokens=%s completion_tokens=%s "
-                "finish_reason=%s duration_ms=%s",
-                result.provider, result.model, result.prompt_tokens, result.completion_tokens,
-                result.finish_reason, result.duration_ms,
+                "LLM completion provider=%s model=%s prompt_tokens=%s cached_prompt_tokens=%s "
+                "completion_tokens=%s finish_reason=%s duration_ms=%s",
+                result.provider, result.model, result.prompt_tokens,
+                result.cached_prompt_tokens, result.completion_tokens, result.finish_reason,
+                result.duration_ms,
             )
             if result.finish_reason == "length":
                 logger.warning(
@@ -306,6 +318,11 @@ def _profile(provider: str) -> _ProviderProfile:
             # in, not a problem to reason about, and the trace costs the whole token budget
             # before a single character of JSON is emitted.
             chat_template_kwargs=None if settings.nlq_llm_thinking else {"enable_thinking": False},
+            # Keep the complete Gold catalog resident in each active slot. Chunk reuse is
+            # especially important when the final user question changes: on the deployed
+            # Qwen server this reduced prompt evaluation from ~11,447 tokens to ~30.
+            cache_prompt=True,
+            cache_reuse_tokens=256,
         )
     if provider == "groq":
         return _ProviderProfile(
@@ -337,3 +354,42 @@ def get_llm_client(provider: str | None = None) -> OpenAICompatibleClient:
             max_retries=settings.nlq_llm_max_retries,
         )
     return _cached[name]
+
+
+async def warm_catalog_prompt_cache() -> None:
+    """Populate llama.cpp's KV cache without delaying API startup.
+
+    The fixed planner prefix contains the complete prompt-safe Gold catalog. A one-token
+    completion is sufficient to evaluate and retain that prefix; real questions then
+    replace only the short final user message.
+    """
+    if settings.nlq_llm_provider != "llamacpp":
+        return
+
+    from app.services.nlq.catalog import get_catalog
+    from app.services.nlq.llm.prompts import build_messages
+    from app.services.nlq.llm.schemas import plan_schema
+
+    catalog = get_catalog()
+    client = get_llm_client("llamacpp")
+    try:
+        result = await client.complete(
+            messages=build_messages(
+                "Show total disbursement by product for FY26.",
+                catalog=catalog,
+            ),
+            json_schema=plan_schema(catalog),
+            max_tokens=1,
+            temperature=0.0,
+        )
+        logger.info(
+            "Warmed NLQ Gold prompt cache: prompt_tokens=%s cached_prompt_tokens=%s "
+            "duration_ms=%s",
+            result.prompt_tokens,
+            result.cached_prompt_tokens,
+            result.duration_ms,
+        )
+    except LLMError as exc:
+        # The UI already degrades when the model is unavailable. Cache warmup must never
+        # make the rest of the API unavailable too.
+        logger.warning("Could not warm NLQ Gold prompt cache: %s", exc)

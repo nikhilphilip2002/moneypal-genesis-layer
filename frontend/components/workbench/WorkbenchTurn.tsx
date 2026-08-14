@@ -29,11 +29,13 @@ export type WorkbenchTurnData = {
 };
 
 const SOURCE_LABELS: Record<string, string> = {
-  db: 'Loan book', macro: 'Macro', competitive: 'Competitive', regulatory: 'Regulatory', schema: 'Schema',
+  db: 'Loan book', macro: 'Macro', competitive: 'Competitive', regulatory: 'Regulatory',
+  knowledge: 'Banking concepts', schema: 'Schema',
 };
 
 const BRIEF_TITLES: Record<string, string> = {
   macro: 'Macro brief', competitive: 'Competitive brief', regulatory: 'Regulatory brief',
+  knowledge: 'Concept explained',
 };
 
 export default function WorkbenchTurn({ turn, onAsk }: { turn: WorkbenchTurnData; onAsk: (q: string) => void }) {
@@ -125,7 +127,7 @@ function CardBody({ card, onAsk }: { card: CardData; onAsk: (q: string) => void 
     const chart = card.payload as ChartSpec;
     return (
       <WorkbenchCard source={card.source} title={chart.title || 'Result'} subtitle={chart.subtitle ?? undefined}>
-        <ChartRenderer chart={chart} />
+        <ChartRenderer chart={chart} hideHeader />
         <LineagePanel chart={chart} sourceLabel="Loan book" />
       </WorkbenchCard>
     );

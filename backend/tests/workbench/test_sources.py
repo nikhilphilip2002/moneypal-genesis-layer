@@ -8,7 +8,7 @@ from __future__ import annotations
 from app.services.workbench import sources
 
 
-ALL_IDS = {"db", "macro", "competitive", "regulatory", "schema"}
+ALL_IDS = {"db", "macro", "competitive", "regulatory", "knowledge", "schema"}
 
 
 def test_all_phase2_sources_are_registered():
@@ -24,26 +24,26 @@ def test_director_sees_loan_book_sources_but_not_market_or_regulatory():
     # gicc_director's workspace is the portfolio: loan book, its schema, and public macro —
     # not competitive or regulatory, which they have no module access to.
     visible = {s.id for s in sources.visible_sources("gicc_director")}
-    assert visible == {"db", "macro", "schema"}
+    assert visible == {"db", "macro", "knowledge", "schema"}
 
 
 def test_policy_maker_sees_public_and_regulatory_but_not_the_loan_book():
     # gicc_policy works with regulatory text and the market, never the portfolio.
     visible = {s.id for s in sources.visible_sources("gicc_policy")}
-    assert visible == {"macro", "competitive", "regulatory"}
+    assert visible == {"macro", "competitive", "regulatory", "knowledge"}
 
 
 def test_loan_book_and_schema_are_sensitive_public_intelligence_is_not():
     assert sources.SOURCES["db"].sensitive is True
     assert sources.SOURCES["schema"].sensitive is True
-    for public in ("macro", "competitive", "regulatory"):
+    for public in ("macro", "competitive", "regulatory", "knowledge"):
         assert sources.SOURCES[public].sensitive is False
 
 
 def test_route_schema_constrains_sources_to_the_roles_visible_set():
     schema = sources.route_schema("gicc_policy")
     enum = schema["properties"]["sources"]["items"]["enum"]
-    assert set(enum) == {"macro", "competitive", "regulatory"}
+    assert set(enum) == {"macro", "competitive", "regulatory", "knowledge"}
     assert "db" not in enum
 
 

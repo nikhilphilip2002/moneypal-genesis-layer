@@ -574,11 +574,15 @@ export type ChartType =
   | 'variance' | 'dumbbell' | 'scatter' | 'heatmap' | 'small_multiples'
   | 'table';
 
-export type Unit = 'inr' | 'percent' | 'count' | 'days' | 'ratio' | 'text' | 'date';
+export type Unit =
+  | 'inr' | 'percent' | 'count' | 'days' | 'months' | 'years' | 'year'
+  | 'ratio' | 'text' | 'date' | 'datetime' | 'boolean';
 
 export type Lineage = {
   path: 'queryspec' | 'text_to_sql';
   sql: string;
+  display_sql: string;
+  parameters: Record<string, string>;
   source_tables: string[];
   formulas: Record<string, string>;
   row_count: number;

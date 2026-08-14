@@ -50,7 +50,10 @@ RelativePeriod = Literal[
 Deliberately a closed set: an open-ended string would let the LLM invent periods the
 compiler cannot honour, and "last year" is ambiguous enough here to be a `clarify`."""
 
-Unit = Literal["inr", "percent", "count", "days", "ratio", "text", "date"]
+Unit = Literal[
+    "inr", "percent", "count", "days", "months", "years", "year", "ratio",
+    "text", "date", "datetime", "boolean",
+]
 
 Sensitivity = Literal["public", "internal", "pii"]
 
@@ -234,6 +237,14 @@ class Lineage(_Model):
 
     path: Literal["queryspec", "text_to_sql"]
     sql: str
+    display_sql: str = Field(
+        default="",
+        description="Runnable explanatory SQL with trusted bound values rendered as literals.",
+    )
+    parameters: dict[str, str] = Field(
+        default_factory=dict,
+        description="Named values used by the read-only execution query.",
+    )
     source_tables: list[str] = Field(default_factory=list)
     formulas: dict[str, str] = Field(default_factory=dict, description="metric id → formula text")
     row_count: int = 0

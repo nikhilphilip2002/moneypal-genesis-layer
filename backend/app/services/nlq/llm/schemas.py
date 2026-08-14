@@ -29,6 +29,7 @@ def plan_schema(catalog: Catalog | None = None) -> dict[str, Any]:
     metric_ids = sorted(cat.metrics)
     dimension_ids = sorted(cat.dimensions)
     filterable = sorted(d for d in cat.dimensions if not cat.dimensions[d].is_time)
+    allowed_tables = sorted(cat.allowed_tables())
 
     period = {
         "type": "object",
@@ -158,7 +159,10 @@ def plan_schema(catalog: Catalog | None = None) -> dict[str, Any]:
                 "properties": {
                     "route": {"const": "sql"},
                     "intent": {"type": "string"},
-                    "tables": {"type": "array", "items": {"type": "string"}},
+                    "tables": {
+                        "type": "array",
+                        "items": {"type": "string", "enum": allowed_tables},
+                    },
                     "confidence": confidence,
                     "reasoning": reasoning,
                 },

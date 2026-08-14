@@ -121,6 +121,9 @@ export function formatValue(value: unknown, unit: string): string {
       return Math.abs(value) < 1 ? `${value.toFixed(2)}%` : `${value.toFixed(1)}%`;
     case 'count':
     case 'days':
+    case 'months':
+    case 'years':
+    case 'year':
       return value.toLocaleString('en-IN', { maximumFractionDigits: 0 });
     default:
       return value.toLocaleString('en-IN', { maximumFractionDigits: 2 });

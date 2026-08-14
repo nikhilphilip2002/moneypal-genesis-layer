@@ -72,6 +72,8 @@ def narrate(
     else:
         parts.append(_ranking_sentence(spec, compiled, rows, metric, cat))
 
+    parts.append(_definition_sentence(spec, cat))
+
     # A KPI tile already states the single value; repeating "every value is zero" adds
     # nothing. On a chart with several bars it is the point worth making.
     if chart_type not in ("kpi", "variance", "dumbbell"):
@@ -124,8 +126,20 @@ def _ranking_sentence(
     total = sum(r[metric.id] for r in ranked)
     share = (top[metric.id] / total * 100) if total else None
 
+    if len(ranked) == 1:
+        value = format_value(top[metric.id], metric.unit)
+        measure = (
+            f"{value} {metric.label.lower()}"
+            if metric.unit == "count"
+            else f"{metric.label.lower()} of {value}"
+        )
+        return (
+            f"{top.get(dim_id)} is the only {dim.label.lower()} returned, with {measure} "
+            f"{_period_phrase(compiled)}."
+        ).replace("  ", " ")
+
     sentence = (
-        f"{dim.label} {top.get(dim_id)} leads with "
+        f"{top.get(dim_id)} has the highest {metric.label.lower()}, at "
         f"{format_value(top[metric.id], metric.unit)} {_period_phrase(compiled)}"
     )
     # Share of total is meaningless for a percentage metric — PAR values do not sum to
@@ -135,6 +149,31 @@ def _ranking_sentence(
             f", {share:.0f}% of the total across {_plural(len(ranked), dim.label.lower())}"
         )
     return sentence + "."
+
+
+def _definition_sentence(spec: QuerySpec, cat: Catalog) -> str:
+    """Explain what the result measures, not just which number is largest."""
+    definitions: list[str] = []
+    for metric_id in spec.metrics:
+        metric = cat.metrics[metric_id]
+        formula = " ".join(metric.formula.split()).rstrip(".")
+        if formula:
+            formula = formula[:1].lower() + formula[1:]
+            definitions.append(
+                formula if len(spec.metrics) == 1 else f"{metric.label}: {formula}"
+            )
+    if not definitions:
+        return ""
+
+    if len(definitions) == 1:
+        sentence = f"This measures {definitions[0]}"
+    else:
+        sentence = "The figures use these governed definitions: " + "; ".join(definitions)
+
+    grouped = [cat.dimensions[d].label.lower() for d in spec.dimensions]
+    if grouped:
+        sentence += f", grouped by {' and '.join(grouped)}"
+    return sentence.rstrip(".") + "."
 
 
 def _plural(count: int, noun: str) -> str:
@@ -231,4 +270,4 @@ def _empty_summary(spec: QuerySpec, compiled: CompiledQuery, cat: Catalog) -> st
     sentence += "."
     if metric.caveat:
         sentence += " " + " ".join(metric.caveat.split())
-    return sentence
+    return sentence + " " + _definition_sentence(spec, cat)

@@ -10,6 +10,8 @@ from types import SimpleNamespace
 import pytest
 
 from app.services.workbench import nodes
+from app.services.workbench import models
+from tests.workbench.conftest import FakeLLM
 
 
 def _intel(summary="A grounded summary.", key_points=None, title="Landscape"):
@@ -38,6 +40,23 @@ class TestMacro:
         assert result.card_type == "error"
         assert result.payload["retryable"] is True
         assert "vector store" in result.payload["message"].lower()
+
+
+class TestKnowledge:
+    @pytest.mark.anyio
+    async def test_returns_a_descriptive_brief_without_database_rows(self, monkeypatch):
+        fake = FakeLLM(
+            "An interest rate is the percentage charged on principal over a stated period. "
+            "Interest paid is a rupee amount, so it is different from the rate."
+        )
+        monkeypatch.setattr(models, "for_step", lambda *a, **k: fake)
+
+        result = await nodes.run_knowledge("what does intrest rate mean?")
+
+        assert result.source == "knowledge"
+        assert result.card_type == "brief"
+        assert "percentage" in result.payload["summary"]
+        assert "interest rate" in fake.calls[0]["messages"][-1]["content"].lower()
 
 
 class TestPostgresMCP:

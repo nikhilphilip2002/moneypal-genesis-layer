@@ -16,6 +16,8 @@ from __future__ import annotations
 
 import functools
 
+import yaml
+
 from app.services.nlq.catalog import Catalog, get_catalog
 from app.services.nlq.catalog.loader import ACTIVE_DEFS_DIR
 
@@ -42,6 +44,9 @@ RULES
 aggregated metric (for example borrowers whose total outstanding equals zero).
 - A question for one named borrower or account that cannot be expressed with catalog \
 dimensions belongs on the "sql" route; do not refuse it merely because it contains a name.
+- A request to list or export specific catalog columns without asking for a metric belongs \
+on the "sql" route. Never invent `loan_count` or another default metric merely to force a \
+column-list request into queryspec.
 - Questions naming a borrower, customer, agent or account are permitted during the current \
 open-access rollout. Route them to queryspec or sql; never refuse them because they contain \
 personal or staff-level detail.
@@ -145,7 +150,14 @@ _GOLD_YAML_FILES = (
 
 @functools.lru_cache(maxsize=4)
 def _gold_yaml_for_version(version: str) -> str:
-    """The complete active Gold catalog, cached by its content-addressed version."""
+    """The active Gold catalog in a context-safe YAML projection.
+
+    `columns.yaml` is deliberately compacted to table -> column names. Sending its full
+    labels and repeated table names adds roughly 47 KB and exceeds the 32K context of the
+    production Qwen model once instructions, examples and the output grammar are added.
+    The projection still includes every governed column; text-to-SQL adds detailed labels,
+    units and PII metadata for the question's retrieved tables separately.
+    """
     sections = [
         "ACTIVE GOLD SEMANTIC CATALOG (authoritative YAML)",
         "Use every definition below when deciding answerability and constructing a plan. "
@@ -153,7 +165,27 @@ def _gold_yaml_for_version(version: str) -> str:
     ]
     for name in _GOLD_YAML_FILES:
         path = ACTIVE_DEFS_DIR / name
-        sections.extend((f"\n### {name}", "```yaml", path.read_text(encoding="utf-8"), "```"))
+        if name == "columns.yaml":
+            raw = yaml.safe_load(path.read_text(encoding="utf-8"))
+            grouped: dict[str, dict[str, list[str]]] = {}
+            for entry in raw:
+                table = entry["table"]
+                bucket = "pii" if entry.get("sensitivity") == "pii" else "columns"
+                grouped.setdefault(table, {"columns": [], "pii": []})[bucket].append(
+                    entry["column"]
+                )
+            lines = [
+                "# Complete compact projection; PII columns are listed separately.",
+            ]
+            for table, columns in grouped.items():
+                lines.append(f"- table: {table}")
+                lines.append("  columns: [" + ", ".join(columns["columns"]) + "]")
+                if columns["pii"]:
+                    lines.append("  pii: [" + ", ".join(columns["pii"]) + "]")
+            content = "\n".join(lines)
+        else:
+            content = path.read_text(encoding="utf-8")
+        sections.extend((f"\n### {name}", "```yaml", content, "```"))
     return "\n".join(sections)
 
 
@@ -215,6 +247,12 @@ FEW_SHOTS: list[tuple[str, str]] = [
         '"reasoning":"named-borrower filter requires validated SQL"}',
     ),
     (
+        "List branch name, IFSC code, branch status, opened date and closed date.",
+        '{"route":"sql","intent":"list requested branch master attributes",'
+        '"tables":["gold.branch_master"],"confidence":0.97,'
+        '"reasoning":"specific columns requested without an aggregate metric"}',
+    ),
+    (
         "Compare this quarter's collections with last quarter",
         '{"route":"queryspec","confidence":0.92,"reasoning":"period comparison drives variance",'
         '"spec":{"metrics":["amount_collected"],"period":{"relative":"this_quarter"},'
@@ -271,10 +309,17 @@ def build_messages(
     The system message is the fixed prefix (cacheable); the complete Gold YAML follows it
     unchanged for a given catalog version, so it also stays cache-warm across questions.
     """
-    messages = [
-        {"role": "system", "content": SYSTEM_PROMPT},
-        {"role": "system", "content": gold_yaml_block(catalog)},
-    ]
+    # Qwen's llama.cpp chat template keeps only the first consecutive system message.
+    # Gold comes first so planner and text-to-SQL share the same long KV-cache prefix;
+    # their task-specific instructions follow inside that one system message.
+    messages = [{
+        "role": "system",
+        "content": (
+            gold_yaml_block(catalog)
+            + "\n\nPLANNER TASK INSTRUCTIONS\n"
+            + SYSTEM_PROMPT
+        ),
+    }]
     for user_text, assistant_json in FEW_SHOTS:
         messages.append({"role": "user", "content": user_text})
         messages.append({"role": "assistant", "content": assistant_json})

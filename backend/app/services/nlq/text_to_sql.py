@@ -19,6 +19,8 @@ from __future__ import annotations
 import logging
 import re
 from dataclasses import dataclass, field
+
+import sqlglot
 from sqlglot import exp
 
 from app.core.config import settings
@@ -28,6 +30,7 @@ from app.services.nlq.contracts import Lineage
 from app.services.nlq.llm import LLMError, get_llm_client
 from app.services.nlq.llm.prompts import gold_yaml_block
 from app.services.nlq.llm.schemas import sql_schema
+from app.services.nlq.normalization import normalize_lending_question
 from app.services.nlq.validator import ValidationError, validate
 
 logger = logging.getLogger(__name__)
@@ -72,7 +75,8 @@ def _system_prompt(allow_pii: bool) -> str:
     pii_rule = (
         "- You may use listed PII columns only when the user's question explicitly needs "
         "that borrower, customer, agent, KYC or MSME detail. Read-only person-level lists, "
-        "rankings and exports are allowed during the open-access rollout."
+        "rankings and exports are allowed during the open-access rollout; never broaden a "
+        "person-level query beyond the fields the user explicitly requested."
         if allow_pii
         else "- Never reference customer names, dates of birth, addresses, PIN codes, "
              "PAN, Aadhaar or income."
@@ -101,11 +105,17 @@ async def generate(
     *,
     catalog: Catalog | None = None,
     allow_pii: bool = False,
+    preferred_tables: list[str] | None = None,
     client=None,
 ) -> SqlAttempt:
     """Generate and validate SQL. Returns an attempt whose `validated` flag is the gate."""
     cat = catalog or get_catalog()
     llm = client or get_llm_client()
+
+    exact = _interest_rate_distribution_attempt(question, cat)
+    if exact is not None:
+        logger.info("NLQ selected deterministic interest-rate distribution")
+        return exact
 
     exact = _named_borrower_disbursed_attempt(question, cat, allow_pii=allow_pii)
     if exact is not None:
@@ -118,12 +128,27 @@ async def generate(
         return exact
 
     hits = retrieve(question, catalog=cat, use_vectors=settings.nlq_catalog_vectors)
-    context = _context_block(hits, cat, allow_pii=allow_pii)
+    selected_tables = [
+        table for table in (preferred_tables or []) if table in cat.allowed_tables()
+    ]
+    context = _context_block(
+        hits,
+        cat,
+        allow_pii=allow_pii,
+        tables=selected_tables or None,
+    )
 
     messages = [
-        {"role": "system", "content": _system_prompt(allow_pii)},
-        {"role": "system", "content": gold_yaml_block(cat)},
-        {"role": "system", "content": context},
+        {
+            "role": "system",
+            "content": (
+                gold_yaml_block(cat)
+                + "\n\nSQL GENERATION TASK INSTRUCTIONS\n"
+                + _system_prompt(allow_pii)
+                + "\n\nRETRIEVED TABLE DETAIL\n"
+                + context
+            ),
+        },
         *_few_shots(),
         {"role": "user", "content": question},
     ]
@@ -186,6 +211,7 @@ async def generate(
         attempt.sql = checked.sql
         attempt.tables = checked.tables
         attempt.pii_columns = checked.pii_columns
+        attempt.column_units = _infer_column_units(checked.sql, checked.tables, cat)
         attempt.validated = True
         attempt.error = ""
         if checked.limit_injected:
@@ -197,6 +223,84 @@ async def generate(
         return attempt
 
     return attempt
+
+
+def _infer_column_units(sql: str, tables: list[str], catalog: Catalog) -> dict[str, str]:
+    """Carry catalog units through generated aliases such as `total_security_value`.
+
+    A generated SUM would otherwise render as a plain count even when its source column is
+    INR. The validator has already proved every referenced column is real at this point.
+    """
+    try:
+        tree = sqlglot.parse_one(sql, read="postgres")
+    except Exception:  # pragma: no cover - validated SQL has already parsed successfully
+        return {}
+
+    units_by_name: dict[str, set[str]] = {}
+    for table in tables:
+        for column in catalog.columns_for(table):
+            units_by_name.setdefault(column.column.lower(), set()).add(column.unit)
+
+    inferred: dict[str, str] = {}
+    select = tree.find(exp.Select)
+    if select is None:
+        return inferred
+    for expression in select.expressions:
+        output_name = expression.alias_or_name
+        if not output_name:
+            continue
+        if expression.find(exp.Count) is not None:
+            inferred[output_name] = "count"
+            continue
+        source_units = {
+            unit
+            for column in expression.find_all(exp.Column)
+            for unit in units_by_name.get(column.name.lower(), set())
+        }
+        if len(source_units) == 1:
+            inferred[output_name] = source_units.pop()
+    return inferred
+
+
+_INTEREST_RATE_LIST_RE = re.compile(
+    r"\b(?:various|different|distinct|available|list|range\s+of)\b[^?]{0,50}"
+    r"\binterest\s+rates?\b|"
+    r"\blist\s+the\s+distinct\s+account\s+interest\s+rates?\b|"
+    r"\bwhat\s+(?:are|is)\b[^?]{0,35}\binterest\s+rates?\b",
+    re.IGNORECASE,
+)
+
+
+def _interest_rate_distribution_attempt(
+    question: str, catalog: Catalog
+) -> SqlAttempt | None:
+    """List contractual account rates with counts, without asking the model to write SQL."""
+    if not _INTEREST_RATE_LIST_RE.search(normalize_lending_question(question)):
+        return None
+    sql = (
+        "SELECT interest_rate AS interest_rate, COUNT(interest_rate) AS loan_count "
+        "FROM gold.loan_account_master "
+        "WHERE interest_rate IS NOT NULL AND sanction_date <= CURRENT_DATE "
+        "GROUP BY interest_rate ORDER BY interest_rate ASC LIMIT 5000"
+    )
+    checked = validate(sql, catalog=catalog, allow_pii=False)
+    return SqlAttempt(
+        sql=checked.sql,
+        tables=checked.tables,
+        explanation=(
+            "Distinct contractual account interest rates, with the number of sanctioned "
+            "loans at each rate, across the full available loan book."
+        ),
+        validated=True,
+        attempts=0,
+        model="deterministic",
+        provider="catalog",
+        warnings=[
+            "Rates are contractual account percentages, not rupee amounts.",
+            "Loan count shows how many accounts carry each distinct rate.",
+        ],
+        column_units={"interest_rate": "percent", "loan_count": "count"},
+    )
 
 
 _NAMED_PRINCIPAL_RE = re.compile(
@@ -354,14 +458,21 @@ def _named_borrower_principal_attempt(
     )
 
 
-def _context_block(hits, catalog: Catalog, *, allow_pii: bool = False) -> str:
+def _context_block(
+    hits,
+    catalog: Catalog,
+    *,
+    allow_pii: bool = False,
+    tables: list[str] | None = None,
+) -> str:
     """Real DDL for the retrieved tables, plus the declared join paths between them.
 
     Without the join block the model sees two tables and no stated way to relate them,
     which is precisely when it invents a join condition.
     """
     lines: list[str] = ["TABLES YOU MAY USE"]
-    for table_name in hits.tables:
+    selected_tables = tables or hits.tables
+    for table_name in selected_tables:
         entry = catalog.table_by_name(table_name)
         if entry is None:
             continue
@@ -373,12 +484,14 @@ def _context_block(hits, catalog: Catalog, *, allow_pii: bool = False) -> str:
                 continue
             lines.append(f"  {column.column:32} -- {column.label} ({column.unit})")
 
-    if hits.joins:
+    selected_joins = [
+        join
+        for join in catalog.joins
+        if join.left in selected_tables and join.right in selected_tables
+    ]
+    if selected_joins:
         lines.append("\nJOIN PATHS (use exactly these conditions)")
-        for join_id in hits.joins:
-            join = next((j for j in catalog.joins if j.id == join_id), None)
-            if join is None:
-                continue
+        for join in selected_joins:
             conditions = " AND ".join(f"{join.left}.{a} = {join.right}.{b}" for a, b in join.on)
             lines.append(f"  {conditions}")
 
@@ -430,6 +543,8 @@ def lineage_for(attempt: SqlAttempt, row_count: int, duration_ms: int) -> Lineag
     return Lineage(
         path="text_to_sql",
         sql=attempt.sql,
+        display_sql=attempt.sql,
+        parameters={},
         source_tables=attempt.tables,
         formulas={},
         row_count=row_count,

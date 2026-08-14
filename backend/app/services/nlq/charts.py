@@ -15,7 +15,8 @@ from typing import Any
 
 from app.services.nlq.catalog import Catalog, get_catalog
 from app.services.nlq.catalog import lookups
-from app.services.nlq.compiler import CompiledQuery
+from app.services.nlq.catalog.loader import canonical_enum_code
+from app.services.nlq.compiler import CompiledQuery, describe_parameters, render_sql_for_display
 from app.services.nlq.contracts import (
     AxisSpec,
     ChartSpec,
@@ -25,6 +26,8 @@ from app.services.nlq.contracts import (
     SeriesSpec,
 )
 from app.services.nlq.executor import QueryResult
+from app.services.nlq.narrator import format_value
+from app.services.nlq.normalization import normalize_lending_question
 from app.services.nlq.periods import format_bucket
 
 MAX_BAR_CATEGORIES = 12
@@ -52,6 +55,8 @@ def build(
     lineage = Lineage(
         path="text_to_sql" if path == "text_to_sql" else "queryspec",
         sql=result.sql,
+        display_sql=render_sql_for_display(compiled.sql, compiled.params),
+        parameters=describe_parameters(compiled.params),
         source_tables=compiled.source_tables,
         formulas=compiled.formulas,
         row_count=result.row_count,
@@ -133,7 +138,11 @@ def choose_chart_type(
                 return "stacked_bar"
             return "line"
         if len(cat_dims) == 1:
-            if spec.as_share and n_rows <= MAX_DONUT_SLICES and _is_additive(metrics[0], cat):
+            if (
+                spec.as_share
+                and 2 <= n_rows <= MAX_DONUT_SLICES
+                and _is_additive(metrics[0], cat)
+            ):
                 return "donut"
             return "bar" if n_rows <= MAX_BAR_CATEGORIES else "ranking"
         if len(cat_dims) == 2:
@@ -201,7 +210,38 @@ def _decode_rows(
             elif raw in (None, ""):
                 decoded[dim_id] = "Not recorded"
         out.append(decoded)
+    _disambiguate_decoded_dimensions(out, spec, cat)
     return out
+
+
+def _disambiguate_decoded_dimensions(
+    rows: list[dict[str, Any]], spec: QuerySpec, catalog: Catalog
+) -> None:
+    """Keep two codes with one governed label visually distinct.
+
+    The Gold product master legitimately contains scheme 1615 and 1619 under the same
+    "Loan Against Property" name. A chart with two identical category labels is ambiguous,
+    so only colliding labels receive their code suffix.
+    """
+    for dimension_id in spec.dimensions:
+        dimension = catalog.dimensions.get(dimension_id)
+        if dimension is None or not dimension.decode:
+            continue
+        codes_by_label: dict[str, set[str]] = {}
+        for row in rows:
+            if f"{dimension_id}__raw" not in row:
+                continue
+            label = str(row.get(dimension_id, ""))
+            code = canonical_enum_code(row[f"{dimension_id}__raw"])
+            codes_by_label.setdefault(label, set()).add(code)
+        collisions = {label for label, codes in codes_by_label.items() if len(codes) > 1}
+        for row in rows:
+            label = str(row.get(dimension_id, ""))
+            if label not in collisions:
+                continue
+            code = canonical_enum_code(row[f"{dimension_id}__raw"])
+            suffix = f"Scheme #{code}" if dimension_id == "scheme" else code
+            row[dimension_id] = f"{label} ({suffix})"
 
 
 def _as_date(value: Any) -> Any:
@@ -245,6 +285,9 @@ def _format_hint(unit: str) -> str | None:
         "percent": "percent_1", # 12.3%
         "count": "integer",     # 13,510
         "days": "integer",
+        "months": "integer",
+        "years": "integer",
+        "year": "integer",
     }.get(unit)
 
 
@@ -386,6 +429,7 @@ def build_from_rows(
     lineage: Lineage,
     catalog: Catalog | None = None,
     unit_hints: dict[str, str] | None = None,
+    description: str = "",
 ) -> ChartSpec:
     """ChartSpec for the text-to-SQL path, where there is no QuerySpec to read from.
 
@@ -393,25 +437,35 @@ def build_from_rows(
     rules are necessarily weaker than on the trusted path — which is one more reason these
     answers are marked unverified.
     """
+    cat = catalog or get_catalog()
     unit_hints = unit_hints or {}
     columns = result.columns
-    numeric = [c for c in columns if _column_is_numeric(result.rows, c)]
+    rows = _decode_generated_rows(result.rows, columns, cat)
+    numeric = [
+        c for c in columns
+        if _column_is_numeric(rows, c) and not _generated_dimension_column(c, columns, unit_hints)
+    ]
     labels = [c for c in columns if c not in numeric]
 
     if not result.rows:
         chart_type = "table"
-    elif len(result.rows) == 1 and len(numeric) >= 1 and not labels:
+    elif len(rows) == 1 and len(numeric) >= 1 and not labels:
         chart_type = "kpi"
     elif len(labels) == 1 and len(numeric) == 1:
-        chart_type = "bar" if len(result.rows) <= MAX_BAR_CATEGORIES else "ranking"
+        chart_type = "bar" if len(rows) <= MAX_BAR_CATEGORIES else "ranking"
     else:
         chart_type = "table"
 
+    clean_title = normalize_lending_question(question).strip().rstrip("?.!")
     return ChartSpec(
         chart_type=chart_type,
-        title=question[:120],
+        title=(clean_title[:1].upper() + clean_title[1:])[:120],
         subtitle="Generated query — not a reviewed metric",
-        x=AxisSpec(field=labels[0], label=labels[0].replace("_", " ").title(), unit="text")
+        x=AxisSpec(
+            field=labels[0],
+            label=labels[0].replace("_", " ").title(),
+            unit=unit_hints.get(labels[0], "text"),
+        )
         if labels
         else None,
         series=[
@@ -432,12 +486,9 @@ def build_from_rows(
             )
             for c in columns
         ],
-        rows=result.rows,
-        summary=(
-            f"{result.row_count} row(s) returned. This answer came from a generated query "
-            "rather than a reviewed metric — check the SQL before relying on it."
-            if result.rows
-            else "The generated query returned no rows."
+        rows=rows,
+        summary=_generated_summary(
+            rows, columns, numeric, labels, unit_hints, description=description
         ),
         drilldown=None,
         lineage=lineage,
@@ -451,6 +502,118 @@ def _column_is_numeric(rows: list[dict[str, Any]], column: str) -> bool:
             continue
         return isinstance(value, (int, float)) and not isinstance(value, bool)
     return False
+
+
+_DIMENSION_LIKE_GENERATED_COLUMNS = frozenset({
+    "interest_rate", "year", "month", "quarter", "fy", "product_code", "scheme_code",
+    "branch_code", "loan_status", "account_status", "asset_code", "dpd_bucket",
+})
+
+
+def _generated_dimension_column(
+    column: str, columns: list[str], unit_hints: dict[str, str]
+) -> bool:
+    """Recognise a numeric grouping key in generated output.
+
+    ``interest_rate`` in a rate distribution is an x value, not a second measure.  Keeping
+    it out of ``numeric`` lets the normal one-dimension/one-metric bar rule apply while its
+    percent unit still formats both the table and the category labels correctly.
+    """
+    return (
+        len(columns) > 1
+        and column == columns[0]
+        and column.lower() in _DIMENSION_LIKE_GENERATED_COLUMNS
+        and any(other != column and unit_hints.get(other) in {"count", "inr", "percent"}
+                for other in columns)
+    )
+
+
+def _decode_generated_rows(
+    rows: list[dict[str, Any]], columns: list[str], catalog: Catalog
+) -> list[dict[str, Any]]:
+    """Apply the same governed labels to generated SQL that QuerySpec charts receive."""
+    decoders: dict[str, str] = {}
+    for column in columns:
+        lowered = column.lower()
+        for dimension_id, enum in catalog.enums.items():
+            if lowered in {dimension_id.lower(), enum.column.lower(), f"{dimension_id.lower()}_code"}:
+                decoders[column] = dimension_id
+                break
+
+    decoded_rows: list[dict[str, Any]] = []
+    for row in rows:
+        decoded = dict(row)
+        for column, dimension_id in decoders.items():
+            raw = decoded.get(column)
+            if raw in (None, ""):
+                decoded[column] = "Not recorded"
+                continue
+            decoded[f"{column}__raw"] = raw
+            decoded[column] = lookups.label_for(catalog, dimension_id, raw)
+        decoded_rows.append(decoded)
+    for column, dimension_id in decoders.items():
+        codes_by_label: dict[str, set[str]] = {}
+        for row in decoded_rows:
+            raw_key = f"{column}__raw"
+            if raw_key in row:
+                codes_by_label.setdefault(str(row[column]), set()).add(
+                    canonical_enum_code(row[raw_key])
+                )
+        collisions = {label for label, codes in codes_by_label.items() if len(codes) > 1}
+        for row in decoded_rows:
+            if str(row.get(column)) not in collisions:
+                continue
+            code = canonical_enum_code(row[f"{column}__raw"])
+            suffix = f"Scheme #{code}" if dimension_id == "scheme" else code
+            row[column] = f"{row[column]} ({suffix})"
+    return decoded_rows
+
+
+def _generated_summary(
+    rows: list[dict[str, Any]],
+    columns: list[str],
+    numeric: list[str],
+    labels: list[str],
+    unit_hints: dict[str, str],
+    *,
+    description: str,
+) -> str:
+    if not rows:
+        base = "The generated query returned no matching rows."
+    elif len(rows) == 1 and numeric and not labels:
+        values = [
+            f"{column.replace('_', ' ').title()} was "
+            f"{format_value(rows[0].get(column), unit_hints.get(column, 'count'))}"
+            for column in numeric
+        ]
+        base = "; ".join(values) + "."
+    elif labels and numeric:
+        label, metric = labels[0], numeric[0]
+        ranked = [row for row in rows if isinstance(row.get(metric), (int, float))]
+        if ranked:
+            top = max(ranked, key=lambda row: row[metric])
+            label_value = top.get(label)
+            if isinstance(label_value, (int, float)) and unit_hints.get(label, "text") != "text":
+                label_value = format_value(label_value, unit_hints[label])
+            base = (
+                f"{label_value} has the highest {metric.replace('_', ' ')} at "
+                f"{format_value(top[metric], unit_hints.get(metric, 'count'))} across "
+                f"{len(rows):,} returned {label.replace('_', ' ')} value(s)."
+            )
+        else:
+            base = f"The query returned {len(rows):,} row(s)."
+    else:
+        readable = ", ".join(column.replace("_", " ") for column in columns[:5])
+        base = f"The query returned {len(rows):,} row(s) covering {readable}."
+
+    detail = " ".join(description.split()).strip()
+    if detail:
+        detail = detail.rstrip(".") + "."
+    verification = (
+        "This uses a validated read-only generated query rather than a reviewed metric; "
+        "check Source details before relying on it."
+    )
+    return " ".join(part for part in (base, detail, verification) if part)
 
 
 def _title(spec: QuerySpec, compiled: CompiledQuery, cat: Catalog) -> str:

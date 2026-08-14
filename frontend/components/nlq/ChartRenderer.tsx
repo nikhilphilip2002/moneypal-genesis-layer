@@ -1,6 +1,7 @@
 'use client';
 
 import { useMemo, useState } from 'react';
+import { BarChart3, Lightbulb, Table2 } from 'lucide-react';
 import {
   Area, AreaChart, Bar, BarChart, CartesianGrid, Cell, LabelList, Legend, Line, LineChart, Pie, PieChart,
   ReferenceLine, ResponsiveContainer, Scatter, ScatterChart, Tooltip, XAxis, YAxis, ZAxis,
@@ -29,34 +30,41 @@ import { cn } from '@/lib/utils';
 type Props = {
   chart: ChartSpec;
   onDrilldown?: (spec: NonNullable<ChartSpec['drilldown']>) => void;
+  hideHeader?: boolean;
 };
 
-export default function ChartRenderer({ chart, onDrilldown }: Props) {
+export default function ChartRenderer({ chart, onDrilldown, hideHeader = false }: Props) {
   const [asTable, setAsTable] = useState(false);
   const mode = useChartMode();
   const showTable = asTable || chart.chart_type === 'table';
+  const canToggle = chart.chart_type !== 'table';
 
   return (
     <div className="w-full">
-      <div className="mb-2 flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <h3 className="truncate text-sm font-semibold text-foreground">{chart.title}</h3>
-          {chart.subtitle && (
-            <p className="truncate text-xs text-muted-foreground">{chart.subtitle}</p>
+      {(!hideHeader || canToggle) && (
+        <div className={cn('mb-3 flex items-start justify-between gap-3', hideHeader && 'justify-end')}>
+          {!hideHeader && (
+            <div className="min-w-0">
+              <h3 className="truncate text-base font-semibold tracking-tight text-foreground">{chart.title}</h3>
+              {chart.subtitle && (
+                <p className="mt-0.5 truncate text-xs text-muted-foreground">{chart.subtitle}</p>
+              )}
+            </div>
+          )}
+          {canToggle && (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => setAsTable((v) => !v)}
+              className="h-8 shrink-0 gap-1.5 rounded-lg border-border/70 bg-background/70 px-2.5 text-xs font-medium text-muted-foreground shadow-sm hover:text-foreground"
+            >
+              {asTable ? <BarChart3 className="size-3.5" /> : <Table2 className="size-3.5" />}
+              {asTable ? 'Chart' : 'Table'}
+            </Button>
           )}
         </div>
-        {chart.chart_type !== 'table' && (
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={() => setAsTable((v) => !v)}
-            className="h-7 shrink-0 text-xs font-normal text-muted-foreground hover:text-foreground"
-          >
-            {asTable ? 'View chart' : 'View table'}
-          </Button>
-        )}
-      </div>
+      )}
 
       {chart.rows.length === 0 ? (
         <EmptyState summary={chart.summary} />
@@ -67,7 +75,15 @@ export default function ChartRenderer({ chart, onDrilldown }: Props) {
       )}
 
       {chart.summary && (
-        <p className="mt-3 text-sm leading-relaxed text-foreground/90">{chart.summary}</p>
+        <div className="mt-4 flex items-start gap-2.5 rounded-xl border border-primary/10 bg-gradient-to-br from-primary/[0.055] to-transparent px-3.5 py-3">
+          <Lightbulb className="mt-0.5 size-4 shrink-0 text-primary" />
+          <div className="min-w-0">
+            <div className="text-[10px] font-semibold uppercase tracking-[0.14em] text-primary/80">
+              What this shows
+            </div>
+            <p className="mt-0.5 text-sm leading-6 text-foreground/90">{chart.summary}</p>
+          </div>
+        </div>
       )}
     </div>
   );
@@ -165,15 +181,20 @@ function usePivot(chart: ChartSpec): Wide {
 function KpiTiles({ chart }: { chart: ChartSpec }) {
   const row = chart.rows[0] ?? {};
   return (
-    <div className="flex flex-wrap gap-4">
+    <div className="grid gap-3 sm:grid-cols-2">
       {chart.series.map((series) => (
-        <Card key={series.field} className="min-w-[10rem] p-4">
-          <div className="text-xs uppercase tracking-wide text-muted-foreground">
+        <Card
+          key={series.field}
+          className="relative min-w-[12rem] overflow-hidden rounded-2xl border-primary/10 bg-gradient-to-br from-primary/[0.09] via-card to-card p-5 shadow-sm"
+        >
+          <span aria-hidden className="absolute inset-y-0 left-0 w-1 bg-primary" />
+          <div className="text-[11px] font-semibold uppercase tracking-[0.13em] text-muted-foreground">
             {series.label}
           </div>
-          <div className="mt-1 text-3xl font-semibold tabular-nums text-foreground">
+          <div className="mt-2 text-4xl font-semibold tracking-[-0.035em] tabular-nums text-foreground">
             {formatValue(row[series.field], series.unit)}
           </div>
+          {chart.subtitle && <div className="mt-3 text-xs text-muted-foreground">{chart.subtitle}</div>}
         </Card>
       ))}
     </div>
@@ -325,6 +346,18 @@ function BarView({
     ? Math.max(compactCategories ? 112 : 220, rows.length * 42 + 36)
     : 280;
 
+  if (single && rows.length === 1) {
+    const series = chart.series[0];
+    return (
+      <SingleCategoryView
+        label={String(rows[0]?.[xKey] ?? 'Not recorded')}
+        value={rows[0]?.[series.field]}
+        unit={series.unit}
+        mode={mode}
+      />
+    );
+  }
+
   return (
     <>
       <ResponsiveContainer width="100%" height={height}>
@@ -352,6 +385,7 @@ function BarView({
                 tickLine={false}
                 axisLine={false}
                 width={150}
+                tickFormatter={(value) => formatCategory(value, chart.x?.unit)}
               />
             </>
           ) : (
@@ -365,6 +399,7 @@ function BarView({
                 angle={rows.length > 6 ? -30 : 0}
                 textAnchor={rows.length > 6 ? 'end' : 'middle'}
                 height={rows.length > 6 ? 62 : 30}
+                tickFormatter={(value) => formatCategory(value, chart.x?.unit)}
               />
               <YAxis
                 tick={{ fill: palette.secondary, fontSize: 12 }}
@@ -417,6 +452,35 @@ function BarView({
   );
 }
 
+function SingleCategoryView({
+  label, value, unit, mode,
+}: { label: string; value: unknown; unit: string; mode: 'light' | 'dark' }) {
+  const color = seriesColor(0, mode);
+  return (
+    <div
+      className="overflow-hidden rounded-2xl border border-border/70 bg-gradient-to-br from-muted/45 to-background p-4 sm:p-5"
+      role="img"
+      aria-label={`${label}: ${formatValue(value, unit)}`}
+    >
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="flex min-w-0 items-center gap-2.5">
+          <span className="size-2.5 shrink-0 rounded-full" style={{ background: color }} />
+          <span className="truncate text-sm font-medium text-foreground" title={label}>{label}</span>
+        </div>
+        <Badge variant="outline" className="rounded-full bg-background/70 text-[10px] font-medium text-muted-foreground">
+          1 category returned
+        </Badge>
+      </div>
+      <div className="mt-4 text-3xl font-semibold tracking-[-0.025em] tabular-nums text-foreground">
+        {formatValue(value, unit)}
+      </div>
+      <div className="mt-4 h-2 overflow-hidden rounded-full bg-muted">
+        <div className="h-full w-full rounded-full" style={{ background: color }} />
+      </div>
+    </div>
+  );
+}
+
 // ─── Donut ───
 // Part-to-whole at a glance, never for comparing close values — which is why the backend
 // only picks this when the question asked for a mix and there are six slices or fewer.
@@ -436,9 +500,10 @@ function DonutView({ chart, mode }: { chart: ChartSpec; mode: 'light' | 'dark' }
   }, [chart, field, labelKey]);
 
   return (
-    <div className="flex flex-col items-center gap-4 sm:flex-row sm:items-center">
-      <ResponsiveContainer width="100%" height={260} className="max-w-[320px]">
-        <PieChart>
+    <div className="flex flex-col items-center gap-4 rounded-2xl border border-border/60 bg-muted/20 p-3 sm:flex-row sm:items-center sm:p-4">
+      <div className="relative h-[260px] w-full max-w-[320px]">
+        <ResponsiveContainer width="100%" height="100%">
+          <PieChart>
           <Pie
             data={data}
             dataKey="value"
@@ -456,8 +521,15 @@ function DonutView({ chart, mode }: { chart: ChartSpec; mode: 'light' | 'dark' }
             ))}
           </Pie>
           <Tooltip content={<ChartTooltip chart={chart} total={total} />} />
-        </PieChart>
-      </ResponsiveContainer>
+          </PieChart>
+        </ResponsiveContainer>
+        <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
+          <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Total</span>
+          <span className="mt-1 max-w-28 truncate text-lg font-semibold tabular-nums text-foreground">
+            {formatValue(total, unit)}
+          </span>
+        </div>
+      </div>
       {/* Direct labels, not a colour-only legend: every slice carries its name, its value
           and its share, so identity never rests on hue alone. */}
       <ul className="w-full min-w-0 flex-1 space-y-1.5">
@@ -801,7 +873,7 @@ function HeatmapView({ chart, mode }: { chart: ChartSpec; mode: 'light' | 'dark'
       if (!rowsOrder.includes(r)) rowsOrder.push(r);
       if (!colsOrder.includes(c)) colsOrder.push(c);
       const value = typeof row[field] === 'number' ? (row[field] as number) : 0;
-      grid.set(`${r} ${c}`, value);
+      grid.set(`${r}\u0000${c}`, value);
       if (value > peak) peak = value;
     }
     return { rowNames: rowsOrder, colNames: colsOrder, cells: grid, max: peak };
@@ -830,7 +902,7 @@ function HeatmapView({ chart, mode }: { chart: ChartSpec; mode: 'light' | 'dark'
                   {rowName}
                 </th>
                 {colNames.map((colName) => {
-                  const value = cells.get(`${rowName} ${colName}`);
+                  const value = cells.get(`${rowName}\u0000${colName}`);
                   const has = typeof value === 'number';
                   return (
                     <td
@@ -944,7 +1016,10 @@ function ChartTooltip({ chart, active, payload, label, total, labelKey }: any) {
   // After a pivot the dataKeys are category names, so they are not in chart.series. The
   // metric's unit is the same for every one of them either way.
   const fallbackUnit = chart.series[0]?.unit ?? 'count';
-  const heading = labelKey ? payload[0]?.payload?.[labelKey] ?? label : label;
+  const rawHeading = labelKey ? payload[0]?.payload?.[labelKey] ?? label : label;
+  const heading = chart.x?.unit && chart.x.unit !== 'text'
+    ? formatCategory(rawHeading, chart.x.unit)
+    : rawHeading;
 
   return (
     <div
@@ -986,9 +1061,9 @@ function ChartTooltip({ chart, active, payload, label, total, labelKey }: any) {
 
 function TableView({ chart }: { chart: ChartSpec }) {
   return (
-    <div className="max-h-[26rem] overflow-auto rounded-xl border border-border">
+    <div className="max-h-[26rem] overflow-auto rounded-xl border border-border/70 shadow-sm">
       <Table>
-        <TableHeader className="sticky top-0 z-10 bg-muted/60 backdrop-blur">
+        <TableHeader className="sticky top-0 z-10 bg-muted/80 backdrop-blur">
           <TableRow>
             {chart.columns.map((column) => (
               <TableHead key={column.name} className={cn(isNumeric(column) && 'text-right')}>
@@ -1007,7 +1082,7 @@ function TableView({ chart }: { chart: ChartSpec }) {
         </TableHeader>
         <TableBody>
           {chart.rows.map((row, index) => (
-            <TableRow key={index}>
+            <TableRow key={index} className="odd:bg-muted/[0.18] hover:bg-muted/45">
               {chart.columns.map((column) => (
                 <TableCell
                   key={column.name}
@@ -1026,6 +1101,13 @@ function TableView({ chart }: { chart: ChartSpec }) {
       </Table>
     </div>
   );
+}
+
+function formatCategory(value: unknown, unit?: string): string {
+  if (!unit || unit === 'text') return String(value ?? '');
+  if (typeof value === 'number') return formatValue(value, unit);
+  const numeric = typeof value === 'string' && value.trim() !== '' ? Number(value) : Number.NaN;
+  return Number.isFinite(numeric) ? formatValue(numeric, unit) : String(value ?? '');
 }
 
 const isNumeric = (column: ColumnSpec) =>

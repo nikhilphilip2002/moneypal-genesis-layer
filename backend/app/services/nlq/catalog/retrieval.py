@@ -94,6 +94,9 @@ def lexical_score(question: str, doc: CatalogDoc, catalog: Catalog) -> float:
     elif doc.kind == "table":
         table = catalog.tables[doc.payload["entry_id"]]
         synonyms, label = list(table.synonyms), table.label
+    elif doc.kind == "column":
+        column = catalog.columns[doc.payload["entry_id"]]
+        synonyms, label = list(column.synonyms), column.label
     elif doc.kind == "enum_value":
         block = catalog.enums.get(doc.payload["dimension"])
         value = block.values.get(str(doc.payload["entry_id"])) if block else None
@@ -194,6 +197,11 @@ def retrieve(
     metrics = take("metric", top_metrics)
     dimensions = take("dimension", top_dimensions)
     tables = [h.doc.payload["table"] for h in hits if h.doc.kind == "table"][:top_tables]
+
+    # Exact column language such as "security value" or "IFSC code" is stronger table
+    # evidence than a generic overlap with an amount metric. Put those tables first.
+    column_tables = [h.doc.payload["table"] for h in hits if h.doc.kind == "column"]
+    tables = list(dict.fromkeys([*column_tables, *tables]))[:top_tables]
 
     # A metric is useless without its own table, so pull those in regardless of whether the
     # table's own description happened to rank.

@@ -53,6 +53,43 @@ class TestDispatch:
         sent = fake.calls[0]["messages"]
         assert sent[-3:] == [*history_messages, {"role": "user", "content": "and by branch?"}]
 
+    @pytest.mark.anyio
+    async def test_lending_typos_are_normalized_before_routing(self, monkeypatch):
+        fake = FakeLLM('{"route":"dispatch","sources":["db"],"intent":"x"}')
+        _use(monkeypatch, fake)
+
+        await router.route("intrest rate based on schema name", role="admin")
+
+        assert fake.calls[0]["messages"][-1]["content"] == "interest rate based on scheme name"
+
+    @pytest.mark.anyio
+    async def test_real_database_schema_word_is_not_changed(self, monkeypatch):
+        fake = FakeLLM('{"route":"dispatch","sources":["schema"],"intent":"x"}')
+        _use(monkeypatch, fake)
+
+        await router.route("show the schema table relationships", role="admin")
+
+        assert fake.calls[0]["messages"][-1]["content"] == "show the schema table relationships"
+
+    @pytest.mark.anyio
+    async def test_descriptive_catalog_question_uses_concept_source(self, monkeypatch):
+        _use(monkeypatch, FakeLLM('{"route":"dispatch","sources":["db"],"intent":"x"}'))
+
+        decision = await router.route("What does interest rate mean?", role="admin")
+
+        assert decision.sources == ["knowledge"]
+
+    @pytest.mark.anyio
+    async def test_rate_values_stay_on_loan_book_source(self, monkeypatch):
+        _use(
+            monkeypatch,
+            FakeLLM('{"route":"dispatch","sources":["knowledge"],"intent":"x"}'),
+        )
+
+        decision = await router.route("What are the various intrest rates?", role="admin")
+
+        assert decision.sources == ["db"]
+
 
 class TestRefuse:
     @pytest.mark.anyio

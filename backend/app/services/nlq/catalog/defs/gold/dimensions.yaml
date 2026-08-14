@@ -70,7 +70,21 @@
   table: gold.loan_account_master
   column: loan_status
   type: categorical
-  synonyms: [status, open or closed, active, closed accounts, live accounts]
+  synonyms: [status, detailed account status, active, NPA, sanctioned]
+
+- id: open_closed_status
+  label: Account state
+  table: gold.loan_account_master
+  column: loan_status
+  type: categorical
+  expression: >
+    CASE WHEN UPPER(BTRIM(COALESCE({col}, ''))) = 'CLOSED' THEN 'Closed' ELSE 'Open' END
+  sort_expression: >
+    CASE WHEN UPPER(BTRIM(COALESCE({col}, ''))) = 'CLOSED' THEN 2 ELSE 1 END
+  synonyms: [open or closed, open versus closed, open vs closed, account state, live or closed]
+  description: >
+    Binary lifecycle view: CLOSED is closed; ACTIVE, NPA and SANCTIONED accounts remain open.
+  cardinality: 2
 
 - id: agent
   label: Agent

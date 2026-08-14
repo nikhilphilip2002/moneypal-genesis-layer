@@ -4,6 +4,10 @@ One app, three domain routers (macro, competitive, regulatory) mounted together.
 
 Run (from backend/):  uvicorn app.main:app --port 8000 --reload
 """
+import asyncio
+import contextlib
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -11,8 +15,24 @@ from app.api.routes import admin, auth, competitive, intelligence, macro, nlq, p
 from app.core.config import settings
 
 
+@asynccontextmanager
+async def _lifespan(_app: FastAPI):
+    warmup_task = None
+    if settings.nlq_llm_provider == "llamacpp":
+        from app.services.nlq.llm import warm_catalog_prompt_cache
+
+        # Become ready immediately; catalog prompt evaluation happens before the first
+        # analyst question normally arrives, without making API health depend on the LLM.
+        warmup_task = asyncio.create_task(warm_catalog_prompt_cache())
+    yield
+    if warmup_task is not None and not warmup_task.done():
+        warmup_task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await warmup_task
+
+
 def create_app() -> FastAPI:
-    app = FastAPI(title="Moneypal Genesis Intelligence API")
+    app = FastAPI(title="Moneypal Genesis Intelligence API", lifespan=_lifespan)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_origins,

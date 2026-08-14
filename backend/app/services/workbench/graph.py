@@ -95,6 +95,12 @@ async def _h_regulatory(intent: str, _state: WorkbenchState) -> SourceResult:
     return await nodes.run_regulatory(intent)
 
 
+async def _h_knowledge(intent: str, _state: WorkbenchState) -> SourceResult:
+    return await nodes.run_knowledge(
+        intent, history_messages=_state.get("history_messages", []),
+    )
+
+
 async def _h_schema(intent: str, _state: WorkbenchState) -> SourceResult:
     return await nodes.run_schema(intent, access_mode=_state.get("data_access"))
 
@@ -106,6 +112,7 @@ _HANDLERS = {
     "macro": _h_macro,
     "competitive": _h_competitive,
     "regulatory": _h_regulatory,
+    "knowledge": _h_knowledge,
     "schema": _h_schema,
 }
 

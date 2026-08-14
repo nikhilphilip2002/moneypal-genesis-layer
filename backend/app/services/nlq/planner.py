@@ -38,6 +38,7 @@ from app.services.nlq.contracts import (
 from app.services.nlq.llm import LLMError, get_llm_client
 from app.services.nlq.llm.prompts import PROMPT_VERSION, build_messages
 from app.services.nlq.llm.schemas import plan_schema
+from app.services.nlq.normalization import normalize_lending_question
 from app.services.nlq.text_to_sql import (
     named_borrower_disbursed_name,
     named_borrower_principal_name,
@@ -80,13 +81,145 @@ _TOP_BORROWERS_RE = re.compile(
     r"\btop\s+(?P<limit>\d{1,4})\s+(?:borrowers?|customers?|clients?)\b",
     re.IGNORECASE,
 )
+_BY_PRODUCT_RE = re.compile(r"\bby\s+(?:loan\s+)?product\b", re.IGNORECASE)
+_OPEN_CLOSED_RE = re.compile(
+    r"\b(?:open\s+(?:and|or|vs\.?|versus)\s+closed|"
+    r"closed\s+(?:and|or|vs\.?|versus)\s+open)\b",
+    re.IGNORECASE,
+)
+_INTEREST_RATE_RE = re.compile(r"\binterest\s+rates?\b", re.IGNORECASE)
+_INTEREST_RATE_AMOUNT_RE = re.compile(
+    r"\b(?:total|sum(?:med)?)\b[^?]{0,40}\binterest\s+rate\b|"
+    r"\binterest\s+rate\s+(?:amount|total)\b",
+    re.IGNORECASE,
+)
+_VARIOUS_INTEREST_RATES_RE = re.compile(
+    r"\b(?:various|different|distinct|available|list|range\s+of)\b[^?]{0,40}"
+    r"\binterest\s+rates?\b|\bwhat\s+(?:are|is)\b[^?]{0,30}\binterest\s+rates?\b",
+    re.IGNORECASE,
+)
+_INTEREST_BY_SCHEME_RE = re.compile(
+    r"\binterest\s+rates?\b[^?]{0,50}\b(?:by|based\s+on|for\s+each)\s+(?:scheme|scheme\s+name)\b|"
+    r"\b(?:by|based\s+on)\s+(?:scheme|scheme\s+name)\b[^?]{0,50}\binterest\s+rates?\b",
+    re.IGNORECASE,
+)
+_SCHEME_AMOUNT_PAID_RE = re.compile(
+    r"\b(?:scheme|scheme\s+name)\b[^?]{0,60}\b(?:amount\s+paid|paid\s+amount|"
+    r"collections?|repayments?)\b|"
+    r"\b(?:amount\s+paid|paid\s+amount|collections?|repayments?)\b[^?]{0,60}"
+    r"\b(?:by|per|for\s+each)\s+(?:scheme|scheme\s+name)\b",
+    re.IGNORECASE,
+)
+_TOTAL_SANCTIONED_RE = re.compile(
+    r"\b(?:total|overall)\b[^?]{0,50}\b(?:loan\s+)?(?:amount\s+)?sanction(?:ed)?\b|"
+    r"\btotal\s+sanctioned\s+(?:loan\s+)?amount\b",
+    re.IGNORECASE,
+)
+_EXPLICIT_TIME_SCOPE_RE = re.compile(
+    r"\b(?:today|yesterday|this|last|past|previous|month|quarter|year|fy\s*\d+|"
+    r"financial\s+year|calendar\s+year|20\d{2})\b",
+    re.IGNORECASE,
+)
+
+
+def _common_business_plan(question: str) -> PlanResult | None:
+    """Reviewed plans for short, high-frequency questions the small model confuses.
+
+    These are semantic patterns, not exact question strings.  Time-qualified variants stay
+    with the planner because their period still needs to be resolved.
+    """
+    if _INTEREST_RATE_AMOUNT_RE.search(question):
+        return ClarifyPlan(
+            question=(
+                "An interest rate is a percentage, so it cannot be totaled as a money amount. "
+                "Would you like interest collected, interest due, or the average interest rate?"
+            ),
+            suggestions=[
+                "What is the total interest collected?",
+                "What is the total interest due?",
+                "What is the average interest rate?",
+            ],
+        )
+
+    explicitly_all_time = bool(re.search(r"\ball[ -]?time\b|\bwhole\s+book\b", question, re.I))
+    if _EXPLICIT_TIME_SCOPE_RE.search(question) and not explicitly_all_time:
+        return None
+
+    if _BORROWER_COUNT_RE.search(question) and _BY_PRODUCT_RE.search(question):
+        return QuerySpecPlan(
+            spec={
+                "metrics": ["customer_count"],
+                "dimensions": ["product"],
+                "period": {"relative": "all_time"},
+            },
+            confidence=1.0,
+            reasoning="distinct borrowers grouped by governed product",
+        )
+
+    if _OPEN_CLOSED_RE.search(question) and re.search(r"\b(?:loan|account)s?\b", question, re.I):
+        return QuerySpecPlan(
+            spec={
+                "metrics": ["loan_count"],
+                "dimensions": ["open_closed_status"],
+                "period": {"relative": "all_time"},
+                "as_share": True,
+            },
+            confidence=1.0,
+            reasoning="loan accounts split into governed open and closed lifecycle states",
+        )
+
+    if _INTEREST_BY_SCHEME_RE.search(question):
+        return QuerySpecPlan(
+            spec={
+                "metrics": ["avg_interest_rate"],
+                "dimensions": ["scheme"],
+                "period": {"relative": "all_time"},
+            },
+            confidence=1.0,
+            reasoning="sanction-weighted average interest rate grouped by loan scheme",
+        )
+
+    if _VARIOUS_INTEREST_RATES_RE.search(question):
+        return SqlPlan(
+            intent="list the distinct account interest rates and loan count at each rate",
+            tables=["gold.loan_account_master"],
+            confidence=1.0,
+            reasoning="a distinct rate distribution is a governed column-list query",
+        )
+
+    if _SCHEME_AMOUNT_PAID_RE.search(question):
+        metric = "interest_collected" if re.search(r"\binterest\s+paid\b", question, re.I) else (
+            "principal_collected" if re.search(r"\bprincipal\s+paid\b", question, re.I)
+            else "amount_collected"
+        )
+        return QuerySpecPlan(
+            spec={
+                "metrics": [metric],
+                "dimensions": ["scheme"],
+                "period": {"relative": "all_time"},
+            },
+            confidence=1.0,
+            reasoning="paid amount grouped by the governed loan scheme",
+        )
+
+    if _TOTAL_SANCTIONED_RE.search(question):
+        return QuerySpecPlan(
+            spec={
+                "metrics": ["sanctioned_amount"],
+                "dimensions": [],
+                "period": {"relative": "all_time"},
+            },
+            confidence=1.0,
+            reasoning="total sanctioned amount across the full available loan book",
+        )
+    return None
 
 
 def _catalog_tables_for(question: str, catalog: Catalog) -> list[str]:
     """Return Gold tables backed by a strong curated lexical match."""
     result = retrieve(question, catalog=catalog, use_vectors=False)
     if not any(
-        hit.lexical >= 1.0 and hit.doc.kind in {"table", "metric", "dimension"}
+        hit.lexical >= 1.0 and hit.doc.kind in {"table", "column", "metric", "dimension"}
         for hit in result.hits
     ):
         return []
@@ -227,9 +360,21 @@ async def plan(
 ) -> PlanOutcome:
     """Ask the model to route and structure a question."""
     cat = catalog or get_catalog()
-    planning_question = _resolve_chart_request(question, history_messages or [])
+    normalized_question = normalize_lending_question(question)
+    planning_question = _resolve_chart_request(normalized_question, history_messages or [])
 
-    top_borrowers = _top_borrowers_plan(question)
+    common = _common_business_plan(planning_question)
+    if common is not None:
+        return PlanOutcome(
+            plan=common,
+            attempts=0,
+            prompt_version=PROMPT_VERSION,
+            model="deterministic",
+            provider="catalog",
+            duration_ms=0,
+        )
+
+    top_borrowers = _top_borrowers_plan(planning_question)
     if top_borrowers is not None:
         return PlanOutcome(
             plan=top_borrowers,
@@ -240,7 +385,7 @@ async def plan(
             duration_ms=0,
         )
 
-    borrower_count = _named_month_borrower_count_plan(question)
+    borrower_count = _named_month_borrower_count_plan(planning_question)
     if borrower_count is not None:
         return PlanOutcome(
             plan=borrower_count,
@@ -251,7 +396,7 @@ async def plan(
             duration_ms=0,
         )
 
-    month_disbursement = _named_month_disbursement_plan(question)
+    month_disbursement = _named_month_disbursement_plan(planning_question)
     if month_disbursement is not None:
         return PlanOutcome(
             plan=month_disbursement,
@@ -262,7 +407,7 @@ async def plan(
             duration_ms=0,
         )
 
-    agent_count = _agent_borrower_count_plan(question)
+    agent_count = _agent_borrower_count_plan(planning_question)
     if agent_count is not None:
         return PlanOutcome(
             plan=agent_count,
@@ -275,10 +420,13 @@ async def plan(
 
     # A named-borrower filter is outside QuerySpec by design. Route this reviewed intent
     # deterministically so the model cannot drop the name and answer with the whole book.
-    if named_borrower_principal_name(question) or named_borrower_disbursed_name(question):
+    if (
+        named_borrower_principal_name(planning_question)
+        or named_borrower_disbursed_name(planning_question)
+    ):
         return PlanOutcome(
             plan=SqlPlan(
-                intent=question,
+                intent=planning_question,
                 tables=["gold.loan_account_master"],
                 confidence=1.0,
                 reasoning="named-borrower principal lookup uses governed SQL",
@@ -297,7 +445,7 @@ async def plan(
     # invalidates every cached plan rather than serving a stale one.
     # A context-free plan is reusable; a context-aware plan belongs to this conversation.
     # Reusing it in another session would be a cross-session memory leak.
-    cached = cache.get_plan(question, cat.version) if not history_messages else None
+    cached = cache.get_plan(planning_question, cat.version) if not history_messages else None
     if cached is not None:
         return replace(cached, duration_ms=0, attempts=0)
 
@@ -366,7 +514,7 @@ async def plan(
         # Only successful plans are cached. Caching a refusal or a clarification would
         # freeze a decision the next catalog change might legitimately reverse.
         if isinstance(parsed, QuerySpecPlan) and not history_messages:
-            cache.put_plan(question, cat.version, outcome)
+            cache.put_plan(planning_question, cat.version, outcome)
         return outcome
 
     # Both attempts failed validation. Demoting to the SQL fallback is the plan's policy,
@@ -374,7 +522,7 @@ async def plan(
     logger.info("NLQ planner demoting to text-to-SQL after %d attempts: %s", attempts, error)
     return PlanOutcome(
         plan=SqlPlan(
-            intent=question,
+            intent=planning_question,
             tables=[],
             confidence=0.3,
             reasoning=f"planner validation failed: {error}"[:500],
@@ -394,6 +542,13 @@ class PlanValidationError(ValueError):
 
 
 _RELATIVE_PERIOD_PHRASES = (
+    (
+        re.compile(
+            r"\b(?:(?:this|current)\s+(?:financial|fiscal)\s+year|this\s+fy|this\s+year)\b",
+            re.I,
+        ),
+        "fy_to_date",
+    ),
     (re.compile(r"\b(?:last|past|previous)\s+90\s+days?\b", re.I), "last_90_days"),
     (re.compile(r"\b(?:last|past|previous)\s+30\s+days?\b", re.I), "last_30_days"),
     (re.compile(r"\b(?:last|past|previous)\s+12\s+months?\b", re.I), "last_12_months"),

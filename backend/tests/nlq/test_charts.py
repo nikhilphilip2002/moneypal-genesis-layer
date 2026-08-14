@@ -11,7 +11,7 @@ import pytest
 from app.services.nlq import charts
 from app.services.nlq.catalog import get_catalog
 from app.services.nlq.compiler import compile_spec
-from app.services.nlq.contracts import Period, QuerySpec
+from app.services.nlq.contracts import Lineage, Period, QuerySpec
 from app.services.nlq.executor import QueryResult
 from app.services.nlq.narrator import format_value
 
@@ -161,6 +161,17 @@ class TestChartTypeRules:
         rows = [{"product": c, "sanctioned_amount": 10.0} for c in (1, 13, 16)]
         assert chart_for(spec, rows, catalog).chart_type == "donut"
 
+    def test_one_category_composition_uses_a_labelled_bar_not_a_meaningless_donut(self, catalog):
+        spec = QuerySpec(
+            metrics=["sanctioned_amount"],
+            dimensions=["product"],
+            period=Period(relative="all_time"),
+            as_share=True,
+        )
+        chart = chart_for(spec, [{"product": 16.0, "sanctioned_amount": 906900000}], catalog)
+        assert chart.chart_type == "bar"
+        assert chart.rows[0]["product"] == "Business & MSME Loans"
+
     def test_the_same_rows_without_share_intent_stay_a_bar(self, catalog):
         """Part-to-whole is what the question asked for, not what the rows look like."""
         spec = QuerySpec(
@@ -294,6 +305,14 @@ class TestDecoding:
         assert chart.rows[0]["product"] == "Gold Loans"
         assert chart.rows[0]["product__raw"] == 1
 
+    def test_float_shaped_numeric_codes_use_the_governed_label(self, catalog):
+        spec = QuerySpec(
+            metrics=["loan_count"], dimensions=["product"], period=Period(relative="all_time")
+        )
+        chart = chart_for(spec, [{"product": 16.0, "loan_count": 5753}], catalog)
+        assert chart.rows[0]["product"] == "Business & MSME Loans"
+        assert "16.0" not in chart.summary
+
     def test_time_buckets_get_fiscal_labels(self, catalog):
         spec = QuerySpec(
             metrics=["loan_count"], dimensions=["fy"], period=Period(relative="last_fy")
@@ -307,6 +326,30 @@ class TestDecoding:
         )
         chart = chart_for(spec, [{"product": None, "loan_count": 3}], catalog)
         assert chart.rows[0]["product"] == "Not recorded"
+
+    def test_live_scheme_codes_use_governed_names(self, catalog):
+        spec = QuerySpec(
+            metrics=["amount_collected"], dimensions=["scheme"], period=Period(relative="all_time")
+        )
+        chart = chart_for(spec, [{"scheme": "1616", "amount_collected": 10.0}], catalog)
+        assert chart.rows[0]["scheme"] == "MSME Loans"
+
+    def test_duplicate_scheme_names_are_disambiguated_by_code(self, catalog):
+        spec = QuerySpec(
+            metrics=["amount_collected"], dimensions=["scheme"], period=Period(relative="all_time")
+        )
+        chart = chart_for(
+            spec,
+            [
+                {"scheme": "1615", "amount_collected": 10.0},
+                {"scheme": "1619", "amount_collected": 20.0},
+            ],
+            catalog,
+        )
+        assert {row["scheme"] for row in chart.rows} == {
+            "Loan Against Property (Scheme #1615)",
+            "Loan Against Property (Scheme #1619)",
+        }
 
 
 class TestFormatting:
@@ -339,6 +382,29 @@ class TestNarration:
         chart = chart_for(spec, [{"par_30": 0.0897}], catalog)
         assert "0.09%" in chart.summary
         assert "as at" in chart.summary.lower()
+        assert "This measures" in chart.summary
+
+    def test_generated_rate_distribution_gets_units_chart_and_descriptive_summary(self, catalog):
+        result = result_of(
+            [
+                {"interest_rate": 16.0, "loan_count": 33},
+                {"interest_rate": 18.0, "loan_count": 3740},
+            ],
+            columns=["interest_rate", "loan_count"],
+        )
+        chart = charts.build_from_rows(
+            question="what are the various intrest rate?",
+            result=result,
+            lineage=Lineage(path="text_to_sql", sql="SELECT 1", unverified=True),
+            catalog=catalog,
+            unit_hints={"interest_rate": "percent", "loan_count": "count"},
+            description="Distinct contractual rates with the account count at each rate.",
+        )
+        assert chart.chart_type == "bar"
+        assert chart.x is not None and chart.x.unit == "percent"
+        assert chart.columns[0].unit == "percent"
+        assert "18.0%" in chart.summary
+        assert "validated read-only" in chart.summary
 
     def test_unratified_metrics_are_badged_in_the_summary(self, catalog):
         spec = QuerySpec(metrics=["par_30"], period=Period(relative="today"))
@@ -398,6 +464,10 @@ class TestLineage:
         spec = QuerySpec(metrics=["par_30"], period=Period(relative="today"))
         chart = chart_for(spec, [{"par_30": 0.09}], catalog)
         assert chart.lineage.sql
+        assert chart.lineage.display_sql
+        assert "%s" not in chart.lineage.display_sql
+        assert chart.lineage.parameters["as_of"]
+        assert chart.lineage.parameters["row_limit"] == "200"
         assert "par_30" in chart.lineage.formulas
         assert chart.lineage.source_tables == ["gold.portfolio_daily_snapshot"]
 

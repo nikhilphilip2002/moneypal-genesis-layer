@@ -13,6 +13,11 @@
   date_columns:
     sanction: sanction_date
     first_disbursement: first_disbursement_date
+    repayment_start: repayment_start_date
+    repayment_end: repayment_end_date
+    last_payment: last_payment_date
+    asset_classification: asset_classified_on
+    npa: npa_date
     closure: closure_date
   description: Governed account-level loan view with borrower, origination and cumulative values.
   notes: Cumulative fields are current values, not period event flows.
@@ -95,6 +100,7 @@
   row_count: 17972
   contains_pii: true
   synonyms: [customers, borrowers, clients, customer profile, contact details]
+  date_columns: {date_of_birth: date_of_birth}
   description: Governed customer master including PII for authorized borrower lookups.
 
 - id: agent_master
@@ -105,6 +111,7 @@
   row_count: 1014
   contains_pii: true
   synonyms: [agents, field agents, staff, sourcing agents, collection agents]
+  date_columns: {joined: joined_on}
   description: Governed staff and field-agent directory.
   restrictions: Standalone current agent directory; linked loan counts are already aggregated.
 
@@ -112,9 +119,11 @@
   table: gold.kyc_document_master
   label: KYC documents
   grain: one row per customer document
+  key: [inventory_num, document_sl]
   row_count: 72295
   contains_pii: true
   synonyms: [KYC, PAN, Aadhaar, identity document, customer documents]
+  date_columns: {issued: issue_date, expiry: expiry_date}
   description: Governed KYC document records for authorized customer-level questions.
 
 - id: branch_master
@@ -124,6 +133,7 @@
   key: [entity_num, branch_code]
   row_count: 67
   synonyms: [branches, offices, locations, IFSC]
+  date_columns: {opened: opened_on, closed: closed_on}
   description: Governed branch reference view.
 
 - id: product_master
@@ -141,7 +151,12 @@
   grain: one row per source product and scheme mapping
   key: [entity_num, source_product_code, source_scheme_code]
   row_count: 22
+  contains_pii: true
   synonyms: [reporting product, product mapping, scheme mapping]
+  date_columns:
+    effective_from: mapping_effective_from
+    effective_to: mapping_effective_to
+    approved: approved_at
   description: Provisional scheme-led reporting map pending business approval.
 
 - id: loan_reporting_attributes
@@ -152,6 +167,7 @@
   row_count: 5753
   contains_pii: true
   synonyms: [reporting branch, servicing branch, loan agent, mapping attributes]
+  date_columns: {effective_from: mapping_effective_from, effective_to: mapping_effective_to}
   description: Governed per-loan branch and agent attributes; reporting branch is not yet populated.
 
 - id: gl_ledger_master
@@ -161,13 +177,20 @@
   key: [gl_number]
   row_count: 866
   synonyms: [GL master, chart of accounts, ledger account, account head]
+  date_columns:
+    opened: opened_on
+    closed: closed_on
+    last_transaction: last_tran_date
+    balance_as_of: balance_as_on
   description: Governed general-ledger account reference view.
 
 - id: msme_master
   table: gold.msme_master
   label: MSME leads
   grain: one row per MSME lead
+  key: [entity_num, lead_number]
   row_count: 9168
   contains_pii: true
   synonyms: [MSME, leads, applications, business borrowers]
+  date_columns: {entered: entered_on}
   description: Governed MSME lead view for authorized operational questions.

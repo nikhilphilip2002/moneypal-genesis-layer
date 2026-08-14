@@ -126,6 +126,8 @@ class TestThinkingModels:
             supports_json_schema=True,
             health_path="/health",
             chat_template_kwargs={"enable_thinking": False},
+            cache_prompt=True,
+            cache_reuse_tokens=256,
         )
         client = OpenAICompatibleClient(profile=profile, model="m")
         client._client = httpx.AsyncClient(
@@ -133,6 +135,8 @@ class TestThinkingModels:
         )
         await client.complete(messages=[{"role": "user", "content": "hi"}])
         assert seen["chat_template_kwargs"] == {"enable_thinking": False}
+        assert seen["cache_prompt"] is True
+        assert seen["n_cache_reuse"] == 256
 
     @pytest.mark.anyio
     async def test_chat_template_kwargs_absent_by_default(self):
@@ -147,6 +151,20 @@ class TestThinkingModels:
             messages=[{"role": "user", "content": "hi"}]
         )
         assert "chat_template_kwargs" not in seen
+        assert "cache_prompt" not in seen
+        assert "n_cache_reuse" not in seen
+
+    @pytest.mark.anyio
+    async def test_cached_prompt_token_count_is_captured(self):
+        def handler(_request):
+            response = _ok('{"route":"refuse"}')
+            body = json.loads(response.content)
+            body["usage"]["prompt_tokens_details"] = {"cached_tokens": 9000}
+            return httpx.Response(200, json=body)
+
+        result = await _client(handler).complete(messages=[{"role": "user", "content": "hi"}])
+        assert result.prompt_tokens == 10
+        assert result.cached_prompt_tokens == 9000
 
 
 class TestResponseFormat:

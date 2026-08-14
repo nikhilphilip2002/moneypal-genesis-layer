@@ -22,6 +22,7 @@ export default function LineagePanel({
 }) {
   const [open, setOpen] = useState(false);
   const { lineage } = chart;
+  const displayedSql = lineage.display_sql || lineage.sql;
 
   return (
     <div className="mt-3 overflow-hidden rounded-xl border border-border bg-muted/20">
@@ -89,6 +90,26 @@ export default function LineagePanel({
             </div>
           </Section>
 
+          <Section title="How the query retrieves the result">
+            <div className="space-y-2 text-muted-foreground">
+              <p>
+                The service runs a read-only SELECT against the source tables above. PostgreSQL
+                applies the dates and filters below before calculating the formula, then returns
+                at most the row limit shown.
+              </p>
+              {Object.keys(lineage.parameters).length > 0 && (
+                <dl className="grid gap-1 rounded-lg bg-muted/40 p-2 sm:grid-cols-[minmax(9rem,auto)_1fr]">
+                  {Object.entries(lineage.parameters).map(([name, value]) => (
+                    <div key={name} className="contents">
+                      <dt className="font-mono text-foreground">{name.replaceAll('_', ' ')}</dt>
+                      <dd className="font-mono">{value}</dd>
+                    </div>
+                  ))}
+                </dl>
+              )}
+            </div>
+          </Section>
+
           <Section
             title="SQL"
             action={
@@ -97,12 +118,12 @@ export default function LineagePanel({
                   type="button"
                   variant="outline"
                   size="sm"
-                  title="Copy SQL"
-                  onClick={() => navigator.clipboard?.writeText(lineage.sql)}
+                  title="Copy runnable SQL"
+                  onClick={() => navigator.clipboard?.writeText(displayedSql)}
                   className="h-6 gap-1 px-2 text-[11px] font-normal text-muted-foreground hover:text-foreground [&_svg]:size-3"
                 >
                   <Copy />
-                  Copy SQL
+                  Copy runnable SQL
                 </Button>
                 <Button
                   type="button"
@@ -119,7 +140,7 @@ export default function LineagePanel({
             }
           >
             <pre className="max-h-64 overflow-auto rounded-lg bg-muted/60 p-2 text-[11px] leading-relaxed text-foreground">
-              <code>{lineage.sql}</code>
+              <code>{displayedSql}</code>
             </pre>
           </Section>
         </div>

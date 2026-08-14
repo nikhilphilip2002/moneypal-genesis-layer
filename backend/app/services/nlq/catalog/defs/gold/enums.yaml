@@ -51,8 +51,12 @@
 
 - dimension: scheme
   column: scheme_code
-  source: governed scheme taxonomy; unknown codes render without an invented name
+  source: governed Gold product master; unknown codes render without an invented name
   fallback_label: "Scheme #{code}"
+  lookup:
+    table: gold.product_master
+    code_column: scheme_code
+    label_column: scheme_name
   values:
     '1001': {label: Standard Retail Gold Loan, synonyms: [standard gold, retail gold]}
     '1005': {label: High-Value Special Gold Loan, synonyms: [high value gold, special gold]}
@@ -62,3 +66,25 @@
     '1354': {label: EV Retail Scheme, synonyms: [EV, electric vehicle]}
     '1355': {label: EV Retail Scheme (variant), synonyms: [EV, electric vehicle]}
     '1356': {label: EV Retail Scheme (variant), synonyms: [EV, electric vehicle]}
+    '1601': {label: Purchase of Site, synonyms: [site purchase]}
+    '1602': {label: Repair of House, synonyms: [house repair, home repair]}
+    '1603': {label: Purchase of Fixtures / Furniture, synonyms: [fixtures, furniture]}
+    '1604': {label: Purchase of Two Wheelers, synonyms: [two wheeler, bike loan]}
+    '1605': {label: New Autorickshaw, synonyms: [autorickshaw, auto loan]}
+    '1606': {label: Four Wheeler Taxi / Car, synonyms: [taxi, car loan, four wheeler]}
+    '1607': {label: Tractor, synonyms: [tractor loan]}
+    '1608': {label: New Lorry / Bus, synonyms: [lorry, bus loan]}
+    '1609': {label: Used Vehicles Under 7 Years, synonyms: [used vehicle]}
+    '1610': {label: Business / Service / Industry, synonyms: [business, service, industry]}
+    '1611': {label: Farming, synonyms: [farm loan, agriculture]}
+    '1612': {label: Cattle, synonyms: [cattle loan, livestock]}
+    '1613': {label: Poultry / Sheep / Pigs, synonyms: [poultry, sheep, piggery]}
+    '1614': {label: Debt Swapping / Consolidation, synonyms: [debt consolidation]}
+    '1615': {label: Loan Against Property, synonyms: [LAP, property loan]}
+    '1616': {label: MSME Loans, synonyms: [MSME loan, small business loan]}
+    '1617': {label: Personal Loan, synonyms: [personal loans]}
+    '1618': {label: Site / Housing Construction / House Repair, synonyms: [housing construction, house repair]}
+    '1619': {label: Loan Against Property, synonyms: [LAP, property loan]}
+    '1620': {label: Vehicle Loans, synonyms: [vehicle loan, auto loan]}
+    '1621': {label: Farming Loan, synonyms: [farming, agriculture loan]}
+    '1622': {label: Dairy Loan, synonyms: [dairy, dairy farming]}

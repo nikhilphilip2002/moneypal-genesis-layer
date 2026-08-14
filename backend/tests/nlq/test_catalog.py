@@ -8,6 +8,7 @@ import yaml
 
 from app.services.nlq.catalog import get_catalog
 from app.services.nlq.catalog.loader import ACTIVE_DEFS_DIR, DEFS_DIR
+from app.services.nlq.catalog.retrieval import retrieve
 from app.services.nlq.llm.prompts import build_messages, gold_yaml_block
 
 
@@ -30,6 +31,13 @@ class TestLoads:
         for path in (*DEFS_DIR.glob("*.yaml"), *ACTIVE_DEFS_DIR.glob("*.yaml")):
             assert isinstance(yaml.safe_load(path.read_text()), list), path.name
 
+    def test_every_gold_view_has_a_complete_unique_column_section(self, catalog):
+        raw = yaml.safe_load((ACTIVE_DEFS_DIR / "columns.yaml").read_text())
+        pairs = [(entry["table"], entry["column"]) for entry in raw]
+        assert len(catalog.columns) == len(raw), "duplicate column ids are not allowed"
+        assert len(set(pairs)) == len(pairs), "a Gold column is cataloged more than once"
+        assert {column.table for column in catalog.columns.values()} == catalog.allowed_tables()
+
     def test_joins_yaml_avoids_the_yaml_boolean_trap(self):
         """A bare `on:` key parses as the boolean True under YAML 1.1, which would silently
         drop every join condition and turn joins into cross products."""
@@ -45,9 +53,15 @@ class TestLoads:
             "joins.yaml", "enums.yaml",
         ):
             assert f"### {name}" in block
+        for table in catalog.allowed_tables():
+            assert f"table: {table}" in block
+        for column in catalog.columns.values():
+            assert column.column in block
+        for name in ("tables.yaml", "metrics.yaml", "dimensions.yaml", "joins.yaml", "enums.yaml"):
             assert (ACTIVE_DEFS_DIR / name).read_text(encoding="utf-8") in block
         messages = build_messages("total disbursement in July 2026", catalog=catalog)
-        assert messages[1]["content"] == block
+        assert len([message for message in messages if message["role"] == "system"]) == 1
+        assert messages[0]["content"].startswith(block)
 
 
 class TestReferentialIntegrity:
@@ -166,6 +180,9 @@ class TestEnums:
         assert catalog.enums["product"].code_for("gld") is None
         assert catalog.enums["product"].code_for("loans") is None
 
+    def test_ambiguous_scheme_name_is_not_silently_mapped_to_one_code(self, catalog):
+        assert catalog.enums["scheme"].code_for("Loan Against Property") is None
+
 
 class TestSearch:
     @pytest.mark.parametrize(
@@ -179,3 +196,12 @@ class TestSearch:
     def test_acronyms_and_phrases_match_lexically(self, catalog, question, expected):
         """Short acronyms embed poorly; lexical matching is what makes PAR findable."""
         assert expected in {m.id for m in catalog.search_metrics(question)}
+
+    def test_new_gold_columns_retrieve_their_own_table(self, catalog):
+        result = retrieve(
+            "MSME requested amount and security value by firm type",
+            catalog=catalog,
+            use_vectors=False,
+        )
+        assert result.tables[0] == "gold.msme_master"
+        assert any(hit.doc.kind == "column" for hit in result.hits)

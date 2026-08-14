@@ -14,7 +14,7 @@ import logging
 import threading
 from typing import Any
 
-from app.services.nlq.catalog.loader import Catalog, EnumBlock
+from app.services.nlq.catalog.loader import Catalog, EnumBlock, canonical_enum_code
 
 logger = logging.getLogger(__name__)
 
@@ -69,7 +69,7 @@ def _fetch(enum: EnumBlock) -> dict[str, str]:
         return {}
 
     return {
-        str(code).strip(): _titlecase(str(label).strip())
+        canonical_enum_code(code): _titlecase(str(label).strip())
         for code, label in rows
         if code is not None and str(label or "").strip()
     }
@@ -91,7 +91,7 @@ def label_for(catalog: Catalog, dimension_id: str, code: Any) -> str:
     enum = catalog.enums.get(dimension_id)
     if enum is None:
         return str(code)
-    key = str(code).strip()
+    key = canonical_enum_code(code)
     if key in enum.values:
         return enum.values[key].label
     dynamic = dynamic_labels(catalog, dimension_id).get(key)

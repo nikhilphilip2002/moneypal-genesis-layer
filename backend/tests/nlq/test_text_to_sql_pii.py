@@ -8,6 +8,7 @@ from app.services.nlq.executor import QueryResult
 from app.services.nlq.text_to_sql import (
     NAME_PII_COLUMN_IDS,
     _context_block,
+    _infer_column_units,
     _named_borrower_disbursed_attempt,
     _named_borrower_principal_attempt,
     _system_prompt,
@@ -31,6 +32,19 @@ def test_authorized_context_exposes_governed_borrower_fields():
 
 def test_unauthorized_context_hides_borrower_name():
     assert "customer_name" not in _loan_context(allow_pii=False)
+
+
+def test_planner_table_hint_limits_generated_sql_context():
+    hits = RetrievalResult(
+        tables=["gold.msme_master", "gold.loan_account_master"], mode="lexical"
+    )
+    context = _context_block(
+        hits,
+        get_catalog(),
+        tables=["gold.msme_master"],
+    )
+    assert "gold.msme_master" in context
+    assert "gold.loan_account_master" not in context
 
 
 def test_prompt_allows_only_explicitly_needed_pii_for_authorized_roles():
@@ -146,3 +160,18 @@ def test_reviewed_unit_hint_renders_principal_as_inr():
     principal = next(column for column in chart.columns if column.name == "principal_repaid")
     assert principal.unit == "inr"
     assert chart.series[0].unit == "inr"
+
+
+def test_generated_aggregate_alias_inherits_catalog_unit():
+    units = _infer_column_units(
+        "SELECT firm_type_desc, SUM(requested_amount) AS total_requested_amount, "
+        "SUM(security_value) AS total_security_value FROM gold.msme_master "
+        "GROUP BY firm_type_desc LIMIT 5000",
+        ["gold.msme_master"],
+        get_catalog(),
+    )
+    assert units == {
+        "firm_type_desc": "text",
+        "total_requested_amount": "inr",
+        "total_security_value": "inr",
+    }

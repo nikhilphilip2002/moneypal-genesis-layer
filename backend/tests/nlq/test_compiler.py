@@ -9,7 +9,14 @@ from datetime import date
 
 import pytest
 
-from app.services.nlq.compiler import CompileError, bind, compile_comparison, compile_spec
+from app.services.nlq.compiler import (
+    CompileError,
+    bind,
+    compile_comparison,
+    compile_spec,
+    describe_parameters,
+    render_sql_for_display,
+)
 from app.services.nlq.contracts import Filter, OrderBy, Period, QuerySpec
 
 TODAY = date(2026, 7, 29)
@@ -233,6 +240,29 @@ class TestBinding:
     def test_unbound_parameter_is_an_error(self):
         with pytest.raises(CompileError, match="unbound"):
             bind("SELECT :missing", {})
+
+    def test_lineage_sql_names_and_renders_bound_values(self):
+        params = {
+            "period_start": date(2026, 7, 1),
+            "period_end": date(2026, 7, 31),
+            "products": ["1", "16"],
+            "row_limit": 5000,
+        }
+        rendered = render_sql_for_display(
+            "SELECT 1 WHERE d BETWEEN :period_start AND :period_end "
+            "AND product = ANY(:products) LIMIT :row_limit",
+            params,
+        )
+        assert "DATE '2026-07-01'" in rendered
+        assert "DATE '2026-07-31'" in rendered
+        assert "ARRAY['1', '16']" in rendered
+        assert rendered.endswith("LIMIT 5000")
+        assert describe_parameters(params) == {
+            "period_start": "2026-07-01",
+            "period_end": "2026-07-31",
+            "products": "1, 16",
+            "row_limit": "5000",
+        }
 
 
 class TestComparison:

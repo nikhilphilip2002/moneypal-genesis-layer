@@ -122,3 +122,31 @@ async def test_chart_only_followup_reuses_previous_user_question():
     sent_question = client.calls[0]["messages"][-1]["content"]
     assert sent_question.startswith("Show the overdue-principal share")
     assert "share or composition" in sent_question.lower()
+
+
+@pytest.mark.anyio
+async def test_this_financial_year_cannot_be_replaced_with_a_hard_coded_prior_fy():
+    cache.clear_all()
+
+    class PriorFyClient(FixedPlanClient):
+        async def complete(self, **kwargs):
+            self.calls.append(kwargs)
+            return LLMResult(
+                text=(
+                    '{"route":"queryspec","confidence":0.95,"spec":{'
+                    '"metrics":["collection_efficiency"],"dimensions":["product"],'
+                    '"period":{"start":"2025-04-01","end":"2026-03-31"}}}'
+                ),
+                model="test",
+                provider="test",
+            )
+
+    outcome = await plan(
+        "Collection efficiency by product this financial year",
+        client=PriorFyClient(),
+    )
+
+    assert isinstance(outcome.plan, QuerySpecPlan)
+    assert outcome.plan.spec.period.relative == "fy_to_date"
+    assert outcome.plan.spec.period.start is None
+    assert outcome.plan.spec.period.end is None

@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from typing import Any, Iterable
+from typing import Any
 
 from app.services.nlq.catalog.loader import Catalog, get_catalog
 
@@ -30,7 +30,7 @@ class CatalogDoc:
     """One retrievable catalog entry."""
 
     id: str
-    kind: str  # metric | dimension | table | enum_value
+    kind: str  # metric | dimension | column | table | enum_value
     text: str  # what gets embedded
     payload: dict[str, Any]
 
@@ -80,6 +80,27 @@ def build_documents(catalog: Catalog | None = None) -> list[CatalogDoc]:
                     "label": dim.label,
                     "type": dim.type,
                     "table": dim.table,
+                },
+            )
+        )
+
+    for column in cat.columns.values():
+        terms = ", ".join(column.synonyms)
+        docs.append(
+            CatalogDoc(
+                id=f"column:{column.id}",
+                kind="column",
+                text=(
+                    f"{column.label}. Column {column.column} in {column.table}. "
+                    f"Measured in {column.unit}. Also called: {terms}. {column.description}"
+                ).strip(),
+                payload={
+                    "entry_id": column.id,
+                    "label": column.label,
+                    "column": column.column,
+                    "table": column.table,
+                    "unit": column.unit,
+                    "sensitivity": column.sensitivity,
                 },
             )
         )

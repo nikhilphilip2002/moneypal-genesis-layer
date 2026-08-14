@@ -7,6 +7,7 @@ from app.services.nlq.llm.client import (
     LLMTimeout,
     LLMUnavailable,
     get_llm_client,
+    warm_catalog_prompt_cache,
 )
 
 __all__ = [
@@ -16,4 +17,5 @@ __all__ = [
     "LLMTimeout",
     "LLMUnavailable",
     "get_llm_client",
+    "warm_catalog_prompt_cache",
 ]

@@ -104,6 +104,22 @@ SOURCES: dict[str, Source] = {
             "DNBS-02 reporting obligations",
         ),
     ),
+    "knowledge": Source(
+        id="knowledge",
+        label="Banking concepts",
+        sensitive=False,
+        describes=(
+            "Stable educational explanations of lending and banking concepts: what a term "
+            "means, how a metric is calculated, its unit, and how nearby concepts differ. "
+            "Use for descriptive questions that do not ask for the bank's records, a current "
+            "external fact, regulation, forecast or recommendation."
+        ),
+        example_intents=(
+            "what does interest rate mean",
+            "explain the difference between sanctioned and disbursed amount",
+            "how is PAR 30 calculated",
+        ),
+    ),
     "schema": Source(
         id="schema",
         label="Schema",
@@ -179,6 +195,8 @@ def router_system_prompt(role: str) -> str:
         "RULES",
         "- Pick every source needed. A question comparing our book to the market needs "
         "both `db` and `macro`; most questions need exactly one.",
+        "- A stable definition or explanation goes to `knowledge`. A request for our values, "
+        "records, rates, counts or breakdowns goes to `db`, even if it uses the same term.",
         '- route="dispatch" with the chosen `sources` and a one-line `intent` restating '
         "the question, whenever any source can contribute.",
         '- route="refuse" only when no source applies at all (small talk, or a request to '
@@ -207,6 +225,16 @@ ROUTER_FEW_SHOTS: list[tuple[str, str]] = [
     (
         "What is the RBI repo rate stance right now?",
         '{"route":"dispatch","sources":["macro"],"intent":"current RBI policy rate stance"}',
+    ),
+    (
+        "What does an interest rate mean on a loan?",
+        '{"route":"dispatch","sources":["knowledge"],'
+        '"intent":"explain what a loan interest rate means"}',
+    ),
+    (
+        "What interest rates are present in our loan book?",
+        '{"route":"dispatch","sources":["db"],'
+        '"intent":"list distinct interest rates in the loan book"}',
     ),
     (
         "How does our MSME book compare with the wider MSME credit market?",

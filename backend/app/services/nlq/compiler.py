@@ -20,7 +20,8 @@ the database semantic layer instead of exposing the underlying classification ev
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import date
+from datetime import date, datetime
+from decimal import Decimal
 from typing import Any
 
 from app.services.nlq import metrics as metric_rules
@@ -574,3 +575,54 @@ def bind(sql: str, params: dict[str, Any]) -> tuple[str, list[Any]]:
     # Bare `:name` only — `::text` casts must survive untouched.
     rendered = re.sub(r"(?<!:):([a-zA-Z_][a-zA-Z0-9_]*)", replace, sql)
     return rendered, ordered
+
+
+def render_sql_for_display(sql: str, params: dict[str, Any]) -> str:
+    """Render a runnable, human-readable copy of trusted compiled SQL.
+
+    Execution continues to use `bind()` and driver parameters. This function is only for
+    lineage display and CSV-style audit: values are PostgreSQL literals so a user can see
+    exactly what `period_start`, `period_end`, filters and `row_limit` meant.
+    """
+    import re
+
+    def replace(match: re.Match) -> str:
+        name = match.group(1)
+        if name not in params:
+            raise CompileError(f"unbound parameter :{name}")
+        return _postgres_literal(params[name])
+
+    return re.sub(r"(?<!:):([a-zA-Z_][a-zA-Z0-9_]*)", replace, sql)
+
+
+def describe_parameters(params: dict[str, Any]) -> dict[str, str]:
+    """JSON-safe parameter values for the explanatory lineage panel."""
+    return {name: _parameter_text(value) for name, value in params.items()}
+
+
+def _postgres_literal(value: Any) -> str:
+    if value is None:
+        return "NULL"
+    if isinstance(value, bool):
+        return "TRUE" if value else "FALSE"
+    if isinstance(value, datetime):
+        return f"TIMESTAMP '{value.isoformat(sep=' ')}'"
+    if isinstance(value, date):
+        return f"DATE '{value.isoformat()}'"
+    if isinstance(value, (int, float, Decimal)):
+        return str(value)
+    if isinstance(value, (list, tuple)):
+        if not value:
+            return "ARRAY[]::text[]"
+        return "ARRAY[" + ", ".join(_postgres_literal(item) for item in value) + "]"
+    return "'" + str(value).replace("'", "''") + "'"
+
+
+def _parameter_text(value: Any) -> str:
+    if value is None:
+        return "NULL"
+    if isinstance(value, (date, datetime)):
+        return value.isoformat()
+    if isinstance(value, (list, tuple)):
+        return ", ".join(_parameter_text(item) for item in value)
+    return str(value)

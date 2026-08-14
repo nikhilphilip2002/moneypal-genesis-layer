@@ -208,7 +208,10 @@ async def _text_to_sql_path(
     yield sse("stage", {"stage": "writing_sql"})
 
     attempt = await text_to_sql.generate(
-        resolved, catalog=cat, allow_pii=pii.may_see_pii(ctx.role)
+        resolved,
+        catalog=cat,
+        allow_pii=pii.may_see_pii(ctx.role),
+        preferred_tables=plan.tables,
     )
 
     if not attempt.validated:

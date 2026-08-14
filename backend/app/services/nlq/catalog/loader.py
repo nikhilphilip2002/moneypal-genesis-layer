@@ -25,6 +25,26 @@ DEFS_DIR = Path(__file__).resolve().parent / "defs"
 ACTIVE_DEFS_DIR = DEFS_DIR / "gold"
 
 _WORD_RE = re.compile(r"[a-z0-9]+")
+_INTEGRAL_DECIMAL_CODE_RE = re.compile(r"^-?\d+\.0+$")
+
+
+def canonical_enum_code(code: Any) -> str:
+    """Normalise JSON-safe numeric codes without damaging opaque string identifiers.
+
+    PostgreSQL ``numeric`` values are converted to floats by the result executor so product
+    code 16 reaches the chart layer as ``16.0``.  Curated enum keys are strings such as
+    ``"16"``.  Exact text is preserved unless it is unambiguously an integral decimal;
+    alphanumeric codes (SMA0), leading-zero strings and non-integral rates are untouched.
+    """
+    key = str(code).strip()
+    if _INTEGRAL_DECIMAL_CODE_RE.fullmatch(key):
+        integer = key.split(".", 1)[0]
+        # Numeric database codes do not use significant leading zeroes.  Keep a single zero
+        # and preserve a possible minus sign.
+        sign = "-" if integer.startswith("-") else ""
+        digits = integer.removeprefix("-").lstrip("0") or "0"
+        return sign + digits
+    return key
 
 
 class CatalogError(RuntimeError):
@@ -211,7 +231,7 @@ class EnumBlock:
     lookup: dict[str, Any] = field(default_factory=dict)
 
     def label_for(self, code: Any) -> str:
-        key = str(code).strip()
+        key = canonical_enum_code(code)
         entry = self.values.get(key)
         if entry:
             return entry.label
@@ -219,12 +239,16 @@ class EnumBlock:
 
     def code_for(self, text: str) -> str | None:
         """Resolve a user's word to a code. Exact label or synonym match only — a fuzzy
-        match here would silently answer about the wrong product."""
+        match here would silently answer about the wrong product. Ambiguous governed names
+        also return ``None``: two schemes with the same label must never collapse to the
+        first code merely because it appears first in YAML."""
         needle = text.strip().lower()
-        for code, value in self.values.items():
-            if value.label.lower() == needle or needle in (s.lower() for s in value.synonyms):
-                return code
-        return None
+        matches = [
+            code
+            for code, value in self.values.items()
+            if value.label.lower() == needle or needle in (s.lower() for s in value.synonyms)
+        ]
+        return matches[0] if len(matches) == 1 else None
 
 
 # --------------------------------------------------------------------------------------
