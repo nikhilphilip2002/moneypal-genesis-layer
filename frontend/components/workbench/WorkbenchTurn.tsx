@@ -48,9 +48,6 @@ export default function WorkbenchTurn({ turn, onAsk }: { turn: WorkbenchTurnData
       </div>
 
       <div className="flex items-start gap-3">
-        <div className="flex size-8 shrink-0 items-center justify-center rounded-xl bg-accent text-primary">
-          <Sparkles className="size-4" />
-        </div>
         <div className="min-w-0 flex-1 space-y-3">
           {!turn.done && turn.stage && !turn.route && (
             <StatusRow icon={Loader2} spin className="py-1">

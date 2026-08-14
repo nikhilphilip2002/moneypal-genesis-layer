@@ -161,7 +161,7 @@ export default function Composer({
           <Button
             type="button"
             size="icon"
-            variant="iconAction"
+            variant="default"
             className="size-9 shrink-0 rounded-xl"
             onClick={onCancel}
             aria-label="Stop response"
@@ -172,7 +172,7 @@ export default function Composer({
           <Button
             type="button"
             size="icon"
-            variant="iconAction"
+            variant="default"
             className="size-9 shrink-0 rounded-xl"
             onClick={submit}
             disabled={!value.trim()}
