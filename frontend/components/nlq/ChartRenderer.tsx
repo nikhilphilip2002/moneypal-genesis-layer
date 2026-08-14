@@ -402,7 +402,7 @@ function BarView({
                 interval={0}
                 angle={rows.length > 6 ? -30 : 0}
                 textAnchor={rows.length > 6 ? 'end' : 'middle'}
-                height={rows.length > 6 ? 62 : 30}
+                height={rows.length > 6 ? 90 : 30}
                 tickFormatter={(value) => formatCategory(value, chart.x?.unit)}
               />
               <YAxis

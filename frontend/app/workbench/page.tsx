@@ -4,7 +4,6 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import {
-  ArrowUpRight,
   BarChart3,
   Clock3,
   Landmark,
@@ -297,8 +296,8 @@ function WorkbenchHeader({
       <div className="mx-auto flex h-16 w-full max-w-6xl items-center justify-between px-4 sm:px-6">
         <div className="flex items-center gap-3">
           <MoneypalLogo />
-          <div className="hidden border-l pl-3 sm:block">
-            <Image src="/gicc.png" alt="GICC" width={32} height={32} className="h-7 w-7 object-contain" />
+          <div className="hidden border-l pl-3 sm:flex items-center">
+            <Image src="/gicc.png" alt="GICC" width={56} height={56} className="h-10 w-auto object-contain" />
           </div>
         </div>
 
@@ -459,9 +458,6 @@ function EmptyState({
   return (
     <div className="flex min-h-0 flex-1 flex-col items-center justify-center overflow-y-auto py-8 sm:py-12">
       <div className="w-full max-w-3xl text-center">
-        <div className="mx-auto mb-5 flex size-11 items-center justify-center rounded-2xl bg-primary text-primary-foreground shadow-[0_8px_24px_rgba(0,69,129,0.18)]">
-          <ArrowUpRight className="size-5" />
-        </div>
         <h1 className="font-headline text-3xl font-semibold tracking-tight text-foreground sm:text-4xl">
           What would you like to know?
         </h1>
@@ -483,7 +479,6 @@ function EmptyState({
                 <Icon className="size-4" />
               </span>
               <span className="font-medium">{label}</span>
-              <ArrowUpRight className="ml-auto size-3.5 opacity-40" />
             </button>
           ))}
         </div>
