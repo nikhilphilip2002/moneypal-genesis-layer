@@ -161,8 +161,8 @@ export default function Composer({
           <Button
             type="button"
             size="icon"
-            variant="default"
-            className="size-9 shrink-0 rounded-xl"
+            variant="ghost"
+            className="size-9 shrink-0 rounded-full bg-muted text-primary shadow-none hover:bg-muted/80"
             onClick={onCancel}
             aria-label="Stop response"
           >
@@ -172,8 +172,8 @@ export default function Composer({
           <Button
             type="button"
             size="icon"
-            variant="default"
-            className="size-9 shrink-0 rounded-xl"
+            variant="ghost"
+            className="size-9 shrink-0 rounded-full bg-muted text-primary shadow-none hover:bg-muted/80"
             onClick={submit}
             disabled={!value.trim()}
             aria-label="Send message"
