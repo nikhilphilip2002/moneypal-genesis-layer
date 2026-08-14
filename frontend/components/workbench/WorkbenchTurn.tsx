@@ -42,7 +42,7 @@ export default function WorkbenchTurn({ turn, onAsk }: { turn: WorkbenchTurnData
   return (
     <section className="space-y-5">
       <div className="flex justify-end">
-        <div className="max-w-[88%] rounded-2xl rounded-br-md bg-primary px-4 py-2.5 text-sm leading-6 text-primary-foreground sm:max-w-[78%]">
+        <div className="max-w-[88%] rounded-2xl rounded-br-md bg-muted px-4 py-2.5 text-sm leading-6 text-foreground sm:max-w-[78%]">
           {turn.question}
         </div>
       </div>
