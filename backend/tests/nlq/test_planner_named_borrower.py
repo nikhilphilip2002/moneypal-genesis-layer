@@ -48,11 +48,20 @@ async def test_agent_borrower_count_routes_without_calling_an_llm():
     assert isinstance(outcome.plan, QuerySpecPlan)
     assert outcome.plan.spec.metrics == ["customer_count"]
     assert outcome.plan.spec.filters[0].field == "agent"
-    assert outcome.plan.spec.filters[0].value == ["45", "agent45"]
+    assert outcome.plan.spec.filters[0].value == ["45", "agent45", "agnt45"]
     compiled = compile_spec(outcome.plan.spec)
     assert "gold.loan_account_master" in compiled.sql
-    assert 'LOWER(lam."agent_code"::text) = ANY(:f0)' in compiled.sql
-    assert compiled.params["f0"] == ["45", "agent45"]
+    assert "gold.loan_reporting_attributes AS attrs" in compiled.sql
+    assert 'LOWER(attrs."agent_code"::text) = ANY(:f0)' in compiled.sql
+    assert compiled.params["f0"] == ["45", "agent45", "agnt45"]
+
+
+@pytest.mark.anyio
+async def test_operational_agnt_code_keeps_all_equivalent_agent_forms():
+    outcome = await plan("how many borrowers are under AGNT45?")
+
+    assert isinstance(outcome.plan, QuerySpecPlan)
+    assert outcome.plan.spec.filters[0].value == ["45", "agent45", "agnt45"]
 
 
 @pytest.mark.anyio
@@ -147,9 +156,58 @@ async def test_top_borrowers_is_a_governed_current_outstanding_ranking():
 
 
 @pytest.mark.anyio
+async def test_top_borrowers_without_a_number_defaults_to_ten():
+    outcome = await plan("top borrowers")
+
+    assert isinstance(outcome.plan, QuerySpecPlan)
+    assert outcome.model == "deterministic"
+    assert outcome.attempts == 0
+    assert outcome.plan.spec.metrics == ["principal_outstanding_book"]
+    assert outcome.plan.spec.dimensions == ["borrower"]
+    assert outcome.plan.spec.limit == 10
+    compiled = compile_spec(outcome.plan.spec)
+    assert 'lam."customer_name" AS borrower' in compiled.sql
+    assert compiled.params["row_limit"] == 10
+
+
+@pytest.mark.anyio
 async def test_catalogued_agents_cannot_be_refused_as_missing_data():
     outcome = await plan("top 10 agents", client=RefusingClient())
 
+    assert isinstance(outcome.plan, QuerySpecPlan)
+    assert outcome.model == "deterministic"
+    assert outcome.attempts == 0
+    assert outcome.plan.spec.metrics == ["agent_linked_loans"]
+    assert outcome.plan.spec.dimensions == ["agent_profile"]
+    assert outcome.plan.spec.limit == 10
+    compiled = compile_spec(outcome.plan.spec)
+    assert "gold.agent_master AS agent" in compiled.sql
+    assert 'agent."agent_code" AS agent_profile' in compiled.sql
+    assert "ORDER BY SUM(agent.linked_loan_count) DESC" in compiled.sql
+
+
+@pytest.mark.anyio
+async def test_agents_with_most_borrowers_uses_linked_customer_metric():
+    outcome = await plan("Which agents have the most linked borrowers?", client=RefusingClient())
+
+    assert isinstance(outcome.plan, QuerySpecPlan)
+    assert outcome.model == "deterministic"
+    assert outcome.plan.spec.metrics == ["customer_count"]
+    assert outcome.plan.spec.dimensions == ["loan_agent"]
+    compiled = compile_spec(outcome.plan.spec)
+    assert "COUNT(DISTINCT lam.customer_id)" in compiled.sql
+    assert "gold.loan_reporting_attributes AS attrs" in compiled.sql
+    assert 'attrs."agent_code" AS loan_agent' in compiled.sql
+
+
+@pytest.mark.anyio
+async def test_agent_directory_fields_route_without_calling_an_llm():
+    outcome = await plan(
+        "Show agent names, designations, branch codes and linked loan counts",
+        client=RefusingClient(),
+    )
+
     assert isinstance(outcome.plan, SqlPlan)
-    assert "gold.agent_master" in outcome.plan.tables
-    assert outcome.plan.intent == "top 10 agents"
+    assert outcome.model == "deterministic"
+    assert outcome.attempts == 0
+    assert outcome.plan.tables == ["gold.agent_master"]

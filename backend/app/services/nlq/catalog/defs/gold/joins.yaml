@@ -38,3 +38,12 @@
   join_type: left
   contains_pii: true
   description: Loan accounts to borrower profiles.
+
+- id: loan_to_reporting_attributes
+  left: gold.loan_account_master
+  right: gold.loan_reporting_attributes
+  on_columns: [[entity_num, entity_num], [loan_account_number, loan_account_number]]
+  cardinality: one_to_one
+  join_type: left
+  contains_pii: true
+  description: Loan accounts to their populated governed branch and agent attributes.

@@ -88,11 +88,20 @@
 
 - id: agent
   label: Agent
-  table: gold.loan_account_master
+  table: gold.loan_reporting_attributes
   column: agent_code
   type: categorical
   synonyms: [agent, agent code, field agent, assigned agent, sourced by, handled by, under agent]
-  description: Agent code assigned to the governed loan account.
+  description: Populated agent code from the governed per-loan reporting attributes view.
+
+- id: loan_agent
+  label: Agent
+  table: gold.loan_reporting_attributes
+  column: agent_code
+  type: categorical
+  decode: agent_identity
+  synonyms: [agent name, loan agent, borrowers by agent, customers by agent]
+  description: Populated per-loan agent, displayed using the governed agent directory name.
 
 - id: borrower
   label: Borrower
@@ -106,10 +115,11 @@
 - id: agent_profile
   label: Agent
   table: gold.agent_master
-  column: agent_name
+  column: agent_code
   type: categorical
+  decode: agent_identity
   synonyms: [agent, agent name, field agent, sales staff, top agents]
-  description: Agent name in the governed agent directory.
+  description: Agent directory identity, grouped by code and displayed by governed name.
   cardinality: 1014
 
 - id: gl_account

@@ -286,7 +286,7 @@ async def _execute_and_emit(
     started: float,
 ) -> AsyncIterator[str]:
     try:
-        chart = run_spec(spec, catalog=cat, today=ctx.today)
+        chart = run_spec(spec, catalog=cat, today=ctx.today, role=ctx.role)
     except CompileError as exc:
         audit.record(turn_id=turn_id, ctx=ctx, resolved=resolved, route="queryspec",
                      outcome="refused_by_compiler", detail=str(exc))

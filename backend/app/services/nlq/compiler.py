@@ -41,6 +41,7 @@ _ALIASES = {
     "gold.gl_daily_balances": "gl",
     "gold.customer_master": "customer",
     "gold.agent_master": "agent",
+    "gold.loan_reporting_attributes": "attrs",
 }
 
 

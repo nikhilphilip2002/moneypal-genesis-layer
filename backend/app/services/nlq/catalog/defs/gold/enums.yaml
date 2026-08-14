@@ -88,3 +88,13 @@
     '1620': {label: Vehicle Loans, synonyms: [vehicle loan, auto loan]}
     '1621': {label: Farming Loan, synonyms: [farming, agriculture loan]}
     '1622': {label: Dairy Loan, synonyms: [dairy, dairy farming]}
+
+- dimension: agent_identity
+  column: agent_identity_code
+  source: governed Gold agent directory
+  fallback_label: "Agent {code}"
+  lookup:
+    table: gold.agent_master
+    code_column: agent_code
+    label_column: agent_name
+  values: {}

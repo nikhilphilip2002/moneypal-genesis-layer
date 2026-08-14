@@ -117,6 +117,11 @@ async def generate(
         logger.info("NLQ selected deterministic interest-rate distribution")
         return exact
 
+    exact = _agent_directory_attempt(question, cat, allow_pii=allow_pii)
+    if exact is not None:
+        logger.info("NLQ selected deterministic agent-directory query")
+        return exact
+
     exact = _named_borrower_disbursed_attempt(question, cat, allow_pii=allow_pii)
     if exact is not None:
         logger.info("NLQ selected deterministic named-borrower disbursement lookup")
@@ -269,6 +274,96 @@ _INTEREST_RATE_LIST_RE = re.compile(
     r"\bwhat\s+(?:are|is)\b[^?]{0,35}\binterest\s+rates?\b",
     re.IGNORECASE,
 )
+
+_AGENT_DIRECTORY_RE = re.compile(
+    r"\b(?:agent\s+(?:details?|directory|profiles?|names?)|"
+    r"(?:list|show)\s+(?:all\s+)?agents?)\b|"
+    r"\bagents?\b[^?]{0,100}\b(?:names?|designations?|branch(?:es|\s+codes?)?|"
+    r"mobiles?|phones?|emails?|role(?:s|\s+codes?)?|joined|linked\s+(?:loan|customer|borrower))\b",
+    re.IGNORECASE,
+)
+
+
+def _agent_directory_attempt(
+    question: str,
+    catalog: Catalog,
+    *,
+    allow_pii: bool,
+) -> SqlAttempt | None:
+    """Select only explicitly requested fields from the governed agent directory."""
+    normalized = normalize_lending_question(question)
+    if not allow_pii or _AGENT_DIRECTORY_RE.search(normalized) is None:
+        return None
+
+    generic = bool(re.search(r"\bagent\s+(?:details?|directory|profiles?)\b", normalized, re.I))
+    columns: list[tuple[str, str]] = [
+        ("agent_code", "text"),
+        ("agent_name", "text"),
+    ]
+    requested = (
+        (r"\bdesignation", "designation", "text"),
+        (r"\bbranch", "branch_code", "text"),
+        (r"\blinked\s+loans?\b|\bloan\s+counts?\b", "linked_loan_count", "count"),
+        (
+            r"\blinked\s+(?:customers?|borrowers?)\b|\b(?:customer|borrower)\s+counts?\b",
+            "linked_customer_count",
+            "count",
+        ),
+        (r"\b(?:mobile|phone)", "mobile", "text"),
+        (r"\bemail", "email", "text"),
+        (r"\bagent\s+types?\b", "agent_type", "text"),
+        (r"\brole(?:s|\s+codes?)?\b", "role_code", "text"),
+        (r"\bjoin(?:ed|ing)?\b", "joined_on", "date"),
+    )
+    for pattern, column, unit in requested:
+        if generic or re.search(pattern, normalized, re.I):
+            columns.append((column, unit))
+
+    # A generic directory is useful without exposing contact details the user did not ask
+    # for. Those fields remain available when mobile/email is explicit.
+    if generic:
+        for column, unit in (
+            ("designation", "text"),
+            ("branch_code", "text"),
+            ("linked_customer_count", "count"),
+            ("linked_loan_count", "count"),
+        ):
+            if (column, unit) not in columns:
+                columns.append((column, unit))
+
+    names = [column for column, _unit in columns]
+    order_column = (
+        "linked_customer_count" if "linked_customer_count" in names
+        else "linked_loan_count" if "linked_loan_count" in names
+        else "agent_name"
+    )
+    direction = "DESC" if order_column.startswith("linked_") else "ASC"
+    sql = (
+        "SELECT " + ", ".join(names) + " FROM gold.agent_master "
+        f"ORDER BY {order_column} {direction} NULLS LAST LIMIT 200"
+    )
+    checked = validate(
+        sql,
+        catalog=catalog,
+        allow_pii=True,
+        allowed_pii_columns={"agent_name", "mobile", "email"},
+    )
+    return SqlAttempt(
+        sql=checked.sql,
+        tables=checked.tables,
+        explanation=(
+            "Current governed agent-directory fields requested by the user, ordered by "
+            + order_column.replace("_", " ")
+            + "."
+        ),
+        validated=True,
+        attempts=0,
+        model="deterministic",
+        provider="catalog",
+        warnings=["Agent directory values reflect the latest available Gold view load."],
+        pii_columns=checked.pii_columns,
+        column_units={column: unit for column, unit in columns},
+    )
 
 
 def _interest_rate_distribution_attempt(

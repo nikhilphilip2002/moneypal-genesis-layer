@@ -7,6 +7,7 @@ from app.services.nlq.contracts import Lineage
 from app.services.nlq.executor import QueryResult
 from app.services.nlq.text_to_sql import (
     NAME_PII_COLUMN_IDS,
+    _agent_directory_attempt,
     _context_block,
     _infer_column_units,
     _named_borrower_disbursed_attempt,
@@ -107,6 +108,48 @@ def test_named_borrower_disbursement_uses_reviewed_columns_without_an_llm():
 def test_named_borrower_disbursement_stays_blocked_for_unauthorized_roles():
     assert _named_borrower_disbursed_attempt(
         "amount disbursed to Sheelavati",
+        get_catalog(),
+        allow_pii=False,
+    ) is None
+
+
+def test_agent_directory_uses_only_requested_governed_fields_without_an_llm():
+    attempt = _agent_directory_attempt(
+        "Show agent names, designations, branch codes and linked loan counts",
+        get_catalog(),
+        allow_pii=True,
+    )
+
+    assert attempt is not None and attempt.validated
+    assert attempt.model == "deterministic"
+    assert attempt.attempts == 0
+    assert attempt.tables == ["gold.agent_master"]
+    assert "agent_code" in attempt.sql
+    assert "agent_name" in attempt.sql
+    assert "designation" in attempt.sql
+    assert "branch_code" in attempt.sql
+    assert "linked_loan_count" in attempt.sql
+    assert "mobile" not in attempt.sql
+    assert "email" not in attempt.sql
+    assert attempt.pii_columns == ["agent_name"]
+
+
+def test_agent_contact_fields_are_included_only_when_explicitly_requested():
+    attempt = _agent_directory_attempt(
+        "List agent names, mobile numbers and email addresses",
+        get_catalog(),
+        allow_pii=True,
+    )
+
+    assert attempt is not None and attempt.validated
+    assert "mobile" in attempt.sql
+    assert "email" in attempt.sql
+    assert attempt.pii_columns == ["agent_name", "email", "mobile"]
+
+
+def test_agent_directory_stays_blocked_when_pii_is_disabled():
+    assert _agent_directory_attempt(
+        "Show agent names and designations",
         get_catalog(),
         allow_pii=False,
     ) is None

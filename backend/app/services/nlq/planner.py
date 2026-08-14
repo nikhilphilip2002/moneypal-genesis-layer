@@ -54,7 +54,9 @@ _BORROWER_COUNT_RE = re.compile(
     r"(?:borrower|customer|client)\s+count|count\s+of\s+(?:borrowers?|customers?|clients?))\b",
     re.IGNORECASE,
 )
-_AGENT_CODE_RE = re.compile(r"\bagent\s*[-:# ]*(?P<code>[a-z0-9_-]+)\b", re.IGNORECASE)
+_AGENT_CODE_RE = re.compile(
+    r"\b(?:agent|agnt)\s*[-:# ]*(?P<code>[a-z0-9_-]+)\b", re.IGNORECASE
+)
 _MONTHS = {
     name.lower(): number
     for number, name in enumerate(calendar.month_name)
@@ -78,7 +80,22 @@ _LOAN_RECEIPT_RE = re.compile(
     re.IGNORECASE,
 )
 _TOP_BORROWERS_RE = re.compile(
-    r"\btop\s+(?P<limit>\d{1,4})\s+(?:borrowers?|customers?|clients?)\b",
+    r"\btop(?:\s+(?P<limit>\d{1,4}))?\s+(?:borrowers?|customers?|clients?)\b",
+    re.IGNORECASE,
+)
+_TOP_AGENTS_RE = re.compile(
+    r"\btop(?:\s+(?P<limit>\d{1,4}))?\s+agents?\b|"
+    r"\bwhich\s+agents?\s+(?:have|has)\s+(?:the\s+)?most\s+"
+    r"(?:linked\s+)?(?:borrowers?|customers?|loans?)\b|"
+    r"\bagents?\s+(?:with|having)\s+(?:the\s+)?most\s+"
+    r"(?:linked\s+)?(?:borrowers?|customers?|loans?)\b",
+    re.IGNORECASE,
+)
+_AGENT_DIRECTORY_RE = re.compile(
+    r"\b(?:agent\s+(?:details?|directory|profiles?|names?)|"
+    r"(?:list|show)\s+(?:all\s+)?agents?)\b|"
+    r"\bagents?\b[^?]{0,100}\b(?:names?|designations?|branch(?:es|\s+codes?)?|"
+    r"mobiles?|phones?|emails?|role(?:s|\s+codes?)?|joined|linked\s+(?:loan|customer|borrower))\b",
     re.IGNORECASE,
 )
 _BY_PRODUCT_RE = re.compile(r"\bby\s+(?:loan\s+)?product\b", re.IGNORECASE)
@@ -245,8 +262,13 @@ def _agent_borrower_count_plan(question: str) -> QuerySpecPlan | None:
     match = _AGENT_CODE_RE.search(question)
     if match is None:
         return None
-    code = match.group("code").strip()
-    values = [code, f"agent{code}"] if not code.lower().startswith("agent") else [code]
+    code = match.group("code").strip().lower()
+    values = [code]
+    operational = re.fullmatch(r"(?:agent|agnt)?[-_ ]*(?P<number>\d+)", code)
+    if operational is not None:
+        number = operational.group("number")
+        values.extend([number, f"agent{number}", f"agnt{number}"])
+    values = list(dict.fromkeys(values))
     return QuerySpecPlan(
         spec={
             "metrics": ["customer_count"],
@@ -286,7 +308,8 @@ def _top_borrowers_plan(question: str) -> QuerySpecPlan | None:
     match = _TOP_BORROWERS_RE.search(question)
     if match is None:
         return None
-    limit = max(1, min(int(match.group("limit")), 5000))
+    requested_limit = match.group("limit")
+    limit = max(1, min(int(requested_limit), 5000)) if requested_limit else 10
     return QuerySpecPlan(
         spec={
             "metrics": ["principal_outstanding_book"],
@@ -297,6 +320,46 @@ def _top_borrowers_plan(question: str) -> QuerySpecPlan | None:
         },
         confidence=1.0,
         reasoning="top borrowers ranked by current governed principal outstanding",
+    )
+
+
+def _top_agents_plan(question: str) -> QuerySpecPlan | None:
+    """Rank governed agents by their current linked loans or linked borrowers."""
+    match = _TOP_AGENTS_RE.search(question)
+    if match is None:
+        return None
+    requested_limit = match.groupdict().get("limit")
+    limit = max(1, min(int(requested_limit), 5000)) if requested_limit else 10
+    by_customers = bool(re.search(r"\b(?:borrowers?|customers?)\b", question, re.I))
+    metric = "customer_count" if by_customers else "agent_linked_loans"
+    dimension = "loan_agent" if by_customers else "agent_profile"
+    period = "all_time" if by_customers else "today"
+    return QuerySpecPlan(
+        spec={
+            "metrics": [metric],
+            "dimensions": [dimension],
+            "period": {"relative": period},
+            "order_by": {"field": metric, "direction": "desc"},
+            "limit": limit,
+        },
+        confidence=1.0,
+        reasoning=(
+            "governed agents ranked by current linked borrowers"
+            if by_customers
+            else "governed agents ranked by current linked loans"
+        ),
+    )
+
+
+def _agent_directory_plan(question: str) -> SqlPlan | None:
+    """Route requested agent profile fields to reviewed deterministic SQL generation."""
+    if _AGENT_DIRECTORY_RE.search(question) is None:
+        return None
+    return SqlPlan(
+        intent=question,
+        tables=["gold.agent_master"],
+        confidence=1.0,
+        reasoning="requested fields from the governed current agent directory",
     )
 
 
@@ -378,6 +441,28 @@ async def plan(
     if top_borrowers is not None:
         return PlanOutcome(
             plan=top_borrowers,
+            attempts=0,
+            prompt_version=PROMPT_VERSION,
+            model="deterministic",
+            provider="catalog",
+            duration_ms=0,
+        )
+
+    top_agents = _top_agents_plan(planning_question)
+    if top_agents is not None:
+        return PlanOutcome(
+            plan=top_agents,
+            attempts=0,
+            prompt_version=PROMPT_VERSION,
+            model="deterministic",
+            provider="catalog",
+            duration_ms=0,
+        )
+
+    agent_directory = _agent_directory_plan(planning_question)
+    if agent_directory is not None:
+        return PlanOutcome(
+            plan=agent_directory,
             attempts=0,
             prompt_version=PROMPT_VERSION,
             model="deterministic",
