@@ -19,6 +19,10 @@ class Settings(BaseSettings):
     groq_model: str = "llama-3.3-70b-versatile"
 
     # Qdrant (shared instance — must be on Aroha_T1 / Aroha_G1 WiFi)
+    # QDRANT_URL is the canonical setting and wins when set; host/port remain for
+    # deployments that predate it. Keeping both in sync by hand is what let the API
+    # (which read QDRANT_URL) and the RAG engine (which read host/port) drift apart.
+    qdrant_url: str = ""
     qdrant_host: str = "192.168.1.183"
     qdrant_port: int = 6333
     qdrant_api_key: str = ""

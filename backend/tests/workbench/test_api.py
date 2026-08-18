@@ -100,5 +100,5 @@ class TestConversationOwnership:
             "/workbench/conversations/cards", headers=_auth("gicc_policy"),
         ).json()
 
-        assert body["record_version"] == 2
+        assert body["record_version"] == history.RECORD_VERSION
         assert body["turns"][0]["cards"][0]["payload"]["summary"] == "Growth is stable."

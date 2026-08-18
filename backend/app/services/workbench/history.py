@@ -38,11 +38,9 @@ MIGRATIONS = (
 )
 
 TITLE_MAX = 80
-RECORD_VERSION = 2
-# 80k characters is roughly 20k tokens. This leaves room in a 32k context for the router
-# or planner system prompt, catalog/schema grammar, the current question, and output.
-TRANSCRIPT_CHAR_BUDGET = 80_000
-RECENT_TURNS_VERBATIM = 8
+# v3 adds `compaction` (checkpoint summary + mechanically extracted session state) and
+# per-turn `usage`. v2 records load with compaction=None and behave exactly as before.
+RECORD_VERSION = 3
 OLDER_TURN_MAX_CHARS = 900
 CARD_ROWS_IN_CONTEXT = 20
 _table_ready = False
@@ -56,6 +54,10 @@ class ConversationRecord:
     turns: list[dict[str, Any]] = field(default_factory=list)
     owner_username: str = "anonymous"
     record_version: int = RECORD_VERSION
+    # Checkpoint written by the compaction pass. None until a conversation grows past
+    # the token budget, and safe to delete at any time — the turns themselves are kept,
+    # so dropping it only costs context, never data.
+    compaction: dict[str, Any] | None = None
 
 
 @dataclass(slots=True)
@@ -104,11 +106,14 @@ def _ensure_table() -> bool:
 
 
 def _record_payload(record: ConversationRecord) -> dict[str, Any]:
-    return {
+    payload: dict[str, Any] = {
         "version": record.record_version,
         "title": record.title,
         "turns": record.turns,
     }
+    if record.compaction:
+        payload["compaction"] = record.compaction
+    return payload
 
 
 def _load(conversation_id: str, user: str) -> ConversationRecord | None:
@@ -136,6 +141,8 @@ def _load(conversation_id: str, user: str) -> ConversationRecord | None:
                 turns=list(payload.get("turns", [])),
                 owner_username=row[3],
                 record_version=row[4] or payload.get("version", 1),
+                # Absent on v1/v2 rows; those conversations simply have no checkpoint yet.
+                compaction=payload.get("compaction"),
             )
         except Exception as exc:  # noqa: BLE001
             logger.warning("workbench history load failed, using memory: %s", exc)
@@ -164,6 +171,9 @@ def exists(conversation_id: str) -> bool:
 
 def _save(record: ConversationRecord) -> None:
     record.updated_at = _now()
+    # Upgrade on write: whatever version a record was read at, this module now writes the
+    # current payload shape, so the stored version should say so.
+    record.record_version = RECORD_VERSION
     _MEMORY[(record.owner_username, record.conversation_id)] = record
     if not _ensure_table():
         return
@@ -192,6 +202,20 @@ def _save(record: ConversationRecord) -> None:
         logger.warning("workbench history write failed, retained in memory: %s", exc)
 
 
+def set_compaction(conversation_id: str, user: str, payload: dict[str, Any] | None) -> None:
+    """Store (or clear) the conversation checkpoint.
+
+    Passing None discards it. That is the recovery path if a checkpoint ever proves
+    misleading: the turns are all still present, so the next transcript simply rebuilds
+    from them.
+    """
+    record = _load(conversation_id, user)
+    if record is None:
+        return
+    record.compaction = payload
+    _save(record)
+
+
 def _mutate(
     conversation_id: str,
     user: str,
@@ -208,8 +232,15 @@ def _mutate(
     _save(record)
 
 
-def begin_turn(conversation_id: str, user: str, question: str) -> str:
-    """Create the user half of a turn before routing or tool calls begin."""
+def begin_turn(
+    conversation_id: str, user: str, question: str, *, pinned: str | None = None
+) -> str:
+    """Create the user half of a turn before routing or tool calls begin.
+
+    `pinned` is recorded because it is a binding later turns depend on — "what does it
+    say about X" means something different depending on which document was pinned — and
+    compaction cannot reconstruct it from the answer text.
+    """
     record = _load(conversation_id, user)
     if record is None:
         record = ConversationRecord(
@@ -222,6 +253,7 @@ def begin_turn(conversation_id: str, user: str, question: str) -> str:
     record.turns.append({
         "id": turn_id,
         "question": question,
+        "pinned": pinned,
         "route": None,
         "sources": [],  # compatibility with version-1 clients
         "cards": [],
@@ -258,6 +290,29 @@ def add_card(conversation_id: str, user: str, turn_id: str, card: dict[str, Any]
 
 def set_synthesis(conversation_id: str, user: str, turn_id: str, text: str) -> None:
     _mutate(conversation_id, user, turn_id, lambda turn: turn.update(synthesis=text))
+
+
+def set_usage(
+    conversation_id: str,
+    user: str,
+    turn_id: str,
+    *,
+    prompt_tokens: int,
+    completion_tokens: int = 0,
+) -> None:
+    """Record what the provider actually charged for this turn.
+
+    The transcript budget is a token budget, and a measured prompt size beats any
+    character heuristic. Only the last such measurement is needed — turns after it are
+    estimated — but keeping it per turn makes the accounting debuggable.
+    """
+    def apply(turn: dict[str, Any]) -> None:
+        turn["usage"] = {
+            "prompt_tokens": int(prompt_tokens),
+            "completion_tokens": int(completion_tokens),
+        }
+
+    _mutate(conversation_id, user, turn_id, apply)
 
 
 def set_refusal(conversation_id: str, user: str, turn_id: str, payload: dict[str, Any]) -> None:
@@ -322,60 +377,136 @@ def get(conversation_id: str, *, user: str = "anonymous") -> ConversationRecord 
     return _load(conversation_id, user)
 
 
+@dataclass(slots=True)
+class Transcript:
+    """The model-facing view of a conversation, plus how tight the fit was."""
+
+    messages: list[dict[str, str]] = field(default_factory=list)
+    tokens: int = 0
+    budget: int = 0
+    # True when even the newest turn alone had to be clipped to fit. At that point the
+    # conversation can no longer carry its own most recent exchange intact, and the only
+    # real remedy is a fresh session.
+    overflow: bool = False
+
+
+def build_transcript(
+    conversation_id: str,
+    *,
+    user: str,
+    token_budget: int | None = None,
+) -> Transcript:
+    """Assemble the next model call's messages from this conversation and no other.
+
+    Three layers, cheapest and most reliable first:
+
+    1. the compaction summary, when one has been written (prose, may be lossy);
+    2. the mechanically extracted session state — figures, sources, refusals — which is
+       exact and is rebuilt from the turns on every call, so it never degrades;
+    3. the most recent turns verbatim, as many as the token budget allows.
+
+    Layers 1 and 2 precede every live turn, so each is capped at a share of the budget
+    rather than given an open claim on it — otherwise the summary of a conversation could
+    crowd out the conversation. Older turns that fit nowhere are dropped whole rather than
+    clipped mid-sentence: whatever mattered about them is in layer 2.
+    """
+    from app.services.workbench.compaction import budget, state as session_state
+
+    limit = budget.budget_tokens() if token_budget is None else token_budget
+    result = Transcript(budget=limit)
+
+    record = _load(conversation_id, user)
+    if record is None:
+        return result
+    complete = [turn for turn in record.turns if turn.get("status") != "running"]
+    if not complete:
+        return result
+
+    messages: list[dict[str, str]] = []
+    spent = 0
+
+    compaction = record.compaction if isinstance(record.compaction, dict) else None
+    first_kept = str(compaction.get("first_kept_turn_id", "")) if compaction else ""
+    summary = str(compaction.get("summary", "")).strip() if compaction else ""
+    if summary:
+        summary = budget.clip_to_tokens(summary, int(limit * budget.SUMMARY_SHARE))
+        messages.append({"role": "system", "content": "Conversation checkpoint:\n\n" + summary})
+        spent += budget.estimate_tokens(summary)
+
+    # Turns already folded into the checkpoint are not replayed verbatim.
+    _, live = _split_at_turn(complete, first_kept)
+    # Recomputed from every turn rather than read back from the checkpoint: turns are
+    # never deleted, so this is always exact and cannot go stale against a summary.
+    state = session_state.from_turns(complete, _assistant_text)
+    state = session_state.trim_to_fit(
+        state, max(0, int(limit * budget.COMPRESSED_SHARE) - spent), budget.estimate_tokens
+    )
+    rendered = session_state.render(state)
+    if rendered:
+        messages.append({"role": "system", "content": rendered})
+        spent += budget.estimate_tokens(rendered)
+
+    pairs = [
+        (str(turn.get("question", "")).strip(), _assistant_text(turn))
+        for turn in live
+    ]
+    pairs = [(question, answer) for question, answer in pairs if question and answer]
+
+    # Fill the remaining budget from the newest turn backwards, then restore order.
+    kept: list[tuple[str, str]] = []
+    for question, answer in reversed(pairs):
+        cost = budget.estimate_tokens(question) + budget.estimate_tokens(answer)
+        if kept and spent + cost > limit:
+            break
+        if not kept and spent + cost > limit:
+            # The newest turn does not fit even on its own. Keep it — a transcript
+            # without the current exchange is useless — but clip it so the request stays
+            # inside the window, and flag that this conversation has run out of room.
+            room = max(0, limit - spent - budget.estimate_tokens(question))
+            answer = budget.clip_to_tokens(answer, room)
+            cost = budget.estimate_tokens(question) + budget.estimate_tokens(answer)
+            result.overflow = True
+        kept.append((question, answer))
+        spent += cost
+    for question, answer in reversed(kept):
+        messages.append({"role": "user", "content": question})
+        messages.append({"role": "assistant", "content": answer})
+
+    result.messages = messages
+    result.tokens = spent
+    return result
+
+
 def transcript(
     conversation_id: str,
     *,
     user: str,
-    char_budget: int = TRANSCRIPT_CHAR_BUDGET,
+    token_budget: int | None = None,
 ) -> list[dict[str, str]]:
-    """Role messages for the next model call, from this conversation and no other."""
-    record = _load(conversation_id, user)
-    if record is None:
-        return []
-    complete = [turn for turn in record.turns if turn.get("status") != "running"]
-    pairs = [(str(turn.get("question", "")).strip(), _assistant_text(turn)) for turn in complete]
-    pairs = [(question, answer) for question, answer in pairs if question and answer]
-    if not pairs:
-        return []
+    """Messages only. See `build_transcript` for the budget and overflow detail."""
+    return build_transcript(conversation_id, user=user, token_budget=token_budget).messages
 
-    total_chars = sum(len(question) + len(answer) for question, answer in pairs)
-    if total_chars <= char_budget:
-        return [
-            message
-            for question, answer in pairs
-            for message in (
-                {"role": "user", "content": question},
-                {"role": "assistant", "content": answer},
-            )
-        ]
 
-    # Keep the most recent turns verbatim. Older turns become deterministic session memory
-    # only when needed; no second model call is required merely to maintain context.
-    recent = pairs[-RECENT_TURNS_VERBATIM:]
-    older = pairs[:-RECENT_TURNS_VERBATIM]
-    recent_chars = sum(len(question) + len(answer) for question, answer in recent)
-    while recent and recent_chars > char_budget:
-        older.append(recent.pop(0))
-        recent_chars = sum(len(question) + len(answer) for question, answer in recent)
+def _split_at_turn(
+    turns: list[dict[str, Any]], first_kept_turn_id: str
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Split turns into (already checkpointed, still replayed verbatim)."""
+    if not first_kept_turn_id:
+        return [], turns
+    for index, turn in enumerate(turns):
+        if turn.get("id") == first_kept_turn_id:
+            return turns[:index], turns[index:]
+    # The pointer names a turn we no longer have; replaying everything is the safe miss.
+    return [], turns
 
-    messages: list[dict[str, str]] = []
-    remaining = max(0, char_budget - recent_chars)
-    if older and remaining:
-        memory_lines = []
-        for question, answer in older:
-            line = f"User: {question}\nAssistant: {answer}"[:OLDER_TURN_MAX_CHARS]
-            if sum(len(item) for item in memory_lines) + len(line) > remaining:
-                break
-            memory_lines.append(line)
-        if memory_lines:
-            messages.append({
-                "role": "system",
-                "content": "Earlier conversation memory:\n\n" + "\n\n".join(memory_lines),
-            })
-    for question, answer in recent:
-        messages.append({"role": "user", "content": question})
-        messages.append({"role": "assistant", "content": answer})
-    return messages
+
+def assistant_text(turn: dict[str, Any]) -> str:
+    """The model-facing rendering of a turn's answer.
+
+    Public because compaction needs exactly the view the model was given — including the
+    row cap in `_card_text` — rather than a second, subtly different flattening.
+    """
+    return _assistant_text(turn)
 
 
 def _assistant_text(turn: dict[str, Any]) -> str:

@@ -19,7 +19,7 @@ from typing import Any, AsyncIterator, NotRequired, TypedDict
 
 from langgraph.graph import END, START, StateGraph
 
-from app.services.workbench import history, models, nodes, router
+from app.services.workbench import compaction, history, models, nodes, router
 from app.services.workbench.nodes import SourceResult
 
 logger = logging.getLogger(__name__)
@@ -27,6 +27,27 @@ logger = logging.getLogger(__name__)
 
 def sse(event: str, data: Any) -> str:
     return f"event: {event}\ndata: {json.dumps(data, default=str)}\n\n"
+
+
+CONTEXT_FULL_MESSAGE = (
+    "This conversation has grown too long for the model's context window, so earlier "
+    "detail has been dropped. Please start a new chat session to continue with full "
+    "accuracy."
+)
+
+# The transcript budget reserves headroom for the system prompt, catalog grammar and the
+# question, but that reserve is an estimate — a large grammar can still push a request
+# past the window. Providers report it as a 4xx whose body names the context limit, so
+# the runtime case is matched here as well as the pre-emptive one.
+_CONTEXT_ERROR_MARKERS = (
+    "context window", "context length", "context size", "n_ctx",
+    "too many tokens", "exceeds the available", "maximum context",
+)
+
+
+def _is_context_overflow(exc: BaseException) -> bool:
+    text = str(exc).lower()
+    return any(marker in text for marker in _CONTEXT_ERROR_MARKERS)
 
 
 class WorkbenchState(TypedDict):
@@ -197,6 +218,13 @@ async def _synthesize_node(state: WorkbenchState) -> dict[str, Any]:
         history.set_synthesis(
             state["conversation_id"], state["user"], state["turn_id"], text,
         )
+        # The prompt this call carried is the best available measure of how full the
+        # conversation's context has become; the transcript budget is built on it.
+        history.set_usage(
+            state["conversation_id"], state["user"], state["turn_id"],
+            prompt_tokens=result.prompt_tokens,
+            completion_tokens=result.completion_tokens,
+        )
     except Exception as exc:  # noqa: BLE001 - synthesis is a nicety; cards already streamed
         logger.warning("workbench synthesis failed: %s", exc)
     return {}
@@ -224,17 +252,39 @@ def _compiled():
     return _COMPILED
 
 
+# asyncio keeps only a weak reference to a running task, so a fire-and-forget coroutine
+# can be garbage collected mid-flight. Holding a strong reference until it finishes is the
+# documented way to detach work safely.
+_background: set[asyncio.Task] = set()
+
+
+def _spawn_background(coro) -> None:
+    task = asyncio.create_task(coro)
+    _background.add(task)
+    task.add_done_callback(_background.discard)
+
+
 async def run_workbench(
     *, question: str, conversation_id: str, user: str, role: str, pinned: str | None = None,
     data_access: str | None = None,
 ) -> AsyncIterator[str]:
     """Run one turn, yielding SSE frames as the graph produces them."""
     emit: "asyncio.Queue[str | None]" = asyncio.Queue()
-    history_messages = history.transcript(conversation_id, user=user)
-    turn_id = history.begin_turn(conversation_id, user, question)
+    built = history.build_transcript(conversation_id, user=user)
+    history_messages = built.messages
+    turn_id = history.begin_turn(conversation_id, user, question, pinned=pinned)
     # Announce the conversation id first so the client can thread follow-ups and the History
     # rail onto it.
     yield sse("conversation", {"conversation_id": conversation_id})
+    if built.overflow:
+        # The conversation no longer fits its own most recent exchange. The answer below
+        # is still produced, but from a clipped view, so say so rather than let quality
+        # degrade silently. Not retryable: asking again in this conversation cannot help.
+        logger.warning(
+            "workbench transcript overflow: conversation=%s tokens=%d budget=%d",
+            conversation_id, built.tokens, built.budget,
+        )
+        yield sse("error", {"message": CONTEXT_FULL_MESSAGE, "retryable": False})
     yield sse("stage", {"stage": "understanding"})
 
     state: WorkbenchState = {
@@ -252,14 +302,24 @@ async def run_workbench(
         except asyncio.CancelledError:
             partial = True
             raise
-        except Exception:  # noqa: BLE001 - surface as an error frame, never a 500
+        except Exception as exc:  # noqa: BLE001 - surface as an error frame, never a 500
             partial = True
-            logger.exception("workbench graph failed")
-            history.set_error(conversation_id, user, turn_id, "The workbench hit an error.")
-            await emit.put(sse("error", {"message": "The workbench hit an error.",
-                                         "retryable": True}))
+            # A context-window rejection is not a transient fault: asking again in this
+            # conversation sends the same oversized prompt. Say what will actually help.
+            if _is_context_overflow(exc):
+                logger.warning("workbench context overflow: conversation=%s", conversation_id)
+                message, retryable = CONTEXT_FULL_MESSAGE, False
+            else:
+                logger.exception("workbench graph failed")
+                message, retryable = "The workbench hit an error.", True
+            history.set_error(conversation_id, user, turn_id, message)
+            await emit.put(sse("error", {"message": message, "retryable": retryable}))
         finally:
             history.complete_turn(conversation_id, user, turn_id, partial=partial)
+            # Checkpoint after the turn, never before it: the summarization call would
+            # otherwise sit between the user's question and their first streamed token.
+            # Detached and failure-tolerant — the transcript works without it.
+            _spawn_background(compaction.maybe_compact(conversation_id, user))
             await emit.put(None)  # sentinel: the graph is done producing frames
 
     task = asyncio.create_task(drive())

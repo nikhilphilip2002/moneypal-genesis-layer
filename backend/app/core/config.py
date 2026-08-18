@@ -9,8 +9,9 @@ BASE_DIR = Path(__file__).resolve().parents[2]   # backend/
 REGISTRY_DIR = BASE_DIR / "registry"             # institution/regulation JSON configs
 DATA_DIR = BASE_DIR / "data"                     # ingested PDFs/TXTs (gitignored)
 
-# Qdrant collections
-MACRO_COLLECTION = "macro_intel1"
+# Qdrant collections. MACRO_COLLECTION is bound from settings at the bottom of this
+# module (the env loader is defined below); it stays a module-level constant so the
+# existing `from app.core.config import MACRO_COLLECTION` imports keep working.
 LANDSCAPE_ANCHOR = "comp_sidbi"                  # anchor collection for the landscape summary
 
 
@@ -46,6 +47,50 @@ class Settings:
         self.embedding_model = get("EMBEDDING_MODEL", "BAAI/bge-m3") or "BAAI/bge-m3"
         self.vector_size = int(get("VECTOR_SIZE", "1024") or "1024")
         self.collection_prefix = get("COLLECTION_PREFIX", "reg_") or "reg_"
+
+        # --- Macro intelligence ingestion pipeline ----------------------------------
+        # Point MACRO_COLLECTION at a scratch collection to exercise the refresh/purge
+        # cycle without touching the collection the macro API serves from.
+        self.macro_collection = get("MACRO_COLLECTION", "macro_intel1") or "macro_intel1"
+        self.macro_data_dir = Path(get("MACRO_DATA_DIR", str(DATA_DIR / "macro")) or DATA_DIR / "macro")
+        self.macro_state_file = Path(
+            get("MACRO_STATE_FILE", str(DATA_DIR / "macro" / "state.json")) or DATA_DIR / "macro" / "state.json"
+        )
+        self.macro_sources_file = Path(
+            get("MACRO_SOURCES_FILE", str(BASE_DIR / "scripts" / "macro_pipeline" / "sources.txt"))
+            or BASE_DIR / "scripts" / "macro_pipeline" / "sources.txt"
+        )
+        # Weekly refresh. APScheduler day_of_week names: mon,tue,wed,thu,fri,sat,sun.
+        self.macro_schedule_day = get("MACRO_SCHEDULE_DAY", "sun") or "sun"
+        self.macro_schedule_hour = int(get("MACRO_SCHEDULE_HOUR", "10") or "10")
+        self.macro_schedule_minute = int(get("MACRO_SCHEDULE_MINUTE", "0") or "0")
+        self.macro_schedule_tz = get("MACRO_SCHEDULE_TZ", "Asia/Kolkata") or "Asia/Kolkata"
+        # Off by default: a container restart should not trigger a full crawl.
+        self.macro_run_on_startup = (get("MACRO_RUN_ON_STARTUP", "false") or "false").lower() in (
+            "1", "true", "yes", "on",
+        )
+        # Stale-point purge. The min-ratio rail stops a blocked crawl from emptying the
+        # collection — three of the four configured sources are auth/JS/TLS gated today.
+        self.macro_purge_stale = (get("MACRO_PURGE_STALE", "true") or "true").lower() in (
+            "1", "true", "yes", "on",
+        )
+        self.macro_purge_min_ratio = float(get("MACRO_PURGE_MIN_RATIO", "0.5") or "0.5")
+        # Off by default: macro_intel1 holds points from an earlier ingest with a
+        # different payload schema, covering sources the crawler cannot reach today.
+        # Retiring them is a deliberate migration (`run.py migrate`), not a side effect
+        # of the first weekly refresh.
+        self.macro_purge_legacy = (get("MACRO_PURGE_LEGACY", "false") or "false").lower() in (
+            "1", "true", "yes", "on",
+        )
+        self.macro_max_pages_per_site = int(get("MACRO_MAX_PAGES_PER_SITE", "100") or "100")
+        self.macro_max_depth = int(get("MACRO_MAX_DEPTH", "2") or "2")
+        self.macro_max_files_per_site = int(get("MACRO_MAX_FILES_PER_SITE", "50") or "50")
+        self.macro_max_download_mb = int(get("MACRO_MAX_DOWNLOAD_MB", "80") or "80")
+        self.macro_request_delay_s = float(get("MACRO_REQUEST_DELAY_S", "1.0") or "1.0")
+        self.macro_request_timeout_s = float(get("MACRO_REQUEST_TIMEOUT_S", "45") or "45")
+        self.macro_respect_robots = (get("MACRO_RESPECT_ROBOTS", "true") or "true").lower() in (
+            "1", "true", "yes", "on",
+        )
 
         self.regulations_dir = Path(get("REGULATIONS_DIR", str(REPO_ROOT / "Regulations")) or REPO_ROOT / "Regulations")
         self.registry_dir = Path(get("REGISTRY_DIR", str(REPO_ROOT / "backend" / "registry" / "regulations")) or REPO_ROOT / "backend" / "registry" / "regulations")
@@ -115,6 +160,25 @@ class Settings:
         self.workbench_router_model = get("WORKBENCH_ROUTER_MODEL") or self.nlq_llm_model
         self.workbench_synth_model = get("WORKBENCH_SYNTH_MODEL") or self.nlq_llm_model
 
+        # --- Workbench conversation compaction --------------------------------------
+        # The transcript budget was previously expressed in characters because no token
+        # count was persisted. Real prompt_tokens from the provider are now recorded per
+        # turn, so the budget is stated in the unit the context window is actually in.
+        self.workbench_context_window = int(get("WORKBENCH_CONTEXT_WINDOW", "32768") or "32768")
+        # Headroom for the next turn's system prompt, catalog grammar and output. Smaller
+        # than a coding agent's: workbench answers are 300-500 tokens, not long diffs.
+        self.workbench_reserve_tokens = int(get("WORKBENCH_RESERVE_TOKENS", "8192") or "8192")
+        self.workbench_keep_recent_turns = int(get("WORKBENCH_KEEP_RECENT_TURNS", "6") or "6")
+        # Summarization stays dark until the deterministic phases are proven in place;
+        # with it off the transcript still gets token-accurate budgeting and the
+        # mechanically extracted session state.
+        self.workbench_compaction_enabled = (
+            get("WORKBENCH_COMPACTION_ENABLED", "false") or "false"
+        ).lower() in ("1", "true", "yes", "on")
+        self.workbench_compaction_max_tokens = int(
+            get("WORKBENCH_COMPACTION_MAX_TOKENS", "1200") or "1200"
+        )
+
 
 @lru_cache
 def get_settings() -> Settings:
@@ -122,3 +186,5 @@ def get_settings() -> Settings:
 
 
 settings = get_settings()
+
+MACRO_COLLECTION = settings.macro_collection

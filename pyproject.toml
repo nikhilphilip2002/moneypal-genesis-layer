@@ -17,6 +17,20 @@ dependencies = [
     "sqlglot>=25.0",
     "pyyaml>=6.0",
     "mcp==1.29.0",
+    # Macro ingestion pipeline: bounded crawl of the public macro sources, plus the
+    # weekly refresh worker. Embeddings/Qdrant/pypdf come via genesis-core.
+    "requests>=2.32.0",
+    "beautifulsoup4>=4.13.0",
+    "lxml>=5.3.0",
+    "APScheduler>=3.10,<4",
+    # Hard-imported by app/services/workbench/graph.py; previously only ever installed
+    # ad-hoc, so a clean `uv sync` produced a backend that could not start.
+    "langgraph>=1.0",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
 ]
 
 

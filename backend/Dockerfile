@@ -8,7 +8,9 @@ COPY packages/genesis_core /srv/packages/genesis_core
 # missing one is a crash loop, not a degraded feature.
 # langgraph orchestrates the workbench chat (route -> dispatch -> synthesize); langchain-core
 # is its state/runnable base. Imported at app.main import time via the workbench router.
-RUN pip install --no-cache-dir /srv/packages/genesis_core fastapi "uvicorn[standard]" psycopg2-binary pg8000 openpyxl sqlglot pyyaml langgraph langchain-core "mcp==1.29.0"
+# requests/beautifulsoup4/lxml crawl the macro sources and APScheduler drives the weekly
+# refresh. Only the macro-pipeline service uses them, but it shares this image.
+RUN pip install --no-cache-dir /srv/packages/genesis_core fastapi "uvicorn[standard]" psycopg2-binary pg8000 openpyxl sqlglot pyyaml langgraph langchain-core "mcp==1.29.0" requests beautifulsoup4 lxml "APScheduler>=3.10,<4"
 
 
 COPY backend /srv/backend

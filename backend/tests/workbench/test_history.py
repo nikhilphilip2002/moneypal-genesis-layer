@@ -97,7 +97,7 @@ def test_new_conversation_starts_with_empty_context():
     assert history.transcript("new", user="alice") == []
 
 
-def test_transcript_respects_the_character_budget():
+def test_transcript_respects_the_token_budget():
     for index in range(12):
         turn_id = history.begin_turn("long", "alice", f"Question {index} " + "q" * 100)
         history.add_card("long", "alice", turn_id, {
@@ -106,6 +106,10 @@ def test_transcript_respects_the_character_budget():
         })
         history.complete_turn("long", "alice", turn_id)
 
-    messages = history.transcript("long", user="alice", char_budget=4_000)
-    assert sum(len(message["content"]) for message in messages) <= 4_200
+    # ~1000 tokens: room for a couple of these turns, not twelve.
+    messages = history.transcript("long", user="alice", token_budget=1_000)
+    verbatim = [message for message in messages if message["role"] != "system"]
+    assert sum(len(message["content"]) for message in verbatim) <= 4_200
+    # The newest turn always survives, whatever the budget.
     assert "Question 11" in messages[-2]["content"]
+    assert "Question 0" not in " ".join(message["content"] for message in verbatim)

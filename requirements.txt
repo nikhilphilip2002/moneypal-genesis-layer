@@ -11,3 +11,8 @@ sqlalchemy
 sqlglot
 pyyaml
 mcp==1.29.0
+# Macro ingestion pipeline: crawl (requests/bs4/lxml) + weekly worker (APScheduler).
+requests
+beautifulsoup4
+lxml
+APScheduler>=3.10,<4

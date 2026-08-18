@@ -41,6 +41,30 @@ services:
     volumes:
       - ./Regulations:/srv/Regulations:ro
 
+  # Weekly macro refresh (Sunday 10:00 IST by default — MACRO_SCHEDULE_* in .env).
+  # Long-lived so bge-m3 stays resident and the scheduled run pays no cold start.
+  # Qdrant credentials come from .env; it writes to MACRO_COLLECTION and purges any
+  # point not stamped with the current run id.
+  macro-pipeline:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    env_file: .env
+    environment:
+      REGULATIONS_DIR: /srv/Regulations
+      REGISTRY_DIR: /srv/backend/registry/regulations
+      MACRO_DATA_DIR: /srv/backend/data/macro
+      MACRO_STATE_FILE: /srv/backend/data/macro/state.json
+      # Not an API process — keep the catalog embedding stack out of this container.
+      NLQ_CATALOG_VECTORS: "false"
+    command: ["python", "-m", "scripts.macro_pipeline.run", "schedule"]
+    restart: unless-stopped
+    volumes:
+      # Downloads and the fingerprint manifest must survive restarts, or every
+      # restart re-downloads and re-embeds everything.
+      - macro-data:/srv/backend/data/macro
+      - ./Regulations:/srv/Regulations:ro
+
   frontend:
     build:
       context: ./frontend
@@ -57,3 +81,6 @@ services:
     depends_on:
       - backend
       - frontend
+
+volumes:
+  macro-data:
