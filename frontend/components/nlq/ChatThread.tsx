@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   nlq,
   type ChartSpec,
+  type DrillStep,
   type NlqClarification,
   type NlqRefusal,
   type NlqStage,
@@ -11,6 +12,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import ChartRenderer from './ChartRenderer';
 import LineagePanel from './LineagePanel';
+import NextQuestions from './NextQuestions';
 import StickyFilters from './StickyFilters';
 import {
   BrainCircuit,
@@ -68,13 +70,14 @@ export default function ChatThread({
   }, [turns]);
 
   const drilldown = useCallback(
-    async (spec: QuerySpec, sourceTurn: Turn) => {
+    async (spec: QuerySpec, sourceTurn: Turn, label = 'Drill-down') => {
       // No LLM: a drill-down re-runs the spec directly, so it is instant and cannot be
-      // misunderstood.
+      // misunderstood. A chip passes its own phrasing as the label, so a chain of them
+      // reads back as the conversation it was rather than eight rows of "Drill-down".
       const id = `${sourceTurn.id}-drill-${Date.now()}`;
       setTurns((prev) => [
         ...prev,
-        { id, question: 'Drill-down', stage: 'querying', done: false },
+        { id, question: label, stage: 'querying', done: false },
       ]);
       try {
         const chart = await nlq.execute(spec);
@@ -129,6 +132,10 @@ export default function ChatThread({
                   <ChartRenderer
                     chart={turn.chart}
                     onDrilldown={(spec) => drilldown(spec, turn)}
+                  />
+                  <NextQuestions
+                    steps={turn.chart.next_steps ?? []}
+                    onPick={(step: DrillStep) => drilldown(step.spec, turn, step.label)}
                   />
                   <LineagePanel chart={turn.chart} />
                   <Feedback turn={turn} onRate={rate} />

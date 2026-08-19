@@ -83,6 +83,12 @@ presentation requests, never a reason to refuse or claim that a graph cannot be 
 For a donut request, reuse the requested metric and dimension and set `as_share` true.
 - Keep amount metrics distinct from ratios: "overdue-principal share by asset classification" \
 means `overdue_principal` grouped by `asset_class` with `as_share=true`; it is not PAR 30.
+- Set `explain` true when the question asks WHY a measure moved rather than what it is \
+("why are collections down", "what is driving the rise in PAR", "why did disbursement fall"). \
+It requires `compare_to` and at least one dimension to attribute the change across — pick \
+the dimension the question names, or `branch` when it names none. Asking why is not a \
+forecast and not a recommendation, so it is never a refusal. "What is our PAR" is not an \
+explanation; leave `explain` false.
 
 PERIODS
 - When the user says "last 30 days", "last 90 days", or "last 12 months", emit the

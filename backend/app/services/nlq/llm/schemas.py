@@ -118,6 +118,13 @@ def plan_schema(catalog: Catalog | None = None) -> dict[str, Any]:
                 "composition rather than a comparison of magnitudes. Selects a "
                 "part-to-whole chart; it does not change the numbers.",
             },
+            "explain": {
+                "type": "boolean",
+                "description": "True when the question asks WHY a measure moved rather than "
+                "what it is: 'why are collections down', 'what is driving the rise in PAR'. "
+                "Requires compare_to and at least one dimension to attribute the change "
+                "across. The change is then decomposed into each member's contribution.",
+            },
         },
         # `dimensions` is required even though an empty list is valid. Optional properties
         # are skippable under constrained decoding, and models take the shortest legal path

@@ -572,6 +572,7 @@ export type ChartType =
   | 'kpi' | 'line' | 'area' | 'stacked_area'
   | 'bar' | 'grouped_bar' | 'stacked_bar' | 'ranking' | 'donut'
   | 'variance' | 'dumbbell' | 'scatter' | 'heatmap' | 'small_multiples'
+  | 'waterfall'
   | 'table';
 
 export type Unit =
@@ -616,6 +617,18 @@ export type QuerySpec = {
   order_by?: { field: string; direction: 'asc' | 'desc' } | null;
   limit: number;
   as_share?: boolean;
+  explain?: boolean;
+};
+
+// One offered next question. The spec is prebuilt, so tapping a chip runs through
+// /nlq/execute with no model in the loop — the same guarantee as a drill-down click.
+export type DrillStep = {
+  kind: 'deeper' | 'sideways' | 'explain' | 'act';
+  id: string;
+  label: string;
+  question: string;
+  dimension: string | null;
+  spec: QuerySpec;
 };
 
 export type ChartSpec = {
@@ -631,6 +644,7 @@ export type ChartSpec = {
   rows: Record<string, unknown>[];
   summary: string;
   drilldown: QuerySpec | null;
+  next_steps: DrillStep[];
   lineage: Lineage;
 };
 

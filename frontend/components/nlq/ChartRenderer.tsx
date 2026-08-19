@@ -112,6 +112,8 @@ function ChartBody({
       return <DonutView chart={chart} mode={mode} />;
     case 'variance':
       return <VarianceView chart={chart} mode={mode} />;
+    case 'waterfall':
+      return <WaterfallView chart={chart} mode={mode} />;
     case 'dumbbell':
       return <DumbbellView chart={chart} mode={mode} />;
     case 'scatter':
@@ -643,6 +645,116 @@ function VarianceView({ chart, mode }: { chart: ChartSpec; mode: 'light' | 'dark
         </Bar>
       </BarChart>
     </ResponsiveContainer>
+  );
+}
+
+// A driver decomposition: the two totals sit on the floor, each contribution floats on the
+// running balance between them. The float is what makes it a bridge rather than a bar
+// chart — you can see the change being handed from one member to the next.
+function WaterfallView({ chart, mode }: { chart: ChartSpec; mode: 'light' | 'dark' }) {
+  const palette = ink(mode);
+  const unit = chart.columns.find((column) => column.name === 'value')?.unit ?? 'count';
+
+  const data = useMemo(() => {
+    let running = 0;
+    return chart.rows.map((row) => {
+      const value = typeof row.value === 'number' ? row.value : 0;
+      const isTotal = row.kind === 'total';
+      // Recharts stacks from the base up, so an invisible `base` bar carries each floating
+      // segment to its position on the running balance.
+      const base = isTotal ? 0 : running;
+      if (!isTotal) running += value;
+      else running = value;
+      return {
+        step: String(row.step ?? ''),
+        base: Math.min(base, base + value),
+        span: Math.abs(value),
+        value,
+        isTotal,
+      };
+    });
+  }, [chart.rows]);
+
+  return (
+    <ResponsiveContainer width="100%" height={Math.max(260, data.length * 30)}>
+      <BarChart
+        data={data}
+        margin={{ top: 8, right: 24, bottom: 4, left: 8 }}
+        barCategoryGap="24%"
+      >
+        <CartesianGrid stroke={palette.grid} vertical={false} />
+        <XAxis
+          dataKey="step"
+          tick={{ fill: palette.secondary, fontSize: 12 }}
+          tickLine={false}
+          axisLine={false}
+          interval={0}
+          angle={data.length > 5 ? -30 : 0}
+          textAnchor={data.length > 5 ? 'end' : 'middle'}
+          height={data.length > 5 ? 68 : 30}
+        />
+        <YAxis
+          tick={{ fill: palette.secondary, fontSize: 12 }}
+          tickLine={false}
+          axisLine={false}
+          tickFormatter={(v) => formatTick(v, unit)}
+          width={64}
+        />
+        <Tooltip content={<WaterfallTooltip unit={unit} />} cursor={{ fill: palette.grid }} />
+        <ReferenceLine y={0} stroke={palette.secondary} strokeWidth={1} />
+        {/* The spacer that floats each segment onto the running balance. It carries no
+            meaning, so it must not appear in the tooltip as if it were data. */}
+        <Bar
+          dataKey="base"
+          stackId="bridge"
+          fill="transparent"
+          isAnimationActive={false}
+          tooltipType="none"
+        />
+        {/* `span` is drawn (bar heights are magnitudes) but WaterfallTooltip reports the
+            signed `value` — a fall of ₹40 L and a rise of ₹40 L are the same height and
+            must never read the same. */}
+        <Bar dataKey="span" stackId="bridge" name="Contribution" radius={2}>
+          {data.map((row, index) => (
+            <Cell
+              key={index}
+              // Totals are anchors, not movements, so they take the neutral ink rather than
+              // a diverging colour that would read as a gain or a loss.
+              fill={row.isTotal ? palette.secondary : divergingColor(row.value, mode)}
+            />
+          ))}
+        </Bar>
+      </BarChart>
+    </ResponsiveContainer>
+  );
+}
+
+// Reads the signed `value` off the datum rather than the drawn `span`, and says whether the
+// bar is one of the two anchors or a movement between them.
+function WaterfallTooltip({ active, payload, unit }: any) {
+  if (!active || !payload?.length) return null;
+  const datum = payload[0]?.payload;
+  if (!datum) return null;
+  const value = typeof datum.value === 'number' ? datum.value : 0;
+  const sign = datum.isTotal || value === 0 ? '' : value > 0 ? '+' : '−';
+
+  return (
+    <div
+      className={cn(
+        'rounded-xl border border-border px-3 py-2 text-xs shadow-md',
+        'bg-popover/85 backdrop-blur-[20px] [backdrop-filter:saturate(180%)_blur(20px)]',
+        '[-webkit-backdrop-filter:saturate(180%)_blur(20px)]',
+      )}
+    >
+      <div className="mb-1 font-medium text-foreground">{datum.step}</div>
+      <div className="text-muted-foreground">
+        {datum.isTotal ? 'Total' : 'Contribution'}{' '}
+        <span className="font-medium text-foreground">
+          {sign}
+          {formatValue(Math.abs(value), unit)}
+        </span>
+      </div>
+    </div>
   );
 }
 

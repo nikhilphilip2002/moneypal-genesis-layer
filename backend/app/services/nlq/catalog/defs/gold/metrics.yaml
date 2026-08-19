@@ -64,6 +64,9 @@
   numerator: SUM({t}.sanction_amount)
   denominator: COUNT(*)
   formula: Total sanctioned amount divided by number of loans
+  # Account count — the ratio's denominator. Named so driver decomposition can split a change into
+  # mix and rate effects exactly rather than approximately.
+  weight_metric: loan_count
   synonyms: [average ticket, ticket size, average loan size, avg loan amount]
 
 - id: avg_interest_rate
@@ -75,6 +78,9 @@
   numerator: SUM({t}.interest_rate * {t}.sanction_amount)
   denominator: SUM({t}.sanction_amount)
   formula: Sanction-amount-weighted average account interest rate
+  # Sanctioned amount — the ratio's denominator. Named so driver decomposition can split a change into
+  # mix and rate effects exactly rather than approximately.
+  weight_metric: sanctioned_amount
   synonyms: [interest rate, average rate, yield, ROI, pricing]
   requires_signoff: true
 
@@ -165,6 +171,9 @@
   denominator: SUM({t}.principal_outstanding)
   scale: 100
   formula: Principal outstanding over 30 DPD divided by classified principal outstanding
+  # Book size — the ratio's denominator. Named so driver decomposition can split a change into
+  # mix and rate effects exactly rather than approximately.
+  weight_metric: principal_outstanding
   synonyms: [PAR, PAR 30, portfolio at risk, par30, 30+ DPD]
   requires_signoff: true
   signoff_note: >
@@ -183,6 +192,9 @@
   denominator: SUM({t}.principal_outstanding)
   scale: 100
   formula: Principal outstanding over 60 DPD divided by classified principal outstanding
+  # Book size — the ratio's denominator. Named so driver decomposition can split a change into
+  # mix and rate effects exactly rather than approximately.
+  weight_metric: principal_outstanding
   synonyms: [PAR 60, par60, 60+ DPD]
   requires_signoff: true
 
@@ -197,6 +209,9 @@
   denominator: SUM({t}.principal_outstanding)
   scale: 100
   formula: Principal outstanding over 90 DPD divided by classified principal outstanding
+  # Book size — the ratio's denominator. Named so driver decomposition can split a change into
+  # mix and rate effects exactly rather than approximately.
+  weight_metric: principal_outstanding
   synonyms: [PAR 90, par90, 90+ DPD]
   requires_signoff: true
 
@@ -211,6 +226,9 @@
   denominator: SUM({t}.principal_outstanding)
   scale: 100
   formula: NPA-classified principal outstanding divided by classified principal outstanding
+  # Book size — the ratio's denominator. Named so driver decomposition can split a change into
+  # mix and rate effects exactly rather than approximately.
+  weight_metric: principal_outstanding
   synonyms: [NPA ratio, gross NPA, GNPA, bad loan ratio, non performing]
   requires_signoff: true
 
@@ -224,6 +242,9 @@
   denominator: SUM({t}.total_due)
   scale: 100
   formula: Total principal and interest paid divided by total principal and interest due
+  # Total due — the ratio's denominator. Named so driver decomposition can split a change into
+  # mix and rate effects exactly rather than approximately.
+  weight_metric: amount_due
   synonyms: [collection efficiency, recovery rate, collections, CE, repayment rate]
   verified: 98.770481% over 18836 repayment events
 

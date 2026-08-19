@@ -29,8 +29,14 @@ class TestLoads:
         assert len(catalog.version) == 12
         assert get_catalog().version == catalog.version
 
-    def test_every_yaml_file_is_a_list(self):
+    def test_every_entry_yaml_file_is_a_list(self):
+        """Entry files are lists of entries. `drill.yaml` is the one exception: it declares
+        a graph — paths, a terminal and the offers made at every level — which is a mapping,
+        and flattening it into a list would lose the distinction."""
         for path in (*DEFS_DIR.glob("*.yaml"), *ACTIVE_DEFS_DIR.glob("*.yaml")):
+            if path.name == "drill.yaml":
+                assert isinstance(yaml.safe_load(path.read_text()), dict), path.name
+                continue
             assert isinstance(yaml.safe_load(path.read_text()), list), path.name
 
     def test_every_gold_view_has_a_complete_unique_column_section(self, catalog):

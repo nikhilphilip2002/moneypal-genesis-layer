@@ -499,3 +499,114 @@ class TestDrilldown:
             period=Period(relative="all_time"),
         )
         assert chart_for(spec, [{"branch": 1, "product": 13, "loan_count": 1}], catalog).drilldown is None
+
+    def test_every_chart_carries_its_next_questions(self, catalog):
+        spec = QuerySpec(
+            metrics=["loan_count"], dimensions=["branch"], period=Period(relative="last_fy")
+        )
+        chart = chart_for(spec, [{"branch": 1, "loan_count": 4}], catalog)
+        assert chart.next_steps
+        assert {"deeper", "explain", "act"} <= {s.kind for s in chart.next_steps}
+
+    def test_a_next_step_is_a_runnable_spec(self, catalog):
+        """The chip has to execute with no model in the loop, which means compiling."""
+        spec = QuerySpec(
+            metrics=["loan_count"], dimensions=["branch"], period=Period(relative="last_fy")
+        )
+        for step in chart_for(spec, [{"branch": 1, "loan_count": 4}], catalog).next_steps:
+            compile_spec(step.spec, catalog, TODAY)
+
+
+class TestExplain:
+    """"Why did it change?" — a decomposition, not a variance table."""
+
+    SPEC = QuerySpec(
+        metrics=["disbursement_total"],
+        dimensions=["branch"],
+        period=Period(relative="this_quarter"),
+        compare_to=Period(relative="last_quarter"),
+        explain=True,
+    )
+    CURRENT = [
+        {"branch": 1, "disbursement_total": 600.0},
+        {"branch": 2, "disbursement_total": 300.0},
+    ]
+    PRIOR = [
+        {"branch": 1, "disbursement_total": 400.0},
+        {"branch": 2, "disbursement_total": 400.0},
+    ]
+
+    def test_an_explained_comparison_is_a_waterfall(self, catalog):
+        chart = chart_for(self.SPEC, self.CURRENT, catalog, prior=result_of(self.PRIOR))
+        assert chart.chart_type == "waterfall"
+
+    def test_the_same_shape_without_explain_stays_a_dumbbell(self, catalog):
+        """The rows are identical. Only the question differs, so only the spec can say."""
+        spec = self.SPEC.model_copy(update={"explain": False})
+        chart = chart_for(spec, self.CURRENT, catalog, prior=result_of(self.PRIOR))
+        assert chart.chart_type == "dumbbell"
+
+    def test_it_bridges_from_the_prior_total_to_the_current_one(self, catalog):
+        chart = chart_for(self.SPEC, self.CURRENT, catalog, prior=result_of(self.PRIOR))
+        assert chart.rows[0]["kind"] == "total"
+        assert chart.rows[0]["value"] == pytest.approx(800.0)
+        assert chart.rows[-1]["kind"] == "total"
+        assert chart.rows[-1]["value"] == pytest.approx(900.0)
+
+    def test_the_contributions_bridge_the_two_totals(self, catalog):
+        chart = chart_for(self.SPEC, self.CURRENT, catalog, prior=result_of(self.PRIOR))
+        moves = [r["value"] for r in chart.rows if r["kind"] == "contribution"]
+        assert sum(moves) == pytest.approx(chart.rows[-1]["value"] - chart.rows[0]["value"])
+
+    def test_the_summary_names_the_driver(self, catalog):
+        chart = chart_for(self.SPEC, self.CURRENT, catalog, prior=result_of(self.PRIOR))
+        assert "rose" in chart.summary
+
+    def test_a_ratio_without_its_weight_is_not_drawn_as_a_bridge(self, catalog):
+        """A ratio's change only splits exactly when the denominator came through the query.
+        Without it there is no exact split and no honest total, so a waterfall would have
+        nothing at either end — it falls back to a comparison form, which claims only what a
+        ratio can support."""
+        spec = QuerySpec(
+            metrics=["collection_efficiency"],
+            dimensions=["branch"],
+            period=Period(relative="this_quarter"),
+            compare_to=Period(relative="last_quarter"),
+            explain=True,
+        )
+        chart = chart_for(
+            spec,
+            [{"branch": 1, "collection_efficiency": 80.0}],
+            catalog,
+            prior=result_of([{"branch": 1, "collection_efficiency": 95.0}]),
+        )
+        assert chart.chart_type != "waterfall"
+
+    def test_a_ratio_carrying_its_weight_is_a_bridge(self, catalog):
+        spec = QuerySpec(
+            metrics=["collection_efficiency", "amount_due"],
+            dimensions=["branch"],
+            period=Period(relative="this_quarter"),
+            compare_to=Period(relative="last_quarter"),
+            explain=True,
+        )
+        chart = chart_for(
+            spec,
+            [{"branch": 1, "collection_efficiency": 80.0, "amount_due": 500.0}],
+            catalog,
+            prior=result_of([{"branch": 1, "collection_efficiency": 95.0, "amount_due": 400.0}]),
+        )
+        assert chart.chart_type == "waterfall"
+
+    def test_the_share_column_is_whole_percent(self, catalog):
+        """`unit: percent` means already-scaled everywhere in the product. Passing the raw
+        0.62 fraction rendered a 62% driver as "0.62%" beneath a summary saying 62%."""
+        chart = chart_for(self.SPEC, self.CURRENT, catalog, prior=result_of(self.PRIOR))
+        top = next(r for r in chart.rows if r["kind"] == "contribution")
+        assert top["share"] == pytest.approx(200.0)
+
+    def test_the_axes_name_keys_that_exist_in_the_rows(self, catalog):
+        """A waterfall's rows are the decomposition's, not the query's."""
+        chart = chart_for(self.SPEC, self.CURRENT, catalog, prior=result_of(self.PRIOR))
+        assert chart.x is not None and chart.x.field in chart.rows[0]
+        assert all(s.field in chart.rows[0] for s in chart.series)

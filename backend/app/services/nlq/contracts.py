@@ -78,13 +78,19 @@ ChartType = Literal[
     "scatter",
     "heatmap",
     "small_multiples",
+    "waterfall",
 ]
 """Every form the renderer knows. The backend picks one deterministically from the result's
 shape, so the same question always looks the same — the model never chooses a chart.
 
+`waterfall` renders one thing only: a driver decomposition — prior total, each member's
+contribution, current total. It was previously excluded on the grounds that no question in
+this catalog called for it, which stopped being true when "why did it change?" became an
+answerable question rather than a refusal.
+
 Absent on purpose: any dual-axis form (two y-scales on one plot is the single most
-misleading chart there is — mixed units fall back to a table instead), and waterfall,
-treemap, radar and sankey, which have no question behind them in this catalog."""
+misleading chart there is — mixed units fall back to a table instead), and treemap, radar
+and sankey, which still have no question behind them."""
 
 
 class _Model(BaseModel):
@@ -169,6 +175,32 @@ class QuerySpec(_Model):
     product" and "our product mix", and only the question says which. Without this the
     backend can never justify a donut, because every donut candidate is also a perfectly
     good bar — and a donut chosen by shape alone would replace better bars everywhere."""
+
+    explain: bool = Field(
+        default=False,
+        description="The question asks *why* the metric moved, not what it is. Requires "
+        "`compare_to` and at least one dimension to attribute the change across; the change "
+        "is decomposed into each member's contribution instead of being tabulated as a "
+        "variance.",
+    )
+
+    @model_validator(mode="after")
+    def _check_explain_is_answerable(self) -> "QuerySpec":
+        # A decomposition with nothing to decompose across, or no change to decompose, is
+        # not a weaker answer — it is a different question, and would silently render as a
+        # one-bar waterfall. Refuse it at the contract instead.
+        if not self.explain:
+            return self
+        if self.compare_to is None:
+            raise ValueError("explain needs `compare_to` — there is no change without one")
+        if not self.dimensions:
+            raise ValueError("explain needs a dimension to attribute the change across")
+        # `metrics[0]` is the subject. A ratio carries its denominator as a second metric so
+        # the mix/rate split stays exact; anything beyond that is a multi-metric question
+        # wearing an explanation's clothes.
+        if len(self.metrics) > 2:
+            raise ValueError("explain decomposes one metric, optionally carrying its weight")
+        return self
 
     @model_validator(mode="after")
     def _check_no_duplicates(self) -> "QuerySpec":
@@ -285,6 +317,23 @@ class SeriesSpec(_Model):
     # different scale get two charts or a common index, never two y-scales on one plot.
 
 
+class DrillStep(_Model):
+    """One offered next question, with the spec that answers it already built.
+
+    The spec is the point. A chip the user taps runs through `/nlq/execute` with no model in
+    the loop, so drilling is instant, free, and cannot be misunderstood — the same property
+    that makes structural follow-ups trustworthy."""
+
+    kind: Literal["deeper", "sideways", "explain", "act"]
+    id: str = Field(description="Stable within one answer, so the UI can key on it.")
+    label: str = Field(description="Chip text, e.g. 'By agent'.")
+    question: str = Field(description="Standalone phrasing, for the audit log and history.")
+    dimension: str | None = Field(
+        default=None, description="The dimension this step moves to, where it moves to one."
+    )
+    spec: QuerySpec
+
+
 class ChartSpec(_Model):
     """The single response payload. `rows` is always populated — even for `kpi` and
     `line` — so the table view, CSV export and representation toggle cost no round-trip."""
@@ -304,6 +353,11 @@ class ChartSpec(_Model):
     rows: list[dict[str, Any]] = Field(default_factory=list)
     summary: str = Field(default="", description="Deterministic narration, templated from rows.")
     drilldown: QuerySpec | None = None
+    next_steps: list[DrillStep] = Field(
+        default_factory=list,
+        description="Where this answer can go next, derived from the catalog's drill graph. "
+        "An answer that carries its own follow-ups is what turns a chart into a chain.",
+    )
     lineage: Lineage
 
 

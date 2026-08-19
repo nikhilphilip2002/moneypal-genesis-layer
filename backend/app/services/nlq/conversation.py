@@ -50,6 +50,25 @@ _ADD_DIMENSION = re.compile(
     r"(?:me\s+)?(?:it\s+)?by\s+(?P<dimension>[a-z_ ]+)\??$",
     re.IGNORECASE,
 )
+_WHICH = re.compile(
+    r"^(?:and\s+|ok\s+|so\s+)?(?:which|what)\s+(?P<dimension>[a-z_ ]+?)\s*\??$",
+    re.IGNORECASE,
+)
+"""«which branches?» — the same operation as «by branch», in the words people actually use
+mid-drill. Anchored to the end of the string, so a full question that merely starts with
+"which branches..." carries extra words, matches no dimension, and falls through to the
+planner where it belongs."""
+
+_WHY = re.compile(
+    r"^(?:and\s+|but\s+|ok\s+)?why"
+    r"(?:\s+(?:is|was|are|were|did|does|do)?\s*(?:that|this|it|they|so|the\s+\w+)?)?"
+    r"(?:\s+(?:change|changed|move|moved|fall|fell|drop|dropped|rise|rose))?\s*\??$",
+    re.IGNORECASE,
+)
+"""Only the bare forms. "Why did collections fall in Q2?" is a complete question with its
+own subject and must be planned; folding it onto the anchor would answer about the anchor's
+metric instead of the one the user just named."""
+
 _SAME_FOR = re.compile(
     r"^(?:and\s+)?(?:the\s+)?same\s+(?:for|with)\s+(?P<value>.+?)\??$", re.IGNORECASE
 )
@@ -229,17 +248,29 @@ def resolve(
     if anchor is None or not text:
         return text, None
 
+    # "Why?" is the most common follow-up a director asks and the one that used to be lost
+    # entirely — it matched no pattern, named no metric, and reached the planner as a
+    # one-word question. It now resolves to the drill graph's decomposition step.
+    if _WHY.match(text):
+        step = _drill_step(anchor, cat, "explain")
+        if step is not None:
+            return step.question, step.spec
+
     # The structural patterns are checked FIRST. "same for gold loans" contains the word
     # "loans", which lexically matches a metric label and would otherwise be misread as a
     # new subject — losing the follow-up and the anchor with it.
-    match = _ADD_DIMENSION.match(text)
-    if match:
+    for pattern in (_ADD_DIMENSION, _WHICH):
+        match = pattern.match(text)
+        if not match:
+            continue
         dimension = _match_dimension(match.group("dimension"), cat)
         if dimension:
-            spec = anchor.model_copy(
-                update={"dimensions": _replace_categorical(anchor, dimension, cat)}
+            base = _without_explanation(anchor, cat)
+            spec = base.model_copy(
+                update={"dimensions": _replace_categorical(base, dimension, cat)}
             )
-            return f"{_describe(anchor, cat)} by {cat.dimensions[dimension].label.lower()}", spec
+            return f"{_describe(base, cat)} by {cat.dimensions[dimension].label.lower()}", spec
+
 
     for pattern in (_SAME_FOR, _WHAT_ABOUT):
         match = pattern.match(text)
@@ -284,16 +315,57 @@ def _looks_elliptical(text: str) -> bool:
     return len(lowered.split()) <= 4 and not lowered.startswith(("what is", "show", "how many"))
 
 
+def _without_explanation(spec: QuerySpec, catalog: Catalog) -> QuerySpec:
+    """Strip a decomposition back to the plain question underneath it.
+
+    After "why?", the anchor is an explanation: it carries `explain`, a `compare_to`, and —
+    for a ratio — the denominator metric that makes the mix/rate split exact. Re-splitting
+    from there ("which accounts?") must not inherit any of that, or a request for a list of
+    fifty accounts renders as a fifty-bar waterfall of a change nobody asked about.
+
+    Asking "why?" again at the new level is one tap, and that is the predictable behaviour.
+    """
+    if not spec.explain:
+        return spec
+    metrics = spec.metrics
+    subject = catalog.metrics.get(metrics[0])
+    # Drop the weight only if it is exactly the companion this module's explain step added.
+    if subject and len(metrics) == 2 and metrics[1] == subject.weight_metric:
+        metrics = metrics[:1]
+    return spec.model_copy(
+        update={"metrics": metrics, "explain": False, "compare_to": None}
+    )
+
+
+def _drill_step(anchor: QuerySpec, catalog: Catalog, kind: str):
+    """One offered next step from the drill graph, by kind. Imported late because the drill
+    engine reads the catalog this module also serves."""
+    from app.services.nlq import drilldown
+
+    steps = drilldown.next_steps(anchor, catalog, limit=len(catalog.dimensions))
+    return next((s for s in steps if s.kind == kind), None)
+
+
 def _match_dimension(text: str, catalog: Catalog) -> str | None:
     needle = text.strip().lower().rstrip("?").strip()
-    for dim in catalog.dimensions.values():
-        if needle == dim.id or needle == dim.label.lower():
-            return dim.id
-        if any(needle == s.lower() for s in dim.synonyms):
-            return dim.id
-    for dim in catalog.dimensions.values():
-        if needle and needle in dim.label.lower():
-            return dim.id
+    # People drill in the plural — "which branches?", "which accounts?" — while the catalog
+    # names dimensions in the singular.
+    candidates = [needle]
+    if needle.endswith("es") and len(needle) > 4:
+        candidates.append(needle[:-2])
+    if needle.endswith("s") and len(needle) > 3:
+        candidates.append(needle[:-1])
+
+    for candidate in candidates:
+        for dim in catalog.dimensions.values():
+            if candidate == dim.id or candidate == dim.label.lower():
+                return dim.id
+            if any(candidate == s.lower() for s in dim.synonyms):
+                return dim.id
+    for candidate in candidates:
+        for dim in catalog.dimensions.values():
+            if candidate and candidate in dim.label.lower():
+                return dim.id
     return None
 
 

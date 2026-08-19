@@ -1,0 +1,46 @@
+# The drill graph: where a question can go next.
+#
+# This replaces a hardcoded branch -> product -> scheme ladder that lived in charts.py. As
+# configuration it can grow a rung without a code change, and the rungs we cannot source
+# yet are declared as `pending` rather than quietly omitted — `region` is one line away from
+# working on the day the client supplies a branch master.
+#
+# Paths must not share a level. Overlap would make "one level deeper" ambiguous, and the
+# validator rejects it.
+
+# `primary` marks the paths worth offering as the *first* split of an undimensioned total.
+# Where and what suit any metric; risk dimensions only make sense for risk metrics, and a
+# borrower split is a list rather than a split — the `act` step already covers it.
+
+paths:
+  - id: portfolio_geo
+    label: Where
+    primary: true
+    # `region` has no source: there is no branch master anywhere in Oracle, so branch name,
+    # district and state cannot be derived (ORACLE_VS_POSTGRES_GAP_ANALYSIS.md §3.2).
+    pending: [region]
+    levels: [branch, agent]
+
+  - id: portfolio_what
+    label: What
+    primary: true
+    levels: [product, scheme]
+
+  - id: portfolio_who
+    label: Who
+    # `segment` is pending: customer segmentation is not defined in the warehouse. Borrower
+    # is the coarsest real rung on this path.
+    pending: [segment]
+    levels: [borrower]
+
+  - id: portfolio_risk
+    label: Risk
+    levels: [asset_class, dpd_bucket]
+
+# The last rung of any chain. Reaching it means the user wants the accounts themselves.
+terminal:
+  entity: loan_account
+  limit: 50
+
+# Offered at every level, because "why" and "who exactly" are always the next two questions.
+offers: [explain, act]

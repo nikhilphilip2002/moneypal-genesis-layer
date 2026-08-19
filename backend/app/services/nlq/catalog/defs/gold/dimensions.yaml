@@ -112,6 +112,18 @@
   description: Borrower name on the governed loan account master.
   cardinality: 17972
 
+- id: loan_account
+  label: Loan account
+  table: gold.loan_account_master
+  column: loan_account_number
+  type: categorical
+  synonyms: [account, loan account, account number, accounts, which accounts, account level]
+  description: >
+    The individual loan account. This is the finest grain the book has, and the terminal
+    rung of every drill path — a question that reaches here is asking for a worklist, not
+    another chart.
+  cardinality: 13510
+
 - id: agent_profile
   label: Agent
   table: gold.agent_master

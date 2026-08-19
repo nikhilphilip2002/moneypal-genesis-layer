@@ -13,6 +13,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
+from app.services.nlq import drilldown, drivers
 from app.services.nlq.catalog import Catalog, get_catalog
 from app.services.nlq.catalog import lookups
 from app.services.nlq.catalog.loader import canonical_enum_code
@@ -67,7 +68,11 @@ def build(
         requires_signoff=compiled.signoff_pending,
     )
 
-    if chart_type in ("variance", "dumbbell") and prior is not None:
+    decomposition = None
+    if chart_type == "waterfall" and prior is not None:
+        decomposition = _decompose(spec, rows, prior, cat)
+        rows, columns = _waterfall_rows(decomposition, cat)
+    elif chart_type in ("variance", "dumbbell") and prior is not None:
         rows, columns = _variance_rows(spec, compiled, rows, prior, cat)
 
     x_axis, series = _axes(spec, compiled, chart_type, cat)
@@ -75,6 +80,14 @@ def build(
 
     from app.services.nlq.narrator import narrate  # local: narrator imports chart vocabulary
 
+    if decomposition is not None:
+        summary = drivers.narrate(decomposition, cat)
+        if decomposition.caveat:
+            lineage.warnings.append(decomposition.caveat)
+    else:
+        summary = narrate(spec, compiled, result, rows, chart_type, cat)
+
+    steps = drilldown.next_steps(spec, cat)
     return ChartSpec(
         chart_type=chart_type,
         title=_title(spec, compiled, cat),
@@ -84,8 +97,14 @@ def build(
         series=series,
         columns=columns,
         rows=rows,
-        summary=narrate(spec, compiled, result, rows, chart_type, cat),
-        drilldown=_drilldown(spec, cat),
+        summary=summary,
+        # `drilldown` is the bar-click target and keeps its original *append* semantics —
+        # branch, then branch x agent. The `deeper` chip's spec cannot serve here because it
+        # *replaces* the split: clicking one branch would return a by-agent view of the whole
+        # book, so a control that implies narrowing would quietly widen. Narrowing to the
+        # clicked member is `drilldown.drill_into`, which needs the member the click carries.
+        drilldown=drilldown.append_level(spec, cat),
+        next_steps=steps,
         lineage=lineage,
     )
 
@@ -106,6 +125,16 @@ def choose_chart_type(
     time_dims = [d for d in dims if d.is_time]
     cat_dims = [d for d in dims if not d.is_time]
     n_rows = result.row_count
+
+    # "Why did it change?" is a different question from "what were the two values?", and
+    # only the spec can say which was asked — the row shapes are identical.
+    #
+    # A ratio whose denominator was not carried through the query is the one case that must
+    # not become a waterfall: without weights there is no exact split and no honest total,
+    # so the bridge would have nothing at either end. It falls back to the comparison forms,
+    # which claim only what a ratio can support.
+    if spec.explain and spec.compare_to is not None and cat_dims and _is_decomposable(spec, cat):
+        return "waterfall"
 
     # A comparison of two periods. Which form depends on what is being compared across:
     # per-item before/after is a dumbbell (two dots and the gap between them), while a
@@ -165,6 +194,16 @@ def choose_chart_type(
     if time_dims:
         return "line"
     return "table"
+
+
+def _is_decomposable(spec: QuerySpec, cat: Catalog) -> bool:
+    """Whether the change in this spec's metric can be split exactly across members."""
+    metric = cat.metrics.get(spec.metrics[0])
+    if metric is None:
+        return False
+    if not metric.is_ratio:
+        return True  # flows and stocks add up by construction
+    return bool(metric.weight_metric) and metric.weight_metric in spec.metrics
 
 
 def _is_flow(metric_id: str, cat: Catalog) -> bool:
@@ -313,6 +352,16 @@ def _axes(
         else None
     )
 
+    # A waterfall's rows are the decomposition's, not the query's: `step` and `value`
+    # replace the dimension and the metric, so the axes have to name those instead. Without
+    # this the export and the representation toggle read keys that are not in the rows.
+    if chart_type == "waterfall":
+        metric = cat.metrics[spec.metrics[0]]
+        return (
+            AxisSpec(field="step", label=axis_dim.label if axis_dim else "Driver", unit="text"),
+            [SeriesSpec(field="value", label="Contribution", unit=metric.unit)],
+        )
+
     # The comparison forms read `_variance_rows` output, whose columns are `previous`,
     # `current` and `delta` — the metric id is not a key in those rows, so pointing the
     # series at it would render an empty chart.
@@ -351,7 +400,7 @@ def _series_by(
     infers it from the shape of the data, which is guesswork that fails on the first
     dimension whose values happen to look numeric.
     """
-    if chart_type in ("kpi", "table", "variance", "dumbbell"):
+    if chart_type in ("kpi", "table", "variance", "dumbbell", "waterfall"):
         return None
     extra = [cat.dimensions[d] for d in spec.dimensions if not x_axis or d != x_axis.field]
     if not extra:
@@ -639,23 +688,59 @@ def _lineage_warnings(compiled: CompiledQuery, result: QueryResult) -> list[str]
     return warnings
 
 
-def _drilldown(spec: QuerySpec, cat: Catalog) -> QuerySpec | None:
-    """What a click re-runs: the same question one level deeper.
+def _decompose(
+    spec: QuerySpec, rows: list[dict[str, Any]], prior: QueryResult, cat: Catalog
+) -> drivers.Decomposition:
+    """Attribute the change to the members of the spec's categorical dimension."""
+    dimension = next(d for d in spec.dimensions if not cat.dimensions[d].is_time)
+    metric = cat.metrics[spec.metrics[0]]
+    # The weight only counts if the query actually carried it — a ratio explained without
+    # its denominator is reported as indicative rather than silently treated as exact.
+    weight = metric.weight_metric if metric.weight_metric in spec.metrics else None
+    return drivers.decompose(
+        metric.id, dimension, rows, prior.rows, cat, weight_metric=weight
+    )
 
-    Returns None when there is no sensible next level, rather than inventing one — a
-    drill-down that lands somewhere arbitrary is worse than none.
-    """
-    if len(spec.dimensions) >= 2:
-        return None
-    ladder = ["branch", "product", "scheme"]
-    current = spec.dimensions[0] if spec.dimensions else None
-    if current in (None, "month", "quarter", "fy", "year", "day", "week", "fy_quarter"):
-        nxt = "branch"
-    else:
-        try:
-            nxt = ladder[ladder.index(current) + 1]
-        except (ValueError, IndexError):
-            return None
-    if nxt == current or nxt not in cat.dimensions:
-        return None
-    return spec.model_copy(update={"dimensions": [*spec.dimensions, nxt]})
+
+def _waterfall_rows(
+    decomposition: drivers.Decomposition, cat: Catalog
+) -> tuple[list[dict[str, Any]], list[ColumnSpec]]:
+    """Prior total, each mover, current total — the bridge between two numbers.
+
+    The two totals are marked `total` so the renderer can floor them at zero while the
+    contributions float on the running balance."""
+    d = decomposition
+    unit = d.unit
+
+    rows: list[dict[str, Any]] = [
+        {"step": f"{d.label} before", "value": d.prior_total, "kind": "total"}
+    ]
+    for contribution in (*d.contributions, *( (d.other,) if d.other else () )):
+        row = {
+            "step": contribution.label,
+            "value": contribution.delta,
+            "kind": "contribution",
+            # Scaled to whole percent here, because `unit: percent` means "already scaled"
+            # everywhere else in the product — both `narrator.format_value` and the
+            # frontend's. Passing the raw 0.62 fraction rendered a 62% driver as "0.62%" in
+            # the table, directly under a summary sentence that said 62%.
+            "share": None if contribution.share is None else contribution.share * 100,
+        }
+        if d.is_ratio and d.exact:
+            row["rate_effect"] = contribution.rate_effect
+            row["mix_effect"] = contribution.mix_effect
+        rows.append(row)
+    rows.append({"step": f"{d.label} after", "value": d.current_total, "kind": "total"})
+
+    columns = [
+        ColumnSpec(name="step", label=d.dimension_label, unit="text", sensitivity="public"),
+        ColumnSpec(name="value", label=f"{d.label} contribution", unit=unit),  # type: ignore[arg-type]
+        ColumnSpec(name="kind", label="Kind", unit="text", sensitivity="public"),
+        ColumnSpec(name="share", label="Share of change", unit="percent"),
+    ]
+    if d.is_ratio and d.exact:
+        columns += [
+            ColumnSpec(name="rate_effect", label="Rate effect", unit=unit),  # type: ignore[arg-type]
+            ColumnSpec(name="mix_effect", label="Mix effect", unit=unit),  # type: ignore[arg-type]
+        ]
+    return rows, columns

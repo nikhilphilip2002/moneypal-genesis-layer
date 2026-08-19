@@ -3,6 +3,7 @@
 import { Loader2, AlertTriangle, Ban, HelpCircle, Sparkles } from 'lucide-react';
 import type { ChartSpec, WorkbenchCard as CardData } from '@/lib/api';
 import ChartRenderer from '@/components/nlq/ChartRenderer';
+import NextQuestions from '@/components/nlq/NextQuestions';
 import LineagePanel from '@/components/nlq/LineagePanel';
 import BriefRenderer from '@/components/intel/BriefRenderer';
 import WorkbenchCard from './WorkbenchCard';
@@ -117,6 +118,13 @@ function CardBody({ card, onAsk }: { card: CardData; onAsk: (q: string) => void 
     return (
       <WorkbenchCard source={card.source} title={chart.title || 'Result'} subtitle={chart.subtitle ?? undefined}>
         <ChartRenderer chart={chart} hideHeader />
+        {/* In the workbench a chip re-asks in words rather than executing the spec
+            directly: the turn has to go through the router so it lands in history with its
+            sources, exactly like any other question the user types. */}
+        <NextQuestions
+          steps={chart.next_steps ?? []}
+          onPick={(step) => onAsk(step.question)}
+        />
         <LineagePanel chart={chart} sourceLabel="Loan book" />
       </WorkbenchCard>
     );

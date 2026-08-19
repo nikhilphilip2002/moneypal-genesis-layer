@@ -29,6 +29,107 @@ def state(catalog):
     return state
 
 
+class TestDrillFollowUps:
+    """The chain: why -> which branches -> which accounts, none of it touching a model."""
+
+    @pytest.mark.parametrize(
+        "question", ["why?", "why", "why is that?", "and why did it change?", "why so"]
+    )
+    def test_a_bare_why_becomes_a_decomposition(self, question, state, catalog):
+        resolved, spec = conversation.resolve(question, state, catalog)
+        assert spec is not None
+        assert spec.explain is True
+        assert spec.compare_to is not None
+        assert "why" in resolved.lower()
+
+    def test_why_keeps_the_anchors_metric(self, state, catalog):
+        _, spec = conversation.resolve("why?", state, catalog)
+        assert spec.metrics[0] == "disbursement_total"
+
+    def test_why_is_not_offered_twice_in_a_row(self, state, catalog):
+        _, spec = conversation.resolve("why?", state, catalog)
+        conversation.set_anchor(state, spec)
+        _, again = conversation.resolve("why?", state, catalog)
+        assert again is None
+
+    @pytest.mark.parametrize("question", ["which branches?", "what branches", "which branch"])
+    def test_which_dimension_splits_by_that_dimension(self, question, state, catalog):
+        resolved, spec = conversation.resolve(question, state, catalog)
+        assert spec is not None
+        assert "branch" in spec.dimensions
+
+    def test_which_accounts_reaches_the_entity_level(self, state, catalog):
+        resolved, spec = conversation.resolve("which accounts?", state, catalog)
+        assert spec is not None
+        assert spec.dimensions == ["month", catalog.drill.entity]
+
+    def test_a_full_question_naming_a_dimension_is_not_a_follow_up(self, state, catalog):
+        """"Which branches have the lowest collection efficiency?" names its own metric and
+        must be planned, not folded onto the anchor."""
+        _, spec = conversation.resolve(
+            "which branches have the lowest collection efficiency?", state, catalog
+        )
+        assert spec is None
+
+    def test_an_unknown_dimension_falls_through_to_the_planner(self, state, catalog):
+        _, spec = conversation.resolve("which cost centres?", state, catalog)
+        assert spec is None
+
+    def test_region_still_resolves_to_branch(self, state, catalog):
+        """The catalog lists `region` as a synonym of branch, because no branch master and
+        therefore no real geography exists. Pinned here so that the day a region feed lands
+        and `drill.yaml` promotes the pending rung, this test fails and forces the synonym
+        to be reconsidered rather than left aliasing two different things."""
+        _, spec = conversation.resolve("which regions?", state, catalog)
+        assert spec is not None
+        assert "branch" in spec.dimensions
+
+    def test_resplitting_after_why_drops_the_decomposition(self, state, catalog):
+        """"why? -> which accounts?" must produce a list of accounts, not a fifty-bar
+        waterfall of a change the user has stopped asking about."""
+        _, explained = conversation.resolve("why?", state, catalog)
+        conversation.set_anchor(state, explained)
+
+        _, spec = conversation.resolve("which accounts?", state, catalog)
+        assert spec is not None
+        assert spec.explain is False
+        assert spec.compare_to is None
+
+    def test_resplitting_after_why_drops_the_carried_weight_metric(self, state, catalog):
+        """A ratio's explanation carries its denominator so the split stays exact. That
+        companion is an implementation detail of the decomposition, and leaving it behind
+        turns a simple breakdown into a two-metric grouped bar."""
+        anchor = QuerySpec(
+            metrics=["collection_efficiency"],
+            dimensions=["branch"],
+            period=Period(relative="this_month"),
+        )
+        conversation.set_anchor(state, anchor)
+        _, explained = conversation.resolve("why?", state, catalog)
+        assert explained.metrics == ["collection_efficiency", "amount_due"]
+        conversation.set_anchor(state, explained)
+
+        _, spec = conversation.resolve("which accounts?", state, catalog)
+        assert spec.metrics == ["collection_efficiency"]
+
+    def test_a_deliberate_second_metric_survives_a_resplit(self, state, catalog):
+        """Only the auto-added weight is stripped. A two-metric question the user actually
+        asked for keeps both."""
+        anchor = QuerySpec(
+            metrics=["disbursement_total", "loan_count"],
+            dimensions=["branch"],
+            period=Period(relative="this_month"),
+        )
+        conversation.set_anchor(state, anchor)
+        _, spec = conversation.resolve("which products?", state, catalog)
+        assert spec.metrics == ["disbursement_total", "loan_count"]
+
+    def test_why_without_an_anchor_falls_through(self, catalog):
+        empty = ConversationState(conversation_id="fresh")
+        _, spec = conversation.resolve("why?", empty, catalog)
+        assert spec is None
+
+
 class TestStructuralFollowUps:
     """These resolve without any model call — instant, free, and always correct."""
 

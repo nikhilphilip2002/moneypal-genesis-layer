@@ -160,6 +160,13 @@ class Metric:
     no_time_travel: bool = False
     restrictions: str = ""
     verified: str = ""
+    weight_metric: str | None = None
+    """For a ratio, the metric that *is* its denominator.
+
+    Driver decomposition splits a ratio's change into a mix effect and a rate effect, and
+    that split is only exact if each member's weight is known. Naming the denominator as a
+    metric — rather than re-deriving it from the SQL expression — keeps the weight governed
+    by the same catalog the numbers come from."""
 
     @property
     def is_ratio(self) -> bool:
@@ -210,6 +217,55 @@ class Join:
         """True when following this edge can multiply rows on the left — which would
         double-count any SUM taken from the left table (§2.5 rule 4)."""
         return self.cardinality in ("one_to_many", "many_to_many")
+
+
+@dataclass(frozen=True, slots=True)
+class DrillPath:
+    """One axis a question can be drilled along, coarsest rung first."""
+
+    id: str
+    label: str
+    levels: tuple[str, ...]
+    pending: tuple[str, ...] = ()
+    """Rungs the business asks for that no data source can currently fill. Declared rather
+    than omitted so the gap is visible, and so filling it is a YAML edit."""
+    primary: bool = False
+    """Whether this path's head is worth offering as the first split of any total."""
+
+    @property
+    def active_levels(self) -> tuple[str, ...]:
+        return self.levels
+
+    def index_of(self, level: str) -> int | None:
+        try:
+            return self.levels.index(level)
+        except ValueError:
+            return None
+
+    def next_after(self, level: str) -> str | None:
+        position = self.index_of(level)
+        if position is None:
+            return None
+        return self.levels[position + 1] if position + 1 < len(self.levels) else None
+
+
+@dataclass(frozen=True, slots=True)
+class DrillGraph:
+    """Where any answer can go next. Configuration, not a hardcoded ladder."""
+
+    paths: tuple[DrillPath, ...]
+    entity: str
+    entity_limit: int = 50
+    offers: tuple[str, ...] = ()
+
+    def path_for(self, level: str) -> DrillPath | None:
+        return next((p for p in self.paths if p.index_of(level) is not None), None)
+
+    def heads(self, *, primary_only: bool = False) -> tuple[str, ...]:
+        return tuple(
+            p.levels[0] for p in self.paths
+            if p.levels and (p.primary or not primary_only)
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -264,6 +320,7 @@ class Catalog:
     metrics: dict[str, Metric]
     joins: tuple[Join, ...]
     enums: dict[str, EnumBlock]
+    drill: DrillGraph
     version: str
 
     # -- lookup helpers ------------------------------------------------------------------
@@ -331,6 +388,16 @@ def _read(name: str) -> list[dict[str, Any]]:
     data = yaml.safe_load(path.read_text(encoding="utf-8"))
     if not isinstance(data, list):
         raise CatalogError(f"{name} must contain a YAML list, got {type(data).__name__}")
+    return data
+
+
+def _read_mapping(name: str) -> dict[str, Any]:
+    path = ACTIVE_DEFS_DIR / name
+    if not path.exists():
+        raise CatalogError(f"catalog file missing: {path}")
+    data = yaml.safe_load(path.read_text(encoding="utf-8"))
+    if not isinstance(data, dict):
+        raise CatalogError(f"{name} must contain a YAML mapping, got {type(data).__name__}")
     return data
 
 
@@ -463,8 +530,34 @@ def _load_metrics() -> dict[str, Metric]:
             no_time_travel=bool(raw.get("no_time_travel")),
             restrictions=raw.get("restrictions", ""),
             verified=str(raw.get("verified", "")),
+            weight_metric=raw.get("weight_metric"),
         )
     return out
+
+
+def _load_drill() -> DrillGraph:
+    raw = _read_mapping("drill.yaml")
+    paths = []
+    for entry in raw.get("paths") or []:
+        _require(entry, "id", "label", "levels", where="drill.yaml")
+        paths.append(
+            DrillPath(
+                id=entry["id"],
+                label=entry["label"],
+                levels=_tuple(entry["levels"]),
+                pending=_tuple(entry.get("pending")),
+                primary=bool(entry.get("primary")),
+            )
+        )
+    terminal = raw.get("terminal") or {}
+    if not terminal.get("entity"):
+        raise CatalogError("drill.yaml must declare terminal.entity — a chain needs an end")
+    return DrillGraph(
+        paths=tuple(paths),
+        entity=terminal["entity"],
+        entity_limit=int(terminal.get("limit", 50)),
+        offers=_tuple(raw.get("offers")),
+    )
 
 
 def _load_joins() -> tuple[Join, ...]:
@@ -518,6 +611,45 @@ def _load_enums() -> dict[str, EnumBlock]:
     return out
 
 
+def _drill_problems(catalog: Catalog) -> list[str]:
+    """The drill graph is navigation, so a broken rung is a dead end in front of a user."""
+    problems: list[str] = []
+    graph = catalog.drill
+    seen: dict[str, str] = {}
+
+    for path in graph.paths:
+        if not path.levels:
+            problems.append(f"drill path {path.id!r} has no active levels")
+        for level in path.levels:
+            if level not in catalog.dimensions:
+                problems.append(f"drill path {path.id!r} names unknown level {level!r}")
+            elif catalog.dimensions[level].is_time:
+                # Time is orthogonal to drilling: every level keeps whatever time grain the
+                # question already had, so a time dimension as a rung would fight it.
+                problems.append(f"drill path {path.id!r} uses time dimension {level!r} as a rung")
+            if level in seen:
+                problems.append(
+                    f"level {level!r} appears in both {seen[level]!r} and {path.id!r} — "
+                    "'one level deeper' would be ambiguous"
+                )
+            seen[level] = path.id
+        for level in path.pending:
+            if level in catalog.dimensions:
+                problems.append(
+                    f"drill path {path.id!r} lists {level!r} as pending, but it is now a "
+                    "real dimension — promote it into `levels`"
+                )
+
+    if graph.entity not in catalog.dimensions:
+        problems.append(f"drill terminal entity {graph.entity!r} is not a dimension")
+
+    unknown = set(graph.offers) - {"explain", "act"}
+    if unknown:
+        problems.append(f"drill.yaml offers unknown step kinds {sorted(unknown)}")
+
+    return problems
+
+
 def _cross_validate(catalog: Catalog) -> None:
     """Every reference must resolve. These are the errors that would otherwise surface as
     a broken query in front of a user."""
@@ -556,6 +688,27 @@ def _cross_validate(catalog: Catalog) -> None:
                 f"metric {metric.id!r} has an as_of_column but no as_of_key, so the "
                 "compiler cannot collapse the event log to one row per entity"
             )
+
+    for metric in catalog.metrics.values():
+        weight = metric.weight_metric
+        if not weight:
+            continue
+        if not metric.is_ratio:
+            problems.append(
+                f"metric {metric.id!r} declares a weight_metric but is not a ratio — there "
+                "is nothing for a weight to weight"
+            )
+        elif weight not in catalog.metrics:
+            problems.append(f"metric {metric.id!r} weights by unknown metric {weight!r}")
+        elif catalog.metrics[weight].base_table != metric.base_table:
+            # A weight drawn from a different table is a different population, so the mix
+            # and rate effects would stop summing to the change they claim to explain.
+            problems.append(
+                f"metric {metric.id!r} weights by {weight!r}, which sits on a different "
+                "base table"
+            )
+
+    problems.extend(_drill_problems(catalog))
 
     for join in catalog.joins:
         for side in (join.left, join.right):
@@ -596,7 +749,7 @@ def get_catalog() -> Catalog:
         ACTIVE_DEFS_DIR / name
         for name in (
             "tables.yaml", "columns.yaml", "dimensions.yaml", "metrics.yaml",
-            "joins.yaml", "enums.yaml",
+            "joins.yaml", "enums.yaml", "drill.yaml",
         )
     ]
     catalog = Catalog(
@@ -606,6 +759,7 @@ def get_catalog() -> Catalog:
         metrics=_load_metrics(),
         joins=_load_joins(),
         enums=_load_enums(),
+        drill=_load_drill(),
         version=_version(version_paths),
     )
     _cross_validate(catalog)
