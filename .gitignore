@@ -2,6 +2,10 @@
 .env
 .env.local
 *.env
+# `*.env` only catches names ending in .env (prod.env), not .env.prod — which is where
+# real keys actually get written. Ignore every .env.<suffix>, then re-admit the template.
+.env.*
+!.env.example
 
 # Python
 __pycache__/
