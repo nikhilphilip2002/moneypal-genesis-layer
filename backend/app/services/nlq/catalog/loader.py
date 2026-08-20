@@ -303,6 +303,111 @@ class DrillGraph:
 
 
 @dataclass(frozen=True, slots=True)
+class WorklistColumn:
+    """One field every worklist row carries. `sql` is reviewed text from the catalog."""
+
+    id: str
+    sql: str
+    label: str
+    unit: str = "text"
+    decode: str | None = None
+    sensitivity: str = "internal"
+
+
+@dataclass(frozen=True, slots=True)
+class EwsRule:
+    """An early-warning rule: a reviewed predicate plus the sentence it puts on the row.
+
+    The sentence matters as much as the predicate. A worklist that ranks accounts without
+    saying why each one is on it gets worked from the top until the officer loses patience;
+    one that states "184 days since the last receipt, with ₹2.4L overdue" gets worked."""
+
+    id: str
+    label: str
+    severity: str
+    predicate: str
+    reason: str = ""
+
+
+@dataclass(frozen=True, slots=True)
+class ScoreComponent:
+    id: str
+    label: str
+    weight: float
+
+
+@dataclass(frozen=True, slots=True)
+class ScoreModel:
+    """How the list is ordered. Every weight is shown on the card — a priority nobody can
+    interrogate is a priority nobody trusts twice."""
+
+    method: str
+    components: tuple[ScoreComponent, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class Playbook:
+    """The bank's own ratified action for a state of an account, matched first-wins."""
+
+    id: str
+    action: str
+    owner: str = ""
+    asset_class: tuple[str, ...] = ()
+    dpd_min: int | None = None
+    dpd_max: int | None = None
+
+    def matches(self, asset_class: Any, dpd: Any) -> bool:
+        if self.asset_class and canonical_enum_code(asset_class) not in self.asset_class:
+            return False
+        if self.dpd_min is not None or self.dpd_max is not None:
+            if dpd is None:
+                return False
+            try:
+                days = float(dpd)
+            except (TypeError, ValueError):
+                return False
+            if self.dpd_min is not None and days < self.dpd_min:
+                return False
+            if self.dpd_max is not None and days > self.dpd_max:
+                return False
+        return True
+
+
+@dataclass(frozen=True, slots=True)
+class WorklistPreset:
+    id: str
+    title: str
+    rules: tuple[str, ...]
+    description: str = ""
+    limit: int = 50
+    synonyms: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
+class WorklistConfig:
+    """Everything behind "what should we do about it?" — the base relation, the rules, the
+    priority score and the playbooks, all as reviewed configuration."""
+
+    base_from: str
+    base_alias: str
+    joins: tuple[str, ...]
+    tables: tuple[str, ...]
+    columns: tuple[WorklistColumn, ...]
+    expressions: dict[str, str]
+    rules: dict[str, EwsRule]
+    score: ScoreModel
+    playbooks: tuple[Playbook, ...]
+    presets: dict[str, WorklistPreset]
+    unavailable: tuple[dict[str, str], ...] = ()
+
+    def column(self, column_id: str) -> WorklistColumn | None:
+        return next((c for c in self.columns if c.id == column_id), None)
+
+    def playbook_for(self, asset_class: Any, dpd: Any) -> Playbook | None:
+        return next((p for p in self.playbooks if p.matches(asset_class, dpd)), None)
+
+
+@dataclass(frozen=True, slots=True)
 class EnumValue:
     code: str
     label: str
@@ -356,6 +461,7 @@ class Catalog:
     enums: dict[str, EnumBlock]
     drill: DrillGraph
     analyses: dict[str, AnalysisDef]
+    worklists: WorklistConfig
     version: str
 
     # -- lookup helpers ------------------------------------------------------------------
@@ -605,6 +711,88 @@ def _load_analyses() -> dict[str, AnalysisDef]:
     return out
 
 
+def _load_worklists() -> WorklistConfig:
+    raw = _read_mapping("worklists.yaml")
+    base = raw.get("base") or {}
+    if not base.get("from"):
+        raise CatalogError("worklists.yaml must declare base.from — a worklist needs a relation")
+
+    columns = []
+    for entry in base.get("columns") or []:
+        _require(entry, "id", "sql", "label", where="worklists.yaml/base.columns")
+        columns.append(
+            WorklistColumn(
+                id=entry["id"],
+                sql=" ".join(entry["sql"].split()),
+                label=entry["label"],
+                unit=entry.get("unit", "text"),
+                decode=entry.get("decode"),
+                sensitivity=entry.get("sensitivity", "internal"),
+            )
+        )
+
+    rules: dict[str, EwsRule] = {}
+    for entry in raw.get("rules") or []:
+        _require(entry, "id", "label", "severity", "predicate", where="worklists.yaml/rules")
+        rules[entry["id"]] = EwsRule(
+            id=entry["id"],
+            label=entry["label"],
+            severity=entry["severity"],
+            predicate=" ".join(entry["predicate"].split()),
+            reason=" ".join((entry.get("reason") or "").split()),
+        )
+
+    score_raw = raw.get("score") or {}
+    score = ScoreModel(
+        method=score_raw.get("method", "percentile_rank"),
+        components=tuple(
+            ScoreComponent(id=c["id"], label=c["label"], weight=float(c["weight"]))
+            for c in score_raw.get("components") or []
+        ),
+    )
+
+    playbooks = []
+    for entry in raw.get("playbooks") or []:
+        _require(entry, "id", "action", where="worklists.yaml/playbooks")
+        when = entry.get("when") or {}
+        playbooks.append(
+            Playbook(
+                id=entry["id"],
+                action=" ".join(entry["action"].split()),
+                owner=entry.get("owner", ""),
+                asset_class=tuple(str(v) for v in _tuple(when.get("asset_class"))),
+                dpd_min=when.get("dpd_min"),
+                dpd_max=when.get("dpd_max"),
+            )
+        )
+
+    presets: dict[str, WorklistPreset] = {}
+    for entry in raw.get("presets") or []:
+        _require(entry, "id", "title", "rules", where="worklists.yaml/presets")
+        presets[entry["id"]] = WorklistPreset(
+            id=entry["id"],
+            title=entry["title"],
+            rules=_tuple(entry["rules"]),
+            description=" ".join((entry.get("description") or "").split()),
+            limit=int(entry.get("limit", 50)),
+            synonyms=_tuple(entry.get("synonyms")),
+        )
+
+    return WorklistConfig(
+        base_from=base["from"],
+        base_alias=base.get("alias", "s"),
+        joins=tuple(" ".join(j.split()) for j in base.get("joins") or []),
+        tables=_tuple(base.get("tables")),
+        columns=tuple(columns),
+        expressions={k: " ".join(v.split()) for k, v in (raw.get("expressions") or {}).items()},
+        rules=rules,
+        score=score,
+        playbooks=tuple(playbooks),
+        presets=presets,
+        unavailable=tuple(raw.get("unavailable") or ()),
+    )
+
+
 def _load_drill() -> DrillGraph:
     raw = _read_mapping("drill.yaml")
     paths = []
@@ -774,6 +962,92 @@ def _analysis_problems(catalog: Catalog) -> list[str]:
     return problems
 
 
+_ROW_FIELD = re.compile(r"\{([a-zA-Z_][a-zA-Z0-9_]*)\}")
+
+# The worklist SQL is assembled from this file and nothing else, so the safety property to
+# hold is "the catalog contains no SQL that would leave the reviewed relation" rather than
+# "user input is escaped" — there is no user input in it. A predicate that reaches another
+# table, or ends a statement, is rejected at load time rather than at query time.
+_FORBIDDEN_IN_PREDICATE = (";", "--", "/*")
+_ALLOWED_SUBQUERY_TABLES = ("gold.portfolio_daily_snapshot",)
+
+
+def _worklist_problems(catalog: Catalog) -> list[str]:
+    """A worklist ends in someone phoning a borrower, so a broken one is worse than most.
+
+    Three failure modes are checked here because none of them fails loudly at query time:
+    a reason template naming a column that is not selected renders as a literal brace; a
+    score component over a missing column silently contributes zero and reorders the whole
+    list; a rule referencing a table outside the base relation would widen what the
+    read-only role is being asked to read.
+    """
+    problems: list[str] = []
+    config = catalog.worklists
+    known_tables = catalog.allowed_tables()
+    column_ids = {c.id for c in config.columns}
+
+    for table in (config.base_from, *config.tables):
+        if table not in known_tables:
+            problems.append(f"worklists.yaml base reads {table!r}, which is not a catalog table")
+
+    for column in config.columns:
+        if column.decode and column.decode not in catalog.enums:
+            problems.append(
+                f"worklist column {column.id!r} decodes with unknown enum {column.decode!r}"
+            )
+
+    for rule in config.rules.values():
+        where = f"worklist rule {rule.id!r}"
+        if rule.severity not in ("alert", "watch", "info"):
+            problems.append(f"{where} has unknown severity {rule.severity!r}")
+        for token in _FORBIDDEN_IN_PREDICATE:
+            if token in rule.predicate:
+                problems.append(f"{where} predicate contains {token!r}")
+        for name in _ROW_FIELD.findall(rule.predicate):
+            if name not in config.expressions:
+                problems.append(f"{where} predicate uses undefined expression {{{name}}}")
+        for name in _ROW_FIELD.findall(rule.reason):
+            if name not in column_ids:
+                problems.append(
+                    f"{where} reason names {{{name}}}, which is not a selected column — it "
+                    "would render to the reader as a literal brace"
+                )
+        # A predicate may only reach outside the base relation for the tables named here;
+        # anything else is a silent widening of what the worklist reads.
+        for match in re.findall(r"\bFROM\s+([a-z_]+\.[a-z_]+)", rule.predicate, re.IGNORECASE):
+            if match not in _ALLOWED_SUBQUERY_TABLES:
+                problems.append(f"{where} predicate reads {match!r}, outside the base relation")
+
+    weights = sum(c.weight for c in config.score.components)
+    if config.score.components and abs(weights - 1.0) > 1e-6:
+        problems.append(f"worklist score weights sum to {weights}, not 1.0")
+    for component in config.score.components:
+        if component.id not in column_ids:
+            problems.append(
+                f"worklist score component {component.id!r} is not a selected column — it "
+                "would contribute zero to every row and reorder the whole list"
+            )
+
+    if config.playbooks and config.playbooks[-1].asset_class:
+        problems.append(
+            "the last playbook must match anything, or an account can reach a worklist with "
+            "no recommended action at all"
+        )
+    if config.playbooks and (
+        config.playbooks[-1].dpd_min is not None or config.playbooks[-1].dpd_max is not None
+    ):
+        problems.append("the last playbook must match anything — see above")
+
+    for preset in config.presets.values():
+        for rule_id in preset.rules:
+            if rule_id not in config.rules:
+                problems.append(f"worklist {preset.id!r} names unknown rule {rule_id!r}")
+        if not preset.rules:
+            problems.append(f"worklist {preset.id!r} has no rules, so it would list the book")
+
+    return problems
+
+
 def _cross_validate(catalog: Catalog) -> None:
     """Every reference must resolve. These are the errors that would otherwise surface as
     a broken query in front of a user."""
@@ -834,6 +1108,7 @@ def _cross_validate(catalog: Catalog) -> None:
 
     problems.extend(_drill_problems(catalog))
     problems.extend(_analysis_problems(catalog))
+    problems.extend(_worklist_problems(catalog))
 
     for join in catalog.joins:
         for side in (join.left, join.right):
@@ -875,6 +1150,7 @@ def get_catalog() -> Catalog:
         for name in (
             "tables.yaml", "columns.yaml", "dimensions.yaml", "metrics.yaml",
             "joins.yaml", "enums.yaml", "drill.yaml", "analyses.yaml",
+            "worklists.yaml",
         )
     ]
     catalog = Catalog(
@@ -886,6 +1162,7 @@ def get_catalog() -> Catalog:
         enums=_load_enums(),
         drill=_load_drill(),
         analyses=_load_analyses(),
+        worklists=_load_worklists(),
         version=_version(version_paths),
     )
     _cross_validate(catalog)

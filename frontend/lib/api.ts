@@ -689,6 +689,48 @@ export type AnalysisResult = {
   warnings: string[];
 };
 
+// One term of a row's priority score, with its arithmetic exposed. A ranking whose order
+// cannot be interrogated gets trusted once and then quietly ignored.
+export type ScoreWeight = {
+  id: string;
+  label: string;
+  weight: number;
+  value: number;
+  contribution: number;
+};
+
+export type WorklistItem = {
+  rank: number;
+  account: string;
+  score: number;
+  severity: Severity;
+  // Why this account is on the list, one sentence per rule it triggered.
+  reasons: string[];
+  triggered: string[];
+  // From the bank's ratified playbook, never composed.
+  action: string;
+  owner: string;
+  weights: ScoreWeight[];
+  fields: Record<string, any>;
+};
+
+// A ranked, account-level list with the reason each row is on it — the end of the chain.
+export type Worklist = {
+  id: string;
+  title: string;
+  subtitle: string;
+  as_of: string | null;
+  method: string;
+  columns: ColumnSpec[];
+  items: WorklistItem[];
+  candidate_count: number;
+  lineage: Lineage;
+  warnings: string[];
+  // Rules we cannot write and what each would need, stated on the card so the reader knows
+  // the shape of what is missing rather than assuming the list is complete.
+  unavailable: string[];
+};
+
 export type NlqAskResponse = {
   conversation_id: string;
   turn_id: string;
@@ -697,6 +739,9 @@ export type NlqAskResponse = {
   // Present instead of `chart` when the question needed several queries. `chart` stays the
   // single-result field, so every existing consumer is unaffected.
   analysis: AnalysisResult | null;
+  // Present instead of `chart` when the answer is a list of accounts to act on rather than
+  // a number to read.
+  worklist: Worklist | null;
   clarification: NlqClarification | null;
   refusal: NlqRefusal | null;
   plan_summary: string;
@@ -731,6 +776,7 @@ export type NlqStreamEvent =
   | { type: 'plan'; route: string; model: string }
   | { type: 'chart'; response: NlqAskResponse }
   | { type: 'analysis'; response: NlqAskResponse }
+  | { type: 'worklist'; response: NlqAskResponse }
   | { type: 'clarify'; clarification: NlqClarification }
   | { type: 'refusal'; refusal: NlqRefusal }
   | { type: 'error'; message: string; retryable: boolean }
@@ -752,6 +798,48 @@ export const nlq = {
     apiRequest('/nlq/feedback', { method: 'POST', body: JSON.stringify({ turn_id, verdict, comment }) }),
   suggestions: (conversation_id?: string) =>
     apiRequest(`/nlq/suggestions${conversation_id ? `?conversation_id=${conversation_id}` : ''}`),
+
+  // Worklists. Also LLM-free: the rules, the score and the playbooks are catalog config, so
+  // a saved list regenerates identically whether or not the assistant is reachable.
+  worklist: (
+    worklist_id: string,
+    opts: { filters?: QuerySpec['filters']; limit?: number; save?: boolean } = {},
+  ): Promise<Worklist> =>
+    apiRequest('/nlq/worklist', {
+      method: 'POST',
+      body: JSON.stringify({ worklist_id, ...opts }),
+    }),
+
+  worklists: (): Promise<{
+    presets: { id: string; title: string; description: string; rules: string[] }[];
+    saved: {
+      worklist_id: string; preset_id: string; title: string;
+      created_at: string; item_count: number; open_count: number;
+    }[];
+    unavailable: { rule: string; needs: string }[];
+  }> => apiRequest('/nlq/worklists'),
+
+  setWorklistStatus: (
+    worklist_id: string,
+    account: string,
+    status: string,
+    opts: { note?: string; assigned_to?: string } = {},
+  ) =>
+    apiRequest(`/nlq/worklists/${worklist_id}/status`, {
+      method: 'POST',
+      body: JSON.stringify({ account, status, ...opts }),
+    }),
+
+  // Fetched rather than linked: the endpoint needs the Authorization header, so a bare
+  // <a href> would 401 and the browser would show its own error page instead of a file.
+  exportWorklist: async (worklist_id: string): Promise<Blob> => {
+    const token = getToken();
+    const response = await fetch(`${API_URL}/nlq/worklists/${worklist_id}/export`, {
+      headers: { ...(token && { Authorization: `Bearer ${token}` }) },
+    });
+    if (!response.ok) throw new Error(`Export failed: ${response.status}`);
+    return response.blob();
+  },
 
   // Streams SSE. Uses fetch rather than EventSource because the endpoint is a POST and
   // needs the Authorization header.
@@ -808,6 +896,7 @@ export const nlq = {
           case 'plan': yield { type: 'plan', route: payload.route, model: payload.model }; break;
           case 'chart': yield { type: 'chart', response: payload as NlqAskResponse }; break;
           case 'analysis': yield { type: 'analysis', response: payload as NlqAskResponse }; break;
+          case 'worklist': yield { type: 'worklist', response: payload as NlqAskResponse }; break;
           case 'clarify': yield { type: 'clarify', clarification: payload as NlqClarification }; break;
           case 'refusal': yield { type: 'refusal', refusal: payload as NlqRefusal }; break;
           case 'error': yield { type: 'error', message: payload.message, retryable: !!payload.retryable }; break;
@@ -832,7 +921,7 @@ export type WorkbenchSource = {
 
 export type WorkbenchCard = {
   source: string;
-  card_type: 'chart' | 'analysis' | 'brief' | 'schema' | 'clarify' | 'refusal' | 'error';
+  card_type: 'chart' | 'analysis' | 'worklist' | 'brief' | 'schema' | 'clarify' | 'refusal' | 'error';
   payload: any;
 };
 

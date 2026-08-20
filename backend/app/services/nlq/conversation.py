@@ -69,6 +69,28 @@ _WHY = re.compile(
 own subject and must be planned; folding it onto the anchor would answer about the anchor's
 metric instead of the one the user just named."""
 
+_ACTION = re.compile(
+    r"^(?:and\s+|so\s+|ok\s+)?(?:what|who)\s+"
+    r"(?:should|do|can)\s+(?:we|i)\s+"
+    r"(?:do|action|chase|call|collect|work)"
+    r"(?:\s+(?:about|with|on)\s+(?:that|this|it|them|these|those))?\s*\??$",
+    re.IGNORECASE,
+)
+"""«what should we do?» — the last rung of the chain, and the one the whole product is for.
+
+Rewritten into words rather than executed structurally, because the answer is a worklist and
+this function's structural shortcut returns a QuerySpec. The rewrite carries the anchor's
+filters into the question, so "what should we do?" asked under a chart of Aluva's arrears
+produces Aluva's collection list rather than the whole bank's."""
+
+_PRIORITY_LIST = re.compile(
+    r"^(?:and\s+|ok\s+)?(?:create|make|build|give|show|get)?\s*(?:me\s+)?(?:the\s+)?"
+    r"(?:today'?s?\s+)?(?:collection|collections|priority|call|chase)\s+"
+    r"(?:priority\s+)?(?:list|worklist)\s*\??$",
+    re.IGNORECASE,
+)
+"""«create today's collection priority list» — same treatment, said outright."""
+
 _SAME_FOR = re.compile(
     r"^(?:and\s+)?(?:the\s+)?same\s+(?:for|with)\s+(?P<value>.+?)\??$", re.IGNORECASE
 )
@@ -256,6 +278,12 @@ def resolve(
         if step is not None:
             return step.question, step.spec
 
+    # "What should we do?" ends the chain in a worklist rather than another chart. The
+    # rewrite names the list outright and carries the anchor's slice into the words, so the
+    # planner has nothing left to guess and the list matches the card that prompted it.
+    if _ACTION.match(text) or _PRIORITY_LIST.match(text):
+        return _worklist_question(anchor, cat), None
+
     # The structural patterns are checked FIRST. "same for gold loans" contains the word
     # "loans", which lexically matches a metric label and would otherwise be misread as a
     # new subject — losing the follow-up and the anchor with it.
@@ -344,6 +372,29 @@ def _drill_step(anchor: QuerySpec, catalog: Catalog, kind: str):
 
     steps = drilldown.next_steps(anchor, catalog, limit=len(catalog.dimensions))
     return next((s for s in steps if s.kind == kind), None)
+
+
+def _worklist_question(anchor: QuerySpec, catalog: Catalog) -> str:
+    """"What should we do?" as a question the planner can route without guessing.
+
+    Only the filters a worklist can honour are carried over. A period is deliberately not:
+    a collection list is about the book as it stands this morning, and inheriting "last
+    quarter" from the chart above would produce a list of accounts whose arrears may have
+    been cleared since.
+    """
+    from app.services.worklists.rules import FILTERABLE
+
+    parts = []
+    for filt in anchor.filters:
+        dimension = catalog.dimensions.get(filt.field)
+        if dimension is None or filt.field not in FILTERABLE or filt.op != "eq":
+            continue
+        enum = catalog.enum_for_dimension(dimension.decode) if dimension.decode else None
+        value = enum.label_for(filt.value) if enum else str(filt.value)
+        parts.append(f"{dimension.label.lower()} {value}")
+
+    scope = (" for " + " and ".join(parts)) if parts else ""
+    return f"today's collection priority list{scope}"
 
 
 def _match_dimension(text: str, catalog: Catalog) -> str | None:

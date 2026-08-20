@@ -28,7 +28,7 @@ logger = logging.getLogger(__name__)
 @dataclass(slots=True)
 class SourceResult:
     source: str
-    card_type: str  # "chart" | "analysis" | "brief" | "clarify" | "refusal" | "error"
+    card_type: str  # "chart" | "analysis" | "worklist" | "brief" | "clarify" | "refusal" | "error"
     payload: dict[str, Any]
     summary: str = ""  # short, feeds the multi-source synthesis; never invents numbers
     sources: list[dict] = field(default_factory=list)
@@ -91,6 +91,20 @@ async def run_db(
             card_type="analysis",
             payload=response.analysis.model_dump(mode="json"),
             summary=response.analysis.headline or response.plan_summary or "",
+        )
+    if response.worklist is not None:
+        # A list of accounts to act on. The summary names the count and the severity mix
+        # rather than the accounts themselves — a cross-source synthesis has no business
+        # restating borrower names, and the card already shows them to whoever may see them.
+        alerts = sum(1 for item in response.worklist.items if item.severity == "alert")
+        return SourceResult(
+            source="db",
+            card_type="worklist",
+            payload=response.worklist.model_dump(mode="json"),
+            summary=(
+                f"{response.worklist.title}: {len(response.worklist.items)} accounts, "
+                f"{alerts} needing immediate action."
+            ),
         )
     if response.chart is not None:
         return SourceResult(

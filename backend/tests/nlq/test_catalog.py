@@ -30,11 +30,14 @@ class TestLoads:
         assert get_catalog().version == catalog.version
 
     def test_every_entry_yaml_file_is_a_list(self):
-        """Entry files are lists of entries. `drill.yaml` is the one exception: it declares
-        a graph — paths, a terminal and the offers made at every level — which is a mapping,
-        and flattening it into a list would lose the distinction."""
+        """Entry files are lists of entries. Two files are documents rather than lists and
+        say so: `drill.yaml` declares a graph — paths, a terminal, the offers made at every
+        level — and `worklists.yaml` declares a base relation, its rules, a score model and
+        the playbooks. Flattening either into a list would lose the distinction between the
+        parts."""
+        documents = {"drill.yaml", "worklists.yaml"}
         for path in (*DEFS_DIR.glob("*.yaml"), *ACTIVE_DEFS_DIR.glob("*.yaml")):
-            if path.name == "drill.yaml":
+            if path.name in documents:
                 assert isinstance(yaml.safe_load(path.read_text()), dict), path.name
                 continue
             assert isinstance(yaml.safe_load(path.read_text()), list), path.name

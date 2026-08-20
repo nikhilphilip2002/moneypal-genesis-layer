@@ -11,7 +11,7 @@ import logging
 
 import uuid
 
-from fastapi import APIRouter, Header, HTTPException
+from fastapi import APIRouter, Header, HTTPException, Response
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
@@ -20,11 +20,13 @@ from app.services.nlq import db as nlq_db
 from app.services.nlq.ask import AskContext, ask_stream
 from app.services.nlq.catalog import get_catalog
 from app.services.nlq.compiler import CompileError
-from app.services.nlq.contracts import ChartSpec, QuerySpec
+from app.services.nlq.contracts import ChartSpec, Filter, QuerySpec, Worklist
 from app.services.nlq.executor import ExecutionError
 from app.services.nlq.llm import get_llm_client
 from app.services.nlq.pipeline import run_spec
 from app.services.nlq.ratelimit import RateLimitExceeded, check_rate_limit
+from app.services import worklists
+from app.services.worklists import store as worklist_store
 
 logger = logging.getLogger(__name__)
 
@@ -201,6 +203,125 @@ def submit_feedback(req: FeedbackRequest):
     if not recorded:
         raise HTTPException(404, "Unknown turn, or the audit log is unavailable.")
     return {"recorded": True}
+
+
+# --------------------------------------------------------------------------------------
+# Worklists — generating, saving, working and exporting a list of accounts
+# --------------------------------------------------------------------------------------
+
+
+class WorklistRequest(BaseModel):
+    worklist_id: str
+    filters: list[Filter] = Field(default_factory=list)
+    limit: int | None = Field(default=None, ge=1, le=200)
+    save: bool = Field(
+        default=False,
+        description="Freeze this list so it can be assigned and worked. A generated list is "
+        "a view; a saved one is a record, and re-running the rules tomorrow would silently "
+        "drop an account someone already called.",
+    )
+
+
+@router.post("/worklist", response_model=Worklist)
+def generate_worklist(req: WorklistRequest, authorization: str | None = Header(default=None)):
+    """Run a worklist preset. No LLM involved — the rules and the score are catalog config."""
+    user, role = _identity(authorization)
+    try:
+        result = worklists.build(
+            req.worklist_id, filters=list(req.filters), limit=req.limit, role=role
+        )
+    except worklists.WorklistError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    except ExecutionError as exc:
+        logger.error("worklist execution failed: %s", exc.detail)
+        raise HTTPException(503, str(exc)) from exc
+
+    if req.save:
+        saved = worklist_store.save(result, owner=user)
+        result.id = saved.worklist_id
+    return result
+
+
+@router.get("/worklists")
+def list_worklists(authorization: str | None = Header(default=None)):
+    """The presets available, and the lists already being worked."""
+    user, _role = _identity(authorization)
+    catalog = get_catalog()
+    return {
+        "presets": [
+            {
+                "id": preset.id,
+                "title": preset.title,
+                "description": preset.description,
+                "rules": [catalog.worklists.rules[r].label for r in preset.rules
+                          if r in catalog.worklists.rules],
+            }
+            for preset in catalog.worklists.presets.values()
+        ],
+        "saved": [
+            {
+                "worklist_id": s.worklist_id,
+                "preset_id": s.preset_id,
+                "title": s.title,
+                "created_at": s.created_at,
+                "item_count": s.item_count,
+                "open_count": s.open_count,
+            }
+            for s in worklist_store.list_recent(owner=user)
+        ],
+        # Named on the API as well as the card: a consumer building a dashboard on this
+        # should know which signals are absent rather than infer completeness from silence.
+        "unavailable": [
+            {"rule": entry.get("rule", ""), "needs": entry.get("needs", "")}
+            for entry in catalog.worklists.unavailable
+        ],
+    }
+
+
+class WorklistStatusRequest(BaseModel):
+    account: str
+    status: str
+    note: str = ""
+    assigned_to: str = ""
+
+
+@router.post("/worklists/{worklist_id}/status")
+def set_worklist_status(
+    worklist_id: str,
+    req: WorklistStatusRequest,
+    authorization: str | None = Header(default=None),
+):
+    """Record what a person did about one account. Only a person calls this — nothing in
+    the product infers that an account was contacted."""
+    user, _role = _identity(authorization)
+    try:
+        saved = worklist_store.set_status(
+            worklist_id, req.account, req.status,
+            owner=user, note=req.note, assigned_to=req.assigned_to,
+        )
+    except worklist_store.WorklistStoreError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    return {"worklist_id": saved.worklist_id, "statuses": saved.statuses}
+
+
+@router.get("/worklists/{worklist_id}/export")
+def export_worklist(worklist_id: str, authorization: str | None = Header(default=None)):
+    """The saved list as CSV, because that is how it reaches a branch.
+
+    Re-exports the frozen snapshot rather than re-running the rules: a list half-worked
+    since this morning must export as the list that was worked.
+    """
+    user, _role = _identity(authorization)
+    saved = worklist_store.get(worklist_id, owner=user)
+    if saved is None:
+        raise HTTPException(404, "Unknown worklist.")
+    return Response(
+        content=worklists.to_csv(saved.worklist),
+        media_type="text/csv",
+        headers={
+            "Content-Disposition": f'attachment; filename="{saved.preset_id}-{worklist_id[:8]}.csv"'
+        },
+    )
 
 
 @router.get("/suggestions")

@@ -258,6 +258,17 @@ class AnalysisPlan(_Model):
     reasoning: str = Field(default="", max_length=500)
 
 
+class WorklistPlan(_Model):
+    """"Create today's collection priority list." — a preset, bound to a slice."""
+
+    route: Literal["worklist"] = "worklist"
+    worklist_id: str = Field(description="Preset id from worklists.yaml.")
+    filters: list[Filter] = Field(default_factory=list)
+    limit: int | None = Field(default=None, ge=1, le=200)
+    confidence: float = Field(ge=0.0, le=1.0)
+    reasoning: str = Field(default="", max_length=500)
+
+
 class ClarifyPlan(_Model):
     route: Literal["clarify"] = "clarify"
     question: str
@@ -272,7 +283,7 @@ class RefusalPlan(_Model):
 
 
 PlanResult = Annotated[
-    Union[QuerySpecPlan, AnalysisPlan, SqlPlan, ClarifyPlan, RefusalPlan],
+    Union[QuerySpecPlan, AnalysisPlan, WorklistPlan, SqlPlan, ClarifyPlan, RefusalPlan],
     Field(discriminator="route"),
 ]
 """Tagged union emitted by the planner under constrained decoding."""
@@ -450,6 +461,71 @@ class AnalysisResult(_Model):
 
 
 # --------------------------------------------------------------------------------------
+# Worklists — where a chain ends in something a team does
+# --------------------------------------------------------------------------------------
+
+
+class ScoreWeight(_Model):
+    """One term of a row's priority score, with its arithmetic exposed.
+
+    Shown on the card rather than kept in the service. A ranking whose order cannot be
+    interrogated is a ranking that gets trusted once and then quietly ignored, and a
+    collections team is exactly the audience that will test it against the accounts they
+    already know."""
+
+    id: str
+    label: str
+    weight: float = Field(description="From the catalog, identical for every row.")
+    value: float = Field(description="This row's normalised component, 0 to 1.")
+    contribution: float = Field(description="weight x value — the term's share of the score.")
+
+
+class WorklistItem(_Model):
+    rank: int
+    account: str
+    score: float
+    severity: Severity = "info"
+    reasons: list[str] = Field(
+        default_factory=list,
+        description="Why this account is on the list, one sentence per rule it triggered. "
+        "A worklist without them gets worked from the top until the officer loses patience.",
+    )
+    triggered: list[str] = Field(default_factory=list, description="Rule ids, for filtering.")
+    action: str = Field(default="", description="From the bank's ratified playbook, never composed.")
+    owner: str = ""
+    weights: list[ScoreWeight] = Field(default_factory=list)
+    fields: dict[str, Any] = Field(
+        default_factory=dict, description="The decoded row, keyed by the catalog's column ids."
+    )
+
+
+class Worklist(_Model):
+    """A ranked, account-level list with the reason each row is on it.
+
+    The end of the chain. An answer that stops at a chart is not usable by a collections
+    team, and the step from "which branches are worst" to "who do I call this morning" is
+    the one the product exists to make."""
+
+    id: str
+    title: str
+    subtitle: str = ""
+    as_of: date | None = None
+    method: str = Field(default="", description="How the score was normalised.")
+    columns: list[ColumnSpec] = Field(default_factory=list)
+    items: list[WorklistItem] = Field(default_factory=list)
+    candidate_count: int = Field(
+        default=0, description="Accounts that triggered a rule, before the list was cut."
+    )
+    lineage: Lineage
+    warnings: list[str] = Field(default_factory=list)
+    unavailable: list[str] = Field(
+        default_factory=list,
+        description="Rules we cannot write and what each would need. Stated on the card so "
+        "the reader knows the shape of what is missing rather than assuming it is complete.",
+    )
+
+
+# --------------------------------------------------------------------------------------
 # Conversation + API envelope
 # --------------------------------------------------------------------------------------
 
@@ -457,7 +533,7 @@ class AnalysisResult(_Model):
 class Turn(_Model):
     question: str
     resolved_question: str
-    route: Literal["queryspec", "analysis", "sql", "clarify", "refuse"]
+    route: Literal["queryspec", "analysis", "worklist", "sql", "clarify", "refuse"]
     chart_type: ChartType | None = None
     row_count: int = 0
     ts: datetime
@@ -482,6 +558,11 @@ class AskResponse(_Model):
         default=None,
         description="Present instead of `chart` when the question needed several queries. "
         "`chart` stays the single-result field, so every existing consumer is unaffected.",
+    )
+    worklist: Worklist | None = Field(
+        default=None,
+        description="Present instead of `chart` when the answer is a list of accounts to "
+        "act on rather than a number to read.",
     )
     clarification: ClarifyPlan | None = None
     refusal: RefusalPlan | None = None

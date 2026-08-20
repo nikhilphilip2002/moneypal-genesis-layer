@@ -575,6 +575,23 @@ def _card_text(card: dict[str, Any]) -> str:
         return "\n".join(
             part for part in [f"[{source}] {title}", headline, *lines, narrative] if part
         )
+    if card_type == "worklist":
+        # The top of the list and the shape of the rest. A worklist can run to fifty named
+        # borrowers, and copying all of them into model context spends the budget on PII to
+        # no benefit — the follow-up questions are about the pattern, not the roster.
+        title = str(payload.get("title") or "Worklist")
+        items = payload.get("items") if isinstance(payload.get("items"), list) else []
+        head = [
+            f"- #{item.get('rank')} {item.get('account')} ({item.get('severity')}): "
+            + " ".join(str(r) for r in (item.get("reasons") or []))
+            for item in items[:5]
+            if isinstance(item, dict)
+        ]
+        rest = len(items) - len(head)
+        lines = [f"[{source}] {title}: {len(items)} accounts", *head]
+        if rest > 0:
+            lines.append(f"[{rest} further accounts omitted from model context]")
+        return "\n".join(lines)
     if card_type == "brief":
         summary = str(payload.get("summary") or "")
         points = payload.get("key_points") if isinstance(payload.get("key_points"), list) else []

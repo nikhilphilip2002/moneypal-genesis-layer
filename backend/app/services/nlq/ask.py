@@ -25,6 +25,7 @@ from app.services.nlq.contracts import (
     QuerySpecPlan,
     RefusalPlan,
     SqlPlan,
+    WorklistPlan,
 )
 from app.services.nlq.executor import ExecutionError
 from app.services.nlq.llm import LLMError
@@ -182,6 +183,11 @@ async def ask_stream(ctx: AskContext, catalog: Catalog | None = None) -> AsyncIt
             yield frame
         return
 
+    if isinstance(plan, WorklistPlan):
+        async for frame in _worklist_path(ctx, cat, plan, turn_id, state, resolved, started):
+            yield frame
+        return
+
     if isinstance(plan, SqlPlan):
         async for frame in _text_to_sql_path(ctx, cat, plan, turn_id, state, resolved, started):
             yield frame
@@ -277,6 +283,85 @@ async def _analysis_path(
         plan_summary=plan.reasoning or "",
     )
     yield sse("analysis", response.model_dump(mode="json"))
+    yield sse("done", {"turn_id": turn_id,
+                       "duration_ms": int((time.perf_counter() - started) * 1000)})
+
+
+async def _worklist_path(
+    ctx: AskContext,
+    cat: Catalog,
+    plan: WorklistPlan,
+    turn_id: str,
+    state,
+    resolved: str,
+    started: float,
+) -> AsyncIterator[str]:
+    """Run a worklist preset: one governed scan, then a transparent ranking.
+
+    The anchor is deliberately left alone. A worklist is the end of a chain, and the useful
+    follow-up after it is "why is that branch on here so often?" — which should continue from
+    the chart the user was looking at, not from a list of account numbers.
+    """
+    import asyncio
+
+    from app.services import worklists as worklist_service
+
+    yield sse("stage", {"stage": "querying", "worklist": plan.worklist_id})
+    try:
+        result = await asyncio.to_thread(
+            worklist_service.build,
+            plan.worklist_id,
+            catalog=cat,
+            as_of=ctx.today,
+            filters=list(plan.filters),
+            limit=plan.limit,
+            role=ctx.role,
+        )
+    except worklist_service.WorklistError as exc:
+        # A filter the account list cannot honour lands here. Saying so is the whole point:
+        # silently dropping it would send one branch's accounts to another branch's team.
+        logger.warning("NLQ worklist %s unavailable: %s", plan.worklist_id, exc)
+        audit.record(turn_id=turn_id, ctx=ctx, resolved=resolved, route="worklist",
+                     outcome="unavailable", detail=str(exc))
+        yield sse(
+            "refusal",
+            {
+                "route": "refuse",
+                "reason": "not_in_data",
+                "message": str(exc),
+                "examples": planner.refusal_examples(),
+            },
+        )
+        yield sse("done", {"turn_id": turn_id})
+        return
+    except ExecutionError as exc:
+        logger.error("NLQ worklist execution failed: %s", exc.detail)
+        audit.record(turn_id=turn_id, ctx=ctx, resolved=resolved, route="worklist",
+                     outcome="execution_error", detail=exc.detail)
+        yield sse("error", {"message": str(exc), "retryable": True})
+        yield sse("done", {"turn_id": turn_id})
+        return
+
+    conversation.append_turn(
+        state, ctx.question, resolved, "worklist", None, len(result.items)
+    )
+    conversation.save(state)
+
+    audit.record(
+        turn_id=turn_id, ctx=ctx, resolved=resolved, route="worklist", outcome="answered",
+        detail=plan.worklist_id,
+        row_count=len(result.items),
+        duration_ms=int((time.perf_counter() - started) * 1000),
+    )
+
+    response = AskResponse(
+        conversation_id=ctx.conversation_id,
+        turn_id=turn_id,
+        status="answered",
+        worklist=result,
+        plan_summary=plan.reasoning or "",
+    )
+    yield sse("worklist", response.model_dump(mode="json"))
     yield sse("done", {"turn_id": turn_id,
                        "duration_ms": int((time.perf_counter() - started) * 1000)})
 
@@ -434,13 +519,15 @@ async def ask_once(ctx: AskContext, catalog: Catalog | None = None) -> AskRespon
         event, _, data = frame.partition("\n")
         name = event.removeprefix("event: ").strip()
         body = data.removeprefix("data: ").strip()
-        if name in ("chart", "analysis", "clarify", "refusal", "error"):
+        if name in ("chart", "analysis", "worklist", "clarify", "refusal", "error"):
             payload[name] = json.loads(body)
 
     if "chart" in payload:
         return AskResponse.model_validate(payload["chart"])
     if "analysis" in payload:
         return AskResponse.model_validate(payload["analysis"])
+    if "worklist" in payload:
+        return AskResponse.model_validate(payload["worklist"])
     if "clarify" in payload:
         return AskResponse(
             conversation_id=ctx.conversation_id,

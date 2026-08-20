@@ -245,3 +245,71 @@ class TestTurnHistory:
         loaded = conversation.load("stale")
         assert loaded.active_spec is None
         assert loaded.turns == []
+
+
+class TestTheChainEndsInAction:
+    """"What should we do?" is the last rung, and the whole point of the chain. It resolves
+    to a worklist rather than another chart."""
+
+    def _anchor(self, **kwargs):
+        base = dict(
+            metrics=["overdue_total"],
+            dimensions=["branch"],
+            period=Period(relative="this_month"),
+        )
+        base.update(kwargs)
+        return ConversationState(conversation_id="chain", active_spec=QuerySpec(**base))
+
+    @pytest.mark.parametrize(
+        "question",
+        [
+            "what should we do?",
+            "what should we do about that",
+            "what should we do about these",
+            "who should we call?",
+            "create today's collection priority list",
+            "collection priority list",
+            "give me the call list",
+        ],
+    )
+    def test_it_resolves_to_a_worklist_question(self, question, catalog):
+        resolved, structural = conversation.resolve(question, self._anchor(), catalog)
+        assert "collection priority list" in resolved
+        # A worklist is not a QuerySpec, so the structural shortcut correctly declines it and
+        # the planner routes the rewritten words.
+        assert structural is None
+
+    def test_it_carries_the_slice_the_card_was_showing(self, catalog):
+        """Asked under a chart of Aluva's arrears, it must produce Aluva's list rather than
+        the whole bank's."""
+        state = self._anchor(filters=[Filter(field="branch", op="eq", value="1002")])
+        resolved, _ = conversation.resolve("what should we do?", state, catalog)
+        assert "Aluva" in resolved
+
+    def test_it_does_not_inherit_the_period(self, catalog):
+        """A collection list is about the book as it stands this morning. Inheriting "last
+        quarter" would list accounts whose arrears may have been cleared since."""
+        state = self._anchor(period=Period(relative="last_quarter"))
+        resolved, _ = conversation.resolve("what should we do?", state, catalog)
+        assert "last quarter" not in resolved
+
+    def test_it_drops_a_filter_the_account_list_cannot_honour(self, catalog):
+        """Carrying `dpd_bucket` into the words would produce a worklist request the rules
+        engine refuses, turning a working follow-up into an error."""
+        state = self._anchor(filters=[Filter(field="dpd_bucket", op="eq", value="90+")])
+        resolved, _ = conversation.resolve("what should we do?", state, catalog)
+        assert "DPD" not in resolved
+
+    @pytest.mark.parametrize(
+        "question",
+        [
+            "what should we do about our pricing strategy?",
+            "what should we do next quarter to grow the book?",
+        ],
+    )
+    def test_a_real_strategy_question_is_left_alone(self, question, catalog):
+        """Only the bare forms. A question with its own subject must reach the planner, which
+        refuses strategy advice — folding it onto a collections list would answer something
+        nobody asked."""
+        resolved, _ = conversation.resolve(question, self._anchor(), catalog)
+        assert resolved == question

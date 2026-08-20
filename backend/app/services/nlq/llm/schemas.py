@@ -31,6 +31,8 @@ def plan_schema(catalog: Catalog | None = None) -> dict[str, Any]:
     filterable = sorted(d for d in cat.dimensions if not cat.dimensions[d].is_time)
     allowed_tables = sorted(cat.allowed_tables())
 
+    from app.services.worklists.rules import FILTERABLE as worklist_filterable
+
     period = {
         "type": "object",
         "properties": {
@@ -179,6 +181,35 @@ def plan_schema(catalog: Catalog | None = None) -> dict[str, Any]:
                     "reasoning": reasoning,
                 },
                 "required": ["route", "analysis_id", "confidence"],
+                "additionalProperties": False,
+            },
+            {
+                "type": "object",
+                "properties": {
+                    "route": {"const": "worklist"},
+                    "worklist_id": {"type": "string", "enum": sorted(cat.worklists.presets)},
+                    # A worklist reads one account-level relation, so it accepts only the
+                    # slices that relation carries. Offering the full dimension enum here
+                    # would let the model ask for a filter the list cannot honour.
+                    "filters": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "field": {"type": "string", "enum": sorted(worklist_filterable)},
+                                "op": {"type": "string", "enum": ["eq", "in"]},
+                                "value": {},
+                            },
+                            "required": ["field", "op", "value"],
+                            "additionalProperties": False,
+                        },
+                        "maxItems": 4,
+                    },
+                    "limit": {"type": "integer", "minimum": 1, "maximum": 200},
+                    "confidence": confidence,
+                    "reasoning": reasoning,
+                },
+                "required": ["route", "worklist_id", "confidence"],
                 "additionalProperties": False,
             },
             {

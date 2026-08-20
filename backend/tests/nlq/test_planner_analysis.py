@@ -93,3 +93,76 @@ async def test_the_union_fields_of_other_routes_are_trimmed_away():
 
     assert isinstance(outcome.plan, AnalysisPlan)
     assert outcome.plan.analysis_id == "concentration"
+
+
+class TestWorklistRoute:
+    """"Create today's collection priority list" is not a chart question and not advice —
+    it is a preset over the account list. The route has to survive the planner the same way
+    the analysis route does."""
+
+    @pytest.mark.anyio
+    async def test_a_worklist_plan_survives_parsing(self):
+        from app.services.nlq.contracts import WorklistPlan
+
+        client = AnalysisClient(
+            '{"route":"worklist","worklist_id":"collections_today","confidence":0.9,'
+            '"reasoning":"a priority list"}'
+        )
+        outcome = await plan("Create today's collection priority list", client=client)
+        assert isinstance(outcome.plan, WorklistPlan)
+        assert outcome.plan.worklist_id == "collections_today"
+
+    @pytest.mark.anyio
+    async def test_a_slice_binds_to_the_preset(self):
+        from app.services.nlq.contracts import WorklistPlan
+
+        client = AnalysisClient(
+            '{"route":"worklist","worklist_id":"collections_today",'
+            '"filters":[{"field":"branch","op":"eq","value":"1002"}],"limit":20,'
+            '"confidence":0.9,"reasoning":""}'
+        )
+        outcome = await plan("Collection list for Aluva", client=client)
+        assert isinstance(outcome.plan, WorklistPlan)
+        assert outcome.plan.filters[0].value == "1002"
+        assert outcome.plan.limit == 20
+
+    @pytest.mark.anyio
+    async def test_an_unknown_preset_is_not_accepted(self):
+        from app.services.nlq.contracts import WorklistPlan
+
+        client = AnalysisClient(
+            '{"route":"worklist","worklist_id":"magic_list","confidence":0.9,"reasoning":""}'
+        )
+        outcome = await plan("Create a list", client=client)
+        assert not isinstance(outcome.plan, WorklistPlan)
+
+
+class TestThePromptNamesThePresets:
+    """The route descriptions say "one of the ANALYSES below" and "one of the WORKLISTS
+    below". Until both lists were appended there was nothing below: the schema enum stopped
+    the model naming a preset that does not exist, but gave it no way to tell two apart."""
+
+    def test_both_listings_reach_the_model(self):
+        from app.services.nlq.llm.prompts import build_messages
+
+        system = build_messages("anything")[0]["content"]
+        assert "### ANALYSES" in system
+        assert "### WORKLISTS" in system
+
+    def test_every_preset_id_is_named(self):
+        from app.services.nlq.catalog import get_catalog
+        from app.services.nlq.llm.prompts import build_messages
+
+        catalog = get_catalog()
+        system = build_messages("anything")[0]["content"]
+        for preset_id in (*catalog.analyses, *catalog.worklists.presets):
+            assert preset_id in system, preset_id
+
+    def test_the_schema_offers_both_routes(self):
+        import json
+
+        from app.services.nlq.llm.schemas import plan_schema
+
+        rendered = json.dumps(plan_schema())
+        assert '"const": "analysis"' in rendered
+        assert '"const": "worklist"' in rendered

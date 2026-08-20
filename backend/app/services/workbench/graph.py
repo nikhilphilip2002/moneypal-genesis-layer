@@ -195,7 +195,7 @@ async def _synthesize_node(state: WorkbenchState) -> dict[str, Any]:
     emit = state["emit"]
     results = [
         r for r in state.get("results", [])
-        if r.card_type in ("chart", "analysis", "brief") and r.summary.strip()
+        if r.card_type in ("chart", "analysis", "worklist", "brief") and r.summary.strip()
     ]
     # Only worth a merged lead when more than one source actually contributed.
     if len(results) < 2:

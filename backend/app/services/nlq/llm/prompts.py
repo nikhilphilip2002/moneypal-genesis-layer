@@ -62,6 +62,10 @@ review, an overview, or several indicators at once, rather than for one number. 
 `analysis_id` (one of the ANALYSES below), plus `period` and `filters` only if the user \
 named them. Prefer this over `queryspec` whenever a listed analysis covers the question: \
 one metric cannot answer "how healthy is the book".
+- "worklist": the question asks who to act on rather than what a number is — a list of \
+accounts to call, chase, visit or review. Emit `worklist_id` (one of the WORKLISTS below), \
+plus `filters` and `limit` only if the user named them. "Which branches have the worst \
+arrears" is a queryspec; "give me today's collection list for Aluva" is a worklist.
 - "sql": the question is about data in the warehouse that the catalog's metrics do not \
 cover. Emit `intent` and `tables`.
 - "clarify": genuinely ambiguous. Emit `question` and up to 3 concrete `suggestions`. \
@@ -72,7 +76,9 @@ itself (predictive, advice, unsafe). Never describe what the warehouse does or d
 contain, and never suggest alternative questions — the application supplies both from the \
 catalog.
     - "predictive": any forecast, projection, or "will/likely to" question.
-    - "advice": any "should we", recommendation, or strategy question.
+    - "advice": any "should we", recommendation, or strategy question. Exception: "what \
+should we do about these accounts" is a `worklist` — the recommended action there is the \
+bank's own ratified collections policy, retrieved, not composed.
     - "not_in_data": competitor data, macroeconomic data, or a breakdown the warehouse \
 cannot support (for example GL balances by product — no such link exists).
     - "out_of_scope": not about this lending book at all.
@@ -150,6 +156,18 @@ def catalog_block(catalog: Catalog | None = None) -> str:
             lines.append(f"    e.g. {'; '.join(definition.synonyms[:5])}")
 
     lines.append("")
+    lines.append("WORKLISTS (id | who is on it)")
+    for preset in cat.worklists.presets.values():
+        summary = " ".join(preset.description.split())
+        lines.append(f"- {preset.id} | {preset.title}. {summary}")
+        if preset.synonyms:
+            lines.append(f"    e.g. {'; '.join(preset.synonyms[:5])}")
+    lines.append(
+        "  A worklist filter can only name: "
+        + ", ".join(sorted(_worklist_filterable()))
+    )
+
+    lines.append("")
     lines.append("CANNOT BE ANSWERED")
     lines.append("- GL balances broken down by product, scheme or loan branch (no link exists)")
     lines.append("- Anything about competitors, market share, or macroeconomic indicators")
@@ -205,6 +223,31 @@ def _gold_yaml_for_version(version: str) -> str:
         else:
             content = path.read_text(encoding="utf-8")
         sections.extend((f"\n### {name}", "```yaml", content, "```"))
+
+    # The presets, compactly. The route descriptions above say "one of the ANALYSES below"
+    # and "one of the WORKLISTS below", and until these were appended there was no list
+    # below — the schema enum stopped the model naming a preset that does not exist, but it
+    # had no descriptions to choose between, so `portfolio_health` and `collections_focus`
+    # were indistinguishable to it. The full YAML is not sent: a worklist's rule predicates
+    # are SQL the model has no use for and would only crowd the context.
+    catalog = get_catalog()
+    sections.append("\n### ANALYSES (id | what it covers)")
+    for definition in catalog.analyses.values():
+        summary = " ".join(definition.description.split())
+        sections.append(f"- {definition.id} | {definition.title}. {summary}")
+        if definition.synonyms:
+            sections.append(f"    e.g. {'; '.join(definition.synonyms[:5])}")
+
+    sections.append("\n### WORKLISTS (id | who is on it)")
+    for preset in catalog.worklists.presets.values():
+        summary = " ".join(preset.description.split())
+        sections.append(f"- {preset.id} | {preset.title}. {summary}")
+        if preset.synonyms:
+            sections.append(f"    e.g. {'; '.join(preset.synonyms[:5])}")
+    sections.append(
+        "  A worklist filter can only name: " + ", ".join(sorted(_worklist_filterable()))
+    )
+
     return "\n".join(sections)
 
 
@@ -373,3 +416,11 @@ Example:
   question: "and by branch?"
   -> {"question":"disbursement total for Q1 FY26 by branch","is_followup":true}
 """
+
+
+def _worklist_filterable() -> list[str]:
+    """The slices a worklist can honour. Imported lazily so the prompt module stays
+    importable without the worklist service."""
+    from app.services.worklists.rules import FILTERABLE
+
+    return list(FILTERABLE)

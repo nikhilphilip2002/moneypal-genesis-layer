@@ -1,0 +1,222 @@
+# Worklists: the end of a drill chain, where an answer becomes something a team does today.
+#
+# Three separate things live here, and the separation is the point.
+#
+# `base`      — the one reviewed relation every worklist reads. Account-level, snapshot
+#               joined to the loan master, and nothing else. Written once, here, so no
+#               worklist can quietly widen its own reach.
+# `rules`     — early-warning predicates. Each is a reviewed SQL fragment plus the sentence
+#               it puts on the row. A rule states why an account is on the list, which is
+#               the difference between a worklist a collections officer acts on and a list
+#               they ignore. Predicates only reference `s.` (snapshot) and `l.` (loan
+#               master), and the SQL is fixed text — nothing here is user input.
+# `score`     — the priority order, as weighted components over declared columns. Every
+#               weight is visible on the card and in the lineage. A ranking nobody can
+#               interrogate is a ranking nobody trusts twice.
+# `playbooks` — what to do about it, from the bank's own ratified policy. Config, not model
+#               judgement: the assistant retrieves the bank's collections policy rather than
+#               inventing collections advice.
+#
+# Everything the rules read is data we hold today. Rules that would need a contact log, an
+# agency assignment or a promise-to-pay are absent rather than approximated — see
+# `unavailable` at the bottom, which is the list to hand the client.
+
+base:
+  from: gold.portfolio_daily_snapshot
+  alias: s
+  joins:
+    - "LEFT JOIN gold.loan_account_master l ON l.entity_num = s.entity_num
+       AND l.loan_account_number = s.loan_account_number"
+  tables: [gold.portfolio_daily_snapshot, gold.loan_account_master]
+  # Selected for every row, whatever the worklist. `column` is the SQL, `id` the row key.
+  columns:
+    - {id: loan_account_number, sql: "s.loan_account_number", label: Account, unit: text}
+    - {id: borrower, sql: "s.customer_name", label: Borrower, unit: text, sensitivity: pii}
+    - {id: branch, sql: "s.branch_code", label: Branch, unit: text, decode: branch}
+    - {id: product, sql: "s.product_code", label: Product, unit: text, decode: product}
+    - {id: agent, sql: "l.agent_name", label: Agent, unit: text, sensitivity: pii}
+    - {id: asset_class, sql: "s.asset_code", label: Asset class, unit: text, decode: asset_class}
+    - {id: dpd_days, sql: "s.dpd_days", label: Days past due, unit: days}
+    - {id: total_overdue, sql: "s.total_overdue", label: Overdue, unit: inr}
+    - {id: principal_outstanding, sql: "s.principal_outstanding", label: Outstanding, unit: inr}
+    - {id: emi_amount, sql: "l.emi_amount", label: EMI, unit: inr}
+    - {id: last_payment_date, sql: "l.last_payment_date", label: Last payment, unit: date}
+    - {id: days_since_last_payment,
+       sql: "CASE WHEN l.last_payment_date IS NULL THEN NULL
+                  ELSE (:as_of::date - l.last_payment_date::date) END",
+       label: Days since payment, unit: days}
+    - {id: days_since_repayment_start,
+       sql: "CASE WHEN l.repayment_start_date IS NULL THEN NULL
+                  ELSE (:as_of::date - l.repayment_start_date::date) END",
+       label: Days since repayment began, unit: days}
+    - {id: previous_asset_class, sql: "s.previous_asset_code", label: Previous asset class,
+       unit: text, decode: asset_class}
+    - {id: npa_date, sql: "l.npa_date", label: NPA date, unit: date}
+
+# Named SQL fragments, so a rule reads as its rule rather than as its encoding. Referenced
+# from a predicate as {name}; substitution is fixed text from this file, never user input.
+expressions:
+  asset_rank_current: >
+    CASE s.asset_code WHEN 'STD' THEN 0 WHEN 'SMA0' THEN 1 WHEN 'SMA1' THEN 2
+                      WHEN 'SMA2' THEN 3 WHEN 'NPA' THEN 4 ELSE -1 END
+  asset_rank_previous: >
+    CASE s.previous_asset_code WHEN 'STD' THEN 0 WHEN 'SMA0' THEN 1 WHEN 'SMA1' THEN 2
+                               WHEN 'SMA2' THEN 3 WHEN 'NPA' THEN 4 ELSE -1 END
+
+rules:
+  # Ordered most severe first. An account can trigger several; all of them are reported.
+  - id: never_paid
+    label: Never paid
+    severity: alert
+    reason: >
+      No repayment has ever been received on this account, and the repayment schedule
+      started {days_since_repayment_start} days ago.
+    predicate: >
+      COALESCE(l.receipt_count, 0) = 0
+      AND l.repayment_start_date IS NOT NULL
+      AND l.repayment_start_date < :as_of::date
+
+  - id: classification_worsened
+    label: Classification worsened
+    severity: alert
+    reason: >
+      The asset classification moved down from {previous_asset_class} to {asset_class} at
+      this snapshot.
+    # STD < SMA0 < SMA1 < SMA2 < NPA. An unrecognised code scores -1 and therefore never
+    # registers as a deterioration — an unknown state is not evidence of one.
+    predicate: >
+      s.previous_asset_code IS NOT NULL
+      AND {asset_rank_current} > {asset_rank_previous}
+      AND {asset_rank_previous} >= 0
+
+  - id: payments_stalled
+    label: Payments stalled
+    severity: alert
+    reason: >
+      {days_since_last_payment} days since the last receipt, with {total_overdue} overdue.
+    predicate: >
+      s.total_overdue > 0
+      AND l.last_payment_date IS NOT NULL
+      AND l.last_payment_date < :as_of::date - INTERVAL '60 days'
+
+  - id: overdue_exceeds_three_emis
+    label: Arrears past three instalments
+    severity: alert
+    reason: >
+      Arrears of {total_overdue} are more than three instalments of {emi_amount}.
+    predicate: >
+      l.emi_amount > 0 AND s.total_overdue > l.emi_amount * 3
+
+  - id: newly_npa
+    label: Newly NPA
+    severity: alert
+    reason: >
+      Classified NPA on {npa_date}, within the last 90 days.
+    predicate: >
+      s.is_npa AND l.npa_date IS NOT NULL
+      AND l.npa_date >= :as_of::date - INTERVAL '90 days'
+
+  - id: early_stress
+    label: Early stress
+    severity: watch
+    reason: >
+      {dpd_days} days past due — inside the window where contact still usually recovers the
+      instalment.
+    predicate: >
+      s.dpd_days BETWEEN 1 AND 30 AND s.total_overdue > 0
+
+  - id: large_exposure_in_arrears
+    label: Large exposure in arrears
+    severity: watch
+    reason: >
+      {principal_outstanding} outstanding is in the top 1% of the book and the account is
+      in arrears.
+    predicate: >
+      s.total_overdue > 0
+      AND s.principal_outstanding >= (
+        SELECT PERCENTILE_CONT(0.99) WITHIN GROUP (ORDER BY principal_outstanding)
+        FROM gold.portfolio_daily_snapshot
+      )
+
+score:
+  # Percentile rank within the candidate set, not min-max: one ₹5 Cr account would
+  # otherwise flatten every other row to nearly zero and the list would be sorted by
+  # exposure alone, which is not what a collections day looks like.
+  method: percentile_rank
+  components:
+    - {id: total_overdue, label: Overdue amount, weight: 0.4}
+    - {id: dpd_days, label: Days past due, weight: 0.3}
+    - {id: days_since_last_payment, label: Days since last payment, weight: 0.2}
+    - {id: principal_outstanding, label: Exposure, weight: 0.1}
+
+playbooks:
+  # First match wins, so these run most severe first. Ratified by the bank; the assistant
+  # retrieves policy here rather than composing collections advice of its own.
+  - id: npa_recovery
+    when: {asset_class: [NPA]}
+    action: Refer to the recovery desk. Any repayment arrangement needs credit sign-off.
+    owner: Recovery
+
+  - id: sma2_field_visit
+    when: {dpd_min: 61}
+    action: Field visit within 48 hours and a written repayment commitment.
+    owner: Branch collections
+
+  - id: sma1_call
+    when: {dpd_min: 31}
+    action: Telephone contact today; escalate to the branch manager if unreachable twice.
+    owner: Branch collections
+
+  - id: early_contact
+    when: {dpd_min: 1}
+    action: Reminder call or message before the account ages into the next bucket.
+    owner: Branch collections
+
+  - id: watch_only
+    when: {}
+    action: No collections action; monitor at the next snapshot.
+    owner: Branch collections
+
+presets:
+  - id: collections_today
+    title: Today's collection priority list
+    description: >
+      Every account in arrears, ranked by the priority score. This is the list a branch
+      works through on a normal day.
+    rules: [never_paid, classification_worsened, payments_stalled,
+            overdue_exceeds_three_emis, newly_npa, early_stress]
+    limit: 50
+    synonyms: [collection priority list, todays collections, who do we chase,
+               collections worklist, priority accounts, call list]
+
+  - id: early_warning
+    title: Early-warning accounts
+    description: >
+      Accounts showing stress before they become arrears cases — the list credit reviews
+      weekly rather than the list collections works daily.
+    rules: [never_paid, classification_worsened, early_stress, large_exposure_in_arrears]
+    limit: 50
+    synonyms: [early warning, emerging risk, accounts at risk, watchlist,
+               which accounts are deteriorating]
+
+  - id: large_exposures_at_risk
+    title: Large exposures in arrears
+    description: >
+      The biggest exposures that are behind, where a single account moves the portfolio
+      numbers on its own.
+    rules: [large_exposure_in_arrears, newly_npa, classification_worsened]
+    limit: 25
+    synonyms: [big accounts at risk, large exposures, top exposures overdue,
+               which large accounts are in trouble]
+
+# Rules we cannot write, and what each would need. Kept here rather than in a ticket so the
+# gap is visible next to the rules that do exist.
+unavailable:
+  - rule: Broken promise to pay
+    needs: A collections contact log with promise date and amount.
+  - rule: No contact attempt in N days
+    needs: The same contact log — attempt, channel and outcome per account.
+  - rule: Consecutive part-payments
+    needs: Receipt-level history (GENLNRCPT / GENLNRCPTDTL), still on the Oracle migration list.
+  - rule: Cheque or mandate bounce
+    needs: Payment-instrument outcomes, which no gold view carries.

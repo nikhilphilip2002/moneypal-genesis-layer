@@ -1,10 +1,12 @@
 'use client';
 
 import { Loader2, AlertTriangle, Ban, HelpCircle, Sparkles } from 'lucide-react';
-import type { AnalysisResult, ChartSpec, QuerySpec, WorkbenchCard as CardData } from '@/lib/api';
+import { nlq, type AnalysisResult, type ChartSpec, type QuerySpec, type Worklist,
+  type WorkbenchCard as CardData } from '@/lib/api';
 import AnalysisCard from '@/components/nlq/AnalysisCard';
 import ChartRenderer from '@/components/nlq/ChartRenderer';
 import NextQuestions from '@/components/nlq/NextQuestions';
+import WorklistCard from '@/components/nlq/WorklistCard';
 import LineagePanel from '@/components/nlq/LineagePanel';
 import BriefRenderer from '@/components/intel/BriefRenderer';
 import WorkbenchCard from './WorkbenchCard';
@@ -113,6 +115,19 @@ export default function WorkbenchTurn({ turn, onAsk }: { turn: WorkbenchTurnData
   );
 }
 
+// Saving is what makes the export meaningful: the CSV is the frozen list somebody is
+// working, not a fresh evaluation of the rules that would drop whatever was paid overnight.
+async function exportWorklist(worklist: Worklist) {
+  const saved = await nlq.worklist(worklist.id, { save: true });
+  const blob = await nlq.exportWorklist(saved.id);
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = `${worklist.id}.csv`;
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
 function CardBody({ card, onAsk }: { card: CardData; onAsk: (q: string) => void }) {
   if (card.card_type === 'chart') {
     const chart = card.payload as ChartSpec;
@@ -145,6 +160,22 @@ function CardBody({ card, onAsk }: { card: CardData; onAsk: (q: string) => void 
         <AnalysisCard
           analysis={analysis}
           onDrilldown={(_spec: QuerySpec, question: string) => onAsk(question)}
+        />
+      </WorkbenchCard>
+    );
+  }
+
+  if (card.card_type === 'worklist') {
+    const worklist = card.payload as Worklist;
+    return (
+      <WorkbenchCard
+        source={card.source}
+        title={worklist.title || 'Worklist'}
+        subtitle={worklist.subtitle || undefined}
+      >
+        <WorklistCard
+          worklist={worklist}
+          onExport={() => exportWorklist(worklist)}
         />
       </WorkbenchCard>
     );
