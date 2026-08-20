@@ -216,25 +216,68 @@ def test_question(q_tuple: tuple[int, str, str], base_url: str) -> dict:
             time.sleep(1)
 
 
+SELECTED_IDS = [1, 2, 4, 6, 8, 9, 11, 13, 18, 19, 21, 23, 27, 29, 31, 33, 35, 36, 45, 46]
+
+
+def parse_id_list(id_str: str) -> set[int]:
+    ids = set()
+    for part in id_str.split(","):
+        part = part.strip()
+        if not part:
+            continue
+        if "-" in part:
+            start_s, end_s = part.split("-", 1)
+            ids.update(range(int(start_s.strip()), int(end_s.strip()) + 1))
+        else:
+            ids.add(int(part))
+    return ids
+
+
 def main():
-    parser = argparse.ArgumentParser(description="Test runner for 50 NLQ enterprise questions")
+    parser = argparse.ArgumentParser(description="Test runner for NLQ enterprise questions")
     parser.add_argument("--url", default=DEFAULT_URL, help=f"Base URL (default: {DEFAULT_URL})")
     parser.add_argument("--workers", type=int, default=1, help="Concurrency workers (default: 1)")
-    parser.add_argument("--output", default="tests/top_50_results.json", help="Path to save output JSON")
+    parser.add_argument("--output", default="backend/tests/top_50_latest_results.json", help="Path to save output JSON")
+    parser.add_argument("--ids", type=str, default="", help="Comma-separated IDs or ranges to run (e.g. '1,2,6,11' or '1-10')")
+    parser.add_argument("--category", type=str, default="", help="Filter by category substring (e.g. 'CEO', 'Sales', 'Credit')")
+    parser.add_argument("--selected", action="store_true", help="Run only the curated selected/answered enterprise queries")
+    parser.add_argument("--remaining", action="store_true", help="Run the remaining queries (the ones outside the curated selected list)")
+    parser.add_argument("-v", "--verbose", action="store_true", help="Print full output details for each response")
     args = parser.parse_args()
 
-    print(f"🚀 Running 50-Questions Test Suite against: {args.url}")
+    active_questions = QUESTIONS
+    if args.selected:
+        active_questions = [q for q in active_questions if q[0] in SELECTED_IDS]
+    elif args.remaining:
+        active_questions = [q for q in active_questions if q[0] not in SELECTED_IDS]
+    elif args.ids:
+        target_ids = parse_id_list(args.ids)
+        active_questions = [q for q in active_questions if q[0] in target_ids]
+
+    if args.category:
+        cat_lower = args.category.lower()
+        active_questions = [q for q in active_questions if cat_lower in q[1].lower()]
+
+    if not active_questions:
+        print("❌ No matching questions found for the given criteria.")
+        sys.exit(1)
+
+    total_count = len(active_questions)
+    print(f"🚀 Running NLQ Test Suite against: {args.url}")
+    print(f"📋 Questions to run: {total_count} / {len(QUESTIONS)}")
     print(f"⚙️  Concurrency: {args.workers} worker(s)\n")
 
     results = []
     start_all = time.time()
     with concurrent.futures.ThreadPoolExecutor(max_workers=args.workers) as executor:
-        future_map = {executor.submit(test_question, q, args.url): q for q in QUESTIONS}
+        future_map = {executor.submit(test_question, q, args.url): q for q in active_questions}
         for idx, future in enumerate(concurrent.futures.as_completed(future_map), 1):
             res = future.result()
             results.append(res)
             st_color = "✅" if res["status"] == "answered" else ("🛑" if res["status"] == "refused" else "❓")
-            print(f"[{idx:02d}/50] {st_color} Q{res['id']:02d} [{res['status'].upper()}] ({res['output_type']}) - {res['question'][:45]}... ({res['duration_s']}s)")
+            print(f"[{idx:02d}/{total_count:02d}] {st_color} Q{res['id']:02d} [{res['status'].upper()}] ({res['output_type']}) - {res['question'][:48]}... ({res['duration_s']}s)")
+            if args.verbose and res.get("details"):
+                print(f"       └─ {res['details']}")
 
     results.sort(key=lambda x: x["id"])
     total_elapsed = time.time() - start_all
@@ -247,17 +290,18 @@ def main():
     print("\n" + "=" * 60)
     print(f"📊 SUMMARY REPORT (Total Time: {total_elapsed:.1f}s)")
     print("=" * 60)
-    print(f"Total Questions Evaluated : 50")
-    print(f"Directly Answered         : {answered} ({answered/50*100:.1f}%)")
-    print(f"Properly Refused          : {refused} ({refused/50*100:.1f}%)")
-    print(f"Clarifications Requested  : {clarify} ({clarify/50*100:.1f}%)")
-    print(f"Errors / Timeouts         : {errors} ({errors/50*100:.1f}%)")
+    print(f"Total Questions Evaluated : {total_count}")
+    print(f"Directly Answered         : {answered} ({answered/total_count*100:.1f}%)")
+    print(f"Properly Refused          : {refused} ({refused/total_count*100:.1f}%)")
+    print(f"Clarifications Requested  : {clarify} ({clarify/total_count*100:.1f}%)")
+    print(f"Errors / Timeouts         : {errors} ({errors/total_count*100:.1f}%)")
     print("=" * 60)
 
-    os.makedirs(os.path.dirname(args.output) or ".", exist_ok=True)
-    with open(args.output, "w") as f:
-        json.dump(results, f, indent=2)
-    print(f"💾 Full results saved to: {args.output}\n")
+    if args.output:
+        os.makedirs(os.path.dirname(args.output) or ".", exist_ok=True)
+        with open(args.output, "w") as f:
+            json.dump(results, f, indent=2)
+        print(f"💾 Results saved to: {args.output}\n")
 
 
 if __name__ == "__main__":
