@@ -448,3 +448,40 @@ class TestSignalEvidence:
         found, _warnings = scan._scan_data_health(catalog)
         assert found
         assert all(signal.spec is None for signal in found)
+
+
+class TestMemberLabels:
+    """Scan rows come straight from the executor, not through the chart layer, so they carry
+    raw codes and no `__raw` companion. Which half goes where matters: the code is what the
+    evidence spec filters on, the label is what the sentence says."""
+
+    def _rows(self):
+        return [
+            {"month": "2026-05-01", "branch": "1002", "par_30": 4.0},
+            {"month": "2026-06-01", "branch": "1002", "par_30": 4.1},
+            {"month": "2026-07-01", "branch": "1002", "par_30": 30.0},
+        ]
+
+    def test_the_signal_text_names_the_branch_not_its_code(self, catalog):
+        scope = catalog.signals.scopes["par30_by_branch"]
+        metric = catalog.metrics["par_30"]
+        spec = scan._series_spec(scope, catalog)
+        found = scan._scan_by_member(scope, metric, spec, self._rows(), catalog)
+        assert found
+        assert any("Aluva" in s.text for s in found)
+        assert not any("1002" in s.text for s in found)
+
+    def test_the_evidence_spec_filters_on_the_code(self, catalog):
+        scope = catalog.signals.scopes["par30_by_branch"]
+        metric = catalog.metrics["par_30"]
+        spec = scan._series_spec(scope, catalog)
+        found = scan._scan_by_member(scope, metric, spec, self._rows(), catalog)
+        branch_filters = [
+            f for s in found if s.spec for f in s.spec.filters if f.field == "branch"
+        ]
+        assert branch_filters
+        assert all(f.value == "1002" for f in branch_filters)
+
+    def test_an_undecodable_member_shows_its_code_rather_than_an_invented_name(self, catalog):
+        assert scan._label_for("branch", "9999", catalog) == "Branch 9999"
+        assert scan._label_for("borrower", "ACME LTD", catalog) == "ACME LTD"

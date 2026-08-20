@@ -19,9 +19,8 @@ import time
 from datetime import date, datetime, timezone
 from typing import Any
 
-from app.services.nlq import periods
 from app.services.nlq.catalog import Catalog, get_catalog
-from app.services.nlq.catalog.loader import DataHealthCheck, SignalScope, canonical_enum_code
+from app.services.nlq.catalog.loader import SignalScope, canonical_enum_code
 from app.services.nlq.compiler import CompiledQuery, CompileError, compile_spec
 from app.services.nlq.contracts import Period, QuerySpec, ScanReport, Signal
 from app.services.nlq.executor import ExecutionError, execute
@@ -191,14 +190,19 @@ def _scan_by_member(
         return [_signal(scope, metric, detection, spec, cat, member="", value=detection.magnitude)]
 
     # Rows arrive as (period, member, value). Regroup into one series per member.
+    #
+    # These rows come straight from the executor, not through the chart layer, so they carry
+    # raw codes and no `__raw` companion. The code is what the evidence spec filters on; the
+    # decoded label is what the signal text says. Reporting the code would put "PAR 30 for
+    # 1002 is above its limit" in front of a director, which is a sentence nobody can act on.
     by_member: dict[str, dict[str, float | None]] = {}
     labels: dict[str, str] = {}
     for row in rows:
-        raw = row.get(f"{dimension}__raw", row.get(dimension))
+        raw = row.get(dimension)
         if raw is None:
             continue
         key = canonical_enum_code(raw)
-        labels.setdefault(key, str(row.get(dimension, key)))
+        labels.setdefault(key, _label_for(dimension, raw, cat))
         by_member.setdefault(key, {})[str(row.get(grain, ""))] = _number(row.get(metric.id))
 
     stamps = sorted({s for series in by_member.values() for s in series})
@@ -222,7 +226,7 @@ def _scan_by_member(
         for key, detection in detectors.rank_movement(current, prior):
             found.append(
                 _signal(scope, metric, detection, _member_spec(spec, dimension, key, cat), cat,
-                        member=labels.get(key, key), value=current.get(key))
+                        member=labels.get(key) or key, value=current.get(key))
             )
     return found
 
@@ -386,6 +390,17 @@ _SEVERITY_RANK = {"alert": 0, "watch": 1, "info": 2}
 
 def _notability(signal: Signal) -> tuple[int, float]:
     return (_SEVERITY_RANK.get(signal.severity, 2), -abs(signal.magnitude))
+
+
+def _label_for(dimension: str, code: Any, cat: Catalog) -> str:
+    """The display name for a dimension member, or the code when the catalog has no decode.
+
+    Falls back to the code rather than inventing a name — an unknown branch shows as its
+    number, which is honest, where a made-up label would not be.
+    """
+    entry = cat.dimensions.get(dimension)
+    enum = cat.enums.get(entry.decode) if entry and entry.decode else None
+    return enum.label_for(code) if enum else str(code)
 
 
 def _number(value: Any) -> float | None:
