@@ -364,6 +364,10 @@ class TestBriefingHeadline:
 
 
 class TestScanReporting:
+    @pytest.fixture(autouse=True)
+    def _warehouse_up(self, monkeypatch):
+        monkeypatch.setattr(scan.nlq_db, "health", lambda: {"status": "ok"})
+
     def test_abstention_is_reported_not_swallowed(self, catalog, monkeypatch):
         """"Not enough data yet" and "nothing is wrong" must never look the same."""
         monkeypatch.setattr(scan, "_scan_scope", lambda scope, cat, today: [])
@@ -485,3 +489,90 @@ class TestMemberLabels:
     def test_an_undecodable_member_shows_its_code_rather_than_an_invented_name(self, catalog):
         assert scan._label_for("branch", "9999", catalog) == "Branch 9999"
         assert scan._label_for("borrower", "ACME LTD", catalog) == "ACME LTD"
+
+
+class TestAnUnreachableWarehouse:
+    """One pre-flight instead of fifteen failures.
+
+    Letting every scope discover the outage independently turned one line of operator
+    information into fifteen stack traces, which is how a log stops being read — and the
+    fifteenth trace is where a genuinely different failure would have been hiding.
+    """
+
+    def _down(self, monkeypatch, status="down"):
+        monkeypatch.setattr(
+            scan.nlq_db, "health", lambda: {"status": status, "detail": "connection refused"}
+        )
+
+    def test_nothing_is_scanned(self, catalog, monkeypatch):
+        self._down(monkeypatch)
+        called = []
+        monkeypatch.setattr(scan, "_scan_scope", lambda *a: called.append(a) or [])
+        report = scan.run(catalog=catalog, today=TODAY)
+        assert called == []
+        assert report.scopes_run == 0
+
+    def test_the_freshness_checks_are_skipped_too(self, catalog, monkeypatch):
+        """They are the queries most likely to be mistaken for a working scan, because they
+        are the simplest — and they need the same connection as everything else."""
+        self._down(monkeypatch)
+        monkeypatch.setattr(
+            scan, "_scan_data_health",
+            lambda cat: pytest.fail("freshness must not run without a warehouse"),
+        )
+        scan.run(catalog=catalog, today=TODAY)
+
+    def test_every_scope_is_recorded_as_abstained(self, catalog, monkeypatch):
+        """Not as failed, and not as clean. The scan did not judge anything."""
+        self._down(monkeypatch)
+        report = scan.run(catalog=catalog, today=TODAY)
+        assert set(report.abstained) == set(catalog.signals.scopes)
+        assert report.scopes_failed == 0
+        assert report.signals == []
+
+    def test_it_says_so_rather_than_reporting_a_clean_book(self, catalog, monkeypatch):
+        self._down(monkeypatch)
+        report = scan.run(catalog=catalog, today=TODAY)
+        assert any("not the same as a clean book" in w for w in report.warnings)
+
+    def test_an_unconfigured_role_is_treated_the_same(self, catalog, monkeypatch):
+        """A missing `nlq_readonly` password is not an outage, but it produces the same
+        fifteen failures and deserves the same single line."""
+        self._down(monkeypatch, status="unconfigured")
+        assert scan.run(catalog=catalog, today=TODAY).scopes_run == 0
+
+    def test_losing_the_warehouse_mid_scan_stops_the_rest(self, catalog, monkeypatch):
+        """The first scope to see it says so; the rest stop rather than each re-reporting
+        the same outage."""
+        from app.services.nlq.executor import ExecutionError
+
+        monkeypatch.setattr(scan.nlq_db, "health", lambda: {"status": "ok"})
+        attempts = []
+
+        def dies(scope, cat, today):
+            attempts.append(scope.id)
+            raise ExecutionError("unavailable", detail="OperationalError: server closed")
+
+        monkeypatch.setattr(scan, "_scan_scope", dies)
+        report = scan.run(catalog=catalog, today=TODAY)
+        assert len(attempts) < len(catalog.signals.scopes)
+        assert report.scopes_failed == 0
+        assert any("unreachable partway" in w for w in report.warnings)
+
+    def test_one_genuinely_bad_scope_still_steps_over_itself(self, catalog, monkeypatch):
+        """A broken scope is a different fact from a dead warehouse, and must not silence
+        the scan the way an outage does."""
+        from app.services.nlq.executor import ExecutionError
+
+        monkeypatch.setattr(scan.nlq_db, "health", lambda: {"status": "ok"})
+        monkeypatch.setattr(scan, "_scan_data_health", lambda cat: ([], []))
+
+        def flaky(scope, cat, today):
+            if scope.id == "par30_total":
+                raise ExecutionError("too broad", detail="plan cost exceeded")
+            return [Signal(scope=scope.id, label=scope.label, kind="threshold", text="x")]
+
+        monkeypatch.setattr(scan, "_scan_scope", flaky)
+        report = scan.run(catalog=catalog, today=TODAY)
+        assert report.scopes_failed == 1
+        assert len(report.signals) == len(catalog.signals.scopes) - 1

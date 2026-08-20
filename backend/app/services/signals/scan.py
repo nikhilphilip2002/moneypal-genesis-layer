@@ -19,6 +19,7 @@ import time
 from datetime import date, datetime, timezone
 from typing import Any
 
+from app.services.nlq import db as nlq_db
 from app.services.nlq.catalog import Catalog, get_catalog
 from app.services.nlq.catalog.loader import SignalScope, canonical_enum_code
 from app.services.nlq.compiler import CompiledQuery, CompileError, compile_spec
@@ -56,12 +57,38 @@ def run(
         if scopes is None or scope_id in scopes
     ]
 
+    # One pre-flight instead of fifteen failures. An unreachable warehouse is a single fact,
+    # and letting every scope discover it independently turns one line of operator
+    # information into fifteen stack traces — which is how the log stops being read.
+    warehouse = nlq_db.health()
+    if warehouse.get("status") != "ok":
+        logger.warning(
+            "signal scan skipped: warehouse is %s (%s)",
+            warehouse.get("status"), warehouse.get("detail", ""),
+        )
+        return ScanReport(
+            started_at=now,
+            duration_ms=int((time.perf_counter() - started) * 1000),
+            scopes_run=0,
+            scopes_failed=0,
+            warnings=[
+                "The warehouse was unreachable, so nothing was scanned. This is not the "
+                "same as a clean book."
+            ],
+            abstained=[scope.id for scope in wanted],
+        )
+
     signals: list[Signal] = []
     warnings: list[str] = []
     abstained: list[str] = []
     failed = 0
+    # The warehouse can go down mid-scan. The first scope to see it says so; the rest stop
+    # rather than each re-reporting the same outage.
+    lost = threading.Event()
 
     def one(scope: SignalScope) -> tuple[list[Signal], str, str]:
+        if lost.is_set():
+            return [], "", scope.id
         try:
             with _SCOPE_SLOTS:
                 found = _scan_scope(scope, cat, today)
@@ -69,8 +96,16 @@ def run(
             # different results, and a dashboard that renders them the same way tells the
             # reader the book is clean when the truth is that history is too short.
             return found, "", "" if found else scope.id
-        except (CompileError, ExecutionError) as exc:
-            logger.warning("signal scope %s failed: %s", scope.id, exc)
+        except ExecutionError as exc:
+            if _is_connection_failure(exc):
+                if not lost.is_set():
+                    lost.set()
+                    logger.warning("signal scan abandoned: the warehouse went away mid-scan")
+                return [], "", scope.id
+            logger.warning("signal scope %s failed: %s", scope.id, exc.detail or exc)
+            return [], f"{scope.label} could not be scanned.", ""
+        except CompileError as exc:
+            logger.warning("signal scope %s failed to compile: %s", scope.id, exc)
             return [], f"{scope.label} could not be scanned.", ""
 
     workers = min(MAX_WORKERS, max(len(wanted), 1))
@@ -83,7 +118,12 @@ def run(
             elif quiet:
                 abstained.append(quiet)
 
-    if scopes is None:
+    if lost.is_set():
+        warnings.append(
+            "The warehouse became unreachable partway through, so the scan is incomplete."
+        )
+
+    if scopes is None and not lost.is_set():
         health, health_warnings = _scan_data_health(cat)
         signals.extend(health)
         warnings.extend(health_warnings)
@@ -390,6 +430,20 @@ _SEVERITY_RANK = {"alert": 0, "watch": 1, "info": 2}
 
 def _notability(signal: Signal) -> tuple[int, float]:
     return (_SEVERITY_RANK.get(signal.severity, 2), -abs(signal.magnitude))
+
+
+_CONNECTION_FAILURES = ("OperationalError", "InterfaceError", "ReadOnlyNotConfigured")
+
+
+def _is_connection_failure(exc: ExecutionError) -> bool:
+    """Whether the warehouse went away, as opposed to one query being wrong.
+
+    The distinction decides whether the scan keeps going. A bad scope is worth reporting and
+    stepping over; a dead warehouse is worth reporting once and stopping, because the
+    remaining scopes will each rediscover it and say the same thing.
+    """
+    detail = getattr(exc, "detail", "") or ""
+    return any(name in detail for name in _CONNECTION_FAILURES)
 
 
 def _label_for(dimension: str, code: Any, cat: Catalog) -> str:
