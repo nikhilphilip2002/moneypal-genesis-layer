@@ -16,6 +16,7 @@ from dataclasses import dataclass
 from datetime import date
 from typing import Any, AsyncIterator
 
+from app.core.config import settings
 from app.services.nlq import audit, conversation, pii, planner, text_to_sql
 from app.services.nlq.catalog import Catalog, get_catalog
 from app.services.nlq.compiler import CompileError
@@ -35,7 +36,8 @@ from app.services.nlq.pipeline import run_spec, run_sql
 
 logger = logging.getLogger(__name__)
 
-HARD_CEILING_S = 20.0
+# Module-level so the budget test can replace it with a few milliseconds.
+HARD_CEILING_S = settings.nlq_request_budget_s
 
 NOT_IN_DATA_MESSAGE = (
     "The loan book does not hold what that question needs. It covers origination, "

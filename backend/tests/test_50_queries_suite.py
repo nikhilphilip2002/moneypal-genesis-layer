@@ -4,7 +4,7 @@
 Usage:
     python backend/tests/test_50_queries_suite.py
     NLQ_TEST_URL=http://localhost:8000 python backend/tests/test_50_queries_suite.py
-    python backend/tests/test_50_queries_suite.py --workers 4 --output results.json
+    python backend/tests/test_50_queries_suite.py --workers 1 --output results.json
 """
 
 import argparse
@@ -87,24 +87,24 @@ QUESTIONS = [
 
 def parse_sse(text: str) -> list[dict]:
     events = []
-    current_event = {}
-    for line in text.split("\n"):
-        line = line.strip()
-        if not line:
-            if current_event:
-                events.append(current_event)
-                current_event = {}
+    for block in text.strip().split("\n\n"):
+        if not block.strip():
             continue
-        if line.startswith("event:"):
-            current_event["event"] = line[6:].strip()
-        elif line.startswith("data:"):
-            data_str = line[5:].strip()
+        lines = block.strip().split("\n")
+        event_name = None
+        data_lines = []
+        for line in lines:
+            if line.startswith("event:"):
+                event_name = line[6:].strip()
+            elif line.startswith("data:"):
+                data_lines.append(line[5:].strip())
+        if event_name:
+            data_str = "\n".join(data_lines)
             try:
-                current_event["data"] = json.loads(data_str)
+                data_obj = json.loads(data_str)
             except Exception:
-                current_event["data"] = data_str
-    if current_event:
-        events.append(current_event)
+                data_obj = data_str
+            events.append({"event": event_name, "data": data_obj})
     return events
 
 
@@ -123,7 +123,7 @@ def test_question(q_tuple: tuple[int, str, str], base_url: str) -> dict:
     start_t = time.time()
     for attempt in range(2):
         try:
-            with urllib.request.urlopen(req, timeout=60) as resp:
+            with urllib.request.urlopen(req, timeout=90) as resp:
                 raw = resp.read()
                 elapsed = time.time() - start_t
                 events = parse_sse(raw.decode("utf-8", errors="replace"))
@@ -219,12 +219,12 @@ def test_question(q_tuple: tuple[int, str, str], base_url: str) -> dict:
 def main():
     parser = argparse.ArgumentParser(description="Test runner for 50 NLQ enterprise questions")
     parser.add_argument("--url", default=DEFAULT_URL, help=f"Base URL (default: {DEFAULT_URL})")
-    parser.add_argument("--workers", type=int, default=2, help="Concurrency workers (default: 2)")
+    parser.add_argument("--workers", type=int, default=1, help="Concurrency workers (default: 1)")
     parser.add_argument("--output", default="tests/top_50_results.json", help="Path to save output JSON")
     args = parser.parse_args()
 
     print(f"🚀 Running 50-Questions Test Suite against: {args.url}")
-    print(f"⚙️  Concurrency: {args.workers} workers\n")
+    print(f"⚙️  Concurrency: {args.workers} worker(s)\n")
 
     results = []
     start_all = time.time()

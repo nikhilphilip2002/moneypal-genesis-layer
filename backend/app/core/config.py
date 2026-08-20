@@ -115,6 +115,12 @@ class Settings:
         self.nlq_llm_api_key = get("NLQ_LLM_API_KEY")          # llama.cpp ignores it; kept for gateways
         self.nlq_llm_timeout_s = float(get("NLQ_LLM_TIMEOUT_S", "30") or "30")
         self.nlq_llm_max_retries = int(get("NLQ_LLM_MAX_RETRIES", "1") or "1")
+        # End-to-end budget for one streamed NLQ turn. Local llama.cpp deployments
+        # can need more than 20 seconds to evaluate a cold Gold-catalog prompt even
+        # when both the model and database are healthy.
+        self.nlq_request_budget_s = float(
+            get("NLQ_REQUEST_BUDGET_S", "60") or "60"
+        )
         # Qwen3 and its relatives think by default, and llama-server returns that trace in
         # `reasoning_content` with `content` left empty — the planner then sees no JSON at
         # all. Nothing on this path wants free-form reasoning, so thinking is off unless a
