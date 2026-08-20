@@ -28,7 +28,7 @@ logger = logging.getLogger(__name__)
 @dataclass(slots=True)
 class SourceResult:
     source: str
-    card_type: str  # "chart" | "analysis" | "worklist" | "brief" | "clarify" | "refusal" | "error"
+    card_type: str  # "chart" | "analysis" | "worklist" | "briefing" | "brief" | "clarify" | "refusal" | "error"
     payload: dict[str, Any]
     summary: str = ""  # short, feeds the multi-source synthesis; never invents numbers
     sources: list[dict] = field(default_factory=list)
@@ -91,6 +91,16 @@ async def run_db(
             card_type="analysis",
             payload=response.analysis.model_dump(mode="json"),
             summary=response.analysis.headline or response.plan_summary or "",
+        )
+    if response.briefing is not None:
+        # The headline is already deterministic and templated from the signals, so it is the
+        # right thing to hand the cross-source synthesis — passing the whole briefing would
+        # invite the synthesiser to re-rank what the detectors ranked.
+        return SourceResult(
+            source="db",
+            card_type="briefing",
+            payload=response.briefing.model_dump(mode="json"),
+            summary=response.briefing.headline or response.plan_summary or "",
         )
     if response.worklist is not None:
         # A list of accounts to act on. The summary names the count and the severity mix

@@ -795,6 +795,9 @@ export type NlqAskResponse = {
   // Present instead of `chart` when the answer is a list of accounts to act on rather than
   // a number to read.
   worklist: Worklist | null;
+  // Present instead of `chart` when the question was "what do I need to know?" — signals,
+  // indicators and lists for one desk.
+  briefing: Briefing | null;
   clarification: NlqClarification | null;
   refusal: NlqRefusal | null;
   plan_summary: string;
@@ -830,6 +833,7 @@ export type NlqStreamEvent =
   | { type: 'chart'; response: NlqAskResponse }
   | { type: 'analysis'; response: NlqAskResponse }
   | { type: 'worklist'; response: NlqAskResponse }
+  | { type: 'briefing'; response: NlqAskResponse }
   | { type: 'clarify'; clarification: NlqClarification }
   | { type: 'refusal'; refusal: NlqRefusal }
   | { type: 'error'; message: string; retryable: boolean }
@@ -976,6 +980,7 @@ export const nlq = {
           case 'chart': yield { type: 'chart', response: payload as NlqAskResponse }; break;
           case 'analysis': yield { type: 'analysis', response: payload as NlqAskResponse }; break;
           case 'worklist': yield { type: 'worklist', response: payload as NlqAskResponse }; break;
+          case 'briefing': yield { type: 'briefing', response: payload as NlqAskResponse }; break;
           case 'clarify': yield { type: 'clarify', clarification: payload as NlqClarification }; break;
           case 'refusal': yield { type: 'refusal', refusal: payload as NlqRefusal }; break;
           case 'error': yield { type: 'error', message: payload.message, retryable: !!payload.retryable }; break;
@@ -1000,7 +1005,9 @@ export type WorkbenchSource = {
 
 export type WorkbenchCard = {
   source: string;
-  card_type: 'chart' | 'analysis' | 'worklist' | 'brief' | 'schema' | 'clarify' | 'refusal' | 'error';
+  card_type:
+    | 'chart' | 'analysis' | 'worklist' | 'briefing' | 'brief' | 'schema'
+    | 'clarify' | 'refusal' | 'error';
   payload: any;
 };
 

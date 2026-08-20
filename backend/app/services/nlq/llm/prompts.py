@@ -66,6 +66,10 @@ one metric cannot answer "how healthy is the book".
 accounts to call, chase, visit or review. Emit `worklist_id` (one of the WORKLISTS below), \
 plus `filters` and `limit` only if the user named them. "Which branches have the worst \
 arrears" is a queryspec; "give me today's collection list for Aluva" is a worklist.
+- "briefing": the question is "what do I need to know?", "how are things this morning", \
+"what needs my attention", "anything I should be worried about" — an open request for a \
+read rather than for a number. Emit `persona_id`: the desk the question is being asked \
+from (DESKS below), defaulting to `ceo` when the question names none.
 - "sql": the question is about data in the warehouse that the catalog's metrics do not \
 cover. Emit `intent` and `tables`.
 - "clarify": genuinely ambiguous. Emit `question` and up to 3 concrete `suggestions`. \
@@ -247,6 +251,12 @@ def _gold_yaml_for_version(version: str) -> str:
     sections.append(
         "  A worklist filter can only name: " + ", ".join(sorted(_worklist_filterable()))
     )
+
+    sections.append("\n### DESKS (id | who is asking)")
+    for persona in catalog.personas.values():
+        sections.append(f"- {persona.id} | {persona.label}. {persona.description}")
+        if persona.synonyms:
+            sections.append(f"    e.g. {'; '.join(persona.synonyms[:5])}")
 
     return "\n".join(sections)
 

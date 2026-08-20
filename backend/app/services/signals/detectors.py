@@ -33,6 +33,16 @@ between months for no reason anybody can act on."""
 
 FLAT_EPSILON = 1e-9
 
+MIN_DISPERSION = 0.005
+"""The baseline's standard deviation must be at least this fraction of its own level before
+a z-score means anything.
+
+An absolute floor is not enough. Collection efficiency sat within a whisker of itself for
+eight months — a real, non-zero standard deviation, but a vanishing one — and the current
+month came back as *31 standard deviations* from the average. A 31-sigma reading is never a
+finding; it is a degenerate baseline, and printing it beside a genuine two-sigma move
+teaches the reader that the number is decorative."""
+
 
 @dataclass(frozen=True, slots=True)
 class Detection:
@@ -57,9 +67,11 @@ def level_shift(series: Sequence[float | None]) -> Detection | None:
     The classic z-score, with two guards that matter more than the statistic:
 
     * fewer than `MIN_BASELINE` priors and it abstains, because Genesis's history is short;
-    * a perfectly flat baseline produces a zero standard deviation and therefore an infinite
-      z-score. A series that has been 4.0 for eight months moving to 4.1 is not a five-sigma
-      event, it is a rounding change, so a flat baseline abstains too.
+    * a baseline with no meaningful spread abstains. A perfectly flat one gives a zero
+      standard deviation and an infinite z-score, and a nearly flat one is barely better:
+      collection efficiency sat within a whisker of itself for eight months and the next
+      reading scored 31 sigma. Neither is a finding; both are degenerate baselines, and a
+      metric that behaves this way belongs to the threshold detector instead.
     """
     values = [v for v in series if v is not None]
     if len(values) < MIN_BASELINE + 1:
@@ -70,6 +82,11 @@ def level_shift(series: Sequence[float | None]) -> Detection | None:
     variance = sum((v - mean) ** 2 for v in prior) / len(prior)
     deviation = math.sqrt(variance)
     if deviation < FLAT_EPSILON:
+        return None
+
+    # A baseline with no meaningful spread cannot support a z-score, whatever the absolute
+    # arithmetic says. Such a metric is judged against a threshold instead, or not at all.
+    if abs(mean) > FLAT_EPSILON and deviation / abs(mean) < MIN_DISPERSION:
         return None
 
     z = (current - mean) / deviation
@@ -244,6 +261,7 @@ def staleness(days_since: int | None, *, watch_days: int, alert_days: int) -> De
 
 __all__ = [
     "MIN_BASELINE",
+    "MIN_DISPERSION",
     "RANK_MOVE",
     "Z_ALERT",
     "Z_WATCH",

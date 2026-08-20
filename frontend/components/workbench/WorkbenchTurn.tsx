@@ -1,11 +1,12 @@
 'use client';
 
 import { Loader2, AlertTriangle, Ban, HelpCircle, Sparkles } from 'lucide-react';
-import { nlq, type AnalysisResult, type ChartSpec, type QuerySpec, type Worklist,
+import { nlq, type AnalysisResult, type ChartSpec, type QuerySpec, type Briefing, type Worklist,
   type WorkbenchCard as CardData } from '@/lib/api';
 import AnalysisCard from '@/components/nlq/AnalysisCard';
 import ChartRenderer from '@/components/nlq/ChartRenderer';
 import NextQuestions from '@/components/nlq/NextQuestions';
+import BriefingCard from '@/components/nlq/BriefingCard';
 import WorklistCard from '@/components/nlq/WorklistCard';
 import LineagePanel from '@/components/nlq/LineagePanel';
 import BriefRenderer from '@/components/intel/BriefRenderer';
@@ -159,6 +160,20 @@ function CardBody({ card, onAsk }: { card: CardData; onAsk: (q: string) => void 
             sources, exactly like any question the user types. */}
         <AnalysisCard
           analysis={analysis}
+          onDrilldown={(_spec: QuerySpec, question: string) => onAsk(question)}
+        />
+      </WorkbenchCard>
+    );
+  }
+
+  if (card.card_type === 'briefing') {
+    const briefing = card.payload as Briefing;
+    return (
+      <WorkbenchCard source={card.source} title={briefing.label || 'Briefing'}>
+        {/* Drilling re-asks in words, like every other card here: a workbench turn has to go
+            through the router to land in history with its sources. */}
+        <BriefingCard
+          briefing={briefing}
           onDrilldown={(_spec: QuerySpec, question: string) => onAsk(question)}
         />
       </WorkbenchCard>

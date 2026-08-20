@@ -145,3 +145,33 @@ def test_an_analysis_turn_survives_into_model_context():
     assert "PAR 30: 14.0%" in context
     assert "NPA ratio: 8.0%" in context
     assert "Arrears drove the move." in context
+
+
+def test_a_briefing_turn_survives_into_model_context():
+    """A briefing is the answer to "what do I need to know?" and its whole content is the
+    signals. Without a branch of its own it flattened to "", and a compacted thread lost the
+    morning read entirely — so "why is that?" afterwards had nothing to refer back to."""
+    turn_id = history.begin_turn("c3", "alice", "What do I need to know?")
+    history.set_route("c3", "alice", turn_id, sources=["db"], intent="briefing")
+    history.add_card("c3", "alice", turn_id, {
+        "source": "db",
+        "card_type": "briefing",
+        "payload": {
+            "persona": "risk",
+            "label": "Credit and Risk",
+            "headline": "2 things need attention: PAR 30, NPA ratio.",
+            "signals": [
+                {"id": "a", "text": "PAR 30 for Aluva is 14.0% — above the alert threshold of 10.0."},
+                {"id": "b", "text": "NPA ratio is 8.0% — 3.2 standard deviations from its average."},
+            ],
+            "analyses": [{"title": "Portfolio health", "headline": "1 of 4 indicators need attention."}],
+            "worklists": [],
+            "warnings": [],
+        },
+    })
+    history.complete_turn("c3", "alice", turn_id)
+
+    context = history.transcript("c3", user="alice")[-1]["content"]
+    assert "2 things need attention" in context
+    assert "PAR 30 for Aluva is 14.0%" in context
+    assert "Portfolio health" in context

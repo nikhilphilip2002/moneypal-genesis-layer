@@ -576,3 +576,78 @@ class TestAnUnreachableWarehouse:
         report = scan.run(catalog=catalog, today=TODAY)
         assert report.scopes_failed == 1
         assert len(report.signals) == len(catalog.signals.scopes) - 1
+
+
+class TestDegenerateBaselines:
+    """Found by running the scan against live data: collection efficiency had sat within a
+    whisker of itself for eight months, and the current month came back as *31 standard
+    deviations* from the average. A 31-sigma reading is never a finding — it is a baseline
+    with no spread — and printing it beside a genuine two-sigma move teaches the reader the
+    number is decorative."""
+
+    NEARLY_FLAT = [99.98, 99.99, 99.98, 100.0, 99.99, 99.98, 99.99, 99.99]
+
+    def test_a_whisker_wide_baseline_abstains(self):
+        assert detectors.level_shift([*self.NEARLY_FLAT, 96.3]) is None
+
+    def test_it_does_not_swallow_a_real_move_on_a_normal_series(self):
+        """The guard is relative to the level, so a metric that genuinely varies keeps its
+        sensitivity — 5% PAR wandering between 3 and 7 is a usable baseline."""
+        normal = [4.0, 5.5, 3.2, 6.1, 4.4, 5.0, 3.8, 4.9]
+        assert detectors.level_shift([*normal, 14.0]) is not None
+
+    def test_a_series_that_straddles_zero_is_still_judged(self):
+        """The guard divides by the mean, so a baseline averaging near zero would be exempt
+        by accident. Its absolute spread is what matters there."""
+        straddling = [-2.0, 3.0, -1.0, 2.0, -3.0, 1.0, 0.5, -0.5]
+        assert detectors.level_shift([*straddling, 40.0]) is not None
+
+    def test_percentage_points_matter_not_relative_ones(self):
+        """Collection efficiency moving 99.99 -> 96.3 is a real 3.7-point fall. It is not a
+        z-score finding, and the catalog gives it thresholds for exactly that reason."""
+        assert detectors.threshold_breach(
+            96.3, watch_below=95.0, alert_below=90.0
+        ) is None
+        assert detectors.threshold_breach(
+            88.0, watch_below=95.0, alert_below=90.0
+        ) is not None
+
+
+class TestFreshnessReadsTheExecutorsDates:
+    """The executor renders dates as ISO strings so a ChartSpec serialises straight to the
+    browser. A freshness check that type-checked for `date` matched none of them and
+    reported "no dated rows at all" for all four source tables — four confident alerts about
+    a warehouse that was loading perfectly well."""
+
+    def test_an_iso_string_is_read_as_a_date(self):
+        assert scan._as_date("2026-07-29") == date(2026, 7, 29)
+
+    def test_a_timestamp_string_is_truncated_to_its_day(self):
+        assert scan._as_date("2026-07-29T14:03:00") == date(2026, 7, 29)
+
+    def test_a_real_date_still_works(self):
+        assert scan._as_date(date(2026, 7, 29)) == date(2026, 7, 29)
+
+    def test_a_genuinely_empty_table_still_alerts(self):
+        assert scan._as_date(None) is None
+        assert scan._as_date("") is None
+
+    def test_a_fresh_table_produces_no_signal(self, catalog, monkeypatch):
+        from datetime import timedelta
+
+        class Result:
+            rows = [{"newest": (date.today() - timedelta(days=1)).isoformat()}]
+
+        monkeypatch.setattr("app.services.signals.scan.execute", lambda q: Result())
+        found, warnings = scan._scan_data_health(catalog)
+        assert found == []
+        assert warnings == []
+
+    def test_a_genuinely_stale_table_still_alerts(self, catalog, monkeypatch):
+        class Result:
+            rows = [{"newest": "2020-01-01"}]
+
+        monkeypatch.setattr("app.services.signals.scan.execute", lambda q: Result())
+        found, _warnings = scan._scan_data_health(catalog)
+        assert len(found) == len(catalog.signals.data_health)
+        assert all(s.severity == "alert" for s in found)

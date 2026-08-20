@@ -21,6 +21,7 @@ from app.services.nlq.compiler import CompileError
 from app.services.nlq.contracts import (
     AnalysisPlan,
     AskResponse,
+    BriefingPlan,
     ClarifyPlan,
     QuerySpecPlan,
     RefusalPlan,
@@ -185,6 +186,11 @@ async def ask_stream(ctx: AskContext, catalog: Catalog | None = None) -> AsyncIt
 
     if isinstance(plan, WorklistPlan):
         async for frame in _worklist_path(ctx, cat, plan, turn_id, state, resolved, started):
+            yield frame
+        return
+
+    if isinstance(plan, BriefingPlan):
+        async for frame in _briefing_path(ctx, cat, plan, turn_id, state, resolved, started):
             yield frame
         return
 
@@ -366,6 +372,90 @@ async def _worklist_path(
                        "duration_ms": int((time.perf_counter() - started) * 1000)})
 
 
+async def _briefing_path(
+    ctx: AskContext,
+    cat: Catalog,
+    plan: BriefingPlan,
+    turn_id: str,
+    state,
+    resolved: str,
+    started: float,
+) -> AsyncIterator[str]:
+    """"What do I need to know?" — one desk's read, answered in the thread.
+
+    Cheap by construction: the signals were found by the scheduled scan hours ago and are
+    read back from an indexed table, so the only work here is the persona's analyses. That
+    is the whole reason the scan exists — asked at request time, this question has no
+    baseline to compare against and nothing has been ranked.
+    """
+    import asyncio
+
+    from app.services import signals as signal_service
+
+    yield sse("stage", {"stage": "querying", "briefing": plan.persona_id})
+    try:
+        result = await asyncio.to_thread(
+            signal_service.briefing,
+            plan.persona_id,
+            catalog=cat,
+            today=ctx.today,
+            role=ctx.role,
+        )
+    except signal_service.BriefingError as exc:
+        logger.warning("NLQ briefing %s unavailable: %s", plan.persona_id, exc)
+        audit.record(turn_id=turn_id, ctx=ctx, resolved=resolved, route="briefing",
+                     outcome="unknown_persona", detail=str(exc))
+        yield sse(
+            "refusal",
+            {
+                "route": "refuse",
+                "reason": "not_in_data",
+                "message": NOT_IN_DATA_MESSAGE,
+                "examples": planner.refusal_examples(),
+            },
+        )
+        yield sse("done", {"turn_id": turn_id})
+        return
+    except ExecutionError as exc:
+        logger.error("NLQ briefing execution failed: %s", exc.detail)
+        audit.record(turn_id=turn_id, ctx=ctx, resolved=resolved, route="briefing",
+                     outcome="execution_error", detail=exc.detail)
+        yield sse("error", {"message": str(exc), "retryable": True})
+        yield sse("done", {"turn_id": turn_id})
+        return
+
+    conversation.append_turn(
+        state, ctx.question, resolved, "briefing", None, len(result.signals)
+    )
+    # The anchor is the leading signal's own spec, so "why?" and "which branches?" continue
+    # from the thing the briefing led with. A briefing whose top finding is a data-health
+    # warning carries no spec, and leaving the previous anchor alone is right — there is no
+    # chart behind "the snapshot is four days old" to drill into.
+    evidence = next((s.spec for s in result.signals if s.spec is not None), None)
+    if evidence is not None:
+        conversation.set_anchor(state, evidence)
+    elif result.analyses and result.analyses[0].findings:
+        conversation.set_anchor(state, result.analyses[0].findings[0].spec)
+    conversation.save(state)
+
+    audit.record(
+        turn_id=turn_id, ctx=ctx, resolved=resolved, route="briefing", outcome="answered",
+        detail=plan.persona_id, row_count=len(result.signals),
+        duration_ms=int((time.perf_counter() - started) * 1000),
+    )
+
+    response = AskResponse(
+        conversation_id=ctx.conversation_id,
+        turn_id=turn_id,
+        status="answered",
+        briefing=result,
+        plan_summary=plan.reasoning or "",
+    )
+    yield sse("briefing", response.model_dump(mode="json"))
+    yield sse("done", {"turn_id": turn_id,
+                       "duration_ms": int((time.perf_counter() - started) * 1000)})
+
+
 async def _text_to_sql_path(
     ctx: AskContext,
     cat: Catalog,
@@ -519,7 +609,9 @@ async def ask_once(ctx: AskContext, catalog: Catalog | None = None) -> AskRespon
         event, _, data = frame.partition("\n")
         name = event.removeprefix("event: ").strip()
         body = data.removeprefix("data: ").strip()
-        if name in ("chart", "analysis", "worklist", "clarify", "refusal", "error"):
+        if name in (
+            "chart", "analysis", "worklist", "briefing", "clarify", "refusal", "error",
+        ):
             payload[name] = json.loads(body)
 
     if "chart" in payload:
@@ -528,6 +620,8 @@ async def ask_once(ctx: AskContext, catalog: Catalog | None = None) -> AskRespon
         return AskResponse.model_validate(payload["analysis"])
     if "worklist" in payload:
         return AskResponse.model_validate(payload["worklist"])
+    if "briefing" in payload:
+        return AskResponse.model_validate(payload["briefing"])
     if "clarify" in payload:
         return AskResponse(
             conversation_id=ctx.conversation_id,

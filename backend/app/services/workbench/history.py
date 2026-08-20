@@ -575,6 +575,23 @@ def _card_text(card: dict[str, Any]) -> str:
         return "\n".join(
             part for part in [f"[{source}] {title}", headline, *lines, narrative] if part
         )
+    if card_type == "briefing":
+        # The headline and the signals. The analyses underneath are already summarised by
+        # their own headlines, and copying every chart row of a five-section briefing into
+        # model context spends the whole budget on one turn.
+        headline = str(payload.get("headline") or "")
+        signals = payload.get("signals") if isinstance(payload.get("signals"), list) else []
+        analyses = payload.get("analyses") if isinstance(payload.get("analyses"), list) else []
+        lines = [f"- {s.get('text')}" for s in signals if isinstance(s, dict) and s.get("text")]
+        lines += [
+            f"- {a.get('title')}: {a.get('headline')}"
+            for a in analyses
+            if isinstance(a, dict) and a.get("headline")
+        ]
+        return "\n".join(
+            part for part in [f"[{source}] {payload.get('label', 'Briefing')}", headline, *lines]
+            if part
+        )
     if card_type == "worklist":
         # The top of the list and the shape of the rest. A worklist can run to fifty named
         # borrowers, and copying all of them into model context spends the budget on PII to

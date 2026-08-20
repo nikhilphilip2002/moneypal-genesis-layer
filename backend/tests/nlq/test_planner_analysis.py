@@ -166,3 +166,59 @@ class TestThePromptNamesThePresets:
         rendered = json.dumps(plan_schema())
         assert '"const": "analysis"' in rendered
         assert '"const": "worklist"' in rendered
+
+
+class TestBriefingRoute:
+    """"What do I need to know?" is a chat question like any other, and it answers in the
+    thread. There is no dashboard, no tab and no panel — the whole product is the
+    conversation, so a standing read has to arrive as a turn in it."""
+
+    @pytest.mark.anyio
+    async def test_a_briefing_plan_survives_parsing(self):
+        from app.services.nlq.contracts import BriefingPlan
+
+        client = AnalysisClient(
+            '{"route":"briefing","persona_id":"ceo","confidence":0.9,"reasoning":"open read"}'
+        )
+        outcome = await plan("What do I need to know this morning?", client=client)
+        assert isinstance(outcome.plan, BriefingPlan)
+        assert outcome.plan.persona_id == "ceo"
+
+    @pytest.mark.anyio
+    async def test_the_desk_in_the_question_binds(self):
+        from app.services.nlq.contracts import BriefingPlan
+
+        client = AnalysisClient(
+            '{"route":"briefing","persona_id":"collections","confidence":0.9,"reasoning":""}'
+        )
+        outcome = await plan("Anything collections should worry about?", client=client)
+        assert isinstance(outcome.plan, BriefingPlan)
+        assert outcome.plan.persona_id == "collections"
+
+    @pytest.mark.anyio
+    async def test_an_unknown_desk_is_not_accepted(self):
+        from app.services.nlq.contracts import BriefingPlan
+
+        client = AnalysisClient(
+            '{"route":"briefing","persona_id":"marketing","confidence":0.9,"reasoning":""}'
+        )
+        outcome = await plan("What should marketing know?", client=client)
+        assert not isinstance(outcome.plan, BriefingPlan)
+
+    def test_the_desks_are_named_in_the_prompt(self):
+        """The route description says "DESKS below". Until they were listed there was
+        nothing below, and the model had no way to tell `risk` from `collections`."""
+        from app.services.nlq.catalog import get_catalog
+        from app.services.nlq.llm.prompts import build_messages
+
+        system = build_messages("anything")[0]["content"]
+        assert "### DESKS" in system
+        for persona_id in get_catalog().personas:
+            assert persona_id in system, persona_id
+
+    def test_the_schema_offers_the_route(self):
+        import json
+
+        from app.services.nlq.llm.schemas import plan_schema
+
+        assert '"const": "briefing"' in json.dumps(plan_schema())

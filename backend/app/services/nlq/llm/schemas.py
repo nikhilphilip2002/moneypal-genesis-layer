@@ -215,6 +215,17 @@ def plan_schema(catalog: Catalog | None = None) -> dict[str, Any]:
             {
                 "type": "object",
                 "properties": {
+                    "route": {"const": "briefing"},
+                    "persona_id": {"type": "string", "enum": sorted(cat.personas)},
+                    "confidence": confidence,
+                    "reasoning": reasoning,
+                },
+                "required": ["route", "persona_id", "confidence"],
+                "additionalProperties": False,
+            },
+            {
+                "type": "object",
+                "properties": {
                     "route": {"const": "sql"},
                     "intent": {"type": "string"},
                     "tables": {

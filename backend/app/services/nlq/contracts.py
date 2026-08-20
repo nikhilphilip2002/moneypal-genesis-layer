@@ -269,6 +269,19 @@ class WorklistPlan(_Model):
     reasoning: str = Field(default="", max_length=500)
 
 
+class BriefingPlan(_Model):
+    """"What do I need to know this morning?" — one desk's read, answered in the thread.
+
+    Persona-scoped rather than user-scoped on purpose: the same person asks as a CEO on
+    Monday and as a collections manager on Thursday, and the desk they are asking from is in
+    the question, not in their login."""
+
+    route: Literal["briefing"] = "briefing"
+    persona_id: str = Field(description="Persona id from personas.yaml.")
+    confidence: float = Field(ge=0.0, le=1.0)
+    reasoning: str = Field(default="", max_length=500)
+
+
 class ClarifyPlan(_Model):
     route: Literal["clarify"] = "clarify"
     question: str
@@ -283,7 +296,10 @@ class RefusalPlan(_Model):
 
 
 PlanResult = Annotated[
-    Union[QuerySpecPlan, AnalysisPlan, WorklistPlan, SqlPlan, ClarifyPlan, RefusalPlan],
+    Union[
+        QuerySpecPlan, AnalysisPlan, WorklistPlan, BriefingPlan, SqlPlan, ClarifyPlan,
+        RefusalPlan,
+    ],
     Field(discriminator="route"),
 ]
 """Tagged union emitted by the planner under constrained decoding."""
@@ -607,7 +623,9 @@ class Briefing(_Model):
 class Turn(_Model):
     question: str
     resolved_question: str
-    route: Literal["queryspec", "analysis", "worklist", "sql", "clarify", "refuse"]
+    route: Literal[
+        "queryspec", "analysis", "worklist", "briefing", "sql", "clarify", "refuse"
+    ]
     chart_type: ChartType | None = None
     row_count: int = 0
     ts: datetime
@@ -637,6 +655,11 @@ class AskResponse(_Model):
         default=None,
         description="Present instead of `chart` when the answer is a list of accounts to "
         "act on rather than a number to read.",
+    )
+    briefing: Briefing | None = Field(
+        default=None,
+        description="Present instead of `chart` when the question was "
+        "\"what do I need to know?\" — signals, indicators and lists for one desk.",
     )
     clarification: ClarifyPlan | None = None
     refusal: RefusalPlan | None = None

@@ -25,7 +25,6 @@ import {
 import { clearUserRoleCache, ROLE_LABELS, type UserRole } from '@/lib/useUserRole';
 import Composer from '@/components/workbench/Composer';
 import WorkbenchTurn, { type WorkbenchTurnData } from '@/components/workbench/WorkbenchTurn';
-import BriefingPanel from '@/components/nlq/BriefingPanel';
 import HistoryRail from '@/components/workbench/HistoryRail';
 import WorkbenchWorkspace, {
   WORKSPACE_TOOLS,
@@ -482,13 +481,6 @@ function EmptyState({
               <span className="font-medium">{label}</span>
             </button>
           ))}
-        </div>
-
-        {/* The briefing goes on the empty state rather than behind a tab. "What are the
-            emerging issues?" is the question a director most wants answered, and asking them
-            to think of asking it defeats the point — the scan already knows. */}
-        <div className="mt-8 rounded-xl border border-border/70 bg-card p-4 text-left">
-          <BriefingPanel onDrilldown={(_spec, question) => onAsk(question)} />
         </div>
 
         <div className="mt-5 flex flex-wrap items-center justify-center gap-2">

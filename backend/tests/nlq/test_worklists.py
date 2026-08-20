@@ -331,3 +331,31 @@ class TestSavedLists:
         summary = store.list_recent(owner="alice")[0]
         assert summary.item_count == 2
         assert summary.open_count == 1
+
+
+class TestAccountNumbersAreIdentifiers:
+    """Postgres hands `loan_account_number` back as `numeric`, so it arrives as a float and
+    rendered as "1000400003373.0" on a live list. An officer reading that off a screen to key
+    into the core system has to know to drop the ".0" — exactly the friction that gets a list
+    abandoned."""
+
+    def _item(self, catalog, account):
+        rules = tuple(catalog.worklists.rules[r] for r in ("early_stress",))
+        rows = [{
+            "loan_account_number": account, "dpd_days": 5, "total_overdue": 100.0,
+            "principal_outstanding": 1000.0,
+            f"{rule_engine.RULE_PREFIX}early_stress": True,
+        }]
+        return build_module._rank(rows, rules, catalog)[0]
+
+    def test_a_numeric_account_loses_its_decimal_tail(self, catalog):
+        assert self._item(catalog, 1000400003373.0).account == "1000400003373"
+
+    def test_the_row_the_csv_exports_matches(self, catalog):
+        item = self._item(catalog, 1000400003373.0)
+        assert item.fields["loan_account_number"] == "1000400003373"
+
+    def test_a_text_account_number_is_untouched(self, catalog):
+        """Not every core system uses numeric keys, and stripping a leading zero from an
+        opaque identifier would produce an account that does not exist."""
+        assert self._item(catalog, "0042-A").account == "0042-A"

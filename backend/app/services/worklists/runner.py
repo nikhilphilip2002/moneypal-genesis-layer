@@ -134,7 +134,7 @@ def _rank(
         items.append(
             WorklistItem(
                 rank=0,  # assigned after the sort, so it always matches what is displayed
-                account=str(row.get("loan_account_number", "")),
+                account=canonical_enum_code(row.get("loan_account_number", "")),
                 score=score,
                 severity=severity,  # type: ignore[arg-type]
                 reasons=[_reason(rule, row, cat) for rule in triggered],
@@ -189,12 +189,20 @@ def _decode(row: dict[str, Any], cat: Catalog) -> dict[str, Any]:
 
 
 def _display_fields(row: dict[str, Any]) -> dict[str, Any]:
-    """Everything except the rule booleans and the raw codes behind decoded labels."""
-    return {
+    """Everything except the rule booleans and the raw codes behind decoded labels.
+
+    The account number is an identifier that Postgres hands back as `numeric`, so it arrives
+    as a float and renders as "1000400003373.0". An officer reading that off a screen to key
+    into the core system has to know to drop the ".0", which is exactly the kind of small
+    friction that gets a list abandoned."""
+    out = {
         key: value
         for key, value in row.items()
         if not key.startswith(rule_engine.RULE_PREFIX) and not key.endswith("__raw")
     }
+    if "loan_account_number" in out:
+        out["loan_account_number"] = canonical_enum_code(out["loan_account_number"])
+    return out
 
 
 def _columns(cat: Catalog) -> list[ColumnSpec]:

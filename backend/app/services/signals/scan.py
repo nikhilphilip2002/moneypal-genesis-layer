@@ -379,8 +379,8 @@ def _scan_data_health(cat: Catalog) -> tuple[list[Signal], list[str]]:
             warnings.append(f"Could not check how fresh {table.label} is.")
             continue
 
-        newest = rows[0].get("newest") if rows else None
-        days = (today - newest).days if isinstance(newest, date) else None
+        newest = _as_date(rows[0].get("newest")) if rows else None
+        days = (today - newest).days if newest is not None else None
         detection = detectors.staleness(
             days, watch_days=check.watch_days, alert_days=check.alert_days
         )
@@ -444,6 +444,27 @@ def _is_connection_failure(exc: ExecutionError) -> bool:
     """
     detail = getattr(exc, "detail", "") or ""
     return any(name in detail for name in _CONNECTION_FAILURES)
+
+
+def _as_date(value: Any) -> date | None:
+    """Read whatever shape the freshest date came back in.
+
+    The executor renders dates as ISO strings so a ChartSpec serialises straight to the
+    browser, so a freshness check that type-checked for `date` matched none of them. On live
+    data it reported "no dated rows at all" for all four source tables — four confident
+    alerts about a warehouse that was loading perfectly well, and the worst kind of false
+    signal because it is about the plumbing, so the reader has nothing to check it against.
+    """
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, date):
+        return value
+    if isinstance(value, str) and value.strip():
+        try:
+            return date.fromisoformat(value.strip()[:10])
+        except ValueError:
+            return None
+    return None
 
 
 def _label_for(dimension: str, code: Any, cat: Catalog) -> str:
