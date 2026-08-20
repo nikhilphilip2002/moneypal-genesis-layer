@@ -97,6 +97,15 @@ class Settings:
         self.local_index_path = Path(get("LOCAL_INDEX_PATH", str(REPO_ROOT / "backend" / "vector_store" / "regulatory_chunks.jsonl")) or REPO_ROOT / "backend" / "vector_store" / "regulatory_chunks.jsonl")
         self.cors_origins = ["*"]
 
+        # --- Standing signals --------------------------------------------------------
+        # The background scan. Off by default in tests and in any process that should not be
+        # holding read-only connections; on in the deployed API, where it is the only way
+        # "what are the emerging issues?" gets a baseline to answer against.
+        self.signals_scan_enabled = (
+            get("SIGNALS_SCAN_ENABLED", "true") or "true"
+        ).lower() in ("1", "true", "yes", "on")
+        self.signals_scan_interval_s = int(get("SIGNALS_SCAN_INTERVAL_S", "21600") or "21600")
+
         # --- NLQ (natural-language query layer) -------------------------------------
         # Provider-agnostic by design: the GPU node is not procured yet, so llama.cpp is
         # selected by config at deploy time and Groq carries development.

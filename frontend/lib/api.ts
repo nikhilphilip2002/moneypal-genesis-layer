@@ -731,6 +731,59 @@ export type Worklist = {
   unavailable: string[];
 };
 
+// One notable thing the scan found, with the query that found it attached. Signals are
+// pre-computed on a schedule: "what are the emerging issues?" has no answer at request time
+// because there is no baseline to compare against and nothing has been ranked yet.
+export type Signal = {
+  id: string;
+  detected_at: string | null;
+  scope: string;
+  label: string;
+  // Which detector fired: level_shift, trend_break, threshold, concentration,
+  // rank_movement, data_health.
+  kind: string;
+  metric: string;
+  dimension: string;
+  member: string;
+  severity: Severity;
+  direction: 'up' | 'down' | 'flat';
+  magnitude: number;
+  baseline: number | null;
+  value: number | null;
+  unit: Unit;
+  text: string;
+  // One click from the signal to its evidence. Null only for a data-health finding, which is
+  // about a table rather than about a measure.
+  spec: QuerySpec | null;
+  status: 'open' | 'acknowledged' | 'resolved';
+  // Added by the API from the store: seen on more than one scan.
+  standing?: boolean;
+  first_seen_at?: string;
+  last_seen_at?: string;
+};
+
+export type Persona = {
+  id: string;
+  label: string;
+  description: string;
+  default_period: string;
+  analyses: string[];
+  worklists: string[];
+};
+
+// One desk's morning read. A persona reorders and preselects; it never changes what a
+// number means.
+export type Briefing = {
+  persona: string;
+  label: string;
+  generated_at: string;
+  headline: string;
+  signals: Signal[];
+  analyses: AnalysisResult[];
+  worklists: Worklist[];
+  warnings: string[];
+};
+
 export type NlqAskResponse = {
   conversation_id: string;
   turn_id: string;
@@ -829,6 +882,32 @@ export const nlq = {
       method: 'POST',
       body: JSON.stringify({ account, status, ...opts }),
     }),
+
+  // Signals and the morning briefing. Retrieval, not analysis: the scan runs on a schedule,
+  // so reading this costs one indexed query rather than eleven warehouse scans.
+  signals: (opts: { scope?: string; severity?: string; limit?: number } = {}): Promise<{
+    signals: Signal[];
+    scopes: { id: string; label: string; metric: string; why: string }[];
+    unavailable: { detector: string; needs: string }[];
+  }> => {
+    const query = new URLSearchParams(
+      Object.entries(opts).filter(([, v]) => v !== undefined).map(([k, v]) => [k, String(v)]),
+    ).toString();
+    return apiRequest(`/nlq/signals${query ? `?${query}` : ''}`);
+  },
+
+  // Acknowledging says "I have seen this", not "this is fixed" — acknowledged signals stay
+  // in the feed so a standing deterioration cannot disappear by being read.
+  setSignalStatus: (fingerprint: string, status: 'open' | 'acknowledged' | 'resolved') =>
+    apiRequest(`/nlq/signals/${fingerprint}/status`, {
+      method: 'POST',
+      body: JSON.stringify({ status }),
+    }),
+
+  personas: (): Promise<{ personas: Persona[] }> => apiRequest('/nlq/personas'),
+
+  briefing: (persona_id: string, includeWorklists = true): Promise<Briefing> =>
+    apiRequest(`/nlq/briefing/${persona_id}?include_worklists=${includeWorklists}`),
 
   // Fetched rather than linked: the endpoint needs the Authorization header, so a bare
   // <a href> would 401 and the browser would show its own error page instead of a file.

@@ -1,0 +1,64 @@
+# Who is asking. A persona changes what a briefing leads with, not what any number means.
+#
+# The same book looks different from five desks. A CEO opening the app wants the portfolio
+# and where it is going; a collections manager wants today's arrears and today's list; a
+# credit officer wants what deteriorated overnight. Serving all of them the same seven KPIs
+# means four of the five scroll past most of it every morning, and a briefing people scroll
+# past is a briefing nobody reads.
+#
+# What a persona may and may not do is the important line here:
+#
+# **May** — set the default period, choose which preset analyses lead, choose which signal
+# scopes are surfaced first, and name a worklist worth opening.
+# **May not** — change a metric, a threshold, a filter or a definition. PAR 30 is PAR 30 at
+# every desk. A persona that quietly redefined a number would give two people different
+# answers to the same question and no way to discover why, which is the single fastest way to
+# lose a finance team's trust in a reporting product.
+
+- id: ceo
+  label: Chief Executive
+  description: The book overall, where it is heading, and what needs a decision.
+  default_period: this_month
+  analyses: [portfolio_health, growth_versus_quality, concentration]
+  signal_scopes: [par30_total, npa_total, collection_efficiency_total, disbursement_total,
+                  borrower_concentration]
+  worklists: []
+  synonyms: [CEO, chief executive, MD, managing director, board]
+
+- id: sales
+  label: Sales and Distribution
+  description: What we are writing, where it is coming from, and which branches are growing.
+  default_period: this_month
+  analyses: [origination_review, growth_versus_quality]
+  signal_scopes: [disbursement_total, disbursement_by_branch, avg_ticket_size]
+  worklists: []
+  synonyms: [sales, distribution, business development, origination, growth]
+
+- id: risk
+  label: Credit and Risk
+  description: What deteriorated, where the arrears are concentrating, and what is rolling forward.
+  default_period: this_month
+  analyses: [portfolio_health, concentration]
+  signal_scopes: [par30_total, par30_by_branch, npa_total, npa_by_product, overdue_by_bucket,
+                  borrower_concentration]
+  worklists: [early_warning, large_exposures_at_risk]
+  synonyms: [risk, credit, credit risk, underwriting, asset quality]
+
+- id: collections
+  label: Collections and Recovery
+  description: Today's arrears, today's list, and which branches are behind.
+  default_period: this_month
+  analyses: [collections_focus]
+  signal_scopes: [collection_efficiency_total, collection_efficiency_by_branch,
+                  overdue_by_bucket, par30_by_branch]
+  worklists: [collections_today, early_warning]
+  synonyms: [collections, recovery, arrears, field collections]
+
+- id: finance
+  label: Finance
+  description: Book size, yield, and the quality of what backs it.
+  default_period: fy_to_date
+  analyses: [portfolio_health, origination_review]
+  signal_scopes: [npa_total, par30_total, avg_ticket_size, disbursement_total]
+  worklists: []
+  synonyms: [finance, CFO, accounts, treasury, MIS]

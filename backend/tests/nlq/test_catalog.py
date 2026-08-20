@@ -32,10 +32,11 @@ class TestLoads:
     def test_every_entry_yaml_file_is_a_list(self):
         """Entry files are lists of entries. Two files are documents rather than lists and
         say so: `drill.yaml` declares a graph — paths, a terminal, the offers made at every
-        level — and `worklists.yaml` declares a base relation, its rules, a score model and
-        the playbooks. Flattening either into a list would lose the distinction between the
+        level — `worklists.yaml` declares a base relation, its rules, a score model and the
+        playbooks, and `signals.yaml` declares the scan window, its scopes and the freshness
+        checks. Flattening any of them into a list would lose the distinction between the
         parts."""
-        documents = {"drill.yaml", "worklists.yaml"}
+        documents = {"drill.yaml", "worklists.yaml", "signals.yaml"}
         for path in (*DEFS_DIR.glob("*.yaml"), *ACTIVE_DEFS_DIR.glob("*.yaml")):
             if path.name in documents:
                 assert isinstance(yaml.safe_load(path.read_text()), dict), path.name

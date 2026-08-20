@@ -25,7 +25,7 @@ from app.services.nlq.executor import ExecutionError
 from app.services.nlq.llm import get_llm_client
 from app.services.nlq.pipeline import run_spec
 from app.services.nlq.ratelimit import RateLimitExceeded, check_rate_limit
-from app.services import worklists
+from app.services import signals, worklists
 from app.services.worklists import store as worklist_store
 
 logger = logging.getLogger(__name__)
@@ -322,6 +322,117 @@ def export_worklist(worklist_id: str, authorization: str | None = Header(default
             "Content-Disposition": f'attachment; filename="{saved.preset_id}-{worklist_id[:8]}.csv"'
         },
     )
+
+
+# --------------------------------------------------------------------------------------
+# Signals and the morning briefing
+# --------------------------------------------------------------------------------------
+
+
+@router.get("/signals")
+def list_signals(
+    scope: str | None = None,
+    severity: str | None = None,
+    limit: int = 20,
+):
+    """The findings the scan has already made. Retrieval, not analysis.
+
+    Deliberately not a "run the scan now" endpoint: a scan on demand would take seconds,
+    hold read-only connections a user is waiting on, and return the same thing the scheduled
+    one already stored.
+    """
+    catalog = get_catalog()
+    stored = signals.open_signals(
+        scopes=[scope] if scope else None,
+        severities=[severity] if severity else None,
+        limit=min(limit, 100),
+    )
+    return {
+        "signals": [
+            {
+                **item.signal.model_dump(mode="json"),
+                "status": item.status,
+                "first_seen_at": item.first_seen_at,
+                "last_seen_at": item.last_seen_at,
+                "standing": item.is_standing,
+            }
+            for item in stored
+        ],
+        "scopes": [
+            {"id": s.id, "label": s.label, "metric": s.metric, "why": s.why}
+            for s in catalog.signals.scopes.values()
+        ],
+        # Named rather than implied. A reader who does not know variance-to-plan is missing
+        # will read an empty feed as a clean book.
+        "unavailable": [
+            {"detector": entry.get("detector", ""), "needs": entry.get("needs", "")}
+            for entry in catalog.signals.unavailable
+        ],
+    }
+
+
+class SignalStatusRequest(BaseModel):
+    status: str = Field(pattern="^(open|acknowledged|resolved)$")
+
+
+@router.post("/signals/{fingerprint}/status")
+def set_signal_status(
+    fingerprint: str,
+    req: SignalStatusRequest,
+    authorization: str | None = Header(default=None),
+):
+    """Acknowledge or resolve one finding.
+
+    Acknowledging says "I have seen this", not "this is fixed" — acknowledged signals stay in
+    the feed, because a standing deterioration must not disappear by being read.
+    """
+    user, _role = _identity(authorization)
+    try:
+        stored = signals.set_status(fingerprint, req.status, user=user)
+    except signals.SignalStoreError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    return {"fingerprint": fingerprint, "status": stored.status}
+
+
+@router.get("/personas")
+def list_personas():
+    """The desks a briefing can be prepared for.
+
+    A persona reorders and preselects. It never changes a metric, a threshold or a filter —
+    PAR 30 is PAR 30 at every desk, and a persona that redefined one would give two people
+    different answers to the same question with no way to discover why.
+    """
+    catalog = get_catalog()
+    return {
+        "personas": [
+            {
+                "id": p.id,
+                "label": p.label,
+                "description": p.description,
+                "default_period": p.default_period,
+                "analyses": list(p.analyses),
+                "worklists": list(p.worklists),
+            }
+            for p in catalog.personas.values()
+        ]
+    }
+
+
+@router.get("/briefing/{persona_id}")
+def get_briefing(
+    persona_id: str,
+    include_worklists: bool = True,
+    authorization: str | None = Header(default=None),
+):
+    """One desk's morning read: what is notable, where the book stands, who to call."""
+    _user, role = _identity(authorization)
+    try:
+        return signals.briefing(persona_id, role=role, include_worklists=include_worklists)
+    except signals.BriefingError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    except ExecutionError as exc:
+        logger.error("briefing failed: %s", exc.detail)
+        raise HTTPException(503, str(exc)) from exc
 
 
 @router.get("/suggestions")

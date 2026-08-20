@@ -408,6 +408,70 @@ class WorklistConfig:
 
 
 @dataclass(frozen=True, slots=True)
+class SignalScope:
+    """One metric (optionally split by one dimension) the scan watches on a schedule.
+
+    The detectors named here are the only judgement in the signals system. Everything after
+    this point is arithmetic, which is what makes "what are the emerging issues?" answerable
+    at all — a model asked the same question has no baseline and will call an ordinary month
+    unusual with total confidence."""
+
+    id: str
+    label: str
+    metric: str
+    detectors: tuple[str, ...]
+    dimension: str | None = None
+    max_members: int | None = None
+    watch_above: float | None = None
+    alert_above: float | None = None
+    watch_below: float | None = None
+    alert_below: float | None = None
+    watch_hhi: float | None = None
+    alert_hhi: float | None = None
+    why: str = ""
+
+
+@dataclass(frozen=True, slots=True)
+class DataHealthCheck:
+    """How stale a table is allowed to get before somebody should know."""
+
+    table: str
+    date_column: str
+    watch_days: int
+    alert_days: int
+    note: str = ""
+
+
+@dataclass(frozen=True, slots=True)
+class SignalConfig:
+    periods: int
+    grain: str
+    max_members: int
+    scopes: dict[str, SignalScope]
+    data_health: tuple[DataHealthCheck, ...]
+    unavailable: tuple[dict[str, str], ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
+class Persona:
+    """Who is asking. Changes what a briefing leads with, never what a number means.
+
+    The restriction is the point: a persona may reorder and preselect, but it may not change
+    a metric, a threshold or a filter. PAR 30 is PAR 30 at every desk, and a persona that
+    quietly redefined one would give two people different answers to the same question with
+    no way to discover why."""
+
+    id: str
+    label: str
+    default_period: str
+    analyses: tuple[str, ...] = ()
+    signal_scopes: tuple[str, ...] = ()
+    worklists: tuple[str, ...] = ()
+    description: str = ""
+    synonyms: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
 class EnumValue:
     code: str
     label: str
@@ -462,6 +526,8 @@ class Catalog:
     drill: DrillGraph
     analyses: dict[str, AnalysisDef]
     worklists: WorklistConfig
+    signals: SignalConfig
+    personas: dict[str, Persona]
     version: str
 
     # -- lookup helpers ------------------------------------------------------------------
@@ -793,6 +859,70 @@ def _load_worklists() -> WorklistConfig:
     )
 
 
+def _load_signals() -> SignalConfig:
+    raw = _read_mapping("signals.yaml")
+    scan = raw.get("scan") or {}
+
+    scopes: dict[str, SignalScope] = {}
+    for entry in raw.get("scopes") or []:
+        _require(entry, "id", "label", "metric", "detectors", where="signals.yaml/scopes")
+        scopes[entry["id"]] = SignalScope(
+            id=entry["id"],
+            label=entry["label"],
+            metric=entry["metric"],
+            detectors=_tuple(entry["detectors"]),
+            dimension=entry.get("dimension"),
+            max_members=entry.get("max_members"),
+            watch_above=entry.get("watch_above"),
+            alert_above=entry.get("alert_above"),
+            watch_below=entry.get("watch_below"),
+            alert_below=entry.get("alert_below"),
+            watch_hhi=entry.get("watch_hhi"),
+            alert_hhi=entry.get("alert_hhi"),
+            why=" ".join((entry.get("why") or "").split()),
+        )
+
+    checks = []
+    for entry in raw.get("data_health") or []:
+        _require(entry, "table", "date_column", "watch_days", "alert_days",
+                 where="signals.yaml/data_health")
+        checks.append(
+            DataHealthCheck(
+                table=entry["table"],
+                date_column=entry["date_column"],
+                watch_days=int(entry["watch_days"]),
+                alert_days=int(entry["alert_days"]),
+                note=" ".join((entry.get("note") or "").split()),
+            )
+        )
+
+    return SignalConfig(
+        periods=int(scan.get("periods", 12)),
+        grain=scan.get("grain", "month"),
+        max_members=int(scan.get("max_members", 25)),
+        scopes=scopes,
+        data_health=tuple(checks),
+        unavailable=tuple(raw.get("unavailable") or ()),
+    )
+
+
+def _load_personas() -> dict[str, Persona]:
+    out: dict[str, Persona] = {}
+    for raw in _read("personas.yaml"):
+        _require(raw, "id", "label", "default_period", where="personas.yaml")
+        out[raw["id"]] = Persona(
+            id=raw["id"],
+            label=raw["label"],
+            default_period=raw["default_period"],
+            analyses=_tuple(raw.get("analyses")),
+            signal_scopes=_tuple(raw.get("signal_scopes")),
+            worklists=_tuple(raw.get("worklists")),
+            description=" ".join((raw.get("description") or "").split()),
+            synonyms=_tuple(raw.get("synonyms")),
+        )
+    return out
+
+
 def _load_drill() -> DrillGraph:
     raw = _read_mapping("drill.yaml")
     paths = []
@@ -1048,6 +1178,83 @@ def _worklist_problems(catalog: Catalog) -> list[str]:
     return problems
 
 
+_DETECTORS = {
+    "level_shift", "trend_break", "threshold", "concentration", "rank_movement",
+}
+
+
+def _signal_problems(catalog: Catalog) -> list[str]:
+    """A scan runs unattended on a schedule, so nobody is watching when a scope breaks.
+
+    The failure mode this guards is specific and quiet: a threshold detector on a scope with
+    no thresholds declared runs, finds nothing, and reports nothing — indistinguishable on the
+    dashboard from a book with no problems.
+    """
+    problems: list[str] = []
+    config = catalog.signals
+
+    for scope in config.scopes.values():
+        where = f"signal scope {scope.id!r}"
+        if scope.metric not in catalog.metrics:
+            problems.append(f"{where} names unknown metric {scope.metric!r}")
+        if scope.dimension and scope.dimension not in catalog.dimensions:
+            problems.append(f"{where} names unknown dimension {scope.dimension!r}")
+
+        unknown = set(scope.detectors) - _DETECTORS
+        if unknown:
+            problems.append(f"{where} names unknown detectors {sorted(unknown)}")
+
+        if "threshold" in scope.detectors and not any(
+            (scope.watch_above, scope.alert_above, scope.watch_below, scope.alert_below)
+        ):
+            problems.append(
+                f"{where} runs the threshold detector with no threshold — it would report "
+                "nothing, which looks exactly like a clean book"
+            )
+        if "concentration" in scope.detectors and (
+            scope.watch_hhi is None or scope.alert_hhi is None
+        ):
+            problems.append(f"{where} runs the concentration detector with no HHI bounds")
+        if "concentration" in scope.detectors and not scope.dimension:
+            problems.append(f"{where} concentrates over nothing — it needs a dimension")
+        if "rank_movement" in scope.detectors and not scope.dimension:
+            problems.append(f"{where} ranks nothing — rank_movement needs a dimension")
+
+    for check in config.data_health:
+        if check.table not in catalog.tables:
+            problems.append(f"data-health check names unknown table {check.table!r}")
+        elif check.watch_days > check.alert_days:
+            problems.append(
+                f"data-health check on {check.table!r} watches later than it alerts"
+            )
+
+    return problems
+
+
+def _persona_problems(catalog: Catalog) -> list[str]:
+    """A persona reorders; it must never redefine.
+
+    Every reference is checked because a persona naming a preset that no longer exists shows
+    the user an empty briefing rather than an error, and an empty briefing reads as "nothing
+    is wrong".
+    """
+    problems: list[str] = []
+    for persona in catalog.personas.values():
+        where = f"persona {persona.id!r}"
+        for analysis_id in persona.analyses:
+            if analysis_id not in catalog.analyses:
+                problems.append(f"{where} names unknown analysis {analysis_id!r}")
+        for scope_id in persona.signal_scopes:
+            if scope_id not in catalog.signals.scopes:
+                problems.append(f"{where} names unknown signal scope {scope_id!r}")
+        for worklist_id in persona.worklists:
+            if worklist_id not in catalog.worklists.presets:
+                problems.append(f"{where} names unknown worklist {worklist_id!r}")
+        if not persona.analyses:
+            problems.append(f"{where} leads with nothing — its briefing would be empty")
+    return problems
+
+
 def _cross_validate(catalog: Catalog) -> None:
     """Every reference must resolve. These are the errors that would otherwise surface as
     a broken query in front of a user."""
@@ -1109,6 +1316,8 @@ def _cross_validate(catalog: Catalog) -> None:
     problems.extend(_drill_problems(catalog))
     problems.extend(_analysis_problems(catalog))
     problems.extend(_worklist_problems(catalog))
+    problems.extend(_signal_problems(catalog))
+    problems.extend(_persona_problems(catalog))
 
     for join in catalog.joins:
         for side in (join.left, join.right):
@@ -1150,7 +1359,7 @@ def get_catalog() -> Catalog:
         for name in (
             "tables.yaml", "columns.yaml", "dimensions.yaml", "metrics.yaml",
             "joins.yaml", "enums.yaml", "drill.yaml", "analyses.yaml",
-            "worklists.yaml",
+            "worklists.yaml", "signals.yaml", "personas.yaml",
         )
     ]
     catalog = Catalog(
@@ -1163,6 +1372,8 @@ def get_catalog() -> Catalog:
         drill=_load_drill(),
         analyses=_load_analyses(),
         worklists=_load_worklists(),
+        signals=_load_signals(),
+        personas=_load_personas(),
         version=_version(version_paths),
     )
     _cross_validate(catalog)

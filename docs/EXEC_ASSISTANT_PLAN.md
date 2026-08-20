@@ -57,13 +57,16 @@ Recommendation: get the **first two** and the count reachable rises from 35 to 4
 Seven pieces. Each is additive — no existing route, contract or chart changes behaviour.
 
 > **Status:** §3.1 (`analysis` route and preset analyses), §3.2 (driver decomposition),
-> §3.4 (drill graph) and §3.5 (worklists, EWS rules, playbooks) are implemented, along with
-> the conversation patterns in §4.1–4.3, the "what should we do?" rung, and the
-> next-question chips in §4.5. The funnel and cohort composers named in §3.1 are *not*
-> built: both need application-level data, and no `gold` view over `bronze.genlnappl*`
-> exists yet. Four of the early-warning rules named in §3.5 are likewise blocked and are
-> declared in `worklists.yaml` under `unavailable` rather than approximated. §3.3, §3.6 and
-> §3.7 are still design.
+> §3.4 (drill graph), §3.5 (worklists, EWS rules, playbooks) and §3.6 (signals engine) are
+> implemented, along with the whole conversation layer in §4 — structural patterns, the
+> "what should we do?" rung, persona presets and the next-question chips.
+>
+> What is *not* built is blocked on data rather than on engineering, and is declared as
+> such in the catalog rather than approximated: the funnel and cohort composers of §3.1
+> (no `gold` view over `bronze.genlnappl*` — see §3.1a), four early-warning rules
+> (`worklists.yaml` → `unavailable`) and four detectors including variance-to-plan
+> (`signals.yaml` → `unavailable`). §3.3 and §3.7 are still design, and §3.7 should stay
+> that way until the T3 ledger data lands.
 
 ### 3.1 `analysis` route — multi-query answers (C1)
 
@@ -267,7 +270,7 @@ Sequence this **last**. Shipping a score before the ledger data exists produces 
 | **2 — Why** ✅ *shipped* | 2–3 wk | Driver decomposition + waterfall (3.2). | ~24 |
 | **3 — Compose** ⚠️ *partly shipped* | 2–3 wk | `analysis` route + preset analyses + briefing/quadrant/concentration composers **(done)**. Funnel and cohort composers, application-funnel catalog entries from `genlnappl*` and TAT metrics from `appldocuplddtl` **(blocked: no `gold` view over the application tables exists — see §3.1a)**. | ~28 of the ~33 |
 | **4 — Act** ✅ *shipped* | 2 wk | Worklists, EWS rules, playbooks (3.5). Seven rules over data we hold; four more named as blocked in `worklists.yaml` rather than approximated. | ~35 |
-| **5 — Standing** | 2–3 wk | Signals engine + morning briefing + persona presets (3.6, 4.4). | ~35 answered *better*; Q8/9/10 become genuinely good |
+| **5 — Standing** ✅ *shipped* | 2–3 wk | Signals engine + morning briefing + persona presets (3.6, 4.4). Eleven scopes, six detectors, four freshness checks, five personas. Detectors abstain below six periods rather than judge from two. | ~35 answered *better*; Q8/9/10 become genuinely good |
 | **6 — Plan** | 1–2 wk | Target layer (3.3) — starts the day the client spreadsheet arrives; can run parallel to 2–5. | ~40 |
 | **7 — Predict** | 3 wk | Oracle migration batch (T3) then the governed score (3.7). | ~44 |
 | **8 — Feeds** | client-paced | Cost/opex, legal, audit, HR, strategy registers. | 50 |

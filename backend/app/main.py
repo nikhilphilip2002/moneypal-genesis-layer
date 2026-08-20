@@ -24,7 +24,16 @@ async def _lifespan(_app: FastAPI):
         # Become ready immediately; catalog prompt evaluation happens before the first
         # analyst question normally arrives, without making API health depend on the LLM.
         warmup_task = asyncio.create_task(warm_catalog_prompt_cache())
+    # The signal scan runs on a schedule rather than on a question: "what are the emerging
+    # issues?" has no answer at request time, because there is no baseline to compare against
+    # and nothing has been ranked yet.
+    from app.services.signals import scheduler as signal_scheduler
+
+    scan_task = signal_scheduler.start(_app.state)
+
     yield
+
+    await signal_scheduler.stop(scan_task)
     if warmup_task is not None and not warmup_task.done():
         warmup_task.cancel()
         with contextlib.suppress(asyncio.CancelledError):

@@ -1,0 +1,162 @@
+# What the scan looks at, and what counts as notable.
+#
+# This is the configuration behind "what are the emerging issues?", "what am I not asking?"
+# and "what decisions need my attention?" — the questions a director most wants answered and
+# an LLM is worst at, because it has no baseline and will call an ordinary month unusual.
+#
+# Every scope below becomes one governed query on a schedule. The detectors are arithmetic
+# (see `services/signals/detectors.py`); the only judgement in the system is which scopes are
+# worth watching, and that judgement is here, in review, rather than in a prompt.
+#
+# Two things to know before adding a scope:
+#
+# `periods` buys history, and Genesis has very little. The portfolio snapshot starts
+# 2026-05-22 and the disbursement event log 2025-10-15, so a monthly series over the snapshot
+# has a handful of points. The statistical detectors abstain below six periods rather than
+# produce a verdict from two, which means a new scope over a point-in-time metric will be
+# quiet for months. That is correct, and preferable to a feed that fires on noise — a feed
+# that cries wolf gets ignored, and then the real signal gets ignored with it.
+#
+# `thresholds` need no history at all, which is why every risk scope carries them.
+
+scan:
+  # Trailing window for the statistical detectors. Twelve months of monthly points is the
+  # most any of these tables can offer today; the detectors take what exists.
+  periods: 12
+  grain: month
+  # A scope split by a high-cardinality dimension produces one series per member, and a scan
+  # that emits four hundred signals has ranked nothing.
+  max_members: 25
+
+scopes:
+  # ---- Portfolio risk -----------------------------------------------------------------
+  - id: par30_total
+    label: PAR 30
+    metric: par_30
+    detectors: [level_shift, trend_break, threshold]
+    watch_above: 5.0
+    alert_above: 10.0
+    why: The single number that says whether the book is deteriorating.
+
+  - id: par30_by_branch
+    label: PAR 30 by branch
+    metric: par_30
+    dimension: branch
+    detectors: [level_shift, threshold, rank_movement]
+    watch_above: 8.0
+    alert_above: 15.0
+    why: >
+      A branch-level threshold sits above the portfolio one deliberately: individual branches
+      are expected to be noisier than the book, and a limit set at the portfolio level would
+      flag half of them every month.
+
+  - id: npa_total
+    label: NPA ratio
+    metric: npa_ratio
+    detectors: [level_shift, trend_break, threshold]
+    watch_above: 4.0
+    alert_above: 6.0
+    why: The prudential number, and the one the board reads first.
+
+  - id: npa_by_product
+    label: NPA ratio by product
+    metric: npa_ratio
+    dimension: product
+    detectors: [level_shift, threshold]
+    watch_above: 6.0
+    alert_above: 10.0
+
+  - id: overdue_by_bucket
+    label: Overdue by DPD bucket
+    metric: overdue_total
+    dimension: dpd_bucket
+    detectors: [level_shift, rank_movement]
+    why: Movement between buckets is the earliest structural sign of roll-forward.
+
+  # ---- Collections --------------------------------------------------------------------
+  - id: collection_efficiency_total
+    label: Collection efficiency
+    metric: collection_efficiency
+    detectors: [level_shift, trend_break, threshold]
+    watch_below: 95.0
+    alert_below: 90.0
+
+  - id: collection_efficiency_by_branch
+    label: Collection efficiency by branch
+    metric: collection_efficiency
+    dimension: branch
+    detectors: [level_shift, threshold, rank_movement]
+    watch_below: 90.0
+    alert_below: 80.0
+
+  # ---- Origination --------------------------------------------------------------------
+  - id: disbursement_total
+    label: Disbursement
+    metric: disbursement_total
+    detectors: [level_shift, trend_break]
+    why: >
+      No threshold. Disbursement has no prudential limit and no plan to compare against until
+      the client supplies the budget feed, so an absolute bound here would be invented.
+
+  - id: disbursement_by_branch
+    label: Disbursement by branch
+    metric: disbursement_total
+    dimension: branch
+    detectors: [level_shift, rank_movement]
+
+  - id: avg_ticket_size
+    label: Average ticket size
+    metric: avg_ticket_size
+    detectors: [level_shift, trend_break]
+    why: A step change in ticket size usually means the mix moved, not that pricing did.
+
+  # ---- Structure ----------------------------------------------------------------------
+  - id: borrower_concentration
+    label: Borrower concentration
+    metric: principal_outstanding
+    dimension: borrower
+    detectors: [concentration]
+    max_members: 500
+    watch_hhi: 0.05
+    alert_hhi: 0.15
+    why: >
+      The prudential question is whether the book *is* concentrated, not whether it became
+      more so, which is why this scope uses a structural detector and a wide member cap.
+
+# Freshness, per table. The honest answer to "which data issues are affecting performance":
+# a metric over a table that stopped loading four days ago is not wrong, it is stale, and
+# nothing else in the product notices.
+data_health:
+  - table: loan_account_master
+    date_column: sanction_date
+    watch_days: 7
+    alert_days: 30
+    note: >
+      Sanctions are lumpy; a quiet week is normal and this is the loosest of the four.
+  - table: portfolio_daily_snapshot
+    date_column: snapshot_date
+    watch_days: 2
+    alert_days: 5
+    note: A daily snapshot two days behind is a pipeline failure, not a quiet week.
+  - table: loan_disbursement_events
+    date_column: disbursement_date
+    watch_days: 7
+    alert_days: 21
+  - table: loan_repayment_events
+    date_column: repayment_date
+    watch_days: 7
+    alert_days: 21
+
+# Detectors we cannot build, and what each needs. Declared next to the ones that exist so a
+# reader knows the shape of what is missing rather than inferring completeness from silence.
+unavailable:
+  - detector: Variance to plan
+    needs: The annual business plan / target feed. Until it lands there is no target to breach.
+  - detector: Regional anomaly
+    needs: A branch master with geography. No gold or Oracle source carries city or district.
+  - detector: Channel mix shift
+    needs: Sourcing channel per account, which no gold view carries.
+  - detector: Reconciliation break
+    needs: >
+      GL-to-loan-book linkage. `gold.gl_daily_balances` has no account-level relationship, so
+      the two sides cannot be tied out at all.

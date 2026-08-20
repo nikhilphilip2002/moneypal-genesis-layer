@@ -526,6 +526,80 @@ class Worklist(_Model):
 
 
 # --------------------------------------------------------------------------------------
+# Signals — findings the system formed before anyone asked
+# --------------------------------------------------------------------------------------
+
+
+class Signal(_Model):
+    """One notable thing the scan found, with the query that found it attached.
+
+    "What are the emerging issues?" cannot be answered request-scoped: by the time someone
+    asks, there is no baseline to compare against and nothing has been ranked. The scan runs
+    on a schedule and stores its findings, which turns the question into retrieval over
+    pre-computed evidence — and that is the only version of it that is trustworthy.
+    """
+
+    id: str = ""
+    detected_at: datetime | None = None
+    scope: str = Field(description="Signal scope id from signals.yaml.")
+    label: str
+    kind: str = Field(description="Which detector fired: level_shift, threshold, …")
+    metric: str = ""
+    dimension: str = ""
+    member: str = Field(default="", description="Decoded member label, or blank for a total.")
+    severity: Severity = "watch"
+    direction: Literal["up", "down", "flat"] = "flat"
+    magnitude: float = 0.0
+    baseline: float | None = None
+    value: float | None = None
+    unit: Unit = "count"
+    text: str = Field(description="Deterministic sentence, templated from the detection.")
+    spec: QuerySpec | None = Field(
+        default=None,
+        description="One click from the signal to its evidence. None only for a data-health "
+        "finding, which is about a table rather than about a measure.",
+    )
+    status: Literal["open", "acknowledged", "resolved"] = "open"
+
+    @property
+    def fingerprint(self) -> str:
+        """Identity across scans, so the same standing problem is one signal with a history
+        rather than a fresh alarm every night."""
+        raw = f"{self.scope}|{self.kind}|{self.member}"
+        return hashlib.sha256(raw.encode()).hexdigest()[:16]
+
+
+class ScanReport(_Model):
+    """What one run of the scan did. Kept because a scan that quietly stopped finding things
+    looks exactly like a book with no problems."""
+
+    started_at: datetime
+    duration_ms: int = 0
+    scopes_run: int = 0
+    scopes_failed: int = 0
+    signals: list[Signal] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+    abstained: list[str] = Field(
+        default_factory=list,
+        description="Scopes that had too little history to judge. Reported rather than "
+        "silently skipped — 'not enough data yet' and 'nothing wrong' must not look alike.",
+    )
+
+
+class Briefing(_Model):
+    """The morning read for one persona: what is notable, and what to do about it."""
+
+    persona: str
+    label: str
+    generated_at: datetime
+    headline: str = ""
+    signals: list[Signal] = Field(default_factory=list)
+    analyses: list[AnalysisResult] = Field(default_factory=list)
+    worklists: list[Worklist] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+
+
+# --------------------------------------------------------------------------------------
 # Conversation + API envelope
 # --------------------------------------------------------------------------------------
 
