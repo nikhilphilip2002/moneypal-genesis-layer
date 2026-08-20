@@ -113,3 +113,35 @@ def test_transcript_respects_the_token_budget():
     # The newest turn always survives, whatever the budget.
     assert "Question 11" in messages[-2]["content"]
     assert "Question 0" not in " ".join(message["content"] for message in verbatim)
+
+
+def test_an_analysis_turn_survives_into_model_context():
+    """An analysis carries its whole answer in the findings, not in a row grid. Without a
+    branch of its own it flattened to "" — a compacted thread lost the briefing entirely, and
+    the follow-up "why is that?" then had nothing to refer back to."""
+    turn_id = history.begin_turn("c2", "alice", "How is the business doing?")
+    history.set_route("c2", "alice", turn_id, sources=["db"], intent="briefing")
+    history.add_card("c2", "alice", turn_id, {
+        "source": "db",
+        "card_type": "analysis",
+        "payload": {
+            "id": "portfolio_health",
+            "title": "Portfolio health",
+            "compose": "briefing",
+            "headline": "2 of 4 indicators need attention: PAR 30, NPA ratio.",
+            "findings": [
+                {"step_id": "par30", "label": "PAR 30", "text": "PAR 30: 14.0%, above 10.0%."},
+                {"step_id": "npa", "label": "NPA ratio", "text": "NPA ratio: 8.0%."},
+            ],
+            "narrative": "Arrears drove the move.",
+            "charts": [],
+            "warnings": [],
+        },
+    })
+    history.complete_turn("c2", "alice", turn_id)
+
+    context = history.transcript("c2", user="alice")[-1]["content"]
+    assert "2 of 4 indicators need attention" in context
+    assert "PAR 30: 14.0%" in context
+    assert "NPA ratio: 8.0%" in context
+    assert "Arrears drove the move." in context

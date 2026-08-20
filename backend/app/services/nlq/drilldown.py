@@ -19,7 +19,9 @@ from datetime import date
 
 from app.services.nlq import periods
 from app.services.nlq.catalog import Catalog, get_catalog
+from app.services.nlq.compiler import CompileError, compile_spec
 from app.services.nlq.contracts import DrillStep, Filter, OrderBy, Period, QuerySpec
+from app.services.nlq.narrator import humanize_label
 
 DEFAULT_LIMIT = 5
 """More chips than this and nobody reads any of them."""
@@ -68,7 +70,23 @@ def next_steps(
             steps.append(step)
     steps.extend(_sideways_steps(spec, cat))
 
-    return _dedupe(steps)[:limit]
+    return [s for s in _dedupe(steps) if _compiles(s.spec, cat)][:limit]
+
+
+def _compiles(spec: QuerySpec, cat: Catalog) -> bool:
+    """Whether this step can actually be answered.
+
+    The drill graph is written per-dimension, but a metric is only available on the tables
+    its source joins to — `disbursement by agent` compiles, `disbursement by DPD bucket`
+    does not. Offering a chip that errors when tapped is worse than offering one fewer: the
+    user reads the failure as the product being broken, not as the question being unaskable.
+    Compilation is pure string building against the catalog, so this costs no database work.
+    """
+    try:
+        compile_spec(spec, cat)
+    except (CompileError, ValueError):
+        return False
+    return True
 
 
 def _deeper_steps(spec: QuerySpec, cat: Catalog) -> list[DrillStep]:
@@ -148,12 +166,12 @@ def _explain_step(spec: QuerySpec, cat: Catalog, today: date | None) -> DrillSte
             "as_share": False,
         }
     )
-    label = cat.dimensions[dimension].label.lower()
+    label = humanize_label(cat.dimensions[dimension].label)
     return DrillStep(
         kind="explain",
         id=f"explain:{dimension}",
         label="Why did it change?",
-        question=f"why {metric.label.lower()} changed, by {label}{_qualifiers(spec, cat)}",
+        question=f"why {humanize_label(metric.label)} changed, by {label}{_qualifiers(spec, cat)}",
         dimension=dimension,
         spec=drilled,
     )
@@ -180,7 +198,7 @@ def _act_step(spec: QuerySpec, cat: Catalog) -> DrillStep | None:
         id=f"act:{entity}",
         label="Show the accounts",
         question=(
-            f"{_subject(spec, cat)} by {cat.dimensions[entity].label.lower()}"
+            f"{_subject(spec, cat)} by {humanize_label(cat.dimensions[entity].label)}"
             f"{_qualifiers(spec, cat)}"
         ),
         dimension=entity,
@@ -196,16 +214,31 @@ def _split_step(kind: str, spec: QuerySpec, dimension: str, cat: Catalog) -> Dri
     return DrillStep(
         kind=kind,  # type: ignore[arg-type]
         id=f"{kind}:{dimension}",
-        label=f"By {label.lower()}",
-        question=f"{_subject(spec, cat)} by {label.lower()}{_qualifiers(spec, cat)}",
+        label=f"By {humanize_label(label)}",
+        question=f"{_subject(spec, cat)} by {humanize_label(label)}{_qualifiers(spec, cat)}",
         dimension=dimension,
         spec=drilled,
     )
 
 
+def describe(spec: QuerySpec, catalog: Catalog | None = None) -> str:
+    """This spec re-asked in words — "PAR 30 by branch for product Gold in this month".
+
+    Anything that offers a spec as a *conversational* follow-up needs this. The workbench
+    routes every turn through the planner so it lands in history with its sources, which
+    means the words are what actually get answered; a chip labelled "PAR 30" would be
+    re-planned with no filter and a default period, answering about the whole book while
+    sitting under a card about gold loans in Q2.
+    """
+    cat = catalog or get_catalog()
+    labels = [cat.dimensions[d].label for d in spec.dimensions if d in cat.dimensions]
+    by = f" by {' and '.join(humanize_label(label) for label in labels)}" if labels else ""
+    return f"{_subject(spec, cat)}{by}{_qualifiers(spec, cat)}"
+
+
 def _subject(spec: QuerySpec, cat: Catalog) -> str:
     metric = cat.metrics.get(spec.metrics[0])
-    return metric.label.lower() if metric else spec.metrics[0]
+    return humanize_label(metric.label) if metric else spec.metrics[0]
 
 
 def _qualifiers(spec: QuerySpec, cat: Catalog) -> str:
@@ -224,7 +257,7 @@ def _qualifiers(spec: QuerySpec, cat: Catalog) -> str:
             continue
         enum = cat.enum_for_dimension(dim.decode) if dim.decode else None
         value = enum.label_for(filt.value) if enum else str(filt.value)
-        parts.append(f"for {dim.label.lower()} {value}")
+        parts.append(f"for {humanize_label(dim.label)} {value}")
 
     period = spec.period.relative or (
         f"{spec.period.start} to {spec.period.end}" if spec.period.start else ""
@@ -262,7 +295,8 @@ def append_level(spec: QuerySpec, catalog: Catalog | None = None) -> QuerySpec |
         nxt = path.next_after(current) if path else None
     if nxt is None or nxt in spec.dimensions or nxt not in cat.dimensions:
         return None
-    return spec.model_copy(update={"dimensions": [*spec.dimensions, nxt]})
+    appended = spec.model_copy(update={"dimensions": [*spec.dimensions, nxt]})
+    return appended if _compiles(appended, cat) else None
 
 
 def drill_into(
@@ -331,12 +365,20 @@ _RELATIVE_PREDECESSOR = {
     "this_month": "last_month",
     "this_quarter": "last_quarter",
     "this_fy": "last_fy",
-    "fy_to_date": "last_fy",
-    "ytd": "last_fy",
     "today": "yesterday",
 }
 """Where the business already has a word for the previous period, use it: "vs last quarter"
-reads better in a subtitle than a pair of dates, and it survives being saved and re-run."""
+reads better in a subtitle than a pair of dates, and it survives being saved and re-run.
+
+`fy_to_date` and `ytd` are deliberately absent. They resolve to a window ending *today*;
+naming `last_fy` as their predecessor would measure four months of trading against twelve
+and report a collapse in every single one of them. They go through `_SAME_SPAN_LAST_YEAR`
+instead."""
+
+_SAME_SPAN_LAST_YEAR = ("fy_to_date", "ytd")
+"""Periods that run from a fixed start to today. The comparison a bank means for these is
+the identical window a year earlier, not the span immediately before them — "FY to date" is
+asked to be read against last year's FY to the same date."""
 
 
 def _previous_period(period: Period, today: date | None) -> Period | None:
@@ -344,6 +386,17 @@ def _previous_period(period: Period, today: date | None) -> Period | None:
     named = _RELATIVE_PREDECESSOR.get(period.relative or "")
     if named:
         return Period(grain=period.grain, relative=named)  # type: ignore[arg-type]
+
+    if period.relative in _SAME_SPAN_LAST_YEAR:
+        try:
+            current = periods.resolve_relative(period.relative, today)
+        except (periods.PeriodError, ValueError):
+            return None
+        return Period(
+            grain=period.grain,
+            start=_a_year_earlier(current.start),
+            end=_a_year_earlier(current.end),
+        )
 
     try:
         if period.relative:
@@ -358,6 +411,15 @@ def _previous_period(period: Period, today: date | None) -> Period | None:
     return Period(grain=period.grain, start=prior.start, end=prior.end)
 
 
+def _a_year_earlier(day: date) -> date:
+    """29 February has no counterpart in a common year; 28 February is the day the business
+    means, and it is the only choice that keeps the window the same length."""
+    try:
+        return day.replace(year=day.year - 1)
+    except ValueError:
+        return day.replace(year=day.year - 1, day=28)
+
+
 def _dedupe(steps: list[DrillStep]) -> list[DrillStep]:
     seen: set[str] = set()
     out = []
@@ -369,4 +431,4 @@ def _dedupe(steps: list[DrillStep]) -> list[DrillStep]:
     return out
 
 
-__all__ = ["DrillError", "DrillStep", "append_level", "drill_into", "next_steps"]
+__all__ = ["DrillError", "DrillStep", "append_level", "describe", "drill_into", "next_steps"]

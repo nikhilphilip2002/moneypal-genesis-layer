@@ -4,6 +4,7 @@ These run with no database and no model. That is the point — every step here i
 from the catalog and the current QuerySpec, so drilling is instant and cannot go wrong.
 """
 
+
 import pytest
 
 from app.services.nlq import drilldown
@@ -66,7 +67,7 @@ class TestNextSteps:
 
     def test_a_branch_split_offers_the_next_level_down(self, catalog):
         spec = QuerySpec(
-            metrics=["disbursement_total"],
+            metrics=["loan_count"],
             dimensions=["branch"],
             period=Period(relative="last_quarter"),
         )
@@ -95,7 +96,7 @@ class TestNextSteps:
     def test_a_deeper_step_replaces_the_categorical_split(self, catalog):
         """Stacking branch x agent produces a two-dimensional grid nobody asked for."""
         spec = QuerySpec(
-            metrics=["disbursement_total"],
+            metrics=["loan_count"],
             dimensions=["branch"],
             period=Period(relative="last_quarter"),
         )
@@ -104,7 +105,7 @@ class TestNextSteps:
 
     def test_a_deeper_step_keeps_the_time_dimension(self, catalog):
         spec = QuerySpec(
-            metrics=["disbursement_total"],
+            metrics=["loan_count"],
             dimensions=["month", "branch"],
             period=Period(relative="last_12_months"),
         )
@@ -113,7 +114,7 @@ class TestNextSteps:
 
     def test_a_deeper_step_keeps_existing_filters(self, catalog):
         spec = QuerySpec(
-            metrics=["disbursement_total"],
+            metrics=["loan_count"],
             dimensions=["branch"],
             filters=[Filter(field="product", op="eq", value="1")],
             period=Period(relative="last_quarter"),
@@ -221,7 +222,7 @@ class TestAppendLevel:
 
     def test_it_adds_rather_than_replaces(self, catalog):
         spec = QuerySpec(
-            metrics=["disbursement_total"],
+            metrics=["loan_count"],
             dimensions=["branch"],
             period=Period(relative="last_quarter"),
         )
@@ -229,7 +230,7 @@ class TestAppendLevel:
 
     def test_a_time_chart_gains_the_first_split(self, catalog):
         spec = QuerySpec(
-            metrics=["disbursement_total"],
+            metrics=["loan_count"],
             dimensions=["month"],
             period=Period(relative="last_12_months"),
         )
@@ -257,7 +258,7 @@ class TestStepQuestions:
 
     def test_a_question_names_the_filters_and_the_period(self, catalog):
         spec = QuerySpec(
-            metrics=["disbursement_total"],
+            metrics=["loan_count"],
             dimensions=["branch"],
             filters=[Filter(field="product", op="eq", value="1")],
             period=Period(relative="last_quarter"),
@@ -326,3 +327,118 @@ class TestDrillIntoMember:
         spec = QuerySpec(metrics=["disbursement_total"], period=Period(relative="last_quarter"))
         with pytest.raises(drilldown.DrillError):
             drilldown.drill_into(spec, "nonexistent", "3", catalog)
+
+
+class TestEveryOfferIsAnswerable:
+    """A chip that errors when tapped is worse than one fewer chip.
+
+    The drill graph is written per dimension, but a metric is only available on the tables
+    its source joins to. `disbursement by agent` is the honest example: the graph says agent
+    comes below branch, and the disbursement source has no join to the agent attribute — so
+    the rung genuinely does not exist for that metric, and offering it taught the user the
+    product was broken rather than that the question was unanswerable.
+    """
+
+    def test_no_offered_step_fails_to_compile(self, catalog):
+        from itertools import product as cross
+
+        from app.services.nlq.compiler import compile_spec
+
+        dimensions = [None, "branch", "agent", "product", "scheme", "asset_class", "month"]
+        for metric, dimension in cross(catalog.metrics, dimensions):
+            spec = QuerySpec(
+                metrics=[metric],
+                dimensions=[dimension] if dimension else [],
+                period=Period(relative="last_quarter"),
+            )
+            try:
+                compile_spec(spec, catalog)
+            except Exception:
+                continue  # the answer on screen has to exist before it can offer anything
+            for step in drilldown.next_steps(spec, catalog):
+                compile_spec(step.spec, catalog)  # must not raise
+
+    def test_a_metric_with_no_agent_join_is_not_offered_agent(self, catalog):
+        """Disbursement events carry no agent, so branch has nothing below it here."""
+        spec = QuerySpec(
+            metrics=["disbursement_total"],
+            dimensions=["branch"],
+            period=Period(relative="last_quarter"),
+        )
+        assert "agent" not in [s.dimension for s in drilldown.next_steps(spec, catalog)]
+
+    def test_append_level_refuses_an_uncompilable_level(self, catalog):
+        """The bar click has the same problem and the same answer: no target beats a broken
+        one, because the click still looks like it worked."""
+        spec = QuerySpec(
+            metrics=["disbursement_total"],
+            dimensions=["branch"],
+            period=Period(relative="last_quarter"),
+        )
+        assert drilldown.append_level(spec, catalog) is None
+
+
+class TestComparisonWindows:
+    """"Why did it change?" builds its own comparison when the user did not name one, and a
+    comparison of unequal windows is not a change — it is an artefact."""
+
+    def test_a_to_date_period_compares_against_the_same_span_last_year(self, catalog):
+        """`fy_to_date` runs from 1 April to today. Naming `last_fy` as its predecessor
+        measured four months of trading against twelve and reported a collapse every time."""
+        spec = QuerySpec(
+            metrics=["disbursement_total"],
+            dimensions=["branch"],
+            period=Period(relative="fy_to_date"),
+        )
+        step = next(s for s in drilldown.next_steps(spec, catalog) if s.kind == "explain")
+        compare_to = step.spec.compare_to
+        assert compare_to is not None
+        assert compare_to.relative != "last_fy"
+        assert compare_to.start is not None and compare_to.end is not None
+        assert compare_to.start.month == 4 and compare_to.start.day == 1  # last year's FY start
+
+    def test_the_two_windows_are_the_same_length(self, catalog):
+        from app.services.nlq import periods
+
+        spec = QuerySpec(
+            metrics=["disbursement_total"],
+            dimensions=["branch"],
+            period=Period(relative="ytd"),
+        )
+        step = next(s for s in drilldown.next_steps(spec, catalog) if s.kind == "explain")
+        current = periods.resolve_relative("ytd")
+        prior = step.spec.compare_to
+        assert prior is not None and prior.start is not None and prior.end is not None
+        assert (prior.end - prior.start).days == (current.end - current.start).days
+
+    def test_a_whole_period_still_uses_the_name_the_business_uses(self, catalog):
+        spec = QuerySpec(
+            metrics=["disbursement_total"],
+            dimensions=["branch"],
+            period=Period(relative="this_quarter"),
+        )
+        step = next(s for s in drilldown.next_steps(spec, catalog) if s.kind == "explain")
+        assert step.spec.compare_to is not None
+        assert step.spec.compare_to.relative == "last_quarter"
+
+
+class TestDescribe:
+    """The words a spec is re-asked in. The workbench routes every turn through the planner,
+    so these words are what actually get answered."""
+
+    def test_it_names_the_metric_the_split_the_filter_and_the_period(self, catalog):
+        spec = QuerySpec(
+            metrics=["par_30"],
+            dimensions=["branch"],
+            filters=[Filter(field="product", op="eq", value="1")],
+            period=Period(relative="last_quarter"),
+        )
+        question = drilldown.describe(spec, catalog)
+        assert "PAR 30" in question          # an acronym must survive being mid-sentence
+        assert "branch" in question
+        assert "product" in question
+        assert "last quarter" in question
+
+    def test_an_undimensioned_total_still_describes_itself(self, catalog):
+        spec = QuerySpec(metrics=["par_30"], period=Period(relative="this_month"))
+        assert drilldown.describe(spec, catalog).startswith("PAR 30")

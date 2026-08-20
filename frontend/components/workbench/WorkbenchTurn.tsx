@@ -1,7 +1,8 @@
 'use client';
 
 import { Loader2, AlertTriangle, Ban, HelpCircle, Sparkles } from 'lucide-react';
-import type { ChartSpec, WorkbenchCard as CardData } from '@/lib/api';
+import type { AnalysisResult, ChartSpec, QuerySpec, WorkbenchCard as CardData } from '@/lib/api';
+import AnalysisCard from '@/components/nlq/AnalysisCard';
 import ChartRenderer from '@/components/nlq/ChartRenderer';
 import NextQuestions from '@/components/nlq/NextQuestions';
 import LineagePanel from '@/components/nlq/LineagePanel';
@@ -126,6 +127,25 @@ function CardBody({ card, onAsk }: { card: CardData; onAsk: (q: string) => void 
           onPick={(step) => onAsk(step.question)}
         />
         <LineagePanel chart={chart} sourceLabel="Loan book" />
+      </WorkbenchCard>
+    );
+  }
+
+  if (card.card_type === 'analysis') {
+    const analysis = card.payload as AnalysisResult;
+    return (
+      <WorkbenchCard
+        source={card.source}
+        title={analysis.title || 'Analysis'}
+        subtitle={analysis.subtitle || undefined}
+      >
+        {/* Findings and charts both re-ask in words here rather than executing the spec:
+            a workbench turn has to go through the router to land in history with its
+            sources, exactly like any question the user types. */}
+        <AnalysisCard
+          analysis={analysis}
+          onDrilldown={(_spec: QuerySpec, question: string) => onAsk(question)}
+        />
       </WorkbenchCard>
     );
   }

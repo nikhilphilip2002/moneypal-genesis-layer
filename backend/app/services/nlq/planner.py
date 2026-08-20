@@ -28,6 +28,7 @@ from app.services.nlq.catalog import Catalog, get_catalog
 from app.services.nlq.catalog.retrieval import retrieve
 from app.services.nlq.compiler import CompileError, compile_spec
 from app.services.nlq.contracts import (
+    AnalysisPlan,
     ClarifyPlan,
     PlanResult,
     Period,
@@ -728,7 +729,7 @@ def _parse(payload: Any, catalog: Catalog) -> PlanResult:
         raise PlanValidationError(f"expected a JSON object, got {type(payload).__name__}")
 
     route = payload.get("route")
-    if route not in ("queryspec", "sql", "clarify", "refuse"):
+    if route not in ("queryspec", "analysis", "sql", "clarify", "refuse"):
         raise PlanValidationError(f"unknown route {route!r}")
 
     # Only keep the fields belonging to the chosen route: models routinely emit the whole
@@ -739,6 +740,15 @@ def _parse(payload: Any, catalog: Catalog) -> PlanResult:
         parsed = _plan_adapter.validate_python(trimmed)
     except ValidationError as exc:
         raise PlanValidationError(_first_error(exc)) from exc
+
+    if isinstance(parsed, AnalysisPlan):
+        if parsed.analysis_id not in catalog.analyses:
+            raise PlanValidationError(f"unknown analysis {parsed.analysis_id!r}")
+        if parsed.confidence < CONFIDENCE_FLOOR:
+            return ClarifyPlan(
+                question="I am not confident I understood that. Could you rephrase it?",
+                suggestions=_suggestions(catalog),
+            )
 
     if isinstance(parsed, QuerySpecPlan):
         if parsed.confidence < CONFIDENCE_FLOOR:
@@ -757,6 +767,7 @@ def _parse(payload: Any, catalog: Catalog) -> PlanResult:
 
 _ROUTE_FIELDS = {
     "queryspec": {"route", "spec", "confidence", "reasoning"},
+    "analysis": {"route", "analysis_id", "period", "filters", "confidence", "reasoning"},
     "sql": {"route", "intent", "tables", "confidence", "reasoning"},
     "clarify": {"route", "question", "suggestions"},
     "refuse": {"route", "reason", "message", "examples"},
@@ -766,7 +777,7 @@ _ROUTE_FIELDS = {
 def _trim_to_route(payload: dict[str, Any], route: str) -> dict[str, Any]:
     keep = _ROUTE_FIELDS[route]
     trimmed = {k: v for k, v in payload.items() if k in keep and v is not None}
-    if route in ("queryspec", "sql") and "confidence" not in trimmed:
+    if route in ("queryspec", "analysis", "sql") and "confidence" not in trimmed:
         trimmed["confidence"] = 0.7
     if route == "refuse" and "reason" not in trimmed:
         trimmed["reason"] = "out_of_scope"

@@ -30,7 +30,7 @@ from typing import Any, Sequence
 
 from app.services.nlq.catalog import Catalog, get_catalog
 from app.services.nlq.catalog.loader import canonical_enum_code
-from app.services.nlq.narrator import format_value
+from app.services.nlq.narrator import format_value, humanize_label
 
 DEFAULT_TOP_N = 6
 """Past six bars a waterfall stops being readable and starts being a table."""
@@ -225,7 +225,7 @@ def _number(value: Any) -> float:
 def _label_for(member: str, enum, dim_label: str) -> str:
     if enum is not None:
         return enum.label_for(member)
-    return member if member else f"(no {dim_label.lower()})"
+    return member if member else f"(no {humanize_label(dim_label)})"
 
 
 def _additive_contributions(members, current, prior, enum, dim_label):
@@ -388,11 +388,11 @@ def narrate(decomposition: Decomposition, catalog: Catalog | None = None) -> str
         # many members moved, and which moved most.
         movers = [c for c in d.all_contributions if c.delta]
         if not movers:
-            return f"{d.label} was unchanged across every {d.dimension_label.lower()}."
+            return f"{d.label} was unchanged across every {humanize_label(d.dimension_label)}."
         top = movers[0]
         return (
             f"{d.label} moved at {len(movers)} of {len(d.all_contributions)} "
-            f"{d.dimension_label.lower()} values. The largest is {top.label} at "
+            f"{humanize_label(d.dimension_label)} values. The largest is {top.label} at "
             f"{_signed(top.delta, unit)}. {d.caveat}"
         )
 

@@ -10,7 +10,7 @@ import pytest
 from app.services.nlq.catalog import get_catalog
 from app.services.nlq.llm.schemas import plan_schema
 
-ROUTES = ("queryspec", "sql", "clarify", "refuse")
+ROUTES = ("queryspec", "analysis", "sql", "clarify", "refuse")
 
 
 @pytest.fixture(scope="module")

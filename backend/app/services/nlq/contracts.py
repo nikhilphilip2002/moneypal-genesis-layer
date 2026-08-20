@@ -240,6 +240,24 @@ class SqlPlan(_Model):
     reasoning: str = Field(default="", max_length=500)
 
 
+class AnalysisPlan(_Model):
+    """Catalog hit of a different kind: the question needs several queries, not one.
+
+    The planner picks a *preset* and binds its period and filters. It does not compose the
+    steps itself — a model free-composing eight interdependent queries produces a plausible
+    analysis roughly as often as a correct one, and the difference is invisible to the reader.
+    Presets are YAML, reviewed once, and each is a golden test."""
+
+    route: Literal["analysis"] = "analysis"
+    analysis_id: str = Field(description="Preset id from analyses.yaml.")
+    period: Period | None = Field(
+        default=None, description="Overrides the preset's default period when the user named one."
+    )
+    filters: list[Filter] = Field(default_factory=list)
+    confidence: float = Field(ge=0.0, le=1.0)
+    reasoning: str = Field(default="", max_length=500)
+
+
 class ClarifyPlan(_Model):
     route: Literal["clarify"] = "clarify"
     question: str
@@ -254,7 +272,8 @@ class RefusalPlan(_Model):
 
 
 PlanResult = Annotated[
-    Union[QuerySpecPlan, SqlPlan, ClarifyPlan, RefusalPlan], Field(discriminator="route")
+    Union[QuerySpecPlan, AnalysisPlan, SqlPlan, ClarifyPlan, RefusalPlan],
+    Field(discriminator="route"),
 ]
 """Tagged union emitted by the planner under constrained decoding."""
 
@@ -362,6 +381,75 @@ class ChartSpec(_Model):
 
 
 # --------------------------------------------------------------------------------------
+# Multi-query analysis
+# --------------------------------------------------------------------------------------
+
+Severity = Literal["info", "watch", "alert"]
+"""Ranked by a threshold the bank ratified in analyses.yaml, never by model judgement.
+"What are the 5 things I need to know?" is only trustworthy if "notable" has a definition."""
+
+
+class AnalysisStep(_Model):
+    """One query inside an analysis. Compiles and executes exactly like any other spec."""
+
+    id: str
+    label: str
+    spec: QuerySpec
+    watch_above: float | None = None
+    watch_below: float | None = None
+    alert_above: float | None = None
+    alert_below: float | None = None
+    note: str = Field(default="", description="Why this step is in the analysis.")
+
+
+class AnalysisSpec(_Model):
+    id: str = Field(default="", description="Preset id, when it came from one.")
+    title: str
+    compose: Literal["briefing", "quadrant", "concentration"]
+    steps: list[AnalysisStep] = Field(min_length=1, max_length=12)
+    subtitle: str = ""
+
+
+class Finding(_Model):
+    """One line of "here is what matters", with the query that produced it attached."""
+
+    step_id: str
+    label: str
+    text: str = Field(description="Deterministic sentence, templated from the step's rows.")
+    question: str = Field(
+        default="",
+        description="How to re-ask this finding in words. The workbench routes every turn "
+        "through the planner so it lands in history with its sources, so a chip has to "
+        "carry a self-contained question — a bare label like 'PAR 30' would be re-planned "
+        "with no period and no filters, quietly answering about the whole book.",
+    )
+    value: float | None = None
+    unit: Unit = "count"
+    severity: Severity = "info"
+    spec: QuerySpec = Field(description="One click from the finding to its evidence.")
+
+
+class AnalysisResult(_Model):
+    """The answer to a question that took more than one query."""
+
+    id: str = ""
+    title: str
+    subtitle: str = ""
+    compose: str
+    headline: str = Field(
+        default="", description="Deterministic lead sentence — never model-written."
+    )
+    narrative: str = Field(
+        default="",
+        description="Optional prose tying the findings together. Written over the findings "
+        "below and never over raw rows, so it can restate but cannot introduce a number.",
+    )
+    findings: list[Finding] = Field(default_factory=list, description="Most notable first.")
+    charts: list[ChartSpec] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+
+
+# --------------------------------------------------------------------------------------
 # Conversation + API envelope
 # --------------------------------------------------------------------------------------
 
@@ -369,7 +457,7 @@ class ChartSpec(_Model):
 class Turn(_Model):
     question: str
     resolved_question: str
-    route: Literal["queryspec", "sql", "clarify", "refuse"]
+    route: Literal["queryspec", "analysis", "sql", "clarify", "refuse"]
     chart_type: ChartType | None = None
     row_count: int = 0
     ts: datetime
@@ -390,6 +478,11 @@ class AskResponse(_Model):
     turn_id: str
     status: Literal["answered", "clarify", "refused"]
     chart: ChartSpec | None = None
+    analysis: AnalysisResult | None = Field(
+        default=None,
+        description="Present instead of `chart` when the question needed several queries. "
+        "`chart` stays the single-result field, so every existing consumer is unaffected.",
+    )
     clarification: ClarifyPlan | None = None
     refusal: RefusalPlan | None = None
     plan_summary: str = ""

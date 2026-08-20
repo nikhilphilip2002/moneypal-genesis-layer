@@ -610,3 +610,19 @@ class TestExplain:
         chart = chart_for(self.SPEC, self.CURRENT, catalog, prior=result_of(self.PRIOR))
         assert chart.x is not None and chart.x.field in chart.rows[0]
         assert all(s.field in chart.rows[0] for s in chart.series)
+
+    def test_a_split_that_also_carries_a_month_is_not_a_bridge(self, catalog):
+        """A bridge attributes one change to one set of members. With a month on the axis
+        each branch appears once per month, and the decomposition kept whichever row arrived
+        last — reporting one month's movement as the whole quarter's."""
+        spec = self.SPEC.model_copy(update={"dimensions": ["month", "branch"]})
+        rows = [
+            {"month": "2026-04-01", "branch": 1, "disbursement_total": 100.0},
+            {"month": "2026-05-01", "branch": 1, "disbursement_total": 500.0},
+        ]
+        prior = [
+            {"month": "2026-01-01", "branch": 1, "disbursement_total": 200.0},
+            {"month": "2026-02-01", "branch": 1, "disbursement_total": 200.0},
+        ]
+        chart = chart_for(spec, rows, catalog, prior=result_of(prior))
+        assert chart.chart_type != "waterfall"

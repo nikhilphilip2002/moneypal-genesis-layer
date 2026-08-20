@@ -558,6 +558,23 @@ def _card_text(card: dict[str, Any]) -> str:
             part for part in [f"[{source}] {title}", subtitle, chart_context, body, summary]
             if part
         )
+    if card_type == "analysis":
+        # An analysis carries its whole answer in the findings, not in a row grid. Falling
+        # through to the generic branch below returned "" for every one of them, so a
+        # compacted thread lost the briefing entirely — and the follow-up "why is that?"
+        # then had nothing to refer back to.
+        title = str(payload.get("title") or "Analysis")
+        headline = str(payload.get("headline") or "")
+        findings = payload.get("findings") if isinstance(payload.get("findings"), list) else []
+        lines = [
+            f"- {finding.get('label')}: {finding.get('text')}"
+            for finding in findings
+            if isinstance(finding, dict) and finding.get("text")
+        ]
+        narrative = str(payload.get("narrative") or "")
+        return "\n".join(
+            part for part in [f"[{source}] {title}", headline, *lines, narrative] if part
+        )
     if card_type == "brief":
         summary = str(payload.get("summary") or "")
         points = payload.get("key_points") if isinstance(payload.get("key_points"), list) else []

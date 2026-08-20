@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   nlq,
+  type AnalysisResult,
   type ChartSpec,
   type DrillStep,
   type NlqClarification,
@@ -10,6 +11,7 @@ import {
 } from '@/lib/api';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import AnalysisCard from './AnalysisCard';
 import ChartRenderer from './ChartRenderer';
 import LineagePanel from './LineagePanel';
 import NextQuestions from './NextQuestions';
@@ -39,6 +41,7 @@ type Turn = {
   planModel?: string;
   planSummary?: string;
   chart?: ChartSpec;
+  analysis?: AnalysisResult;
   clarification?: NlqClarification;
   refusal?: NlqRefusal;
   error?: string;
@@ -135,9 +138,19 @@ export default function ChatThread({
                   />
                   <NextQuestions
                     steps={turn.chart.next_steps ?? []}
-                    onPick={(step: DrillStep) => drilldown(step.spec, turn, step.label)}
+                    onPick={(step: DrillStep) => drilldown(step.spec, turn, step.question)}
                   />
                   <LineagePanel chart={turn.chart} />
+                  <Feedback turn={turn} onRate={rate} />
+                </>
+              )}
+
+              {turn.analysis && (
+                <>
+                  <AnalysisCard
+                    analysis={turn.analysis}
+                    onDrilldown={(spec, question) => drilldown(spec, turn, question)}
+                  />
                   <Feedback turn={turn} onRate={rate} />
                 </>
               )}

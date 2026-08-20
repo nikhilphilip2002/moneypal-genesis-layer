@@ -1,0 +1,208 @@
+# Preset analyses: the questions that take more than one query.
+#
+# "How is the business performing, and what are the five things I need to know?" is eight
+# queries plus a ranking of what is notable. The planner picks a preset from this file and
+# binds its period and filters; it never composes the steps itself. A model free-composing
+# interdependent queries produces a plausible analysis about as often as a correct one, and
+# the difference is invisible to the reader.
+#
+# `watch_*` / `alert_*` are what make "notable" mean something. They are the bank's
+# thresholds, reviewed once and versioned with the catalog, so the ranking of findings is
+# reproducible rather than a judgement the model re-makes on every run.
+#
+# Every step is an ordinary QuerySpec. It compiles, executes, caches and drills exactly like
+# a question typed by hand, which is why an analysis costs no new database surface.
+
+- id: portfolio_health
+  title: Portfolio health
+  compose: briefing
+  description: >
+    Overall credit quality and book size right now: outstanding, arrears, PAR, NPA and
+    collection efficiency in one view.
+  synonyms:
+    - how healthy is our portfolio
+    - portfolio health
+    - how is the book doing
+    - credit quality overview
+    - state of the loan book
+    - how are we performing
+  default_period: {relative: this_month}
+  steps:
+    - id: book_size
+      label: Principal outstanding
+      metrics: [principal_outstanding]
+      note: The size of the book everything else is a proportion of.
+
+    - id: par30
+      label: PAR 30
+      metrics: [par_30]
+      watch_above: 5.0
+      alert_above: 10.0
+      note: Standard portfolio-at-risk trigger for a co-operative MSME book.
+
+    - id: par90
+      label: PAR 90
+      metrics: [par_90]
+      watch_above: 2.0
+      alert_above: 5.0
+
+    - id: npa
+      label: NPA ratio
+      metrics: [npa_ratio]
+      watch_above: 3.0
+      alert_above: 6.0
+
+    - id: collections
+      label: Collection efficiency
+      metrics: [collection_efficiency]
+      watch_below: 95.0
+      alert_below: 90.0
+      note: Below par means arrears are building faster than they are being cleared.
+
+    - id: arrears
+      label: Total overdue
+      metrics: [overdue_total]
+
+    - id: delinquent_accounts
+      label: Delinquent accounts
+      metrics: [delinquent_account_count]
+
+- id: collections_focus
+  title: Collections focus
+  compose: briefing
+  description: >
+    Where collections stand and which branches, buckets and borrowers are behind the
+    shortfall.
+  synonyms:
+    - where should collections focus
+    - collections performance
+    - how are collections doing
+    - what is driving collections
+    - collections review
+  default_period: {relative: this_month}
+  steps:
+    - id: efficiency
+      label: Collection efficiency
+      metrics: [collection_efficiency]
+      watch_below: 95.0
+      alert_below: 90.0
+
+    - id: shortfall
+      label: Collection shortfall
+      metrics: [collection_shortfall]
+
+    - id: by_branch
+      label: Collection efficiency by branch
+      metrics: [collection_efficiency, amount_due]
+      dimensions: [branch]
+
+    - id: by_bucket
+      label: Overdue by DPD bucket
+      metrics: [overdue_total]
+      dimensions: [dpd_bucket]
+
+    - id: worst_accounts
+      label: Largest overdue accounts
+      metrics: [overdue_total]
+      dimensions: [loan_account]
+      order_by: {field: overdue_total, direction: desc}
+      limit: 25
+
+- id: origination_review
+  title: Origination review
+  compose: briefing
+  description: >
+    What we are writing: disbursement and sanction volumes, ticket size, pricing, and the
+    branches and products behind them.
+  synonyms:
+    - how is origination doing
+    - disbursement review
+    - how much are we lending
+    - new business review
+    - where is growth coming from
+  default_period: {relative: this_quarter}
+  steps:
+    - id: disbursed
+      label: Disbursement
+      metrics: [disbursement_total]
+
+    - id: sanctioned
+      label: Sanctioned
+      metrics: [sanctioned_amount]
+
+    - id: accounts
+      label: Loans sanctioned
+      metrics: [loan_count]
+
+    - id: ticket
+      label: Average ticket size
+      metrics: [avg_ticket_size]
+
+    - id: by_branch
+      label: Disbursement by branch
+      metrics: [disbursement_total]
+      dimensions: [branch]
+
+    - id: by_product
+      label: Disbursement by product
+      metrics: [disbursement_total]
+      dimensions: [product]
+
+- id: concentration
+  title: Concentration risk
+  compose: concentration
+  description: >
+    How much of the book sits with how few borrowers — the Herfindahl index and the top-10
+    share of principal outstanding.
+  synonyms:
+    - concentration risk
+    - how concentrated is our book
+    - single borrower exposure
+    - largest exposures
+    - top borrowers by exposure
+  default_period: {relative: this_month}
+  steps:
+    - id: exposure
+      label: Principal outstanding by borrower
+      metrics: [principal_outstanding]
+      dimensions: [borrower]
+      order_by: {field: principal_outstanding, direction: desc}
+      limit: 500
+      # HHI over the top 500 understates a genuinely long tail and overstates nothing: any
+      # borrower outside it is smaller than every borrower inside it.
+      watch_above: 0.15
+      alert_above: 0.25
+      note: Herfindahl index. Above 0.15 is a moderately concentrated book, above 0.25 high.
+
+- id: growth_versus_quality
+  title: Growth against credit quality
+  compose: quadrant
+  description: >
+    Every branch placed on growth against arrears, so the branches growing well and cleanly
+    separate from the ones buying volume with risk.
+  synonyms:
+    - which branches have the best growth and credit quality
+    - growth versus risk by branch
+    - who is growing well
+    - growth and quality
+  default_period: {relative: this_quarter}
+  # Two steps, not one query with two metrics: disbursement lives on the disbursement event
+  # log and PAR on the daily snapshot, and the compiler refuses to combine metrics across
+  # source tables because the join would double-count. Merging two correct result sets on
+  # the dimension is exactly the job an analysis exists to do.
+  steps:
+    - id: growth
+      label: Disbursement by branch
+      metrics: [disbursement_total]
+      dimensions: [branch]
+      note: >
+        The "more is better" axis. The quadrant composer reads the first step this way and
+        the second as "more is worse".
+
+    - id: quality
+      label: PAR 30 by branch
+      metrics: [par_30]
+      dimensions: [branch]
+      note: >
+        Quadrants are cut at the median of each axis, not at an absolute threshold: the
+        question is which branches are better or worse than the rest of this bank.

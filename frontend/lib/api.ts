@@ -656,11 +656,47 @@ export type NlqRefusal = {
   examples: string[];
 };
 
+export type Severity = 'info' | 'watch' | 'alert';
+
+// One line of "here is what matters", carrying the query that produced it so the reader is
+// always one click from the evidence. Severity comes from thresholds the bank ratified in
+// analyses.yaml, never from model judgement — otherwise "the five things I need to know"
+// is whatever the model felt strongly about that run.
+export type Finding = {
+  step_id: string;
+  label: string;
+  text: string;
+  // How to re-ask this finding in words. The workbench routes every turn through the
+  // planner, so a chip has to carry a self-contained question — a bare label like "PAR 30"
+  // is re-planned with no period and no filters.
+  question: string;
+  value: number | null;
+  unit: Unit;
+  severity: Severity;
+  spec: QuerySpec;
+};
+
+// The answer to a question that took more than one query.
+export type AnalysisResult = {
+  id: string;
+  title: string;
+  subtitle: string;
+  compose: string;
+  headline: string;
+  narrative: string;
+  findings: Finding[];
+  charts: ChartSpec[];
+  warnings: string[];
+};
+
 export type NlqAskResponse = {
   conversation_id: string;
   turn_id: string;
   status: 'answered' | 'clarify' | 'refused';
   chart: ChartSpec | null;
+  // Present instead of `chart` when the question needed several queries. `chart` stays the
+  // single-result field, so every existing consumer is unaffected.
+  analysis: AnalysisResult | null;
   clarification: NlqClarification | null;
   refusal: NlqRefusal | null;
   plan_summary: string;
@@ -694,6 +730,7 @@ export type NlqStreamEvent =
   | { type: 'rewrite'; resolved_question: string }
   | { type: 'plan'; route: string; model: string }
   | { type: 'chart'; response: NlqAskResponse }
+  | { type: 'analysis'; response: NlqAskResponse }
   | { type: 'clarify'; clarification: NlqClarification }
   | { type: 'refusal'; refusal: NlqRefusal }
   | { type: 'error'; message: string; retryable: boolean }
@@ -770,6 +807,7 @@ export const nlq = {
           case 'rewrite': yield { type: 'rewrite', resolved_question: payload.resolved_question }; break;
           case 'plan': yield { type: 'plan', route: payload.route, model: payload.model }; break;
           case 'chart': yield { type: 'chart', response: payload as NlqAskResponse }; break;
+          case 'analysis': yield { type: 'analysis', response: payload as NlqAskResponse }; break;
           case 'clarify': yield { type: 'clarify', clarification: payload as NlqClarification }; break;
           case 'refusal': yield { type: 'refusal', refusal: payload as NlqRefusal }; break;
           case 'error': yield { type: 'error', message: payload.message, retryable: !!payload.retryable }; break;
@@ -794,7 +832,7 @@ export type WorkbenchSource = {
 
 export type WorkbenchCard = {
   source: string;
-  card_type: 'chart' | 'brief' | 'schema' | 'clarify' | 'refusal' | 'error';
+  card_type: 'chart' | 'analysis' | 'brief' | 'schema' | 'clarify' | 'refusal' | 'error';
   payload: any;
 };
 

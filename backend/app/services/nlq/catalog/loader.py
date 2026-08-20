@@ -220,6 +220,40 @@ class Join:
 
 
 @dataclass(frozen=True, slots=True)
+class AnalysisStepDef:
+    """One query in a preset analysis, still in catalog terms rather than as a QuerySpec.
+
+    Kept as loose data here so the catalog stays importable without the contracts module;
+    `analysis.build` turns it into a real `QuerySpec` and the validators there apply."""
+
+    id: str
+    label: str
+    metrics: tuple[str, ...]
+    dimensions: tuple[str, ...] = ()
+    order_by: dict[str, str] | None = None
+    limit: int | None = None
+    as_share: bool = False
+    watch_above: float | None = None
+    watch_below: float | None = None
+    alert_above: float | None = None
+    alert_below: float | None = None
+    note: str = ""
+
+
+@dataclass(frozen=True, slots=True)
+class AnalysisDef:
+    """A question that takes more than one query, defined once and reviewed once."""
+
+    id: str
+    title: str
+    compose: str
+    steps: tuple[AnalysisStepDef, ...]
+    description: str = ""
+    synonyms: tuple[str, ...] = ()
+    default_period: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass(frozen=True, slots=True)
 class DrillPath:
     """One axis a question can be drilled along, coarsest rung first."""
 
@@ -321,6 +355,7 @@ class Catalog:
     joins: tuple[Join, ...]
     enums: dict[str, EnumBlock]
     drill: DrillGraph
+    analyses: dict[str, AnalysisDef]
     version: str
 
     # -- lookup helpers ------------------------------------------------------------------
@@ -535,6 +570,41 @@ def _load_metrics() -> dict[str, Metric]:
     return out
 
 
+def _load_analyses() -> dict[str, AnalysisDef]:
+    out: dict[str, AnalysisDef] = {}
+    for raw in _read("analyses.yaml"):
+        _require(raw, "id", "title", "compose", "steps", where="analyses.yaml")
+        steps = []
+        for entry in raw["steps"]:
+            _require(entry, "id", "label", "metrics", where=f"analyses.yaml/{raw['id']}")
+            steps.append(
+                AnalysisStepDef(
+                    id=entry["id"],
+                    label=entry["label"],
+                    metrics=_tuple(entry["metrics"]),
+                    dimensions=_tuple(entry.get("dimensions")),
+                    order_by=entry.get("order_by"),
+                    limit=entry.get("limit"),
+                    as_share=bool(entry.get("as_share")),
+                    watch_above=entry.get("watch_above"),
+                    watch_below=entry.get("watch_below"),
+                    alert_above=entry.get("alert_above"),
+                    alert_below=entry.get("alert_below"),
+                    note=entry.get("note", ""),
+                )
+            )
+        out[raw["id"]] = AnalysisDef(
+            id=raw["id"],
+            title=raw["title"],
+            compose=raw["compose"],
+            steps=tuple(steps),
+            description=raw.get("description", ""),
+            synonyms=_tuple(raw.get("synonyms")),
+            default_period=raw.get("default_period") or {},
+        )
+    return out
+
+
 def _load_drill() -> DrillGraph:
     raw = _read_mapping("drill.yaml")
     paths = []
@@ -650,6 +720,60 @@ def _drill_problems(catalog: Catalog) -> list[str]:
     return problems
 
 
+_COMPOSERS = {"briefing", "quadrant", "concentration"}
+
+# A composer that receives the wrong shape does not fail — it produces a confident,
+# meaningless answer. Pin the shape each one requires at load time instead.
+# (step count, metrics per step, dimensions per step, description)
+_COMPOSER_SHAPES = {
+    "quadrant": (2, 1, 1, "two steps of one metric over the same one dimension"),
+    "concentration": (1, 1, 1, "exactly one step with one metric and one dimension"),
+}
+
+
+def _analysis_problems(catalog: Catalog) -> list[str]:
+    problems: list[str] = []
+    for analysis in catalog.analyses.values():
+        where = f"analysis {analysis.id!r}"
+        if analysis.compose not in _COMPOSERS:
+            problems.append(f"{where} uses unknown composer {analysis.compose!r}")
+
+        for step in analysis.steps:
+            for metric in step.metrics:
+                if metric not in catalog.metrics:
+                    problems.append(f"{where} step {step.id!r} names unknown metric {metric!r}")
+            for dim in step.dimensions:
+                if dim not in catalog.dimensions:
+                    problems.append(f"{where} step {step.id!r} names unknown dimension {dim!r}")
+            if step.order_by:
+                field_name = step.order_by.get("field")
+                if field_name not in {*step.metrics, *step.dimensions}:
+                    problems.append(
+                        f"{where} step {step.id!r} orders by {field_name!r}, which the step "
+                        "does not select"
+                    )
+
+        if len(analysis.steps) != len({s.id for s in analysis.steps}):
+            problems.append(f"{where} has duplicate step ids")
+
+        shape = _COMPOSER_SHAPES.get(analysis.compose)
+        if shape:
+            n_steps, n_metrics, n_dims, described = shape
+            ok = len(analysis.steps) == n_steps and all(
+                len(s.metrics) == n_metrics and len(s.dimensions) == n_dims
+                for s in analysis.steps
+            )
+            if ok and n_steps > 1:
+                # The steps are merged on their shared dimension, so they must share one.
+                ok = len({s.dimensions for s in analysis.steps}) == 1
+            if not ok:
+                problems.append(
+                    f"{where} composes with {analysis.compose!r}, which needs {described}"
+                )
+
+    return problems
+
+
 def _cross_validate(catalog: Catalog) -> None:
     """Every reference must resolve. These are the errors that would otherwise surface as
     a broken query in front of a user."""
@@ -709,6 +833,7 @@ def _cross_validate(catalog: Catalog) -> None:
             )
 
     problems.extend(_drill_problems(catalog))
+    problems.extend(_analysis_problems(catalog))
 
     for join in catalog.joins:
         for side in (join.left, join.right):
@@ -749,7 +874,7 @@ def get_catalog() -> Catalog:
         ACTIVE_DEFS_DIR / name
         for name in (
             "tables.yaml", "columns.yaml", "dimensions.yaml", "metrics.yaml",
-            "joins.yaml", "enums.yaml", "drill.yaml",
+            "joins.yaml", "enums.yaml", "drill.yaml", "analyses.yaml",
         )
     ]
     catalog = Catalog(
@@ -760,6 +885,7 @@ def get_catalog() -> Catalog:
         joins=_load_joins(),
         enums=_load_enums(),
         drill=_load_drill(),
+        analyses=_load_analyses(),
         version=_version(version_paths),
     )
     _cross_validate(catalog)

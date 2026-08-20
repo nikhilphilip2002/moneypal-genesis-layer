@@ -22,6 +22,22 @@ CRORE = 10_000_000
 LAKH = 100_000
 
 
+def humanize_label(label: str) -> str:
+    """A catalog label, fit to sit mid-sentence.
+
+    `label.lower()` is the obvious move and it mangles every acronym the catalog has: "PAR
+    30" becomes "par 30", "NPA ratio" becomes "npa ratio". Only ordinary Titlecase words are
+    lowered; anything already carrying capitals — an acronym, a code — is left as written.
+    """
+    words = []
+    for word in label.split():
+        if word[:1].isupper() and word[1:].islower():
+            words.append(word.lower())
+        else:
+            words.append(word)
+    return " ".join(words)
+
+
 def format_value(value: Any, unit: str) -> str:
     """Indian money conventions: crore and lakh, not millions."""
     if value is None:

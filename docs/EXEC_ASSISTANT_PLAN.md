@@ -56,9 +56,11 @@ Recommendation: get the **first two** and the count reachable rises from 35 to 4
 
 Seven pieces. Each is additive — no existing route, contract or chart changes behaviour.
 
-> **Status:** §3.2 (driver decomposition) and §3.4 (drill graph) are implemented, along with
-> the conversation patterns in §4.1–4.3 and the next-question chips in §4.5. The rest of
-> this section is still design.
+> **Status:** §3.1 (`analysis` route and preset analyses), §3.2 (driver decomposition) and
+> §3.4 (drill graph) are implemented, along with the conversation patterns in §4.1–4.3 and
+> the next-question chips in §4.5. The funnel and cohort composers named in §3.1 are *not*
+> built: both need application-level data, and no `gold` view over `bronze.genlnappl*`
+> exists yet. §3.3, §3.5, §3.6 and §3.7 are still design.
 
 ### 3.1 `analysis` route — multi-query answers (C1)
 
@@ -98,6 +100,34 @@ Response shape: `AskResponse` gains `charts: list[ChartSpec]` and `narrative: st
 **Preset analyses.** Because `AnalysisSpec` is data, the high-value recurring questions ship as YAML presets (`catalog/defs/analyses/*.yaml`) rather than depending on the model to compose them. `portfolio_health`, `morning_briefing`, `collections_focus`, `funnel_health`, `concentration`. The planner's job shrinks to *picking a preset and binding its period/filters* — far more reliable than freeform composition, and each preset is a golden test.
 
 *Files:* `nlq/analysis.py` (new), `nlq/contracts.py`, `nlq/planner.py`, `nlq/llm/schemas.py`, `nlq/llm/prompts.py`, `nlq/ask.py`, `catalog/defs/analyses/`.
+
+### 3.1a The application funnel is blocked on a `gold` view
+
+Phase 3 assumed the funnel could be built from `bronze.genlnappl` (8,661 rows),
+`genlnapplca`, `genlnapplga` and `appldocuplddtl` (184,792 rows). Those tables do exist —
+but the NLQ catalog is **gold-only** by design (`ACTIVE_DEFS_DIR = defs/gold`, and the
+read-only role holds `SELECT` on `gold.*` alone). There is no `gold` view over the
+application tables, so a funnel metric has nowhere to point.
+
+Unblocking it is one migration, not a redesign:
+
+1. Create `gold.loan_application_events` over `bronze.genlnappl` + `genlnapplca/ga`, one row
+   per application with its received / sanctioned / rejected / disbursed dates and codes.
+2. Add `tables.yaml`, `columns.yaml` and `joins.yaml` entries (join to
+   `loan_account_master` on `application_number`, which is already catalogued).
+3. Add funnel metrics — `application_count`, `approval_rate`, `rejection_rate`,
+   `application_to_disbursement_days` — and a `funnel` composer preset.
+
+That lands questions 15, 16, 25, 42 and 43. Until the view exists, those five questions must
+refuse by naming the missing view rather than approximating a funnel from the loan book,
+which would count only the applications that succeeded.
+
+**Also worth knowing:** `gold.branch_master` has no city, district or state — confirming the
+gap analysis — but it *does* carry `parent_admin_code` and `admin_unit_type`, an
+organisational hierarchy. That is a genuine one-level-up grouping of branches. It is not
+geography and must not be labelled "region", but it may be the reporting rollup the business
+actually means when it says region. Worth one question to the client before commissioning a
+branch-master feed.
 
 ### 3.2 Driver decomposition — the "why" engine (C2)
 
@@ -156,6 +186,8 @@ The drill engine then offers, at every level, three kinds of next step:
 3. **Explain / Act** — `why` (3.2) or `worklist` (3.5)
 
 This is generated from the current `QuerySpec` + the graph, so the answer always carries its own next questions. The frontend renders them as chips under each card; clicking one is a normal `/nlq/execute` call with a derived spec — **no LLM in the loop**, so drilling is instant and cannot go wrong.
+
+**A rung exists per dimension; a question exists per metric × dimension.** Every offered step is put through `compile_spec` before it is shown, because the graph does not know which metrics can reach which dimensions. The live example is `agent`: it sits below `branch` on the geo path, but only the five metrics sourced from `loan_account_master` (`loan_count`, `customer_count`, `sanctioned_amount`, `avg_ticket_size`, `avg_interest_rate`) join to it. `disbursement by agent` and `PAR 30 by agent` have no declared join and are therefore never offered. Adding an agent column to the disbursement and arrears sources — or a join to the attribute table — would light up the rung for the metrics that matter most to a sales conversation; until then the honest behaviour is silence.
 
 Your example chain becomes, end to end:
 
@@ -230,7 +262,7 @@ Sequence this **last**. Shipping a score before the ledger data exists produces 
 | **0 — Baseline** | 1 wk | 50-question eval harness extending `tests/nlq/golden/questions.yaml` and `tests/workbench/golden/routes.yaml`; each question labelled with its expected route, composer and tier. Client feed request sent (plan + branch master). | measures the true 8–10 we answer today |
 | **1 — Chain** ✅ *shipped* | 2–3 wk | Drill graph (3.4), extended conversation patterns (4.1–4.3), next-question chips. | ~16 |
 | **2 — Why** ✅ *shipped* | 2–3 wk | Driver decomposition + waterfall (3.2). | ~24 |
-| **3 — Compose** | 2–3 wk | `analysis` route + preset analyses + funnel/quadrant/cohort composers; application-funnel catalog entries from `genlnappl*`; TAT/exception metrics from application dates + `appldocuplddtl`. | ~33 |
+| **3 — Compose** ⚠️ *partly shipped* | 2–3 wk | `analysis` route + preset analyses + briefing/quadrant/concentration composers **(done)**. Funnel and cohort composers, application-funnel catalog entries from `genlnappl*` and TAT metrics from `appldocuplddtl` **(blocked: no `gold` view over the application tables exists — see §3.1a)**. | ~28 of the ~33 |
 | **4 — Act** | 2 wk | Worklists, EWS rules, playbooks (3.5). | ~35 |
 | **5 — Standing** | 2–3 wk | Signals engine + morning briefing + persona presets (3.6, 4.4). | ~35 answered *better*; Q8/9/10 become genuinely good |
 | **6 — Plan** | 1–2 wk | Target layer (3.3) — starts the day the client spreadsheet arrives; can run parallel to 2–5. | ~40 |

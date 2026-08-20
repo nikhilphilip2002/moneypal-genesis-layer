@@ -133,7 +133,18 @@ def choose_chart_type(
     # not become a waterfall: without weights there is no exact split and no honest total,
     # so the bridge would have nothing at either end. It falls back to the comparison forms,
     # which claim only what a ratio can support.
-    if spec.explain and spec.compare_to is not None and cat_dims and _is_decomposable(spec, cat):
+    #
+    # A time split is the second case. A bridge attributes one change to one set of members;
+    # with a month on the axis each member appears once per month, and the decomposition
+    # would keep whichever row happened to arrive last — reporting one month's movement as
+    # the whole period's. Explaining branch-by-month means explaining the total first.
+    if (
+        spec.explain
+        and spec.compare_to is not None
+        and cat_dims
+        and not time_dims
+        and _is_decomposable(spec, cat)
+    ):
         return "waterfall"
 
     # A comparison of two periods. Which form depends on what is being compared across:

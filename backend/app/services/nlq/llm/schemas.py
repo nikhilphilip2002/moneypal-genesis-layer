@@ -52,6 +52,25 @@ def plan_schema(catalog: Catalog | None = None) -> dict[str, Any]:
         "additionalProperties": False,
     }
 
+    # Shared by the queryspec and analysis branches: a preset is bound to a slice of the
+    # book the same way a hand-written question is, so both must accept the same filters.
+    filter_item = {
+        "type": "object",
+        "properties": {
+            "field": {"type": "string", "enum": filterable},
+            "op": {
+                "type": "string",
+                "enum": [
+                    "eq", "ne", "in", "not_in", "gt", "gte", "lt", "lte",
+                    "between", "contains", "is_null",
+                ],
+            },
+            "value": {},
+        },
+        "required": ["field", "op"],
+        "additionalProperties": False,
+    }
+
     query_spec = {
         "type": "object",
         "properties": {
@@ -66,22 +85,7 @@ def plan_schema(catalog: Catalog | None = None) -> dict[str, Any]:
             },
             "filters": {
                 "type": "array",
-                "items": {
-                    "type": "object",
-                    "properties": {
-                        "field": {"type": "string", "enum": filterable},
-                        "op": {
-                            "type": "string",
-                            "enum": [
-                                "eq", "ne", "in", "not_in", "gt", "gte", "lt", "lte",
-                                "between", "contains", "is_null",
-                            ],
-                        },
-                        "value": {},
-                    },
-                    "required": ["field", "op"],
-                    "additionalProperties": False,
-                },
+                "items": filter_item,
             },
             "having": {
                 "type": "array",
@@ -159,6 +163,22 @@ def plan_schema(catalog: Catalog | None = None) -> dict[str, Any]:
                     "reasoning": reasoning,
                 },
                 "required": ["route", "spec", "confidence"],
+                "additionalProperties": False,
+            },
+            {
+                "type": "object",
+                "properties": {
+                    "route": {"const": "analysis"},
+                    # An enum, so the model can only choose an analysis that exists — the
+                    # same discipline as the metric enum, and the reason a preset can never
+                    # be half-invented.
+                    "analysis_id": {"type": "string", "enum": sorted(cat.analyses)},
+                    "period": period,
+                    "filters": {"type": "array", "items": filter_item, "maxItems": 4},
+                    "confidence": confidence,
+                    "reasoning": reasoning,
+                },
+                "required": ["route", "analysis_id", "confidence"],
                 "additionalProperties": False,
             },
             {

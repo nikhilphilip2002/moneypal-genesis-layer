@@ -19,6 +19,7 @@ from app.services.nlq import audit, conversation, pii, planner, text_to_sql
 from app.services.nlq.catalog import Catalog, get_catalog
 from app.services.nlq.compiler import CompileError
 from app.services.nlq.contracts import (
+    AnalysisPlan,
     AskResponse,
     ClarifyPlan,
     QuerySpecPlan,
@@ -176,6 +177,11 @@ async def ask_stream(ctx: AskContext, catalog: Catalog | None = None) -> AsyncIt
         yield sse("done", {"turn_id": turn_id})
         return
 
+    if isinstance(plan, AnalysisPlan):
+        async for frame in _analysis_path(ctx, cat, plan, turn_id, state, resolved, started):
+            yield frame
+        return
+
     if isinstance(plan, SqlPlan):
         async for frame in _text_to_sql_path(ctx, cat, plan, turn_id, state, resolved, started):
             yield frame
@@ -188,6 +194,91 @@ async def ask_stream(ctx: AskContext, catalog: Catalog | None = None) -> AsyncIt
         plan_summary=plan.reasoning or "", started=started,
     ):
         yield frame
+
+
+async def _analysis_path(
+    ctx: AskContext,
+    cat: Catalog,
+    plan: AnalysisPlan,
+    turn_id: str,
+    state,
+    resolved: str,
+    started: float,
+) -> AsyncIterator[str]:
+    """Run a preset analysis: several governed queries, then a deterministic composition.
+
+    The steps run off the event loop — they are synchronous psycopg2 calls on the read-only
+    pool — so a seven-step briefing does not block every other in-flight question.
+    """
+    import asyncio
+
+    from app.services.nlq import analysis as analysis_service
+
+    yield sse("stage", {"stage": "querying", "analysis": plan.analysis_id})
+    try:
+        spec = analysis_service.build(
+            plan.analysis_id, catalog=cat, period=plan.period, filters=plan.filters
+        )
+        result = await asyncio.to_thread(
+            analysis_service.run, spec, catalog=cat, today=ctx.today, role=ctx.role
+        )
+    except analysis_service.AnalysisError as exc:
+        # The preset enum makes this near-impossible from the model, so reaching here means
+        # the catalog changed under a cached plan. Fall back rather than error.
+        logger.warning("NLQ analysis %s unavailable: %s", plan.analysis_id, exc)
+        audit.record(turn_id=turn_id, ctx=ctx, resolved=resolved, route="analysis",
+                     outcome="unknown_analysis", detail=str(exc))
+        yield sse(
+            "refusal",
+            {
+                "route": "refuse",
+                "reason": "not_in_data",
+                "message": NOT_IN_DATA_MESSAGE,
+                "examples": planner.refusal_examples(),
+            },
+        )
+        yield sse("done", {"turn_id": turn_id})
+        return
+    except ExecutionError as exc:
+        logger.error("NLQ analysis execution failed: %s", exc.detail)
+        audit.record(turn_id=turn_id, ctx=ctx, resolved=resolved, route="analysis",
+                     outcome="execution_error", detail=exc.detail)
+        yield sse("error", {"message": str(exc), "retryable": True})
+        yield sse("done", {"turn_id": turn_id})
+        return
+
+    yield sse("stage", {"stage": "charting"})
+
+    conversation.append_turn(
+        state, ctx.question, resolved, "analysis",
+        result.charts[0].chart_type if result.charts else None,
+        sum(c.lineage.row_count for c in result.charts),
+    )
+    # The anchor is the top finding's own spec, so "why?" and "which branches?" continue
+    # from the thing the briefing led with rather than from the whole briefing. Findings
+    # carry their spec precisely so this needs no matching back to a step — chart titles are
+    # generated from the spec and would not match a step label anyway.
+    if result.findings:
+        conversation.set_anchor(state, result.findings[0].spec)
+    conversation.save(state)
+
+    audit.record(
+        turn_id=turn_id, ctx=ctx, resolved=resolved, route="analysis", outcome="answered",
+        detail=plan.analysis_id,
+        row_count=sum(c.lineage.row_count for c in result.charts),
+        duration_ms=int((time.perf_counter() - started) * 1000),
+    )
+
+    response = AskResponse(
+        conversation_id=ctx.conversation_id,
+        turn_id=turn_id,
+        status="answered",
+        analysis=result,
+        plan_summary=plan.reasoning or "",
+    )
+    yield sse("analysis", response.model_dump(mode="json"))
+    yield sse("done", {"turn_id": turn_id,
+                       "duration_ms": int((time.perf_counter() - started) * 1000)})
 
 
 async def _text_to_sql_path(
@@ -343,11 +434,13 @@ async def ask_once(ctx: AskContext, catalog: Catalog | None = None) -> AskRespon
         event, _, data = frame.partition("\n")
         name = event.removeprefix("event: ").strip()
         body = data.removeprefix("data: ").strip()
-        if name in ("chart", "clarify", "refusal", "error"):
+        if name in ("chart", "analysis", "clarify", "refusal", "error"):
             payload[name] = json.loads(body)
 
     if "chart" in payload:
         return AskResponse.model_validate(payload["chart"])
+    if "analysis" in payload:
+        return AskResponse.model_validate(payload["analysis"])
     if "clarify" in payload:
         return AskResponse(
             conversation_id=ctx.conversation_id,

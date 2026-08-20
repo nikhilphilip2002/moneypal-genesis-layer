@@ -28,7 +28,7 @@ logger = logging.getLogger(__name__)
 @dataclass(slots=True)
 class SourceResult:
     source: str
-    card_type: str  # "chart" | "brief" | "clarify" | "refusal" | "error"
+    card_type: str  # "chart" | "analysis" | "brief" | "clarify" | "refusal" | "error"
     payload: dict[str, Any]
     summary: str = ""  # short, feeds the multi-source synthesis; never invents numbers
     sources: list[dict] = field(default_factory=list)
@@ -82,6 +82,16 @@ async def run_db(
     if response.status == "refused" and response.refusal is not None:
         return SourceResult(source="db", card_type="refusal",
                             payload=response.refusal.model_dump(mode="json"))
+    if response.analysis is not None:
+        # A multi-query answer. Its headline is already deterministic and templated from the
+        # findings, so it is the right thing to hand the cross-source synthesis — passing the
+        # whole briefing would invite the synthesiser to re-rank what the thresholds ranked.
+        return SourceResult(
+            source="db",
+            card_type="analysis",
+            payload=response.analysis.model_dump(mode="json"),
+            summary=response.analysis.headline or response.plan_summary or "",
+        )
     if response.chart is not None:
         return SourceResult(
             source="db",

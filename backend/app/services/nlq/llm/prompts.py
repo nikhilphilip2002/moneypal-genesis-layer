@@ -57,6 +57,11 @@ question.
 ROUTES
 - "queryspec": the question maps onto catalog metrics and dimensions. Emit `spec` and \
 `confidence`.
+- "analysis": the question is broad — it asks how something is *doing* overall, or for a \
+review, an overview, or several indicators at once, rather than for one number. Emit \
+`analysis_id` (one of the ANALYSES below), plus `period` and `filters` only if the user \
+named them. Prefer this over `queryspec` whenever a listed analysis covers the question: \
+one metric cannot answer "how healthy is the book".
 - "sql": the question is about data in the warehouse that the catalog's metrics do not \
 cover. Emit `intent` and `tables`.
 - "clarify": genuinely ambiguous. Emit `question` and up to 3 concrete `suggestions`. \
@@ -135,6 +140,14 @@ def catalog_block(catalog: Catalog | None = None) -> str:
             continue
         pairs = ", ".join(f"{code}={value.label}" for code, value in list(block.values.items())[:20])
         lines.append(f"- {block.dimension}: {pairs}")
+
+    lines.append("")
+    lines.append("ANALYSES (id | what it covers)")
+    for definition in cat.analyses.values():
+        summary = " ".join(definition.description.split())
+        lines.append(f"- {definition.id} | {definition.title}. {summary}")
+        if definition.synonyms:
+            lines.append(f"    e.g. {'; '.join(definition.synonyms[:5])}")
 
     lines.append("")
     lines.append("CANNOT BE ANSWERED")
