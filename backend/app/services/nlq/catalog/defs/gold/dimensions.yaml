@@ -150,6 +150,132 @@
   synonyms: [GL branch, ledger branch]
   cardinality: 5
 
+- id: application_branch
+  label: Application branch
+  table: gold.loan_application_master
+  column: branch_code
+  type: categorical
+  decode: branch
+  synonyms: [application branch, sourcing branch, applications by branch]
+  description: Branch recorded on the application, not a reporting or servicing branch.
+
+- id: application_product
+  label: Application product
+  table: gold.loan_application_master
+  column: product_code
+  type: categorical
+  decode: product
+  synonyms: [application product, applied product, applications by product]
+
+- id: application_scheme
+  label: Application scheme
+  table: gold.loan_application_master
+  column: scheme_code
+  type: categorical
+  decode: scheme
+  synonyms: [application scheme, applied scheme, applications by scheme]
+
+- id: application_account_link_status
+  label: Application account linkage
+  table: gold.loan_application_master
+  column: account_link_status
+  type: categorical
+  synonyms: [account linked applications, application linkage]
+  cardinality: 2
+
+- id: application_outcome
+  label: Observable application outcome
+  table: gold.loan_application_outcomes
+  column: outcome_status
+  type: categorical
+  synonyms: [application outcome, converted application, applications disbursed]
+  description: >
+    Observable disbursement/account linkage only. The negative category is not a rejection.
+  cardinality: 2
+
+- id: receipt_mode
+  label: Receipt mode
+  table: gold.payment_receipt_events
+  column: receipt_mode
+  type: categorical
+  synonyms: [payment mode, receipt channel, cash cheque online, collection mode]
+
+- id: receipt_branch
+  label: Receipt branch
+  table: gold.payment_receipt_events
+  column: receipt_branch
+  type: categorical
+  decode: branch
+  synonyms: [collection branch, payment branch, receipt branch]
+
+- id: collection_activity_branch
+  label: Collection activity branch
+  table: gold.collection_activity_events
+  column: branch_code
+  type: categorical
+  decode: branch
+  synonyms: [collector branch, collection team branch]
+
+- id: collector_user
+  label: Collector
+  table: gold.collection_activity_events
+  column: collector_user_id
+  type: categorical
+  synonyms: [collector, collection user, recovery officer]
+
+- id: collection_agent
+  label: Collection agent
+  table: gold.collection_activity_events
+  column: agent_code
+  type: categorical
+  decode: agent_identity
+  synonyms: [collection agent, recovery agent, field collection agent]
+
+- id: handover_status
+  label: Collection handover status
+  table: gold.collection_handover_events
+  column: status
+  type: categorical
+  synonyms: [handover status, reassignment status]
+
+- id: vintage_origination_month
+  label: Vintage origination month
+  table: gold.origination_vintage_matrix
+  column: origination_month
+  type: categorical
+  synonyms: [origination month, vintage month, cohort month]
+
+- id: months_on_book
+  label: Months on book
+  table: gold.origination_vintage_matrix
+  column: months_on_book
+  type: categorical
+  synonyms: [MOB, months on book, cohort age]
+
+- id: vintage_branch
+  label: Vintage branch
+  table: gold.origination_vintage_matrix
+  column: branch_code
+  type: categorical
+  decode: branch
+  synonyms: [vintage by branch, cohort branch]
+
+- id: vintage_product
+  label: Vintage product
+  table: gold.origination_vintage_matrix
+  column: product_code
+  type: categorical
+  decode: product
+  synonyms: [vintage by product, cohort product]
+
+- id: vintage_scheme
+  label: Vintage scheme
+  table: gold.origination_vintage_matrix
+  column: scheme_code
+  type: categorical
+  decode: scheme
+  synonyms: [vintage by scheme, cohort scheme]
+
 - {id: month, label: Month, type: time, grain: month, synonyms: [month, monthly, by month, month on month, MoM]}
 - {id: quarter, label: Quarter, type: time, grain: quarter, synonyms: [quarter, quarterly, by quarter, QoQ]}
 - {id: fy_quarter, label: Fiscal quarter, type: time, grain: fy_quarter, synonyms: [fiscal quarter, FY quarter, financial quarter]}

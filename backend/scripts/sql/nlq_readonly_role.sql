@@ -24,14 +24,42 @@ GRANT CONNECT ON DATABASE moneypaldb TO nlq_readonly;
 
 GRANT USAGE ON SCHEMA gold TO nlq_readonly;
 
--- Start closed, then enumerate views. PostgreSQL treats views as tables for GRANT, so
--- `GRANT ... ON ALL TABLES` would also expose any physical Gold table added later.
+-- Start closed, then grant only the reviewed semantic views. PostgreSQL treats views as
+-- tables for GRANT, so `GRANT ... ON ALL TABLES` would also expose any physical Gold table
+-- added later. Keep this allowlist synchronized with catalog/defs/gold/tables.yaml.
 REVOKE ALL ON ALL TABLES IN SCHEMA gold FROM nlq_readonly;
-SELECT format('GRANT SELECT ON %I.%I TO nlq_readonly', schemaname, viewname)
-FROM pg_views
-WHERE schemaname = 'gold'
-ORDER BY viewname
-\gexec
+GRANT SELECT ON
+    gold.agent_master,
+    gold.application_checklist_events,
+    gold.branch_geography_bridge,
+    gold.branch_master,
+    gold.collection_activity_events,
+    gold.collection_assignment_events,
+    gold.collection_handover_events,
+    gold.collection_team_hierarchy,
+    gold.customer_master,
+    gold.geography_master,
+    gold.gl_daily_balances,
+    gold.gl_ledger_master,
+    gold.kyc_document_master,
+    gold.loan_account_master,
+    gold.loan_application_master,
+    gold.loan_application_outcomes,
+    gold.loan_balance_events,
+    gold.loan_disbursement_events,
+    gold.loan_ledger_events,
+    gold.loan_repayment_events,
+    gold.loan_reporting_attributes,
+    gold.loan_schedule_events,
+    gold.loan_waiver_events,
+    gold.msme_master,
+    gold.origination_vintage_matrix,
+    gold.payment_receipt_events,
+    gold.portfolio_daily_snapshot,
+    gold.product_master,
+    gold.reporting_product_mapping,
+    gold.sales_team_hierarchy
+TO nlq_readonly;
 
 -- The reviewed as-of function reads raw Silver tables internally. Keep Silver invisible
 -- to the runtime role while allowing this one fixed, non-dynamic function to execute with
@@ -69,6 +97,8 @@ ALTER ROLE nlq_readonly SET search_path = 'gold';
 -- ---------------------------------------------------------------------------------------
 -- \c moneypaldb nlq_readonly
 -- SELECT count(*) FROM gold.loan_account_master;           -- expect: a number
+-- SELECT count(*) FROM gold.payment_receipt_events;        -- expect: a number
+-- SELECT count(*) FROM gold.origination_vintage_matrix;    -- expect: a number
 -- SELECT count(*) FROM silver.loan_account_master;         -- expect: permission denied
 -- SELECT count(*) FROM bronze.genlnacnts;                  -- expect: permission denied
 -- CREATE TABLE gold.x (i int);                             -- expect: permission denied

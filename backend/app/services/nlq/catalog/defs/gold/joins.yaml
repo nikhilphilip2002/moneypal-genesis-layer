@@ -47,3 +47,76 @@
   join_type: left
   contains_pii: true
   description: Loan accounts to their populated governed branch and agent attributes.
+
+- id: application_to_outcome
+  left: gold.loan_application_master
+  right: gold.loan_application_outcomes
+  on_columns: [[entity_num, entity_num], [application_number, application_number]]
+  cardinality: one_to_one
+  join_type: left
+  contains_pii: true
+  description: Application facts to their limited observable outcome classification.
+  verified: 9021 application rows and 9021 outcome rows at the same declared key.
+
+- id: application_to_loan
+  left: gold.loan_application_master
+  right: gold.loan_account_master
+  on_columns: [[entity_num, entity_num], [loan_account_number, loan_account_number]]
+  cardinality: many_to_one
+  join_type: left
+  contains_pii: true
+  description: Applications to a linked current loan account where the application carries one.
+
+- id: application_outcome_to_loan
+  left: gold.loan_application_outcomes
+  right: gold.loan_account_master
+  on_columns: [[entity_num, entity_num], [loan_account_number, loan_account_number]]
+  cardinality: many_to_one
+  join_type: left
+  contains_pii: true
+  description: Observable application outcomes to a linked current loan account where available.
+
+- id: receipt_to_loan
+  left: gold.payment_receipt_events
+  right: gold.loan_account_master
+  on_columns: [[entity_num, entity_num], [loan_account_number, loan_account_number]]
+  cardinality: many_to_one
+  join_type: left
+  contains_pii: true
+  description: Receipt events to their governed current loan account dimensions.
+
+- id: waiver_to_loan
+  left: gold.loan_waiver_events
+  right: gold.loan_account_master
+  on_columns: [[entity_num, entity_num], [loan_account_number, loan_account_number]]
+  cardinality: many_to_one
+  join_type: left
+  contains_pii: true
+  description: Waiver source rows to their governed current loan account dimensions.
+
+- id: loan_ledger_to_loan
+  left: gold.loan_ledger_events
+  right: gold.loan_account_master
+  on_columns: [[entity_num, entity_num], [loan_account_number, loan_account_number]]
+  cardinality: many_to_one
+  join_type: left
+  contains_pii: true
+  description: Loan ledger transactions to current loan account dimensions.
+
+- id: loan_balance_to_loan
+  left: gold.loan_balance_events
+  right: gold.loan_account_master
+  on_columns: [[entity_num, entity_num], [loan_account_number, loan_account_number]]
+  cardinality: many_to_one
+  join_type: left
+  contains_pii: true
+  description: Historical loan balance events to current loan account dimensions.
+
+- id: branch_to_geography_bridge
+  left: gold.branch_master
+  right: gold.branch_geography_bridge
+  on_columns: [[entity_num, entity_num], [branch_code, branch_code]]
+  cardinality: one_to_one
+  join_type: left
+  description: Branch master to explicit geography match metadata.
+  verified: 67 branch rows on both sides; only one currently has a district match.

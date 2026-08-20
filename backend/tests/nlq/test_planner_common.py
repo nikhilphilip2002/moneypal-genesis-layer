@@ -7,7 +7,13 @@ import pytest
 from app.services.nlq import cache
 from app.services.nlq.catalog import get_catalog
 from app.services.nlq.compiler import compile_spec
-from app.services.nlq.contracts import ClarifyPlan, QuerySpecPlan, SqlPlan
+from app.services.nlq.contracts import (
+    BriefingPlan,
+    ClarifyPlan,
+    QuerySpecPlan,
+    RefusalPlan,
+    SqlPlan,
+)
 from app.services.nlq.planner import plan
 from app.services.nlq.text_to_sql import generate
 
@@ -69,3 +75,44 @@ async def test_interest_rate_amount_explains_the_unit_mismatch_and_offers_real_m
         "What is the total interest due?",
         "What is the average interest rate?",
     ]
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    "question",
+    [
+        "Why are disbursements above or below target?",
+        "Which branches are performing above and below expectations?",
+        "What is the conversion rate at each stage of the sales funnel?",
+        "Where are approval rates changing significantly?",
+        "Which products have the highest contribution margin?",
+        "Why is profitability different from budget?",
+        "Which legal matters or cases require attention?",
+        "What recurring audit observations should management be concerned about?",
+    ],
+)
+async def test_known_enterprise_data_gaps_refuse_without_calling_the_model(question):
+    outcome = await plan(question, client=NoModel())
+    assert isinstance(outcome.plan, RefusalPlan)
+    assert outcome.plan.reason == "not_in_data"
+    assert outcome.attempts == 0
+
+
+@pytest.mark.anyio
+async def test_vintage_performance_uses_promoted_gold_matrix():
+    outcome = await plan("How is our vintage performance changing?", client=NoModel())
+    assert isinstance(outcome.plan, QuerySpecPlan)
+    assert outcome.plan.spec.metrics == ["vintage_par30_rate", "vintage_npa_rate"]
+    assert outcome.plan.spec.dimensions == ["vintage_origination_month", "month"]
+    assert outcome.attempts == 0
+
+
+@pytest.mark.anyio
+async def test_data_pipeline_issues_use_existing_freshness_signals():
+    outcome = await plan(
+        "Which technology or data issues are impacting business performance?",
+        client=NoModel(),
+    )
+    assert isinstance(outcome.plan, BriefingPlan)
+    assert outcome.plan.persona_id == "ceo"
+    assert outcome.attempts == 0

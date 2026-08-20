@@ -482,11 +482,49 @@ def _compose_quadrant(
         if x is None or y is None:
             continue  # a member on one axis only cannot be placed on a grid
         rows.append({**row, x_metric.id: x, y_metric.id: y})
-    if len(rows) < 2:
+    if not rows:
         return AnalysisResult(
             id=spec.id, title=spec.title, subtitle=spec.subtitle, compose=spec.compose,
             headline="Not enough members to compare.",
             charts=[r.chart for r in results if r.chart],
+        )
+
+    # A single member has two valid readings, but no peer against which a median or a
+    # quadrant can honestly be computed. Keep the evidence useful without turning the
+    # member into its own benchmark (which would classify it as both high-growth and
+    # high-risk because >= median is true on both axes).
+    if len(rows) == 1:
+        row = rows[0]
+        row["quadrant"] = "Comparison unavailable"
+        member = _member_label(row, dimension)
+        finding = Finding(
+            step_id=x_step.id,
+            label=member,
+            text=(
+                f"{member} is the only comparable member available: "
+                f"{format_value(row[x_metric.id], x_metric.unit)} "
+                f"{humanize_label(x_metric.label)} and "
+                f"{format_value(row[y_metric.id], y_metric.unit)} "
+                f"{humanize_label(y_metric.label)}."
+            ),
+            unit="text",
+            severity="info",
+            spec=x_step.spec,
+            question=drilldown.describe(x_step.spec, cat),
+        )
+        chart = _quadrant_chart(spec, results, rows, dimension, x_metric, y_metric, cat)
+        return AnalysisResult(
+            id=spec.id,
+            title=spec.title,
+            subtitle=spec.subtitle,
+            compose=spec.compose,
+            headline="One comparable member is available; a relative ranking is not possible.",
+            findings=[finding],
+            charts=[chart],
+            warnings=[
+                "At least two members with both measures are required to calculate "
+                "relative medians and quadrants."
+            ],
         )
 
     x_cut = median(r[x_metric.id] for r in rows)

@@ -194,3 +194,189 @@
   synonyms: [MSME, leads, applications, business borrowers]
   date_columns: {entered: entered_on}
   description: Governed MSME lead view for authorized operational questions.
+
+# Oracle operational domains promoted on 2026-08-20. Coverage warnings are part of the
+# planner contract: a view being present does not make an absent business field inferable.
+- id: geography_master
+  table: gold.geography_master
+  label: Geography reference
+  grain: one row per source district record
+  key: [country_code, state_code, district_code]
+  row_count: 828
+  synonyms: [geography, regions, states, districts, locations]
+  description: District and state reference enriched with the available regional mapping.
+  coverage_warning: Region is populated for only 28 of 828 rows; 10 rows lack a state name.
+
+- id: branch_geography_bridge
+  table: gold.branch_geography_bridge
+  label: Branch geography mapping
+  grain: one row per branch
+  key: [entity_num, branch_code]
+  row_count: 67
+  synonyms: [branch geography, branch region, branch district, branch location]
+  description: Branch reference with explicit geography match status.
+  restrictions: >
+    Geography is not analysis-ready: only 1 of 67 branches matches a district and none
+    matches a region. Do not group or rank loan metrics by district, state or region.
+
+- id: sales_team_hierarchy
+  table: gold.sales_team_hierarchy
+  label: Sales team hierarchy
+  grain: one row per current or historical user-manager relationship
+  key: [hierarchy_version, entity_num, user_id, effective_from]
+  row_count: 6425
+  contains_pii: true
+  date_columns: {effective_from: effective_from, effective_to: effective_to, uploaded: uploaded_on}
+  synonyms: [sales hierarchy, sales teams, sales managers, field teams]
+  description: Current and historical sales reporting relationships.
+
+- id: collection_team_hierarchy
+  table: gold.collection_team_hierarchy
+  label: Collection team hierarchy
+  grain: one row per current or historical collector-manager relationship
+  key: [hierarchy_version, entity_num, collector_user_id, effective_from]
+  row_count: 1654
+  contains_pii: true
+  date_columns: {effective_from: effective_from, effective_to: effective_to, uploaded: uploaded_on}
+  synonyms: [collection hierarchy, collection teams, recovery teams, collection managers]
+  description: Current and historical collection reporting relationships.
+
+- id: collection_assignment_events
+  table: gold.collection_assignment_events
+  label: Collection assignments
+  grain: one row per CPV assignment
+  key: [entity_num, application_or_ref_num, customer_id, cpv_type, assigned_on]
+  row_count: 14091
+  contains_pii: true
+  date_columns: {assigned: assigned_on, completed: completed_on}
+  synonyms: [collection assignments, CPV allotment, collector allocation, vendor allocation]
+  description: Operational assignment of a customer/application reference to a collector or vendor.
+  coverage_warning: The application/reference number is not yet proven to be a loan account key.
+
+- id: loan_application_master
+  table: gold.loan_application_master
+  label: Loan applications
+  grain: one row per loan application
+  key: [entity_num, application_number]
+  row_count: 9021
+  contains_pii: true
+  date_columns: {application: application_date, authorized: authorized_on}
+  synonyms: [applications, loan applications, origination, acquisition pipeline]
+  description: Governed application-level facts and observable account linkage.
+  coverage_warning: >
+    Completion stage is null and application-level sanction amount is zero for every row;
+    this view cannot support stage conversion, approval rate or rejection analysis.
+
+- id: loan_application_outcomes
+  table: gold.loan_application_outcomes
+  label: Observable application outcomes
+  grain: one row per loan application
+  key: [entity_num, application_number]
+  row_count: 9021
+  contains_pii: true
+  date_columns: {application: application_date, first_disbursement: first_disbursement_date}
+  synonyms: [application outcomes, application conversion, applications disbursed]
+  description: Application outcome inferred from explicit disbursement records or account linkage.
+  coverage_warning: >
+    The label disbursed is not fully verified: 1,822 such rows lack a disbursement date and
+    amount, and 44 are inferred from account linkage without an explicit disbursement row.
+  restrictions: Do not describe not_observed_as_disbursed applications as rejected or declined.
+
+- id: application_checklist_events
+  table: gold.application_checklist_events
+  label: Application checklist records
+  grain: one row per application checklist header in the current implementation
+  key: [entity_num, application_number, inventory_number]
+  row_count: 21042
+  contains_pii: true
+  date_columns: {entered: entered_on}
+  synonyms: [application checklist, documentation checklist, missing documents]
+  description: Application checklist header records with attempted detail enrichment.
+  restrictions: >
+    Detail enrichment is invalid: zero of 550,389 source detail rows join to a header.
+    Do not use checklist_code, selected_flag, applicant_type, inventory_sl or detail_remarks.
+
+- id: payment_receipt_events
+  table: gold.payment_receipt_events
+  label: Payment receipts
+  grain: one row per loan receipt
+  key: [entity_num, loan_account_number, receipt_date, day_serial]
+  row_count: 46144
+  contains_pii: true
+  date_columns: {receipt: receipt_date, posting: posting_date, instrument: instrument_date}
+  synonyms: [receipts, payments received, recoveries, collection receipts, payment modes]
+  description: Loan receipt facts enriched with receipt mode and instrument detail.
+
+- id: loan_waiver_events
+  table: gold.loan_waiver_events
+  label: Loan waiver records
+  grain: one row per loan waiver source record
+  key: [entity_num, loan_account_number, waiver_date, day_serial]
+  row_count: 40421
+  contains_pii: true
+  date_columns: {waiver: waiver_date}
+  synonyms: [waivers, interest waiver, charge waiver, penal waiver]
+  description: Source waiver records and calculated total waived amount.
+  coverage_warning: Every monetary waiver component is currently zero; no positive waiver can be reported.
+
+- id: loan_ledger_events
+  table: gold.loan_ledger_events
+  label: Loan ledger transactions
+  grain: one row per loan account ledger transaction
+  key: [entity_num, loan_account_number, transaction_date, day_serial]
+  row_count: 94124
+  contains_pii: true
+  date_columns: {transaction: transaction_date}
+  synonyms: [loan ledger, account transactions, principal movement, interest movement, charges]
+  description: Transaction-level principal, interest, charge and penal movements.
+
+- id: loan_balance_events
+  table: gold.loan_balance_events
+  label: Loan balance events
+  grain: one row per loan balance state after a transaction
+  key: [entity_num, loan_account_number, as_of_date, day_serial]
+  row_count: 102321
+  point_in_time: true
+  as_of_column: as_of_date
+  contains_pii: true
+  date_columns: {as_of: as_of_date}
+  synonyms: [loan balances, historical outstanding, account balance history]
+  description: Historical principal, interest, charge, penal and excess balances.
+
+- id: collection_activity_events
+  table: gold.collection_activity_events
+  label: Collection activity
+  grain: one row per current or historical collector activity summary
+  key: [activity_version, entity_num, branch_code, collector_user_id, activity_date, run_number]
+  row_count: 1029
+  contains_pii: true
+  date_columns: {activity: activity_date, posting: post_date}
+  synonyms: [collection activity, collector performance, field collection, recovery activity]
+  description: Current and historical daily collection activity by collector and branch.
+  restrictions: Standalone collector/branch summaries; no proven loan-account attribution key.
+
+- id: collection_handover_events
+  table: gold.collection_handover_events
+  label: Collection handovers
+  grain: one row per collection ownership handover
+  key: [entity_num, inventory_number, inventory_sl, run_number]
+  row_count: 174
+  contains_pii: true
+  date_columns: {effective: effective_date, handover: handover_date, handover_time: handover_time}
+  synonyms: [collection handover, collector reassignment, recovery transfer]
+  description: Transfer of collection ownership between users and branches.
+  restrictions: Inventory references are not proven loan-account keys; do not group by loan dimensions.
+
+- id: origination_vintage_matrix
+  table: gold.origination_vintage_matrix
+  label: Origination vintage matrix
+  grain: one row per origination month, report month, branch, product and scheme
+  key: [entity_num, origination_month, report_month, branch_code, product_code, scheme_code]
+  row_count: 286
+  point_in_time: true
+  as_of_column: report_month
+  date_columns: {origination: origination_month, report: report_month}
+  synonyms: [vintage, origination cohort, month on book, MOB, cohort performance]
+  description: Monthly origination cohorts measured at each available portfolio report month.
+  coverage_warning: Coverage spans only nine origination and report months through 2026-06-01.
+  restrictions: Already aggregated; do not join to account-grain views or sum across report months.

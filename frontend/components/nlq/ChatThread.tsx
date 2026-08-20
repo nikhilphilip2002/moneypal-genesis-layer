@@ -159,7 +159,7 @@ export default function ChatThread({
                 <Clarification clarification={turn.clarification} onPick={onAsk} />
               )}
 
-              {turn.refusal && <Refusal refusal={turn.refusal} />}
+              {turn.refusal && <Refusal refusal={turn.refusal} onPick={onAsk} />}
 
               {turn.error && <p className="text-sm text-muted-foreground">{turn.error}</p>}
             </CardContent>
@@ -310,7 +310,12 @@ const REFUSAL_HEADING: Record<NlqRefusal['reason'], string> = {
   unsafe: 'I cannot do that.',
 };
 
-function Refusal({ refusal }: { refusal: NlqRefusal }) {
+function Refusal({
+  refusal, onPick,
+}: {
+  refusal: NlqRefusal;
+  onPick: (question: string) => void;
+}) {
   return (
     <div>
       <p className="text-sm font-medium text-foreground">{REFUSAL_HEADING[refusal.reason]}</p>
@@ -322,13 +327,20 @@ function Refusal({ refusal }: { refusal: NlqRefusal }) {
           <p className="mt-3 text-xs uppercase tracking-wide text-muted-foreground">
             Try instead
           </p>
-          <ul className="mt-1 space-y-1">
+          <div className="mt-2 flex flex-wrap gap-2">
             {refusal.examples.map((example) => (
-              <li key={example} className="text-sm text-foreground/80">
-                • {example}
-              </li>
+              <Button
+                key={example}
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => onPick(example)}
+                className="h-auto min-h-7 whitespace-normal rounded-full px-3 py-1 text-left text-xs font-normal"
+              >
+                {example}
+              </Button>
             ))}
-          </ul>
+          </div>
         </>
       )}
     </div>

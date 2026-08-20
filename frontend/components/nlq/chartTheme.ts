@@ -108,6 +108,12 @@ const LAKH = 1e5;
 
 export function formatValue(value: unknown, unit: string): string {
   if (value === null || value === undefined) return '—';
+  // Identifiers often arrive from PostgreSQL as numbers even though the catalog declares
+  // them as text. Formatting must follow catalog semantics: grouping an account number or
+  // PIN changes its displayed identity.
+  if (unit === 'text' || unit === 'date' || unit === 'datetime' || unit === 'boolean') {
+    return String(value);
+  }
   if (typeof value !== 'number') return String(value);
 
   switch (unit) {
@@ -132,6 +138,9 @@ export function formatValue(value: unknown, unit: string): string {
 
 // Compact form for axis ticks, where a full ₹1,27,54,559 would collide with its neighbour.
 export function formatTick(value: unknown, unit: string): string {
+  if (unit === 'text' || unit === 'date' || unit === 'datetime' || unit === 'boolean') {
+    return String(value ?? '');
+  }
   if (typeof value !== 'number') return String(value ?? '');
   if (unit === 'inr') {
     const magnitude = Math.abs(value);

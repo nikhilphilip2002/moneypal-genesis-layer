@@ -7,6 +7,7 @@ spinner of the same duration reads as a hang.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import time
@@ -58,6 +59,11 @@ class AskContext:
     history_messages: list[dict[str, str]] | None = None
 
 
+def _remaining_seconds(started: float) -> float:
+    """One budget for the whole turn, rather than a fresh timeout for every phase."""
+    return max(0.001, HARD_CEILING_S - (time.perf_counter() - started))
+
+
 def sse(event: str, data: Any) -> str:
     return f"event: {event}\ndata: {json.dumps(data, default=str)}\n\n"
 
@@ -95,9 +101,24 @@ async def ask_stream(ctx: AskContext, catalog: Catalog | None = None) -> AsyncIt
 
     yield sse("stage", {"stage": "planning"})
     try:
-        outcome = await planner.plan(
-            resolved, catalog=cat, history_messages=ctx.history_messages or [],
+        outcome = await asyncio.wait_for(
+            planner.plan(
+                resolved, catalog=cat, history_messages=ctx.history_messages or [],
+            ),
+            timeout=_remaining_seconds(started),
         )
+    except TimeoutError:
+        logger.warning("NLQ ask exceeded its request budget during planning")
+        audit.record(
+            turn_id=turn_id, ctx=ctx, resolved=resolved, route="error",
+            outcome="timeout", detail="planning exceeded the request budget",
+        )
+        yield sse(
+            "error",
+            {"message": "The question took too long to plan. Please try again.", "retryable": True},
+        )
+        yield sse("done", {"turn_id": turn_id})
+        return
     except LLMError as exc:
         logger.warning("NLQ ask failed at planning: %s", exc)
         audit.record(
@@ -164,7 +185,7 @@ async def ask_stream(ctx: AskContext, catalog: Catalog | None = None) -> AsyncIt
         # here offered "Equity shareholding breakdown by shareholder", a subject the
         # warehouse has no data on at all, immediately after saying so. Every suggestion
         # shown must be one the catalog can actually serve.
-        payload["examples"] = planner.refusal_examples()
+        payload["examples"] = planner.refusal_examples(resolved, plan.reason)
         if plan.reason in COVERAGE_REASONS:
             # These two are claims about the warehouse's contents, and the model knows the
             # catalog only as a list. It has asserted things that are plainly false ("no
@@ -231,9 +252,19 @@ async def _analysis_path(
         spec = analysis_service.build(
             plan.analysis_id, catalog=cat, period=plan.period, filters=plan.filters
         )
-        result = await asyncio.to_thread(
-            analysis_service.run, spec, catalog=cat, today=ctx.today, role=ctx.role
+        result = await asyncio.wait_for(
+            asyncio.to_thread(
+                analysis_service.run, spec, catalog=cat, today=ctx.today, role=ctx.role
+            ),
+            timeout=_remaining_seconds(started),
         )
+    except TimeoutError:
+        audit.record(turn_id=turn_id, ctx=ctx, resolved=resolved, route="analysis",
+                     outcome="timeout", detail="analysis exceeded the request budget")
+        yield sse("error", {"message": "The analysis took too long. Please retry.",
+                            "retryable": True})
+        yield sse("done", {"turn_id": turn_id})
+        return
     except analysis_service.AnalysisError as exc:
         # The preset enum makes this near-impossible from the model, so reaching here means
         # the catalog changed under a cached plan. Fall back rather than error.
@@ -314,15 +345,25 @@ async def _worklist_path(
 
     yield sse("stage", {"stage": "querying", "worklist": plan.worklist_id})
     try:
-        result = await asyncio.to_thread(
-            worklist_service.build,
-            plan.worklist_id,
-            catalog=cat,
-            as_of=ctx.today,
-            filters=list(plan.filters),
-            limit=plan.limit,
-            role=ctx.role,
+        result = await asyncio.wait_for(
+            asyncio.to_thread(
+                worklist_service.build,
+                plan.worklist_id,
+                catalog=cat,
+                as_of=ctx.today,
+                filters=list(plan.filters),
+                limit=plan.limit,
+                role=ctx.role,
+            ),
+            timeout=_remaining_seconds(started),
         )
+    except TimeoutError:
+        audit.record(turn_id=turn_id, ctx=ctx, resolved=resolved, route="worklist",
+                     outcome="timeout", detail="worklist exceeded the request budget")
+        yield sse("error", {"message": "The worklist took too long. Please retry.",
+                            "retryable": True})
+        yield sse("done", {"turn_id": turn_id})
+        return
     except worklist_service.WorklistError as exc:
         # A filter the account list cannot honour lands here. Saying so is the whole point:
         # silently dropping it would send one branch's accounts to another branch's team.
@@ -394,13 +435,23 @@ async def _briefing_path(
 
     yield sse("stage", {"stage": "querying", "briefing": plan.persona_id})
     try:
-        result = await asyncio.to_thread(
-            signal_service.briefing,
-            plan.persona_id,
-            catalog=cat,
-            today=ctx.today,
-            role=ctx.role,
+        result = await asyncio.wait_for(
+            asyncio.to_thread(
+                signal_service.briefing,
+                plan.persona_id,
+                catalog=cat,
+                today=ctx.today,
+                role=ctx.role,
+            ),
+            timeout=_remaining_seconds(started),
         )
+    except TimeoutError:
+        audit.record(turn_id=turn_id, ctx=ctx, resolved=resolved, route="briefing",
+                     outcome="timeout", detail="briefing exceeded the request budget")
+        yield sse("error", {"message": "The briefing took too long. Please retry.",
+                            "retryable": True})
+        yield sse("done", {"turn_id": turn_id})
+        return
     except signal_service.BriefingError as exc:
         logger.warning("NLQ briefing %s unavailable: %s", plan.persona_id, exc)
         audit.record(turn_id=turn_id, ctx=ctx, resolved=resolved, route="briefing",
@@ -473,12 +524,24 @@ async def _text_to_sql_path(
     """
     yield sse("stage", {"stage": "writing_sql"})
 
-    attempt = await text_to_sql.generate(
-        resolved,
-        catalog=cat,
-        allow_pii=pii.may_see_pii(ctx.role),
-        preferred_tables=plan.tables,
-    )
+    try:
+        attempt = await asyncio.wait_for(
+            text_to_sql.generate(
+                resolved,
+                catalog=cat,
+                allow_pii=pii.may_see_pii(ctx.role),
+                preferred_tables=plan.tables,
+            ),
+            timeout=_remaining_seconds(started),
+        )
+    except TimeoutError:
+        audit.record(turn_id=turn_id, ctx=ctx, resolved=resolved, route="text_to_sql",
+                     outcome="timeout", detail="SQL generation exceeded the request budget")
+        yield sse("error", {"message": "The question took too long to translate safely. "
+                                       "Please try a more specific question.",
+                            "retryable": True})
+        yield sse("done", {"turn_id": turn_id})
+        return
 
     if not attempt.validated:
         audit.record(
@@ -502,15 +565,46 @@ async def _text_to_sql_path(
 
     yield sse("stage", {"stage": "querying"})
     try:
-        chart = run_sql(
-            attempt, question=resolved, role=ctx.role, catalog=cat
+        chart = await asyncio.wait_for(
+            asyncio.to_thread(
+                run_sql, attempt, question=resolved, role=ctx.role, catalog=cat
+            ),
+            timeout=_remaining_seconds(started),
         )
+    except TimeoutError:
+        audit.record(turn_id=turn_id, ctx=ctx, resolved=resolved, route="text_to_sql",
+                     outcome="timeout", sql=attempt.sql,
+                     detail="SQL execution exceeded the request budget")
+        yield sse("error", {"message": "The warehouse query took too long. Please retry.",
+                            "retryable": True})
+        yield sse("done", {"turn_id": turn_id})
+        return
     except ExecutionError as exc:
         audit.record(
             turn_id=turn_id, ctx=ctx, resolved=resolved, route="text_to_sql",
             outcome="execution_error", sql=attempt.sql, detail=exc.detail,
         )
         yield sse("error", {"message": str(exc), "retryable": False})
+        yield sse("done", {"turn_id": turn_id})
+        return
+
+    if not chart.rows:
+        audit.record(
+            turn_id=turn_id, ctx=ctx, resolved=resolved, route="text_to_sql",
+            outcome="no_matching_rows", sql=attempt.sql, row_count=0,
+            duration_ms=int((time.perf_counter() - started) * 1000),
+        )
+        conversation.append_turn(state, ctx.question, resolved, "refuse", None, 0)
+        conversation.save(state)
+        yield sse(
+            "refusal",
+            {
+                "route": "refuse",
+                "reason": "not_in_data",
+                "message": "No records matched that question in the available data.",
+                "examples": planner.refusal_examples(resolved, "not_in_data"),
+            },
+        )
         yield sse("done", {"turn_id": turn_id})
         return
 
@@ -552,7 +646,19 @@ async def _execute_and_emit(
     started: float,
 ) -> AsyncIterator[str]:
     try:
-        chart = run_spec(spec, catalog=cat, today=ctx.today, role=ctx.role)
+        chart = await asyncio.wait_for(
+            asyncio.to_thread(
+                run_spec, spec, catalog=cat, today=ctx.today, role=ctx.role
+            ),
+            timeout=_remaining_seconds(started),
+        )
+    except TimeoutError:
+        audit.record(turn_id=turn_id, ctx=ctx, resolved=resolved, route="queryspec",
+                     outcome="timeout", detail="query exceeded the request budget")
+        yield sse("error", {"message": "The warehouse query took too long. Please retry.",
+                            "retryable": True})
+        yield sse("done", {"turn_id": turn_id})
+        return
     except CompileError as exc:
         audit.record(turn_id=turn_id, ctx=ctx, resolved=resolved, route="queryspec",
                      outcome="refused_by_compiler", detail=str(exc))

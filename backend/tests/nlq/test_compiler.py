@@ -78,6 +78,24 @@ class TestGeneratedSql:
         out = sql_for(metrics=["principal_outstanding"], dimensions=["dpd_bucket"])
         assert "CASE WHEN" in out and "THEN 0" in out
 
+    def test_application_conversion_uses_distinct_safe_aliases(self):
+        out = sql_for(metrics=["application_count"], dimensions=["application_outcome"])
+        assert "FROM gold.loan_application_master AS application" in out
+        assert "JOIN gold.loan_application_outcomes AS application_outcome" in out
+        assert 'application."application_number" = application_outcome."application_number"' in out
+
+    def test_receipts_can_use_governed_loan_product(self):
+        out = sql_for(metrics=["receipt_total"], dimensions=["product"])
+        assert "FROM gold.payment_receipt_events AS receipt" in out
+        assert "JOIN gold.loan_account_master AS lam" in out
+        assert "SUM(receipt.receipt_amount)" in out
+
+    def test_vintage_metric_stays_at_aggregate_grain(self):
+        out = sql_for(metrics=["vintage_par30_rate"], dimensions=["months_on_book"])
+        assert "FROM gold.origination_vintage_matrix AS vintage" in out
+        assert "gold.loan_account_master" not in out
+        assert "SUM(vintage.accounts_par30)" in out
+
 
 class TestPointInTimeCollapse:
     """The guard against reading an event log as a snapshot."""

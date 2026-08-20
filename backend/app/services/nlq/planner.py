@@ -135,11 +135,62 @@ _TOTAL_SANCTIONED_RE = re.compile(
     r"\btotal\s+sanctioned\s+(?:loan\s+)?amount\b",
     re.IGNORECASE,
 )
+_VINTAGE_PERFORMANCE_RE = re.compile(
+    r"\bvintage performance\b|\b(?:origination )?cohort performance\b|\bmonth[s]? on book\b",
+    re.IGNORECASE,
+)
 _EXPLICIT_TIME_SCOPE_RE = re.compile(
     r"\b(?:today|yesterday|this|last|past|previous|month|quarter|year|fy\s*\d+|"
     r"financial\s+year|calendar\s+year|20\d{2})\b",
     re.IGNORECASE,
 )
+
+_KNOWN_DATA_GAPS: tuple[re.Pattern[str], ...] = tuple(
+    re.compile(pattern, re.IGNORECASE)
+    for pattern in (
+        r"\bannual business plan\b",
+        r"\b(?:above|below|against|off)(?:\s+or\s+(?:above|below))?[ -]?"
+        r"(?:target|budget|expectation)s?\b",
+        r"\b(?:different|variance)\s+from\s+budget\b",
+        r"\bon track\b[^?]{0,50}\b(?:plan|target|initiative)s?\b",
+        r"\bsales funnel\b|\bacquisition process\b|\bfunnel stage",
+        r"\bapproval rates?\b",
+        r"\bprofitability\b|\bcontribution margin\b|\bmaking and losing money\b",
+        r"\bcost overruns?\b|\bcost of acquisition\b|\bCAC\b",
+        r"\boperational bottlenecks?\b|\bturnaround time\b|\brework\b",
+        r"\bcustomer (?:tickets?|complaints?|experience)\b",
+        r"\blegal matters?\b|\blegal cases?\b|\bcontracts? or cases?\b",
+        r"\baudit observations?\b|\bcontrol failures?\b",
+        r"\bstrategic initiatives?\b|\bOKRs?\b",
+        r"\bcompliance (?:or regulatory )?exceptions?\b|\bregulatory exceptions?\b",
+        r"\b(?:people|capability) gaps?\b",
+        r"\bsales teams?\b[^?]{0,50}\bunderperform",
+    )
+)
+
+_DATA_HEALTH_RE = re.compile(
+    r"\b(?:technology|data|etl|pipeline)\b[^?]{0,80}"
+    r"\b(?:issues?|freshness|delay|latency|impacting|performance)\b",
+    re.IGNORECASE,
+)
+
+
+def _enterprise_coverage_plan(question: str) -> PlanResult | None:
+    """Fast, reviewed routing for capabilities the catalog can prove or disprove.
+
+    Known missing domains must not spend two model calls generating plausible SQL against
+    neighbouring loan-book tables. Data-health questions are the exception: scheduled
+    freshness signals already provide governed evidence through the CEO briefing.
+    """
+    if _DATA_HEALTH_RE.search(question):
+        return BriefingPlan(
+            persona_id="ceo",
+            confidence=1.0,
+            reasoning="scheduled data-health signals and current executive indicators",
+        )
+    if any(pattern.search(question) for pattern in _KNOWN_DATA_GAPS):
+        return RefusalPlan(reason="not_in_data")
+    return None
 
 
 def _common_business_plan(question: str) -> PlanResult | None:
@@ -148,6 +199,17 @@ def _common_business_plan(question: str) -> PlanResult | None:
     These are semantic patterns, not exact question strings.  Time-qualified variants stay
     with the planner because their period still needs to be resolved.
     """
+    if _VINTAGE_PERFORMANCE_RE.search(question):
+        return QuerySpecPlan(
+            spec={
+                "metrics": ["vintage_par30_rate", "vintage_npa_rate"],
+                "dimensions": ["vintage_origination_month", "month"],
+                "period": {"relative": "all_time"},
+            },
+            confidence=1.0,
+            reasoning="governed origination cohorts measured across available report months",
+        )
+
     if _INTEREST_RATE_AMOUNT_RE.search(question):
         return ClarifyPlan(
             question=(
@@ -433,6 +495,17 @@ async def plan(
     if common is not None:
         return PlanOutcome(
             plan=common,
+            attempts=0,
+            prompt_version=PROMPT_VERSION,
+            model="deterministic",
+            provider="catalog",
+            duration_ms=0,
+        )
+
+    enterprise = _enterprise_coverage_plan(planning_question)
+    if enterprise is not None:
+        return PlanOutcome(
+            plan=enterprise,
             attempts=0,
             prompt_version=PROMPT_VERSION,
             model="deterministic",
@@ -822,5 +895,44 @@ def _suggestions(catalog: Catalog) -> list[str]:
     ]
 
 
-def refusal_examples() -> list[str]:
+def refusal_examples(question: str = "", reason: str = "") -> list[str]:
+    """Return reviewed, answerable pivots for a refusal.
+
+    The model never authors these. Topic matching only selects among questions backed by
+    an existing analysis or worklist; it does not decide a metric or manufacture a new
+    capability. The generic catalog examples remain the safe fallback.
+    """
+    normalized = question.lower()
+    if reason == "predictive" and re.search(
+        r"\b(?:delinquen|default|portfolio quality|credit risk|npa|par)\w*\b", normalized
+    ):
+        return [
+            "Which borrowers show early warning signs of default?",
+            "How healthy is our credit portfolio right now?",
+            "PAR 30 by product and branch right now",
+        ]
+    if re.search(r"\bcollection\w*\b.*\b(?:strategy|approach|contact)\b", normalized):
+        return [
+            "Show today's collections priority list",
+            "Collection efficiency by branch this financial year",
+            "Which delinquency buckets have the highest overdue balance?",
+        ]
+    if re.search(r"\b(?:growth potential|potential for growth|grow fastest)\b", normalized):
+        return [
+            "Which products have the best combination of growth and credit quality?",
+            "Disbursement by product this financial year",
+            "PAR 30 by product right now",
+        ]
+    if re.search(r"\b(?:business plan|target|budget|cost overrun)\w*\b", normalized):
+        return [
+            "How is the business performing today, and what are the 5 things I need to know?",
+            "Disbursement by branch this financial year",
+            "How healthy is our credit portfolio right now?",
+        ]
+    if re.search(r"\b(?:anomal|leakage|unusual pattern|control failure)\w*\b", normalized):
+        return [
+            "What has changed materially in the loan book this month?",
+            "How healthy is our credit portfolio right now?",
+            "Which borrowers show early warning signs of default?",
+        ]
     return _suggestions(get_catalog())

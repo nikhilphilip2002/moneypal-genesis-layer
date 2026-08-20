@@ -39,13 +39,26 @@ class TestPrivileges:
             assert cur.fetchone()[0] > 0
 
     def test_sees_every_gold_view(self):
-        """Guards the ALTER DEFAULT PRIVILEGES FOR ROLE moneypal clause: without it, tables
-        created by the next ingestion would be invisible here."""
+        """Every reviewed Gold view is explicitly granted by nlq_readonly_role.sql."""
         with nlq_db.readonly_cursor() as (_conn, cur):
             cur.execute(
                 "SELECT count(*) FROM information_schema.views WHERE table_schema = 'gold'"
             )
-            assert cur.fetchone()[0] == 15
+            assert cur.fetchone()[0] == 30
+
+    @pytest.mark.parametrize(
+        "view",
+        [
+            "loan_application_master",
+            "payment_receipt_events",
+            "loan_ledger_events",
+            "origination_vintage_matrix",
+        ],
+    )
+    def test_can_read_promoted_operational_views(self, view):
+        with nlq_db.readonly_cursor() as (_conn, cur):
+            cur.execute(f"SELECT count(*) FROM gold.{view}")
+            assert cur.fetchone()[0] >= 0
 
     def test_can_execute_reviewed_portfolio_function(self):
         with nlq_db.readonly_cursor() as (_conn, cur):

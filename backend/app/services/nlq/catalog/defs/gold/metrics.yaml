@@ -322,3 +322,127 @@
   synonyms: [GL balance, ledger balance, trial balance, account balance, financials]
   restrictions: Cannot be grouped by loan product, scheme or loan branch.
   requires_signoff: true
+
+# Oracle operational facts promoted to Gold on 2026-08-20.
+- id: application_count
+  label: Applications received
+  unit: count
+  grain: flow
+  base_table: gold.loan_application_master
+  date_column: application_date
+  expression: COUNT(*)
+  formula: Count of application master records entered in the period
+  synonyms: [applications, applications received, application volume, leads received]
+  verified: 9021 applications in the available source history
+
+- id: observable_disbursed_application_count
+  label: Applications observed as disbursed
+  unit: count
+  grain: flow
+  base_table: gold.loan_application_outcomes
+  date_column: application_date
+  expression: COUNT(*) FILTER (WHERE {t}.outcome_status = 'disbursed')
+  formula: Applications carrying either an explicit disbursement record or a linked loan account
+  synonyms: [applications disbursed, converted applications, application outcomes]
+  requires_signoff: true
+  signoff_note: >
+    This is an observable outcome, not an approval count. Of 7,515 rows labelled disbursed,
+    1,822 lack a disbursement date/amount and 44 rely only on account linkage.
+
+- id: observable_application_conversion_rate
+  label: Observable application-to-disbursement conversion
+  unit: percent
+  grain: ratio
+  base_table: gold.loan_application_outcomes
+  date_column: application_date
+  numerator: COUNT(*) FILTER (WHERE {t}.outcome_status = 'disbursed')
+  denominator: COUNT(*)
+  scale: 100
+  formula: Applications observed as disbursed divided by all application records in the period
+  synonyms: [application conversion, application to disbursement rate, observable conversion]
+  requires_signoff: true
+  signoff_note: >
+    This is not a stage conversion or approval rate. Applications not observed as disbursed
+    must not be called rejected or declined.
+
+- id: receipt_total
+  label: Payment receipts
+  unit: inr
+  grain: flow
+  base_table: gold.payment_receipt_events
+  date_column: receipt_date
+  expression: SUM({t}.receipt_amount)
+  formula: Sum of governed loan receipt amounts in the period
+  synonyms: [receipts, cash collected, payments received, recovery receipts]
+  verified: 464832760.700 across 46144 receipts through 2026-07-31
+
+- id: receipt_count
+  label: Number of payment receipts
+  unit: count
+  grain: flow
+  base_table: gold.payment_receipt_events
+  date_column: receipt_date
+  expression: COUNT(*)
+  formula: Count of governed loan receipt events in the period
+  synonyms: [receipt count, payment count, number of receipts]
+  verified: 46144 receipts
+
+- id: loan_ledger_transaction_count
+  label: Loan ledger transactions
+  unit: count
+  grain: flow
+  base_table: gold.loan_ledger_events
+  date_column: transaction_date
+  expression: COUNT(*)
+  formula: Count of loan account ledger transactions in the period
+  synonyms: [ledger transactions, loan transactions, account movements]
+  verified: 94124 unique transaction keys
+
+- id: collection_activity_total
+  label: Collection activity amount
+  unit: inr
+  grain: flow
+  base_table: gold.collection_activity_events
+  date_column: activity_date
+  expression: SUM({t}.final_collection_amount)
+  formula: Sum of final collection amounts recorded in collector activity summaries
+  synonyms: [collector amount, team collections, field collections, collection activity amount]
+
+- id: collection_handover_count
+  label: Collection handovers
+  unit: count
+  grain: flow
+  base_table: gold.collection_handover_events
+  date_column: handover_date
+  expression: COUNT(*)
+  formula: Count of collection ownership handover records in the period
+  synonyms: [handovers, collector reassignments, collection transfers]
+  verified: 174 handover records
+
+- id: vintage_par30_rate
+  label: Vintage PAR 30 account rate
+  unit: percent
+  grain: ratio
+  base_table: gold.origination_vintage_matrix
+  date_column: report_month
+  numerator: SUM({t}.accounts_par30)
+  denominator: SUM({t}.account_count)
+  scale: 100
+  formula: PAR-30 account count divided by cohort account count at each report month
+  synonyms: [vintage PAR 30, cohort PAR 30, vintage delinquency]
+  requires_signoff: true
+  signoff_note: This is an account-count rate, not an outstanding-balance PAR ratio.
+
+- id: vintage_npa_rate
+  label: Vintage NPA account rate
+  unit: percent
+  grain: ratio
+  base_table: gold.origination_vintage_matrix
+  date_column: report_month
+  numerator: SUM({t}.accounts_npa)
+  denominator: SUM({t}.account_count)
+  scale: 100
+  formula: NPA account count divided by cohort account count at each report month
+  synonyms: [vintage NPA, cohort NPA, NPA by vintage]
+  requires_signoff: true
+  signoff_note: This is an account-count rate over the nine-month source window.

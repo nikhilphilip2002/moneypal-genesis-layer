@@ -42,6 +42,21 @@ _ALIASES = {
     "gold.customer_master": "customer",
     "gold.agent_master": "agent",
     "gold.loan_reporting_attributes": "attrs",
+    "gold.geography_master": "geo",
+    "gold.branch_geography_bridge": "branch_geo",
+    "gold.sales_team_hierarchy": "sales_hier",
+    "gold.collection_team_hierarchy": "collection_hier",
+    "gold.collection_assignment_events": "assignment",
+    "gold.loan_application_master": "application",
+    "gold.loan_application_outcomes": "application_outcome",
+    "gold.application_checklist_events": "checklist",
+    "gold.payment_receipt_events": "receipt",
+    "gold.loan_waiver_events": "waiver",
+    "gold.loan_ledger_events": "loan_ledger",
+    "gold.loan_balance_events": "loan_balance",
+    "gold.collection_activity_events": "collection_activity",
+    "gold.collection_handover_events": "handover",
+    "gold.origination_vintage_matrix": "vintage",
 }
 
 

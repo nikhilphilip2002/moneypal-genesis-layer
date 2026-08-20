@@ -6,6 +6,7 @@ mocks. `/nlq/ask` is driven with a stub planner so the routing and SSE framing a
 without spending tokens or depending on a model being up.
 """
 
+import asyncio
 import json
 
 import pytest
@@ -171,6 +172,21 @@ class TestAskEndpoint:
         assert len(events["refusal"]["examples"]) == 3
         assert "done" in events
 
+    def test_request_budget_is_enforced_during_planning(self, client, monkeypatch):
+        from app.services.nlq import ask as ask_module
+
+        async def slow_plan(*args, **kwargs):
+            await asyncio.sleep(0.05)
+            raise AssertionError("the request budget should cancel planning first")
+
+        monkeypatch.setattr(ask_module, "HARD_CEILING_S", 0.01)
+        monkeypatch.setattr(ask_module.planner, "plan", slow_plan)
+        response = client.post("/nlq/ask", json={"question": "How many loans?"})
+        events = dict(self._events(response))
+        assert events["error"]["retryable"] is True
+        assert "too long" in events["error"]["message"].lower()
+        assert "done" in events
+
     def test_model_authored_examples_are_discarded(self, client, monkeypatch):
         """A refusal once suggested "Equity shareholding breakdown by shareholder" — a
         subject with no table, no metric and no dimension behind it — in the same breath
@@ -208,6 +224,21 @@ class TestAskEndpoint:
         )
         response = client.post("/nlq/ask", json={"question": "Will defaults rise?"})
         assert dict(self._events(response))["refusal"]["message"] == "I do not forecast."
+
+    def test_advice_refusal_offers_topic_specific_catalogued_pivots(self, client, monkeypatch):
+        from app.services.nlq.contracts import RefusalPlan
+
+        self._stub_planner(
+            monkeypatch,
+            RefusalPlan(reason="advice", message="I retrieve ratified policy."),
+        )
+        response = client.post(
+            "/nlq/ask",
+            json={"question": "What collection strategy should we use for each segment?"},
+        )
+        refusal = dict(self._events(response))["refusal"]
+        assert refusal["examples"][0] == "Show today's collections priority list"
+        assert all("strategy" not in example.lower() for example in refusal["examples"])
 
     def test_a_second_clarification_in_a_row_becomes_a_way_out(self, client, monkeypatch):
         """Answering a clarification arrives as a new question. A planner that clarifies

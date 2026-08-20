@@ -285,14 +285,35 @@ class TestQuadrant:
         result = analysis.compose(spec, results, catalog)
         assert "9" not in {r["branch"] for r in result.charts[0].rows}
 
-    def test_too_few_members_to_split_produces_no_quadrants(self, catalog):
+    def test_one_member_returns_its_readings_without_inventing_a_quadrant(self, catalog):
         spec = analysis.build("growth_versus_quality", catalog=catalog)
         results = _results(spec, {
             "growth": [{"branch": "1", "disbursement_total": 1.0}],
             "quality": [{"branch": "1", "par_30": 1.0}],
         })
         result = analysis.compose(spec, results, catalog)
-        assert not result.findings
+        assert len(result.findings) == 1
+        assert "only comparable member" in result.findings[0].text
+        assert result.findings[0].severity == "info"
+        assert result.charts[0].rows[0]["quadrant"] == "Comparison unavailable"
+        assert "relative ranking is not possible" in result.headline
+
+    def test_two_members_still_use_the_normal_median_comparison(self, catalog):
+        spec = analysis.build("growth_versus_quality", catalog=catalog)
+        results = _results(spec, {
+            "growth": [
+                {"branch": "1", "disbursement_total": 10.0},
+                {"branch": "2", "disbursement_total": 5.0},
+            ],
+            "quality": [
+                {"branch": "1", "par_30": 2.0},
+                {"branch": "2", "par_30": 8.0},
+            ],
+        })
+        result = analysis.compose(spec, results, catalog)
+        assert len(result.charts[0].rows) == 2
+        assert all(row["quadrant"] != "Comparison unavailable" for row in result.charts[0].rows)
+        assert any("median" in warning.lower() for warning in result.warnings)
 
 
 class TestFindingsCarryTheirOwnQuestion:
