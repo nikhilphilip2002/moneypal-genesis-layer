@@ -41,6 +41,19 @@ class TestMacro:
         assert result.payload["retryable"] is True
         assert "vector store" in result.payload["message"].lower()
 
+    def test_missing_evidence_is_detected_and_fake_pages_are_removed(self):
+        answer = (
+            "The context does not contain a SIDBI benchmark (document, p.4), "
+            "so a direct comparison cannot be made."
+        )
+        assert nodes._answer_limitation(answer)
+        assert nodes._strip_unsupported_page_citations(
+            answer, [{"document": "SIDBI", "page": None}],
+        ) == (
+            "The context does not contain a SIDBI benchmark (document), "
+            "so a direct comparison cannot be made."
+        )
+
 
 class TestKnowledge:
     @pytest.mark.anyio

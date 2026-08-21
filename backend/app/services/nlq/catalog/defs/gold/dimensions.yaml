@@ -112,6 +112,17 @@
   description: Borrower name on the governed loan account master.
   cardinality: 17972
 
+- id: gender
+  label: Borrower gender
+  table: gold.customer_master
+  column: gender
+  type: categorical
+  synonyms: [gender, borrower gender, customer gender, male female, gender diversity]
+  description: >
+    Aggregate borrower gender from the governed customer master. This dimension is
+    internal, not PII; individual customer identifiers remain protected separately.
+  cardinality: 4
+
 - id: loan_account
   label: Loan account
   table: gold.loan_account_master

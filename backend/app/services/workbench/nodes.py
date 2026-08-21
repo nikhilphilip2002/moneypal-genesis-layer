@@ -33,6 +33,36 @@ class SourceResult:
     payload: dict[str, Any]
     summary: str = ""  # short, feeds the multi-source synthesis; never invents numbers
     sources: list[dict] = field(default_factory=list)
+    complete: bool = True
+    limitation: str = ""
+
+
+_INCOMPLETE_ANSWER_RE = re.compile(
+    r"\b(?:does not|doesn't|do not|don't|did not|didn't)\s+(?:contain|provide|include|reference)|"
+    r"\b(?:cannot|can't|unable to)\s+(?:compare|determine|assess|answer|align)|"
+    r"\b(?:no|without)\s+(?:specific|quantitative|comparable|relevant)?\s*"
+    r"(?:data|figure|figures|benchmark|benchmarks|evidence|target|targets|context)|"
+    r"\b(?:data|evidence|benchmark|figures?)\s+(?:is|are)\s+(?:absent|missing|unavailable)|"
+    r"\b(?:context|findings|passages|evidence)\s+lacks?\b|"
+    r"\bdata gap\b",
+    re.IGNORECASE,
+)
+
+
+def _answer_limitation(answer: str) -> str:
+    """Return a short, machine-readable reason when retrieved evidence is incomplete."""
+    if not _INCOMPLETE_ANSWER_RE.search(answer):
+        return ""
+    sentences = re.split(r"(?<=[.!?])\s+", " ".join(answer.split()))
+    return next((sentence for sentence in sentences if _INCOMPLETE_ANSWER_RE.search(sentence)),
+                "The requested evidence is incomplete.")[:320]
+
+
+def _strip_unsupported_page_citations(answer: str, sources: list[dict]) -> str:
+    """Do not display page numbers invented for chunks that carry no page metadata."""
+    if any(source.get("page") not in (None, "") for source in sources):
+        return answer
+    return re.sub(r",\s*p\.?\s*\d+(?:\s*[-–]\s*\d+)?", "", answer, flags=re.IGNORECASE)
 
 
 async def run_db(
@@ -130,8 +160,9 @@ async def run_db(
 
 _MACRO_SYSTEM = (
     "You are a macroeconomic analyst for a Karnataka co-operative bank. Answer the question "
-    "strictly from the provided context passages. Cite figures as (document, p.X) using the "
-    "passage metadata. If the context does not contain the answer, say so in one sentence "
+    "strictly from the provided context passages. Cite each figure using the passage's exact "
+    "bracketed label; include p.X only when the label supplies that page. If the context does "
+    "not contain the answer, say so in one sentence "
     "rather than guessing. Be concise: at most ~150 words."
 )
 
@@ -166,6 +197,8 @@ async def run_macro(
             card_type="brief",
             payload={"summary": "No macro sources matched that question.", "sources": []},
             summary="No macro context available.",
+            complete=False,
+            limitation="No macro sources matched the question.",
         )
 
     context = _format_chunks(chunks)
@@ -190,12 +223,16 @@ async def run_macro(
         )
 
     sources = _source_refs(chunks)
+    answer = _strip_unsupported_page_citations(answer, sources)
+    limitation = _answer_limitation(answer)
     return SourceResult(
         source="macro",
         card_type="brief",
         payload={"summary": answer, "sources": sources},
         summary=answer,
         sources=sources,
+        complete=not limitation,
+        limitation=limitation,
     )
 
 
@@ -317,6 +354,8 @@ async def run_competitive(intent: str) -> SourceResult:
             return SourceResult(
                 source="competitive", card_type="brief",
                 payload={"summary": answer, "sources": [], "degraded": True}, summary=answer,
+                complete=False,
+                limitation="Detailed competitive evidence is unavailable from indexed sources.",
             )
         return SourceResult(
             source="competitive", card_type="error",
@@ -328,7 +367,9 @@ async def run_competitive(intent: str) -> SourceResult:
         "Answer the exact question using only the supplied indexed passages. Compare "
         "institutions directly when asked. Never invent rates, ticket sizes, turnaround "
         "times, market shares, or financial figures. If a requested fact is absent, answer "
-        "the supported portion and state the gap briefly. Cite facts as (document, p.X). "
+        "the supported portion and state the gap briefly. Cite a passage using its exact "
+        "bracketed document label. Include p.X only when that passage label itself includes "
+        "p.X; never invent a page number for page-less evidence. "
         "Use at most 180 words."
     )
     context = _format_chunks(chunks)
@@ -347,10 +388,14 @@ async def run_competitive(intent: str) -> SourceResult:
         answer = _extractive_fallback(chunks, prefix="Relevant competitor evidence")
 
     sources = _source_refs(chunks)
+    answer = _strip_unsupported_page_citations(answer, sources)
+    limitation = _answer_limitation(answer)
     return SourceResult(
         source="competitive", card_type="brief",
         payload={"summary": answer, "sources": sources},
         summary=answer, sources=sources,
+        complete=not limitation,
+        limitation=limitation,
     )
 
 
@@ -436,10 +481,14 @@ async def run_regulatory(intent: str) -> SourceResult:
         logger.warning("workbench regulatory synthesis failed: %s", exc)
         answer = _extractive_fallback(hits, prefix=f"Relevant {chosen.display_name} evidence")
     sources = _source_refs(hits)
+    answer = _strip_unsupported_page_citations(answer, sources)
+    limitation = _answer_limitation(answer)
     return SourceResult(
         source="regulatory", card_type="brief",
         payload={"summary": answer, "sources": sources},
         summary=answer, sources=sources,
+        complete=not limitation,
+        limitation=limitation,
     )
 
 
@@ -494,12 +543,15 @@ def _intel_card(source: str, resp) -> SourceResult:
             "document": getattr(ref, "document", None) or getattr(resp, "title", source),
             "page": getattr(ref, "page", None),
         }]
+    limitation = _answer_limitation(summary)
     return SourceResult(
         source=source,
         card_type="brief",
         payload={"summary": summary, "key_points": key_points, "sources": sources},
         summary=summary,
         sources=sources,
+        complete=not limitation,
+        limitation=limitation,
     )
 
 

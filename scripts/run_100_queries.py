@@ -12,6 +12,8 @@ from __future__ import annotations
 import argparse
 import datetime
 import json
+import random
+import re
 import sys
 import time
 import urllib.error
@@ -72,7 +74,7 @@ class QueryItem:
 @dataclass
 class QueryResult:
     item: QueryItem
-    status: str  # "Answered" | "Refused" | "Clarification Needed" | "Error"
+    status: str  # "Answered" | "Partial" | "Refused" | "Clarification Needed" | "Error"
     latency_s: float
     sources: list[str] = field(default_factory=list)
     card_types: list[str] = field(default_factory=list)
@@ -82,6 +84,20 @@ class QueryResult:
     chart_info: dict[str, Any] | None = None
     citations: list[str] = field(default_factory=list)
     error_message: str = ""
+
+
+_INCOMPLETE_RESPONSE_RE = re.compile(
+    r"\b(?:cannot|can't|unable to)\s+(?:compare|determine|assess|align)|"
+    r"\b(?:direct|precise|quantitative)\s+comparison\b[^.]{0,100}\b(?:not possible|cannot)|"
+    r"\b(?:data|evidence|benchmark|figures?|targets?)\s+(?:is|are)\s+"
+    r"(?:missing|absent|unavailable)|"
+    r"\b(?:context|findings|passages|evidence)\s+lacks?\b|\bdata gap\b",
+    re.IGNORECASE,
+)
+
+
+def response_is_incomplete(text: str) -> bool:
+    return bool(_INCOMPLETE_RESPONSE_RE.search(text))
 
 
 # --------------------------------------------------------------------------------------
@@ -561,7 +577,9 @@ class GenesisAPIClient:
             elif ev_type == "answer":
                 final_status = ev_data.get("status", "answered")
                 summary = ev_data.get("text", "")
-                if final_status in ("answered", "partial") and summary:
+                if final_status == "partial" and summary:
+                    status = "Partial"
+                elif final_status == "answered" and summary:
                     status = "Answered"
                 elif final_status == "clarify":
                     status = "Clarification Needed"
@@ -581,6 +599,8 @@ class GenesisAPIClient:
 
         if not summary and synthesis:
             summary = synthesis
+        if status == "Answered" and response_is_incomplete(summary):
+            status = "Partial"
         if not summary and not error_msg and status == "Answered":
             summary = "Structured intelligence successfully retrieved and validated."
 
@@ -609,6 +629,7 @@ class GenesisAPIClient:
 def generate_markdown_report(results: list[QueryResult], total_duration_s: float, app_url: str) -> str:
     total_queries = len(results)
     answered_count = sum(1 for r in results if r and r.status == "Answered")
+    partial_count = sum(1 for r in results if r and r.status == "Partial")
     refused_count = sum(1 for r in results if r and r.status == "Refused")
     clarify_count = sum(1 for r in results if r and r.status == "Clarification Needed")
     error_count = sum(1 for r in results if r and r.status == "Error")
@@ -620,10 +641,12 @@ def generate_markdown_report(results: list[QueryResult], total_duration_s: float
         cat_res = [r for r in results if r and r.item.category == cat]
         c_tot = len(cat_res)
         c_ans = sum(1 for r in cat_res if r.status == "Answered")
+        c_partial = sum(1 for r in cat_res if r.status == "Partial")
         c_lat = sum(r.latency_s for r in cat_res) / c_tot if c_tot else 0
         cat_stats[cat] = {
             "total": c_tot,
             "answered": c_ans,
+            "partial": c_partial,
             "pct": (c_ans / c_tot * 100) if c_tot else 0,
             "avg_latency": c_lat,
         }
@@ -631,7 +654,7 @@ def generate_markdown_report(results: list[QueryResult], total_duration_s: float
     avg_latency_all = sum(r.latency_s for r in results if r) / total_queries if total_queries else 0
 
     lines: list[str] = []
-    lines.append("# Moneypal Genesis Intelligence — 100-Query Benchmark & Evaluation Report")
+    lines.append(f"# Moneypal Genesis Intelligence — {total_queries}-Query Benchmark & Evaluation Report")
     lines.append("")
     lines.append(f"**Execution Timestamp:** {datetime.datetime.now(datetime.timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')}  ")
     lines.append(f"**Target Application Endpoint:** `{app_url}`  ")
@@ -644,10 +667,14 @@ def generate_markdown_report(results: list[QueryResult], total_duration_s: float
     lines.append("")
     lines.append("| Metric | Result | Benchmark Target | Status |")
     lines.append("|---|---|---|---|")
-    pass_condition = answered_count >= min(70, total_queries)
+    pass_target = 70 if total_queries == 100 else max(1, int(total_queries * 0.70 + 0.999999))
+    pass_condition = answered_count >= pass_target
     status_emoji = "✅ PASS" if pass_condition else "❌ FAIL"
-    lines.append(f"| **Total Queries Executed** | **{total_queries}** | 100 | ✅ Complete |")
-    lines.append(f"| **Answered Queries** | **{answered_count} / {total_queries}** ({answered_pct:.1f}%) | **≥ 70% (70/100)** | **{status_emoji}** |")
+    lines.append(f"| **Total Queries Executed** | **{total_queries}** | {total_queries} | ✅ Complete |")
+    lines.append(f"| **Complete Answers** | **{answered_count} / {total_queries}** ({answered_pct:.1f}%) | **≥ {pass_target} ({pass_target/total_queries*100:.0f}%)** | **{status_emoji}** |")
+    lines.append(f"| **Partial Answers** | **{partial_count} / {total_queries}** | Reported separately; not counted as accurate | ℹ️ Useful but incomplete |")
+    useful_pct = ((answered_count + partial_count) / total_queries * 100) if total_queries else 0
+    lines.append(f"| **Useful Response Rate** | **{answered_count + partial_count} / {total_queries}** ({useful_pct:.1f}%) | Diagnostic only | ℹ️ Not accuracy |")
     lines.append(f"| **Refused (Governed Safety Policy)** | {refused_count} | < 10% | ℹ️ Handled |")
     lines.append(f"| **Clarifications Triggered** | {clarify_count} | < 5% | ℹ️ Handled |")
     lines.append(f"| **Errors / Timeouts** | {error_count} | < 10% | {'⚠️ Review' if error_count > 0 else '✅ Zero Errors'} |")
@@ -656,22 +683,22 @@ def generate_markdown_report(results: list[QueryResult], total_duration_s: float
     lines.append("")
     lines.append("### Category Breakdown")
     lines.append("")
-    lines.append("| Category | Total Queries | Answered | Success Rate (%) | Avg Latency (s) |")
-    lines.append("|---|---|---|---|---|")
+    lines.append("| Category | Total Queries | Complete | Partial | Complete Rate (%) | Avg Latency (s) |")
+    lines.append("|---|---|---|---|---|---|")
     for cat in categories:
         s = cat_stats[cat]
-        lines.append(f"| **{cat}** | {s['total']} | {s['answered']} / {s['total']} | {s['pct']:.1f}% | {s['avg_latency']:.2f}s |")
+        lines.append(f"| **{cat}** | {s['total']} | {s['answered']} / {s['total']} | {s['partial']} | {s['pct']:.1f}% | {s['avg_latency']:.2f}s |")
     lines.append("")
     lines.append("---")
     lines.append("")
-    lines.append("## 2. Detailed Query Execution Log (100 Queries)")
+    lines.append(f"## 2. Detailed Query Execution Log ({total_queries} Queries)")
     lines.append("")
 
     for r in results:
         if not r:
             continue
         q = r.item
-        status_icon = "🟢" if r.status == "Answered" else ("🟡" if r.status in ("Refused", "Clarification Needed") else "🔴")
+        status_icon = "🟢" if r.status == "Answered" else ("🟡" if r.status in ("Partial", "Refused", "Clarification Needed") else "🔴")
         lines.append(f"### Q{q.id:03d}: {q.question}")
         lines.append("")
         lines.append(f"- **Category:** `{q.category}`")
@@ -735,6 +762,12 @@ def main() -> int:
     parser.add_argument("--timeout", type=int, default=None, help="Per-query timeout in seconds")
     parser.add_argument("--token", default="mock-token-gicc_admin", help="Authentication token")
     parser.add_argument("--limit", type=int, default=100, help="Number of queries to run (default: 100)")
+    parser.add_argument(
+        "--ids",
+        help="Run specific query IDs, for example --ids 56,70,74,76,79",
+    )
+    parser.add_argument("--sample", type=int, help="Run a reproducible random sample of N queries")
+    parser.add_argument("--seed", type=int, default=20260821, help="Seed used with --sample")
     parser.add_argument("--allow-fallbacks", action="store_true", help="Use legacy direct endpoints after a Workbench failure (diagnostic only)")
     args = parser.parse_args()
 
@@ -755,7 +788,27 @@ def main() -> int:
 
     client = GenesisAPIClient(base_url=base_url, timeout_s=timeout_s, auth_token=args.token,
                               allow_fallbacks=args.allow_fallbacks)
-    all_queries = get_100_queries()[:args.limit]
+    query_bank = get_100_queries()
+    if args.ids and args.sample is not None:
+        parser.error("--ids and --sample cannot be used together")
+    if args.ids:
+        try:
+            requested_ids = [int(value.strip()) for value in args.ids.split(",") if value.strip()]
+        except ValueError:
+            parser.error("--ids must be a comma-separated list of integers")
+        by_id = {query.id: query for query in query_bank}
+        missing = [query_id for query_id in requested_ids if query_id not in by_id]
+        if missing:
+            parser.error(f"unknown query IDs: {', '.join(map(str, missing))}")
+        all_queries = [by_id[query_id] for query_id in dict.fromkeys(requested_ids)]
+    elif args.sample is not None:
+        if not 1 <= args.sample <= len(query_bank):
+            parser.error(f"--sample must be between 1 and {len(query_bank)}")
+        all_queries = sorted(random.Random(args.seed).sample(query_bank, args.sample), key=lambda q: q.id)
+    else:
+        if not 1 <= args.limit <= len(query_bank):
+            parser.error(f"--limit must be between 1 and {len(query_bank)}")
+        all_queries = query_bank[:args.limit]
     total_count = len(all_queries)
 
     print(f"Loaded {total_count} curated test questions across 5 categories.", flush=True)
@@ -768,7 +821,7 @@ def main() -> int:
         print(f"[{idx:03d}/{total_count:03d}] (Q{query.id:03d}) [{query.category:11s}] Q: {query.question[:55]}...", flush=True)
         res = client.execute_query(query)
         results.append(res)
-        status_symbol = "✓" if res.status == "Answered" else ("!" if res.status in ("Refused", "Clarification Needed") else "✗")
+        status_symbol = "✓" if res.status == "Answered" else ("!" if res.status in ("Partial", "Refused", "Clarification Needed") else "✗")
         print(f"       -> [{status_symbol} {res.status:10s}] ({res.latency_s:.2f}s) | Sources: {res.sources} | {res.headline or res.summary[:45]}", flush=True)
 
     overall_duration = time.time() - overall_start
@@ -778,12 +831,14 @@ def main() -> int:
     print("=" * 80, flush=True)
 
     answered = sum(1 for r in results if r and r.status == "Answered")
-    pass_target = 70 if total_count == 100 else int(total_count * 0.70)
+    partial = sum(1 for r in results if r and r.status == "Partial")
+    pass_target = 70 if total_count == 100 else max(1, int(total_count * 0.70 + 0.999999))
     passed = answered >= pass_target
     print(f" Total Executed : {total_count}", flush=True)
-    print(f" Answered       : {answered} / {total_count} ({(answered/total_count)*100:.1f}%)", flush=True)
+    print(f" Complete       : {answered} / {total_count} ({(answered/total_count)*100:.1f}%)", flush=True)
+    print(f" Partial        : {partial} / {total_count} (not counted as accurate)", flush=True)
     print(f" Total Duration : {overall_duration:.2f}s ({overall_duration/60:.1f} min)", flush=True)
-    print(f" Pass Threshold : ≥ {pass_target} Answered -> {'PASSED ✅' if passed else 'FAILED ❌'}", flush=True)
+    print(f" Pass Threshold : ≥ {pass_target} Complete -> {'PASSED ✅' if passed else 'FAILED ❌'}", flush=True)
     print("-" * 80, flush=True)
 
     # Write Markdown file

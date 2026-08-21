@@ -144,6 +144,26 @@ _EXPLICIT_TIME_SCOPE_RE = re.compile(
     r"financial\s+year|calendar\s+year|20\d{2})\b",
     re.IGNORECASE,
 )
+_GOLD_DISBURSEMENT_TREND_RE = re.compile(
+    r"\bgold\s+loans?\b[^?]{0,80}\bdisburse(?:ment|ments|d)?\b[^?]{0,50}\btrend\b|"
+    r"\bdisburse(?:ment|ments|d)?\b[^?]{0,50}\btrend\b[^?]{0,80}\bgold\s+loans?\b",
+    re.IGNORECASE,
+)
+_GOLD_DISBURSEMENT_RE = re.compile(
+    r"\bgold\s+loans?\b[^?]{0,80}\bdisburse(?:ment|ments|d)?\b|"
+    r"\bdisburse(?:ment|ments|d)?\b[^?]{0,80}\bgold\s+loans?\b",
+    re.IGNORECASE,
+)
+_GENDER_DIVERSITY_RE = re.compile(
+    r"\b(?:borrower|customer|portfolio)?\s*gender\s+(?:diversity|mix|breakdown|distribution)\b|"
+    r"\b(?:female|women)\s+borrowers?\b[^?]{0,60}\b(?:male|men)\s+borrowers?\b",
+    re.IGNORECASE,
+)
+_MSME_DELINQUENCY_RE = re.compile(
+    r"\b(?:MSME|business)\b[^?]{0,90}\b(?:delinquen|PAR\s*30|NPA)\w*\b|"
+    r"\b(?:delinquen|PAR\s*30|NPA)\w*\b[^?]{0,90}\b(?:MSME|business)\b",
+    re.IGNORECASE,
+)
 
 _KNOWN_DATA_GAPS: tuple[re.Pattern[str], ...] = tuple(
     re.compile(pattern, re.IGNORECASE)
@@ -208,6 +228,56 @@ def _common_business_plan(question: str) -> PlanResult | None:
             },
             confidence=1.0,
             reasoning="governed origination cohorts measured across available report months",
+        )
+
+    if _GOLD_DISBURSEMENT_TREND_RE.search(question):
+        return QuerySpecPlan(
+            spec={
+                "metrics": ["disbursement_total"],
+                "dimensions": ["month"],
+                "filters": [{"field": "product", "op": "eq", "value": "Gold Loans"}],
+                "period": {"relative": "all_time"},
+            },
+            confidence=1.0,
+            reasoning="monthly gold-loan disbursement trend from governed product taxonomy",
+        )
+
+    if _GOLD_DISBURSEMENT_RE.search(question) and not _EXPLICIT_TIME_SCOPE_RE.search(question):
+        return QuerySpecPlan(
+            spec={
+                "metrics": ["disbursement_total"],
+                "filters": [{"field": "product", "op": "eq", "value": "Gold Loans"}],
+                "period": {"relative": "all_time"},
+            },
+            confidence=1.0,
+            reasoning="all-time gold-loan disbursement from governed product taxonomy",
+        )
+
+    if _GENDER_DIVERSITY_RE.search(question):
+        return QuerySpecPlan(
+            spec={
+                "metrics": ["customer_count"],
+                "dimensions": ["gender"],
+                "period": {"relative": "all_time"},
+                "as_share": True,
+            },
+            confidence=1.0,
+            reasoning="distinct borrowers grouped by governed aggregate gender",
+        )
+
+    if _MSME_DELINQUENCY_RE.search(question):
+        return QuerySpecPlan(
+            spec={
+                "metrics": ["par_30"],
+                "dimensions": ["scheme"],
+                "filters": [
+                    {"field": "product", "op": "eq", "value": "Business & MSME Loans"}
+                ],
+                "period": {"relative": "today"},
+                "order_by": {"field": "par_30", "direction": "desc"},
+            },
+            confidence=1.0,
+            reasoning="current PAR 30 by scheme restricted to the governed MSME product",
         )
 
     if _INTEREST_RATE_AMOUNT_RE.search(question):

@@ -76,9 +76,13 @@ export default function WorkbenchTurn({ turn, onAsk }: { turn: WorkbenchTurnData
             <CardBody key={`${card.source}-${index}`} card={card} onAsk={onAsk} />
           ))}
 
-          {turn.answer?.status === 'partial' && turn.answer.unavailable_sources.length > 0 && (
+          {turn.answer?.status === 'partial' &&
+            (turn.answer.unavailable_sources.length > 0 || turn.answer.limitations?.length > 0) && (
             <StatusRow icon={AlertTriangle} tone="warning" surface className="text-muted-foreground">
-              Answered with available evidence; {turn.answer.unavailable_sources.map((item) => sourceLabel(item.source)).join(', ')} could not contribute.
+              Answered with available evidence.{' '}
+              {turn.answer.unavailable_sources.length > 0 &&
+                `${turn.answer.unavailable_sources.map((item) => sourceLabel(item.source)).join(', ')} could not contribute. `}
+              {turn.answer.limitations?.map((item) => item.reason).join(' ')}
             </StatusRow>
           )}
 

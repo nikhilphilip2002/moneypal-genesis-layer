@@ -196,6 +196,25 @@ class TestMultiSource:
         assert answer["text"] == "book says X"
         assert answer["unavailable_sources"][0]["source"] == "competitive"
 
+    @pytest.mark.anyio
+    async def test_incomplete_contributing_source_marks_answer_partial(self, monkeypatch):
+        _stub_route(monkeypatch, router.RouteDecision(
+            route="dispatch", sources=["db", "macro"], intent="compare"))
+        _stub_node(monkeypatch, "run_db", SourceResult(
+            source="db", card_type="chart", payload={}, summary="Our PAR 30 is 1.2%."))
+        _stub_node(monkeypatch, "run_macro", SourceResult(
+            source="macro", card_type="brief", payload={},
+            summary="The requested benchmark is unavailable.", complete=False,
+            limitation="SIDBI benchmark evidence is unavailable."))
+        monkeypatch.setattr(models, "for_step", lambda *a, **k: FakeLLM("Our PAR 30 is 1.2%; no benchmark is available."))
+
+        events = await _run()
+        answer = next(data for name, data in events if name == "answer")
+        assert answer["status"] == "partial"
+        assert answer["limitations"] == [
+            {"source": "macro", "reason": "SIDBI benchmark evidence is unavailable."}
+        ]
+
 
 class TestPinnedThreading:
     @pytest.mark.anyio

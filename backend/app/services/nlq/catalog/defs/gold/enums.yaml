@@ -49,6 +49,14 @@
     E: {label: EMI term loan, synonyms: [EMI, term loan, amortising, instalment loan]}
     C: {label: Non-EMI demand / bullet loan, synonyms: [bullet, demand loan, non-EMI, lump sum]}
 
+- dimension: gender
+  column: gender
+  source: governed customer taxonomy
+  values:
+    M: {label: Male, synonyms: [men, male borrowers]}
+    F: {label: Female, synonyms: [women, female borrowers]}
+    T: {label: Transgender, synonyms: [transgender borrowers]}
+
 - dimension: scheme
   column: scheme_code
   source: governed Gold product master; unknown codes render without an invented name

@@ -1017,6 +1017,7 @@ export type WorkbenchAnswer = {
   sources: string[];
   citations: { document: string; page?: string | number | null; score?: number }[];
   unavailable_sources: { source: string; type: string; reason: string }[];
+  limitations: { source: string; reason: string }[];
 };
 
 export type WorkbenchConversation = {

@@ -209,7 +209,7 @@ async def _synthesize_node(state: WorkbenchState) -> dict[str, Any]:
         payload = {
             "status": "refused",
             "text": decision.message or "That request cannot be handled by this workbench.",
-            "sources": [], "citations": [], "unavailable_sources": [],
+            "sources": [], "citations": [], "unavailable_sources": [], "limitations": [],
         }
         await emit.put(sse("answer", payload))
         history.set_answer(state["conversation_id"], state["user"], state["turn_id"], payload)
@@ -230,6 +230,14 @@ async def _synthesize_node(state: WorkbenchState) -> dict[str, Any]:
         for r in all_results
         if r not in results
     ]
+    limitations = [
+        {
+            "source": r.source,
+            "reason": r.limitation or "The source only supported part of the request.",
+        }
+        for r in results
+        if not r.complete
+    ]
 
     if not results:
         refusal = next((r for r in all_results if r.card_type == "refusal"), None)
@@ -239,6 +247,7 @@ async def _synthesize_node(state: WorkbenchState) -> dict[str, Any]:
                 "status": "clarify",
                 "text": str(clarification.payload.get("question") or "Please clarify the request."),
                 "sources": [], "citations": [], "unavailable_sources": unavailable,
+                "limitations": [],
             }
             await emit.put(sse("answer", payload))
             history.set_answer(state["conversation_id"], state["user"], state["turn_id"], payload)
@@ -247,6 +256,7 @@ async def _synthesize_node(state: WorkbenchState) -> dict[str, Any]:
                 "status": "refused",
                 "text": str(refusal.payload.get("message") or "That request cannot be answered safely."),
                 "sources": [], "citations": [], "unavailable_sources": unavailable,
+                "limitations": [],
             }
             await emit.put(sse("answer", payload))
             history.set_answer(state["conversation_id"], state["user"], state["turn_id"], payload)
@@ -287,11 +297,12 @@ async def _synthesize_node(state: WorkbenchState) -> dict[str, Any]:
                 seen_citations.add(key)
                 citations.append(citation)
     payload = {
-        "status": "partial" if unavailable else "answered",
+        "status": "partial" if unavailable or limitations else "answered",
         "text": text,
         "sources": [r.source for r in results],
         "citations": citations,
         "unavailable_sources": unavailable,
+        "limitations": limitations,
     }
     await emit.put(sse("answer", payload))
     history.set_answer(state["conversation_id"], state["user"], state["turn_id"], payload)

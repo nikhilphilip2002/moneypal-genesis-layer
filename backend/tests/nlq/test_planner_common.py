@@ -116,3 +116,39 @@ async def test_data_pipeline_issues_use_existing_freshness_signals():
     assert isinstance(outcome.plan, BriefingPlan)
     assert outcome.plan.persona_id == "ceo"
     assert outcome.attempts == 0
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    "question,metric,dimensions,filter_value,period",
+    [
+        (
+            "Show our gold loan disbursement trend over time",
+            "disbursement_total", ["month"], "Gold Loans", "all_time",
+        ),
+        (
+            "How much have we disbursed in gold loans?",
+            "disbursement_total", [], "Gold Loans", "all_time",
+        ),
+        (
+            "How do our portfolio delinquency levels in MSME schemes compare with SIDBI?",
+            "par_30", ["scheme"], "Business & MSME Loans", "today",
+        ),
+        (
+            "How does our borrower gender diversity compare with microfinance targets?",
+            "customer_count", ["gender"], None, "all_time",
+        ),
+    ],
+)
+async def test_benchmark_internal_tasks_use_complete_governed_plans(
+    question, metric, dimensions, filter_value, period,
+):
+    outcome = await plan(question, client=NoModel())
+
+    assert isinstance(outcome.plan, QuerySpecPlan)
+    assert outcome.plan.spec.metrics == [metric]
+    assert outcome.plan.spec.dimensions == dimensions
+    assert outcome.plan.spec.period.relative == period
+    if filter_value is not None:
+        assert outcome.plan.spec.filters[0].value == filter_value
+    assert compile_spec(outcome.plan.spec, get_catalog()).sql.startswith("SELECT")
