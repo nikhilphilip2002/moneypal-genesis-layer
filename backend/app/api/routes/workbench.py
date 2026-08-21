@@ -98,6 +98,11 @@ def _turn_for_api(turn: dict) -> dict:
         "route": route,
         "sources": sources,
         "cards": list(turn.get("cards", []) or []),
+        "answer": turn.get("answer") or (
+            {"status": "answered", "text": turn.get("synthesis"), "sources": sources,
+             "citations": [], "unavailable_sources": []}
+            if turn.get("synthesis") else None
+        ),
         "synthesis": turn.get("synthesis"),
         "refusal": turn.get("refusal"),
         "error": turn.get("error"),

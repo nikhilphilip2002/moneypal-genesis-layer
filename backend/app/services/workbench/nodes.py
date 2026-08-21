@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -267,23 +268,124 @@ def _catalog_definition_fallback(metric_ids: list[str], catalog) -> str:
 
 
 async def run_competitive(intent: str) -> SourceResult:
-    """Answer from competitive intelligence. The landscape brief is the general view; it
-    needs no institution id, which makes it the right default for a free-form question."""
-    from app.services import competitive
+    """Retrieve question-specific competitor evidence and synthesize via Workbench policy.
+
+    The legacy competitive service always generated a generic landscape with Groq. That
+    made every pinned question identical and broke local-only deployments. This adapter
+    selects the relevant institution collections, retrieves with the user's actual intent,
+    and uses the same local-first model router as macro intelligence.
+    """
+    from app.services import institution_loader
+
+    institutions = institution_loader.load_all()
+    selected = _matching_institutions(intent, institutions) or institutions
+
+    def retrieve_chunks() -> list[dict[str, Any]]:
+        chunks: list[dict[str, Any]] = []
+        for institution in selected:
+            collection = institution.get("qdrant_collection")
+            if not collection:
+                continue
+            try:
+                hits = rag.search_multi(
+                    collection, [intent], top_k=3, min_score=0.25, max_chunks=3,
+                )
+                for hit in hits:
+                    enriched = dict(hit)
+                    enriched.setdefault("document", institution.get("name", collection))
+                    enriched["institution"] = institution.get("name", collection)
+                    chunks.append(enriched)
+            except Exception as exc:  # noqa: BLE001 - one bad collection must not erase peers
+                logger.warning("competitive collection %s failed: %s", collection, exc)
+        chunks.sort(key=lambda item: float(item.get("score", 0.0)), reverse=True)
+        return chunks[:14]
 
     try:
-        resp = competitive.landscape()
+        chunks = await asyncio.to_thread(retrieve_chunks)
     except Exception as exc:  # noqa: BLE001
-        logger.warning("workbench competitive node failed: %s", exc)
-        return SourceResult(source="competitive", card_type="error",
-                            payload={"message": "Competitive intelligence is unavailable."})
-    return _intel_card("competitive", resp)
+        logger.warning("workbench competitive retrieval failed: %s", exc)
+        chunks = []
+
+    if not chunks:
+        # Registry metadata is governed and remains useful when semantic retrieval is down.
+        names = ", ".join(str(item.get("name", "")) for item in selected[:8] if item.get("name"))
+        if names:
+            answer = (
+                f"The competitor registry identifies {names}. Detailed product, pricing, "
+                "and performance evidence is currently unavailable from the indexed sources."
+            )
+            return SourceResult(
+                source="competitive", card_type="brief",
+                payload={"summary": answer, "sources": [], "degraded": True}, summary=answer,
+            )
+        return SourceResult(
+            source="competitive", card_type="error",
+            payload={"message": "Competitive intelligence is unavailable.", "retryable": True},
+        )
+
+    system = (
+        "You are a competitive-intelligence analyst for a Karnataka co-operative lender. "
+        "Answer the exact question using only the supplied indexed passages. Compare "
+        "institutions directly when asked. Never invent rates, ticket sizes, turnaround "
+        "times, market shares, or financial figures. If a requested fact is absent, answer "
+        "the supported portion and state the gap briefly. Cite facts as (document, p.X). "
+        "Use at most 180 words."
+    )
+    context = _format_chunks(chunks)
+    try:
+        completion = await models.for_step("synthesize", sensitive=False).complete(
+            messages=[
+                {"role": "system", "content": system},
+                {"role": "user", "content": f"Question: {intent}\n\nIndexed evidence:\n{context}"},
+            ],
+            max_tokens=550,
+            temperature=0.1,
+        )
+        answer = completion.text.strip()
+    except Exception as exc:  # noqa: BLE001 - retrieval evidence still has value
+        logger.warning("workbench competitive synthesis failed: %s", exc)
+        answer = _extractive_fallback(chunks, prefix="Relevant competitor evidence")
+
+    sources = _source_refs(chunks)
+    return SourceResult(
+        source="competitive", card_type="brief",
+        payload={"summary": answer, "sources": sources},
+        summary=answer, sources=sources,
+    )
+
+
+def _matching_institutions(intent: str, institutions: list[dict]) -> list[dict]:
+    normalized = re.sub(r"[^a-z0-9]+", " ", intent.lower()).strip()
+    words = set(normalized.split())
+    matched: list[dict] = []
+    for institution in institutions:
+        identity = " ".join(
+            str(institution.get(field, "")) for field in ("id", "name", "type")
+        ).lower()
+        tokens = {token for token in re.findall(r"[a-z0-9]+", identity) if len(token) > 2}
+        distinctive = {token for token in tokens if token not in {
+            "bank", "cooperative", "urban", "state", "financial", "capital", "karnataka",
+            "national",
+        }}
+        if distinctive and (distinctive & words or any(token in normalized for token in distinctive if len(token) > 4)):
+            matched.append(institution)
+    return matched
+
+
+def _extractive_fallback(chunks: list[dict], *, prefix: str) -> str:
+    excerpts: list[str] = []
+    for chunk in chunks[:3]:
+        text = " ".join(str(chunk.get("text", "")).split())
+        if text:
+            excerpts.append(text[:320].rstrip())
+    return f"{prefix}: " + " ".join(excerpts) if excerpts else f"{prefix} is unavailable."
 
 
 async def run_regulatory(intent: str) -> SourceResult:
     """Answer from regulatory intelligence. The question is matched to a regulation category
     and that category's grounded detail is returned; an unmatched question falls to the
     first category rather than guessing."""
+    from app.services import rag as regulatory_rag
     from app.services import regulatory
 
     try:
@@ -292,12 +394,53 @@ async def run_regulatory(intent: str) -> SourceResult:
             return SourceResult(source="regulatory", card_type="error",
                                 payload={"message": "No regulatory categories are loaded."})
         chosen = _best_category(intent, categories)
-        resp = regulatory.regulation_detail(chosen.id)
+        hits = await asyncio.to_thread(
+            regulatory_rag.search_qdrant, chosen.qdrant_collection, intent, 8,
+        )
     except Exception as exc:  # noqa: BLE001
         logger.warning("workbench regulatory node failed: %s", exc)
         return SourceResult(source="regulatory", card_type="error",
                             payload={"message": "Regulatory intelligence is unavailable."})
-    return _intel_card("regulatory", resp)
+    if not hits:
+        # The existing service has an extractive fallback based on the registry config.
+        try:
+            return _intel_card("regulatory", regulatory.regulation_detail(chosen.id))
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("workbench regulatory fallback failed: %s", exc)
+            return SourceResult(source="regulatory", card_type="error",
+                                payload={"message": "Regulatory intelligence is unavailable."})
+
+    context = regulatory_rag.build_context(hits)
+    system = (
+        "You answer Indian lending-regulation questions for a bank director. Use only the "
+        "provided RBI/regulatory passages and the supplied applicability metadata. Answer "
+        "the exact question, not a generic compliance briefing. Distinguish an explicit "
+        "rule from a related principle and say when entity-specific applicability must be "
+        "confirmed. Never invent a threshold or effective date. Cite as (document, p.X)."
+    )
+    try:
+        completion = await models.for_step("synthesize", sensitive=False).complete(
+            messages=[
+                {"role": "system", "content": system},
+                {"role": "user", "content": (
+                    f"Question: {intent}\nCategory: {chosen.display_name}\n"
+                    f"Applicability: {chosen.applicability}\nEffective date: {chosen.effective_date}"
+                    f"\n\nEvidence:\n{context}"
+                )},
+            ],
+            max_tokens=550,
+            temperature=0.1,
+        )
+        answer = completion.text.strip()
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("workbench regulatory synthesis failed: %s", exc)
+        answer = _extractive_fallback(hits, prefix=f"Relevant {chosen.display_name} evidence")
+    sources = _source_refs(hits)
+    return SourceResult(
+        source="regulatory", card_type="brief",
+        payload={"summary": answer, "sources": sources},
+        summary=answer, sources=sources,
+    )
 
 
 async def run_schema(intent: str, *, access_mode: str | None = None) -> SourceResult:
@@ -364,12 +507,33 @@ def _best_category(intent: str, categories: list):
     """Pick the category whose name best overlaps the question; first category on a tie or
     no overlap. Deliberately simple — a keyword hit is enough to route, and the category's
     own grounded detail does the real work."""
-    words = {w for w in intent.lower().split() if len(w) > 3}
+    normalized = re.sub(r"[^a-z0-9]+", " ", intent.lower())
+    words = {w for w in normalized.split() if len(w) > 2}
+    aliases = {
+        "prudential_norms": {
+            "prudential", "exposure", "single borrower", "group borrower", "concentration",
+            "npa", "non performing", "asset classification", "provisioning", "capital adequacy",
+        },
+        "master_directions": {
+            "priority sector", "psl", "msme target", "gold loan", "secured lending",
+        },
+        "fair_practices_code": {
+            "fair practices", "grievance", "recovery conduct", "customer protection",
+        },
+        "digital_lending": {"digital lending", "lsp", "dla", "fintech"},
+        "kyc_aml": {"kyc", "aml", "money laundering", "customer due diligence"},
+        "outsourcing": {"outsourcing", "vendor", "service provider"},
+        "information_security": {"cyber", "information security", "incident", "technology risk"},
+        "governance": {"governance", "board oversight", "director"},
+    }
     best = categories[0]
     best_score = 0
     for cat in categories:
         label = f"{getattr(cat, 'display_name', '')} {getattr(cat, 'category', '')}".lower()
         score = sum(1 for w in words if w in label)
+        for alias in aliases.get(getattr(cat, "id", ""), set()):
+            if alias in normalized:
+                score += 5 if " " in alias else 3
         if score > best_score:
             best, best_score = cat, score
     return best

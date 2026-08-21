@@ -108,25 +108,36 @@ class TestPostgresMCP:
 
 class TestCompetitive:
     @pytest.mark.anyio
-    async def test_returns_a_brief_card_from_the_landscape(self, monkeypatch):
-        from app.services import competitive
+    async def test_returns_a_question_specific_brief_via_workbench_model(self, monkeypatch):
+        from app.services import institution_loader
 
-        monkeypatch.setattr(competitive, "landscape", lambda: _intel(summary="Rivals price low."))
+        monkeypatch.setattr(institution_loader, "load_all", lambda: [{
+            "id": "peer", "name": "Peer Bank", "type": "cooperative",
+            "qdrant_collection": "comp_peer",
+        }])
+        monkeypatch.setattr(nodes.rag, "search_multi", lambda *a, **k: [{
+            "text": "Peer Bank prices secured MSME loans competitively.",
+            "source": "peer.pdf", "page": 3, "score": 0.8,
+        }])
+        async def run_inline(fn, *args, **kwargs):
+            return fn(*args, **kwargs)
+        monkeypatch.setattr(nodes.asyncio, "to_thread", run_inline)
+        monkeypatch.setattr(models, "for_step", lambda *a, **k: FakeLLM("Rivals price low."))
+
         result = await nodes.run_competitive("who competes for MSME borrowers")
-
         assert result.source == "competitive"
         assert result.card_type == "brief"
         assert "Rivals price low." in result.payload["summary"]
         assert result.summary  # non-empty, so multi-source synthesis has something to use
 
     @pytest.mark.anyio
-    async def test_service_failure_degrades_to_an_error_card(self, monkeypatch):
-        from app.services import competitive
+    async def test_empty_registry_degrades_to_an_error_card(self, monkeypatch):
+        from app.services import institution_loader
 
-        def boom():
-            raise RuntimeError("no data")
-
-        monkeypatch.setattr(competitive, "landscape", boom)
+        monkeypatch.setattr(institution_loader, "load_all", lambda: [])
+        async def run_inline(fn, *args, **kwargs):
+            return fn(*args, **kwargs)
+        monkeypatch.setattr(nodes.asyncio, "to_thread", run_inline)
         result = await nodes.run_competitive("anything")
         assert result.card_type == "error"
 
@@ -134,16 +145,23 @@ class TestCompetitive:
 class TestRegulatory:
     def _categories(self):
         return [
-            SimpleNamespace(id="psl", display_name="Priority Sector Lending", category="psl"),
-            SimpleNamespace(id="dnbs", display_name="DNBS Returns", category="reporting"),
+            SimpleNamespace(id="psl", display_name="Priority Sector Lending", category="psl",
+                            qdrant_collection="reg_psl", applicability="banks", effective_date="current"),
+            SimpleNamespace(id="dnbs", display_name="DNBS Returns", category="reporting",
+                            qdrant_collection="reg_dnbs", applicability="NBFCs", effective_date="current"),
         ]
 
     @pytest.mark.anyio
     async def test_matches_the_category_the_question_is_about(self, monkeypatch):
+        from app.services import rag as regulatory_rag
         from app.services import regulatory
 
         seen = {}
         monkeypatch.setattr(regulatory, "list_categories", self._categories)
+        monkeypatch.setattr(regulatory_rag, "search_qdrant", lambda *a, **k: [])
+        async def run_inline(fn, *args, **kwargs):
+            return fn(*args, **kwargs)
+        monkeypatch.setattr(nodes.asyncio, "to_thread", run_inline)
 
         def detail(category_id):
             seen["id"] = category_id
@@ -159,10 +177,15 @@ class TestRegulatory:
 
     @pytest.mark.anyio
     async def test_defaults_to_the_first_category_when_nothing_matches(self, monkeypatch):
+        from app.services import rag as regulatory_rag
         from app.services import regulatory
 
         seen = {}
         monkeypatch.setattr(regulatory, "list_categories", self._categories)
+        monkeypatch.setattr(regulatory_rag, "search_qdrant", lambda *a, **k: [])
+        async def run_inline(fn, *args, **kwargs):
+            return fn(*args, **kwargs)
+        monkeypatch.setattr(nodes.asyncio, "to_thread", run_inline)
 
         def detail(category_id):
             seen["id"] = category_id

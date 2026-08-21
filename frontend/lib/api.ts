@@ -1011,6 +1011,14 @@ export type WorkbenchCard = {
   payload: any;
 };
 
+export type WorkbenchAnswer = {
+  status: 'answered' | 'partial' | 'clarify' | 'refused';
+  text: string;
+  sources: string[];
+  citations: { document: string; page?: string | number | null; score?: number }[];
+  unavailable_sources: { source: string; type: string; reason: string }[];
+};
+
 export type WorkbenchConversation = {
   conversation_id: string;
   title: string;
@@ -1024,6 +1032,7 @@ export type WorkbenchStreamEvent =
   | { type: 'route'; sources: string[]; intent: string; model: string }
   | { type: 'source_start'; source: string }
   | { type: 'source_card'; card: WorkbenchCard }
+  | { type: 'answer'; answer: WorkbenchAnswer }
   | { type: 'synthesis'; text: string }
   | { type: 'refusal'; refusal: { reason: string; message: string } }
   | { type: 'error'; message: string; retryable: boolean }
@@ -1057,6 +1066,7 @@ export const workbench = {
       route: { sources: string[]; intent: string; model?: string };
       sources: string[];
       cards: WorkbenchCard[];
+      answer: WorkbenchAnswer | null;
       synthesis: string | null;
       refusal: { reason: string; message: string } | null;
       error: string | null;
@@ -1140,6 +1150,7 @@ export const workbench = {
             yield { type: 'source_card', card: { source, card_type, payload: rest } };
             break;
           }
+          case 'answer': yield { type: 'answer', answer: payload as WorkbenchAnswer }; break;
           case 'synthesis': yield { type: 'synthesis', text: payload.text }; break;
           case 'refusal': yield { type: 'refusal', refusal: { reason: payload.reason, message: payload.message } }; break;
           case 'error': yield { type: 'error', message: payload.message, retryable: !!payload.retryable }; break;

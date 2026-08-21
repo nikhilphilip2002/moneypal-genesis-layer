@@ -25,6 +25,30 @@ class TestDispatch:
         assert decision.sources == ["db", "macro"]
 
     @pytest.mark.anyio
+    async def test_parses_source_specific_hybrid_tasks(self, monkeypatch):
+        _use(monkeypatch, FakeLLM(
+            '{"route":"dispatch","sources":["db","competitive"],"intent":"compare",'
+            '"source_intents":{"db":"show our collection efficiency",'
+            '"competitive":"regional peer collection benchmarks"}}'
+        ))
+        decision = await router.route(
+            "How does our collection efficiency compare with peer benchmarks?", role="admin",
+        )
+        assert decision.source_intents["db"] == "show our collection efficiency"
+        assert decision.source_intents["competitive"] == "regional peer collection benchmarks"
+
+    @pytest.mark.anyio
+    async def test_hybrid_coverage_guard_adds_missed_external_source(self, monkeypatch):
+        _use(monkeypatch, FakeLLM(
+            '{"route":"dispatch","sources":["db"],"intent":"our collection efficiency"}'
+        ))
+        decision = await router.route(
+            "How does our collection efficiency compare with NBFC peers?", role="admin",
+        )
+        assert decision.sources == ["db", "competitive"]
+        assert "compare" not in decision.source_intents["db"].lower()
+
+    @pytest.mark.anyio
     async def test_strips_sources_the_role_may_not_see(self, monkeypatch):
         # gicc_policy cannot see the loan book; a model that names it must not leak it.
         _use(monkeypatch, FakeLLM('{"route":"dispatch","sources":["db","macro"],"intent":"x"}'))
@@ -128,6 +152,19 @@ class TestFallback:
         decision = await router.route("q", role="admin")
         assert decision.route == "dispatch"
         assert decision.sources == ["db"]
+
+    @pytest.mark.anyio
+    async def test_llm_failure_still_routes_both_halves_of_a_hybrid_question(self, monkeypatch):
+        class Failing(FakeLLM):
+            async def complete(self, **kw):
+                raise LLMError("model down")
+
+        _use(monkeypatch, Failing())
+        decision = await router.route(
+            "Compare our collection efficiency with NBFC peers", role="admin",
+        )
+        assert decision.sources == ["db", "competitive"]
+        assert decision.source_intents["db"] == "Show our collection efficiency by product and branch."
 
     @pytest.mark.anyio
     async def test_llm_failure_falls_back_to_first_visible_for_a_non_book_role(self, monkeypatch):

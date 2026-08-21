@@ -2,7 +2,7 @@
 
 import { Loader2, AlertTriangle, Ban, HelpCircle, Sparkles } from 'lucide-react';
 import { nlq, type AnalysisResult, type ChartSpec, type QuerySpec, type Briefing, type Worklist,
-  type WorkbenchCard as CardData } from '@/lib/api';
+  type WorkbenchAnswer, type WorkbenchCard as CardData } from '@/lib/api';
 import AnalysisCard from '@/components/nlq/AnalysisCard';
 import ChartRenderer from '@/components/nlq/ChartRenderer';
 import NextQuestions from '@/components/nlq/NextQuestions';
@@ -30,6 +30,7 @@ export type WorkbenchTurnData = {
   route?: { sources: string[]; intent: string };
   pending: string[]; // source ids dispatched but not yet returned
   cards: CardData[];
+  answer?: WorkbenchAnswer;
   synthesis?: string;
   refusal?: { reason: string; message: string };
   error?: string;
@@ -44,6 +45,11 @@ const BRIEF_TITLES: Record<string, string> = {
 };
 
 export default function WorkbenchTurn({ turn, onAsk }: { turn: WorkbenchTurnData; onAsk: (q: string) => void }) {
+  const hasFinalAnswer = Boolean(turn.answer || turn.synthesis);
+  const supportingCards = hasFinalAnswer
+    ? turn.cards.filter((card) => ['chart', 'analysis', 'worklist', 'briefing', 'schema'].includes(card.card_type))
+    : (turn.done ? turn.cards : []);
+  const answerText = turn.answer?.text || turn.synthesis;
   return (
     <section className="space-y-5">
       <div className="flex justify-end">
@@ -60,13 +66,21 @@ export default function WorkbenchTurn({ turn, onAsk }: { turn: WorkbenchTurnData
             </StatusRow>
           )}
 
-          {turn.synthesis && (
-            <p className="whitespace-pre-wrap text-sm leading-7 text-foreground">{turn.synthesis}</p>
+          {answerText && (
+            <div className="text-sm leading-7 text-foreground">
+              <BriefRenderer content={answerText} />
+            </div>
           )}
 
-          {turn.cards.map((card, index) => (
+          {supportingCards.map((card, index) => (
             <CardBody key={`${card.source}-${index}`} card={card} onAsk={onAsk} />
           ))}
+
+          {turn.answer?.status === 'partial' && turn.answer.unavailable_sources.length > 0 && (
+            <StatusRow icon={AlertTriangle} tone="warning" surface className="text-muted-foreground">
+              Answered with available evidence; {turn.answer.unavailable_sources.map((item) => sourceLabel(item.source)).join(', ')} could not contribute.
+            </StatusRow>
+          )}
 
           {turn.pending
             .filter((source) => !turn.cards.some((card) => card.source === source))
@@ -76,7 +90,15 @@ export default function WorkbenchTurn({ turn, onAsk }: { turn: WorkbenchTurnData
               </StatusRow>
             ))}
 
-          {turn.refusal && (
+          {!turn.done && turn.route && !hasFinalAnswer && turn.pending.every(
+            (source) => turn.cards.some((card) => card.source === source),
+          ) && (
+            <StatusRow icon={Loader2} spin className="py-1">
+              Combining findings…
+            </StatusRow>
+          )}
+
+          {turn.refusal && !hasFinalAnswer && (
             <StatusRow icon={Ban} tone="warning" surface label="Not answerable:">
               {turn.refusal.message || 'That request cannot be handled here.'}
             </StatusRow>
@@ -103,7 +125,7 @@ export default function WorkbenchTurn({ turn, onAsk }: { turn: WorkbenchTurnData
           {turn.done && turn.route && turn.route.sources.length > 0 && (
             <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
               <span className="text-[11px] leading-5 text-muted-foreground">Sources</span>
-              {turn.route.sources.map((source) => (
+              {(turn.answer?.sources.length ? turn.answer.sources : turn.route.sources).map((source) => (
                 <Badge key={source} variant="outline" className={`${SOURCE_BADGE} text-muted-foreground`}>
                   {sourceLabel(source)}
                 </Badge>

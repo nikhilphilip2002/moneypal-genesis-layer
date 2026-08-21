@@ -88,6 +88,7 @@ export default function WorkbenchPage() {
         question: turn.question,
         pending: [],
         cards: turn.cards,
+        answer: turn.answer ?? undefined,
         synthesis: turn.synthesis ?? undefined,
         refusal: turn.refusal ?? undefined,
         error: turn.error ?? undefined,
@@ -139,6 +140,9 @@ export default function WorkbenchPage() {
             break;
           case 'source_card':
             patchWith((turn) => ({ ...turn, cards: [...turn.cards, event.card] }));
+            break;
+          case 'answer':
+            patch({ answer: event.answer, synthesis: event.answer.text });
             break;
           case 'synthesis':
             patch({ synthesis: event.text });

@@ -1,7 +1,6 @@
 """The orchestrator, end to end, with the router and nodes stubbed. These tests assert the
 frame protocol the frontend depends on and the two structural rules: every chosen source is
-dispatched to its handler, and a merged synthesis is emitted only when more than one source
-actually contributed.
+dispatched to its handler, and every usable turn emits one definitive answer.
 """
 
 from __future__ import annotations
@@ -60,7 +59,7 @@ def _names(events):
 
 class TestSingleSource:
     @pytest.mark.anyio
-    async def test_streams_route_then_a_single_card_and_no_synthesis(self, monkeypatch):
+    async def test_streams_route_card_and_one_final_answer(self, monkeypatch):
         _stub_route(monkeypatch, router.RouteDecision(route="dispatch", sources=["db"], intent="i"))
         _stub_node(monkeypatch, "run_db",
                    SourceResult(source="db", card_type="chart", payload={"title": "T"}, summary="s"))
@@ -69,7 +68,9 @@ class TestSingleSource:
         names = _names(events)
         assert "route" in names
         assert names.count("source_card") == 1
-        assert "synthesis" not in names
+        answers = [data for name, data in events if name == "answer"]
+        assert len(answers) == 1
+        assert answers[0]["text"] == "s"
         assert names[-1] == "done"
 
     @pytest.mark.anyio
@@ -91,6 +92,36 @@ class TestSingleSource:
         await _run(question=original)
 
         assert received["question"] == original
+
+    @pytest.mark.anyio
+    async def test_db_receives_its_focused_task_for_a_hybrid_question(self, monkeypatch):
+        original = "Compare our collection efficiency with peers"
+        _stub_route(monkeypatch, router.RouteDecision(
+            route="dispatch", sources=["db", "competitive"], intent="compare",
+            source_intents={
+                "db": "show our collection efficiency",
+                "competitive": "regional peer collection benchmarks",
+            },
+        ))
+        received = {}
+
+        async def fake_db(question, **kwargs):
+            received["db"] = question
+            return SourceResult(source="db", card_type="chart", payload={}, summary="98%")
+
+        async def fake_competitive(question, **kwargs):
+            received["competitive"] = question
+            return SourceResult(source="competitive", card_type="brief", payload={}, summary="97%")
+
+        monkeypatch.setattr(nodes, "run_db", fake_db)
+        monkeypatch.setattr(nodes, "run_competitive", fake_competitive)
+        monkeypatch.setattr(models, "for_step", lambda *a, **k: FakeLLM("98% versus 97%."))
+        await _run(question=original)
+
+        assert received == {
+            "db": "show our collection efficiency",
+            "competitive": "regional peer collection benchmarks",
+        }
 
 
 class TestDispatchTable:
@@ -123,7 +154,7 @@ class TestDispatchTable:
 
         monkeypatch.setattr(nodes, "run_macro", broken_macro)
         _stub_node(monkeypatch, "run_regulatory",
-                   SourceResult(source="regulatory", card_type="brief", payload={"summary": "r"}))
+                   SourceResult(source="regulatory", card_type="brief", payload={"summary": "r"}, summary="r"))
 
         events = await _run()
         cards = [data for name, data in events if name == "source_card"]
@@ -136,7 +167,7 @@ class TestDispatchTable:
 
 class TestMultiSource:
     @pytest.mark.anyio
-    async def test_two_contributing_sources_emit_a_merged_synthesis(self, monkeypatch):
+    async def test_two_contributing_sources_emit_one_merged_answer(self, monkeypatch):
         _stub_route(monkeypatch, router.RouteDecision(
             route="dispatch", sources=["db", "macro"], intent="i"))
         _stub_node(monkeypatch, "run_db",
@@ -146,9 +177,24 @@ class TestMultiSource:
         monkeypatch.setattr(models, "for_step", lambda *a, **k: FakeLLM("A merged view."))
 
         events = await _run()
-        synth = [d for n, d in events if n == "synthesis"]
-        assert len(synth) == 1
-        assert synth[0]["text"] == "A merged view."
+        answers = [d for n, d in events if n == "answer"]
+        assert len(answers) == 1
+        assert answers[0]["text"] == "A merged view."
+
+    @pytest.mark.anyio
+    async def test_one_success_and_one_failure_emit_a_partial_answer(self, monkeypatch):
+        _stub_route(monkeypatch, router.RouteDecision(
+            route="dispatch", sources=["db", "competitive"], intent="i"))
+        _stub_node(monkeypatch, "run_db", SourceResult(
+            source="db", card_type="chart", payload={"title": "T"}, summary="book says X"))
+        _stub_node(monkeypatch, "run_competitive", SourceResult(
+            source="competitive", card_type="error", payload={"message": "offline"}))
+
+        events = await _run()
+        answer = next(data for name, data in events if name == "answer")
+        assert answer["status"] == "partial"
+        assert answer["text"] == "book says X"
+        assert answer["unavailable_sources"][0]["source"] == "competitive"
 
 
 class TestPinnedThreading:
@@ -170,5 +216,7 @@ class TestRefuse:
         events = await _run()
         names = _names(events)
         assert "refusal" in names
+        answer = next(data for name, data in events if name == "answer")
+        assert answer["status"] == "refused"
         assert "source_card" not in names
         assert names[-1] == "done"

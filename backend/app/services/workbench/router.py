@@ -43,6 +43,21 @@ _DESCRIPTIVE_CUES = re.compile(
     re.IGNORECASE,
 )
 
+_HYBRID_SOURCE_CUES: dict[str, re.Pattern[str]] = {
+    "competitive": re.compile(
+        r"\b(?:competitor|competitive|peer|nbfc|microfinance|fintech|co[ -]?lending|"
+        r"market offering|industry inclusion|turnaround|\bbenchmark)\b", re.IGNORECASE,
+    ),
+    "regulatory": re.compile(
+        r"\b(?:regulat|prudential|priority sector|psl|cgtmse|exposure limit|guideline)\b",
+        re.IGNORECASE,
+    ),
+    "macro": re.compile(
+        r"\b(?:macro|inflation|repo|gsdp|gdp|national|economic|industrial growth|"
+        r"gold price|seasonal|credit conditions|state[ -]?wide)\b", re.IGNORECASE,
+    ),
+}
+
 
 def _asks_for_loan_book_values(question: str) -> bool:
     return not _STRUCTURAL_QUERY.search(question) and bool(_VALUE_CUES.search(question))
@@ -62,6 +77,40 @@ def _matches_loan_book_catalog(question: str) -> bool:
     )
 
 
+def _db_subquestion(question: str) -> str:
+    """Best-effort internal task when an older router omits source-specific intents."""
+    lowered = question.lower()
+    patterns = (
+        (("msme portfolio", "msme book"), "Show our MSME portfolio size and monthly growth."),
+        (("par 30",), "What is our current PAR 30?"),
+        (("interest rate", "loan rates"), "Show loan count and outstanding by interest rate."),
+        (("collection efficiency",), "Show our collection efficiency by product and branch."),
+        (("gold loan",), "Show monthly gold-loan disbursement trend."),
+        (("branch-level disbursement", "branch level disbursement"), "Show disbursement by branch."),
+        (("ticket size",), "What is our average sanctioned loan amount by product?"),
+        (("repayment schedule",), "Show monthly scheduled, due, and repaid amounts."),
+        (("delinquency", "sidbi"), "Show MSME delinquency and PAR 30 by scheme."),
+        (("liquidity", "vintage"), "Show repayment vintage, outstanding, PAR and NPA trends."),
+        (("scheme-wise concentration", "scheme wise concentration"), "Show portfolio outstanding and share by scheme."),
+        (("sanction-to-disbursement", "sanction to disbursement"), "Show total sanctioned amount, disbursed amount, and their conversion ratio."),
+        (("floating-rate", "floating rate"), "Show loan count and outstanding by contractual interest rate."),
+        (("gender diversity",), "Show borrower count and share by gender."),
+        (("top 10 borrower",), "Show top 10 borrowers by principal outstanding and their share of the portfolio."),
+        (("dpd bucket migration",), "Show monthly loan count and outstanding by DPD bucket."),
+        (("business loan disbursement",), "Show monthly business and MSME loan disbursement trend."),
+        (("retail loan collection",), "Show collection efficiency by retail loan product."),
+        (("portfolio risk profile",), "Show current PAR 30, NPA ratio, DPD buckets, and principal outstanding."),
+        (("branch expansion",), "Show branch status, opening date, loan count, disbursement, and outstanding for the named locations."),
+    )
+    for cues, task in patterns:
+        if any(cue in lowered for cue in cues):
+            return task
+    # Removing the external half is safer than sending a comparison request to a source
+    # that is intentionally unaware of market/regulatory data.
+    internal = re.split(r"\b(?:compare[sd]?\s+(?:with|against)|against|benchmark(?:ed)?\s+against|align(?:s|ed)?\s+with)\b", question, maxsplit=1, flags=re.IGNORECASE)[0]
+    return internal.strip(" ,.?-") or question
+
+
 @dataclass(slots=True)
 class RouteDecision:
     route: str  # "dispatch" | "refuse"
@@ -70,6 +119,11 @@ class RouteDecision:
     reason: str = ""
     message: str = ""
     model: str = ""
+    # A multi-source question is not itself a valid question for every source. For
+    # example, the loan-book planner should receive "our collection efficiency", not
+    # "compare our collection efficiency with regional peers". The router may provide
+    # one focused task per source; handlers fall back to `intent` when it does not.
+    source_intents: dict[str, str] = field(default_factory=dict)
 
 
 def _fallback(role: str, question: str) -> RouteDecision:
@@ -82,8 +136,26 @@ def _fallback(role: str, question: str) -> RouteDecision:
     if not visible:
         return RouteDecision(route="refuse", reason="out_of_scope",
                              message="No sources are available for your role.")
-    default = "db" if any(s.id == "db" for s in visible) else visible[0].id
-    return RouteDecision(route="dispatch", sources=[default], intent=question)
+    visible_ids = [source.id for source in visible]
+    chosen: list[str] = []
+    if "db" in visible_ids and (
+        _asks_for_loan_book_values(question) or _matches_loan_book_catalog(question)
+    ):
+        chosen.append("db")
+    for source_id, cue in _HYBRID_SOURCE_CUES.items():
+        if source_id in visible_ids and cue.search(question) and source_id not in chosen:
+            chosen.append(source_id)
+    if not chosen:
+        chosen = ["db" if "db" in visible_ids else visible_ids[0]]
+    source_intents: dict[str, str] = {}
+    if len(chosen) > 1:
+        if "db" in chosen:
+            source_intents["db"] = _db_subquestion(question)
+        source_intents.update({source: question for source in chosen if source != "db"})
+    return RouteDecision(
+        route="dispatch", sources=chosen, intent=question,
+        source_intents=source_intents, model="fallback",
+    )
 
 
 async def route(
@@ -154,6 +226,13 @@ async def route(
     # De-duplicate while preserving order.
     seen: set[str] = set()
     chosen = [s for s in chosen if not (s in seen or seen.add(s))]
+    # Deterministic coverage guard for hybrid questions. The model remains responsible for
+    # normal routing, but a missed external half must not turn a comparison into a DB-only
+    # judgement or refusal.
+    if "db" in chosen or value_intent:
+        for source_id, cue in _HYBRID_SOURCE_CUES.items():
+            if source_id in visible_ids and cue.search(normalized) and source_id not in chosen:
+                chosen.append(source_id)
     if value_intent:
         chosen = [source for source in chosen if source != "knowledge"]
     elif (
@@ -168,9 +247,23 @@ async def route(
     if not chosen:
         return _fallback(role, normalized)
 
+    raw_source_intents = payload.get("source_intents") or {}
+    if not isinstance(raw_source_intents, dict):
+        raw_source_intents = {}
+    source_intents = {
+        source: str(value).strip()
+        for source, value in raw_source_intents.items()
+        if source in chosen and isinstance(value, str) and value.strip()
+    }
+    if len(chosen) > 1:
+        source_intents.setdefault("db", _db_subquestion(normalized))
+        for source in chosen:
+            source_intents.setdefault(source, normalized)
+
     return RouteDecision(
         route="dispatch",
         sources=chosen,
         intent=str(payload.get("intent", normalized)) or normalized,
+        source_intents=source_intents,
         model=result.model,
     )

@@ -54,13 +54,16 @@ class TestRunTool:
 
     @pytest.mark.anyio
     async def test_competitor_landscape_returns_a_brief(self, monkeypatch):
-        from app.services import competitive
+        from app.services.workbench import nodes
 
-        monkeypatch.setattr(
-            competitive, "landscape",
-            lambda: SimpleNamespace(summary="Rivals.", key_points=[], title="L",
-                                    source=SimpleNamespace(document="d", page=None)),
-        )
+        async def fake_competitive(intent):
+            return nodes.SourceResult(
+                source="competitive", card_type="brief",
+                payload={"summary": "Rivals.", "key_points": []},
+                summary="Rivals.",
+            )
+
+        monkeypatch.setattr(nodes, "run_competitive", fake_competitive)
         result = await tools.run_tool("competitor_landscape", role="gicc_admin", params={})
         assert result.card_type == "brief"
         assert "Rivals." in result.payload["summary"]

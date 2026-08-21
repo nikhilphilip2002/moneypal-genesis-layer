@@ -95,7 +95,7 @@ async def _h_db(intent: str, state: WorkbenchState) -> SourceResult:
     # into governed NLQ: borrower names, account identifiers, periods, and distinctions
     # such as principal vs interest must remain byte-for-byte as the user supplied them.
     return await nodes.run_db(
-        state["question"],
+        intent,
         conversation_id=state["conversation_id"], user=state["user"], role=state["role"],
         access_mode=state.get("data_access"),
         history_messages=state.get("history_messages", []),
@@ -155,8 +155,13 @@ async def _dispatch_node(state: WorkbenchState) -> dict[str, Any]:
                                   payload={"message": f"Unknown source {source_id}."})
         else:
             try:
-                result = await handler(decision.intent, state)
-            except Exception as exc:  # noqa: BLE001 - isolate unavailable dependencies
+                source_intent = decision.source_intents.get(source_id)
+                if not source_intent:
+                    # Preserve the exact user text for a normal DB turn. Other sources may
+                    # safely use the router's normalized intent.
+                    source_intent = state["question"] if source_id == "db" else decision.intent
+                result = await handler(source_intent, state)
+            except Exception:  # noqa: BLE001 - isolate unavailable dependencies
                 logger.exception("workbench source %s failed", source_id)
                 result = SourceResult(
                     source=source_id,
@@ -183,51 +188,121 @@ async def _dispatch_node(state: WorkbenchState) -> dict[str, Any]:
     return {"results": list(results)}
 
 
+_ANSWERABLE_CARD_TYPES = frozenset(
+    {"chart", "analysis", "worklist", "briefing", "brief", "schema"}
+)
+
 _SYNTH_SYSTEM = (
-    "You are briefing a bank director. Write 2-3 sentences that tie together the findings "
-    "below into one answer to their question. Use ONLY the facts and figures given — never "
-    "add or alter a number. If the findings do not fully answer the question, say what is "
-    "missing in one clause."
+    "You are briefing a bank director. Produce one cohesive answer to the question from "
+    "the source findings below. Use ONLY the supplied facts and figures; never add, alter, "
+    "or infer a number. Compare findings directly when the question asks for a comparison. "
+    "Do not describe the sources as separate answers. If evidence is incomplete, still "
+    "answer the supported portion first, then state the missing evidence in one short "
+    "sentence. Be concise but complete (normally 3-6 sentences)."
 )
 
 
 async def _synthesize_node(state: WorkbenchState) -> dict[str, Any]:
     emit = state["emit"]
+    decision = state.get("decision")
+    if decision is not None and decision.route == "refuse":
+        payload = {
+            "status": "refused",
+            "text": decision.message or "That request cannot be handled by this workbench.",
+            "sources": [], "citations": [], "unavailable_sources": [],
+        }
+        await emit.put(sse("answer", payload))
+        history.set_answer(state["conversation_id"], state["user"], state["turn_id"], payload)
+        return {}
+    all_results = state.get("results", [])
     results = [
-        r for r in state.get("results", [])
-        if r.card_type in ("chart", "analysis", "worklist", "briefing", "brief")
-        and r.summary.strip()
+        r for r in all_results
+        if r.card_type in _ANSWERABLE_CARD_TYPES and r.summary.strip()
     ]
-    # Only worth a merged lead when more than one source actually contributed.
-    if len(results) < 2:
+    unavailable = [
+        {
+            "source": r.source,
+            "type": r.card_type,
+            "reason": str(
+                r.payload.get("message") or r.payload.get("question") or "No usable result."
+            ),
+        }
+        for r in all_results
+        if r not in results
+    ]
+
+    if not results:
+        refusal = next((r for r in all_results if r.card_type == "refusal"), None)
+        clarification = next((r for r in all_results if r.card_type == "clarify"), None)
+        if clarification is not None:
+            payload = {
+                "status": "clarify",
+                "text": str(clarification.payload.get("question") or "Please clarify the request."),
+                "sources": [], "citations": [], "unavailable_sources": unavailable,
+            }
+            await emit.put(sse("answer", payload))
+            history.set_answer(state["conversation_id"], state["user"], state["turn_id"], payload)
+        elif refusal is not None:
+            payload = {
+                "status": "refused",
+                "text": str(refusal.payload.get("message") or "That request cannot be answered safely."),
+                "sources": [], "citations": [], "unavailable_sources": unavailable,
+            }
+            await emit.put(sse("answer", payload))
+            history.set_answer(state["conversation_id"], state["user"], state["turn_id"], payload)
+        else:
+            message = "No intelligence source produced a usable answer."
+            history.set_error(state["conversation_id"], state["user"], state["turn_id"], message)
+            await emit.put(sse("error", {"message": message, "retryable": True}))
         return {}
 
     findings = "\n".join(f"- [{r.source}] {r.summary}" for r in results if r.summary)
-    client = models.for_step("synthesize", sensitive=any(r.source == "db" for r in results))
+    text = results[0].summary.strip()
+    result = None
     try:
-        result = await client.complete(
-            messages=[
-                {"role": "system", "content": _SYNTH_SYSTEM},
-                *state.get("history_messages", []),
-                {"role": "user", "content": f"Question: {state['question']}\n\nFindings:\n{findings}"},
-            ],
-            max_tokens=300,
-            temperature=0.2,
-        )
-        text = result.text.strip()
-        await emit.put(sse("synthesis", {"text": text}))
-        history.set_synthesis(
-            state["conversation_id"], state["user"], state["turn_id"], text,
-        )
+        if len(results) > 1:
+            client = models.for_step(
+                "synthesize", sensitive=any(r.source == "db" for r in results)
+            )
+            result = await client.complete(
+                messages=[
+                    {"role": "system", "content": _SYNTH_SYSTEM},
+                    *state.get("history_messages", []),
+                    {"role": "user", "content": f"Question: {state['question']}\n\nFindings:\n{findings}"},
+                ],
+                max_tokens=500,
+                temperature=0.1,
+            )
+            text = result.text.strip() or text
+    except Exception as exc:  # noqa: BLE001 - deterministic findings remain usable
+        logger.warning("workbench synthesis failed, using grounded findings: %s", exc)
+        text = "\n\n".join(r.summary.strip() for r in results)
+
+    citations: list[dict[str, Any]] = []
+    seen_citations: set[tuple[str, str]] = set()
+    for item in results:
+        for citation in item.sources:
+            key = (str(citation.get("document", "")), str(citation.get("page", "")))
+            if key not in seen_citations:
+                seen_citations.add(key)
+                citations.append(citation)
+    payload = {
+        "status": "partial" if unavailable else "answered",
+        "text": text,
+        "sources": [r.source for r in results],
+        "citations": citations,
+        "unavailable_sources": unavailable,
+    }
+    await emit.put(sse("answer", payload))
+    history.set_answer(state["conversation_id"], state["user"], state["turn_id"], payload)
+    if result is not None:
         # The prompt this call carried is the best available measure of how full the
         # conversation's context has become; the transcript budget is built on it.
         history.set_usage(
             state["conversation_id"], state["user"], state["turn_id"],
-            prompt_tokens=result.prompt_tokens,
-            completion_tokens=result.completion_tokens,
+            prompt_tokens=getattr(result, "prompt_tokens", 0),
+            completion_tokens=getattr(result, "completion_tokens", 0),
         )
-    except Exception as exc:  # noqa: BLE001 - synthesis is a nicety; cards already streamed
-        logger.warning("workbench synthesis failed: %s", exc)
     return {}
 
 

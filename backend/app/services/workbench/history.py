@@ -257,6 +257,7 @@ def begin_turn(
         "route": None,
         "sources": [],  # compatibility with version-1 clients
         "cards": [],
+        "answer": None,
         "synthesis": None,
         "refusal": None,
         "error": None,
@@ -290,6 +291,17 @@ def add_card(conversation_id: str, user: str, turn_id: str, card: dict[str, Any]
 
 def set_synthesis(conversation_id: str, user: str, turn_id: str, text: str) -> None:
     _mutate(conversation_id, user, turn_id, lambda turn: turn.update(synthesis=text))
+
+
+def set_answer(
+    conversation_id: str, user: str, turn_id: str, payload: dict[str, Any]
+) -> None:
+    """Persist the one user-facing answer while keeping `synthesis` for old clients."""
+    def apply(turn: dict[str, Any]) -> None:
+        turn["answer"] = payload
+        turn["synthesis"] = str(payload.get("text", "")) or None
+
+    _mutate(conversation_id, user, turn_id, apply)
 
 
 def set_usage(
@@ -510,6 +522,11 @@ def assistant_text(turn: dict[str, Any]) -> str:
 
 
 def _assistant_text(turn: dict[str, Any]) -> str:
+    answer = turn.get("answer")
+    if isinstance(answer, dict) and answer.get("text"):
+        # The final answer already combines the source findings. Replaying source cards as
+        # additional assistant prose duplicates facts and biases follow-up synthesis.
+        return str(answer["text"])
     parts: list[str] = []
     if turn.get("synthesis"):
         parts.append(str(turn["synthesis"]))

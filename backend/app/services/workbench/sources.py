@@ -167,6 +167,11 @@ def route_schema(role: str) -> dict[str, Any]:
                 "maxItems": len(ids),
             },
             "intent": {"type": "string"},
+            "source_intents": {
+                "type": "object",
+                "additionalProperties": False,
+                "properties": {source_id: {"type": "string"} for source_id in ids},
+            },
             "reason": {"type": "string"},
             "message": {"type": "string"},
         },
@@ -199,6 +204,10 @@ def router_system_prompt(role: str) -> str:
         "records, rates, counts or breakdowns goes to `db`, even if it uses the same term.",
         '- route="dispatch" with the chosen `sources` and a one-line `intent` restating '
         "the question, whenever any source can contribute.",
+        "- For a multi-source question, also return `source_intents`: one standalone, "
+        "source-specific question for each chosen source. The db task must ask only for "
+        "the internal fact or calculation; macro/competitive/regulatory tasks must ask "
+        "only for their external evidence. Preserve all names, dates, rates and filters.",
         '- route="refuse" only when no source applies at all (small talk, or a request to '
         "modify or delete data). Read-only lists and exports are allowed. Give a short "
         "`reason` and `message`. Do not refuse merely "
@@ -239,7 +248,8 @@ ROUTER_FEW_SHOTS: list[tuple[str, str]] = [
     (
         "How does our MSME book compare with the wider MSME credit market?",
         '{"route":"dispatch","sources":["db","macro"],"intent":"our MSME portfolio versus '
-        'MSME sector credit trends"}',
+        'MSME sector credit trends","source_intents":{"db":"show the size and growth of our MSME '
+        'portfolio","macro":"what is the wider Indian MSME credit growth trend"}}',
     ),
     (
         "Delete the loan records for branch 4",
