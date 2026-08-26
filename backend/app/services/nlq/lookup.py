@@ -19,7 +19,8 @@ from app.services.nlq.text_to_sql import SqlAttempt, _normalized_borrower_sql
 from app.services.nlq.validator import validate
 
 
-_REPAYMENT_CUE = re.compile(r"\b(?:repayment|payment)\s+histor(?:y|ies)\b", re.I)
+_HISTORY_WORD = r"(?:histor(?:y|ies)|histoy|histry|hisotry|hitory)"
+_REPAYMENT_CUE = re.compile(rf"\b(?:repayment|payment)\s+{_HISTORY_WORD}\b", re.I)
 _CUSTOMER_ID = re.compile(
     r"\b(?:customer|borrower|client)\s*(?:id|number|no\.?|#)\s*"
     r"(?:is|was|=|:|-)?\s*(?P<value>[0-9][0-9,]*(?:\.0+)?)\b",
@@ -31,14 +32,14 @@ _ACCOUNT_ID = re.compile(
     re.I,
 )
 _NAME_AFTER_HISTORY = re.compile(
-    r"\b(?:repayment|payment)\s+histor(?:y|ies)\s+(?:of|for)\s+"
+    rf"\b(?:repayment|payment)\s+{_HISTORY_WORD}\s+(?:of|for)\s+"
     r"(?P<name>[\w .'-]{2,100})\s*[?!.]*$",
     re.I,
 )
 _NAME_BEFORE_HISTORY = re.compile(
     r"^(?:what\s+is|show(?:\s+me)?|give\s+me)?\s*"
     r"(?P<name>[\w .'-]{2,100}?)\s*(?:'s\s+)?"
-    r"(?:repayment|payment)\s+histor(?:y|ies)\s*[?!.]*$",
+    rf"(?:repayment|payment)\s+{_HISTORY_WORD}\s*[?!.]*$",
     re.I,
 )
 _GENDER_ACCOUNT_SAMPLE = re.compile(

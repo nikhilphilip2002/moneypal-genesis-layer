@@ -93,6 +93,10 @@ from app.services.nlq.planner import plan
             "show customer profile for Sheelavathi M K",
             "borrower_name", "Sheelavathi M K", "customer_summary",
         ),
+        (
+            "gshow me the borrower id 128 repayment histoy",
+            "customer_id", "128", "repayment_history",
+        ),
     ],
 )
 def test_lookup_intent_is_phrase_independent(question, selector, value, detail):
@@ -109,6 +113,16 @@ async def test_record_lookup_bypasses_the_llm_planner():
     assert isinstance(outcome.plan, LookupPlan)
     assert outcome.attempts == 0
     assert outcome.model == "deterministic"
+
+
+@pytest.mark.anyio
+async def test_misspelled_repayment_history_still_bypasses_the_llm_planner():
+    outcome = await plan("gshow me the borrower id 128 repayment histoy")
+
+    assert isinstance(outcome.plan, LookupPlan)
+    assert outcome.plan.detail == "repayment_history"
+    assert outcome.plan.value == "128"
+    assert outcome.attempts == 0
 
 
 def test_customer_details_query_returns_both_sanction_and_disbursement_fields():
