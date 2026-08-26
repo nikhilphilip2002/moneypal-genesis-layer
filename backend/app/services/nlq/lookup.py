@@ -50,6 +50,20 @@ _LOAN_DETAIL_CUE = re.compile(
     r"\b(?:loan\s+amount|sanction(?:ed)?|disburs(?:ed|e?ment)|loan\s+date|date)\b",
     re.I,
 )
+_SANCTION_AMOUNT_CUE = re.compile(
+    r"\b(?:loan|sanction(?:ed)?)\s+amount\b|\bhow\s+much\s+(?:was\s+)?(?:the\s+)?loan\b",
+    re.I,
+)
+_SANCTION_DATE_CUE = re.compile(r"\b(?:sanction|loan)\s+date\b", re.I)
+_DISBURSEMENT_AMOUNT_CUE = re.compile(
+    r"\bdisburs(?:ed|e?ment)\s+amount\b|\bamount\s+disburs(?:ed|e?ment)\b",
+    re.I,
+)
+_DISBURSEMENT_DATE_CUE = re.compile(
+    r"\b(?:first\s+)?disburs(?:ed|e?ment)\s+date\b|"
+    r"\bdate\s+(?:of\s+)?(?:the\s+)?disburs(?:ed|e?ment)\b",
+    re.I,
+)
 _CUSTOMER_DETAIL_CUE = re.compile(
     r"\b(?:details?|profiles?|information|info|infor\w*)\b|"
     r"\b(?:show|give|get|find)\s+(?:me\s+)?(?:the\s+)?(?:customer|borrower|client)\b",
@@ -71,6 +85,18 @@ _NAME_BEFORE_LOAN_DETAILS = re.compile(
     r"(?P<name>[\w .'-]{2,100}?)\s*(?:'s\s+)?"
     r"(?:loan(?:\s+account)?|account)\s+"
     r"(?:details?|information|info|records?|profile)\s*[?!.]*$",
+    re.I,
+)
+_NAME_BEFORE_CUSTOMER_DETAILS = re.compile(
+    r"^(?:what\s+(?:is|are)|show(?:\s+me)?|give\s+me|get|find)?\s*"
+    r"(?P<name>[\w .'-]{2,100}?)\s*'s\s+"
+    r"(?:customer\s+)?(?:details?|profile|information|info)\s*[?!.]*$",
+    re.I,
+)
+_NAME_AFTER_CUSTOMER_DETAILS = re.compile(
+    r"\b(?:customer|borrower|client)\s+"
+    r"(?:details?|profile|information|info)\s+(?:of|for)\s+"
+    r"(?P<name>[\w .'-]{2,100})\s*[?!.]*$",
     re.I,
 )
 _BRANCH_DIRECTORY_CUE = re.compile(
@@ -179,6 +205,28 @@ def _plain_identifier(value: str) -> str:
     return text
 
 
+def _requested_loan_fields(text: str) -> list[str]:
+    """Extract requested loan facts without binding to a particular phrasing or value."""
+    fields: list[str] = []
+    if _SANCTION_AMOUNT_CUE.search(text):
+        fields.append("sanction_amount")
+    if _SANCTION_DATE_CUE.search(text):
+        fields.append("sanction_date")
+    if _DISBURSEMENT_AMOUNT_CUE.search(text):
+        fields.append("disbursed_amount")
+    if _DISBURSEMENT_DATE_CUE.search(text):
+        fields.append("first_disbursement_date")
+    # In an amount-and-date question, an otherwise unqualified "date" is the loan's
+    # sanction date. A disbursement-date cue above remains unambiguous.
+    if (
+        "sanction_amount" in fields
+        and not any(field.endswith("date") for field in fields)
+        and re.search(r"\bdate\b", text, re.I)
+    ):
+        fields.append("sanction_date")
+    return fields
+
+
 def detect(question: str) -> LookupPlan | None:
     """Recognise selector + requested record family without matching whole questions."""
     text = " ".join(str(question or "").split())
@@ -233,18 +281,28 @@ def detect(question: str) -> LookupPlan | None:
     if customer and _LOAN_DETAIL_CUE.search(text):
         return LookupPlan(
             selector="customer_id", value=_plain_identifier(customer.group("value")),
-            detail="loan_details",
+            detail="loan_details", requested_fields=_requested_loan_fields(text),
             reasoning="governed loan-account origination and disbursement details",
         )
     if account and _LOAN_DETAIL_CUE.search(text):
         return LookupPlan(
             selector="loan_account", value=_plain_identifier(account.group("value")),
-            detail="loan_details",
+            detail="loan_details", requested_fields=_requested_loan_fields(text),
             reasoning="governed loan-account origination and disbursement details",
         )
     if customer and _CUSTOMER_DETAIL_CUE.search(text):
         return LookupPlan(
             selector="customer_id", value=_plain_identifier(customer.group("value")),
+            detail="customer_summary",
+            reasoning="governed customer and linked-loan summary",
+        )
+    named_customer = (
+        _NAME_BEFORE_CUSTOMER_DETAILS.search(text)
+        or _NAME_AFTER_CUSTOMER_DETAILS.search(text)
+    )
+    if named_customer:
+        return LookupPlan(
+            selector="borrower_name", value=named_customer.group("name").strip(" .?!"),
             detail="customer_summary",
             reasoning="governed customer and linked-loan summary",
         )
@@ -262,7 +320,7 @@ def detect(question: str) -> LookupPlan | None:
         if named:
             return LookupPlan(
                 selector="borrower_name", value=named.group("name").strip(" .?!"),
-                detail="loan_details",
+                detail="loan_details", requested_fields=_requested_loan_fields(text),
                 reasoning="governed borrower loan origination and disbursement details",
             )
     return None
@@ -327,25 +385,73 @@ def _where(plan: LookupPlan) -> str:
 
 
 def _loan_details(plan: LookupPlan, catalog: Catalog) -> SqlAttempt:
+    available = {
+        "sanction_amount": "inr",
+        "sanction_date": "date",
+        "disbursed_amount": "inr",
+        "first_disbursement_date": "date",
+    }
+    requested = list(dict.fromkeys(plan.requested_fields)) or list(available)
+    selected = ", ".join(requested)
     sql = (
         "SELECT customer_id::text AS customer_id, "
-        "loan_account_number::text AS loan_account_number, sanction_amount, sanction_date, "
-        "disbursed_amount, first_disbursement_date "
+        f"loan_account_number::text AS loan_account_number, {selected} "
         "FROM gold.loan_account_master WHERE " + _where(plan) +
         " AND sanction_date <= CURRENT_DATE ORDER BY sanction_date DESC, "
         "loan_account_number LIMIT 500"
     )
     return _validated_attempt(
         sql, catalog=catalog,
-        explanation=(
-            "Sanction and cumulative disbursement details for each matched loan account."
-        ),
+        explanation="Requested governed fields for each matched loan account.",
         units={
             "customer_id": "text", "loan_account_number": "text",
-            "sanction_amount": "inr", "sanction_date": "date",
-            "disbursed_amount": "inr", "first_disbursement_date": "date",
+            **{field: available[field] for field in requested},
         },
     )
+
+
+def _shape_loan_details(chart: ChartSpec, plan: LookupPlan) -> None:
+    """Keep only requested facts in the UI while retaining account context when needed."""
+    from app.services.nlq.narrator import format_value
+
+    labels = {
+        "sanction_amount": "Sanction amount",
+        "sanction_date": "Sanction date",
+        "disbursed_amount": "Disbursed amount",
+        "first_disbursement_date": "First disbursement date",
+    }
+    requested = list(dict.fromkeys(plan.requested_fields))
+    chart.title = "Requested loan details"
+    chart.chart_type = "table"
+    chart.x = None
+    chart.series_by = None
+    chart.series = []
+    if not requested:
+        chart.summary = f"Returned {len(chart.rows):,} matched loan account(s)."
+        return
+
+    visible = (["loan_account_number"] if len(chart.rows) > 1 else []) + requested
+    for row in chart.rows:
+        for field in list(row):
+            if field not in visible:
+                row.pop(field, None)
+    chart.columns = [column for column in chart.columns if column.name in visible]
+
+    if len(chart.rows) == 1:
+        row = chart.rows[0]
+        facts = [
+            f"{labels[field]} is {format_value(row.get(field), chart_column_unit(chart, field))}"
+            for field in requested
+        ]
+        chart.summary = "; ".join(facts) + "."
+    else:
+        named = ", ".join(labels[field].lower() for field in requested)
+        chart.summary = f"Returned {len(chart.rows):,} matched loan accounts with {named}."
+
+
+def chart_column_unit(chart: ChartSpec, field: str) -> str:
+    column = next((column for column in chart.columns if column.name == field), None)
+    return column.unit if column is not None else "number"
 
 
 def _customer_summary(plan: LookupPlan, catalog: Catalog) -> SqlAttempt:
@@ -493,7 +599,12 @@ def run(plan: LookupPlan, *, role: str | None, catalog: Catalog | None = None) -
                 name = str(row.get("borrower_name", ""))
                 account = _plain_identifier(str(row.get("account_number", "")))
                 suffix = account[-4:] if account else "unknown"
-                prefix = "Show repayment history for" if plan.detail == "repayment_history" else "Show loans for"
+                if plan.detail == "repayment_history":
+                    prefix = "Show repayment history for"
+                elif plan.detail == "customer_summary":
+                    prefix = "Show customer details for"
+                else:
+                    prefix = "Show loans for"
                 suggestions.append(
                     f"{prefix} customer ID {customer_id} ({name}, account ending {suffix})"
                 )
@@ -523,7 +634,9 @@ def run(plan: LookupPlan, *, role: str | None, catalog: Catalog | None = None) -
     if not chart.rows:
         return LookupResult(no_match=True)
     chart.subtitle = "Governed read-only record lookup"
-    if effective.detail == "repayment_history":
+    if effective.detail == "loan_details":
+        _shape_loan_details(chart, effective)
+    elif effective.detail == "repayment_history":
         first = chart.rows[0]
         totals = {
             "history_total_due": first.get("history_total_due"),

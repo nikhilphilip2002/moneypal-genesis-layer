@@ -252,6 +252,9 @@ class LookupPlan(_Model):
         "customer_summary", "loan_details", "repayment_history", "agent_details", "agent_count",
         "branch_directory", "account_sample",
     ]
+    requested_fields: list[Literal[
+        "sanction_amount", "sanction_date", "disbursed_amount", "first_disbursement_date",
+    ]] = Field(default_factory=list)
     confidence: float = Field(default=1.0, ge=0.0, le=1.0)
     reasoning: str = Field(default="", max_length=500)
 

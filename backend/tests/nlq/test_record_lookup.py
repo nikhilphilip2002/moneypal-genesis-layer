@@ -15,6 +15,7 @@ from app.services.nlq.lookup import (
     completions,
     _loan_details,
     _repayment_history,
+    _shape_loan_details,
     detect,
     run,
 )
@@ -84,6 +85,14 @@ from app.services.nlq.planner import plan
             "show me Mahabala Gowda's loan account information",
             "borrower_name", "Mahabala Gowda", "loan_details",
         ),
+        (
+            "SHEELAVATHI M K's details",
+            "borrower_name", "SHEELAVATHI M K", "customer_summary",
+        ),
+        (
+            "show customer profile for Sheelavathi M K",
+            "borrower_name", "Sheelavathi M K", "customer_summary",
+        ),
     ],
 )
 def test_lookup_intent_is_phrase_independent(question, selector, value, detail):
@@ -117,6 +126,49 @@ def test_customer_details_query_returns_both_sanction_and_disbursement_fields():
     assert "disbursed_amount" in attempt.sql
     assert "first_disbursement_date" in attempt.sql
     assert "customer_id AS TEXT" in attempt.sql
+
+
+def test_loan_amount_question_requests_only_the_sanction_amount():
+    plan_result = detect("what is the loan amount of customer id 129")
+
+    assert plan_result is not None
+    assert plan_result.requested_fields == ["sanction_amount"]
+    attempt = _loan_details(plan_result, get_catalog())
+    projection = attempt.sql.split("FROM", 1)[0]
+    assert "sanction_amount" in projection
+    assert "sanction_date" not in projection
+    assert "disbursed_amount" not in projection
+    assert "first_disbursement_date" not in projection
+
+
+def test_single_loan_result_displays_only_the_requested_fact():
+    chart = build_from_rows(
+        question="loan amount",
+        result=QueryResult(
+            rows=[{
+                "customer_id": "129", "loan_account_number": "1000400000075",
+                "sanction_amount": 700000,
+            }],
+            columns=["customer_id", "loan_account_number", "sanction_amount"],
+            status="ok", duration_ms=1, sql="SELECT 1", row_count=1,
+        ),
+        lineage=Lineage(path="text_to_sql", sql="SELECT 1", unverified=False),
+        unit_hints={
+            "customer_id": "text", "loan_account_number": "text", "sanction_amount": "inr",
+        },
+    )
+    _shape_loan_details(
+        chart,
+        LookupPlan(
+            selector="customer_id", value="129", detail="loan_details",
+            requested_fields=["sanction_amount"], reasoning="test",
+        ),
+    )
+
+    assert chart.rows == [{"sanction_amount": 700000}]
+    assert [column.name for column in chart.columns] == ["sanction_amount"]
+    assert chart.summary.startswith("Sanction amount is ")
+    assert "highest" not in chart.summary
 
 
 def test_customer_summary_returns_only_the_requested_profile_fields():
