@@ -21,7 +21,11 @@ from app.services.nlq.validator import validate
 
 
 _HISTORY_WORD = r"(?:histor(?:y|ies)|histoy|histry|hisotry|hitory)"
-_REPAYMENT_CUE = re.compile(rf"\b(?:repayment|payment)\s+{_HISTORY_WORD}\b", re.I)
+_REPAYMENT_CUE = re.compile(
+    rf"\b(?:repayment|payment)\s+{_HISTORY_WORD}\b|"
+    r"\b(?:(?:re)?payments|collection\s+history|payment\s+records?)\b",
+    re.I,
+)
 _CUSTOMER_ID = re.compile(
     r"\b(?:customer|borrower|client)\s*(?:id|number|no\.?|#)\s*"
     r"(?:is|was|=|:|-)?\s*(?P<value>[0-9][0-9,]*(?:\.0+)?)\b",
@@ -37,12 +41,31 @@ _NAME_AFTER_HISTORY = re.compile(
     r"(?P<name>[\w .'-]{2,100})\s*[?!.]*$",
     re.I,
 )
+_BARE_REPAYMENT_WORD = r"(?:(?:re)?payments|collection\s+history|payment\s+records?)"
+_NAME_BEFORE_BARE_REPAYMENT = re.compile(
+    r"^(?:(?:what\s+(?:is|are)|show(?:\s+me)?|give\s+me|list)\s+(?:the\s+)?)?"
+    rf"(?P<name>[\w .'-]{{2,100}}?)\s*(?:'s)?\s+{_BARE_REPAYMENT_WORD}\s*[?!.]*$",
+    re.I,
+)
+_NAME_AFTER_BARE_REPAYMENT = re.compile(
+    rf"\b{_BARE_REPAYMENT_WORD}\s+(?:of|for|by)\s+"
+    r"(?P<name>[\w .'-]{2,100})\s*[?!.]*$",
+    re.I,
+)
 _NAME_BEFORE_HISTORY = re.compile(
     r"^(?:what\s+is|show(?:\s+me)?|give\s+me)?\s*"
     r"(?P<name>[\w .'-]{2,100}?)\s*(?:'s\s+)?"
     rf"(?:repayment|payment)\s+{_HISTORY_WORD}\s*[?!.]*$",
     re.I,
 )
+_ACCOUNT_ID_BARE = re.compile(
+    r"\b(?:loan\s+)?account\s*(?:is|was|=|:|-)?\s*(?P<value>\d{6,})\b", re.I,
+)
+"""«loan account 1000400001520» — the keyword "number" is usually left out. A long digit
+run after the word account can only be the account, so no detail cue is needed; a short
+one is not accepted, because "account 5" is more likely a count than an identifier."""
+_BRANCH_CODE_REF = re.compile(r"\bbranch(?:\s*(?:code|no\.?|number))?\s*\d{1,6}\b", re.I)
+_PRODUCT_CODE_BARE = re.compile(r"\bproduct\s+(?P<value>\d{1,6})\b", re.I)
 _GENDER_ACCOUNT_SAMPLE = re.compile(
     r"\b(?:male|men)\b.*\b(?:female|women)\b|"
     r"\b(?:female|women)\b.*\b(?:male|men)\b",
@@ -77,7 +100,7 @@ _NAMED_LOAN_DETAIL = re.compile(
     re.I,
 )
 _NAME_AFTER_LOAN_DETAILS = re.compile(
-    r"\b(?:loan(?:\s+account)?|account)\s+"
+    r"\b(?:loans?(?:\s+accounts?)?|accounts?)\s+"
     r"(?:details?|information|info|records?|profile)\s+(?:of|for)\s+"
     r"(?P<name>[\w .'-]{2,100})\s*[?!.]*$",
     re.I,
@@ -85,7 +108,7 @@ _NAME_AFTER_LOAN_DETAILS = re.compile(
 _NAME_BEFORE_LOAN_DETAILS = re.compile(
     r"^(?:what\s+(?:is|are)|show(?:\s+me)?|give\s+me|get|find)?\s*"
     r"(?P<name>[\w .'-]{2,100}?)\s*(?:'s\s+)?"
-    r"(?:loan(?:\s+account)?|account)\s+"
+    r"(?:loans?(?:\s+accounts?)?|accounts?)\s+"
     r"(?:details?|information|info|records?|profile)\s*[?!.]*$",
     re.I,
 )
@@ -113,6 +136,34 @@ _NAME_AFTER_CUSTOMER_DETAILS = re.compile(
     r"(?P<name>[\w .'-]{2,100})\s*[?!.]*$",
     re.I,
 )
+_NAME_AFTER_DETAILS = re.compile(
+    r"\b(?:details?|profile|information|info|records?)\s+(?:of|for|about)\s+"
+    r"(?P<name>[\w .'-]{2,100})\s*[?!.]*$",
+    re.I,
+)
+"""«give me the details of <name>» — the same request as the customer-prefixed form, which
+people only bother typing when the system has already misunderstood them once."""
+_NAME_IDENTITY = re.compile(
+    r"^(?:who\s+is|tell\s+me\s+about|what\s+do\s+(?:we|you)\s+know\s+about)\s+"
+    r"(?P<name>[\w .'-]{2,100})\s*[?!.]*$",
+    re.I,
+)
+_NAME_ACCOUNTS = re.compile(
+    r"^(?:(?:show|list|give|get|find)\s+(?:me\s+)?)?(?P<name>[\w .'-]{2,100}?)\s*(?:'s)?\s+"
+    r"(?:loan\s+)?accounts?\s*[?!.]*$|"
+    r"\bhow\s+many\s+loans?\s+(?:does|do|has|have)\s+"
+    r"(?P<name2>[\w .'-]{2,100}?)\s+(?:have|got|taken)\s*[?!.]*$",
+    re.I,
+)
+_CUSTOMER_FIELD_CUE = re.compile(
+    r"\b(?:address|occupation|profession|agency|home\s+branch)\b", re.I
+)
+_NAME_BEFORE_CUSTOMER_FIELD = re.compile(
+    r"^(?:(?:what\s+is|show(?:\s+me)?|give\s+me|get|find)\s+(?:the\s+)?)?"
+    r"(?P<name>[\w .'-]{2,100}?)\s*(?:'s)?\s+"
+    r"(?:address|occupation|profession|agency|home\s+branch)\s*[?!.]*$",
+    re.I,
+)
 _BRANCH_DIRECTORY_CUE = re.compile(
     r"\b(?:what|which)\s+(?:are|is)\s+(?:the\s+)?branches\b|"
     r"\bbranches?\s+(?:are|is)\s+there\b|"
@@ -122,12 +173,20 @@ _BRANCH_DIRECTORY_CUE = re.compile(
 )
 _AGENT_CODE = re.compile(r"\b(?P<value>(?:agnt|agent)[-_ ]?\d+)\b", re.I)
 _AGENT_DETAIL_CUE = re.compile(
-    r"\b(?:details?|profiles?|names?|information|info|infor\w*|show|get|give|about)\b",
+    r"\b(?:details?|profiles?|names?|information|info|infor\w*|show|get|give|about|who)\b",
     re.I,
 )
 _ARTICLE_PREFIX = re.compile(r"^(?:the|a|an)\s+", re.I)
 """«show me the <name> repayment history» — the article belongs to the sentence, not to the
 borrower. Left attached it becomes part of the normalised name and matches nobody."""
+_AGENT_DIRECTORY_CUE = re.compile(
+    r"^(?:(?:list|show|give|get)\s+(?:me\s+)?)?(?:all\s+|the\s+)?agents?"
+    r"(?:\s+(?:list|directory))?\s*[?!.]*$|"
+    r"^(?:what|which)\s+agents?\s+(?:are|is)\s+there\s*[?!.]*$|"
+    r"^(?:show|list|give|get)\s+(?:me\s+)?(?:the\s+)?agent\s+(?:directory|list)"
+    r"\s*[?!.]*$",
+    re.I,
+)
 _AGENT_COUNT_CUE = re.compile(
     r"\b(?:(?:how\s+many|number\s+of|count\s+of|total)\s+(?:active\s+)?agents?|"
     r"agents?\s+count)\b",
@@ -135,7 +194,10 @@ _AGENT_COUNT_CUE = re.compile(
 )
 _AGENT_ACCOUNT_CUE = re.compile(
     r"\b(?:loan\s+)?accounts?\s*(?:numbers?|nos?\.?)\b|"
-    r"\b(?:show|list|give|get)\b[^?]{0,80}\b(?:loan\s+)?accounts?\b",
+    r"\b(?:show|list|give|get)\b[^?]{0,80}\b(?:loan\s+)?accounts?\b|"
+    r"\b(?:loan\s+)?accounts?\s+(?:linked|associated|mapped|tagged|handled|"
+    r"under|of|for|with)\b|"
+    r"\b(?:linked|associated|mapped|tagged)\s+(?:loan\s+)?accounts?\b",
     re.I,
 )
 _PRODUCT_CODE = re.compile(
@@ -144,7 +206,7 @@ _PRODUCT_CODE = re.compile(
     re.I,
 )
 _PRODUCT_DETAIL_CUE = re.compile(
-    r"\b(?:name|details?|information|info|which|identify|called)\b",
+    r"\b(?:name|details?|information|info|which|what|identify|called)\b",
     re.I,
 )
 _NAME_BEFORE_LOAN_FIELD = re.compile(
@@ -163,6 +225,26 @@ _NAME_AFTER_LOAN_FIELD = re.compile(
 _BORROWER_NAME_CUE = re.compile(r"\bnames?\b", re.I)
 _AGENT_BORROWER_CUE = re.compile(r"\b(?:borrowers?|customers?|clients?)\b", re.I)
 _COUNT_CUE = re.compile(r"\b(?:how\s+many|count|number\s+of|total\s+number)\b", re.I)
+
+_NON_NAME_WORDS = frozenset({
+    "split", "between", "and", "or", "versus", "vs", "by", "per", "each", "total",
+    "count", "sum", "average", "mean", "open", "closed", "active", "inactive", "top",
+    "bottom", "highest", "lowest", "most", "least", "overdue", "outstanding", "arrears",
+    "disbursed", "disbursement", "sanctioned", "sanction", "list", "show", "compare",
+    "trend", "breakdown", "share", "ratio", "growth", "npa", "par", "dpd", "bucket",
+    "portfolio", "gold", "microfinance", "msme", "retail", "male", "female", "gender",
+    "many", "much", "which", "where", "when", "why",
+})
+"""One of these anywhere in a captured name means the phrase is a question about the book.
+"Show the loan-count split between open and closed accounts" ends in the word the account
+patterns anchor on, and without this reads as a borrower named "loan-count split between
+open and closed"."""
+
+_NAME_FILLER_WORDS = frozenset({
+    "a", "an", "the", "all", "any", "every", "each", "both", "some", "his", "her",
+    "their", "its", "my", "our", "this", "that", "these", "those", "please", "me",
+})
+"""Words that can only be scaffolding at the edge of a captured name."""
 
 _GENERIC_NAME_WORDS = frozenset({
     "a", "an", "the", "this", "that", "his", "her", "their", "its", "my", "our",
@@ -291,7 +373,11 @@ def _is_person_name(value: str) -> bool:
     "customer information" from being planned as a lookup for a borrower called "customer".
     """
     tokens = [token for token in re.split(r"[^a-z0-9]+", value.lower()) if token]
-    return bool(tokens) and any(token not in _GENERIC_NAME_WORDS for token in tokens)
+    if not tokens or len(tokens) > 6:
+        return False
+    if any(token in _NON_NAME_WORDS for token in tokens):
+        return False
+    return any(token not in _GENERIC_NAME_WORDS for token in tokens)
 
 
 def _name_tokens(name: str) -> list[str]:
@@ -305,10 +391,26 @@ def _name_tokens(name: str) -> list[str]:
     return tokens
 
 
+def _agent_code(value: str) -> str:
+    """Governed agent codes are zero-padded to two digits — "agent 4" is AGNT04."""
+    return "AGNT" + re.sub(r"\D", "", value).zfill(2)
+
+
 def _clean_name(value: str) -> str:
-    """Strip sentence scaffolding an extraction pattern carried into the captured name."""
-    text = " ".join(str(value or "").split()).strip(" .?!,")
-    return _ARTICLE_PREFIX.sub("", text, count=1).strip()
+    """Strip sentence scaffolding an extraction pattern carried into the captured name.
+
+    The name group is deliberately permissive so real names survive punctuation and
+    initials, which means it also absorbs whatever filler sits between the name and the
+    noun the pattern anchored on — "SHEELA all accounts details" captures "SHEELA all".
+    Generic words can only be scaffolding at either end; a name made of nothing else is
+    rejected later by `_is_person_name`.
+    """
+    tokens = " ".join(str(value or "").split()).strip(" .?!,").split()
+    while tokens and tokens[0].lower().strip(".,'") in _NAME_FILLER_WORDS:
+        tokens.pop(0)
+    while tokens and tokens[-1].lower().strip(".,'") in _NAME_FILLER_WORDS:
+        tokens.pop()
+    return " ".join(tokens)
 
 
 def _requested_loan_fields(text: str) -> list[str]:
@@ -337,14 +439,14 @@ def _requested_agent_fields(text: str) -> list[str]:
     cues = (
         (r"\b(?:mobile|phone)(?:\s+number)?\b", "mobile"),
         (r"\bemail(?:\s+address)?\b", "email"),
-        (r"\bname\b", "agent_name"),
-        (r"\bagent\s+type\b", "agent_type"),
+        (r"\bnames?\b", "agent_name"),
+        (r"\b(?:agent\s+)?types?\b", "agent_type"),
         (r"\bdesignation\b", "designation"),
         (r"\bbranch(?:\s+code)?\b", "branch_code"),
         (r"\brole(?:\s+code)?\b", "role_code"),
         (r"\bjoin(?:ed|ing)?(?:\s+(?:on|date))?\b", "joined_on"),
         (r"\blinked\s+(?:customers?|borrowers?)\b", "linked_customer_count"),
-        (r"\blinked\s+(?:loans?|accounts?)\b", "linked_loan_count"),
+        (r"\blinked\s+(?:loans?|accounts?)\b|\b(?:loans?|accounts?)\s+count\b|\bcount\s+of\s+(?:loans?|accounts?)\b", "linked_loan_count"),
     )
     return [field for pattern, field in cues if re.search(pattern, text, re.I)]
 
@@ -353,10 +455,23 @@ def detect(question: str) -> LookupPlan | None:
     """Recognise selector + requested record family without matching whole questions."""
     text = normalize_apostrophes(" ".join(str(question or "").split()))
 
+    branch_code = _BRANCH_CODE_REF.search(text)
+    if branch_code and _CUSTOMER_DETAIL_CUE.search(text):
+        return LookupPlan(
+            selector="branch", value=re.sub(r"\D", "", branch_code.group()),
+            detail="branch_directory",
+            reasoning="governed directory row for the requested branch code",
+        )
     if _BRANCH_DIRECTORY_CUE.search(text):
         return LookupPlan(
             selector="branch", value="all", detail="branch_directory",
             reasoning="current governed branch directory",
+        )
+
+    if _AGENT_DIRECTORY_CUE.search(text) and not _AGENT_CODE.search(text):
+        return LookupPlan(
+            selector="agent_code", value="all", detail="agent_directory",
+            reasoning="current governed agent directory",
         )
 
     if _AGENT_COUNT_CUE.search(text):
@@ -375,10 +490,12 @@ def detect(question: str) -> LookupPlan | None:
         )
 
     customer = _CUSTOMER_ID.search(text)
-    account = _ACCOUNT_ID.search(text)
+    account = _ACCOUNT_ID.search(text) or _ACCOUNT_ID_BARE.search(text)
     agent = _AGENT_CODE.search(text)
-    product = _PRODUCT_CODE.search(text)
-    if product and _PRODUCT_DETAIL_CUE.search(text):
+    product = _PRODUCT_CODE.search(text) or _PRODUCT_CODE_BARE.search(text)
+    # An explicit "product code 13" is already a request for that product; only the bare
+    # "product 13" form needs a cue to tell a lookup from a filter on a metric question.
+    if product and (_PRODUCT_DETAIL_CUE.search(text) or _PRODUCT_CODE.search(text)):
         return LookupPlan(
             selector="product_code", value=_plain_identifier(product.group("value")),
             detail="product_details", reasoning="governed product-directory lookup",
@@ -397,7 +514,7 @@ def detect(question: str) -> LookupPlan | None:
         )
         return LookupPlan(
             selector="agent_code",
-            value="AGNT" + re.sub(r"\D", "", agent.group("value")),
+            value=_agent_code(agent.group("value")),
             detail="agent_accounts", requested_fields=requested,
             reasoning="loan accounts linked to the governed agent code",
         )
@@ -410,7 +527,7 @@ def detect(question: str) -> LookupPlan | None:
         if agent_fields or _AGENT_DETAIL_CUE.search(text) or _AGENT_CODE.fullmatch(text.strip()):
             return LookupPlan(
                 selector="agent_code",
-                value="AGNT" + re.sub(r"\D", "", agent.group("value")),
+                value=_agent_code(agent.group("value")),
                 detail="agent_details", requested_fields=agent_fields,
                 reasoning="governed agent-directory details",
             )
@@ -420,8 +537,13 @@ def detect(question: str) -> LookupPlan | None:
         elif account:
             selector, value = "loan_account", _plain_identifier(account.group("value"))
         else:
-            match = _NAME_AFTER_HISTORY.search(text) or _NAME_BEFORE_HISTORY.search(text)
-            if not match:
+            match = (
+                _NAME_AFTER_HISTORY.search(text)
+                or _NAME_BEFORE_HISTORY.search(text)
+                or _NAME_AFTER_BARE_REPAYMENT.search(text)
+                or _NAME_BEFORE_BARE_REPAYMENT.search(text)
+            )
+            if not match or not _is_person_name(_clean_name(match.group("name"))):
                 return None
             selector, value = "borrower_name", _clean_name(match.group("name"))
         return LookupPlan(
@@ -441,12 +563,42 @@ def detect(question: str) -> LookupPlan | None:
             detail="loan_details", requested_fields=_requested_loan_fields(text),
             reasoning="governed loan-account origination and disbursement details",
         )
+    if account and _CUSTOMER_DETAIL_CUE.search(text):
+        return LookupPlan(
+            selector="loan_account", value=_plain_identifier(account.group("value")),
+            detail="loan_details", requested_fields=_requested_loan_fields(text),
+            reasoning="governed record for the named loan account",
+        )
     if customer and _CUSTOMER_DETAIL_CUE.search(text):
         return LookupPlan(
             selector="customer_id", value=_plain_identifier(customer.group("value")),
             detail="customer_summary",
             reasoning="governed customer and linked-loan summary",
         )
+    # Every pattern below captures a free-text name. A question that already names a
+    # governed identifier is never one of them — without this guard "branch 1002 details"
+    # and "account number 100... details" are planned as borrowers with those names.
+    if customer or account or agent or product or _BRANCH_CODE_REF.search(text):
+        return None
+
+    named_field = _NAME_BEFORE_CUSTOMER_FIELD.search(text)
+    if named_field and _is_person_name(_clean_name(named_field.group("name"))):
+        return LookupPlan(
+            selector="borrower_name", value=_clean_name(named_field.group("name")),
+            detail="customer_summary",
+            reasoning="governed customer profile holding the requested field",
+        )
+
+    named_accounts = _NAME_ACCOUNTS.search(text)
+    if named_accounts:
+        captured = named_accounts.group("name") or named_accounts.group("name2") or ""
+        if _is_person_name(_clean_name(captured)):
+            return LookupPlan(
+                selector="borrower_name", value=_clean_name(captured),
+                detail="loan_details",
+                reasoning="governed loan accounts held by the named borrower",
+            )
+
     named_details = (
         _NAME_AFTER_LOAN_DETAILS.search(text) or _NAME_BEFORE_LOAN_DETAILS.search(text)
     )
@@ -457,9 +609,11 @@ def detect(question: str) -> LookupPlan | None:
             reasoning="governed borrower loan origination and disbursement details",
         )
     named_customer = (
-        _NAME_THEN_REQUEST.search(text)
+        _NAME_IDENTITY.search(text)
+        or _NAME_THEN_REQUEST.search(text)
         or _NAME_BEFORE_CUSTOMER_DETAILS.search(text)
         or _NAME_AFTER_CUSTOMER_DETAILS.search(text)
+        or _NAME_AFTER_DETAILS.search(text)
     )
     if named_customer and _is_person_name(_clean_name(named_customer.group("name"))):
         return LookupPlan(
@@ -467,10 +621,10 @@ def detect(question: str) -> LookupPlan | None:
             detail="customer_summary",
             reasoning="governed customer and linked-loan summary",
         )
-    named_field = _NAME_BEFORE_LOAN_FIELD.search(text) or _NAME_AFTER_LOAN_FIELD.search(text)
-    if named_field and agent is None and _is_person_name(_clean_name(named_field.group('name'))):
+    named_loan_field = _NAME_BEFORE_LOAN_FIELD.search(text) or _NAME_AFTER_LOAN_FIELD.search(text)
+    if named_loan_field and _is_person_name(_clean_name(named_loan_field.group('name'))):
         return LookupPlan(
-            selector="borrower_name", value=_clean_name(named_field.group("name")),
+            selector="borrower_name", value=_clean_name(named_loan_field.group("name")),
             detail="loan_details", requested_fields=_requested_loan_fields(text),
             reasoning="requested governed loan field for the named borrower",
         )
@@ -485,6 +639,13 @@ def detect(question: str) -> LookupPlan | None:
     return None
 
 
+_ANAPHORIC_AGENT = re.compile(
+    r"\b(?:the\s+)?(?:above|same|that|this|previous|said)\s+agent\b", re.I
+)
+"""«accounts and names of borrowers linked to the above agent» — the code was named a turn
+ago, and the record grammar has no way to see it from this question alone."""
+
+
 def resolve_followup(question: str, history_messages: list[dict[str, str]] | None) -> str:
     """Complete a bare record refinement from the question it refines.
 
@@ -494,7 +655,11 @@ def resolve_followup(question: str, history_messages: list[dict[str, str]] | Non
     same governed lookup with one more field, which is exactly what was asked.
     """
     text = normalize_apostrophes(" ".join(str(question or "").split()))
-    if not text or not _RECORD_REFINEMENT.fullmatch(text):
+    if not text:
+        return question
+    refinement = bool(_RECORD_REFINEMENT.fullmatch(text))
+    anaphor = _ANAPHORIC_AGENT.search(text)
+    if not refinement and anaphor is None:
         return question
     previous = next(
         (
@@ -504,7 +669,14 @@ def resolve_followup(question: str, history_messages: list[dict[str, str]] | Non
         ),
         "",
     )
-    if not previous or detect(previous) is None:
+    if not previous:
+        return question
+    if anaphor is not None:
+        code = _AGENT_CODE.search(normalize_apostrophes(previous))
+        if code is None:
+            return question
+        return text[: anaphor.start()] + _agent_code(code.group("value")) + text[anaphor.end():]
+    if detect(previous) is None:
         return question
     return f"{previous} {text}"
 
@@ -769,6 +941,40 @@ def _agent_details(plan: LookupPlan, catalog: Catalog) -> SqlAttempt:
     )
 
 
+def _shape_customer_summary(chart: ChartSpec) -> None:
+    """A profile is a record, not a ranking.
+
+    Left unshaped this family kept the generated-SQL narration, which reads the sanction
+    column as a measure and reports the "highest" of one row, and appends a caveat about
+    unreviewed SQL that does not apply to an application-owned query.
+    """
+    from app.services.nlq.narrator import format_value
+
+    chart.chart_type = "table"
+    chart.x = None
+    chart.series_by = None
+    chart.series = []
+    first = chart.rows[0]
+    name = str(first.get("customer_name", "")).strip()
+    customer_id = str(first.get("customer_id", "")).strip()
+    chart.title = name or f"Customer {customer_id}"
+    accounts = len({
+        str(row.get("loan_account_number", "")) for row in chart.rows
+        if str(row.get("loan_account_number", "") or "").strip()
+    })
+    sanctioned = sum(
+        value for row in chart.rows
+        if isinstance(value := row.get("sanction_amount"), (int, float))
+    )
+    if not accounts:
+        chart.summary = f"{chart.title} is customer {customer_id} with no sanctioned loan accounts."
+        return
+    chart.summary = (
+        f"{chart.title} is customer {customer_id} with {accounts:,} sanctioned loan "
+        f"account(s) totalling {format_value(sanctioned, 'inr')}."
+    )
+
+
 def _shape_agent_details(chart: ChartSpec, plan: LookupPlan) -> None:
     requested = list(dict.fromkeys(plan.requested_fields))
     chart.title = plan.value
@@ -841,11 +1047,33 @@ def _agent_accounts(plan: LookupPlan, catalog: Catalog) -> SqlAttempt:
     )
 
 
-def _branch_directory(catalog: Catalog) -> SqlAttempt:
+def _agent_directory(catalog: Catalog) -> SqlAttempt:
+    sql = (
+        "SELECT agent_code, agent_name, agent_type, designation, branch_code, "
+        "linked_customer_count, linked_loan_count FROM gold.agent_master "
+        "ORDER BY agent_code LIMIT 500"
+    )
+    return _validated_attempt(
+        sql, catalog=catalog, explanation="Current governed agent directory.",
+        units={
+            "agent_code": "text", "agent_name": "text", "agent_type": "text",
+            "designation": "text", "branch_code": "text",
+            "linked_customer_count": "count", "linked_loan_count": "count",
+        },
+        pii_columns={"agent_name"},
+    )
+
+
+def _branch_directory(plan: LookupPlan, catalog: Catalog) -> SqlAttempt:
+    where = (
+        ""
+        if plan.value == "all"
+        else " WHERE LOWER(branch_code::text) = " + _literal(plan.value.lower())
+    )
     sql = (
         "SELECT branch_code, branch_name, branch_category_name, branch_size, "
-        "branch_status, opened_on FROM gold.branch_master "
-        "ORDER BY branch_name, branch_code LIMIT 500"
+        "branch_status, opened_on FROM gold.branch_master" + where +
+        " ORDER BY branch_name, branch_code LIMIT 500"
     )
     return _validated_attempt(
         sql, catalog=catalog, explanation="Current governed branch directory.",
@@ -911,10 +1139,12 @@ def run(plan: LookupPlan, *, role: str | None, catalog: Catalog | None = None) -
         attempt = _agent_details(effective, cat)
     elif effective.detail == "agent_count":
         attempt = _agent_count(cat)
+    elif effective.detail == "agent_directory":
+        attempt = _agent_directory(cat)
     elif effective.detail == "agent_accounts":
         attempt = _agent_accounts(effective, cat)
     elif effective.detail == "branch_directory":
-        attempt = _branch_directory(cat)
+        attempt = _branch_directory(effective, cat)
     elif effective.detail == "product_details":
         attempt = _product_details(effective, cat)
     else:
@@ -924,7 +1154,9 @@ def run(plan: LookupPlan, *, role: str | None, catalog: Catalog | None = None) -
     if not chart.rows:
         return LookupResult(no_match=True)
     chart.subtitle = "Governed read-only record lookup"
-    if effective.detail == "loan_details":
+    if effective.detail == "customer_summary":
+        _shape_customer_summary(chart)
+    elif effective.detail == "loan_details":
         _shape_loan_details(chart, effective)
     elif effective.detail == "agent_details":
         _shape_agent_details(chart, effective)
@@ -940,6 +1172,27 @@ def run(plan: LookupPlan, *, role: str | None, catalog: Catalog | None = None) -
             chart.summary = (
                 f"Returned {len(chart.rows):,} governed product-name record(s) for "
                 f"product code {effective.value}."
+            )
+    elif effective.detail in {"agent_directory", "branch_directory"}:
+        chart.chart_type = "table"
+        chart.x = None
+        chart.series_by = None
+        chart.series = []
+        noun = "agent" if effective.detail == "agent_directory" else "branch"
+        if effective.value != "all":
+            chart.title = f"Branch {effective.value}"
+            name = str(chart.rows[0].get("branch_name", "")).strip()
+            chart.summary = (
+                f"Branch {effective.value} is {name}." if name
+                else f"Returned the governed directory row for branch {effective.value}."
+            )
+        else:
+            chart.title = f"{noun.title()} directory"
+            # The row cap is real: say "of" only when the cap was actually reached, so a
+            # complete directory is never reported as a partial one.
+            capped = " (row limit reached)" if len(chart.rows) >= 500 else ""
+            chart.summary = (
+                f"Returned {len(chart.rows):,} {noun}(s) from the governed directory{capped}."
             )
     elif effective.detail == "agent_accounts":
         total = int(chart.rows[0].get("total_linked_account_count") or len(chart.rows))

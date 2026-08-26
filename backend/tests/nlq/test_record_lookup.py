@@ -382,7 +382,11 @@ def test_agent_account_record_list_is_always_a_table(monkeypatch):
 
 
 def test_branch_directory_uses_the_governed_branch_master():
-    attempt = _branch_directory(get_catalog())
+    attempt = _branch_directory(
+        LookupPlan(selector="branch", value="all", detail="branch_directory",
+                   reasoning="test"),
+        get_catalog(),
+    )
 
     assert attempt.validated and attempt.reviewed
     assert "FROM gold.branch_master" in attempt.sql

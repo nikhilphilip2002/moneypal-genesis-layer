@@ -127,7 +127,10 @@ body {
 
 body {
   font-feature-settings: "rlig" 1, "calt" 1;
-  min-height: 100vh;
+  /* svh, not vh: with a dynamic browser toolbar 100vh exceeds the visible viewport, and a
+     shell sized to the visible viewport then leaves the body taller than the screen — a
+     second, document-level scrollbar over nothing. */
+  min-height: 100svh;
   -webkit-font-smoothing: antialiased;
   background: transparent;
 }

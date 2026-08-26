@@ -229,7 +229,9 @@ export default function WorkbenchPage() {
   );
 
   return (
-    <div className="flex h-svh flex-col overflow-hidden bg-background">
+    // Fixed rather than merely full-height: the shell owns its own scrolling region, so
+    // taking it out of document flow guarantees the page behind it can never scroll too.
+    <div className="fixed inset-0 flex flex-col overflow-hidden bg-background">
       <WorkbenchHeader
         user={user}
         onNew={newConversation}

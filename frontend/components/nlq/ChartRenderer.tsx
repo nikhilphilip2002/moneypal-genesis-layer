@@ -1175,47 +1175,69 @@ function ChartTooltip({ chart, active, payload, label, total, labelKey }: any) {
 
 // ─── Table ───
 
+const TABLE_PREVIEW_ROWS = 25;
+
 function TableView({ chart }: { chart: ChartSpec }) {
+  const [expanded, setExpanded] = useState(false);
+  const folded = Math.max(0, chart.rows.length - TABLE_PREVIEW_ROWS);
+  const rows = expanded || folded === 0 ? chart.rows : chart.rows.slice(0, TABLE_PREVIEW_ROWS);
+
   return (
-    // Nested inside a card that already owns an edge and a shadow — this one gets neither.
-    <div className="max-h-[26rem] overflow-auto rounded-xl border border-border/60">
-      <Table>
-        <TableHeader className="sticky top-0 z-10 bg-muted/80 backdrop-blur">
-          <TableRow>
-            {chart.columns.map((column) => (
-              <TableHead key={column.name} className={cn(isNumeric(column) && 'text-right')}>
-                {column.label}
-                {column.masked && (
-                  <Badge
-                    variant="outline"
-                    className="ml-1 px-1.5 py-0 text-[10px] font-normal uppercase text-amber-700 dark:text-amber-400"
-                  >
-                    masked
-                  </Badge>
-                )}
-              </TableHead>
-            ))}
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {chart.rows.map((row, index) => (
-            <TableRow key={index} className="odd:bg-muted/[0.18] hover:bg-muted/45">
+    // A capped height would give a 300-row record list its own vertical scrollbar, inches
+    // from the transcript's — two bars, and no way to tell which one moves the page. The
+    // table grows with its rows instead, and a long one is folded until asked for.
+    <div className="space-y-2">
+      <div className="overflow-x-auto rounded-xl border border-border/60">
+        <Table>
+          <TableHeader className="bg-muted/80">
+            <TableRow>
               {chart.columns.map((column) => (
-                <TableCell
-                  key={column.name}
-                  className={cn(
-                    'text-foreground',
-                    isNumeric(column) && 'text-right tabular-nums',
-                    column.name === 'delta' && deltaTone(row[column.name]),
+                <TableHead key={column.name} className={cn(isNumeric(column) && 'text-right')}>
+                  {column.label}
+                  {column.masked && (
+                    <Badge
+                      variant="outline"
+                      className="ml-1 px-1.5 py-0 text-[10px] font-normal uppercase text-amber-700 dark:text-amber-400"
+                    >
+                      masked
+                    </Badge>
                   )}
-                >
-                  {formatValue(row[column.name], column.unit)}
-                </TableCell>
+                </TableHead>
               ))}
             </TableRow>
-          ))}
-        </TableBody>
-      </Table>
+          </TableHeader>
+          <TableBody>
+            {rows.map((row, index) => (
+              <TableRow key={index} className="odd:bg-muted/[0.18] hover:bg-muted/45">
+                {chart.columns.map((column) => (
+                  <TableCell
+                    key={column.name}
+                    className={cn(
+                      'text-foreground',
+                      isNumeric(column) && 'text-right tabular-nums',
+                      column.name === 'delta' && deltaTone(row[column.name]),
+                    )}
+                  >
+                    {formatValue(row[column.name], column.unit)}
+                  </TableCell>
+                ))}
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </div>
+      {folded > 0 && (
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => setExpanded((current) => !current)}
+          className="h-auto px-2 py-1 text-xs font-medium text-muted-foreground hover:text-foreground"
+        >
+          {expanded
+            ? `Show first ${TABLE_PREVIEW_ROWS} rows`
+            : `Show all ${chart.rows.length.toLocaleString()} rows`}
+        </Button>
+      )}
     </div>
   );
 }

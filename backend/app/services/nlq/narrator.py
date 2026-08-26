@@ -104,6 +104,24 @@ def narrate(
     return " ".join(p for p in parts if p)
 
 
+def _filter_phrase(spec: QuerySpec, cat: Catalog) -> str:
+    """Name the slice the number was measured over.
+
+    A filtered KPI otherwise reads as the whole book: "Loans sanctioned was 76 in all time"
+    is the count of *closed* accounts, and the sentence that omits the filter is the one
+    people quote.
+    """
+    parts = []
+    for filt in spec.filters:
+        dimension = cat.dimensions.get(filt.field)
+        if dimension is None or filt.op != "eq" or filt.value is None:
+            continue
+        enum = cat.enum_for_dimension(dimension.decode) if dimension.decode else None
+        label = enum.label_for(str(filt.value)) if enum else str(filt.value)
+        parts.append(f"{dimension.label.lower()} {label}")
+    return (" for " + " and ".join(parts)) if parts else ""
+
+
 def _period_phrase(compiled: CompiledQuery) -> str:
     if compiled.as_of:
         return f"as at {compiled.as_of.strftime('%d %b %Y')}"
@@ -118,7 +136,8 @@ def _kpi_sentence(
     for metric_id in spec.metrics:
         metric = cat.metrics[metric_id]
         pieces.append(f"{metric.label} was {format_value(row.get(metric_id), metric.unit)}")
-    return f"{'; '.join(pieces)} {_period_phrase(compiled)}.".replace("  ", " ").strip()
+    scope = f"{_filter_phrase(spec, cat)} {_period_phrase(compiled)}".strip()
+    return f"{'; '.join(pieces)} {scope}.".replace("  ", " ").strip()
 
 
 def _ranking_sentence(

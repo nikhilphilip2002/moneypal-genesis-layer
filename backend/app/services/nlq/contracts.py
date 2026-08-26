@@ -251,7 +251,8 @@ class LookupPlan(_Model):
     value: str
     detail: Literal[
         "customer_summary", "loan_details", "repayment_history", "agent_details", "agent_count",
-        "agent_accounts", "branch_directory", "product_details", "account_sample",
+        "agent_accounts", "agent_directory", "branch_directory", "product_details",
+        "account_sample",
     ]
     requested_fields: list[Literal[
         "sanction_amount", "sanction_date", "disbursed_amount", "first_disbursement_date",
