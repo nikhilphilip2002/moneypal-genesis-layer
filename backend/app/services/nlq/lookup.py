@@ -60,6 +60,19 @@ _NAMED_LOAN_DETAIL = re.compile(
     r"(?P<name>[\w .'-]{2,100})\s*[?!.]*$",
     re.I,
 )
+_NAME_AFTER_LOAN_DETAILS = re.compile(
+    r"\b(?:loan(?:\s+account)?|account)\s+"
+    r"(?:details?|information|info|records?|profile)\s+(?:of|for)\s+"
+    r"(?P<name>[\w .'-]{2,100})\s*[?!.]*$",
+    re.I,
+)
+_NAME_BEFORE_LOAN_DETAILS = re.compile(
+    r"^(?:what\s+(?:is|are)|show(?:\s+me)?|give\s+me|get|find)?\s*"
+    r"(?P<name>[\w .'-]{2,100}?)\s*(?:'s\s+)?"
+    r"(?:loan(?:\s+account)?|account)\s+"
+    r"(?:details?|information|info|records?|profile)\s*[?!.]*$",
+    re.I,
+)
 _BRANCH_DIRECTORY_CUE = re.compile(
     r"\b(?:what|which)\s+(?:are|is)\s+(?:the\s+)?branches\b|"
     r"\bbranches?\s+(?:are|is)\s+there\b|"
@@ -234,6 +247,15 @@ def detect(question: str) -> LookupPlan | None:
             selector="customer_id", value=_plain_identifier(customer.group("value")),
             detail="customer_summary",
             reasoning="governed customer and linked-loan summary",
+        )
+    named_details = (
+        _NAME_AFTER_LOAN_DETAILS.search(text) or _NAME_BEFORE_LOAN_DETAILS.search(text)
+    )
+    if named_details:
+        return LookupPlan(
+            selector="borrower_name", value=named_details.group("name").strip(" .?!"),
+            detail="loan_details",
+            reasoning="governed borrower loan origination and disbursement details",
         )
     if _LOAN_DETAIL_CUE.search(text):
         named = _NAMED_LOAN_DETAIL.search(text)

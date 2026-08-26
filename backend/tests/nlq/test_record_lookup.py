@@ -76,6 +76,14 @@ from app.services.nlq.planner import plan
             "show me the customer id 128 detail",
             "customer_id", "128", "customer_summary",
         ),
+        (
+            "loan details of MAHABALA GOWDA",
+            "borrower_name", "MAHABALA GOWDA", "loan_details",
+        ),
+        (
+            "show me Mahabala Gowda's loan account information",
+            "borrower_name", "Mahabala Gowda", "loan_details",
+        ),
     ],
 )
 def test_lookup_intent_is_phrase_independent(question, selector, value, detail):
