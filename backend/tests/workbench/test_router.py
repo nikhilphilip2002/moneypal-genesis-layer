@@ -50,10 +50,10 @@ class TestDispatch:
 
     @pytest.mark.anyio
     async def test_strips_sources_the_role_may_not_see(self, monkeypatch):
-        # gicc_policy cannot see the loan book; a model that names it must not leak it.
+        # The open-access rollout makes governed loan-book lookups visible to this role.
         _use(monkeypatch, FakeLLM('{"route":"dispatch","sources":["db","macro"],"intent":"x"}'))
         decision = await router.route("q", role="gicc_policy")
-        assert decision.sources == ["macro"]
+        assert decision.sources == ["db", "macro"]
 
     @pytest.mark.anyio
     async def test_deduplicates_preserving_order(self, monkeypatch):
@@ -167,16 +167,16 @@ class TestFallback:
         assert decision.source_intents["db"] == "Show our collection efficiency by product and branch."
 
     @pytest.mark.anyio
-    async def test_llm_failure_falls_back_to_first_visible_for_a_non_book_role(self, monkeypatch):
+    async def test_llm_failure_falls_back_to_db_during_open_access(self, monkeypatch):
         class Failing(FakeLLM):
             async def complete(self, **kw):
                 raise LLMError("model down")
 
         _use(monkeypatch, Failing())
         decision = await router.route("q", role="gicc_policy")
-        # gicc_policy has no db; the fallback must be a source it can actually see.
+        # DB is the modal fallback and is visible under the selected rollout policy.
         assert decision.route == "dispatch"
-        assert decision.sources and decision.sources[0] in {"macro", "competitive", "regulatory"}
+        assert decision.sources == ["db"]
 
     @pytest.mark.anyio
     async def test_empty_source_list_falls_back_rather_than_returning_nothing(self, monkeypatch):
@@ -197,14 +197,12 @@ class TestPinnedSource:
         assert fake.calls == []  # the model was never consulted
 
     @pytest.mark.anyio
-    async def test_a_pin_the_role_cannot_see_is_ignored_and_routing_proceeds(self, monkeypatch):
-        # gicc_policy cannot see the loan book; a pinned "db" must not smuggle it in. The pin
-        # is dropped and normal routing runs.
+    async def test_open_access_role_can_pin_the_loan_book(self, monkeypatch):
         fake = FakeLLM('{"route":"dispatch","sources":["macro"],"intent":"x"}')
         _use(monkeypatch, fake)
         decision = await router.route("q", role="gicc_policy", pinned="db")
-        assert decision.sources == ["macro"]
-        assert fake.calls  # routing ran because the pin was rejected
+        assert decision.sources == ["db"]
+        assert fake.calls == []
 
     @pytest.mark.anyio
     async def test_an_unknown_pin_is_ignored(self, monkeypatch):

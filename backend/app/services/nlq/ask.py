@@ -17,7 +17,7 @@ from datetime import date
 from typing import Any, AsyncIterator
 
 from app.core.config import settings
-from app.services.nlq import audit, conversation, pii, planner, text_to_sql
+from app.services.nlq import audit, conversation, lookup, pii, planner, text_to_sql
 from app.services.nlq.catalog import Catalog, get_catalog
 from app.services.nlq.compiler import CompileError
 from app.services.nlq.contracts import (
@@ -28,6 +28,7 @@ from app.services.nlq.contracts import (
     QuerySpecPlan,
     RefusalPlan,
     SqlPlan,
+    LookupPlan,
     WorklistPlan,
 )
 from app.services.nlq.executor import ExecutionError
@@ -217,6 +218,11 @@ async def ask_stream(ctx: AskContext, catalog: Catalog | None = None) -> AsyncIt
             yield frame
         return
 
+    if isinstance(plan, LookupPlan):
+        async for frame in _lookup_path(ctx, cat, plan, turn_id, state, resolved, started):
+            yield frame
+        return
+
     if isinstance(plan, SqlPlan):
         async for frame in _text_to_sql_path(ctx, cat, plan, turn_id, state, resolved, started):
             yield frame
@@ -229,6 +235,74 @@ async def ask_stream(ctx: AskContext, catalog: Catalog | None = None) -> AsyncIt
         plan_summary=plan.reasoning or "", started=started,
     ):
         yield frame
+
+
+async def _lookup_path(
+    ctx: AskContext,
+    cat: Catalog,
+    plan: LookupPlan,
+    turn_id: str,
+    state,
+    resolved: str,
+    started: float,
+) -> AsyncIterator[str]:
+    """Run a reviewed person/account lookup and reuse existing chart/clarify contracts."""
+    yield sse("stage", {"stage": "querying", "lookup": plan.detail})
+    try:
+        result = await asyncio.wait_for(
+            asyncio.to_thread(lookup.run, plan, role=ctx.role, catalog=cat),
+            timeout=_remaining_seconds(started),
+        )
+    except TimeoutError:
+        audit.record(turn_id=turn_id, ctx=ctx, resolved=resolved, route="lookup",
+                     outcome="timeout", detail="record lookup exceeded the request budget")
+        yield sse("error", {"message": "The record lookup took too long. Please retry.",
+                            "retryable": True})
+        yield sse("done", {"turn_id": turn_id})
+        return
+    except ExecutionError as exc:
+        audit.record(turn_id=turn_id, ctx=ctx, resolved=resolved, route="lookup",
+                     outcome="execution_error", detail=exc.detail)
+        yield sse("error", {"message": str(exc), "retryable": True})
+        yield sse("done", {"turn_id": turn_id})
+        return
+
+    if result.clarification is not None:
+        audit.record(turn_id=turn_id, ctx=ctx, resolved=resolved, route="lookup",
+                     outcome="ambiguous_name")
+        conversation.append_turn(state, ctx.question, resolved, "clarify", None, 0)
+        conversation.save(state)
+        yield sse("clarify", result.clarification.model_dump(mode="json"))
+        yield sse("done", {"turn_id": turn_id})
+        return
+    if result.no_match or result.chart is None:
+        audit.record(turn_id=turn_id, ctx=ctx, resolved=resolved, route="lookup",
+                     outcome="no_matching_rows")
+        conversation.append_turn(state, ctx.question, resolved, "refuse", None, 0)
+        conversation.save(state)
+        yield sse("refusal", {
+            "route": "refuse", "reason": "not_in_data",
+            "message": "No customer or loan records matched that lookup.", "examples": [],
+        })
+        yield sse("done", {"turn_id": turn_id})
+        return
+
+    chart = result.chart
+    conversation.append_turn(state, ctx.question, resolved, "lookup", chart.chart_type,
+                             chart.lineage.row_count)
+    conversation.save(state)
+    audit.record(
+        turn_id=turn_id, ctx=ctx, resolved=resolved, route="lookup", outcome="answered",
+        sql=chart.lineage.sql, row_count=chart.lineage.row_count,
+        duration_ms=int((time.perf_counter() - started) * 1000), touches_pii=True,
+    )
+    response = AskResponse(
+        conversation_id=ctx.conversation_id, turn_id=turn_id, status="answered",
+        chart=chart, plan_summary=plan.reasoning,
+    )
+    yield sse("chart", response.model_dump(mode="json"))
+    yield sse("done", {"turn_id": turn_id,
+                       "duration_ms": int((time.perf_counter() - started) * 1000)})
 
 
 async def _analysis_path(

@@ -561,6 +561,22 @@ async def plan(
     normalized_question = normalize_lending_question(question)
     planning_question = _resolve_chart_request(normalized_question, history_messages or [])
 
+    # Record lookups have a closed selector/detail grammar and application-owned SQL. They
+    # must run before the metric planner, which can otherwise mistake "what is <name>..."
+    # for a descriptive banking-concept question or discard the identifier as prose.
+    from app.services.nlq import lookup
+
+    record_lookup = lookup.detect(planning_question)
+    if record_lookup is not None:
+        return PlanOutcome(
+            plan=record_lookup,
+            attempts=0,
+            prompt_version=PROMPT_VERSION,
+            model="deterministic",
+            provider="catalog",
+            duration_ms=0,
+        )
+
     common = _common_business_plan(planning_question)
     if common is not None:
         return PlanOutcome(

@@ -27,10 +27,9 @@ def test_director_sees_loan_book_sources_but_not_market_or_regulatory():
     assert visible == {"db", "macro", "knowledge", "schema"}
 
 
-def test_policy_maker_sees_public_and_regulatory_but_not_the_loan_book():
-    # gicc_policy works with regulatory text and the market, never the portfolio.
+def test_policy_maker_sees_loan_book_during_open_access_rollout():
     visible = {s.id for s in sources.visible_sources("gicc_policy")}
-    assert visible == {"macro", "competitive", "regulatory", "knowledge"}
+    assert visible == {"db", "macro", "competitive", "regulatory", "knowledge"}
 
 
 def test_loan_book_and_schema_are_sensitive_public_intelligence_is_not():
@@ -43,8 +42,7 @@ def test_loan_book_and_schema_are_sensitive_public_intelligence_is_not():
 def test_route_schema_constrains_sources_to_the_roles_visible_set():
     schema = sources.route_schema("gicc_policy")
     enum = schema["properties"]["sources"]["items"]["enum"]
-    assert set(enum) == {"macro", "competitive", "regulatory", "knowledge"}
-    assert "db" not in enum
+    assert set(enum) == {"db", "macro", "competitive", "regulatory", "knowledge"}
 
 
 def test_router_prompt_describes_only_visible_sources():

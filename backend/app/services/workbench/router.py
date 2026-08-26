@@ -32,7 +32,8 @@ _STRUCTURAL_QUERY = re.compile(
 _VALUE_CUES = re.compile(
     r"\b(?:our|right\s+now|today|all[ -]?time|how\s+many|how\s+much|total|sum|"
     r"top|bottom|best|worst|rank(?:ed|ing)?|zero|various|different|distinct|available|"
-    r"list|show|split|composition|amount\s+paid|"
+    r"list|show|split|composition|amount\s+paid|customer\s*(?:id|number|no\.?|#)|"
+    r"loan\s+account|repayment\s+history|payment\s+history|"
     r"collected|outstanding|sanctioned|disbursed|by\s+(?:product|scheme|branch|status)|"
     r"based\s+on\s+(?:product|scheme|branch))\b",
     re.IGNORECASE,

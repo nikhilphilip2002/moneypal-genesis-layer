@@ -494,16 +494,29 @@ def build_from_rows(
     """ChartSpec for the text-to-SQL path, where there is no QuerySpec to read from.
 
     Shape is inferred from the returned columns rather than from a catalog entry, so the
-    rules are necessarily weaker than on the trusted path — which is one more reason these
-    answers are marked unverified.
+    rules are necessarily weaker than on the trusted path. Generated answers are marked
+    unverified; application-owned record lookups use the same renderer but remain reviewed.
     """
     cat = catalog or get_catalog()
     unit_hints = unit_hints or {}
     columns = result.columns
     rows = _decode_generated_rows(result.rows, columns, cat)
+    # PostgreSQL numeric identifiers arrive as floats through the generic executor.  Their
+    # catalog unit, not their runtime Python type, determines presentation.
+    for row in rows:
+        for column in columns:
+            if unit_hints.get(column) != "text":
+                continue
+            value = row.get(column)
+            if isinstance(value, float) and value.is_integer():
+                row[column] = str(int(value))
+            elif isinstance(value, int) and not isinstance(value, bool):
+                row[column] = str(value)
     numeric = [
         c for c in columns
-        if _column_is_numeric(rows, c) and not _generated_dimension_column(c, columns, unit_hints)
+        if unit_hints.get(c) not in {"text", "date", "datetime", "boolean"}
+        and _column_is_numeric(rows, c)
+        and not _generated_dimension_column(c, columns, unit_hints)
     ]
     labels = [c for c in columns if c not in numeric]
 
@@ -520,7 +533,10 @@ def build_from_rows(
     return ChartSpec(
         chart_type=chart_type,
         title=(clean_title[:1].upper() + clean_title[1:])[:120],
-        subtitle="Generated query — not a reviewed metric",
+        subtitle=(
+            "Generated query — not a reviewed metric"
+            if lineage.unverified else "Governed read-only record lookup"
+        ),
         x=AxisSpec(
             field=labels[0],
             label=labels[0].replace("_", " ").title(),

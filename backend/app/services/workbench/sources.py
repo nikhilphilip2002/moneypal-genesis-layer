@@ -38,21 +38,24 @@ SOURCES: dict[str, Source] = {
         id="db",
         label="Loan book",
         sensitive=True,
-        # Loan-book analytics mirror who may reach the /ask (NLQ) route: the two GICC
-        # business roles and platform admin. gicc_policy works with regulatory text, not
-        # the portfolio, so in the workbench it sees only the public macro source.
-        roles=frozenset({"admin", "gicc_admin", "gicc_director"}),
+        # Open-access rollout policy: every Workbench role, including anonymous sessions,
+        # may perform governed read-only record lookups. Authentication/role restrictions
+        # can be restored by setting an explicit role set here with PII masking enabled.
+        roles=None,
         describes=(
             "The bank's own lending warehouse: disbursement and sanctions, repayments and "
             "repayment history, outstanding balances, delinquency and DPD, collections and "
             "collection efficiency, PAR and NPA ratios, the general ledger — sliced by "
-            "borrower, branch, product, scheme, asset class and time. Any question about *our* "
-            "numbers, portfolio, transaction records, or performance."
+            "borrower, customer ID, loan account, gender, branch, product, scheme, asset "
+            "class and time. Any question about *our* numbers, individual records, "
+            "repayment events, portfolio, transaction records, or performance."
         ),
         example_intents=(
             "disbursement by branch last quarter",
             "what is our PAR 30 right now",
             "collection efficiency by product this year",
+            "repayment history for a named borrower",
+            "loan details for customer ID 128",
         ),
     ),
     "macro": Source(
@@ -218,6 +221,16 @@ def router_system_prompt(role: str) -> str:
 
 
 ROUTER_FEW_SHOTS: list[tuple[str, str]] = [
+    (
+        "Show repayment history for borrower Anitha K",
+        '{"route":"dispatch","sources":["db"],'
+        '"intent":"repayment history for borrower Anitha K"}',
+    ),
+    (
+        "What are the loan amount and date for customer ID 42?",
+        '{"route":"dispatch","sources":["db"],'
+        '"intent":"loan amount and date for customer ID 42"}',
+    ),
     (
         "top 25 borrowers",
         '{"route":"dispatch","sources":["db"],'

@@ -98,6 +98,7 @@ class SqlAttempt:
     warnings: list[str] = field(default_factory=list)
     pii_columns: list[str] = field(default_factory=list)
     column_units: dict[str, str] = field(default_factory=dict)
+    reviewed: bool = False
 
 
 async def generate(
@@ -634,7 +635,7 @@ def _few_shots() -> list[dict[str, str]]:
 
 
 def lineage_for(attempt: SqlAttempt, row_count: int, duration_ms: int) -> Lineage:
-    """Lineage for the fallback path, marked unverified so the UI can flag it."""
+    """Lineage for generated SQL or a reviewed deterministic record lookup."""
     return Lineage(
         path="text_to_sql",
         sql=attempt.sql,
@@ -645,5 +646,5 @@ def lineage_for(attempt: SqlAttempt, row_count: int, duration_ms: int) -> Lineag
         row_count=row_count,
         duration_ms=duration_ms,
         warnings=list(attempt.warnings),
-        unverified=True,
+        unverified=not attempt.reviewed,
     )

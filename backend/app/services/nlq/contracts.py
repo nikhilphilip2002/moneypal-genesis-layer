@@ -240,6 +240,17 @@ class SqlPlan(_Model):
     reasoning: str = Field(default="", max_length=500)
 
 
+class LookupPlan(_Model):
+    """Governed person/account lookup compiled by the application, never by the LLM."""
+
+    route: Literal["lookup"] = "lookup"
+    selector: Literal["borrower_name", "customer_id", "loan_account", "gender"]
+    value: str
+    detail: Literal["loan_details", "repayment_history", "account_sample"]
+    confidence: float = Field(default=1.0, ge=0.0, le=1.0)
+    reasoning: str = Field(default="", max_length=500)
+
+
 class AnalysisPlan(_Model):
     """Catalog hit of a different kind: the question needs several queries, not one.
 
@@ -297,7 +308,7 @@ class RefusalPlan(_Model):
 
 PlanResult = Annotated[
     Union[
-        QuerySpecPlan, AnalysisPlan, WorklistPlan, BriefingPlan, SqlPlan, ClarifyPlan,
+        QuerySpecPlan, AnalysisPlan, WorklistPlan, BriefingPlan, SqlPlan, LookupPlan, ClarifyPlan,
         RefusalPlan,
     ],
     Field(discriminator="route"),
@@ -624,7 +635,7 @@ class Turn(_Model):
     question: str
     resolved_question: str
     route: Literal[
-        "queryspec", "analysis", "worklist", "briefing", "sql", "clarify", "refuse"
+        "queryspec", "analysis", "worklist", "briefing", "sql", "lookup", "clarify", "refuse"
     ]
     chart_type: ChartType | None = None
     row_count: int = 0

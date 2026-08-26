@@ -261,6 +261,15 @@ async def _synthesize_node(state: WorkbenchState) -> dict[str, Any]:
             await emit.put(sse("answer", payload))
             history.set_answer(state["conversation_id"], state["user"], state["turn_id"], payload)
         else:
+            first_error = next((r for r in all_results if r.card_type == "error"), None)
+            if first_error is not None:
+                # The source card already streamed the actionable failure. Do not add a
+                # second generic orchestrator error underneath it.
+                message = str(first_error.payload.get("message") or "Source unavailable.")
+                history.set_error(
+                    state["conversation_id"], state["user"], state["turn_id"], message
+                )
+                return {}
             message = "No intelligence source produced a usable answer."
             history.set_error(state["conversation_id"], state["user"], state["turn_id"], message)
             await emit.put(sse("error", {"message": message, "retryable": True}))

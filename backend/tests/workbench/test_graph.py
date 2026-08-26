@@ -74,6 +74,25 @@ class TestSingleSource:
         assert names[-1] == "done"
 
     @pytest.mark.anyio
+    async def test_source_failure_is_not_followed_by_a_second_generic_error(self, monkeypatch):
+        _stub_route(monkeypatch, router.RouteDecision(
+            route="dispatch", sources=["db"], intent="i",
+        ))
+        _stub_node(monkeypatch, "run_db", SourceResult(
+            source="db", card_type="error",
+            payload={"message": "The loan book could not answer that."},
+        ))
+
+        events = await _run()
+
+        assert _names(events).count("source_card") == 1
+        assert "error" not in _names(events)
+        assert all(
+            data.get("message") != "No intelligence source produced a usable answer."
+            for _name, data in events
+        )
+
+    @pytest.mark.anyio
     async def test_db_receives_exact_user_question_not_router_paraphrase(self, monkeypatch):
         original = "principal amount paid by sheelavati"
         rewritten = "find total loan repayment for a named customer"
