@@ -466,7 +466,10 @@ def _filter_sql(
         )
 
     alias = base_alias if dim.table == base_table else _alias(dim.table)
-    column = f'{alias}."{dim.column}"'
+    # Filters on derived categorical dimensions (DPD buckets, open/closed state) must use
+    # the same governed CASE expression as grouping. Comparing their raw source column to
+    # display labels such as "31-60" or "Open" can never match.
+    column = dim.sql(alias) if dim.expression else f'{alias}."{dim.column}"'
     value = _decode_filter_value(cat, dim, flt.value)
     key = f"f{index}"
 

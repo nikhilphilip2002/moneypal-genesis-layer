@@ -18,6 +18,72 @@ def _use(monkeypatch, client):
 
 class TestDispatch:
     @pytest.mark.anyio
+    async def test_agent_name_request_is_a_record_request_not_a_concept(self, monkeypatch):
+        _use(monkeypatch, FakeLLM(
+            '{"route":"dispatch","sources":["knowledge"],"intent":"explain agent name"}'
+        ))
+
+        decision = await router.route("give the agents name instead of id", role="admin")
+
+        assert decision.sources == ["db"]
+
+    @pytest.mark.anyio
+    async def test_branch_directory_request_is_not_routed_to_concepts(self, monkeypatch):
+        _use(monkeypatch, FakeLLM(
+            '{"route":"dispatch","sources":["knowledge"],"intent":"define branch"}'
+        ))
+
+        decision = await router.route("what are the branches is there", role="admin")
+
+        assert decision.sources == ["db"]
+
+    @pytest.mark.anyio
+    async def test_named_borrower_disbursement_date_is_not_routed_to_concepts(
+        self, monkeypatch
+    ):
+        fake = FakeLLM(
+            '{"route":"dispatch","sources":["knowledge"],"intent":"define date"}'
+        )
+        _use(monkeypatch, fake)
+
+        decision = await router.route(
+            "what is the disbursment date of customer SHEELAVATHI M K", role="admin"
+        )
+
+        assert fake.calls[0]["messages"][-1]["content"] == (
+            "what is the disbursement date of customer SHEELAVATHI M K"
+        )
+        assert decision.sources == ["db"]
+
+    @pytest.mark.anyio
+    @pytest.mark.parametrize(
+        "question",
+        ["what is the today's GDP", "what is the today GDP of karnataka"],
+    )
+    async def test_plain_gdp_question_overrides_an_incorrect_loan_book_route(
+        self, monkeypatch, question
+    ):
+        _use(monkeypatch, FakeLLM(
+            '{"route":"dispatch","sources":["db"],"intent":"current GDP"}'
+        ))
+
+        decision = await router.route(question, role="admin")
+
+        assert decision.sources == ["macro"]
+
+    @pytest.mark.anyio
+    async def test_gdp_comparison_with_our_book_keeps_both_sources(self, monkeypatch):
+        _use(monkeypatch, FakeLLM(
+            '{"route":"dispatch","sources":["db"],"intent":"compare"}'
+        ))
+
+        decision = await router.route(
+            "Compare Karnataka GDP growth with our loan portfolio growth", role="admin"
+        )
+
+        assert decision.sources == ["db", "macro"]
+
+    @pytest.mark.anyio
     async def test_parses_chosen_sources(self, monkeypatch):
         _use(monkeypatch, FakeLLM('{"route":"dispatch","sources":["db","macro"],"intent":"x"}'))
         decision = await router.route("q", role="admin")

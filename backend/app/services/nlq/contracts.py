@@ -244,9 +244,14 @@ class LookupPlan(_Model):
     """Governed person/account lookup compiled by the application, never by the LLM."""
 
     route: Literal["lookup"] = "lookup"
-    selector: Literal["borrower_name", "customer_id", "loan_account", "gender"]
+    selector: Literal[
+        "borrower_name", "customer_id", "loan_account", "agent_code", "branch", "gender"
+    ]
     value: str
-    detail: Literal["loan_details", "repayment_history", "account_sample"]
+    detail: Literal[
+        "customer_summary", "loan_details", "repayment_history", "agent_details", "agent_count",
+        "branch_directory", "account_sample",
+    ]
     confidence: float = Field(default=1.0, ge=0.0, le=1.0)
     reasoning: str = Field(default="", max_length=500)
 

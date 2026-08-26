@@ -31,6 +31,7 @@ from app.services.nlq.contracts import (
     AnalysisPlan,
     BriefingPlan,
     ClarifyPlan,
+    Filter,
     PlanResult,
     Period,
     QuerySpecPlan,
@@ -193,6 +194,169 @@ _DATA_HEALTH_RE = re.compile(
     r"\b(?:issues?|freshness|delay|latency|impacting|performance)\b",
     re.IGNORECASE,
 )
+
+_PRINCIPAL_OUTSTANDING_RE = re.compile(
+    r"\b(?:principal\s+outstanding|total\s+outstanding|outstanding\s+(?:balance|amount))\b",
+    re.IGNORECASE,
+)
+_COLLECTION_EFFICIENCY_RE = re.compile(r"\bcollection\s+efficiency\b", re.IGNORECASE)
+_SANCTION_METRIC_RE = re.compile(r"\bsanction(?:ed)?\s+amount\b", re.IGNORECASE)
+_DISBURSEMENT_METRIC_RE = re.compile(
+    r"\b(?:total\s+)?disburse(?:ment|ments|d)?(?:\s+(?:amount|volume))?\b",
+    re.IGNORECASE,
+)
+_LOAN_COUNT_METRIC_RE = re.compile(
+    r"\b(?:loan\s+count|number\s+of\s+(?:active\s+)?(?:loans?|loan\s+accounts?)|"
+    r"how\s+many\s+(?:total\s+)?(?:active\s+)?loan\s+accounts?|loan\s+volume)\b",
+    re.IGNORECASE,
+)
+_ASSET_BREAKDOWN_RE = re.compile(
+    r"\b(?:asset\s+class(?:ification)?|credit\s+quality)\s+breakdown\b|"
+    r"\bbreakdown\b[^?]{0,50}\basset\s+class(?:ification)?\b",
+    re.IGNORECASE,
+)
+_SEGMENT_PERFORMANCE_RE = re.compile(
+    r"\bperformance\b[^?]{0,50}\bvolume\b|\bvolume\b[^?]{0,50}\bperformance\b",
+    re.IGNORECASE,
+)
+_SANCTION_DISBURSEMENT_COMPARISON_RE = re.compile(
+    r"\bsanction(?:ed)?\b[^?]{0,80}\bdisburs\w*\b|"
+    r"\bdisburs\w*\b[^?]{0,80}\bsanction(?:ed)?\b",
+    re.IGNORECASE,
+)
+_DPD_BUCKET_VALUE_RE = re.compile(
+    r"\b(?P<bounded>(?:1|31|61)\s*[-–]\s*(?:30|60|90))\b|"
+    r"\b(?P<over90>90\s*\+)\s*(?:dpd\s+)?bucket\b",
+    re.IGNORECASE,
+)
+
+
+def _phrase_tokens(text: str) -> tuple[str, ...]:
+    """Canonical words for matching governed labels, ignoring connector punctuation."""
+    return tuple(
+        token for token in re.findall(r"[a-z0-9]+", text.lower())
+        if token not in {"and"}
+    )
+
+
+def _contains_tokens(haystack: tuple[str, ...], needle: tuple[str, ...]) -> bool:
+    if not needle or len(needle) > len(haystack):
+        return False
+    width = len(needle)
+    return any(haystack[index:index + width] == needle for index in range(len(haystack) - width + 1))
+
+
+def _enum_filter(question: str, catalog: Catalog, dimension_id: str) -> Filter | None:
+    """Resolve the most specific governed label/synonym present in the question."""
+    block = catalog.enum_for_dimension(dimension_id)
+    if block is None:
+        return None
+    question_tokens = _phrase_tokens(question)
+    matches: list[tuple[int, str]] = []
+    for code, value in block.values.items():
+        for phrase in (value.label, *value.synonyms):
+            tokens = _phrase_tokens(phrase)
+            if _contains_tokens(question_tokens, tokens):
+                matches.append((len(tokens), code))
+    if not matches:
+        return None
+    specificity = max(length for length, _code in matches)
+    codes = list(dict.fromkeys(code for length, code in matches if length == specificity))
+    if len(codes) == 1:
+        return Filter(field=dimension_id, op="eq", value=codes[0])
+    return Filter(field=dimension_id, op="in", value=codes)
+
+
+def _catalog_entity_filters(question: str, catalog: Catalog) -> list[Filter]:
+    """Extract governed entity values without asking a model to copy labels into filters."""
+    filters: list[Filter] = []
+    explicit_scheme = bool(re.search(r"\bschemes?\b", question, re.I))
+    if explicit_scheme:
+        scheme = _enum_filter(question, catalog, "scheme")
+        if scheme:
+            filters.append(scheme)
+    else:
+        product = _enum_filter(question, catalog, "product")
+        if product:
+            filters.append(product)
+
+    branch = _enum_filter(question, catalog, "branch")
+    if branch:
+        filters.append(branch)
+
+    if not _ASSET_BREAKDOWN_RE.search(question):
+        asset = _enum_filter(question, catalog, "asset_class")
+        if asset:
+            filters.append(asset)
+
+    bucket = _DPD_BUCKET_VALUE_RE.search(question)
+    if bucket:
+        value = bucket.group("bounded") or bucket.group("over90")
+        value = re.sub(r"\s+", "", value).replace("–", "-")
+        filters.append(Filter(field="dpd_bucket", op="eq", value=value))
+
+    if re.search(r"\bactive\s+loan\s+accounts?\b", question, re.I):
+        filters.append(Filter(field="open_closed_status", op="eq", value="Open"))
+    return filters
+
+
+def _metric_for_filtered_question(question: str) -> str | None:
+    if _PRINCIPAL_OUTSTANDING_RE.search(question):
+        return "principal_outstanding"
+    if _COLLECTION_EFFICIENCY_RE.search(question):
+        return "collection_efficiency"
+    if _SANCTION_METRIC_RE.search(question):
+        return "sanctioned_amount"
+    if _DISBURSEMENT_METRIC_RE.search(question):
+        if re.search(r"\b(?:count|number|how\s+many)\b", question, re.I):
+            return "disbursement_count"
+        return "disbursement_total"
+    if _LOAN_COUNT_METRIC_RE.search(question):
+        return "loan_count"
+    return None
+
+
+def _catalog_filtered_plan(question: str, catalog: Catalog) -> PlanResult | None:
+    """Compile common metric/entity questions entirely from governed catalog vocabulary."""
+    # The established gold-disbursement rule also preserves an explicit trend dimension.
+    # Let that more specific reviewed plan run instead of reducing it to a filtered KPI.
+    if _GOLD_DISBURSEMENT_RE.search(question):
+        return None
+    filters = _catalog_entity_filters(question, catalog)
+
+    if _SANCTION_DISBURSEMENT_COMPARISON_RE.search(question) and _BY_BRANCH_RE.search(question):
+        return AnalysisPlan(
+            analysis_id="sanctions_vs_disbursements_by_branch",
+            period=Period(relative="all_time"), filters=filters, confidence=1.0,
+            reasoning="separate governed branch aggregates avoid a cross-fact-table join",
+        )
+
+    if _SEGMENT_PERFORMANCE_RE.search(question) and filters:
+        return AnalysisPlan(
+            analysis_id="loan_segment_performance",
+            period=Period(relative="all_time"), filters=filters, confidence=1.0,
+            reasoning="governed multi-metric performance review for the resolved segment",
+        )
+
+    metric = _metric_for_filtered_question(question)
+    dimensions = ["asset_class"] if _ASSET_BREAKDOWN_RE.search(question) else []
+    if dimensions and metric is None:
+        metric = "principal_outstanding"
+    if metric == "loan_count" and any(
+        item.field in {"asset_class", "dpd_bucket"} for item in filters
+    ):
+        metric = "classified_account_count"
+    if metric is None or (not filters and not dimensions):
+        return None
+    period = "today" if catalog.metrics[metric].grain == "point_in_time" else "all_time"
+    return QuerySpecPlan(
+        spec={
+            "metrics": [metric], "dimensions": dimensions, "filters": filters,
+            "period": {"relative": period},
+        },
+        confidence=1.0,
+        reasoning="metric and filter values resolved from governed catalog vocabulary",
+    )
 
 
 def _enterprise_coverage_plan(question: str) -> PlanResult | None:
@@ -570,6 +734,17 @@ async def plan(
     if record_lookup is not None:
         return PlanOutcome(
             plan=record_lookup,
+            attempts=0,
+            prompt_version=PROMPT_VERSION,
+            model="deterministic",
+            provider="catalog",
+            duration_ms=0,
+        )
+
+    filtered = _catalog_filtered_plan(planning_question, cat)
+    if filtered is not None:
+        return PlanOutcome(
+            plan=filtered,
             attempts=0,
             prompt_version=PROMPT_VERSION,
             model="deterministic",

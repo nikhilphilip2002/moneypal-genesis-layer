@@ -11,13 +11,14 @@ import logging
 import uuid
 from typing import Literal
 
-from fastapi import APIRouter, Header, HTTPException
+from fastapi import APIRouter, Header, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from app.services.workbench import history, models, tools
 from app.services.workbench.graph import run_workbench
 from app.services.workbench.sources import visible_sources
+from app.services.nlq import lookup as record_lookup
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
@@ -124,6 +125,24 @@ def list_tools(authorization: str | None = Header(default=None)):
             for t in tools.visible_tools(role)
         ],
     }
+
+
+@router.get("/completions")
+def chat_completions(
+    q: str = Query(default="", max_length=100),
+    kind: Literal["all", "borrower", "customer", "account", "agent"] = "all",
+    authorization: str | None = Header(default=None),
+):
+    """Bounded borrower/account/agent suggestions for Tab completion in chat."""
+    _username, role = _identity(authorization)
+    if "db" not in {source.id for source in visible_sources(role)}:
+        return {"query": q, "kind": kind, "results": []}
+    try:
+        results = record_lookup.completions(q, kind)
+    except Exception:
+        logger.warning("Workbench completion lookup failed", exc_info=True)
+        results = []
+    return {"query": q, "kind": kind, "results": results}
 
 
 class ToolRequest(BaseModel):

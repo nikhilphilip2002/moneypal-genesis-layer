@@ -34,6 +34,24 @@ class TestListTools:
         assert "show_schema" not in ids
 
 
+class TestCompletions:
+    def test_returns_governed_chat_completions(self, client, monkeypatch):
+        from app.api.routes import workbench as route
+
+        monkeypatch.setattr(route.record_lookup, "completions", lambda q, kind: [{
+            "kind": "agent", "value": "AGNT45", "label": "Agent Name",
+            "detail": "AGNT45 · Officer",
+        }])
+
+        response = client.get(
+            "/workbench/completions?q=AGNT4&kind=agent",
+            headers=_auth("gicc_policy"),
+        )
+
+        assert response.status_code == 200
+        assert response.json()["results"][0]["value"] == "AGNT45"
+
+
 class TestRunTool:
     def test_unknown_tool_is_404(self, client):
         r = client.post("/workbench/tool/nope", headers=_auth("moneypal_admin"), json={})

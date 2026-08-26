@@ -148,6 +148,53 @@
       metrics: [disbursement_total]
       dimensions: [product]
 
+- id: sanctions_vs_disbursements_by_branch
+  title: Sanctions against disbursements by branch
+  compose: briefing
+  description: >
+    Branch-level sanctioned and disbursed amounts, aggregated independently so the two
+    fact tables are never joined and monetary totals cannot fan out.
+  synonyms:
+    - sanctions versus disbursements by branch
+    - sanctioned amount against disbursed amount by branch
+  default_period: {relative: all_time}
+  steps:
+    - id: sanctioned_by_branch
+      label: Sanctioned amount by branch
+      metrics: [sanctioned_amount]
+      dimensions: [branch]
+    - id: disbursed_by_branch
+      label: Disbursement by branch
+      metrics: [disbursement_total]
+      dimensions: [branch]
+
+- id: loan_segment_performance
+  title: Loan segment performance
+  compose: briefing
+  description: >
+    Volume, outstanding balance, disbursement and collection performance for a governed
+    product, scheme, branch or asset-class filter.
+  synonyms:
+    - segment performance and volume
+    - scheme performance and volume
+  default_period: {relative: all_time}
+  steps:
+    - id: sanctioned
+      label: Sanctioned amount
+      metrics: [sanctioned_amount]
+    - id: loans
+      label: Loans sanctioned
+      metrics: [loan_count]
+    - id: disbursed
+      label: Disbursement
+      metrics: [disbursement_total]
+    - id: outstanding
+      label: Principal outstanding
+      metrics: [principal_outstanding]
+    - id: collections
+      label: Collection efficiency
+      metrics: [collection_efficiency]
+
 - id: concentration
   title: Concentration risk
   compose: concentration

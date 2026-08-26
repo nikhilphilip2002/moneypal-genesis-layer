@@ -91,6 +91,7 @@
   table: gold.loan_reporting_attributes
   column: agent_code
   type: categorical
+  decode: agent_identity
   synonyms: [agent, agent code, field agent, assigned agent, sourced by, handled by, under agent]
   description: Populated agent code from the governed per-loan reporting attributes view.
 

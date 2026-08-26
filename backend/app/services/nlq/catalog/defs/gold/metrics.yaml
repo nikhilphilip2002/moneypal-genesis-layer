@@ -118,6 +118,17 @@
   synonyms: [outstanding, principal outstanding, POS, book size, exposure, AUM]
   verified: 2045394519.25 across 5466 classified accounts as of 2026-07-31
 
+- id: classified_account_count
+  label: Classified loan accounts
+  unit: count
+  grain: point_in_time
+  base_table: gold.portfolio_daily_snapshot
+  as_of_function: gold.portfolio_snapshot_as_of
+  expression: COUNT(*)
+  formula: Count of loan accounts present in the requested classified portfolio snapshot
+  synonyms: [classified accounts, accounts by asset class, loan accounts by classification]
+  verified: 5466 classified accounts as of 2026-07-31
+
 - id: overdue_principal
   label: Overdue principal
   unit: inr

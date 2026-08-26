@@ -47,7 +47,34 @@ _GENDER_ACCOUNT_SAMPLE = re.compile(
     re.I,
 )
 _LOAN_DETAIL_CUE = re.compile(
-    r"\b(?:loan\s+amount|sanction(?:ed)?|disburs(?:ed|ement)|loan\s+date|date)\b",
+    r"\b(?:loan\s+amount|sanction(?:ed)?|disburs(?:ed|e?ment)|loan\s+date|date)\b",
+    re.I,
+)
+_CUSTOMER_DETAIL_CUE = re.compile(
+    r"\b(?:details?|profiles?|information|info|infor\w*)\b|"
+    r"\b(?:show|give|get|find)\s+(?:me\s+)?(?:the\s+)?(?:customer|borrower|client)\b",
+    re.I,
+)
+_NAMED_LOAN_DETAIL = re.compile(
+    r"\b(?:customer|borrower|client)\s+(?!id\b|number\b|no\.?\b|#)"
+    r"(?P<name>[\w .'-]{2,100})\s*[?!.]*$",
+    re.I,
+)
+_BRANCH_DIRECTORY_CUE = re.compile(
+    r"\b(?:what|which)\s+(?:are|is)\s+(?:the\s+)?branches\b|"
+    r"\bbranches?\s+(?:are|is)\s+there\b|"
+    r"\b(?:list|show)\s+(?:me\s+)?(?:all\s+)?branches\b|"
+    r"\bavailable\s+branches\b",
+    re.I,
+)
+_AGENT_CODE = re.compile(r"\b(?P<value>(?:agnt|agent)[-_ ]?\d+)\b", re.I)
+_AGENT_DETAIL_CUE = re.compile(
+    r"\b(?:details?|profiles?|names?|information|info|infor\w*|show|get|give|about)\b",
+    re.I,
+)
+_AGENT_COUNT_CUE = re.compile(
+    r"\b(?:(?:how\s+many|number\s+of|count\s+of|total)\s+(?:active\s+)?agents?|"
+    r"agents?\s+count)\b",
     re.I,
 )
 
@@ -57,6 +84,79 @@ class LookupResult:
     chart: ChartSpec | None = None
     clarification: ClarifyPlan | None = None
     no_match: bool = False
+
+
+def completions(term: str, kind: str = "all", catalog: Catalog | None = None) -> list[dict]:
+    """Return bounded Gold-directory completions for the chat composer."""
+    cat = catalog or get_catalog()
+    text = " ".join(str(term or "").split()).strip()
+    if len(text) < 2 or kind not in {"all", "borrower", "customer", "account", "agent"}:
+        return []
+
+    results: list[dict] = []
+    if kind in {"all", "borrower", "customer", "account"}:
+        normalized = re.sub(r"[^a-z0-9]", "", text.lower()).replace("th", "t")
+        normalized = re.sub(r"(.)\1+", r"\1", normalized)
+        name_literal = _literal(normalized)
+        id_literal = _literal(_plain_identifier(text).lower())
+        stored_name = (
+            "REGEXP_REPLACE(REGEXP_REPLACE(REPLACE(LOWER(TRIM(customer_name)), "
+            "'th', 't'), '[^a-z0-9]', '', 'g'), '(.)\\1+', '\\1', 'g')"
+        )
+        sql = (
+            "SELECT TRIM(REGEXP_REPLACE(customer_name, '\\s+', ' ', 'g')) AS borrower_name, "
+            "customer_id::text AS customer_id, MIN(loan_account_number::text) AS account_number "
+            "FROM gold.loan_account_master WHERE sanction_date <= CURRENT_DATE AND ("
+            f"{stored_name} LIKE {name_literal} || '%' OR "
+            f"LOWER(customer_id::text) LIKE {id_literal} || '%' OR "
+            f"LOWER(loan_account_number::text) LIKE {id_literal} || '%') "
+            "GROUP BY TRIM(REGEXP_REPLACE(customer_name, '\\s+', ' ', 'g')), customer_id "
+            "ORDER BY borrower_name, customer_id LIMIT 8"
+        )
+        attempt = _validated_attempt(
+            sql, catalog=cat, explanation="Chat entity completions from governed borrowers.",
+            units={"borrower_name": "text", "customer_id": "text", "account_number": "text"},
+            pii_columns={"customer_name"},
+        )
+        for row in execute_raw(attempt.sql).rows:
+            customer_id = _plain_identifier(str(row.get("customer_id", "")))
+            account = _plain_identifier(str(row.get("account_number", "")))
+            name = str(row.get("borrower_name", "")).strip()
+            if kind == "customer":
+                value, result_kind = customer_id, "customer"
+            elif kind == "account":
+                value, result_kind = account, "account"
+            else:
+                value, result_kind = name, "borrower"
+            results.append({
+                "kind": result_kind,
+                "value": value,
+                "label": name or f"Customer {customer_id}",
+                "detail": f"Customer {customer_id} · Account ending {account[-4:]}",
+            })
+
+    if kind in {"all", "agent"}:
+        literal = _literal(text.lower())
+        sql = (
+            "SELECT agent_code, agent_name, designation FROM gold.agent_master "
+            f"WHERE LOWER(agent_code) LIKE {literal} || '%' "
+            f"OR LOWER(agent_name) LIKE '%' || {literal} || '%' "
+            "ORDER BY agent_code LIMIT 8"
+        )
+        attempt = _validated_attempt(
+            sql, catalog=cat, explanation="Chat entity completions from the governed agent directory.",
+            units={"agent_code": "text", "agent_name": "text", "designation": "text"},
+            pii_columns={"agent_name"},
+        )
+        for row in execute_raw(attempt.sql).rows:
+            code = str(row.get("agent_code", "")).strip()
+            name = str(row.get("agent_name", "")).strip()
+            designation = str(row.get("designation", "") or "Agent").strip()
+            results.append({
+                "kind": "agent", "value": code, "label": name or code,
+                "detail": f"{code} · {designation}",
+            })
+    return results[:8]
 
 
 def _plain_identifier(value: str) -> str:
@@ -70,6 +170,18 @@ def detect(question: str) -> LookupPlan | None:
     """Recognise selector + requested record family without matching whole questions."""
     text = " ".join(str(question or "").split())
 
+    if _BRANCH_DIRECTORY_CUE.search(text):
+        return LookupPlan(
+            selector="branch", value="all", detail="branch_directory",
+            reasoning="current governed branch directory",
+        )
+
+    if _AGENT_COUNT_CUE.search(text):
+        return LookupPlan(
+            selector="agent_code", value="all", detail="agent_count",
+            reasoning="count of agents in the current governed agent directory",
+        )
+
     if (
         _GENDER_ACCOUNT_SAMPLE.search(text)
         and re.search(r"\baccount(?:\s+(?:number|no\.?))?s?\b", text, re.I)
@@ -81,6 +193,15 @@ def detect(question: str) -> LookupPlan | None:
 
     customer = _CUSTOMER_ID.search(text)
     account = _ACCOUNT_ID.search(text)
+    agent = _AGENT_CODE.search(text)
+    if agent and (
+        _AGENT_DETAIL_CUE.search(text) or _AGENT_CODE.fullmatch(text.strip())
+    ):
+        return LookupPlan(
+            selector="agent_code",
+            value="AGNT" + re.sub(r"\D", "", agent.group("value")),
+            detail="agent_details", reasoning="governed agent-directory details",
+        )
     if _REPAYMENT_CUE.search(text):
         if customer:
             selector, value = "customer_id", _plain_identifier(customer.group("value"))
@@ -108,6 +229,20 @@ def detect(question: str) -> LookupPlan | None:
             detail="loan_details",
             reasoning="governed loan-account origination and disbursement details",
         )
+    if customer and _CUSTOMER_DETAIL_CUE.search(text):
+        return LookupPlan(
+            selector="customer_id", value=_plain_identifier(customer.group("value")),
+            detail="customer_summary",
+            reasoning="governed customer and linked-loan summary",
+        )
+    if _LOAN_DETAIL_CUE.search(text):
+        named = _NAMED_LOAN_DETAIL.search(text)
+        if named:
+            return LookupPlan(
+                selector="borrower_name", value=named.group("name").strip(" .?!"),
+                detail="loan_details",
+                reasoning="governed borrower loan origination and disbursement details",
+            )
     return None
 
 
@@ -191,6 +326,44 @@ def _loan_details(plan: LookupPlan, catalog: Catalog) -> SqlAttempt:
     )
 
 
+def _customer_summary(plan: LookupPlan, catalog: Catalog) -> SqlAttempt:
+    """Return the intentionally narrow customer profile requested by the UI."""
+    value = _literal(_plain_identifier(plan.value).lower())
+    sql = (
+        "SELECT customer.customer_id::text AS customer_id, "
+        "customer.full_name AS customer_name, "
+        "loan.loan_account_number::text AS loan_account_number, "
+        "loan.sanction_amount, loan.sanction_date, "
+        "CONCAT_WS(', ', NULLIF(TRIM(customer.address_line1), ''), "
+        "NULLIF(TRIM(customer.address_line2), ''), "
+        "NULLIF(TRIM(customer.additional_address), '')) AS address, "
+        "COALESCE(NULLIF(TRIM(customer.occupation_name), ''), "
+        "NULLIF(TRIM(customer.occupation_type), ''), "
+        "NULLIF(TRIM(customer.occupation_nature), '')) AS occupation, "
+        "customer.home_branch_code, customer.agency_code, customer.agency_name "
+        "FROM gold.customer_master AS customer "
+        "LEFT JOIN gold.loan_account_master AS loan "
+        "ON customer.entity_num = loan.entity_num "
+        "AND customer.customer_id = loan.customer_id "
+        "AND loan.sanction_date <= CURRENT_DATE "
+        "WHERE LOWER(REGEXP_REPLACE(customer.customer_id::text, '\\.0+$', '')) = "
+        + value +
+        " ORDER BY loan.sanction_date DESC, loan.loan_account_number LIMIT 500"
+    )
+    return _validated_attempt(
+        sql, catalog=catalog,
+        explanation="Requested customer profile fields and linked sanctioned loan accounts.",
+        units={
+            "customer_id": "text", "customer_name": "text",
+            "loan_account_number": "text", "sanction_amount": "inr",
+            "sanction_date": "date", "address": "text", "occupation": "text",
+            "home_branch_code": "text", "agency_code": "text", "agency_name": "text",
+        },
+        pii_columns={
+            "full_name", "address_line1", "address_line2", "additional_address",
+            "agency_name",
+        },
+    )
 def _repayment_history(plan: LookupPlan, catalog: Catalog) -> SqlAttempt:
     sql = (
         "SELECT loan_account_number::text AS loan_account_number, repayment_date, "
@@ -238,6 +411,52 @@ def _gender_sample(catalog: Catalog) -> SqlAttempt:
     )
 
 
+def _agent_details(plan: LookupPlan, catalog: Catalog) -> SqlAttempt:
+    value = _literal(plan.value.lower())
+    sql = (
+        "SELECT agent_code, agent_name, agent_type, designation, branch_code, role_code, "
+        "joined_on, linked_customer_count, linked_loan_count "
+        "FROM gold.agent_master WHERE LOWER(agent_code) = " + value +
+        " ORDER BY agent_code LIMIT 20"
+    )
+    return _validated_attempt(
+        sql, catalog=catalog,
+        explanation="Current governed directory details for the requested agent code.",
+        units={
+            "agent_code": "text", "agent_name": "text", "agent_type": "text",
+            "designation": "text", "branch_code": "text", "role_code": "text",
+            "joined_on": "date", "linked_customer_count": "count",
+            "linked_loan_count": "count",
+        },
+        pii_columns={"agent_name"},
+    )
+
+
+def _agent_count(catalog: Catalog) -> SqlAttempt:
+    return _validated_attempt(
+        "SELECT COUNT(agent_code) AS agent_count FROM gold.agent_master LIMIT 1",
+        catalog=catalog,
+        explanation="Count of agents in the current governed agent directory.",
+        units={"agent_count": "count"},
+    )
+
+
+def _branch_directory(catalog: Catalog) -> SqlAttempt:
+    sql = (
+        "SELECT branch_code, branch_name, branch_category_name, branch_size, "
+        "branch_status, opened_on FROM gold.branch_master "
+        "ORDER BY branch_name, branch_code LIMIT 500"
+    )
+    return _validated_attempt(
+        sql, catalog=catalog, explanation="Current governed branch directory.",
+        units={
+            "branch_code": "text", "branch_name": "text",
+            "branch_category_name": "text", "branch_size": "text",
+            "branch_status": "text", "opened_on": "date",
+        },
+    )
+
+
 def run(plan: LookupPlan, *, role: str | None, catalog: Catalog | None = None) -> LookupResult:
     cat = catalog or get_catalog()
     effective = plan
@@ -263,10 +482,18 @@ def run(plan: LookupPlan, *, role: str | None, catalog: Catalog | None = None) -
         customer_id = next(iter(identities))
         effective = plan.model_copy(update={"selector": "customer_id", "value": customer_id})
 
-    if effective.detail == "loan_details":
+    if effective.detail == "customer_summary":
+        attempt = _customer_summary(effective, cat)
+    elif effective.detail == "loan_details":
         attempt = _loan_details(effective, cat)
     elif effective.detail == "repayment_history":
         attempt = _repayment_history(effective, cat)
+    elif effective.detail == "agent_details":
+        attempt = _agent_details(effective, cat)
+    elif effective.detail == "agent_count":
+        attempt = _agent_count(cat)
+    elif effective.detail == "branch_directory":
+        attempt = _branch_directory(cat)
     else:
         attempt = _gender_sample(cat)
 
@@ -296,4 +523,4 @@ def run(plan: LookupPlan, *, role: str | None, catalog: Catalog | None = None) -
     return LookupResult(chart=chart)
 
 
-__all__ = ["LookupResult", "detect", "run"]
+__all__ = ["LookupResult", "completions", "detect", "run"]

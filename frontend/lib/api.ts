@@ -1003,6 +1003,13 @@ export type WorkbenchSource = {
   sensitive: boolean;
 };
 
+export type WorkbenchCompletion = {
+  kind: 'borrower' | 'customer' | 'account' | 'agent';
+  value: string;
+  label: string;
+  detail: string;
+};
+
 export type WorkbenchCard = {
   source: string;
   card_type:
@@ -1052,6 +1059,12 @@ export const workbench = {
     apiRequest('/workbench/sources'),
 
   tools: (): Promise<{ tools: WorkbenchTool[] }> => apiRequest('/workbench/tools'),
+
+  completions: (
+    q: string,
+    kind: 'all' | 'borrower' | 'customer' | 'account' | 'agent' = 'all',
+  ): Promise<{ query: string; kind: string; results: WorkbenchCompletion[] }> =>
+    apiRequest(`/workbench/completions?q=${encodeURIComponent(q)}&kind=${encodeURIComponent(kind)}`),
 
   conversations: (): Promise<{ conversations: WorkbenchConversation[] }> =>
     apiRequest('/workbench/conversations'),

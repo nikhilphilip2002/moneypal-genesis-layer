@@ -46,8 +46,8 @@ SOURCES: dict[str, Source] = {
             "The bank's own lending warehouse: disbursement and sanctions, repayments and "
             "repayment history, outstanding balances, delinquency and DPD, collections and "
             "collection efficiency, PAR and NPA ratios, the general ledger — sliced by "
-            "borrower, customer ID, loan account, gender, branch, product, scheme, asset "
-            "class and time. Any question about *our* numbers, individual records, "
+            "borrower, customer ID, loan account, agent code/name, gender, branch, product, "
+            "scheme, asset class and time. Any question about *our* numbers, individual records, "
             "repayment events, portfolio, transaction records, or performance."
         ),
         example_intents=(
@@ -230,6 +230,16 @@ ROUTER_FEW_SHOTS: list[tuple[str, str]] = [
         "What are the loan amount and date for customer ID 42?",
         '{"route":"dispatch","sources":["db"],'
         '"intent":"loan amount and date for customer ID 42"}',
+    ),
+    (
+        "Give me details for agent AGNT12",
+        '{"route":"dispatch","sources":["db"],'
+        '"intent":"governed directory details for agent AGNT12"}',
+    ),
+    (
+        "What branches are there?",
+        '{"route":"dispatch","sources":["db"],'
+        '"intent":"list the current governed branch directory"}',
     ),
     (
         "top 25 borrowers",

@@ -34,7 +34,10 @@ _VALUE_CUES = re.compile(
     r"top|bottom|best|worst|rank(?:ed|ing)?|zero|various|different|distinct|available|"
     r"list|show|split|composition|amount\s+paid|customer\s*(?:id|number|no\.?|#)|"
     r"loan\s+account|repayment\s+history|payment\s+history|"
-    r"collected|outstanding|sanctioned|disbursed|by\s+(?:product|scheme|branch|status)|"
+    r"agents?\s+(?:name|details?|profile)|details?\s+(?:of|for)\s+(?:agnt|agent)\s*\d+|"
+    r"what\s+(?:are|is)\s+(?:the\s+)?branches|branches?\s+(?:are|is)\s+there|"
+    r"collected|outstanding|sanctioned|disburs(?:ed|ement)|"
+    r"by\s+(?:product|scheme|branch|status)|"
     r"based\s+on\s+(?:product|scheme|branch))\b",
     re.IGNORECASE,
 )
@@ -58,6 +61,23 @@ _HYBRID_SOURCE_CUES: dict[str, re.Pattern[str]] = {
         r"gold price|seasonal|credit conditions|state[ -]?wide)\b", re.IGNORECASE,
     ),
 }
+_INTERNAL_BOOK_CUES = re.compile(
+    r"\b(?:our|loan\s+book|portfolio|loans?|borrowers?|customers?|agents?|branches?|"
+    r"disburs\w*|sanction\w*|repay\w*|collection\w*|outstanding|delinquen\w*|"
+    r"scheme|product)\b",
+    re.IGNORECASE,
+)
+
+
+def _external_only_source(question: str, visible_ids: list[str]) -> str | None:
+    """Identify a plainly external fact when no internal-book comparison is requested."""
+    if _INTERNAL_BOOK_CUES.search(question):
+        return None
+    for source_id in ("macro", "competitive", "regulatory"):
+        cue = _HYBRID_SOURCE_CUES[source_id]
+        if source_id in visible_ids and cue.search(question):
+            return source_id
+    return None
 
 
 def _asks_for_loan_book_values(question: str) -> bool:
@@ -206,10 +226,20 @@ async def route(
         return _fallback(role, normalized)
 
     visible_ids = [s.id for s in visible_sources(role)]
+    external_only = _external_only_source(normalized, visible_ids)
     catalog_match = "db" in visible_ids and _matches_loan_book_catalog(normalized)
-    value_intent = catalog_match and _asks_for_loan_book_values(normalized)
+    value_intent = (
+        external_only is None
+        and catalog_match
+        and _asks_for_loan_book_values(normalized)
+    )
     route_value = payload.get("route")
     if route_value == "refuse":
+        if external_only is not None:
+            return RouteDecision(
+                route="dispatch", sources=[external_only], intent=normalized,
+                model="catalog",
+            )
         if catalog_match:
             source = "db" if value_intent or "knowledge" not in visible_ids else "knowledge"
             return RouteDecision(
@@ -227,6 +257,8 @@ async def route(
     # De-duplicate while preserving order.
     seen: set[str] = set()
     chosen = [s for s in chosen if not (s in seen or seen.add(s))]
+    if external_only is not None:
+        chosen = [external_only]
     # Deterministic coverage guard for hybrid questions. The model remains responsible for
     # normal routing, but a missed external half must not turn a comparison into a DB-only
     # judgement or refusal.
