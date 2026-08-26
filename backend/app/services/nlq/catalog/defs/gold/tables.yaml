@@ -183,6 +183,7 @@
     last_transaction: last_tran_date
     balance_as_of: balance_as_on
   description: Governed general-ledger account reference view.
+  restrictions: Standalone GL directory and balances; cannot be grouped by lending dimensions.
 
 - id: msme_master
   table: gold.msme_master

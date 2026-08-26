@@ -124,6 +124,15 @@
     internal, not PII; individual customer identifiers remain protected separately.
   cardinality: 4
 
+- id: occupation
+  label: Borrower occupation
+  table: gold.customer_master
+  column: occupation_type
+  type: categorical
+  expression: UPPER(BTRIM(COALESCE({col}, '')))
+  synonyms: [occupation, occupation type, profession, agriculturist, farmer]
+  description: Governed customer occupation joined to loan accounts for aggregate analysis.
+
 - id: loan_account
   label: Loan account
   table: gold.loan_account_master

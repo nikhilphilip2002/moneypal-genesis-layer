@@ -117,6 +117,33 @@ _AGENT_COUNT_CUE = re.compile(
     r"agents?\s+count)\b",
     re.I,
 )
+_AGENT_ACCOUNT_CUE = re.compile(
+    r"\b(?:loan\s+)?accounts?\s*(?:numbers?|nos?\.?)\b|"
+    r"\b(?:show|list|give|get)\b[^?]{0,80}\b(?:loan\s+)?accounts?\b",
+    re.I,
+)
+_PRODUCT_CODE = re.compile(
+    r"\bproduct\s*(?:code|id|number|no\.?)\s*(?:is|was|=|:|-)?\s*"
+    r"(?P<value>[a-z0-9][a-z0-9._/-]*)\b",
+    re.I,
+)
+_PRODUCT_DETAIL_CUE = re.compile(
+    r"\b(?:name|details?|information|info|which|identify|called)\b",
+    re.I,
+)
+_NAME_BEFORE_LOAN_FIELD = re.compile(
+    r"^(?:(?:what\s+is|show(?:\s+me)?|give\s+me|get|find)\s+(?:the\s+)?)?"
+    r"(?P<name>[a-z][\w .'-]{1,100}?)\s*(?:'s\s+)?"
+    r"(?:loan\s+amount|sanction(?:ed)?\s+amount|sanction\s+date|loan\s+date|"
+    r"disburs(?:ed|e?ment)\s+(?:amount|date))\s*[?!.]*$",
+    re.I,
+)
+_NAME_AFTER_LOAN_FIELD = re.compile(
+    r"\b(?:loan\s+amount|sanction(?:ed)?\s+amount|sanction\s+date|loan\s+date|"
+    r"disburs(?:ed|e?ment)\s+(?:amount|date))\s+(?:of|for)\s+"
+    r"(?:(?:customer|borrower|client)\s+)?(?P<name>[a-z][\w .'-]{1,100})\s*[?!.]*$",
+    re.I,
+)
 
 
 @dataclass(slots=True)
@@ -228,6 +255,22 @@ def _requested_loan_fields(text: str) -> list[str]:
     return fields
 
 
+def _requested_agent_fields(text: str) -> list[str]:
+    cues = (
+        (r"\b(?:mobile|phone)(?:\s+number)?\b", "mobile"),
+        (r"\bemail(?:\s+address)?\b", "email"),
+        (r"\bname\b", "agent_name"),
+        (r"\bagent\s+type\b", "agent_type"),
+        (r"\bdesignation\b", "designation"),
+        (r"\bbranch(?:\s+code)?\b", "branch_code"),
+        (r"\brole(?:\s+code)?\b", "role_code"),
+        (r"\bjoin(?:ed|ing)?(?:\s+(?:on|date))?\b", "joined_on"),
+        (r"\blinked\s+(?:customers?|borrowers?)\b", "linked_customer_count"),
+        (r"\blinked\s+(?:loans?|accounts?)\b", "linked_loan_count"),
+    )
+    return [field for pattern, field in cues if re.search(pattern, text, re.I)]
+
+
 def detect(question: str) -> LookupPlan | None:
     """Recognise selector + requested record family without matching whole questions."""
     text = " ".join(str(question or "").split())
@@ -256,13 +299,26 @@ def detect(question: str) -> LookupPlan | None:
     customer = _CUSTOMER_ID.search(text)
     account = _ACCOUNT_ID.search(text)
     agent = _AGENT_CODE.search(text)
+    product = _PRODUCT_CODE.search(text)
+    if product and _PRODUCT_DETAIL_CUE.search(text):
+        return LookupPlan(
+            selector="product_code", value=_plain_identifier(product.group("value")),
+            detail="product_details", reasoning="governed product-directory lookup",
+        )
+    if agent and _AGENT_ACCOUNT_CUE.search(text):
+        return LookupPlan(
+            selector="agent_code",
+            value="AGNT" + re.sub(r"\D", "", agent.group("value")),
+            detail="agent_accounts", reasoning="loan accounts linked to the governed agent code",
+        )
     if agent and (
         _AGENT_DETAIL_CUE.search(text) or _AGENT_CODE.fullmatch(text.strip())
     ):
         return LookupPlan(
             selector="agent_code",
             value="AGNT" + re.sub(r"\D", "", agent.group("value")),
-            detail="agent_details", reasoning="governed agent-directory details",
+            detail="agent_details", requested_fields=_requested_agent_fields(text),
+            reasoning="governed agent-directory details",
         )
     if _REPAYMENT_CUE.search(text):
         if customer:
@@ -315,6 +371,13 @@ def detect(question: str) -> LookupPlan | None:
             selector="borrower_name", value=named_details.group("name").strip(" .?!"),
             detail="loan_details",
             reasoning="governed borrower loan origination and disbursement details",
+        )
+    named_field = _NAME_BEFORE_LOAN_FIELD.search(text) or _NAME_AFTER_LOAN_FIELD.search(text)
+    if named_field and agent is None:
+        return LookupPlan(
+            selector="borrower_name", value=named_field.group("name").strip(" .?!"),
+            detail="loan_details", requested_fields=_requested_loan_fields(text),
+            reasoning="requested governed loan field for the named borrower",
         )
     if _LOAN_DETAIL_CUE.search(text):
         named = _NAMED_LOAN_DETAIL.search(text)
@@ -542,23 +605,63 @@ def _gender_sample(catalog: Catalog) -> SqlAttempt:
 
 def _agent_details(plan: LookupPlan, catalog: Catalog) -> SqlAttempt:
     value = _literal(plan.value.lower())
+    available = {
+        "agent_name": "text", "agent_type": "text", "designation": "text",
+        "mobile": "text", "email": "text", "branch_code": "text", "role_code": "text",
+        "joined_on": "date", "linked_customer_count": "count", "linked_loan_count": "count",
+    }
+    requested = list(dict.fromkeys(plan.requested_fields))
+    selected = requested or [
+        "agent_name", "agent_type", "designation", "branch_code", "role_code",
+        "joined_on", "linked_customer_count", "linked_loan_count",
+    ]
     sql = (
-        "SELECT agent_code, agent_name, agent_type, designation, branch_code, role_code, "
-        "joined_on, linked_customer_count, linked_loan_count "
+        "SELECT agent_code, " + ", ".join(selected) + " "
         "FROM gold.agent_master WHERE LOWER(agent_code) = " + value +
         " ORDER BY agent_code LIMIT 20"
     )
+    pii = {field for field in selected if field in {"agent_name", "mobile", "email"}}
     return _validated_attempt(
         sql, catalog=catalog,
         explanation="Current governed directory details for the requested agent code.",
-        units={
-            "agent_code": "text", "agent_name": "text", "agent_type": "text",
-            "designation": "text", "branch_code": "text", "role_code": "text",
-            "joined_on": "date", "linked_customer_count": "count",
-            "linked_loan_count": "count",
-        },
-        pii_columns={"agent_name"},
+        units={"agent_code": "text", **{field: available[field] for field in selected}},
+        pii_columns=pii or None,
     )
+
+
+def _shape_agent_details(chart: ChartSpec, plan: LookupPlan) -> None:
+    requested = list(dict.fromkeys(plan.requested_fields))
+    chart.title = plan.value
+    chart.chart_type = "table"
+    chart.x = None
+    chart.series_by = None
+    chart.series = []
+    if not requested:
+        chart.summary = f"Returned the current governed directory profile for {plan.value}."
+        return
+
+    labels = {
+        "agent_name": "Agent name", "agent_type": "Agent type", "designation": "Designation",
+        "mobile": "Phone number", "email": "Email", "branch_code": "Branch code",
+        "role_code": "Role code", "joined_on": "Joined on",
+        "linked_customer_count": "Linked customer count",
+        "linked_loan_count": "Linked loan count",
+    }
+    visible = ["agent_code", *requested]
+    for row in chart.rows:
+        for field in list(row):
+            if field not in visible:
+                row.pop(field, None)
+    chart.columns = [column for column in chart.columns if column.name in visible]
+    row = chart.rows[0]
+    facts = []
+    for field in requested:
+        value = row.get(field)
+        if value is None or not str(value).strip():
+            facts.append(f"{labels[field]} is unavailable in the governed agent directory")
+        else:
+            facts.append(f"{labels[field]} is {value}")
+    chart.summary = "; ".join(facts) + "."
 
 
 def _agent_count(catalog: Catalog) -> SqlAttempt:
@@ -567,6 +670,21 @@ def _agent_count(catalog: Catalog) -> SqlAttempt:
         catalog=catalog,
         explanation="Count of agents in the current governed agent directory.",
         units={"agent_count": "count"},
+    )
+
+
+def _agent_accounts(plan: LookupPlan, catalog: Catalog) -> SqlAttempt:
+    value = _literal(plan.value.lower())
+    sql = (
+        "SELECT loan_account_number::text AS loan_account_number, "
+        "COUNT(loan_account_number) OVER () AS total_linked_account_count "
+        "FROM gold.loan_reporting_attributes WHERE LOWER(agent_code) = " + value +
+        " ORDER BY loan_account_number LIMIT 500"
+    )
+    return _validated_attempt(
+        sql, catalog=catalog,
+        explanation="Loan account numbers linked to the requested governed agent code.",
+        units={"loan_account_number": "text", "total_linked_account_count": "count"},
     )
 
 
@@ -583,6 +701,20 @@ def _branch_directory(catalog: Catalog) -> SqlAttempt:
             "branch_category_name": "text", "branch_size": "text",
             "branch_status": "text", "opened_on": "date",
         },
+    )
+
+
+def _product_details(plan: LookupPlan, catalog: Catalog) -> SqlAttempt:
+    value = _literal(_plain_identifier(plan.value).lower())
+    sql = (
+        "SELECT DISTINCT product_code::text AS product_code, product_name "
+        "FROM gold.product_master WHERE LOWER(product_code::text) = " + value +
+        " ORDER BY product_name, product_code LIMIT 100"
+    )
+    return _validated_attempt(
+        sql, catalog=catalog,
+        explanation="Current governed product name for the requested product code.",
+        units={"product_code": "text", "product_name": "text"},
     )
 
 
@@ -626,8 +758,12 @@ def run(plan: LookupPlan, *, role: str | None, catalog: Catalog | None = None) -
         attempt = _agent_details(effective, cat)
     elif effective.detail == "agent_count":
         attempt = _agent_count(cat)
+    elif effective.detail == "agent_accounts":
+        attempt = _agent_accounts(effective, cat)
     elif effective.detail == "branch_directory":
         attempt = _branch_directory(cat)
+    elif effective.detail == "product_details":
+        attempt = _product_details(effective, cat)
     else:
         attempt = _gender_sample(cat)
 
@@ -637,6 +773,33 @@ def run(plan: LookupPlan, *, role: str | None, catalog: Catalog | None = None) -
     chart.subtitle = "Governed read-only record lookup"
     if effective.detail == "loan_details":
         _shape_loan_details(chart, effective)
+    elif effective.detail == "agent_details":
+        _shape_agent_details(chart, effective)
+    elif effective.detail == "product_details":
+        chart.title = "Product details"
+        names = list(dict.fromkeys(
+            str(row.get("product_name", "")).strip()
+            for row in chart.rows if str(row.get("product_name", "")).strip()
+        ))
+        if len(names) == 1:
+            chart.summary = f"Product code {effective.value} is {names[0]}."
+        else:
+            chart.summary = (
+                f"Returned {len(chart.rows):,} governed product-name record(s) for "
+                f"product code {effective.value}."
+            )
+    elif effective.detail == "agent_accounts":
+        total = int(chart.rows[0].get("total_linked_account_count") or len(chart.rows))
+        for row in chart.rows:
+            row.pop("total_linked_account_count", None)
+        chart.columns = [
+            column for column in chart.columns if column.name != "total_linked_account_count"
+        ]
+        chart.series = [
+            series for series in chart.series if series.field != "total_linked_account_count"
+        ]
+        chart.title = f"Loan accounts linked to {effective.value}"
+        chart.summary = f"Showing {len(chart.rows):,} of {total:,} linked loan account(s)."
     elif effective.detail == "repayment_history":
         first = chart.rows[0]
         totals = {

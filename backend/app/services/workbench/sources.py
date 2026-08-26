@@ -48,7 +48,9 @@ SOURCES: dict[str, Source] = {
             "collection efficiency, PAR and NPA ratios, the general ledger — sliced by "
             "borrower, customer ID, loan account, agent code/name, gender, branch, product, "
             "scheme, asset class and time. Any question about *our* numbers, individual records, "
-            "repayment events, portfolio, transaction records, or performance."
+            "repayment events, portfolio, transaction records, or performance. It also "
+            "includes the governed general ledger, share capital/equity balances, and "
+            "product-code directory."
         ),
         example_intents=(
             "disbursement by branch last quarter",
@@ -99,7 +101,7 @@ SOURCES: dict[str, Source] = {
         describes=(
             "RBI and co-operative-banking regulation that applies to the bank: circulars, "
             "prudential norms, priority-sector and MSME rules, DNBS reporting obligations, "
-            "and what recent changes require."
+            "regulatory capital and equity requirements, and what recent changes require."
         ),
         example_intents=(
             "what does the latest RBI MSME circular require",

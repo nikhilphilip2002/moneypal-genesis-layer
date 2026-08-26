@@ -33,10 +33,12 @@ _VALUE_CUES = re.compile(
     r"\b(?:our|right\s+now|today|all[ -]?time|how\s+many|how\s+much|total|sum|"
     r"top|bottom|best|worst|rank(?:ed|ing)?|zero|various|different|distinct|available|"
     r"list|show|split|composition|amount\s+paid|customer\s*(?:id|number|no\.?|#)|"
-    r"loan\s+account|repayment\s+history|payment\s+history|"
+    r"loan\s+accounts?|repayment\s+history|payment\s+history|"
     r"agents?\s+(?:name|details?|profile)|details?\s+(?:of|for)\s+(?:agnt|agent)\s*\d+|"
     r"what\s+(?:are|is)\s+(?:the\s+)?branches|branches?\s+(?:are|is)\s+there|"
-    r"collected|outstanding|sanctioned|disburs(?:ed|ement)|"
+    r"collected|outstanding|sanction(?:ed)?|disburs(?:ed|ement)|"
+    r"share\s+capital|capital\s+share|equity\s+shares?|capital\s+reserves?|"
+    r"reserves?\s+(?:and\s+)?surplus|reserve\s+shares?\w*|product\s+code|"
     r"by\s+(?:product|scheme|branch|status)|"
     r"based\s+on\s+(?:product|scheme|branch))\b",
     re.IGNORECASE,
@@ -64,7 +66,8 @@ _HYBRID_SOURCE_CUES: dict[str, re.Pattern[str]] = {
 _INTERNAL_BOOK_CUES = re.compile(
     r"\b(?:our|loan\s+book|portfolio|loans?|borrowers?|customers?|agents?|branches?|"
     r"disburs\w*|sanction\w*|repay\w*|collection\w*|outstanding|delinquen\w*|"
-    r"scheme|product)\b",
+    r"scheme|product|share\s+capital|capital\s+share|equity\s+shares?|"
+    r"capital\s+reserves?|reserves?\s+(?:and\s+)?surplus|reserve\s+shares?\w*)\b",
     re.IGNORECASE,
 )
 

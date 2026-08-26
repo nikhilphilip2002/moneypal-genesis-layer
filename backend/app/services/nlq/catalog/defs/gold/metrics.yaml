@@ -104,7 +104,9 @@
   base_table: gold.agent_master
   expression: SUM({t}.linked_loan_count)
   formula: Sum of loan accounts linked to each governed agent
-  synonyms: [top agents, agent ranking, loans by agent, agent performance, linked loans]
+  synonyms:
+    [top agents, agent ranking, loans by agent, agent performance, linked loans,
+     most loan accounts, more loan accounts, agent loan account count]
   no_time_travel: true
 
 - id: principal_outstanding
@@ -333,6 +335,37 @@
   synonyms: [GL balance, ledger balance, trial balance, account balance, financials]
   restrictions: Cannot be grouped by loan product, scheme or loan branch.
   requires_signoff: true
+
+- id: share_capital
+  label: Share capital
+  unit: inr
+  grain: point_in_time
+  base_table: gold.gl_ledger_master
+  expression: >
+    SUM(CASE WHEN LEFT(COALESCE({t}.ext_access_code, ''), 4) = '1001'
+             THEN COALESCE({t}.current_bc_balance, 0) ELSE 0 END)
+  formula: Current base-currency balance of governed GL accounts in access-code group 1001
+  synonyms: [share capital, capital share, equity shares, equity share capital, paid-up equity]
+  no_time_travel: true
+  restrictions: Standalone current GL measure; cannot be grouped by lending dimensions.
+  requires_signoff: true
+  signoff_note: Uses the same governed access-code group as DNBS-02 Part 1 capital reporting.
+
+- id: capital_reserves
+  label: Capital reserves and surplus
+  unit: inr
+  grain: point_in_time
+  base_table: gold.gl_ledger_master
+  expression: >
+    SUM(CASE WHEN LEFT(COALESCE({t}.ext_access_code, ''), 4) = '1033'
+             THEN COALESCE({t}.current_bc_balance, 0) ELSE 0 END)
+  formula: Current base-currency balance of governed GL accounts in access-code group 1033
+  synonyms: [capital reserve, capital reserves, reserves and surplus, reserve shares,
+             reserve capital, total reserves]
+  no_time_travel: true
+  restrictions: Standalone current GL measure; cannot be grouped by lending dimensions.
+  requires_signoff: true
+  signoff_note: Uses the same governed access-code group as DNBS-02 Part 1 reserves reporting.
 
 # Oracle operational facts promoted to Gold on 2026-08-20.
 - id: application_count

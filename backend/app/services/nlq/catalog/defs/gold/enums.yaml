@@ -84,7 +84,7 @@
     '1608': {label: New Lorry / Bus, synonyms: [lorry, bus loan]}
     '1609': {label: Used Vehicles Under 7 Years, synonyms: [used vehicle]}
     '1610': {label: Business / Service / Industry, synonyms: [business, service, industry]}
-    '1611': {label: Farming, synonyms: [farm loan, agriculture]}
+    '1611': {label: Farming, synonyms: [farm loan, agriculture, agricultural loan]}
     '1612': {label: Cattle, synonyms: [cattle loan, livestock]}
     '1613': {label: Poultry / Sheep / Pigs, synonyms: [poultry, sheep, piggery]}
     '1614': {label: Debt Swapping / Consolidation, synonyms: [debt consolidation]}
@@ -94,7 +94,7 @@
     '1618': {label: Site / Housing Construction / House Repair, synonyms: [housing construction, house repair]}
     '1619': {label: Loan Against Property, synonyms: [LAP, property loan]}
     '1620': {label: Vehicle Loans, synonyms: [vehicle loan, auto loan]}
-    '1621': {label: Farming Loan, synonyms: [farming, agriculture loan]}
+    '1621': {label: Farming Loan, synonyms: [farming, agriculture loan, agricultural loan]}
     '1622': {label: Dairy Loan, synonyms: [dairy, dairy farming]}
 
 - dimension: agent_identity

@@ -92,7 +92,39 @@ _TOP_AGENTS_RE = re.compile(
     r"\bwhich\s+agents?\s+(?:have|has)\s+(?:the\s+)?most\s+"
     r"(?:linked\s+)?(?:borrowers?|customers?|loans?)\b|"
     r"\bagents?\s+(?:with|having)\s+(?:the\s+)?most\s+"
-    r"(?:linked\s+)?(?:borrowers?|customers?|loans?)\b",
+    r"(?:linked\s+)?(?:borrowers?|customers?|loans?)\b|"
+    r"\bwhich\s+agents?\b[^?]{0,80}\b(?:more|most|highest|largest|maximum)\b"
+    r"[^?]{0,40}\b(?:loan\s+)?accounts?\b|"
+    r"\bagents?\s+under\s+(?:the\s+)?(?:more|most)\s+(?:loan\s+)?accounts?\b",
+    re.IGNORECASE,
+)
+_SHARE_CAPITAL_RE = re.compile(
+    r"\b(?:share\s+capital|capital\s+share|equity\s+shares?|equity\s+share\s+capital|"
+    r"paid[- ]?up\s+equity)\b",
+    re.IGNORECASE,
+)
+_CAPITAL_RESERVES_RE = re.compile(
+    r"\b(?:capital\s+reserves?|reserves?\s+(?:and\s+)?surplus|reserve\s+capital|"
+    r"reserve\s+shares?\w*)\b",
+    re.IGNORECASE,
+)
+_AGRICULTURIST_ACCOUNT_RE = re.compile(
+    r"\b(?:agriculturists?|farmers?)\b[^?]{0,60}"
+    r"\b(?:loan\s+)?accounts?\b|"
+    r"\b(?:loan\s+)?accounts?\b[^?]{0,60}\b(?:agriculturists?|farmers?)\b",
+    re.IGNORECASE,
+)
+_AGRICULTURAL_LOAN_ACCOUNT_RE = re.compile(
+    r"\b(?:agricultural|agriculture|farming)\s+(?:loan\s+)?accounts?\b|"
+    r"\b(?:loan\s+)?accounts?\b[^?]{0,40}\b(?:agricultural|agriculture|farming)\s+loans?\b",
+    re.IGNORECASE,
+)
+_AGENT_SANCTION_AMOUNT_RE = re.compile(
+    r"\b(?:sanction(?:ed)?|approved)\s+amount\b", re.IGNORECASE,
+)
+_AGENT_LOAN_COUNT_RE = re.compile(
+    r"\b(?:how\s+many|count|number|total)\b[^?]{0,40}\b(?:loans?|loan\s+accounts?)\b|"
+    r"\b(?:loans?|loan\s+accounts?)\s+(?:count|number|total)\b",
     re.IGNORECASE,
 )
 _AGENT_DIRECTORY_RE = re.compile(
@@ -106,6 +138,13 @@ _BY_PRODUCT_RE = re.compile(r"\bby\s+(?:loan\s+)?product\b", re.IGNORECASE)
 _OPEN_CLOSED_RE = re.compile(
     r"\b(?:open\s+(?:and|or|vs\.?|versus)\s+closed|"
     r"closed\s+(?:and|or|vs\.?|versus)\s+open)\b",
+    re.IGNORECASE,
+)
+_SINGLE_ACCOUNT_STATE_COUNT_RE = re.compile(
+    r"\b(?:how\s+many|number\s+of|count\s+of|total)\s+"
+    r"(?P<state>open|closed|active|live)\s+(?:loan\s+)?accounts?\b|"
+    r"\b(?P<state_after>open|closed|active|live)\s+(?:loan\s+)?accounts?\s+"
+    r"(?:count|total)\b",
     re.IGNORECASE,
 )
 _INTEREST_RATE_RE = re.compile(r"\binterest\s+rates?\b", re.IGNORECASE)
@@ -472,6 +511,20 @@ def _common_business_plan(question: str) -> PlanResult | None:
             reasoning="distinct borrowers grouped by governed product",
         )
 
+    state_match = _SINGLE_ACCOUNT_STATE_COUNT_RE.search(question)
+    if state_match:
+        raw_state = state_match.group("state") or state_match.group("state_after")
+        state = "Closed" if raw_state.lower() == "closed" else "Open"
+        return QuerySpecPlan(
+            spec={
+                "metrics": ["loan_count"],
+                "filters": [{"field": "open_closed_status", "op": "eq", "value": state}],
+                "period": {"relative": "all_time"},
+            },
+            confidence=1.0,
+            reasoning=f"loan-account count filtered to the governed {state.lower()} state",
+        )
+
     if _OPEN_CLOSED_RE.search(question) and re.search(r"\b(?:loan|account)s?\b", question, re.I):
         return QuerySpecPlan(
             spec={
@@ -561,13 +614,7 @@ def _agent_borrower_count_plan(question: str) -> QuerySpecPlan | None:
     match = _AGENT_CODE_RE.search(question)
     if match is None:
         return None
-    code = match.group("code").strip().lower()
-    values = [code]
-    operational = re.fullmatch(r"(?:agent|agnt)?[-_ ]*(?P<number>\d+)", code)
-    if operational is not None:
-        number = operational.group("number")
-        values.extend([number, f"agent{number}", f"agnt{number}"])
-    values = list(dict.fromkeys(values))
+    values = _agent_filter_values(match.group("code"))
     return QuerySpecPlan(
         spec={
             "metrics": ["customer_count"],
@@ -576,6 +623,87 @@ def _agent_borrower_count_plan(question: str) -> QuerySpecPlan | None:
         },
         confidence=1.0,
         reasoning="distinct borrowers filtered by the governed loan-account agent code",
+    )
+
+
+def _agent_filter_values(raw_code: str) -> list[str]:
+    code = raw_code.strip().lower()
+    values = [code]
+    operational = re.fullmatch(r"(?:agent|agnt)?[-_ ]*(?P<number>\d+)", code)
+    if operational is not None:
+        number = operational.group("number")
+        values.extend([number, f"agent{number}", f"agnt{number}"])
+    values = list(dict.fromkeys(values))
+    return values
+
+
+def _agent_metric_plan(question: str) -> QuerySpecPlan | None:
+    """Resolve a named agent plus a requested governed loan metric."""
+    match = _AGENT_CODE_RE.search(question)
+    if match is None:
+        return None
+    if _AGENT_SANCTION_AMOUNT_RE.search(question):
+        metric = "sanctioned_amount"
+    elif _AGENT_LOAN_COUNT_RE.search(question):
+        metric = "loan_count"
+    else:
+        return None
+    return QuerySpecPlan(
+        spec={
+            "metrics": [metric],
+            "filters": [{
+                "field": "agent", "op": "in",
+                "value": _agent_filter_values(match.group("code")),
+            }],
+            "period": {"relative": "all_time"},
+        },
+        confidence=1.0,
+        reasoning="requested governed loan metric filtered by agent code",
+    )
+
+
+def _share_capital_plan(question: str) -> QuerySpecPlan | None:
+    if _CAPITAL_RESERVES_RE.search(question):
+        return QuerySpecPlan(
+            spec={"metrics": ["capital_reserves"], "period": {"relative": "today"}},
+            confidence=1.0,
+            reasoning="current governed capital-reserves GL balance",
+        )
+    if _SHARE_CAPITAL_RE.search(question) is None:
+        return None
+    return QuerySpecPlan(
+        spec={"metrics": ["share_capital"], "period": {"relative": "today"}},
+        confidence=1.0,
+        reasoning="current governed share-capital GL balance",
+    )
+
+
+def _agriculturist_account_plan(question: str) -> QuerySpecPlan | None:
+    if _AGRICULTURIST_ACCOUNT_RE.search(question) is None:
+        return None
+    needle = "FARM" if re.search(r"\bfarmers?\b", question, re.I) else "AGRICULT"
+    return QuerySpecPlan(
+        spec={
+            "metrics": ["loan_count"],
+            "filters": [{"field": "occupation", "op": "contains", "value": needle}],
+            "period": {"relative": "all_time"},
+        },
+        confidence=1.0,
+        reasoning="loan-account count filtered by governed borrower occupation",
+    )
+
+
+def _agricultural_loan_account_plan(question: str) -> QuerySpecPlan | None:
+    if _AGRICULTURAL_LOAN_ACCOUNT_RE.search(question) is None:
+        return None
+    return QuerySpecPlan(
+        spec={
+            "metrics": ["loan_count"],
+            "filters": [{"field": "scheme", "op": "in", "value": ["1611", "1621"]}],
+            "period": {"relative": "all_time"},
+        },
+        confidence=1.0,
+        reasoning="loan-account count filtered by governed agricultural loan schemes",
     )
 
 
@@ -740,6 +868,22 @@ async def plan(
             provider="catalog",
             duration_ms=0,
         )
+
+    for deterministic_plan in (
+        _share_capital_plan(planning_question),
+        _agriculturist_account_plan(planning_question),
+        _agricultural_loan_account_plan(planning_question),
+        _agent_metric_plan(planning_question),
+    ):
+        if deterministic_plan is not None:
+            return PlanOutcome(
+                plan=deterministic_plan,
+                attempts=0,
+                prompt_version=PROMPT_VERSION,
+                model="deterministic",
+                provider="catalog",
+                duration_ms=0,
+            )
 
     filtered = _catalog_filtered_plan(planning_question, cat)
     if filtered is not None:

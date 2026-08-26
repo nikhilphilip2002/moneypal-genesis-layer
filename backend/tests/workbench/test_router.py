@@ -180,6 +180,30 @@ class TestDispatch:
 
         assert decision.sources == ["db"]
 
+    @pytest.mark.anyio
+    @pytest.mark.parametrize(
+        "question",
+        [
+            "what is the total amount of equity shares",
+            "what is the capital share",
+            "what is the total capital reserve sharesz",
+            "which agent under more loan accounts is ther",
+            "how many agriculturist loan accounts is theer",
+            "what is the name of product code 16 in loan book",
+            "what is the sanction amount of agent 45",
+        ],
+    )
+    async def test_governed_business_values_override_concept_or_refusal(
+        self, monkeypatch, question
+    ):
+        _use(monkeypatch, FakeLLM(
+            '{"route":"dispatch","sources":["knowledge"],"intent":"define it"}'
+        ))
+
+        decision = await router.route(question, role="admin")
+
+        assert decision.sources == ["db"]
+
 
 class TestRefuse:
     @pytest.mark.anyio

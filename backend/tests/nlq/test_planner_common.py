@@ -54,6 +54,61 @@ async def test_common_question_maps_to_reviewed_queryspec(question, metric, dime
 
 
 @pytest.mark.anyio
+@pytest.mark.parametrize(
+    ("question", "metric", "filter_field", "filter_value"),
+    [
+        ("what is the total amount of equity shares", "share_capital", None, None),
+        ("what is the capital share", "share_capital", None, None),
+        ("what is the total capital reserve sharesz", "capital_reserves", None, None),
+        ("show reserves and surplus", "capital_reserves", None, None),
+        ("what is the sanction amount of agent 45", "sanctioned_amount", "agent", ["45", "agent45", "agnt45"]),
+        ("total approved amount under AGNT45", "sanctioned_amount", "agent", ["45", "agent45", "agnt45"]),
+        ("how many agriculturist loan accounts is theer", "loan_count", "occupation", "AGRICULT"),
+        ("How many agricultural loan accounts are there?", "loan_count", "scheme", ["1611", "1621"]),
+    ],
+)
+async def test_governed_business_entities_bypass_the_model(
+    question, metric, filter_field, filter_value
+):
+    outcome = await plan(question, client=NoModel())
+
+    assert isinstance(outcome.plan, QuerySpecPlan)
+    assert outcome.plan.spec.metrics == [metric]
+    assert outcome.attempts == 0
+    if filter_field is None:
+        assert outcome.plan.spec.filters == []
+    else:
+        assert outcome.plan.spec.filters[0].field == filter_field
+        assert outcome.plan.spec.filters[0].value == filter_value
+    assert compile_spec(outcome.plan.spec, get_catalog()).sql.startswith("SELECT")
+
+
+@pytest.mark.anyio
+async def test_natural_top_agent_wording_ranks_by_linked_loan_accounts():
+    outcome = await plan("which agent under more loan accounts is ther", client=NoModel())
+
+    assert isinstance(outcome.plan, QuerySpecPlan)
+    assert outcome.plan.spec.metrics == ["agent_linked_loans"]
+    assert outcome.plan.spec.dimensions == ["agent_profile"]
+    assert outcome.plan.spec.order_by.field == "agent_linked_loans"
+    assert outcome.plan.spec.order_by.direction == "desc"
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("state_word", ["open", "active", "live"])
+async def test_single_open_account_count_filters_instead_of_grouping(state_word):
+    outcome = await plan(f"How many {state_word} loan accounts are there", client=NoModel())
+
+    assert isinstance(outcome.plan, QuerySpecPlan)
+    assert outcome.plan.spec.metrics == ["loan_count"]
+    assert outcome.plan.spec.dimensions == []
+    assert outcome.plan.spec.filters[0].field == "open_closed_status"
+    assert outcome.plan.spec.filters[0].value == "Open"
+    assert outcome.attempts == 0
+    assert compile_spec(outcome.plan.spec, get_catalog()).sql.startswith("SELECT")
+
+
+@pytest.mark.anyio
 async def test_various_interest_rates_uses_validated_column_query_path():
     outcome = await plan("what are the various intrest rate?", client=NoModel())
     assert isinstance(outcome.plan, SqlPlan)

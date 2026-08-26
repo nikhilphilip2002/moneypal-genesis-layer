@@ -7,14 +7,17 @@ from app.services.nlq.charts import build_from_rows
 from app.services.nlq.contracts import Lineage, LookupPlan
 from app.services.nlq.executor import QueryResult
 from app.services.nlq.lookup import (
+    _agent_accounts,
     _agent_count,
     _agent_details,
+    _shape_agent_details,
     _branch_directory,
     _customer_summary,
     _gender_sample,
     completions,
     _loan_details,
     _repayment_history,
+    _product_details,
     _shape_loan_details,
     detect,
     run,
@@ -66,6 +69,14 @@ from app.services.nlq.planner import plan
             "agent_code", "AGNT45", "agent_details",
         ),
         (
+            "show me the agent 45 phone number",
+            "agent_code", "AGNT45", "agent_details",
+        ),
+        (
+            "how me the agent 45 account number",
+            "agent_code", "AGNT45", "agent_accounts",
+        ),
+        (
             "what are the branches is there",
             "branch", "all", "branch_directory",
         ),
@@ -90,12 +101,24 @@ from app.services.nlq.planner import plan
             "borrower_name", "SHEELAVATHI M K", "customer_summary",
         ),
         (
+            "show me the SHEELAVATHI M K sanctioned amount?",
+            "borrower_name", "SHEELAVATHI M K", "loan_details",
+        ),
+        (
+            "sanction amount for borrower SHEELAVATHI M K",
+            "borrower_name", "SHEELAVATHI M K", "loan_details",
+        ),
+        (
             "show customer profile for Sheelavathi M K",
             "borrower_name", "Sheelavathi M K", "customer_summary",
         ),
         (
             "gshow me the borrower id 128 repayment histoy",
             "customer_id", "128", "repayment_history",
+        ),
+        (
+            "what is the name of product code 16 in loan book",
+            "product_code", "16", "product_details",
         ),
     ],
 )
@@ -252,12 +275,64 @@ def test_agent_details_use_the_governed_directory_and_exact_code():
     assert "linked_loan_count" in attempt.sql
 
 
+def test_agent_phone_lookup_selects_only_the_explicit_contact_field():
+    plan_result = detect("show me the agent 45 phone number")
+
+    assert plan_result is not None
+    assert plan_result.requested_fields == ["mobile"]
+    attempt = _agent_details(plan_result, get_catalog())
+    projection = attempt.sql.split("FROM", 1)[0]
+    assert "mobile" in projection
+    assert "linked_customer_count" not in projection
+    assert "linked_loan_count" not in projection
+
+
+def test_missing_agent_phone_is_reported_as_unavailable_not_as_an_unrelated_metric():
+    chart = build_from_rows(
+        question="agent phone",
+        result=QueryResult(
+            rows=[{"agent_code": "AGNT45", "mobile": None}],
+            columns=["agent_code", "mobile"],
+            status="ok", duration_ms=1, sql="SELECT 1", row_count=1,
+        ),
+        lineage=Lineage(path="text_to_sql", sql="SELECT 1", unverified=False),
+        unit_hints={"agent_code": "text", "mobile": "text"},
+    )
+    _shape_agent_details(
+        chart,
+        LookupPlan(
+            selector="agent_code", value="AGNT45", detail="agent_details",
+            requested_fields=["mobile"], reasoning="test",
+        ),
+    )
+
+    assert chart.rows == [{"agent_code": "AGNT45", "mobile": None}]
+    assert chart.summary == "Phone number is unavailable in the governed agent directory."
+    assert "highest" not in chart.summary
+
+
 def test_agent_count_uses_the_governed_agent_directory():
     attempt = _agent_count(get_catalog())
 
     assert attempt.validated and attempt.reviewed
     assert "COUNT(agent_code) AS agent_count" in attempt.sql
     assert "FROM gold.agent_master" in attempt.sql
+
+
+def test_agent_accounts_use_exact_code_and_return_only_linked_account_numbers():
+    attempt = _agent_accounts(
+        LookupPlan(
+            selector="agent_code", value="AGNT45", detail="agent_accounts",
+            reasoning="test",
+        ),
+        get_catalog(),
+    )
+
+    assert attempt.validated and attempt.reviewed
+    assert "FROM gold.loan_reporting_attributes" in attempt.sql
+    assert "LOWER(agent_code) = 'agnt45'" in attempt.sql
+    assert "loan_account_number" in attempt.sql
+    assert "COUNT(loan_account_number) OVER ()" in attempt.sql
 
 
 def test_branch_directory_uses_the_governed_branch_master():
@@ -268,6 +343,21 @@ def test_branch_directory_uses_the_governed_branch_master():
     assert "branch_code" in attempt.sql
     assert "branch_name" in attempt.sql
     assert "branch_status" in attempt.sql
+
+
+def test_product_code_name_uses_the_governed_product_master():
+    attempt = _product_details(
+        LookupPlan(
+            selector="product_code", value="16", detail="product_details",
+            reasoning="test",
+        ),
+        get_catalog(),
+    )
+
+    assert attempt.validated and attempt.reviewed
+    assert "FROM gold.product_master" in attempt.sql
+    assert "LOWER(CAST(product_code AS TEXT)) = '16'" in attempt.sql
+    assert "product_name" in attempt.sql
 
 
 def test_sanctioned_loans_by_agent_decode_codes_to_directory_names():
