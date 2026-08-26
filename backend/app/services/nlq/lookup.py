@@ -91,10 +91,22 @@ _NAME_BEFORE_LOAN_DETAILS = re.compile(
 )
 _NAME_BEFORE_CUSTOMER_DETAILS = re.compile(
     r"^(?:what\s+(?:is|are)|show(?:\s+me)?|give\s+me|get|find)?\s*"
-    r"(?P<name>[\w .'-]{2,100}?)\s*'s\s+"
+    r"(?P<name>[\w .'-]{2,100}?)\s*(?:'s)?\s+"
     r"(?:customer\s+)?(?:details?|profile|information|info)\s*[?!.]*$",
     re.I,
 )
+"""The possessive is optional: people type "<name> information" as often as "<name>'s
+information". `_is_person_name` is what keeps "customer information" from being read as a
+borrower called "customer"."""
+_NAME_THEN_REQUEST = re.compile(
+    r"^(?P<name>[\w .'-]{2,100}?)\s+(?:please\s+)?"
+    r"(?:give|show|get|find|tell|fetch)\s+(?:me\s+)?(?:his|her|their|its|the)?\s*"
+    r"(?:customer\s+|loan\s+|account\s+)?"
+    r"(?:details?|profile|information|info|records?)\s*[?!.]*$",
+    re.I,
+)
+"""«MAHABOOB PASHA give me his details» — the subject is stated first and the request
+follows it, which none of the verb-first patterns can see."""
 _NAME_AFTER_CUSTOMER_DETAILS = re.compile(
     r"\b(?:customer|borrower|client)\s+"
     r"(?:details?|profile|information|info)\s+(?:of|for)\s+"
@@ -149,6 +161,16 @@ _NAME_AFTER_LOAN_FIELD = re.compile(
     re.I,
 )
 _BORROWER_NAME_CUE = re.compile(r"\bnames?\b", re.I)
+_AGENT_BORROWER_CUE = re.compile(r"\b(?:borrowers?|customers?|clients?)\b", re.I)
+_COUNT_CUE = re.compile(r"\b(?:how\s+many|count|number\s+of|total\s+number)\b", re.I)
+
+_GENERIC_NAME_WORDS = frozenset({
+    "a", "an", "the", "this", "that", "his", "her", "their", "its", "my", "our",
+    "customer", "customers", "borrower", "borrowers", "client", "clients",
+    "agent", "agents", "branch", "branches", "loan", "loans", "account", "accounts",
+    "product", "products", "scheme", "schemes", "bank", "book", "portfolio", "record",
+    "records", "detail", "details", "profile", "information", "info",
+})
 
 _REFINEMENT_FIELD = (
     r"(?:(?:their|the|its|his|her|full|borrower|customer|agent|linked)\s+)*"
@@ -262,6 +284,27 @@ def _plain_identifier(value: str) -> str:
     return text
 
 
+def _is_person_name(value: str) -> bool:
+    """Whether a captured phrase can be a borrower rather than governed vocabulary.
+
+    The name patterns are deliberately loose so real names survive; this is what stops
+    "customer information" from being planned as a lookup for a borrower called "customer".
+    """
+    tokens = [token for token in re.split(r"[^a-z0-9]+", value.lower()) if token]
+    return bool(tokens) and any(token not in _GENERIC_NAME_WORDS for token in tokens)
+
+
+def _name_tokens(name: str) -> list[str]:
+    """Distinct normalised name parts, in the same spelling the stored name is reduced to."""
+    tokens: list[str] = []
+    for raw in str(name or "").split():
+        token = re.sub(r"[^a-z0-9]", "", raw.lower()).replace("th", "t")
+        token = re.sub(r"(.)\1+", r"\1", token)
+        if len(token) >= 3 and token not in tokens:
+            tokens.append(token)
+    return tokens
+
+
 def _clean_name(value: str) -> str:
     """Strip sentence scaffolding an extraction pattern carried into the captured name."""
     text = " ".join(str(value or "").split()).strip(" .?!,")
@@ -340,8 +383,18 @@ def detect(question: str) -> LookupPlan | None:
             selector="product_code", value=_plain_identifier(product.group("value")),
             detail="product_details", reasoning="governed product-directory lookup",
         )
-    if agent and _AGENT_ACCOUNT_CUE.search(text):
-        requested = ["borrower_name"] if _BORROWER_NAME_CUE.search(text) else []
+    # "borrowers under AGNT45" asks for the same linked records as "AGNT45 account
+    # numbers", named by borrower instead of by account. A count question is not this —
+    # that is a directory field and falls through to the agent-details branch below.
+    agent_borrowers = bool(
+        agent and _AGENT_BORROWER_CUE.search(text) and not _COUNT_CUE.search(text)
+    )
+    if agent and (_AGENT_ACCOUNT_CUE.search(text) or agent_borrowers):
+        requested = (
+            ["borrower_name"]
+            if _BORROWER_NAME_CUE.search(text) or agent_borrowers
+            else []
+        )
         return LookupPlan(
             selector="agent_code",
             value="AGNT" + re.sub(r"\D", "", agent.group("value")),
@@ -394,27 +447,28 @@ def detect(question: str) -> LookupPlan | None:
             detail="customer_summary",
             reasoning="governed customer and linked-loan summary",
         )
-    named_customer = (
-        _NAME_BEFORE_CUSTOMER_DETAILS.search(text)
-        or _NAME_AFTER_CUSTOMER_DETAILS.search(text)
-    )
-    if named_customer:
-        return LookupPlan(
-            selector="borrower_name", value=_clean_name(named_customer.group("name")),
-            detail="customer_summary",
-            reasoning="governed customer and linked-loan summary",
-        )
     named_details = (
         _NAME_AFTER_LOAN_DETAILS.search(text) or _NAME_BEFORE_LOAN_DETAILS.search(text)
     )
-    if named_details:
+    if named_details and _is_person_name(_clean_name(named_details.group('name'))):
         return LookupPlan(
             selector="borrower_name", value=_clean_name(named_details.group("name")),
             detail="loan_details",
             reasoning="governed borrower loan origination and disbursement details",
         )
+    named_customer = (
+        _NAME_THEN_REQUEST.search(text)
+        or _NAME_BEFORE_CUSTOMER_DETAILS.search(text)
+        or _NAME_AFTER_CUSTOMER_DETAILS.search(text)
+    )
+    if named_customer and _is_person_name(_clean_name(named_customer.group("name"))):
+        return LookupPlan(
+            selector="borrower_name", value=_clean_name(named_customer.group("name")),
+            detail="customer_summary",
+            reasoning="governed customer and linked-loan summary",
+        )
     named_field = _NAME_BEFORE_LOAN_FIELD.search(text) or _NAME_AFTER_LOAN_FIELD.search(text)
-    if named_field and agent is None:
+    if named_field and agent is None and _is_person_name(_clean_name(named_field.group('name'))):
         return LookupPlan(
             selector="borrower_name", value=_clean_name(named_field.group("name")),
             detail="loan_details", requested_fields=_requested_loan_fields(text),
@@ -422,7 +476,7 @@ def detect(question: str) -> LookupPlan | None:
         )
     if _LOAN_DETAIL_CUE.search(text):
         named = _NAMED_LOAN_DETAIL.search(text)
-        if named:
+        if named and _is_person_name(_clean_name(named.group("name"))):
             return LookupPlan(
                 selector="borrower_name", value=_clean_name(named.group("name")),
                 detail="loan_details", requested_fields=_requested_loan_fields(text),
@@ -487,21 +541,42 @@ def _validated_attempt(
     )
 
 
-def _candidate_customers(name: str, catalog: Catalog) -> list[dict]:
-    literal, stored_name, display_name = _normalized_borrower_sql(name)
-    sql = (
+def _borrower_candidate_sql(where: str, display_name: str) -> str:
+    return (
         f"SELECT {display_name} AS borrower_name, customer_id::text AS customer_id, "
         "MIN(loan_account_number::text) AS account_number "
         "FROM gold.loan_account_master "
-        f"WHERE {stored_name} LIKE {literal} || '%' AND sanction_date <= CURRENT_DATE "
+        f"WHERE {where} AND sanction_date <= CURRENT_DATE "
         f"GROUP BY {display_name}, customer_id ORDER BY {display_name}, customer_id LIMIT 20"
     )
-    attempt = _validated_attempt(
-        sql, catalog=catalog, explanation="Borrower candidates from the governed loan master.",
-        units={"borrower_name": "text", "customer_id": "text", "account_number": "text"},
-        pii_columns={"customer_name"},
+
+
+def _candidate_customers(name: str, catalog: Catalog) -> list[dict]:
+    literal, stored_name, display_name = _normalized_borrower_sql(name)
+
+    def fetch(where: str) -> list[dict]:
+        attempt = _validated_attempt(
+            _borrower_candidate_sql(where, display_name), catalog=catalog,
+            explanation="Borrower candidates from the governed loan master.",
+            units={"borrower_name": "text", "customer_id": "text", "account_number": "text"},
+            pii_columns={"customer_name"},
+        )
+        return execute_raw(attempt.sql).rows
+
+    rows = fetch(f"{stored_name} LIKE {literal} || '%'")
+    if rows:
+        return rows
+
+    # The prefix match reads the name as one run of letters, so a repeated or reordered
+    # part ("MAHABOOB PASHA PASHA") misses a record that holds every part of it. Fall back
+    # to requiring each distinct part somewhere in the stored name — still every part, so
+    # this widens the spelling accepted without widening who can match.
+    tokens = _name_tokens(name)
+    if len(tokens) < 2:
+        return []
+    return fetch(
+        " AND ".join(f"{stored_name} LIKE '%' || {_literal(token)} || '%'" for token in tokens)
     )
-    return execute_raw(attempt.sql).rows
 
 
 def _where(plan: LookupPlan) -> str:
