@@ -77,6 +77,10 @@ from app.services.nlq.planner import plan
             "agent_code", "AGNT45", "agent_accounts",
         ),
         (
+            "show me the agent 45 linked account numbers along with names",
+            "agent_code", "AGNT45", "agent_accounts",
+        ),
+        (
             "what are the branches is there",
             "branch", "all", "branch_directory",
         ),
@@ -329,10 +333,52 @@ def test_agent_accounts_use_exact_code_and_return_only_linked_account_numbers():
     )
 
     assert attempt.validated and attempt.reviewed
-    assert "FROM gold.loan_reporting_attributes" in attempt.sql
-    assert "LOWER(agent_code) = 'agnt45'" in attempt.sql
+    assert "FROM gold.loan_reporting_attributes AS reporting" in attempt.sql
+    assert "LOWER(reporting.agent_code) = 'agnt45'" in attempt.sql
     assert "loan_account_number" in attempt.sql
-    assert "COUNT(loan_account_number) OVER ()" in attempt.sql
+    assert "COUNT(reporting.loan_account_number) OVER ()" in attempt.sql
+    assert "customer_name" not in attempt.sql
+
+
+def test_agent_account_names_join_the_governed_loan_only_when_requested():
+    plan_result = detect("show agent 45 account numbers along with borrower names")
+
+    assert plan_result is not None
+    assert plan_result.requested_fields == ["borrower_name"]
+    attempt = _agent_accounts(plan_result, get_catalog())
+    assert "JOIN gold.loan_account_master AS loan" in attempt.sql
+    assert "loan.customer_name AS borrower_name" in attempt.sql
+    assert attempt.pii_columns == ["customer_name"]
+
+
+def test_agent_account_record_list_is_always_a_table(monkeypatch):
+    from app.services.nlq import executor
+
+    monkeypatch.setattr(executor, "execute_raw", lambda _sql: QueryResult(
+        rows=[{
+            "loan_account_number": "1000400000007",
+            "borrower_name": "CUSTOMER ONE",
+            "total_linked_account_count": 1,
+        }],
+        columns=["loan_account_number", "borrower_name", "total_linked_account_count"],
+        status="ok", duration_ms=1, sql="SELECT 1", row_count=1,
+    ))
+    result = run(
+        LookupPlan(
+            selector="agent_code", value="AGNT45", detail="agent_accounts",
+            requested_fields=["borrower_name"], reasoning="test",
+        ),
+        role="admin", catalog=get_catalog(),
+    )
+
+    assert result.chart is not None
+    assert result.chart.chart_type == "table"
+    assert result.chart.x is None
+    assert result.chart.series == []
+    assert result.chart.rows == [{
+        "loan_account_number": "1000400000007", "borrower_name": "CUSTOMER ONE",
+    }]
+    assert "with borrower names" in result.chart.summary
 
 
 def test_branch_directory_uses_the_governed_branch_master():

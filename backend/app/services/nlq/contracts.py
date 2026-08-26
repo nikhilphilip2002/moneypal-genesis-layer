@@ -257,6 +257,7 @@ class LookupPlan(_Model):
         "sanction_amount", "sanction_date", "disbursed_amount", "first_disbursement_date",
         "agent_name", "agent_type", "designation", "mobile", "email", "branch_code",
         "role_code", "joined_on", "linked_customer_count", "linked_loan_count",
+        "borrower_name",
     ]] = Field(default_factory=list)
     confidence: float = Field(default=1.0, ge=0.0, le=1.0)
     reasoning: str = Field(default="", max_length=500)

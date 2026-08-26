@@ -14,6 +14,7 @@ from sqlglot import exp
 from app.services.nlq.catalog import Catalog, get_catalog
 from app.services.nlq.contracts import ChartSpec, ClarifyPlan, LookupPlan
 from app.services.nlq.executor import execute_raw
+from app.services.nlq.normalization import normalize_apostrophes
 from app.services.nlq.pipeline import run_sql
 from app.services.nlq.text_to_sql import SqlAttempt, _normalized_borrower_sql
 from app.services.nlq.validator import validate
@@ -112,6 +113,9 @@ _AGENT_DETAIL_CUE = re.compile(
     r"\b(?:details?|profiles?|names?|information|info|infor\w*|show|get|give|about)\b",
     re.I,
 )
+_ARTICLE_PREFIX = re.compile(r"^(?:the|a|an)\s+", re.I)
+"""«show me the <name> repayment history» — the article belongs to the sentence, not to the
+borrower. Left attached it becomes part of the normalised name and matches nobody."""
 _AGENT_COUNT_CUE = re.compile(
     r"\b(?:(?:how\s+many|number\s+of|count\s+of|total)\s+(?:active\s+)?agents?|"
     r"agents?\s+count)\b",
@@ -144,6 +148,31 @@ _NAME_AFTER_LOAN_FIELD = re.compile(
     r"(?:(?:customer|borrower|client)\s+)?(?P<name>[a-z][\w .'-]{1,100})\s*[?!.]*$",
     re.I,
 )
+_BORROWER_NAME_CUE = re.compile(r"\bnames?\b", re.I)
+
+_REFINEMENT_FIELD = (
+    r"(?:(?:their|the|its|his|her|full|borrower|customer|agent|linked)\s+)*"
+    r"(?:names?|phone(?:\s+numbers?)?|mobile(?:\s+numbers?)?|contact(?:\s+numbers?)?|"
+    r"email(?:\s+address(?:es)?)?|designations?|branch\s+codes?|"
+    r"(?:loan\s+)?account\s+numbers?|customer\s+ids?|"
+    r"sanction(?:ed)?\s+amounts?|sanction\s+dates?|loan\s+amounts?|"
+    r"disburs(?:ed|e?ment)\s+(?:amounts?|dates?))"
+)
+_RECORD_REFINEMENT = re.compile(
+    r"^(?:(?:ok|and|also|plus|now)\s+)?"
+    r"(?:(?:can\s+you\s+)?(?:please\s+)?(?:show|list|give|get|display|add|include)"
+    r"\s+(?:me\s+)?)?"
+    r"(?:along\s+with|together\s+with|with|and|also|plus|including|include)\s+"
+    rf"{_REFINEMENT_FIELD}(?:\s*(?:,|and)\s*{_REFINEMENT_FIELD})*"
+    r"(?:\s+(?:as\s+well|too|also|please))?\s*[?!.]*$",
+    re.I,
+)
+"""«along with names» — a refinement that only widens the previous record request.
+
+The connector is required: a bare "sanction date" is a question in its own right and must
+be planned as one, while "and the names" cannot be anything but an addition to what was
+just asked. Folding still only happens when the previous turn was itself a record lookup,
+so no metric question can inherit a selector this way."""
 
 
 @dataclass(slots=True)
@@ -233,6 +262,12 @@ def _plain_identifier(value: str) -> str:
     return text
 
 
+def _clean_name(value: str) -> str:
+    """Strip sentence scaffolding an extraction pattern carried into the captured name."""
+    text = " ".join(str(value or "").split()).strip(" .?!,")
+    return _ARTICLE_PREFIX.sub("", text, count=1).strip()
+
+
 def _requested_loan_fields(text: str) -> list[str]:
     """Extract requested loan facts without binding to a particular phrasing or value."""
     fields: list[str] = []
@@ -273,7 +308,7 @@ def _requested_agent_fields(text: str) -> list[str]:
 
 def detect(question: str) -> LookupPlan | None:
     """Recognise selector + requested record family without matching whole questions."""
-    text = " ".join(str(question or "").split())
+    text = normalize_apostrophes(" ".join(str(question or "").split()))
 
     if _BRANCH_DIRECTORY_CUE.search(text):
         return LookupPlan(
@@ -306,20 +341,26 @@ def detect(question: str) -> LookupPlan | None:
             detail="product_details", reasoning="governed product-directory lookup",
         )
     if agent and _AGENT_ACCOUNT_CUE.search(text):
+        requested = ["borrower_name"] if _BORROWER_NAME_CUE.search(text) else []
         return LookupPlan(
             selector="agent_code",
             value="AGNT" + re.sub(r"\D", "", agent.group("value")),
-            detail="agent_accounts", reasoning="loan accounts linked to the governed agent code",
+            detail="agent_accounts", requested_fields=requested,
+            reasoning="loan accounts linked to the governed agent code",
         )
-    if agent and (
-        _AGENT_DETAIL_CUE.search(text) or _AGENT_CODE.fullmatch(text.strip())
-    ):
-        return LookupPlan(
-            selector="agent_code",
-            value="AGNT" + re.sub(r"\D", "", agent.group("value")),
-            detail="agent_details", requested_fields=_requested_agent_fields(text),
-            reasoning="governed agent-directory details",
-        )
+    if agent:
+        # Naming a directory field is itself the request: "agent 45 phone number" asks for
+        # the same record as "show me the agent 45 phone number". Without this, a terse
+        # phrasing carries no verb, matches no cue, and is routed to the concepts source,
+        # which then explains that it cannot see phone numbers it was never shown.
+        agent_fields = _requested_agent_fields(text)
+        if agent_fields or _AGENT_DETAIL_CUE.search(text) or _AGENT_CODE.fullmatch(text.strip()):
+            return LookupPlan(
+                selector="agent_code",
+                value="AGNT" + re.sub(r"\D", "", agent.group("value")),
+                detail="agent_details", requested_fields=agent_fields,
+                reasoning="governed agent-directory details",
+            )
     if _REPAYMENT_CUE.search(text):
         if customer:
             selector, value = "customer_id", _plain_identifier(customer.group("value"))
@@ -329,7 +370,7 @@ def detect(question: str) -> LookupPlan | None:
             match = _NAME_AFTER_HISTORY.search(text) or _NAME_BEFORE_HISTORY.search(text)
             if not match:
                 return None
-            selector, value = "borrower_name", match.group("name").strip(" .?!")
+            selector, value = "borrower_name", _clean_name(match.group("name"))
         return LookupPlan(
             selector=selector, value=value, detail="repayment_history",
             reasoning="governed borrower repayment-event history",
@@ -359,7 +400,7 @@ def detect(question: str) -> LookupPlan | None:
     )
     if named_customer:
         return LookupPlan(
-            selector="borrower_name", value=named_customer.group("name").strip(" .?!"),
+            selector="borrower_name", value=_clean_name(named_customer.group("name")),
             detail="customer_summary",
             reasoning="governed customer and linked-loan summary",
         )
@@ -368,14 +409,14 @@ def detect(question: str) -> LookupPlan | None:
     )
     if named_details:
         return LookupPlan(
-            selector="borrower_name", value=named_details.group("name").strip(" .?!"),
+            selector="borrower_name", value=_clean_name(named_details.group("name")),
             detail="loan_details",
             reasoning="governed borrower loan origination and disbursement details",
         )
     named_field = _NAME_BEFORE_LOAN_FIELD.search(text) or _NAME_AFTER_LOAN_FIELD.search(text)
     if named_field and agent is None:
         return LookupPlan(
-            selector="borrower_name", value=named_field.group("name").strip(" .?!"),
+            selector="borrower_name", value=_clean_name(named_field.group("name")),
             detail="loan_details", requested_fields=_requested_loan_fields(text),
             reasoning="requested governed loan field for the named borrower",
         )
@@ -383,11 +424,35 @@ def detect(question: str) -> LookupPlan | None:
         named = _NAMED_LOAN_DETAIL.search(text)
         if named:
             return LookupPlan(
-                selector="borrower_name", value=named.group("name").strip(" .?!"),
+                selector="borrower_name", value=_clean_name(named.group("name")),
                 detail="loan_details", requested_fields=_requested_loan_fields(text),
                 reasoning="governed borrower loan origination and disbursement details",
             )
     return None
+
+
+def resolve_followup(question: str, history_messages: list[dict[str, str]] | None) -> str:
+    """Complete a bare record refinement from the question it refines.
+
+    "along with names" is not a question the record grammar — or the source router — can
+    read on its own, and handing the fragment to a model instead produces an invented
+    reason why the names cannot be shown. Folded onto the previous question it becomes the
+    same governed lookup with one more field, which is exactly what was asked.
+    """
+    text = normalize_apostrophes(" ".join(str(question or "").split()))
+    if not text or not _RECORD_REFINEMENT.fullmatch(text):
+        return question
+    previous = next(
+        (
+            str(message.get("content", "")).strip()
+            for message in reversed(history_messages or [])
+            if message.get("role") == "user" and str(message.get("content", "")).strip()
+        ),
+        "",
+    )
+    if not previous or detect(previous) is None:
+        return question
+    return f"{previous} {text}"
 
 
 def _literal(value: str) -> str:
@@ -675,16 +740,29 @@ def _agent_count(catalog: Catalog) -> SqlAttempt:
 
 def _agent_accounts(plan: LookupPlan, catalog: Catalog) -> SqlAttempt:
     value = _literal(plan.value.lower())
+    include_name = "borrower_name" in plan.requested_fields
+    name_projection = ", loan.customer_name AS borrower_name" if include_name else ""
+    join = (
+        " JOIN gold.loan_account_master AS loan "
+        "ON reporting.entity_num = loan.entity_num "
+        "AND reporting.loan_account_number = loan.loan_account_number"
+        if include_name else ""
+    )
     sql = (
-        "SELECT loan_account_number::text AS loan_account_number, "
-        "COUNT(loan_account_number) OVER () AS total_linked_account_count "
-        "FROM gold.loan_reporting_attributes WHERE LOWER(agent_code) = " + value +
-        " ORDER BY loan_account_number LIMIT 500"
+        "SELECT reporting.loan_account_number::text AS loan_account_number" + name_projection + ", "
+        "COUNT(reporting.loan_account_number) OVER () AS total_linked_account_count "
+        "FROM gold.loan_reporting_attributes AS reporting" + join +
+        " WHERE LOWER(reporting.agent_code) = " + value +
+        " ORDER BY reporting.loan_account_number LIMIT 500"
     )
     return _validated_attempt(
         sql, catalog=catalog,
         explanation="Loan account numbers linked to the requested governed agent code.",
-        units={"loan_account_number": "text", "total_linked_account_count": "count"},
+        units={
+            "loan_account_number": "text", "total_linked_account_count": "count",
+            **({"borrower_name": "text"} if include_name else {}),
+        },
+        pii_columns={"customer_name"} if include_name else None,
     )
 
 
@@ -798,8 +876,14 @@ def run(plan: LookupPlan, *, role: str | None, catalog: Catalog | None = None) -
         chart.series = [
             series for series in chart.series if series.field != "total_linked_account_count"
         ]
+        chart.chart_type = "table"
+        chart.x = None
+        chart.series_by = None
         chart.title = f"Loan accounts linked to {effective.value}"
-        chart.summary = f"Showing {len(chart.rows):,} of {total:,} linked loan account(s)."
+        suffix = " with borrower names" if "borrower_name" in effective.requested_fields else ""
+        chart.summary = (
+            f"Showing {len(chart.rows):,} of {total:,} linked loan account(s){suffix}."
+        )
     elif effective.detail == "repayment_history":
         first = chart.rows[0]
         totals = {
@@ -822,4 +906,4 @@ def run(plan: LookupPlan, *, role: str | None, catalog: Catalog | None = None) -
     return LookupResult(chart=chart)
 
 
-__all__ = ["LookupResult", "completions", "detect", "run"]
+__all__ = ["LookupResult", "completions", "detect", "resolve_followup", "run"]

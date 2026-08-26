@@ -858,6 +858,7 @@ async def plan(
     # for a descriptive banking-concept question or discard the identifier as prose.
     from app.services.nlq import lookup
 
+    planning_question = lookup.resolve_followup(planning_question, history_messages or [])
     record_lookup = lookup.detect(planning_question)
     if record_lookup is not None:
         return PlanOutcome(

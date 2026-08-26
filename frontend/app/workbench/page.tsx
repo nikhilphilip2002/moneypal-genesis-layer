@@ -54,6 +54,7 @@ export default function WorkbenchPage() {
   const [conversations, setConversations] = useState<WorkbenchConversation[]>([]);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [workspaceView, setWorkspaceView] = useState<WorkspaceView | null>(null);
+  const [completionsHeight, setCompletionsHeight] = useState(0);
   const abortRef = useRef<AbortController | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
 
@@ -105,7 +106,7 @@ export default function WorkbenchPage() {
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
-  }, [turns]);
+  }, [turns, completionsHeight]);
 
   const ask = useCallback(async (question: string) => {
     const id = `t-${Date.now()}`;
@@ -223,6 +224,7 @@ export default function WorkbenchPage() {
       onOpenWorkspace={setWorkspaceView}
       dataAccess={dataAccess}
       onDataAccess={setDataAccess}
+      onCompletionHeightChange={setCompletionsHeight}
     />
   );
 
@@ -236,24 +238,29 @@ export default function WorkbenchPage() {
         onLogout={logout}
       />
 
-      <main className="mx-auto flex min-h-0 w-full max-w-4xl flex-1 flex-col px-4 sm:px-6">
+      <main className="flex min-h-0 w-full flex-1 flex-col">
         {turns.length === 0 ? (
           <EmptyState onAsk={ask} onOpenWorkspace={setWorkspaceView}>{composer}</EmptyState>
         ) : (
           <>
             <div className="min-h-0 flex-1 overflow-y-auto py-6 sm:py-8">
-              <div className="space-y-8">
+              <div className="mx-auto w-full max-w-4xl space-y-8 px-4 sm:px-6">
                 {turns.map((turn) => (
                   <WorkbenchTurn key={turn.id} turn={turn} onAsk={ask} />
                 ))}
+                {completionsHeight > 0 && (
+                  <div aria-hidden style={{ height: completionsHeight }} />
+                )}
                 <div ref={bottomRef} />
               </div>
             </div>
             <div className="shrink-0 bg-background pb-[calc(env(safe-area-inset-bottom,0px)+12px)] pt-2 sm:pb-4">
-              {composer}
-              <p className="mt-2 text-center text-[11px] text-muted-foreground">
-                Private by default. Verify important decisions against the cited source.
-              </p>
+              <div className="mx-auto w-full max-w-4xl px-4 sm:px-6">
+                {composer}
+                <p className="mt-2 text-center text-[11px] text-muted-foreground">
+                  Private by default. Verify important decisions against the cited source.
+                </p>
+              </div>
             </div>
           </>
         )}
@@ -460,7 +467,7 @@ function EmptyState({
   children: React.ReactNode;
 }) {
   return (
-    <div className="flex min-h-0 flex-1 flex-col items-center justify-center overflow-y-auto py-8 sm:py-12">
+    <div className="flex min-h-0 flex-1 flex-col items-center justify-center overflow-y-auto px-4 py-8 sm:px-6 sm:py-12">
       <div className="w-full max-w-3xl text-center">
         <h1 className="font-headline text-3xl font-semibold tracking-tight text-foreground sm:text-4xl">
           What would you like to know?

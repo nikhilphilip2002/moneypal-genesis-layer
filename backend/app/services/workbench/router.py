@@ -83,8 +83,23 @@ def _external_only_source(question: str, visible_ids: list[str]) -> str | None:
     return None
 
 
+def _is_record_lookup(question: str) -> bool:
+    """Whether the governed record-lookup grammar already owns this question.
+
+    A question the NLQ module can answer deterministically from Gold is a loan-book value
+    question by definition, whatever words it uses. Deferring to that grammar keeps a terse
+    phrasing ("agent 45 phone number") out of the concepts source, which can only describe
+    what a phone number is.
+    """
+    from app.services.nlq import lookup
+
+    return lookup.detect(question) is not None
+
+
 def _asks_for_loan_book_values(question: str) -> bool:
-    return not _STRUCTURAL_QUERY.search(question) and bool(_VALUE_CUES.search(question))
+    if _STRUCTURAL_QUERY.search(question):
+        return False
+    return bool(_VALUE_CUES.search(question)) or _is_record_lookup(question)
 
 
 def _matches_loan_book_catalog(question: str) -> bool:
@@ -196,7 +211,14 @@ async def route(
     see (or an unknown one) is dropped, and normal routing runs: pinning must never widen
     access beyond what the role already has.
     """
-    normalized = normalize_lending_question(question)
+    # A bare record refinement ("along with names") names no source of its own. Routing on
+    # the question it refines keeps the follow-up with the loan book instead of handing a
+    # fragment to a model that will guess.
+    from app.services.nlq import lookup
+
+    normalized = normalize_lending_question(
+        lookup.resolve_followup(question, history_messages or [])
+    )
 
     if pinned:
         visible_ids = [s.id for s in visible_sources(role)]
@@ -230,7 +252,11 @@ async def route(
 
     visible_ids = [s.id for s in visible_sources(role)]
     external_only = _external_only_source(normalized, visible_ids)
-    catalog_match = "db" in visible_ids and _matches_loan_book_catalog(normalized)
+    # The record grammar is itself curated Gold metadata, so a question it recognises is a
+    # catalog match whether or not the lexical retriever scores one.
+    catalog_match = "db" in visible_ids and (
+        _is_record_lookup(normalized) or _matches_loan_book_catalog(normalized)
+    )
     value_intent = (
         external_only is None
         and catalog_match
