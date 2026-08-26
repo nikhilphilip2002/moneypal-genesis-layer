@@ -72,6 +72,8 @@ export default function Composer({
   const accessInitializedRef = useRef(false);
   const completionRequestRef = useRef(0);
   const listRef = useRef<HTMLUListElement>(null);
+  const shellRef = useRef<HTMLDivElement>(null);
+  const [listMaxHeight, setListMaxHeight] = useState(288);
   const completionsOpen = focused && completions.length > 0;
 
   const loadData = () => {
@@ -111,14 +113,30 @@ export default function Composer({
     return () => window.clearTimeout(timer);
   }, [value, busy]);
 
-  // The list is drawn over the transcript, so the page reserves exactly as much room as
-  // it actually occupies. A fixed reserve would leave a blank band under a two-item list
-  // and still clip a full one.
+  // The list opens upward, so its ceiling is the gap between the header and the composer —
+  // not the viewport. Clamping against the viewport is what made the top of the list sit
+  // behind the header until the page was zoomed out.
+  useEffect(() => {
+    if (!completionsOpen) return;
+    const measure = () => {
+      const top = shellRef.current?.getBoundingClientRect().top ?? 0;
+      const headerBottom =
+        document.querySelector('header')?.getBoundingClientRect().bottom ?? 0;
+      setListMaxHeight(Math.max(140, Math.round(top - headerBottom - 16)));
+    };
+    measure();
+    window.addEventListener('resize', measure);
+    return () => window.removeEventListener('resize', measure);
+  }, [completionsOpen]);
+
+  // The list is drawn over the transcript, so the page reserves exactly as much room as it
+  // actually occupies. A fixed reserve leaves a blank band under a two-item list and still
+  // clips a full one.
   useEffect(() => {
     const height = completionsOpen ? (listRef.current?.offsetHeight ?? 0) + 8 : 0;
     onCompletionHeightChange?.(height);
     return () => onCompletionHeightChange?.(0);
-  }, [completionsOpen, completions, onCompletionHeightChange]);
+  }, [completionsOpen, completions, listMaxHeight, onCompletionHeightChange]);
 
   const resize = () => {
     const textarea = textareaRef.current;
@@ -155,13 +173,16 @@ export default function Composer({
     // Focus is neutral by design: a blue rim around a permanently visible input reads as an
     // alert and competes with the response cards below it. Border width never changes, and
     // the ring is drawn outside the box, so focusing shifts nothing.
-    <div className="relative rounded-2xl border border-border/80 bg-card shadow-[0_10px_35px_rgba(0,69,129,0.08)] transition-colors focus-within:border-foreground/25 focus-within:ring-2 focus-within:ring-foreground/[0.07]">
+    <div
+      ref={shellRef}
+      className="relative rounded-2xl border border-border/80 bg-card shadow-[0_10px_35px_rgba(0,69,129,0.08)] transition-colors focus-within:border-foreground/25 focus-within:ring-2 focus-within:ring-foreground/[0.07]">
       {completionsOpen && (
         <ul
           ref={listRef}
           id="workbench-completions"
           role="listbox"
-          className="absolute bottom-full left-0 z-50 mb-2 max-h-[min(18rem,calc(100svh-12rem))] w-full overflow-y-auto rounded-xl border border-border bg-popover p-1 shadow-xl"
+          style={{ maxHeight: listMaxHeight }}
+          className="absolute bottom-full left-0 z-50 mb-2 w-full overflow-y-auto rounded-xl border border-border bg-popover p-1 shadow-xl"
         >
           {completions.map((item, index) => (
             <li key={`${item.kind}-${item.value}`} role="option" aria-selected={index === completionIndex}>

@@ -285,11 +285,67 @@ def _contains_tokens(haystack: tuple[str, ...], needle: tuple[str, ...]) -> bool
     return any(haystack[index:index + width] == needle for index in range(len(haystack) - width + 1))
 
 
+def _code_reference(
+    question: str, catalog: Catalog, dimension_id: str
+) -> re.Match[str] | None:
+    """Find an explicit "<dimension> <code>" reference, valid code or not.
+
+    People name a branch the way the source system does — "branch 3" — while the enum only
+    carries labels and synonyms. Without this the code is invisible to filtering, the
+    question falls through to generated SQL, and an unrecognised code returns an empty
+    result instead of saying which branches exist.
+    """
+    dimension = catalog.dimensions.get(dimension_id)
+    if dimension is None:
+        return None
+    names = {dimension_id, dimension.label.lower(), *(s.lower() for s in dimension.synonyms)}
+    words = sorted(
+        {name for name in names if re.fullmatch(r"[a-z]{3,}", name)}, key=len, reverse=True
+    )
+    if not words:
+        return None
+    pattern = re.compile(
+        r"\b(?:" + "|".join(words) + r")(?:e?s)?\s*(?:code|number|no\.?|#)?\s*"
+        r"(?P<code>[0-9]{1,6})\b",
+        re.IGNORECASE,
+    )
+    return pattern.search(question)
+
+
+def _unknown_code_plan(question: str, catalog: Catalog) -> ClarifyPlan | None:
+    """Name the codes that do exist rather than returning an empty chart for one that does not."""
+    for dimension_id in ("branch", "product", "scheme"):
+        block = catalog.enum_for_dimension(dimension_id)
+        match = _code_reference(question, catalog, dimension_id) if block else None
+        if match is None or match.group("code") in block.values:
+            continue
+        dimension = catalog.dimensions[dimension_id]
+        label = dimension.label.lower()
+        known = list(block.values)
+        listed = ", ".join(known[:8]) + ("…" if len(known) > 8 else "")
+        return ClarifyPlan(
+            question=(
+                f"The loan book has no {label} {match.group('code')}. "
+                f"Its {len(known)} {label} codes are {listed}. Which did you mean?"
+            ),
+            suggestions=[
+                question[: match.start()] + f"{label} {block.values[code].label}"
+                + question[match.end():]
+                for code in known[:3]
+            ],
+        )
+    return None
+
+
 def _enum_filter(question: str, catalog: Catalog, dimension_id: str) -> Filter | None:
     """Resolve the most specific governed label/synonym present in the question."""
     block = catalog.enum_for_dimension(dimension_id)
     if block is None:
         return None
+    # An explicit code is more specific than any label match, so it settles the filter.
+    coded = _code_reference(question, catalog, dimension_id)
+    if coded is not None and coded.group("code") in block.values:
+        return Filter(field=dimension_id, op="eq", value=coded.group("code"))
     question_tokens = _phrase_tokens(question)
     matches: list[tuple[int, str]] = []
     for code, value in block.values.items():
@@ -885,6 +941,19 @@ async def plan(
                 provider="catalog",
                 duration_ms=0,
             )
+
+    # A code the governed enum does not hold can only produce an empty result. Say which
+    # codes exist instead, before the question reaches generated SQL.
+    unknown_code = _unknown_code_plan(planning_question, cat)
+    if unknown_code is not None:
+        return PlanOutcome(
+            plan=unknown_code,
+            attempts=0,
+            prompt_version=PROMPT_VERSION,
+            model="deterministic",
+            provider="catalog",
+            duration_ms=0,
+        )
 
     filtered = _catalog_filtered_plan(planning_question, cat)
     if filtered is not None:

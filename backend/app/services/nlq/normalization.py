@@ -27,6 +27,14 @@ ASCII apostrophe silently loses the borrower name in front of it."""
 _INTEREST_TYPO = re.compile(r"\bint(?:r|er)?est\b|\bintrest\b", re.IGNORECASE)
 _DISBURSEMENT_TYPO = re.compile(r"\bdisbursment\b", re.IGNORECASE)
 _HISTORY_TYPO = re.compile(r"\b(?:histoy|histry|hisotry|hitory)\b", re.IGNORECASE)
+_PRINCIPAL_TYPO = re.compile(
+    r"\bprinciple(?=s?\s+(?:outstanding|amount|due|paid|repaid|balance|overdue|"
+    r"arrears|collected|recovery|component|portion)\b)|"
+    r"(?<=outstanding\s)principle\b|(?<=overdue\s)principle\b",
+    re.IGNORECASE,
+)
+"""Only next to a lending noun. A question about the *principle* behind a policy belongs to
+the concepts source and must keep its own word."""
 _SCHEMA_WORD = re.compile(r"\bschema\b", re.IGNORECASE)
 _STRUCTURE_WORDS = re.compile(
     r"\b(?:database|table|tables|column|columns|relationship|relationships|join|joins|"
@@ -51,6 +59,7 @@ def normalize_lending_question(question: str) -> str:
     text = _INTEREST_TYPO.sub("interest", text)
     text = _DISBURSEMENT_TYPO.sub("disbursement", text)
     text = _HISTORY_TYPO.sub("history", text)
+    text = _PRINCIPAL_TYPO.sub("principal", text)
 
     if (
         _SCHEMA_WORD.search(text)
