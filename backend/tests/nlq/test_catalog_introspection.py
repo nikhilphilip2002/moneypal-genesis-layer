@@ -44,9 +44,20 @@ class TestTablesExist:
             assert table.startswith("gold."), table
 
     def test_every_gold_view_is_cataloged(self, catalog, live_columns):
-        """A newly deployed Gold view must not remain invisible to NLQ."""
-        uncataloged = sorted(set(live_columns) - catalog.allowed_tables())
+        """Every assistant-facing semantic view must be cataloged.
+
+        Gold also contains implementation and compatibility views that are deliberately
+        outside the LLM allowlist. Only the governed ``semantic_*`` contract is required
+        to be complete here; the private helper is not a selectable business relation.
+        """
+        semantic_views = {
+            table for table in live_columns
+            if table.startswith("gold.semantic_")
+        }
+        uncataloged = sorted(semantic_views - catalog.allowed_tables())
         assert not uncataloged, f"Gold views missing from tables.yaml: {uncataloged}"
+        unexpected = sorted(catalog.allowed_tables() - semantic_views)
+        assert not unexpected, f"non-semantic views exposed by tables.yaml: {unexpected}"
 
 
 class TestColumnsExist:
@@ -134,7 +145,7 @@ class TestDocumentedFactsStillHold:
         """A code documented but absent is fine (NPA is). A code in the data but missing
         from the enum renders as a bare number in a chart, which is what this catches."""
         warehouse_cursor.execute(
-            "SELECT DISTINCT product_code FROM gold.loan_account_master"
+            "SELECT DISTINCT product_code FROM gold.semantic_loan_account"
         )
         live = {str(r[0]) for r in warehouse_cursor.fetchall()}
         documented = set(catalog.enums["product"].values)
@@ -142,7 +153,7 @@ class TestDocumentedFactsStillHold:
 
     def test_branch_codes_are_all_documented(self, catalog, warehouse_cursor):
         warehouse_cursor.execute(
-            "SELECT DISTINCT branch_code FROM gold.loan_account_master"
+            "SELECT DISTINCT application_branch_code FROM gold.semantic_loan_account"
         )
         live = {str(r[0]) for r in warehouse_cursor.fetchall()}
         documented = set(catalog.enums["branch"].values)

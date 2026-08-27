@@ -1,8 +1,8 @@
-# Governed Gold semantic layer. Only PostgreSQL views appear here; Bronze, Public and raw
-# Silver objects are intentionally absent from the active NLQ allowlist.
+# Governed assistant-facing Gold semantic layer. These 18 views are the complete NLQ
+# allowlist; Bronze, Silver, implementation views, and compatibility views stay hidden.
 
-- id: loan_account_master
-  table: gold.loan_account_master
+- id: semantic_loan_account
+  table: gold.semantic_loan_account
   label: Loan accounts
   grain: one row per loan account
   key: [entity_num, loan_account_number]
@@ -10,46 +10,106 @@
   is_hub: true
   contains_pii: true
   synonyms: [loans, loan book, accounts, sanctions, borrowers, customer loans]
-  date_columns:
-    sanction: sanction_date
-    first_disbursement: first_disbursement_date
-    repayment_start: repayment_start_date
-    repayment_end: repayment_end_date
-    last_payment: last_payment_date
-    asset_classification: asset_classified_on
-    npa: npa_date
-    closure: closure_date
-  description: Governed account-level loan view with borrower, origination and cumulative values.
+  date_columns: {sanction: sanction_date, first_disbursement: first_disbursement_date, repayment_start: repayment_start_date, repayment_end: repayment_end_date, last_payment: last_payment_date, asset_classification: asset_classified_on, npa: npa_date, closure: closure_date}
+  description: Account-level loan facts, reporting attributes, borrower identity, and cumulative values.
   notes: Cumulative fields are current values, not period event flows.
 
-- id: loan_disbursement_events
-  table: gold.loan_disbursement_events
-  label: Loan disbursement events
-  grain: one row per disbursement event
+- id: semantic_customer_profile
+  table: gold.semantic_customer_profile
+  label: Customers
+  grain: one row per customer
+  key: [entity_num, customer_id]
+  row_count: 17972
+  contains_pii: true
+  synonyms: [customers, borrowers, clients, customer profile, contact details, KYC status]
+  date_columns: {date_of_birth: date_of_birth}
+  description: Customer identity, demographics, contact, address, KYC summary, and relationship counts.
+
+- id: semantic_customer_document
+  table: gold.semantic_customer_document
+  label: Customer documents
+  grain: one row per customer document
+  key: [inventory_num, document_sl]
+  row_count: 72295
+  contains_pii: true
+  synonyms: [KYC, PAN, Aadhaar, identity document, customer documents]
+  date_columns: {issued: issue_date, expiry: expiry_date}
+  description: Governed KYC document records for authorized customer-level questions.
+
+- id: semantic_branch
+  table: gold.semantic_branch
+  label: Branches and geography
+  grain: one row per branch
+  key: [entity_num, branch_code]
+  row_count: 67
+  contains_pii: true
+  synonyms: [branches, offices, locations, IFSC, district, state, region]
+  date_columns: {opened: opened_on, closed: closed_on}
+  description: Branch directory with the currently validated geography match.
+  coverage_warning: Only one branch currently has a district match and none has a region match.
+  restrictions: Do not rank lending performance by district, state, or region until match coverage is adequate.
+
+- id: semantic_product_scheme
+  table: gold.semantic_product_scheme
+  label: Products, schemes, and reporting mapping
+  grain: one row per source product and scheme combination
+  key: [entity_num, product_code, scheme_code]
+  row_count: 22
+  synonyms: [products, schemes, lending products, loan schemes, reporting products]
+  date_columns: {effective_from: mapping_effective_from, effective_to: mapping_effective_to, approved: mapping_approved_at}
+  description: Product/scheme attributes and their provisional reporting-product mapping.
+  coverage_warning: Reporting mapping remains provisional pending business approval.
+
+- id: semantic_agent
+  table: gold.semantic_agent
+  label: Agents
+  grain: one row per agent
+  key: [agent_code]
+  row_count: 1014
+  contains_pii: true
+  synonyms: [agents, field agents, staff, sourcing agents, collection agents]
+  date_columns: {joined: joined_on}
+  description: Governed staff and field-agent directory with pre-aggregated relationship counts.
+  restrictions: Standalone directory; linked customer and loan counts are already aggregated.
+
+- id: semantic_organization_hierarchy
+  table: gold.semantic_organization_hierarchy
+  label: Organization hierarchy
+  grain: one row per latest sales or collections reporting relationship
+  key: [hierarchy_type, entity_num, actor_user_id, actor_role_code, manager_user_id, effective_from, effective_to, manager_effective_from]
+  row_count: 366
+  contains_pii: true
+  synonyms: [organization, sales hierarchy, collection hierarchy, teams, managers, reporting lines]
+  date_columns: {effective_from: effective_from, effective_to: effective_to, uploaded: uploaded_on}
+  description: Deduplicated sales and collections reporting relationships with source lineage.
+
+- id: semantic_disbursement_event
+  table: gold.semantic_disbursement_event
+  label: Disbursement events
+  grain: one row per loan disbursement
   key: [entity_num, loan_account_number, disbursement_sequence]
   row_count: 5696
   contains_pii: true
   synonyms: [disbursements, releases, payouts, drawdowns, loan amount disbursed]
   date_columns: {disbursement: disbursement_date}
-  description: Governed event-level disbursement view; authoritative for period flows.
-  coverage_warning: >
-    Disbursement event log starts 2025-10-15. Earlier periods may be absent rather than
-    zero.
+  description: Authoritative event-level source for period disbursement flows.
+  coverage_warning: Disbursement event log starts 2025-10-15; earlier periods may be absent rather than zero.
 
-- id: loan_repayment_events
-  table: gold.loan_repayment_events
-  label: Loan repayment events
-  grain: one row per repayment instalment event
+- id: semantic_repayment_event
+  table: gold.semantic_repayment_event
+  label: Repayment events
+  grain: one row per contractual due-versus-paid repayment event
   key: [entity_num, loan_account_number, repayment_sequence]
   row_count: 18836
   contains_pii: true
-  synonyms: [repayments, collections, recovery, receipts, due versus paid]
+  synonyms: [repayments, collections, recovery, due versus paid, repayment history]
   date_columns: {repayment: repayment_date}
-  description: Governed event view pairing principal and interest due with amounts paid.
+  description: Contractual principal and interest due paired with allocated amounts paid.
+  restrictions: This is not the cash-receipt source; use receipt-adjustment events for receipts.
 
-- id: loan_schedule_events
-  table: gold.loan_schedule_events
-  label: Scheduled loan instalments
+- id: semantic_schedule_event
+  table: gold.semantic_schedule_event
+  label: Scheduled instalments
   grain: one row per scheduled instalment
   key: [entity_num, loan_account_number, instalment_sequence]
   row_count: 225132
@@ -59,134 +119,96 @@
   description: Contractual repayment schedule including future-dated instalments.
   notes: Always use an explicit date range.
 
-- id: portfolio_daily_snapshot
-  table: gold.portfolio_daily_snapshot
-  label: Portfolio snapshot
-  grain: one row per classified loan account at the current snapshot
-  key: [entity_num, loan_account_number]
+- id: semantic_portfolio_snapshot
+  table: gold.semantic_portfolio_snapshot
+  label: Portfolio snapshots
+  grain: one row per loan account and snapshot date
+  key: [snapshot_date, entity_num, loan_account_number]
   row_count: 5466
   point_in_time: true
   as_of_column: snapshot_date
   contains_pii: true
   synonyms: [portfolio, outstanding, overdue, DPD, PAR, NPA, asset classification]
-  description: >
-    Current governed portfolio snapshot. Historical as-of reads are produced by
-    gold.portfolio_snapshot_as_of(date), which returns the same columns.
-  coverage_warning: >
-    Covers 5,466 classified accounts out of 5,753 loans and ₹204.54 Cr of classified
-    principal outstanding as of 2026-07-31. Risk ratios use the classified subset. History
-    runs only from 2026-05-22; earlier periods render as explicit gaps rather than zero.
+  description: Classified account portfolio snapshot used for exposure and credit-quality measures.
+  coverage_warning: Covers 5,466 of 5,753 loans. History runs only from 2026-05-22.
 
-- id: gl_daily_balances
-  table: gold.gl_daily_balances
-  label: Daily GL balances
-  grain: one row per GL account, branch, currency and balance date
-  key: [entity_num, branch_code, gl_number, currency_code, balance_date]
+- id: semantic_application
+  table: gold.semantic_application
+  label: Loan applications
+  grain: one row per loan application
+  key: [entity_num, application_number]
+  row_count: 9021
+  contains_pii: true
+  synonyms: [applications, origination, acquisition pipeline, observable outcomes, checklists]
+  date_columns: {application: application_date, authorized: authorized_on, first_disbursement: first_disbursement_date}
+  description: Application facts with observable outcomes and valid checklist-header aggregates.
+  coverage_warning: Completion stage and authoritative approval/rejection decisions are unavailable.
+  restrictions: Do not label an application rejected or approved from observable disbursement status.
+
+- id: semantic_receipt_adjustment_event
+  table: gold.semantic_receipt_adjustment_event
+  label: Receipt and adjustment events
+  grain: one row per receipt or waiver source event
+  key: [event_type, entity_num, loan_account_number, source_event_key]
+  row_count: 86565
+  contains_pii: true
+  synonyms: [receipts, cash collections, payment modes, waivers, adjustments]
+  date_columns: {event: event_date, posting: posting_date, instrument: instrument_date}
+  description: Union of cash receipt and waiver events with an explicit event discriminator.
+  coverage_warning: All current waiver monetary components are zero.
+
+- id: semantic_loan_ledger_event
+  table: gold.semantic_loan_ledger_event
+  label: Loan ledger and balance events
+  grain: one row per ledger movement or post-transaction balance event
+  key: [record_type, entity_num, loan_account_number, source_event_key]
+  row_count: 196445
+  contains_pii: true
+  synonyms: [loan ledger, account transactions, historical balances, principal movement, interest movement]
+  date_columns: {event: event_date}
+  description: Typed union of loan ledger movements and historical account balance states.
+
+- id: semantic_collection_operation_event
+  table: gold.semantic_collection_operation_event
+  label: Collection operations
+  grain: one row per deduplicated assignment, activity, or handover operation
+  key: [operation_type, entity_num, source_event_key]
+  row_count: 13689
+  contains_pii: true
+  synonyms: [collection assignment, collection activity, collector performance, handover, recovery operations]
+  date_columns: {operation: operation_date, assigned: assigned_on, completed: completed_on, posting: posting_date}
+  description: Typed collection operations with collision-free source keys.
+  restrictions: Account linkage is unverified; do not group these operations by loan dimensions.
+
+- id: semantic_origination_vintage
+  table: gold.semantic_origination_vintage
+  label: Origination vintage
+  grain: one row per origination month, report month, branch, product, and scheme
+  key: [entity_num, origination_month, report_month, branch_code, product_code, scheme_code]
+  row_count: 286
+  point_in_time: true
+  as_of_column: report_month
+  synonyms: [vintage, origination cohort, month on book, MOB, cohort performance]
+  date_columns: {origination: origination_month, report: report_month}
+  description: Monthly origination cohorts measured at each available portfolio report month.
+  coverage_warning: Coverage spans nine origination and report months through 2026-06-01.
+  restrictions: Already aggregated; do not join to account-grain views or sum across report months.
+
+- id: semantic_gl_balance
+  table: gold.semantic_gl_balance
+  label: General-ledger balances
+  grain: one row per GL account, branch, currency, and balance date
+  key: [balance_date, entity_num, branch_code, gl_number, currency_code]
   row_count: 203933
   point_in_time: true
   as_of_column: balance_date
-  synonyms: [GL, ledger, trial balance, daily balances, financials]
-  date_columns: {balance: balance_date}
-  description: Governed daily general-ledger balance history from 2020-02-09 onward.
-  restrictions: >
-    GL balances cannot be grouped by loan product, scheme or loan branch because no
-    account-level relationship exists.
+  synonyms: [GL, ledger, trial balance, daily balances, financials, chart of accounts]
+  date_columns: {balance: balance_date, opened: opened_on, closed: closed_on}
+  description: Daily GL balances enriched with governed GL and branch labels.
+  restrictions: No safe relationship exists from GL balances to loan product, scheme, or customer dimensions.
 
-- id: customer_master
-  table: gold.customer_master
-  label: Customers
-  grain: one row per customer
-  key: [entity_num, customer_id]
-  row_count: 17972
-  contains_pii: true
-  synonyms: [customers, borrowers, clients, customer profile, contact details]
-  date_columns: {date_of_birth: date_of_birth}
-  description: Governed customer master including PII for authorized borrower lookups.
-
-- id: agent_master
-  table: gold.agent_master
-  label: Agents
-  grain: one row per agent
-  key: [agent_code]
-  row_count: 1014
-  contains_pii: true
-  synonyms: [agents, field agents, staff, sourcing agents, collection agents]
-  date_columns: {joined: joined_on}
-  description: Governed staff and field-agent directory.
-  restrictions: Standalone current agent directory; linked loan counts are already aggregated.
-
-- id: kyc_document_master
-  table: gold.kyc_document_master
-  label: KYC documents
-  grain: one row per customer document
-  key: [inventory_num, document_sl]
-  row_count: 72295
-  contains_pii: true
-  synonyms: [KYC, PAN, Aadhaar, identity document, customer documents]
-  date_columns: {issued: issue_date, expiry: expiry_date}
-  description: Governed KYC document records for authorized customer-level questions.
-
-- id: branch_master
-  table: gold.branch_master
-  label: Branches
-  grain: one row per branch
-  key: [entity_num, branch_code]
-  row_count: 67
-  synonyms: [branches, offices, locations, IFSC]
-  date_columns: {opened: opened_on, closed: closed_on}
-  description: Governed branch reference view.
-
-- id: product_master
-  table: gold.product_master
-  label: Products and schemes
-  grain: one row per product or scheme
-  key: [product_key]
-  row_count: 35
-  synonyms: [products, schemes, lending products, loan schemes]
-  description: Governed product and scheme reference view.
-
-- id: reporting_product_mapping
-  table: gold.reporting_product_mapping
-  label: Reporting product mapping
-  grain: one row per source product and scheme mapping
-  key: [entity_num, source_product_code, source_scheme_code]
-  row_count: 22
-  contains_pii: true
-  synonyms: [reporting product, product mapping, scheme mapping]
-  date_columns:
-    effective_from: mapping_effective_from
-    effective_to: mapping_effective_to
-    approved: approved_at
-  description: Provisional scheme-led reporting map pending business approval.
-
-- id: loan_reporting_attributes
-  table: gold.loan_reporting_attributes
-  label: Loan reporting attributes
-  grain: one row per loan account
-  key: [entity_num, loan_account_number]
-  row_count: 5753
-  contains_pii: true
-  synonyms: [reporting branch, servicing branch, loan agent, mapping attributes]
-  date_columns: {effective_from: mapping_effective_from, effective_to: mapping_effective_to}
-  description: Governed per-loan branch and agent attributes; reporting branch is not yet populated.
-
-- id: gl_ledger_master
-  table: gold.gl_ledger_master
-  label: General-ledger accounts
-  grain: one row per GL account
-  key: [gl_number]
-  row_count: 866
-  synonyms: [GL master, chart of accounts, ledger account, account head]
-  date_columns:
-    opened: opened_on
-    closed: closed_on
-    last_transaction: last_tran_date
-    balance_as_of: balance_as_on
-  description: Governed general-ledger account reference view.
-  restrictions: Standalone GL directory and balances; cannot be grouped by lending dimensions.
-
-- id: msme_master
-  table: gold.msme_master
+- id: semantic_msme_lead
+  table: gold.semantic_msme_lead
   label: MSME leads
   grain: one row per MSME lead
   key: [entity_num, lead_number]
@@ -194,190 +216,4 @@
   contains_pii: true
   synonyms: [MSME, leads, applications, business borrowers]
   date_columns: {entered: entered_on}
-  description: Governed MSME lead view for authorized operational questions.
-
-# Oracle operational domains promoted on 2026-08-20. Coverage warnings are part of the
-# planner contract: a view being present does not make an absent business field inferable.
-- id: geography_master
-  table: gold.geography_master
-  label: Geography reference
-  grain: one row per source district record
-  key: [country_code, state_code, district_code]
-  row_count: 828
-  synonyms: [geography, regions, states, districts, locations]
-  description: District and state reference enriched with the available regional mapping.
-  coverage_warning: Region is populated for only 28 of 828 rows; 10 rows lack a state name.
-
-- id: branch_geography_bridge
-  table: gold.branch_geography_bridge
-  label: Branch geography mapping
-  grain: one row per branch
-  key: [entity_num, branch_code]
-  row_count: 67
-  synonyms: [branch geography, branch region, branch district, branch location]
-  description: Branch reference with explicit geography match status.
-  restrictions: >
-    Geography is not analysis-ready: only 1 of 67 branches matches a district and none
-    matches a region. Do not group or rank loan metrics by district, state or region.
-
-- id: sales_team_hierarchy
-  table: gold.sales_team_hierarchy
-  label: Sales team hierarchy
-  grain: one row per current or historical user-manager relationship
-  key: [hierarchy_version, entity_num, user_id, effective_from]
-  row_count: 6425
-  contains_pii: true
-  date_columns: {effective_from: effective_from, effective_to: effective_to, uploaded: uploaded_on}
-  synonyms: [sales hierarchy, sales teams, sales managers, field teams]
-  description: Current and historical sales reporting relationships.
-
-- id: collection_team_hierarchy
-  table: gold.collection_team_hierarchy
-  label: Collection team hierarchy
-  grain: one row per current or historical collector-manager relationship
-  key: [hierarchy_version, entity_num, collector_user_id, effective_from]
-  row_count: 1654
-  contains_pii: true
-  date_columns: {effective_from: effective_from, effective_to: effective_to, uploaded: uploaded_on}
-  synonyms: [collection hierarchy, collection teams, recovery teams, collection managers]
-  description: Current and historical collection reporting relationships.
-
-- id: collection_assignment_events
-  table: gold.collection_assignment_events
-  label: Collection assignments
-  grain: one row per CPV assignment
-  key: [entity_num, application_or_ref_num, customer_id, cpv_type, assigned_on]
-  row_count: 14091
-  contains_pii: true
-  date_columns: {assigned: assigned_on, completed: completed_on}
-  synonyms: [collection assignments, CPV allotment, collector allocation, vendor allocation]
-  description: Operational assignment of a customer/application reference to a collector or vendor.
-  coverage_warning: The application/reference number is not yet proven to be a loan account key.
-
-- id: loan_application_master
-  table: gold.loan_application_master
-  label: Loan applications
-  grain: one row per loan application
-  key: [entity_num, application_number]
-  row_count: 9021
-  contains_pii: true
-  date_columns: {application: application_date, authorized: authorized_on}
-  synonyms: [applications, loan applications, origination, acquisition pipeline]
-  description: Governed application-level facts and observable account linkage.
-  coverage_warning: >
-    Completion stage is null and application-level sanction amount is zero for every row;
-    this view cannot support stage conversion, approval rate or rejection analysis.
-
-- id: loan_application_outcomes
-  table: gold.loan_application_outcomes
-  label: Observable application outcomes
-  grain: one row per loan application
-  key: [entity_num, application_number]
-  row_count: 9021
-  contains_pii: true
-  date_columns: {application: application_date, first_disbursement: first_disbursement_date}
-  synonyms: [application outcomes, application conversion, applications disbursed]
-  description: Application outcome inferred from explicit disbursement records or account linkage.
-  coverage_warning: >
-    The label disbursed is not fully verified: 1,822 such rows lack a disbursement date and
-    amount, and 44 are inferred from account linkage without an explicit disbursement row.
-  restrictions: Do not describe not_observed_as_disbursed applications as rejected or declined.
-
-- id: application_checklist_events
-  table: gold.application_checklist_events
-  label: Application checklist records
-  grain: one row per application checklist header in the current implementation
-  key: [entity_num, application_number, inventory_number]
-  row_count: 21042
-  contains_pii: true
-  date_columns: {entered: entered_on}
-  synonyms: [application checklist, documentation checklist, missing documents]
-  description: Application checklist header records with attempted detail enrichment.
-  restrictions: >
-    Detail enrichment is invalid: zero of 550,389 source detail rows join to a header.
-    Do not use checklist_code, selected_flag, applicant_type, inventory_sl or detail_remarks.
-
-- id: payment_receipt_events
-  table: gold.payment_receipt_events
-  label: Payment receipts
-  grain: one row per loan receipt
-  key: [entity_num, loan_account_number, receipt_date, day_serial]
-  row_count: 46144
-  contains_pii: true
-  date_columns: {receipt: receipt_date, posting: posting_date, instrument: instrument_date}
-  synonyms: [receipts, payments received, recoveries, collection receipts, payment modes]
-  description: Loan receipt facts enriched with receipt mode and instrument detail.
-
-- id: loan_waiver_events
-  table: gold.loan_waiver_events
-  label: Loan waiver records
-  grain: one row per loan waiver source record
-  key: [entity_num, loan_account_number, waiver_date, day_serial]
-  row_count: 40421
-  contains_pii: true
-  date_columns: {waiver: waiver_date}
-  synonyms: [waivers, interest waiver, charge waiver, penal waiver]
-  description: Source waiver records and calculated total waived amount.
-  coverage_warning: Every monetary waiver component is currently zero; no positive waiver can be reported.
-
-- id: loan_ledger_events
-  table: gold.loan_ledger_events
-  label: Loan ledger transactions
-  grain: one row per loan account ledger transaction
-  key: [entity_num, loan_account_number, transaction_date, day_serial]
-  row_count: 94124
-  contains_pii: true
-  date_columns: {transaction: transaction_date}
-  synonyms: [loan ledger, account transactions, principal movement, interest movement, charges]
-  description: Transaction-level principal, interest, charge and penal movements.
-
-- id: loan_balance_events
-  table: gold.loan_balance_events
-  label: Loan balance events
-  grain: one row per loan balance state after a transaction
-  key: [entity_num, loan_account_number, as_of_date, day_serial]
-  row_count: 102321
-  point_in_time: true
-  as_of_column: as_of_date
-  contains_pii: true
-  date_columns: {as_of: as_of_date}
-  synonyms: [loan balances, historical outstanding, account balance history]
-  description: Historical principal, interest, charge, penal and excess balances.
-
-- id: collection_activity_events
-  table: gold.collection_activity_events
-  label: Collection activity
-  grain: one row per current or historical collector activity summary
-  key: [activity_version, entity_num, branch_code, collector_user_id, activity_date, run_number]
-  row_count: 1029
-  contains_pii: true
-  date_columns: {activity: activity_date, posting: post_date}
-  synonyms: [collection activity, collector performance, field collection, recovery activity]
-  description: Current and historical daily collection activity by collector and branch.
-  restrictions: Standalone collector/branch summaries; no proven loan-account attribution key.
-
-- id: collection_handover_events
-  table: gold.collection_handover_events
-  label: Collection handovers
-  grain: one row per collection ownership handover
-  key: [entity_num, inventory_number, inventory_sl, run_number]
-  row_count: 174
-  contains_pii: true
-  date_columns: {effective: effective_date, handover: handover_date, handover_time: handover_time}
-  synonyms: [collection handover, collector reassignment, recovery transfer]
-  description: Transfer of collection ownership between users and branches.
-  restrictions: Inventory references are not proven loan-account keys; do not group by loan dimensions.
-
-- id: origination_vintage_matrix
-  table: gold.origination_vintage_matrix
-  label: Origination vintage matrix
-  grain: one row per origination month, report month, branch, product and scheme
-  key: [entity_num, origination_month, report_month, branch_code, product_code, scheme_code]
-  row_count: 286
-  point_in_time: true
-  as_of_column: report_month
-  date_columns: {origination: origination_month, report: report_month}
-  synonyms: [vintage, origination cohort, month on book, MOB, cohort performance]
-  description: Monthly origination cohorts measured at each available portfolio report month.
-  coverage_warning: Coverage spans only nine origination and report months through 2026-06-01.
-  restrictions: Already aggregated; do not join to account-grain views or sum across report months.
+  description: MSME lead and vendor facts for authorized operational analysis.

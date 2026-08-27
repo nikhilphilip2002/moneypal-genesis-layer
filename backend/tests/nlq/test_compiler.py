@@ -35,14 +35,14 @@ class TestGeneratedSql:
     def test_simple_aggregate(self):
         out = sql_for(metrics=["disbursement_total"])
         assert "SUM(disb.disbursement_amount)" in out
-        assert "FROM gold.loan_disbursement_events AS disb" in out
+        assert "FROM gold.semantic_disbursement_event AS disb" in out
         assert "LIMIT :row_limit" in out
 
     def test_group_by_joins_through_the_hub(self):
         out = sql_for(metrics=["disbursement_total"], dimensions=["branch"])
-        assert "JOIN gold.loan_account_master AS lam" in out
-        assert 'disb."entity_num" = lam."entity_num"' in out
-        assert 'lam."branch_code"' in out
+        assert "JOIN gold.semantic_loan_account AS lam" in out
+        assert 'disb."entity_num"::text = lam."entity_num"::text' in out
+        assert 'lam."application_branch_code"' in out
 
     def test_entity_number_is_always_in_the_join(self):
         """entity_num takes two values; omitting it merges two entities' accounts that
@@ -78,22 +78,22 @@ class TestGeneratedSql:
         out = sql_for(metrics=["principal_outstanding"], dimensions=["dpd_bucket"])
         assert "CASE WHEN" in out and "THEN 0" in out
 
-    def test_application_conversion_uses_distinct_safe_aliases(self):
+    def test_application_conversion_uses_folded_outcome_column(self):
         out = sql_for(metrics=["application_count"], dimensions=["application_outcome"])
-        assert "FROM gold.loan_application_master AS application" in out
-        assert "JOIN gold.loan_application_outcomes AS application_outcome" in out
-        assert 'application."application_number" = application_outcome."application_number"' in out
+        assert "FROM gold.semantic_application AS application" in out
+        assert "JOIN gold.semantic_application" not in out
+        assert 'application."observable_outcome_status"' in out
 
     def test_receipts_can_use_governed_loan_product(self):
         out = sql_for(metrics=["receipt_total"], dimensions=["product"])
-        assert "FROM gold.payment_receipt_events AS receipt" in out
-        assert "JOIN gold.loan_account_master AS lam" in out
-        assert "SUM(receipt.receipt_amount)" in out
+        assert "FROM gold.semantic_receipt_adjustment_event AS receipt_adjustment" in out
+        assert "JOIN gold.semantic_loan_account AS lam" in out
+        assert "SUM(receipt_adjustment.receipt_amount)" in out
 
     def test_vintage_metric_stays_at_aggregate_grain(self):
         out = sql_for(metrics=["vintage_par30_rate"], dimensions=["months_on_book"])
-        assert "FROM gold.origination_vintage_matrix AS vintage" in out
-        assert "gold.loan_account_master" not in out
+        assert "FROM gold.semantic_origination_vintage AS vintage" in out
+        assert "gold.semantic_loan_account" not in out
         assert "SUM(vintage.accounts_par30)" in out
 
 

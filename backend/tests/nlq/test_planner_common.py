@@ -112,7 +112,7 @@ async def test_single_open_account_count_filters_instead_of_grouping(state_word)
 async def test_various_interest_rates_uses_validated_column_query_path():
     outcome = await plan("what are the various intrest rate?", client=NoModel())
     assert isinstance(outcome.plan, SqlPlan)
-    assert outcome.plan.tables == ["gold.loan_account_master"]
+    assert outcome.plan.tables == ["gold.semantic_loan_account"]
 
     attempt = await generate("what are the various intrest rate?", client=NoModel())
     assert attempt.validated is True

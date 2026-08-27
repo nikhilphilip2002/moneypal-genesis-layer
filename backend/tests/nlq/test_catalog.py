@@ -20,8 +20,8 @@ def catalog():
 class TestLoads:
     def test_catalog_loads_and_validates(self, catalog):
         assert catalog.metrics and catalog.dimensions and catalog.tables
-        assert catalog.metrics["agent_linked_loans"].base_table == "gold.agent_master"
-        assert catalog.dimensions["agent"].table == "gold.loan_reporting_attributes"
+        assert catalog.metrics["agent_linked_loans"].base_table == "gold.semantic_agent"
+        assert catalog.dimensions["agent"].table == "gold.semantic_loan_account"
         assert catalog.dimensions["loan_agent"].decode == "agent_identity"
         assert catalog.dimensions["agent_profile"].column == "agent_code"
 
@@ -162,7 +162,7 @@ class TestSafetyMetadata:
     def test_gl_is_isolated_from_the_loan_book(self, catalog):
         """No join path — a GL-by-product question must be refusable, not answerable."""
         assert catalog.join_between(
-            "gold.gl_daily_balances", "gold.loan_account_master"
+            "gold.semantic_gl_balance", "gold.semantic_loan_account"
         ) is None
 
     def test_unratified_metrics_are_flagged(self, catalog):
@@ -215,5 +215,5 @@ class TestSearch:
             catalog=catalog,
             use_vectors=False,
         )
-        assert result.tables[0] == "gold.msme_master"
+        assert result.tables[0] == "gold.semantic_msme_lead"
         assert any(hit.doc.kind == "column" for hit in result.hits)

@@ -47,7 +47,7 @@ class TestFlowMetrics:
     def test_disbursement_total(self, warehouse_cursor):
         expected = hand_scalar(
             warehouse_cursor,
-            "SELECT SUM(disbursement_amount) FROM gold.loan_disbursement_events",
+            "SELECT SUM(disbursement_amount) FROM gold.semantic_disbursement_event",
         )
         actual = scalar(
             warehouse_cursor,
@@ -57,7 +57,7 @@ class TestFlowMetrics:
 
     def test_sanctioned_amount(self, warehouse_cursor):
         expected = hand_scalar(
-            warehouse_cursor, "SELECT SUM(sanction_amount) FROM gold.loan_account_master"
+            warehouse_cursor, "SELECT SUM(sanction_amount) FROM gold.semantic_loan_account"
         )
         actual = scalar(
             warehouse_cursor,
@@ -70,12 +70,12 @@ class TestFlowMetrics:
             warehouse_cursor,
             QuerySpec(metrics=["loan_count"], period=Period(relative="all_time")),
         )
-        expected = hand_scalar(warehouse_cursor, "SELECT count(*) FROM gold.loan_account_master")
+        expected = hand_scalar(warehouse_cursor, "SELECT count(*) FROM gold.semantic_loan_account")
         assert actual == expected
 
     def test_amount_collected(self, warehouse_cursor):
         expected = hand_scalar(
-            warehouse_cursor, "SELECT SUM(total_paid) FROM gold.loan_repayment_events"
+            warehouse_cursor, "SELECT SUM(total_paid) FROM gold.semantic_repayment_event"
         )
         actual = scalar(
             warehouse_cursor,
@@ -91,7 +91,7 @@ class TestRatioMetrics:
         expected = hand_scalar(
             warehouse_cursor,
             "SELECT 100.0 * SUM(total_paid) / NULLIF(SUM(total_due), 0) "
-            "FROM gold.loan_repayment_events",
+            "FROM gold.semantic_repayment_event",
         )
         actual = scalar(
             warehouse_cursor,
@@ -106,7 +106,7 @@ class TestRatioMetrics:
         )
         expected = hand_scalar(
             warehouse_cursor,
-            "SELECT SUM(sanction_amount) / NULLIF(count(*), 0) FROM gold.loan_account_master",
+            "SELECT SUM(sanction_amount) / NULLIF(count(*), 0) FROM gold.semantic_loan_account",
         )
         assert close(actual, expected, 0.01)
 
@@ -149,7 +149,7 @@ class TestPointInTimeMetrics:
     def test_whole_book_outstanding(self, warehouse_cursor):
         expected = hand_scalar(
             warehouse_cursor,
-            "SELECT SUM(disbursed_amount - principal_repaid) FROM gold.loan_account_master",
+            "SELECT SUM(disbursed_amount - principal_repaid) FROM gold.semantic_loan_account",
         )
         actual = scalar(
             warehouse_cursor,
@@ -231,7 +231,7 @@ class TestBreakdownsSumToTheTotal:
                 metrics=["loan_count"], dimensions=["product"], period=Period(relative="all_time")
             ),
         )
-        total = hand_scalar(warehouse_cursor, "SELECT count(*) FROM gold.loan_account_master")
+        total = hand_scalar(warehouse_cursor, "SELECT count(*) FROM gold.semantic_loan_account")
         assert sum(int(r[1]) for r in rows) == total
 
     def test_outstanding_by_dpd_bucket_reconciles(self, warehouse_cursor):

@@ -13,13 +13,13 @@ import pytest
 from app.services.nlq.validator import ValidationError, is_safe, validate
 
 GOOD = """
-SELECT lam.branch_code, SUM(d.disbursement_amount) AS total
-FROM gold.loan_disbursement_events AS d
-JOIN gold.loan_account_master AS lam
+SELECT lam.application_branch_code, SUM(d.disbursement_amount) AS total
+FROM gold.semantic_disbursement_event AS d
+JOIN gold.semantic_loan_account AS lam
   ON d.loan_account_number = lam.loan_account_number
  AND d.entity_num = lam.entity_num
 WHERE d.disbursement_date BETWEEN '2026-04-01' AND '2026-06-30'
-GROUP BY lam.branch_code
+GROUP BY lam.application_branch_code
 LIMIT 100
 """
 
@@ -27,14 +27,14 @@ LIMIT 100
 class TestAcceptsLegitimateQueries:
     def test_a_normal_reporting_query_passes(self):
         result = validate(GOOD)
-        assert "gold.loan_disbursement_events" in result.tables
-        assert "gold.loan_account_master" in result.tables
+        assert "gold.semantic_disbursement_event" in result.tables
+        assert "gold.semantic_loan_account" in result.tables
 
     def test_cte_is_allowed(self):
         sql = """
         WITH asof AS (
             SELECT loan_account_number, principal_outstanding
-            FROM gold.portfolio_daily_snapshot
+            FROM gold.semantic_portfolio_snapshot
             WHERE snapshot_date <= '2026-07-01'
         )
         SELECT SUM(principal_outstanding) AS total FROM asof LIMIT 10
@@ -49,7 +49,7 @@ class TestAcceptsLegitimateQueries:
                                      INTERVAL '1 month')::date AS bucket) AS b
         CROSS JOIN LATERAL (
             SELECT principal_outstanding
-            FROM gold.portfolio_daily_snapshot
+            FROM gold.semantic_portfolio_snapshot
             WHERE snapshot_date <= b.bucket
         ) AS a
         GROUP BY b.bucket
@@ -137,7 +137,7 @@ class TestSchemaIsolation:
         ["gnlnac_prin_repay_amt", "gnlnac_prin_paid", "gnlnac_borrower_name"],
     )
     def test_invented_columns_are_rejected_before_explain(self, column):
-        sql = f"SELECT {column} FROM gold.loan_account_master LIMIT 1"
+        sql = f"SELECT {column} FROM gold.semantic_loan_account LIMIT 1"
         with pytest.raises(ValidationError, match="column"):
             validate(sql, allow_pii=True)
 
@@ -164,14 +164,14 @@ class TestDangerousFunctions:
         ],
     )
     def test_file_network_and_dos_primitives_are_rejected(self, call):
-        sql = f"SELECT {call} FROM gold.loan_account_master LIMIT 1"
+        sql = f"SELECT {call} FROM gold.semantic_loan_account LIMIT 1"
         with pytest.raises(ValidationError):
             validate(sql)
 
     def test_nested_in_a_subquery_is_still_caught(self):
         """A denylist that only inspected the top-level select list would miss this."""
         sql = (
-            "SELECT loan_account_number FROM gold.loan_account_master "
+            "SELECT loan_account_number FROM gold.semantic_loan_account "
             "WHERE loan_account_number IN (SELECT pg_sleep(10)) LIMIT 1"
         )
         with pytest.raises(ValidationError):
@@ -182,9 +182,9 @@ class TestUncontrolledEgress:
     @pytest.mark.parametrize(
         "sql",
         [
-            "SELECT * FROM gold.loan_account_master LIMIT 10",
-            "SELECT lam.* FROM gold.loan_account_master AS lam LIMIT 10",
-            "SELECT a.* FROM gold.customer_master AS a LIMIT 1",
+            "SELECT * FROM gold.semantic_loan_account LIMIT 10",
+            "SELECT lam.* FROM gold.semantic_loan_account AS lam LIMIT 10",
+            "SELECT a.* FROM gold.semantic_customer_profile AS a LIMIT 1",
         ],
     )
     def test_select_star_is_rejected(self, sql):
@@ -194,20 +194,20 @@ class TestUncontrolledEgress:
 
     def test_pii_columns_are_rejected_without_permission(self):
         sql = (
-            "SELECT full_name, date_of_birth FROM gold.customer_master LIMIT 5"
+            "SELECT full_name, date_of_birth FROM gold.semantic_customer_profile LIMIT 5"
         )
         with pytest.raises(ValidationError):
             validate(sql, allow_pii=False)
 
     def test_pii_columns_are_allowed_for_a_permitted_role(self):
-        sql = "SELECT full_name FROM gold.customer_master LIMIT 5"
+        sql = "SELECT full_name FROM gold.semantic_customer_profile LIMIT 5"
         result = validate(sql, allow_pii=True)
         assert "full_name" in result.pii_columns
 
     def test_pii_can_be_narrowed_to_borrower_name_columns(self):
         sql = (
             "SELECT full_name, date_of_birth "
-            "FROM gold.customer_master LIMIT 5"
+            "FROM gold.semantic_customer_profile LIMIT 5"
         )
         with pytest.raises(ValidationError, match="not permitted for this query path"):
             validate(
@@ -222,28 +222,28 @@ class TestResourceBounds:
         """13k accounts x 260k schedule rows is 3.5 billion rows."""
         sql = (
             "SELECT a.loan_account_number, b.principal_due "
-            "FROM gold.loan_account_master AS a, gold.loan_schedule_events AS b LIMIT 10"
+            "FROM gold.semantic_loan_account AS a, gold.semantic_schedule_event AS b LIMIT 10"
         )
         with pytest.raises(ValidationError):
             validate(sql)
 
     def test_join_without_on_is_rejected(self):
         sql = (
-            "SELECT a.loan_account_number FROM gold.loan_account_master AS a "
-            "JOIN gold.loan_schedule_events AS b ON TRUE LIMIT 10"
+            "SELECT a.loan_account_number FROM gold.semantic_loan_account AS a "
+            "JOIN gold.semantic_schedule_event AS b ON TRUE LIMIT 10"
         )
         # ON TRUE is syntactically a condition; it is still bounded by the LIMIT and the
         # EXPLAIN cost gate, so this is allowed through to that check rather than here.
         assert is_safe(sql)
 
     def test_missing_limit_is_injected(self):
-        sql = "SELECT loan_account_number FROM gold.loan_account_master"
+        sql = "SELECT loan_account_number FROM gold.semantic_loan_account"
         result = validate(sql)
         assert result.limit_injected
         assert "LIMIT" in result.sql.upper()
 
     def test_excessive_limit_is_rejected(self):
-        sql = "SELECT loan_account_number FROM gold.loan_account_master LIMIT 999999"
+        sql = "SELECT loan_account_number FROM gold.semantic_loan_account LIMIT 999999"
         with pytest.raises(ValidationError):
             validate(sql)
 
@@ -280,7 +280,7 @@ class TestReturnedSql:
     def test_the_validator_returns_the_statement_it_checked(self):
         """The executor must run the validated tree, not the original string — otherwise
         the injected LIMIT would be silently discarded."""
-        original = "SELECT loan_account_number FROM gold.loan_account_master"
+        original = "SELECT loan_account_number FROM gold.semantic_loan_account"
         result = validate(original)
         assert "LIMIT" in result.sql.upper()
         assert result.sql != original

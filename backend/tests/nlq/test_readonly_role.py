@@ -35,30 +35,35 @@ class TestPrivileges:
 
     def test_can_read_gold_view(self):
         with nlq_db.readonly_cursor() as (_conn, cur):
-            cur.execute("SELECT count(*) FROM gold.loan_account_master")
+            cur.execute("SELECT count(*) FROM gold.semantic_loan_account")
             assert cur.fetchone()[0] > 0
 
     def test_sees_every_gold_view(self):
-        """Every reviewed Gold view is explicitly granted by nlq_readonly_role.sql."""
+        """Only the 18 reviewed semantic views are visible to NLQ."""
         with nlq_db.readonly_cursor() as (_conn, cur):
             cur.execute(
                 "SELECT count(*) FROM information_schema.views WHERE table_schema = 'gold'"
             )
-            assert cur.fetchone()[0] == 30
+            assert cur.fetchone()[0] == 18
 
     @pytest.mark.parametrize(
         "view",
         [
-            "loan_application_master",
-            "payment_receipt_events",
-            "loan_ledger_events",
-            "origination_vintage_matrix",
+            "semantic_application",
+            "semantic_receipt_adjustment_event",
+            "semantic_loan_ledger_event",
+            "semantic_origination_vintage",
         ],
     )
-    def test_can_read_promoted_operational_views(self, view):
+    def test_can_read_consolidated_semantic_views(self, view):
         with nlq_db.readonly_cursor() as (_conn, cur):
             cur.execute(f"SELECT count(*) FROM gold.{view}")
             assert cur.fetchone()[0] >= 0
+
+    def test_cannot_read_legacy_compatibility_view(self):
+        with nlq_db.readonly_cursor() as (_conn, cur):
+            error = _fails(cur, "SELECT count(*) FROM gold.loan_account_master")
+            assert "permission denied" in error.lower()
 
     def test_can_execute_reviewed_portfolio_function(self):
         with nlq_db.readonly_cursor() as (_conn, cur):
@@ -67,12 +72,21 @@ class TestPrivileges:
 
 
 class TestWritesAreRejected:
+    def test_semantic_views_have_no_dml_privileges(self):
+        with nlq_db.readonly_cursor() as (_conn, cur):
+            cur.execute(
+                "SELECT has_table_privilege(current_user, 'gold.semantic_loan_account', 'INSERT'), "
+                "has_table_privilege(current_user, 'gold.semantic_loan_account', 'UPDATE'), "
+                "has_table_privilege(current_user, 'gold.semantic_loan_account', 'DELETE')"
+            )
+            assert cur.fetchone() == (False, False, False)
+
     @pytest.mark.parametrize(
         "sql",
         [
-            "INSERT INTO gold.loan_account_master (loan_account_number) VALUES ('x')",
-            "UPDATE gold.loan_account_master SET sanction_amount = 0",
-            "DELETE FROM gold.loan_account_master",
+            "INSERT INTO gold.semantic_loan_account (loan_account_number) VALUES ('x')",
+            "UPDATE gold.semantic_loan_account SET sanction_amount = 0",
+            "DELETE FROM gold.semantic_loan_account",
             "CREATE TABLE gold.nlq_should_not_exist (i int)",
         ],
     )
@@ -80,16 +94,18 @@ class TestWritesAreRejected:
         with nlq_db.readonly_cursor() as (conn, cur):
             error = _fails(cur, sql)
             conn.rollback()
-        assert "denied" in error.lower() or "read-only" in error.lower()
+        lowered = error.lower()
+        assert "denied" in lowered or "read-only" in lowered or "cannot " in lowered
 
     def test_write_denied_even_in_an_explicit_read_write_transaction(self):
         """`default_transaction_read_only` is only a default — a session can turn it off.
         What must hold is the privilege set underneath it."""
         with nlq_db.readonly_cursor() as (conn, cur):
             cur.execute("SET default_transaction_read_only = off")
-            error = _fails(cur, "DELETE FROM gold.loan_account_master")
+            error = _fails(cur, "DELETE FROM gold.semantic_loan_account")
             conn.rollback()
-        assert "denied" in error.lower()
+        lowered = error.lower()
+        assert "denied" in lowered or "cannot " in lowered
 
 
 class TestSchemaIsolation:

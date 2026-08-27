@@ -1099,7 +1099,7 @@ _ROW_FIELD = re.compile(r"\{([a-zA-Z_][a-zA-Z0-9_]*)\}")
 # "user input is escaped" — there is no user input in it. A predicate that reaches another
 # table, or ends a statement, is rejected at load time rather than at query time.
 _FORBIDDEN_IN_PREDICATE = (";", "--", "/*")
-_ALLOWED_SUBQUERY_TABLES = ("gold.portfolio_daily_snapshot",)
+_ALLOWED_SUBQUERY_TABLES = ("gold.semantic_portfolio_snapshot",)
 
 
 def _worklist_problems(catalog: Catalog) -> list[str]:

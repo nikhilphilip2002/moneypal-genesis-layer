@@ -469,7 +469,7 @@ class TestLineage:
         assert chart.lineage.parameters["as_of"]
         assert chart.lineage.parameters["row_limit"] == "200"
         assert "par_30" in chart.lineage.formulas
-        assert chart.lineage.source_tables == ["gold.portfolio_daily_snapshot"]
+        assert chart.lineage.source_tables == ["gold.semantic_portfolio_snapshot"]
 
     def test_queryspec_answers_are_not_marked_unverified(self, catalog):
         spec = QuerySpec(metrics=["loan_count"], period=Period(relative="all_time"))

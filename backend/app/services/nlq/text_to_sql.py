@@ -340,7 +340,7 @@ def _agent_directory_attempt(
     )
     direction = "DESC" if order_column.startswith("linked_") else "ASC"
     sql = (
-        "SELECT " + ", ".join(names) + " FROM gold.agent_master "
+        "SELECT " + ", ".join(names) + " FROM gold.semantic_agent "
         f"ORDER BY {order_column} {direction} NULLS LAST LIMIT 200"
     )
     checked = validate(
@@ -375,7 +375,7 @@ def _interest_rate_distribution_attempt(
         return None
     sql = (
         "SELECT interest_rate AS interest_rate, COUNT(interest_rate) AS loan_count "
-        "FROM gold.loan_account_master "
+        "FROM gold.semantic_loan_account "
         "WHERE interest_rate IS NOT NULL AND sanction_date <= CURRENT_DATE "
         "GROUP BY interest_rate ORDER BY interest_rate ASC LIMIT 5000"
     )
@@ -470,7 +470,7 @@ def _named_borrower_disbursed_attempt(
     sql = (
         f"SELECT {display_name} AS borrower_name, "
         "SUM(disbursed_amount) AS disbursed_amount "
-        "FROM gold.loan_account_master "
+        "FROM gold.semantic_loan_account "
         f"WHERE {stored_name} LIKE {literal} || '%' "
         "AND sanction_date <= CURRENT_DATE "
         f"GROUP BY {display_name} ORDER BY disbursed_amount DESC LIMIT 20"
@@ -525,7 +525,7 @@ def _named_borrower_principal_attempt(
     sql = (
         f"SELECT {display_name} AS borrower_name, "
         "SUM(principal_repaid) AS principal_repaid "
-        "FROM gold.loan_account_master "
+        "FROM gold.semantic_loan_account "
         f"WHERE {stored_name} LIKE {literal} || '%' "
         "AND sanction_date <= CURRENT_DATE "
         f"GROUP BY {display_name} ORDER BY principal_repaid DESC LIMIT 20"
@@ -608,11 +608,11 @@ def _few_shots() -> list[dict[str, str]]:
         {
             "role": "assistant",
             "content": (
-                '{"sql":"SELECT branch_code, AVG(interest_rate) AS avg_rate '
-                "FROM gold.loan_account_master WHERE product_code = 1 "
+                '{"sql":"SELECT application_branch_code, AVG(interest_rate) AS avg_rate '
+                "FROM gold.semantic_loan_account WHERE product_code = 1 "
                 'AND sanction_date >= DATE \'2023-01-01\' '
-                'GROUP BY branch_code LIMIT 100",'
-                '"tables":["gold.loan_account_master"],'
+                'GROUP BY application_branch_code LIMIT 100",'
+                '"tables":["gold.semantic_loan_account"],'
                 '"explanation":"Average rate per branch for product 1."}'
             ),
         },
@@ -624,10 +624,10 @@ def _few_shots() -> list[dict[str, str]]:
             "role": "assistant",
             "content": (
                 '{"sql":"SELECT loan_account_number, dpd_days, total_overdue '
-                "FROM gold.portfolio_daily_snapshot "
+                "FROM gold.semantic_portfolio_snapshot "
                 'WHERE dpd_days > 0 ORDER BY dpd_days DESC, total_overdue DESC '
                 'LIMIT 100",'
-                '"tables":["gold.portfolio_daily_snapshot"],'
+                '"tables":["gold.semantic_portfolio_snapshot"],'
                 '"explanation":"Current delinquent accounts, worst first."}'
             ),
         },

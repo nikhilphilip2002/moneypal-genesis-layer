@@ -22,12 +22,12 @@
 # `unavailable` at the bottom, which is the list to hand the client.
 
 base:
-  from: gold.portfolio_daily_snapshot
+  from: gold.semantic_portfolio_snapshot
   alias: s
   joins:
-    - "LEFT JOIN gold.loan_account_master l ON l.entity_num = s.entity_num
+    - "LEFT JOIN gold.semantic_loan_account l ON l.entity_num = s.entity_num
        AND l.loan_account_number = s.loan_account_number"
-  tables: [gold.portfolio_daily_snapshot, gold.loan_account_master]
+  tables: [gold.semantic_portfolio_snapshot, gold.semantic_loan_account]
   # Selected for every row, whatever the worklist. `column` is the SQL, `id` the row key.
   columns:
     - {id: loan_account_number, sql: "s.loan_account_number", label: Account, unit: text}
@@ -135,7 +135,7 @@ rules:
       s.total_overdue > 0
       AND s.principal_outstanding >= (
         SELECT PERCENTILE_CONT(0.99) WITHIN GROUP (ORDER BY principal_outstanding)
-        FROM gold.portfolio_daily_snapshot
+        FROM gold.semantic_portfolio_snapshot
       )
 
 score:

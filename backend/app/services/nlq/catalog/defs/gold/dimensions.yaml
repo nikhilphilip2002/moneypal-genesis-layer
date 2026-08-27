@@ -1,7 +1,7 @@
 - id: branch
   label: Branch
-  table: gold.loan_account_master
-  column: branch_code
+  table: gold.semantic_loan_account
+  column: application_branch_code
   type: categorical
   decode: branch
   synonyms: [branch, branches, location, office, centre, region, by branch]
@@ -10,7 +10,7 @@
 
 - id: product
   label: Product
-  table: gold.loan_account_master
+  table: gold.semantic_loan_account
   column: product_code
   type: categorical
   decode: product
@@ -20,7 +20,7 @@
 
 - id: scheme
   label: Scheme
-  table: gold.loan_account_master
+  table: gold.semantic_loan_account
   column: scheme_code
   type: categorical
   decode: scheme
@@ -30,7 +30,7 @@
 
 - id: asset_class
   label: Asset classification
-  table: gold.portfolio_daily_snapshot
+  table: gold.semantic_portfolio_snapshot
   column: asset_code
   type: categorical
   decode: asset_class
@@ -41,7 +41,7 @@
 
 - id: dpd_bucket
   label: DPD bucket
-  table: gold.portfolio_daily_snapshot
+  table: gold.semantic_portfolio_snapshot
   column: dpd_days
   type: categorical
   expression: >
@@ -59,7 +59,7 @@
 
 - id: loan_type
   label: Loan type
-  table: gold.loan_account_master
+  table: gold.semantic_loan_account
   column: loan_type
   type: categorical
   decode: loan_type
@@ -67,14 +67,14 @@
 
 - id: account_status
   label: Account status
-  table: gold.loan_account_master
+  table: gold.semantic_loan_account
   column: loan_status
   type: categorical
   synonyms: [status, detailed account status, active, NPA, sanctioned]
 
 - id: open_closed_status
   label: Account state
-  table: gold.loan_account_master
+  table: gold.semantic_loan_account
   column: loan_status
   type: categorical
   expression: >
@@ -88,7 +88,7 @@
 
 - id: agent
   label: Agent
-  table: gold.loan_reporting_attributes
+  table: gold.semantic_loan_account
   column: agent_code
   type: categorical
   decode: agent_identity
@@ -97,7 +97,7 @@
 
 - id: loan_agent
   label: Agent
-  table: gold.loan_reporting_attributes
+  table: gold.semantic_loan_account
   column: agent_code
   type: categorical
   decode: agent_identity
@@ -106,7 +106,7 @@
 
 - id: borrower
   label: Borrower
-  table: gold.loan_account_master
+  table: gold.semantic_loan_account
   column: customer_name
   type: categorical
   synonyms: [borrower, borrower name, customer, customer name, client, top borrowers]
@@ -115,7 +115,7 @@
 
 - id: gender
   label: Borrower gender
-  table: gold.customer_master
+  table: gold.semantic_customer_profile
   column: gender
   type: categorical
   synonyms: [gender, borrower gender, customer gender, male female, gender diversity]
@@ -126,7 +126,7 @@
 
 - id: occupation
   label: Borrower occupation
-  table: gold.customer_master
+  table: gold.semantic_customer_profile
   column: occupation_type
   type: categorical
   expression: UPPER(BTRIM(COALESCE({col}, '')))
@@ -135,7 +135,7 @@
 
 - id: loan_account
   label: Loan account
-  table: gold.loan_account_master
+  table: gold.semantic_loan_account
   column: loan_account_number
   type: categorical
   synonyms: [account, loan account, account number, accounts, which accounts, account level]
@@ -147,7 +147,7 @@
 
 - id: agent_profile
   label: Agent
-  table: gold.agent_master
+  table: gold.semantic_agent
   column: agent_code
   type: categorical
   decode: agent_identity
@@ -157,7 +157,7 @@
 
 - id: gl_account
   label: GL account
-  table: gold.gl_daily_balances
+  table: gold.semantic_gl_balance
   column: gl_number
   type: categorical
   synonyms: [GL code, ledger account, account head, GL account]
@@ -165,7 +165,7 @@
 
 - id: gl_branch
   label: GL branch
-  table: gold.gl_daily_balances
+  table: gold.semantic_gl_balance
   column: branch_code
   type: categorical
   synonyms: [GL branch, ledger branch]
@@ -173,7 +173,7 @@
 
 - id: application_branch
   label: Application branch
-  table: gold.loan_application_master
+  table: gold.semantic_application
   column: branch_code
   type: categorical
   decode: branch
@@ -182,7 +182,7 @@
 
 - id: application_product
   label: Application product
-  table: gold.loan_application_master
+  table: gold.semantic_application
   column: product_code
   type: categorical
   decode: product
@@ -190,7 +190,7 @@
 
 - id: application_scheme
   label: Application scheme
-  table: gold.loan_application_master
+  table: gold.semantic_application
   column: scheme_code
   type: categorical
   decode: scheme
@@ -198,7 +198,7 @@
 
 - id: application_account_link_status
   label: Application account linkage
-  table: gold.loan_application_master
+  table: gold.semantic_application
   column: account_link_status
   type: categorical
   synonyms: [account linked applications, application linkage]
@@ -206,8 +206,8 @@
 
 - id: application_outcome
   label: Observable application outcome
-  table: gold.loan_application_outcomes
-  column: outcome_status
+  table: gold.semantic_application
+  column: observable_outcome_status
   type: categorical
   synonyms: [application outcome, converted application, applications disbursed]
   description: >
@@ -216,22 +216,22 @@
 
 - id: receipt_mode
   label: Receipt mode
-  table: gold.payment_receipt_events
+  table: gold.semantic_receipt_adjustment_event
   column: receipt_mode
   type: categorical
   synonyms: [payment mode, receipt channel, cash cheque online, collection mode]
 
 - id: receipt_branch
   label: Receipt branch
-  table: gold.payment_receipt_events
-  column: receipt_branch
+  table: gold.semantic_receipt_adjustment_event
+  column: receipt_branch_code
   type: categorical
   decode: branch
   synonyms: [collection branch, payment branch, receipt branch]
 
 - id: collection_activity_branch
   label: Collection activity branch
-  table: gold.collection_activity_events
+  table: gold.semantic_collection_operation_event
   column: branch_code
   type: categorical
   decode: branch
@@ -239,14 +239,14 @@
 
 - id: collector_user
   label: Collector
-  table: gold.collection_activity_events
-  column: collector_user_id
+  table: gold.semantic_collection_operation_event
+  column: actor_user_id
   type: categorical
   synonyms: [collector, collection user, recovery officer]
 
 - id: collection_agent
   label: Collection agent
-  table: gold.collection_activity_events
+  table: gold.semantic_collection_operation_event
   column: agent_code
   type: categorical
   decode: agent_identity
@@ -254,28 +254,28 @@
 
 - id: handover_status
   label: Collection handover status
-  table: gold.collection_handover_events
-  column: status
+  table: gold.semantic_collection_operation_event
+  column: handover_status
   type: categorical
   synonyms: [handover status, reassignment status]
 
 - id: vintage_origination_month
   label: Vintage origination month
-  table: gold.origination_vintage_matrix
+  table: gold.semantic_origination_vintage
   column: origination_month
   type: categorical
   synonyms: [origination month, vintage month, cohort month]
 
 - id: months_on_book
   label: Months on book
-  table: gold.origination_vintage_matrix
+  table: gold.semantic_origination_vintage
   column: months_on_book
   type: categorical
   synonyms: [MOB, months on book, cohort age]
 
 - id: vintage_branch
   label: Vintage branch
-  table: gold.origination_vintage_matrix
+  table: gold.semantic_origination_vintage
   column: branch_code
   type: categorical
   decode: branch
@@ -283,7 +283,7 @@
 
 - id: vintage_product
   label: Vintage product
-  table: gold.origination_vintage_matrix
+  table: gold.semantic_origination_vintage
   column: product_code
   type: categorical
   decode: product
@@ -291,7 +291,7 @@
 
 - id: vintage_scheme
   label: Vintage scheme
-  table: gold.origination_vintage_matrix
+  table: gold.semantic_origination_vintage
   column: scheme_code
   type: categorical
   decode: scheme

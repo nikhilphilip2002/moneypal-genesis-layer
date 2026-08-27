@@ -124,7 +124,7 @@ class TestRefusedCasesAreNotSecretlyAnswerable:
                 }
             )
         )
-        assert "gold.gl_daily_balances" in compiled.sql
+        assert "gold.semantic_gl_balance" in compiled.sql
         assert "generate_series" in compiled.sql
         assert "bucket_start" in compiled.sql
 

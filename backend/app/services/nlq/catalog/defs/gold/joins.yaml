@@ -1,122 +1,69 @@
+# Only reviewed, non-fan-out edges between the 18 semantic views are exposed.
+
 - id: disbursement_to_loan
-  left: gold.loan_disbursement_events
-  right: gold.loan_account_master
+  left: gold.semantic_disbursement_event
+  right: gold.semantic_loan_account
   on_columns: [[entity_num, entity_num], [loan_account_number, loan_account_number]]
   cardinality: many_to_one
   join_type: inner
-  description: Disbursement events to their loan account dimensions.
+  description: Disbursement events to their account-level labels and current attributes.
 
 - id: repayment_to_loan
-  left: gold.loan_repayment_events
-  right: gold.loan_account_master
+  left: gold.semantic_repayment_event
+  right: gold.semantic_loan_account
   on_columns: [[entity_num, entity_num], [loan_account_number, loan_account_number]]
   cardinality: many_to_one
   join_type: inner
-  description: Repayment events to their loan account dimensions.
+  description: Contractual repayment events to their loan accounts.
 
 - id: schedule_to_loan
-  left: gold.loan_schedule_events
-  right: gold.loan_account_master
+  left: gold.semantic_schedule_event
+  right: gold.semantic_loan_account
   on_columns: [[entity_num, entity_num], [loan_account_number, loan_account_number]]
   cardinality: many_to_one
   join_type: inner
-  description: Scheduled instalments to their loan account dimensions.
+  description: Scheduled instalments to their loan accounts.
 
 - id: portfolio_to_loan
-  left: gold.portfolio_daily_snapshot
-  right: gold.loan_account_master
+  left: gold.semantic_portfolio_snapshot
+  right: gold.semantic_loan_account
   on_columns: [[entity_num, entity_num], [loan_account_number, loan_account_number]]
   cardinality: many_to_one
   join_type: inner
-  description: Portfolio snapshot facts to their loan account dimensions.
+  description: Portfolio snapshots to current account labels and reporting attributes.
 
 - id: loan_to_customer
-  left: gold.loan_account_master
-  right: gold.customer_master
+  left: gold.semantic_loan_account
+  right: gold.semantic_customer_profile
   on_columns: [[entity_num, entity_num], [customer_id, customer_id]]
   cardinality: many_to_one
   join_type: left
   contains_pii: true
   description: Loan accounts to borrower profiles.
 
-- id: loan_to_reporting_attributes
-  left: gold.loan_account_master
-  right: gold.loan_reporting_attributes
-  on_columns: [[entity_num, entity_num], [loan_account_number, loan_account_number]]
-  cardinality: one_to_one
-  join_type: left
-  contains_pii: true
-  description: Loan accounts to their populated governed branch and agent attributes.
-
-- id: application_to_outcome
-  left: gold.loan_application_master
-  right: gold.loan_application_outcomes
-  on_columns: [[entity_num, entity_num], [application_number, application_number]]
-  cardinality: one_to_one
-  join_type: left
-  contains_pii: true
-  description: Application facts to their limited observable outcome classification.
-  verified: 9021 application rows and 9021 outcome rows at the same declared key.
-
 - id: application_to_loan
-  left: gold.loan_application_master
-  right: gold.loan_account_master
+  left: gold.semantic_application
+  right: gold.semantic_loan_account
   on_columns: [[entity_num, entity_num], [loan_account_number, loan_account_number]]
   cardinality: many_to_one
   join_type: left
   contains_pii: true
-  description: Applications to a linked current loan account where the application carries one.
+  description: Applications to a linked loan account where observable linkage exists.
 
-- id: application_outcome_to_loan
-  left: gold.loan_application_outcomes
-  right: gold.loan_account_master
+- id: receipt_adjustment_to_loan
+  left: gold.semantic_receipt_adjustment_event
+  right: gold.semantic_loan_account
   on_columns: [[entity_num, entity_num], [loan_account_number, loan_account_number]]
   cardinality: many_to_one
   join_type: left
   contains_pii: true
-  description: Observable application outcomes to a linked current loan account where available.
+  description: Receipt and waiver events to their current loan account.
 
-- id: receipt_to_loan
-  left: gold.payment_receipt_events
-  right: gold.loan_account_master
+- id: ledger_event_to_loan
+  left: gold.semantic_loan_ledger_event
+  right: gold.semantic_loan_account
   on_columns: [[entity_num, entity_num], [loan_account_number, loan_account_number]]
   cardinality: many_to_one
   join_type: left
   contains_pii: true
-  description: Receipt events to their governed current loan account dimensions.
-
-- id: waiver_to_loan
-  left: gold.loan_waiver_events
-  right: gold.loan_account_master
-  on_columns: [[entity_num, entity_num], [loan_account_number, loan_account_number]]
-  cardinality: many_to_one
-  join_type: left
-  contains_pii: true
-  description: Waiver source rows to their governed current loan account dimensions.
-
-- id: loan_ledger_to_loan
-  left: gold.loan_ledger_events
-  right: gold.loan_account_master
-  on_columns: [[entity_num, entity_num], [loan_account_number, loan_account_number]]
-  cardinality: many_to_one
-  join_type: left
-  contains_pii: true
-  description: Loan ledger transactions to current loan account dimensions.
-
-- id: loan_balance_to_loan
-  left: gold.loan_balance_events
-  right: gold.loan_account_master
-  on_columns: [[entity_num, entity_num], [loan_account_number, loan_account_number]]
-  cardinality: many_to_one
-  join_type: left
-  contains_pii: true
-  description: Historical loan balance events to current loan account dimensions.
-
-- id: branch_to_geography_bridge
-  left: gold.branch_master
-  right: gold.branch_geography_bridge
-  on_columns: [[entity_num, entity_num], [branch_code, branch_code]]
-  cardinality: one_to_one
-  join_type: left
-  description: Branch master to explicit geography match metadata.
-  verified: 67 branch rows on both sides; only one currently has a district match.
+  description: Ledger movements and balance events to their current loan account.

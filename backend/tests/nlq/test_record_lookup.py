@@ -45,6 +45,10 @@ from app.services.nlq.planner import plan
             "borrower_name", "SHEELAVATHI M K", "repayment_history",
         ),
         (
+            "SHEELAVATHI M K's loan repayment history",
+            "borrower_name", "SHEELAVATHI M K", "repayment_history",
+        ),
+        (
             "payment history for loan account number 1000400001520.00",
             "loan_account", "1000400001520", "repayment_history",
         ),
@@ -222,8 +226,8 @@ def test_customer_summary_returns_only_the_requested_profile_fields():
     )
 
     assert attempt.validated and attempt.reviewed
-    assert "FROM gold.customer_master AS customer" in attempt.sql
-    assert "LEFT JOIN gold.loan_account_master AS loan" in attempt.sql
+    assert "FROM gold.semantic_customer_profile AS customer" in attempt.sql
+    assert "LEFT JOIN gold.semantic_loan_account AS loan" in attempt.sql
     assert "customer.full_name AS customer_name" in attempt.sql
     assert "CAST(loan.loan_account_number AS TEXT) AS loan_account_number" in attempt.sql
     assert "loan.sanction_amount" in attempt.sql
@@ -273,7 +277,7 @@ def test_agent_details_use_the_governed_directory_and_exact_code():
     )
 
     assert attempt.validated and attempt.reviewed
-    assert "FROM gold.agent_master" in attempt.sql
+    assert "FROM gold.semantic_agent" in attempt.sql
     assert "LOWER(agent_code) = 'agnt45'" in attempt.sql
     assert "agent_name" in attempt.sql
     assert "linked_loan_count" in attempt.sql
@@ -320,7 +324,7 @@ def test_agent_count_uses_the_governed_agent_directory():
 
     assert attempt.validated and attempt.reviewed
     assert "COUNT(agent_code) AS agent_count" in attempt.sql
-    assert "FROM gold.agent_master" in attempt.sql
+    assert "FROM gold.semantic_agent" in attempt.sql
 
 
 def test_agent_accounts_use_exact_code_and_return_only_linked_account_numbers():
@@ -333,7 +337,7 @@ def test_agent_accounts_use_exact_code_and_return_only_linked_account_numbers():
     )
 
     assert attempt.validated and attempt.reviewed
-    assert "FROM gold.loan_reporting_attributes AS reporting" in attempt.sql
+    assert "FROM gold.semantic_loan_account AS reporting" in attempt.sql
     assert "LOWER(reporting.agent_code) = 'agnt45'" in attempt.sql
     assert "loan_account_number" in attempt.sql
     assert "COUNT(reporting.loan_account_number) OVER ()" in attempt.sql
@@ -346,7 +350,7 @@ def test_agent_account_names_join_the_governed_loan_only_when_requested():
     assert plan_result is not None
     assert plan_result.requested_fields == ["borrower_name"]
     attempt = _agent_accounts(plan_result, get_catalog())
-    assert "JOIN gold.loan_account_master AS loan" in attempt.sql
+    assert "JOIN gold.semantic_loan_account AS loan" in attempt.sql
     assert "loan.customer_name AS borrower_name" in attempt.sql
     assert attempt.pii_columns == ["customer_name"]
 
@@ -389,7 +393,7 @@ def test_branch_directory_uses_the_governed_branch_master():
     )
 
     assert attempt.validated and attempt.reviewed
-    assert "FROM gold.branch_master" in attempt.sql
+    assert "FROM gold.semantic_branch" in attempt.sql
     assert "branch_code" in attempt.sql
     assert "branch_name" in attempt.sql
     assert "branch_status" in attempt.sql
@@ -405,7 +409,7 @@ def test_product_code_name_uses_the_governed_product_master():
     )
 
     assert attempt.validated and attempt.reviewed
-    assert "FROM gold.product_master" in attempt.sql
+    assert "FROM gold.semantic_product_scheme" in attempt.sql
     assert "LOWER(CAST(product_code AS TEXT)) = '16'" in attempt.sql
     assert "product_name" in attempt.sql
 

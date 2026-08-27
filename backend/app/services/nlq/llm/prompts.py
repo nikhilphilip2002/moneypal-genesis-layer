@@ -315,13 +315,13 @@ FEW_SHOTS: list[tuple[str, str]] = [
     (
         "What principal amount was paid by Sheelavati?",
         '{"route":"sql","intent":"cumulative principal repaid by borrower Sheelavati",'
-        '"tables":["gold.loan_account_master"],"confidence":0.94,'
+        '"tables":["gold.semantic_loan_account"],"confidence":0.94,'
         '"reasoning":"named-borrower filter requires validated SQL"}',
     ),
     (
         "List branch name, IFSC code, branch status, opened date and closed date.",
         '{"route":"sql","intent":"list requested branch master attributes",'
-        '"tables":["gold.branch_master"],"confidence":0.97,'
+        '"tables":["gold.semantic_branch"],"confidence":0.97,'
         '"reasoning":"specific columns requested without an aggregate metric"}',
     ),
     (

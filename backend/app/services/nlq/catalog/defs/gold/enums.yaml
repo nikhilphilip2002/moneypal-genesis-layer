@@ -62,7 +62,7 @@
   source: governed Gold product master; unknown codes render without an invented name
   fallback_label: "Scheme #{code}"
   lookup:
-    table: gold.product_master
+    table: gold.semantic_product_scheme
     code_column: scheme_code
     label_column: scheme_name
   values:
@@ -102,7 +102,7 @@
   source: governed Gold agent directory
   fallback_label: "Agent {code}"
   lookup:
-    table: gold.agent_master
+    table: gold.semantic_agent
     code_column: agent_code
     label_column: agent_name
   values: {}

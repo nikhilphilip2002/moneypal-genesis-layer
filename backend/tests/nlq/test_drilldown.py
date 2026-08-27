@@ -358,24 +358,24 @@ class TestEveryOfferIsAnswerable:
             for step in drilldown.next_steps(spec, catalog):
                 compile_spec(step.spec, catalog)  # must not raise
 
-    def test_a_metric_with_no_agent_join_is_not_offered_agent(self, catalog):
-        """Disbursement events carry no agent, so branch has nothing below it here."""
+    def test_folded_loan_attributes_make_agent_drill_answerable(self, catalog):
+        """The semantic loan hub carries agent attribution for disbursement drill-down."""
         spec = QuerySpec(
             metrics=["disbursement_total"],
             dimensions=["branch"],
             period=Period(relative="last_quarter"),
         )
-        assert "agent" not in [s.dimension for s in drilldown.next_steps(spec, catalog)]
+        assert "agent" in [s.dimension for s in drilldown.next_steps(spec, catalog)]
 
-    def test_append_level_refuses_an_uncompilable_level(self, catalog):
-        """The bar click has the same problem and the same answer: no target beats a broken
-        one, because the click still looks like it worked."""
+    def test_append_level_uses_folded_agent_attribution(self, catalog):
         spec = QuerySpec(
             metrics=["disbursement_total"],
             dimensions=["branch"],
             period=Period(relative="last_quarter"),
         )
-        assert drilldown.append_level(spec, catalog) is None
+        drilled = drilldown.append_level(spec, catalog)
+        assert drilled is not None
+        assert drilled.dimensions == ["branch", "agent"]
 
 
 class TestComparisonWindows:

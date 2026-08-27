@@ -607,7 +607,7 @@ def _common_business_plan(question: str) -> PlanResult | None:
     if _VARIOUS_INTEREST_RATES_RE.search(question):
         return SqlPlan(
             intent="list the distinct account interest rates and loan count at each rate",
-            tables=["gold.loan_account_master"],
+            tables=["gold.semantic_loan_account"],
             confidence=1.0,
             reasoning="a distinct rate distribution is a governed column-list query",
         )
@@ -840,7 +840,7 @@ def _agent_directory_plan(question: str) -> SqlPlan | None:
         return None
     return SqlPlan(
         intent=question,
-        tables=["gold.agent_master"],
+        tables=["gold.semantic_agent"],
         confidence=1.0,
         reasoning="requested fields from the governed current agent directory",
     )
@@ -1063,7 +1063,7 @@ async def plan(
         return PlanOutcome(
             plan=SqlPlan(
                 intent=planning_question,
-                tables=["gold.loan_account_master"],
+                tables=["gold.semantic_loan_account"],
                 confidence=1.0,
                 reasoning="named-borrower principal lookup uses governed SQL",
             ),

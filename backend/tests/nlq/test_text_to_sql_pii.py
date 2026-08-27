@@ -19,7 +19,7 @@ from app.services.nlq.text_to_sql import (
 
 
 def _loan_context(*, allow_pii: bool) -> str:
-    hits = RetrievalResult(tables=["gold.loan_account_master"], mode="lexical")
+    hits = RetrievalResult(tables=["gold.semantic_loan_account"], mode="lexical")
     return _context_block(hits, get_catalog(), allow_pii=allow_pii)
 
 
@@ -37,15 +37,15 @@ def test_unauthorized_context_hides_borrower_name():
 
 def test_planner_table_hint_limits_generated_sql_context():
     hits = RetrievalResult(
-        tables=["gold.msme_master", "gold.loan_account_master"], mode="lexical"
+        tables=["gold.semantic_msme_lead", "gold.semantic_loan_account"], mode="lexical"
     )
     context = _context_block(
         hits,
         get_catalog(),
-        tables=["gold.msme_master"],
+        tables=["gold.semantic_msme_lead"],
     )
-    assert "gold.msme_master" in context
-    assert "gold.loan_account_master" not in context
+    assert "gold.semantic_msme_lead" in context
+    assert "gold.semantic_loan_account" not in context
 
 
 def test_prompt_allows_only_explicitly_needed_pii_for_authorized_roles():
@@ -74,7 +74,7 @@ def test_named_borrower_principal_uses_reviewed_columns_without_an_llm():
     assert attempt.model == "deterministic"
     assert "principal_repaid" in attempt.sql
     assert "customer_name" in attempt.sql
-    assert "gold.loan_account_master" in attempt.sql
+    assert "gold.semantic_loan_account" in attempt.sql
     assert "LIKE 'shelavati' || '%'" in attempt.sql
     assert "GROUP BY" in attempt.sql
     assert attempt.column_units["principal_repaid"] == "inr"
@@ -100,7 +100,7 @@ def test_named_borrower_disbursement_uses_reviewed_columns_without_an_llm():
     assert attempt.model == "deterministic"
     assert "disbursed_amount" in attempt.sql
     assert "customer_name" in attempt.sql
-    assert "gold.loan_account_master" in attempt.sql
+    assert "gold.semantic_loan_account" in attempt.sql
     assert "LIKE 'shelavati' || '%'" in attempt.sql
     assert attempt.column_units["disbursed_amount"] == "inr"
 
@@ -123,7 +123,7 @@ def test_agent_directory_uses_only_requested_governed_fields_without_an_llm():
     assert attempt is not None and attempt.validated
     assert attempt.model == "deterministic"
     assert attempt.attempts == 0
-    assert attempt.tables == ["gold.agent_master"]
+    assert attempt.tables == ["gold.semantic_agent"]
     assert "agent_code" in attempt.sql
     assert "agent_name" in attempt.sql
     assert "designation" in attempt.sql
@@ -208,9 +208,9 @@ def test_reviewed_unit_hint_renders_principal_as_inr():
 def test_generated_aggregate_alias_inherits_catalog_unit():
     units = _infer_column_units(
         "SELECT firm_type_desc, SUM(requested_amount) AS total_requested_amount, "
-        "SUM(security_value) AS total_security_value FROM gold.msme_master "
+        "SUM(security_value) AS total_security_value FROM gold.semantic_msme_lead "
         "GROUP BY firm_type_desc LIMIT 5000",
-        ["gold.msme_master"],
+        ["gold.semantic_msme_lead"],
         get_catalog(),
     )
     assert units == {

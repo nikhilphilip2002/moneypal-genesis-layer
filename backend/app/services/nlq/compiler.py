@@ -31,32 +31,36 @@ from app.services.nlq.contracts import Filter, Period, QuerySpec
 
 MAX_ROWS = 5000
 
+# The consolidated views deliberately expose business identifiers, but PostgreSQL retains
+# a mixture of numeric and text source types underneath them. Join identifiers by their
+# canonical text representation so a safe catalog edge does not fail on numeric = text.
+_TEXT_JOIN_KEYS = {
+    "entity_num",
+    "loan_account_number",
+    "customer_id",
+    "application_number",
+}
+
 # Alias per table, so generated SQL is readable in the lineage panel.
 _ALIASES = {
-    "gold.loan_account_master": "lam",
-    "gold.portfolio_daily_snapshot": "portfolio",
-    "gold.loan_disbursement_events": "disb",
-    "gold.loan_repayment_events": "repay",
-    "gold.loan_schedule_events": "sched",
-    "gold.gl_daily_balances": "gl",
-    "gold.customer_master": "customer",
-    "gold.agent_master": "agent",
-    "gold.loan_reporting_attributes": "attrs",
-    "gold.geography_master": "geo",
-    "gold.branch_geography_bridge": "branch_geo",
-    "gold.sales_team_hierarchy": "sales_hier",
-    "gold.collection_team_hierarchy": "collection_hier",
-    "gold.collection_assignment_events": "assignment",
-    "gold.loan_application_master": "application",
-    "gold.loan_application_outcomes": "application_outcome",
-    "gold.application_checklist_events": "checklist",
-    "gold.payment_receipt_events": "receipt",
-    "gold.loan_waiver_events": "waiver",
-    "gold.loan_ledger_events": "loan_ledger",
-    "gold.loan_balance_events": "loan_balance",
-    "gold.collection_activity_events": "collection_activity",
-    "gold.collection_handover_events": "handover",
-    "gold.origination_vintage_matrix": "vintage",
+    "gold.semantic_loan_account": "lam",
+    "gold.semantic_portfolio_snapshot": "portfolio",
+    "gold.semantic_disbursement_event": "disb",
+    "gold.semantic_repayment_event": "repay",
+    "gold.semantic_schedule_event": "sched",
+    "gold.semantic_gl_balance": "gl",
+    "gold.semantic_customer_profile": "customer",
+    "gold.semantic_customer_document": "document",
+    "gold.semantic_agent": "agent",
+    "gold.semantic_branch": "branch",
+    "gold.semantic_product_scheme": "product_scheme",
+    "gold.semantic_organization_hierarchy": "hierarchy",
+    "gold.semantic_collection_operation_event": "collection_op",
+    "gold.semantic_application": "application",
+    "gold.semantic_receipt_adjustment_event": "receipt_adjustment",
+    "gold.semantic_loan_ledger_event": "ledger_event",
+    "gold.semantic_origination_vintage": "vintage",
+    "gold.semantic_msme_lead": "msme",
 }
 
 
@@ -137,9 +141,15 @@ def compile_spec(
             # Column order in joins.yaml follows (left table, right table); flip when the
             # edge is declared in the opposite direction to the one we are traversing.
             if join.right == right_table:
-                conditions.append(f'{left_alias}."{left_col}" = {right_alias}."{right_col}"')
+                left_expr = f'{left_alias}."{left_col}"'
+                right_expr = f'{right_alias}."{right_col}"'
             else:
-                conditions.append(f'{left_alias}."{right_col}" = {right_alias}."{left_col}"')
+                left_expr = f'{left_alias}."{right_col}"'
+                right_expr = f'{right_alias}."{left_col}"'
+            if left_col in _TEXT_JOIN_KEYS or right_col in _TEXT_JOIN_KEYS:
+                left_expr += "::text"
+                right_expr += "::text"
+            conditions.append(f"{left_expr} = {right_expr}")
         keyword = "LEFT JOIN" if join.join_type == "left" else "JOIN"
         from_parts.append(
             f"{keyword} {right_table} AS {right_alias} ON " + " AND ".join(conditions)
