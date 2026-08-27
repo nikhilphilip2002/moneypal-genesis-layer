@@ -275,6 +275,12 @@ _INTEREST_RATE_LIST_RE = re.compile(
     r"\bwhat\s+(?:are|is)\b[^?]{0,35}\binterest\s+rates?\b",
     re.IGNORECASE,
 )
+_LOAN_NAME_WITH_RATE_RE = re.compile(
+    r"\b(?:different|various|available)\s+(?:types?|names?)\s+of\s+loans?\b|"
+    r"\bloan\s+(?:types?|names?)\b[^?]{0,60}\binterest\s+rates?\b|"
+    r"\b(?:products?|schemes?)\b[^?]{0,60}\binterest\s+rates?\b",
+    re.IGNORECASE,
+)
 
 _AGENT_DIRECTORY_RE = re.compile(
     r"\b(?:agent\s+(?:details?|directory|profiles?|names?)|"
@@ -371,20 +377,38 @@ def _interest_rate_distribution_attempt(
     question: str, catalog: Catalog
 ) -> SqlAttempt | None:
     """List contractual account rates with counts, without asking the model to write SQL."""
-    if not _INTEREST_RATE_LIST_RE.search(normalize_lending_question(question)):
+    normalized = normalize_lending_question(question)
+    if not _INTEREST_RATE_LIST_RE.search(normalized):
         return None
-    sql = (
-        "SELECT interest_rate AS interest_rate, COUNT(interest_rate) AS loan_count "
-        "FROM gold.semantic_loan_account "
-        "WHERE interest_rate IS NOT NULL AND sanction_date <= CURRENT_DATE "
-        "GROUP BY interest_rate ORDER BY interest_rate ASC LIMIT 5000"
+    include_loan_name = _LOAN_NAME_WITH_RATE_RE.search(normalized) is not None
+    loan_name = (
+        "COALESCE(NULLIF(TRIM(scheme_name), ''), NULLIF(TRIM(product_name), ''), "
+        "'Unmapped loan')"
     )
+    if include_loan_name:
+        sql = (
+            f"SELECT {loan_name} AS loan_name, interest_rate AS interest_rate, "
+            "COUNT(interest_rate) AS loan_count FROM gold.semantic_loan_account "
+            "WHERE interest_rate IS NOT NULL AND sanction_date <= CURRENT_DATE "
+            f"GROUP BY {loan_name}, interest_rate ORDER BY loan_name, interest_rate "
+            "LIMIT 5000"
+        )
+    else:
+        sql = (
+            "SELECT interest_rate AS interest_rate, COUNT(interest_rate) AS loan_count "
+            "FROM gold.semantic_loan_account "
+            "WHERE interest_rate IS NOT NULL AND sanction_date <= CURRENT_DATE "
+            "GROUP BY interest_rate ORDER BY interest_rate ASC LIMIT 5000"
+        )
     checked = validate(sql, catalog=catalog, allow_pii=False)
     return SqlAttempt(
         sql=checked.sql,
         tables=checked.tables,
         explanation=(
-            "Distinct contractual account interest rates, with the number of sanctioned "
+            "Governed loan scheme names and distinct contractual account interest rates, "
+            "with the number of sanctioned loans in each combination."
+            if include_loan_name
+            else "Distinct contractual account interest rates, with the number of sanctioned "
             "loans at each rate, across the full available loan book."
         ),
         validated=True,
@@ -395,7 +419,11 @@ def _interest_rate_distribution_attempt(
             "Rates are contractual account percentages, not rupee amounts.",
             "Loan count shows how many accounts carry each distinct rate.",
         ],
-        column_units={"interest_rate": "percent", "loan_count": "count"},
+        column_units={
+            **({"loan_name": "text"} if include_loan_name else {}),
+            "interest_rate": "percent",
+            "loan_count": "count",
+        },
     )
 
 

@@ -121,6 +121,45 @@ async def test_various_interest_rates_uses_validated_column_query_path():
 
 
 @pytest.mark.anyio
+async def test_loan_types_and_interest_rates_include_governed_loan_names():
+    question = "Display different types of loans and interest rate of it?"
+
+    outcome = await plan(question, client=NoModel())
+    assert isinstance(outcome.plan, SqlPlan)
+
+    attempt = await generate(question, client=NoModel())
+    assert attempt.validated is True
+    assert "scheme_name" in attempt.sql
+    assert "product_name" in attempt.sql
+    assert "AS loan_name" in attempt.sql
+    assert attempt.column_units == {
+        "loan_name": "text",
+        "interest_rate": "percent",
+        "loan_count": "count",
+    }
+
+
+@pytest.mark.anyio
+async def test_total_number_of_sanctioned_loans_returns_count_not_amount():
+    outcome = await plan("Total number of loans got sanctioned?", client=NoModel())
+
+    assert isinstance(outcome.plan, QuerySpecPlan)
+    assert outcome.plan.spec.metrics == ["loan_count"]
+    assert outcome.plan.spec.dimensions == []
+    compiled = compile_spec(outcome.plan.spec, get_catalog())
+    assert "COUNT(" in compiled.sql
+    assert "sanctioned_amount" not in compiled.sql
+
+
+@pytest.mark.anyio
+async def test_total_sanctioned_amount_still_returns_currency_metric():
+    outcome = await plan("What is the total sanctioned amount?", client=NoModel())
+
+    assert isinstance(outcome.plan, QuerySpecPlan)
+    assert outcome.plan.spec.metrics == ["sanctioned_amount"]
+
+
+@pytest.mark.anyio
 async def test_interest_rate_amount_explains_the_unit_mismatch_and_offers_real_metrics():
     outcome = await plan("what is the total intrest rate amunt?", client=NoModel())
     assert isinstance(outcome.plan, ClarifyPlan)

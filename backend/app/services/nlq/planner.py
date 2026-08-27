@@ -158,6 +158,12 @@ _VARIOUS_INTEREST_RATES_RE = re.compile(
     r"\binterest\s+rates?\b|\bwhat\s+(?:are|is)\b[^?]{0,30}\binterest\s+rates?\b",
     re.IGNORECASE,
 )
+_LOAN_NAME_WITH_RATE_RE = re.compile(
+    r"\b(?:different|various|available)\s+(?:types?|names?)\s+of\s+loans?\b|"
+    r"\bloan\s+(?:types?|names?)\b[^?]{0,60}\binterest\s+rates?\b|"
+    r"\b(?:products?|schemes?)\b[^?]{0,60}\binterest\s+rates?\b",
+    re.IGNORECASE,
+)
 _INTEREST_BY_SCHEME_RE = re.compile(
     r"\binterest\s+rates?\b[^?]{0,50}\b(?:by|based\s+on|for\s+each)\s+(?:scheme|scheme\s+name)\b|"
     r"\b(?:by|based\s+on)\s+(?:scheme|scheme\s+name)\b[^?]{0,50}\binterest\s+rates?\b",
@@ -173,6 +179,12 @@ _SCHEME_AMOUNT_PAID_RE = re.compile(
 _TOTAL_SANCTIONED_RE = re.compile(
     r"\b(?:total|overall)\b[^?]{0,50}\b(?:loan\s+)?(?:amount\s+)?sanction(?:ed)?\b|"
     r"\btotal\s+sanctioned\s+(?:loan\s+)?amount\b",
+    re.IGNORECASE,
+)
+_TOTAL_SANCTIONED_LOAN_COUNT_RE = re.compile(
+    r"\b(?:total\s+)?(?:number|count)\s+of\s+loans?\b[^?]{0,35}\bsanction(?:ed)?\b|"
+    r"\bhow\s+many\s+loans?\b[^?]{0,35}\bsanction(?:ed)?\b|"
+    r"\b(?:total\s+)?loans?\s+(?:got|were|was)?\s*sanction(?:ed)?\b",
     re.IGNORECASE,
 )
 _VINTAGE_PERFORMANCE_RE = re.compile(
@@ -605,8 +617,14 @@ def _common_business_plan(question: str) -> PlanResult | None:
         )
 
     if _VARIOUS_INTEREST_RATES_RE.search(question):
+        with_loan_names = _LOAN_NAME_WITH_RATE_RE.search(question) is not None
         return SqlPlan(
-            intent="list the distinct account interest rates and loan count at each rate",
+            intent=(
+                "list each governed loan scheme name with its distinct account interest "
+                "rates and loan count"
+                if with_loan_names
+                else "list the distinct account interest rates and loan count at each rate"
+            ),
             tables=["gold.semantic_loan_account"],
             confidence=1.0,
             reasoning="a distinct rate distribution is a governed column-list query",
@@ -625,6 +643,17 @@ def _common_business_plan(question: str) -> PlanResult | None:
             },
             confidence=1.0,
             reasoning="paid amount grouped by the governed loan scheme",
+        )
+
+    if _TOTAL_SANCTIONED_LOAN_COUNT_RE.search(question):
+        return QuerySpecPlan(
+            spec={
+                "metrics": ["loan_count"],
+                "dimensions": [],
+                "period": {"relative": "all_time"},
+            },
+            confidence=1.0,
+            reasoning="count of loan accounts sanctioned across the full available loan book",
         )
 
     if _TOTAL_SANCTIONED_RE.search(question):
