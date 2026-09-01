@@ -164,6 +164,27 @@ class TestDispatchTable:
         assert all(c["card_type"] != "error" for c in cards)
 
     @pytest.mark.anyio
+    async def test_web_source_reaches_the_public_handler_with_user_identity(self, monkeypatch):
+        _stub_route(monkeypatch, router.RouteDecision(
+            route="dispatch", sources=["web"], intent="latest RBI release",
+        ))
+        received = {}
+
+        async def fake_web(intent, *, user):
+            received.update(intent=intent, user=user)
+            return SourceResult(
+                source="web", card_type="brief", payload={"summary": "fresh"},
+                summary="fresh",
+            )
+
+        monkeypatch.setattr(nodes, "run_web", fake_web)
+        events = await _run()
+
+        assert received == {"intent": "latest RBI release", "user": "u"}
+        card = next(data for name, data in events if name == "source_card")
+        assert card["source"] == "web"
+
+    @pytest.mark.anyio
     async def test_one_source_exception_does_not_fail_the_whole_turn(self, monkeypatch):
         _stub_route(monkeypatch, router.RouteDecision(
             route="dispatch", sources=["macro", "regulatory"], intent="i"))

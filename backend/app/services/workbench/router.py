@@ -71,11 +71,40 @@ _INTERNAL_BOOK_CUES = re.compile(
     re.IGNORECASE,
 )
 
+_WEB_FRESHNESS_CUES = re.compile(
+    r"\b(?:latest|today|current|currently|recent|newly published|up[ -]?to[ -]?date|"
+    r"real[ -]?time|right now|breaking|news|announcement|this week|this month)\b",
+    re.IGNORECASE,
+)
+_WEB_PUBLIC_CUES = re.compile(
+    r"\b(?:RBI|MoSPI|government|ministry|PIB|India Budget|Economic Survey|IMF|"
+    r"World Bank|OECD|United Nations|market|industry|economy|economic|inflation|"
+    r"GDP|GVA|CPI|IIP|repo|policy rate|fiscal|trade|exports?|imports?|FDI|scheme|"
+    r"legislation|competitor|NBFC|MSME)\b",
+    re.IGNORECASE,
+)
+_EXPLICIT_WEB_CUES = re.compile(
+    r"\b(?:search|look up|find|check)\s+(?:the\s+)?(?:web|internet|online)\b|"
+    r"\b(?:on the web|on the internet|online sources?)\b",
+    re.IGNORECASE,
+)
+
+
+def _requires_web(question: str, visible_ids: list[str]) -> bool:
+    if "web" not in visible_ids:
+        return False
+    return bool(
+        _EXPLICIT_WEB_CUES.search(question)
+        or (_WEB_FRESHNESS_CUES.search(question) and _WEB_PUBLIC_CUES.search(question))
+    )
+
 
 def _external_only_source(question: str, visible_ids: list[str]) -> str | None:
     """Identify a plainly external fact when no internal-book comparison is requested."""
     if _INTERNAL_BOOK_CUES.search(question):
         return None
+    if _requires_web(question, visible_ids):
+        return "web"
     for source_id in ("macro", "competitive", "regulatory"):
         cue = _HYBRID_SOURCE_CUES[source_id]
         if source_id in visible_ids and cue.search(question):
@@ -184,6 +213,14 @@ def _fallback(role: str, question: str) -> RouteDecision:
     for source_id, cue in _HYBRID_SOURCE_CUES.items():
         if source_id in visible_ids and cue.search(question) and source_id not in chosen:
             chosen.append(source_id)
+    if _requires_web(question, visible_ids):
+        if not _INTERNAL_BOOK_CUES.search(question):
+            chosen = ["web"]
+        elif "db" in chosen:
+            chosen = [source for source in chosen if source not in {"macro", "competitive", "regulatory"}]
+            chosen.append("web")
+        else:
+            chosen = ["web"]
     if not chosen:
         chosen = ["db" if "db" in visible_ids else visible_ids[0]]
     source_intents: dict[str, str] = {}
@@ -191,6 +228,13 @@ def _fallback(role: str, question: str) -> RouteDecision:
         if "db" in chosen:
             source_intents["db"] = _db_subquestion(question)
         source_intents.update({source: question for source in chosen if source != "db"})
+        if "web" in chosen:
+            from app.services.workbench.web import public_query
+            try:
+                source_intents["web"] = public_query(question)
+            except ValueError:
+                chosen = [source for source in chosen if source != "web"]
+                source_intents.pop("web", None)
     return RouteDecision(
         route="dispatch", sources=chosen, intent=question,
         source_intents=source_intents, model="fallback",
@@ -229,7 +273,10 @@ async def route(
 
     client = models.for_step("route", sensitive=True)
     messages = [{"role": "system", "content": router_system_prompt(role)}]
+    visible_for_prompt = {s.id for s in visible_sources(role)}
     for user_text, assistant_json in ROUTER_FEW_SHOTS:
+        if '"web"' in assistant_json and "web" not in visible_for_prompt:
+            continue
         messages.append({"role": "user", "content": user_text})
         messages.append({"role": "assistant", "content": assistant_json})
     messages.extend(history_messages or [])
@@ -252,6 +299,7 @@ async def route(
 
     visible_ids = [s.id for s in visible_sources(role)]
     external_only = _external_only_source(normalized, visible_ids)
+    web_required = _requires_web(normalized, visible_ids)
     # The record grammar is itself curated Gold metadata, so a question it recognises is a
     # catalog match whether or not the lexical retriever scores one.
     catalog_match = "db" in visible_ids and (
@@ -295,6 +343,12 @@ async def route(
         for source_id, cue in _HYBRID_SOURCE_CUES.items():
             if source_id in visible_ids and cue.search(normalized) and source_id not in chosen:
                 chosen.append(source_id)
+    if web_required:
+        if value_intent or ("db" in chosen and _INTERNAL_BOOK_CUES.search(normalized)):
+            chosen = [source for source in chosen if source not in {"macro", "competitive", "regulatory", "web"}]
+            chosen.append("web")
+        else:
+            chosen = ["web"]
     if value_intent:
         chosen = [source for source in chosen if source != "knowledge"]
     elif (
@@ -321,6 +375,17 @@ async def route(
         source_intents.setdefault("db", _db_subquestion(normalized))
         for source in chosen:
             source_intents.setdefault(source, normalized)
+    if "web" in chosen:
+        from app.services.workbench.web import public_query
+        try:
+            source_intents["web"] = public_query(
+                source_intents.get("web") or normalized
+            )
+        except ValueError:
+            chosen = [source for source in chosen if source != "web"]
+            source_intents.pop("web", None)
+            if not chosen:
+                return _fallback(role, normalized)
 
     return RouteDecision(
         route="dispatch",

@@ -159,6 +159,31 @@ class Settings:
         self.postgres_mcp_url = get("POSTGRES_MCP_URL", "http://postgres-mcp:8001/mcp") or "http://postgres-mcp:8001/mcp"
         self.postgres_mcp_timeout_s = float(get("POSTGRES_MCP_TIMEOUT_S", "30") or "30")
 
+        # Exa is a public-web boundary. It is independently gated so deployments can keep
+        # the private Workbench running when the external search quota or network is down.
+        self.exa_api_key = get("EXA_API_KEY")
+        self.exa_mcp_enabled = (get("EXA_MCP_ENABLED", "false") or "false").lower() in (
+            "1", "true", "yes", "on",
+        )
+        self.exa_mcp_url = (
+            get(
+                "EXA_MCP_URL",
+                "https://mcp.exa.ai/mcp?tools=web_search_exa,web_fetch_exa,web_search_advanced_exa",
+            )
+            or "https://mcp.exa.ai/mcp"
+        )
+        self.exa_mcp_timeout_s = float(get("EXA_MCP_TIMEOUT_S", "30") or "30")
+        self.exa_search_max_results = max(
+            1, min(10, int(get("EXA_SEARCH_MAX_RESULTS", "8") or "8"))
+        )
+        self.exa_fetch_max_pages = max(
+            0, min(3, int(get("EXA_FETCH_MAX_PAGES", "2") or "2"))
+        )
+        self.exa_cache_ttl_s = max(0, int(get("EXA_CACHE_TTL_S", "3600") or "3600"))
+        self.exa_daily_user_limit = max(
+            1, int(get("EXA_DAILY_USER_LIMIT", "10") or "10")
+        )
+
         # --- Workbench (unified chat orchestrator) ----------------------------------
         # Completely local by default: every orchestration step runs on the llama.cpp
         # provider regardless of what NLQ_LLM_PROVIDER is set to. Groq stays wired but is

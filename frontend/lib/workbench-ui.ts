@@ -11,6 +11,7 @@ export const SOURCE_LABELS: Record<string, string> = {
   regulatory: 'Regulatory',
   knowledge: 'Banking concepts',
   schema: 'Schema',
+  web: 'Live web',
 };
 
 export const sourceLabel = (source: string) => SOURCE_LABELS[source] ?? source;

@@ -15,6 +15,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+from app.core.config import settings
+
 
 @dataclass(frozen=True, slots=True)
 class Source:
@@ -143,13 +145,34 @@ SOURCES: dict[str, Source] = {
             "what tables hold disbursement data",
         ),
     ),
+    "web": Source(
+        id="web",
+        label="Live web",
+        sensitive=False,
+        roles=None,
+        describes=(
+            "Current public information from the internet, especially newly published "
+            "economic releases, government announcements, news, market developments and "
+            "facts that require a live lookup. It prioritizes official Indian sources "
+            "such as RBI, MoSPI, India Budget, DEA, PIB, Commerce and data.gov.in, then "
+            "international primary sources. It must never receive private bank records."
+        ),
+        example_intents=(
+            "search the web for the latest RBI repo-rate announcement",
+            "what is the latest published CPI inflation figure",
+            "recent Government of India MSME policy announcement",
+        ),
+    ),
 }
 
 ROUTE_VALUES = ("dispatch", "refuse")
 
 
 def visible_sources(role: str) -> list[Source]:
-    return [s for s in SOURCES.values() if s.visible_to(role)]
+    return [
+        s for s in SOURCES.values()
+        if s.visible_to(role) and (s.id != "web" or settings.exa_mcp_enabled)
+    ]
 
 
 def route_schema(role: str) -> dict[str, Any]:
@@ -204,7 +227,11 @@ def router_system_prompt(role: str) -> str:
         "",
         "RULES",
         "- Pick every source needed. A question comparing our book to the market needs "
-        "both `db` and `macro`; most questions need exactly one.",
+        "both `db` and the applicable public source; most questions need exactly one.",
+        "- Use `web` only when the user explicitly asks to search online or freshness is "
+        "material (latest/current/recent/news). Stable indexed macro questions use `macro`.",
+        "- Never put borrower names, customer/account identifiers, repayment histories, "
+        "phone numbers or other private bank details in a `web` source_intent.",
         "- A stable definition or explanation goes to `knowledge`. A request for our values, "
         "records, rates, counts or breakdowns goes to `db`, even if it uses the same term.",
         '- route="dispatch" with the chosen `sources` and a one-line `intent` restating '
@@ -232,6 +259,17 @@ ROUTER_FEW_SHOTS: list[tuple[str, str]] = [
         "What are the loan amount and date for customer ID 42?",
         '{"route":"dispatch","sources":["db"],'
         '"intent":"loan amount and date for customer ID 42"}',
+    ),
+    (
+        "Search the web for the latest RBI repo rate announcement",
+        '{"route":"dispatch","sources":["web"],'
+        '"intent":"latest RBI repo rate announcement"}',
+    ),
+    (
+        "Compare our loan growth with the latest RBI bank credit growth",
+        '{"route":"dispatch","sources":["db","web"],"intent":"compare loan growth",'
+        '"source_intents":{"db":"our loan growth",'
+        '"web":"latest published RBI bank credit growth"}}',
     ),
     (
         "Give me details for agent AGNT12",

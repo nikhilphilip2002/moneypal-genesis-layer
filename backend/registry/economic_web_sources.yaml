@@ -1,0 +1,24 @@
+sources:
+  - {id: rbi, label: Reserve Bank of India, tier: 1, domains: [rbi.org.in], topics: [banking, monetary_policy, inflation, credit, npa, nbfc, foreign_exchange]}
+  - {id: rbi_dbie, label: RBI Database on Indian Economy, tier: 1, domains: [data.rbi.org.in], topics: [banking, monetary_policy, inflation, credit, trade, foreign_exchange, macro]}
+  - {id: mospi, label: Ministry of Statistics and Programme Implementation, tier: 1, domains: [mospi.gov.in], topics: [gdp, inflation, employment, industry, macro]}
+  - {id: india_budget, label: India Budget and Economic Survey, tier: 1, domains: [indiabudget.gov.in], topics: [budget, fiscal, tax, macro]}
+  - {id: dea, label: Department of Economic Affairs, tier: 1, domains: [dea.gov.in], topics: [fiscal, macro, policy, foreign_exchange]}
+  - {id: niti, label: NITI Aayog, tier: 1, domains: [niti.gov.in], topics: [policy, development, macro]}
+  - {id: dpiit, label: DPIIT, tier: 1, domains: [dpiit.gov.in], topics: [industry, fdi, startups, trade]}
+  - {id: commerce, label: Ministry of Commerce and Industry, tier: 1, domains: [commerce.gov.in], topics: [trade, industry, fdi]}
+  - {id: dgft, label: Directorate General of Foreign Trade, tier: 1, domains: [dgft.gov.in], topics: [trade, policy]}
+  - {id: pib, label: Press Information Bureau, tier: 1, domains: [pib.gov.in], topics: [news, policy, budget, industry, macro]}
+  - {id: data_gov, label: Open Government Data Platform India, tier: 1, domains: [data.gov.in], topics: [macro, development, agriculture, population, trade]}
+  - {id: imf, label: International Monetary Fund, tier: 2, domains: [imf.org], topics: [gdp, inflation, fiscal, trade, employment, macro]}
+  - {id: world_bank, label: World Bank, tier: 2, domains: [worldbank.org], topics: [gdp, development, poverty, population, trade, macro]}
+  - {id: oecd, label: OECD, tier: 2, domains: [oecd.org], topics: [gdp, employment, tax, productivity, macro]}
+  - {id: un, label: United Nations Data, tier: 2, domains: [un.org, data.un.org], topics: [population, trade, development, macro]}
+  - {id: prs, label: PRS Legislative Research, tier: 3, domains: [prsindia.org], topics: [policy, legislation, budget]}
+  - {id: ibef, label: India Brand Equity Foundation, tier: 3, domains: [ibef.org], topics: [industry, trade, investment, macro]}
+  - {id: grant_thornton, label: Grant Thornton India, tier: 3, domains: [grantthornton.in], topics: [industry, tax, macro]}
+  - {id: cleartax, label: ClearTax, tier: 3, domains: [cleartax.in], topics: [tax, gst, budget]}
+  - {id: vision_ias, label: Vision IAS, tier: 4, domains: [visionias.in], topics: [policy, macro]}
+  - {id: insights_ias, label: Insights IAS, tier: 4, domains: [insightsonindia.com], topics: [policy, macro]}
+  - {id: drishti_ias, label: Drishti IAS, tier: 4, domains: [drishtiias.com], topics: [policy, macro]}
+  - {id: levelup_ias, label: LevelUp IAS, tier: 4, domains: [levelupias.com], topics: [policy, macro]}

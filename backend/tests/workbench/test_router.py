@@ -69,7 +69,45 @@ class TestDispatch:
 
         decision = await router.route(question, role="admin")
 
+        assert decision.sources == ["web"]
+
+    @pytest.mark.anyio
+    async def test_latest_official_release_overrides_stale_model_route(self, monkeypatch):
+        _use(monkeypatch, FakeLLM(
+            '{"route":"dispatch","sources":["macro"],"intent":"repo rate"}'
+        ))
+
+        decision = await router.route(
+            "What is the latest RBI repo rate announcement?", role="admin"
+        )
+
+        assert decision.sources == ["web"]
+        assert decision.source_intents["web"] == "What is the latest RBI repo rate announcement?"
+
+    @pytest.mark.anyio
+    async def test_stable_macro_question_stays_on_local_index(self, monkeypatch):
+        _use(monkeypatch, FakeLLM(
+            '{"route":"dispatch","sources":["macro"],"intent":"Karnataka GDP trend"}'
+        ))
+
+        decision = await router.route("Explain Karnataka GDP growth trends", role="admin")
+
         assert decision.sources == ["macro"]
+
+    @pytest.mark.anyio
+    async def test_fresh_hybrid_query_is_split_between_db_and_public_web(self, monkeypatch):
+        _use(monkeypatch, FakeLLM(
+            '{"route":"dispatch","sources":["db"],"intent":"compare loan growth"}'
+        ))
+
+        decision = await router.route(
+            "Compare our loan growth against the latest RBI bank credit growth", role="admin"
+        )
+
+        assert decision.sources == ["db", "web"]
+        assert "our" in decision.source_intents["db"].lower()
+        assert "our" not in decision.source_intents["web"].lower()
+        assert "RBI" in decision.source_intents["web"]
 
     @pytest.mark.anyio
     async def test_gdp_comparison_with_our_book_keeps_both_sources(self, monkeypatch):
@@ -255,6 +293,17 @@ class TestFallback:
         )
         assert decision.sources == ["db", "competitive"]
         assert decision.source_intents["db"] == "Show our collection efficiency by product and branch."
+
+    @pytest.mark.anyio
+    async def test_llm_failure_still_routes_latest_public_fact_to_web(self, monkeypatch):
+        class Failing(FakeLLM):
+            async def complete(self, **kw):
+                raise LLMError("model down")
+
+        _use(monkeypatch, Failing())
+        decision = await router.route("latest MoSPI CPI announcement", role="admin")
+
+        assert decision.sources == ["web"]
 
     @pytest.mark.anyio
     async def test_llm_failure_falls_back_to_db_during_open_access(self, monkeypatch):

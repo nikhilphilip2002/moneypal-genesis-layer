@@ -37,7 +37,7 @@
 
 - id: r007
   question: What is the RBI repo rate stance right now?
-  sources: [macro]
+  sources: [web]
 
 - id: r008
   question: How is MSME credit growth trending across India?
@@ -57,7 +57,7 @@
 
 - id: r012
   question: What does the latest RBI MSME circular require of us?
-  sources: [regulatory]
+  sources: [web]
 
 - id: r013
   question: What are our DNBS-02 reporting obligations?
@@ -86,3 +86,15 @@
 - id: r019
   question: How many loans did we sanction each month in FY26?
   sources: [db]
+
+- id: r020
+  question: Explain Karnataka GDP growth trends
+  sources: [macro]
+
+- id: r021
+  question: Search the internet for the latest MoSPI CPI release
+  sources: [web]
+
+- id: r022
+  question: Compare our loan growth against the latest RBI bank credit growth
+  sources: [db, web]

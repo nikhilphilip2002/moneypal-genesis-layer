@@ -126,6 +126,10 @@ async def _h_schema(intent: str, _state: WorkbenchState) -> SourceResult:
     return await nodes.run_schema(intent, access_mode=_state.get("data_access"))
 
 
+async def _h_web(intent: str, _state: WorkbenchState) -> SourceResult:
+    return await nodes.run_web(intent, user=_state["user"])
+
+
 # source id -> handler. Adding a source is a new entry here plus a catalog entry — the
 # dispatch node itself never changes.
 _HANDLERS = {
@@ -135,6 +139,7 @@ _HANDLERS = {
     "regulatory": _h_regulatory,
     "knowledge": _h_knowledge,
     "schema": _h_schema,
+    "web": _h_web,
 }
 
 
@@ -301,7 +306,10 @@ async def _synthesize_node(state: WorkbenchState) -> dict[str, Any]:
     seen_citations: set[tuple[str, str]] = set()
     for item in results:
         for citation in item.sources:
-            key = (str(citation.get("document", "")), str(citation.get("page", "")))
+            key = (
+                str(citation.get("url") or citation.get("document", "")),
+                str(citation.get("page", "")),
+            )
             if key not in seen_citations:
                 seen_citations.add(key)
                 citations.append(citation)

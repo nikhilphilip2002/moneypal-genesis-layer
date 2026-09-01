@@ -1022,7 +1022,19 @@ export type WorkbenchAnswer = {
   status: 'answered' | 'partial' | 'clarify' | 'refused';
   text: string;
   sources: string[];
-  citations: { document: string; page?: string | number | null; score?: number }[];
+  citations: {
+    document: string;
+    page?: string | number | null;
+    score?: number;
+    title?: string;
+    url?: string;
+    publisher?: string;
+    domain?: string;
+    published_at?: string | null;
+    retrieved_at?: string;
+    source_tier?: number;
+    primary?: boolean;
+  }[];
   unavailable_sources: { source: string; type: string; reason: string }[];
   limitations: { source: string; reason: string }[];
 };

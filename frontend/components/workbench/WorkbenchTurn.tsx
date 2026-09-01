@@ -41,7 +41,7 @@ export type WorkbenchTurnData = {
 
 const BRIEF_TITLES: Record<string, string> = {
   macro: 'Macro brief', competitive: 'Competitive brief', regulatory: 'Regulatory brief',
-  knowledge: 'Concept explained',
+  knowledge: 'Concept explained', web: 'Live web intelligence',
 };
 
 export default function WorkbenchTurn({ turn, onAsk }: { turn: WorkbenchTurnData; onAsk: (q: string) => void }) {
@@ -69,6 +69,24 @@ export default function WorkbenchTurn({ turn, onAsk }: { turn: WorkbenchTurnData
           {answerText && (
             <div className="text-sm leading-7 text-foreground">
               <BriefRenderer content={answerText} />
+            </div>
+          )}
+
+          {turn.answer?.citations.some((citation) => citation.url) && (
+            <div className="flex flex-wrap gap-1.5">
+              {turn.answer.citations.filter((citation) => citation.url).map((citation, index) => (
+                <a
+                  key={citation.url ?? index}
+                  href={citation.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className={`${SOURCE_BADGE} inline-flex max-w-full items-center rounded-md border border-border px-1.5 normal-case tracking-normal text-muted-foreground hover:text-foreground`}
+                  title={citation.publisher || citation.domain || citation.document}
+                >
+                  <span className="truncate">{citation.title || citation.document}</span>
+                  {citation.primary ? <span className="ml-1 text-[9px] uppercase">Official</span> : null}
+                </a>
+              ))}
             </div>
           )}
 
@@ -226,7 +244,7 @@ function CardBody({ card, onAsk }: { card: CardData; onAsk: (q: string) => void 
     const { summary, key_points, sources } = card.payload as {
       summary: string;
       key_points?: string[];
-      sources?: { document: string; page?: number }[];
+      sources?: { document: string; page?: number; title?: string; url?: string; primary?: boolean }[];
     };
     return (
       <WorkbenchCard source={card.source} title={BRIEF_TITLES[card.source] ?? 'Brief'}>
@@ -240,7 +258,18 @@ function CardBody({ card, onAsk }: { card: CardData; onAsk: (q: string) => void 
         )}
         {sources && sources.length > 0 && (
           <div className={`${BLOCK_GAP} flex flex-wrap gap-1.5`}>
-            {sources.map((s, i) => (
+            {sources.map((s, i) => s.url ? (
+              <a
+                key={s.url}
+                href={s.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className={`${SOURCE_BADGE} inline-flex max-w-full items-center rounded-md border border-border px-1.5 normal-case tracking-normal text-muted-foreground hover:text-foreground`}
+              >
+                <span className="truncate">{s.title || s.document}</span>
+                {s.primary ? <span className="ml-1 text-[9px] uppercase">Official</span> : null}
+              </a>
+            ) : (
               <Badge key={i} variant="outline" className={`${SOURCE_BADGE} normal-case tracking-normal text-muted-foreground`}>
                 {s.document}{s.page ? `, p.${s.page}` : ''}
               </Badge>
