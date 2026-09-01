@@ -19,6 +19,7 @@ from typing import Any, AsyncIterator, NotRequired, TypedDict
 
 from langgraph.graph import END, START, StateGraph
 
+from app.services.nlq.llm.messages import coalesce_system_messages
 from app.services.workbench import compaction, history, models, nodes, router
 from app.services.workbench.nodes import SourceResult
 
@@ -289,11 +290,11 @@ async def _synthesize_node(state: WorkbenchState) -> dict[str, Any]:
                 "synthesize", sensitive=any(r.source == "db" for r in results)
             )
             result = await client.complete(
-                messages=[
+                messages=coalesce_system_messages([
                     {"role": "system", "content": _SYNTH_SYSTEM},
                     *state.get("history_messages", []),
                     {"role": "user", "content": f"Question: {state['question']}\n\nFindings:\n{findings}"},
-                ],
+                ]),
                 max_tokens=500,
                 temperature=0.1,
             )

@@ -193,6 +193,55 @@ class TestResponseFormat:
         client = _client(handler, supports_json_schema=False, name="groq")
         await client.complete(messages=[{"role": "user", "content": "hi"}], json_schema=SCHEMA)
         assert seen["response_format"] == {"type": "json_object"}
+        assert [message["role"] for message in seen["messages"]] == ["system", "user"]
+        assert seen["messages"][0]["content"].startswith("Respond with a single JSON object")
+
+    @pytest.mark.anyio
+    async def test_system_context_and_schema_are_merged_in_stable_order(self):
+        seen = {}
+
+        def handler(request):
+            seen.update(json.loads(request.content))
+            return _ok('{"route":"refuse"}')
+
+        client = _client(handler, supports_json_schema=False, name="groq")
+        await client.complete(
+            messages=[
+                {"role": "system", "content": "Primary instructions"},
+                {"role": "system", "content": "Conversation checkpoint"},
+                {"role": "user", "content": "hi"},
+            ],
+            json_schema=SCHEMA,
+        )
+
+        assert [message["role"] for message in seen["messages"]] == ["system", "user"]
+        system = seen["messages"][0]["content"]
+        assert system.index("Primary instructions") < system.index("Conversation checkpoint")
+        assert system.index("Conversation checkpoint") < system.index("Respond with a single JSON")
+
+    @pytest.mark.anyio
+    async def test_native_schema_provider_still_coalesces_system_messages(self):
+        seen = {}
+
+        def handler(request):
+            seen.update(json.loads(request.content))
+            return _ok('{"route":"refuse"}')
+
+        client = _client(handler, supports_json_schema=True)
+        await client.complete(
+            messages=[
+                {"role": "system", "content": "Primary instructions"},
+                {"role": "user", "content": "earlier question"},
+                {"role": "system", "content": "Session state"},
+                {"role": "assistant", "content": "earlier answer"},
+            ],
+            json_schema=SCHEMA,
+        )
+
+        assert [message["role"] for message in seen["messages"]] == [
+            "system", "user", "assistant",
+        ]
+        assert seen["messages"][0]["content"] == "Primary instructions\n\nSession state"
 
     @pytest.mark.anyio
     async def test_temperature_defaults_to_zero(self):

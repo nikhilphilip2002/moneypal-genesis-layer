@@ -20,6 +20,7 @@ import yaml
 
 from app.services.nlq.catalog import Catalog, get_catalog
 from app.services.nlq.catalog.loader import ACTIVE_DEFS_DIR
+from app.services.nlq.llm.messages import coalesce_system_messages
 
 PROMPT_VERSION = "planner-v3"
 
@@ -413,7 +414,7 @@ def build_messages(
                 ),
             }
         )
-    return messages
+    return coalesce_system_messages(messages)
 
 
 REWRITE_SYSTEM_PROMPT = """\

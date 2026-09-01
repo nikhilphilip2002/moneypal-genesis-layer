@@ -14,6 +14,7 @@ from dataclasses import dataclass, field
 
 from app.services.nlq.catalog.retrieval import retrieve
 from app.services.nlq.llm import LLMError
+from app.services.nlq.llm.messages import coalesce_system_messages
 from app.services.nlq.normalization import normalize_lending_question
 from app.services.workbench import models
 from app.services.workbench.sources import (
@@ -281,6 +282,7 @@ async def route(
         messages.append({"role": "assistant", "content": assistant_json})
     messages.extend(history_messages or [])
     messages.append({"role": "user", "content": normalized})
+    messages = coalesce_system_messages(messages)
 
     try:
         result = await client.complete(

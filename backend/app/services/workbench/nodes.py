@@ -20,6 +20,7 @@ from app.services.nlq.ask import AskContext, ask_once
 from app.services.nlq.catalog import get_catalog
 from app.services.nlq.catalog.retrieval import retrieve
 from app.services.nlq.contracts import AskResponse
+from app.services.nlq.llm.messages import coalesce_system_messages
 from app.services.nlq.normalization import normalize_lending_question
 from app.services.workbench import models
 
@@ -225,11 +226,11 @@ async def run_macro(
     client = models.for_step("synthesize", sensitive=False)
     try:
         result = await client.complete(
-            messages=[
+            messages=coalesce_system_messages([
                 {"role": "system", "content": _MACRO_SYSTEM},
                 *(history_messages or []),
                 {"role": "user", "content": f"Question: {intent}\n\nContext:\n{context}"},
-            ],
+            ]),
             max_tokens=500,
             temperature=0.2,
         )
@@ -355,11 +356,11 @@ async def run_knowledge(
     client = models.for_step("synthesize", sensitive=False)
     try:
         result = await client.complete(
-            messages=[
+            messages=coalesce_system_messages([
                 {"role": "system", "content": _KNOWLEDGE_SYSTEM},
                 *(history_messages or []),
                 {"role": "user", "content": f"Question: {question}\n\nCatalog context:\n{context}"},
-            ],
+            ]),
             max_tokens=350,
             temperature=0.1,
         )

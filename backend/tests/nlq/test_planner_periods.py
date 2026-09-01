@@ -79,6 +79,29 @@ async def test_session_history_is_sent_before_the_current_planner_question():
 
 
 @pytest.mark.anyio
+async def test_planner_merges_history_system_context_into_its_system_prompt():
+    cache.clear_all()
+    client = FixedPlanClient()
+
+    await plan(
+        "now by asset classification",
+        client=client,
+        history_messages=[
+            {"role": "system", "content": "Conversation checkpoint"},
+            {"role": "system", "content": "Current session state"},
+            {"role": "user", "content": "Show principal outstanding"},
+            {"role": "assistant", "content": "Principal outstanding was ₹10 Cr."},
+        ],
+    )
+
+    sent = client.calls[0]["messages"]
+    assert [message["role"] for message in sent].count("system") == 1
+    assert sent[0]["role"] == "system"
+    assert "Conversation checkpoint" in sent[0]["content"]
+    assert "Current session state" in sent[0]["content"]
+
+
+@pytest.mark.anyio
 async def test_explicit_overdue_principal_share_cannot_be_changed_to_par30():
     cache.clear_all()
     outcome = await plan(

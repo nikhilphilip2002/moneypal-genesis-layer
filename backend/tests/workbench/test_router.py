@@ -182,6 +182,28 @@ class TestDispatch:
         assert sent[-3:] == [*history_messages, {"role": "user", "content": "and by branch?"}]
 
     @pytest.mark.anyio
+    async def test_history_system_context_is_merged_into_router_system_prompt(self, monkeypatch):
+        fake = FakeLLM('{"route":"dispatch","sources":["db"],"intent":"x"}')
+        _use(monkeypatch, fake)
+
+        await router.route(
+            "and by branch?",
+            role="admin",
+            history_messages=[
+                {"role": "system", "content": "Conversation checkpoint"},
+                {"role": "system", "content": "Current session state"},
+                {"role": "user", "content": "Show PAR 30"},
+                {"role": "assistant", "content": "PAR 30 was 4.2%."},
+            ],
+        )
+
+        sent = fake.calls[0]["messages"]
+        assert [message["role"] for message in sent].count("system") == 1
+        assert sent[0]["role"] == "system"
+        assert "Conversation checkpoint" in sent[0]["content"]
+        assert "Current session state" in sent[0]["content"]
+
+    @pytest.mark.anyio
     async def test_lending_typos_are_normalized_before_routing(self, monkeypatch):
         fake = FakeLLM('{"route":"dispatch","sources":["db"],"intent":"x"}')
         _use(monkeypatch, fake)

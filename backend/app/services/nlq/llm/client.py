@@ -23,6 +23,7 @@ from typing import Any, Protocol, runtime_checkable
 import httpx
 
 from app.core.config import settings
+from app.services.nlq.llm.messages import coalesce_system_messages
 
 logger = logging.getLogger(__name__)
 
@@ -179,15 +180,18 @@ class OpenAICompatibleClient:
     def _prepare_messages(
         self, messages: list[dict[str, str]], json_schema: dict[str, Any] | None
     ) -> list[dict[str, str]]:
-        """Carry the schema in the prompt for providers without grammar support.
+        """Normalize system context and carry schemas for JSON-mode-only providers.
 
         Groq additionally *rejects* a json_object request whose messages never mention
-        JSON, so this is required rather than merely helpful. It is appended rather than
-        prepended so the cacheable system prefix stays byte-identical.
+        JSON, so the schema instruction is required rather than merely helpful.  It is
+        merged after the existing system context: this preserves the cacheable prefix and
+        avoids consecutive system messages that some chat templates silently discard.
         """
+        prepared = coalesce_system_messages(messages)
         if json_schema is None or self.profile.supports_json_schema:
-            return messages
-        return [
+            return prepared
+        return coalesce_system_messages([
+            *prepared,
             {
                 "role": "system",
                 "content": (
@@ -196,8 +200,7 @@ class OpenAICompatibleClient:
                     f"{json.dumps(json_schema, separators=(',', ':'))}"
                 ),
             },
-            *messages,
-        ]
+        ])
 
     async def complete(
         self,
