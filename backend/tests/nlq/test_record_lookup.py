@@ -117,6 +117,10 @@ from app.services.nlq.planner import plan
             "borrower_name", "SHEELAVATHI M K", "loan_details",
         ),
         (
+            "9loan sanctioned amount sheelavathi mk",
+            "borrower_name", "sheelavathi mk", "loan_details",
+        ),
+        (
             "show customer profile for Sheelavathi M K",
             "borrower_name", "Sheelavathi M K", "customer_summary",
         ),
@@ -144,6 +148,30 @@ async def test_record_lookup_bypasses_the_llm_planner():
     assert isinstance(outcome.plan, LookupPlan)
     assert outcome.attempts == 0
     assert outcome.model == "deterministic"
+
+
+@pytest.mark.anyio
+async def test_terse_named_sanction_amount_bypasses_portfolio_count_metric():
+    outcome = await plan("9loan sanctioned amount sheelavathi mk")
+
+    assert isinstance(outcome.plan, LookupPlan)
+    assert outcome.plan.selector == "borrower_name"
+    assert outcome.plan.value == "sheelavathi mk"
+    assert outcome.plan.requested_fields == ["sanction_amount"]
+    assert outcome.attempts == 0
+    assert outcome.model == "deterministic"
+
+
+@pytest.mark.parametrize(
+    "question",
+    [
+        "sanctioned amount this year",
+        "sanctioned amount by branch",
+        "loan amount last quarter",
+    ],
+)
+def test_bare_field_suffix_does_not_treat_period_or_dimension_as_a_name(question):
+    assert detect(question) is None
 
 
 @pytest.mark.anyio

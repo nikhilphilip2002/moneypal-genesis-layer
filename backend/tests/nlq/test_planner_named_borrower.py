@@ -21,6 +21,25 @@ class RefusingClient:
         )
 
 
+class SqlClient:
+    provider = "test"
+    model = "test"
+
+    def __init__(self):
+        self.calls = 0
+
+    async def complete(self, **kwargs):
+        self.calls += 1
+        return LLMResult(
+            text=(
+                '{"route":"sql","intent":"sanction amount for named borrower",'
+                '"tables":["gold.semantic_loan_account"],"confidence":0.9}'
+            ),
+            model=self.model,
+            provider=self.provider,
+        )
+
+
 @pytest.mark.anyio
 async def test_named_borrower_principal_routes_without_calling_an_llm():
     outcome = await plan("principle amount paid by sheelavati")
@@ -39,6 +58,21 @@ async def test_named_borrower_disbursement_routes_without_calling_an_llm():
     assert outcome.plan.tables == ["gold.semantic_loan_account"]
     assert outcome.model == "deterministic"
     assert outcome.attempts == 0
+
+
+@pytest.mark.anyio
+async def test_unrecognized_named_amount_phrase_reaches_llm_instead_of_book_count():
+    client = SqlClient()
+
+    outcome = await plan(
+        "loan sanctioned amount belonging sheelavathi mk", client=client,
+    )
+
+    assert isinstance(outcome.plan, SqlPlan)
+    assert outcome.plan.tables == ["gold.semantic_loan_account"]
+    assert outcome.model == "test"
+    assert outcome.attempts == 1
+    assert client.calls == 1
 
 
 @pytest.mark.anyio

@@ -645,7 +645,14 @@ def _common_business_plan(question: str) -> PlanResult | None:
             reasoning="paid amount grouped by the governed loan scheme",
         )
 
-    if _TOTAL_SANCTIONED_LOAN_COUNT_RE.search(question):
+    # "loan sanctioned amount <name>" contains the substring "loan sanctioned", but the
+    # explicit amount cue makes it impossible to be a loan-count question. If the governed
+    # record grammar did not already recognize the borrower phrasing, leave it for the LLM
+    # planner instead of silently returning the whole-book account count.
+    if (
+        _TOTAL_SANCTIONED_LOAN_COUNT_RE.search(question)
+        and not _SANCTION_METRIC_RE.search(question)
+    ):
         return QuerySpecPlan(
             spec={
                 "metrics": ["loan_count"],

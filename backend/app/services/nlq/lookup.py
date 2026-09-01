@@ -222,18 +222,31 @@ _NAME_AFTER_LOAN_FIELD = re.compile(
     r"(?:(?:customer|borrower|client)\s+)?(?P<name>[a-z][\w .'-]{1,100})\s*[?!.]*$",
     re.I,
 )
+# Terse search-box phrasing often omits "for": "loan sanctioned amount Sheelavathi MK".
+# Require at least two name tokens so "sanctioned amount this year" cannot become a
+# borrower lookup.
+_NAME_AFTER_BARE_LOAN_FIELD = re.compile(
+    r"\b(?:loan\s+amount|sanction(?:ed)?\s+amount|sanction\s+date|loan\s+date|"
+    r"disburs(?:ed|e?ment)\s+(?:amount|date))\s+"
+    r"(?!disbur\w*\b|sanction\w*\b)"
+    r"(?P<name>[a-z][\w.'-]*(?:\s+[a-z][\w.'-]*){1,5})\s*[?!.]*$",
+    re.I,
+)
 _BORROWER_NAME_CUE = re.compile(r"\bnames?\b", re.I)
 _AGENT_BORROWER_CUE = re.compile(r"\b(?:borrowers?|customers?|clients?)\b", re.I)
 _COUNT_CUE = re.compile(r"\b(?:how\s+many|count|number\s+of|total\s+number)\b", re.I)
 
 _NON_NAME_WORDS = frozenset({
-    "split", "between", "and", "or", "versus", "vs", "by", "per", "each", "total",
+    "split", "between", "and", "or", "versus", "vs", "by", "to", "for", "of", "per",
+    "each", "total", "belonging",
     "count", "sum", "average", "mean", "open", "closed", "active", "inactive", "top",
     "bottom", "highest", "lowest", "most", "least", "overdue", "outstanding", "arrears",
     "disbursed", "disbursement", "sanctioned", "sanction", "list", "show", "compare",
     "trend", "breakdown", "share", "ratio", "growth", "npa", "par", "dpd", "bucket",
     "portfolio", "gold", "microfinance", "msme", "retail", "male", "female", "gender",
-    "many", "much", "which", "where", "when", "why",
+    "many", "much", "which", "where", "when", "why", "year", "month", "quarter",
+    "week", "day", "today", "yesterday", "current", "latest", "period", "fiscal",
+    "financial", "time",
 })
 """One of these anywhere in a captured name means the phrase is a question about the book.
 "Show the loan-count split between open and closed accounts" ends in the word the account
@@ -621,7 +634,11 @@ def detect(question: str) -> LookupPlan | None:
             detail="customer_summary",
             reasoning="governed customer and linked-loan summary",
         )
-    named_loan_field = _NAME_BEFORE_LOAN_FIELD.search(text) or _NAME_AFTER_LOAN_FIELD.search(text)
+    named_loan_field = (
+        _NAME_BEFORE_LOAN_FIELD.search(text)
+        or _NAME_AFTER_LOAN_FIELD.search(text)
+        or _NAME_AFTER_BARE_LOAN_FIELD.search(text)
+    )
     if named_loan_field and _is_person_name(_clean_name(named_loan_field.group('name'))):
         return LookupPlan(
             selector="borrower_name", value=_clean_name(named_loan_field.group("name")),
