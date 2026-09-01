@@ -188,7 +188,6 @@ class OpenAICompatibleClient:
         if json_schema is None or self.profile.supports_json_schema:
             return messages
         return [
-            *messages,
             {
                 "role": "system",
                 "content": (
@@ -197,6 +196,7 @@ class OpenAICompatibleClient:
                     f"{json.dumps(json_schema, separators=(',', ':'))}"
                 ),
             },
+            *messages,
         ]
 
     async def complete(
