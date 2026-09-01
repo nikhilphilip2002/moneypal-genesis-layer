@@ -24,33 +24,6 @@ from app.services.workbench.nodes import SourceResult
 
 logger = logging.getLogger(__name__)
 
-EXA_SEARCH_TOOL = {
-    "type": "function",
-    "function": {
-        "name": "web_search_exa",
-        "description": "Search the public web with Exa for current, citable information.",
-    },
-}
-EXA_SEARCH_TOOL_CHOICE = {
-    "type": "function",
-    "function": {"name": "web_search_exa"},
-}
-
-
-def web_tool_config(enabled: bool) -> dict[str, Any]:
-    """Return the effective chat tool policy for a Workbench turn.
-
-    The named choice is stronger than ``auto``: when the toggle is on, Exa must run. When
-    it is off, Exa is absent from ``tools`` rather than merely left for the model to ignore.
-    """
-    if not enabled:
-        return {"tools": [], "tool_choice_mode": "none", "tool_choice": "none"}
-    return {
-        "tools": [EXA_SEARCH_TOOL],
-        "tool_choice_mode": "required",
-        "tool_choice": EXA_SEARCH_TOOL_CHOICE,
-    }
-
 
 def sse(event: str, data: Any) -> str:
     return f"event: {event}\ndata: {json.dumps(data, default=str)}\n\n"
@@ -87,7 +60,6 @@ class WorkbenchState(TypedDict):
     emit: "asyncio.Queue[str | None]"
     pinned: NotRequired[str | None]
     data_access: NotRequired[str | None]
-    web_search: NotRequired[bool]
     decision: NotRequired[router.RouteDecision]
     results: NotRequired[list[SourceResult]]
 
@@ -95,46 +67,10 @@ class WorkbenchState(TypedDict):
 async def _route_node(state: WorkbenchState) -> dict[str, Any]:
     emit = state["emit"]
     await emit.put(sse("stage", {"stage": "routing"}))
-    tool_config = web_tool_config(bool(state.get("web_search")))
-    if tool_config["tool_choice_mode"] == "required":
-        # The UI toggle is the tool-choice boundary: Exa is not offered to normal routing.
-        # When enabled, the named tool is required and therefore dispatched directly.
-        from app.services.workbench.sources import visible_sources
-        from app.services.workbench.web import UnsafeWebQuery, public_query
-
-        web_available = "web" in {
-            source.id for source in visible_sources(state["role"], include_web=True)
-        }
-        if not web_available:
-            decision = router.RouteDecision(
-                route="refuse",
-                reason="web_search_unavailable",
-                message="Web search is not available in this deployment.",
-                model="tool_choice:required:web_search_exa",
-            )
-        else:
-            try:
-                intent = public_query(state["question"])
-            except UnsafeWebQuery as exc:
-                decision = router.RouteDecision(
-                    route="refuse",
-                    reason="private_external_query",
-                    message=str(exc),
-                    model="tool_choice:required:web_search_exa",
-                )
-            else:
-                decision = router.RouteDecision(
-                    route="dispatch",
-                    sources=["web"],
-                    intent=intent,
-                    source_intents={"web": intent},
-                    model="tool_choice:required:web_search_exa",
-                )
-    else:
-        decision = await router.route(
-            state["question"], role=state["role"], pinned=state.get("pinned"),
-            history_messages=state.get("history_messages", []), include_web=False,
-        )
+    decision = await router.route(
+        state["question"], role=state["role"], pinned=state.get("pinned"),
+        history_messages=state.get("history_messages", []),
+    )
     if decision.route == "dispatch":
         await emit.put(sse("route", {"sources": decision.sources, "intent": decision.intent,
                                      "model": decision.model}))
@@ -434,7 +370,7 @@ def _spawn_background(coro) -> None:
 
 async def run_workbench(
     *, question: str, conversation_id: str, user: str, role: str, pinned: str | None = None,
-    data_access: str | None = None, web_search: bool = False,
+    data_access: str | None = None,
 ) -> AsyncIterator[str]:
     """Run one turn, yielding SSE frames as the graph produces them."""
     emit: "asyncio.Queue[str | None]" = asyncio.Queue()
@@ -461,7 +397,6 @@ async def run_workbench(
         "history_messages": history_messages,
         "emit": emit, "pinned": pinned,
         "data_access": data_access,
-        "web_search": web_search,
     }
 
     async def drive() -> None:

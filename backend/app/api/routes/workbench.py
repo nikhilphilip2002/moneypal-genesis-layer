@@ -43,9 +43,6 @@ class AskRequest(BaseModel):
     # role's visible set, so it can never widen access.
     pinned_source: str | None = None
     data_access: Literal["direct", "mcp"] | None = None
-    # Exa is excluded from normal routing. This explicit opt-in acts as a required,
-    # named tool choice for web_search_exa; callers cannot supply arbitrary tool schemas.
-    web_search: bool = False
 
 
 @router.get("/sources")
@@ -188,7 +185,6 @@ async def ask(req: AskRequest, authorization: str | None = Header(default=None))
             role=role,
             pinned=req.pinned_source,
             data_access=req.data_access,
-            web_search=req.web_search,
         ),
         media_type="text/event-stream",
         headers={

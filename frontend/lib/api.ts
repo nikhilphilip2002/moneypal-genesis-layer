@@ -1116,7 +1116,6 @@ export const workbench = {
     conversationId: string | null,
     pinnedSource?: string | null,
     dataAccess?: 'direct' | 'mcp',
-    webSearch = false,
     signal?: AbortSignal,
   ): AsyncGenerator<WorkbenchStreamEvent> {
     const token = getToken();
@@ -1131,7 +1130,6 @@ export const workbench = {
         conversation_id: conversationId,
         pinned_source: pinnedSource ?? null,
         data_access: dataAccess ?? null,
-        web_search: webSearch,
       }),
       signal,
     });

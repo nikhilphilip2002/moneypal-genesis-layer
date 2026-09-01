@@ -42,9 +42,7 @@ def _run(question="q", role="admin"):
 
 
 def _stub_route(monkeypatch, decision):
-    async def fake_route(
-        question, *, role, pinned=None, history_messages=None, include_web=True,
-    ):
+    async def fake_route(question, *, role, pinned=None, history_messages=None):
         return decision
     monkeypatch.setattr(router, "route", fake_route)
 
@@ -57,18 +55,6 @@ def _stub_node(monkeypatch, name, result):
 
 def _names(events):
     return [n for n, _ in events]
-
-
-def test_exa_tool_is_absent_by_default_and_named_when_enabled():
-    assert graph.web_tool_config(False) == {
-        "tools": [], "tool_choice_mode": "none", "tool_choice": "none",
-    }
-    enabled = graph.web_tool_config(True)
-    assert enabled["tool_choice_mode"] == "required"
-    assert enabled["tools"] == [graph.EXA_SEARCH_TOOL]
-    assert enabled["tool_choice"] == {
-        "type": "function", "function": {"name": "web_search_exa"},
-    }
 
 
 class TestSingleSource:
@@ -179,6 +165,9 @@ class TestDispatchTable:
 
     @pytest.mark.anyio
     async def test_web_source_reaches_the_public_handler_with_user_identity(self, monkeypatch):
+        _stub_route(monkeypatch, router.RouteDecision(
+            route="dispatch", sources=["web"], intent="latest RBI release",
+        ))
         received = {}
 
         async def fake_web(intent, *, user):
@@ -189,34 +178,11 @@ class TestDispatchTable:
             )
 
         monkeypatch.setattr(nodes, "run_web", fake_web)
-        monkeypatch.setattr(
-            "app.services.workbench.sources.settings.exa_mcp_enabled", True,
-        )
-        events = await _collect(
-            question="latest RBI release", conversation_id="c1", user="u", role="admin",
-            web_search=True,
-        )
+        events = await _run()
 
         assert received == {"intent": "latest RBI release", "user": "u"}
         card = next(data for name, data in events if name == "source_card")
         assert card["source"] == "web"
-
-    @pytest.mark.anyio
-    async def test_default_turn_does_not_offer_web_to_router(self, monkeypatch):
-        seen = {}
-
-        async def fake_route(question, **kwargs):
-            seen.update(kwargs)
-            return router.RouteDecision(route="dispatch", sources=["macro"], intent=question)
-
-        monkeypatch.setattr(router, "route", fake_route)
-        _stub_node(monkeypatch, "run_macro", SourceResult(
-            source="macro", card_type="brief", payload={}, summary="indexed",
-        ))
-
-        await _run("latest RBI release")
-
-        assert seen["include_web"] is False
 
     @pytest.mark.anyio
     async def test_one_source_exception_does_not_fail_the_whole_turn(self, monkeypatch):

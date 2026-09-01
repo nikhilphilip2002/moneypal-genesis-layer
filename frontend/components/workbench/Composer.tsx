@@ -6,7 +6,6 @@ import {
   Check,
   Database,
   Filter,
-  Globe2,
   Plus,
   ShieldCheck,
   Square,
@@ -38,7 +37,7 @@ import {
 } from '@/components/workbench/WorkbenchWorkspace';
 
 type Props = {
-  onAsk: (question: string, webSearch?: boolean) => void;
+  onAsk: (question: string) => void;
   busy?: boolean;
   onCancel?: () => void;
   pinned: string | null;
@@ -69,7 +68,6 @@ export default function Composer({
   const [completions, setCompletions] = useState<WorkbenchCompletion[]>([]);
   const [completionIndex, setCompletionIndex] = useState(0);
   const [focused, setFocused] = useState(false);
-  const [webSearch, setWebSearch] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const accessInitializedRef = useRef(false);
   const completionRequestRef = useRef(0);
@@ -150,7 +148,7 @@ export default function Composer({
   const submit = () => {
     const question = value.trim();
     if (!question || busy) return;
-    onAsk(question, webSearch);
+    onAsk(question);
     setValue('');
     setCompletions([]);
     if (textareaRef.current) textareaRef.current.style.height = '72px';
@@ -274,26 +272,6 @@ export default function Composer({
             onDataAccess={onDataAccess}
             onOpen={loadData}
           />
-
-          <Button
-            type="button"
-            size="sm"
-            variant="ghost"
-            aria-pressed={webSearch}
-            aria-label={webSearch ? 'Disable web search' : 'Enable web search'}
-            title={webSearch ? 'Web search on · Exa required' : 'Search the web with Exa'}
-            onClick={() => setWebSearch((enabled) => !enabled)}
-            disabled={busy}
-            className={cn(
-              'h-8 gap-1.5 rounded-lg px-2.5 text-xs shadow-none',
-              webSearch
-                ? 'bg-primary/10 text-primary hover:bg-primary/15'
-                : 'text-muted-foreground hover:bg-muted hover:text-foreground',
-            )}
-          >
-            <Globe2 className="size-3.5" />
-            <span className="hidden sm:inline">Web search</span>
-          </Button>
 
           {pinned ? (
             <span className="flex min-w-0 items-center gap-1.5 rounded-lg bg-accent px-2.5 py-1.5 text-xs font-medium text-accent-foreground">
