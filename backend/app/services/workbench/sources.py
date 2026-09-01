@@ -168,21 +168,22 @@ SOURCES: dict[str, Source] = {
 ROUTE_VALUES = ("dispatch", "refuse")
 
 
-def visible_sources(role: str) -> list[Source]:
+def visible_sources(role: str, *, include_web: bool = True) -> list[Source]:
     return [
         s for s in SOURCES.values()
-        if s.visible_to(role) and (s.id != "web" or settings.exa_mcp_enabled)
+        if s.visible_to(role)
+        and (s.id != "web" or (include_web and settings.exa_mcp_enabled))
     ]
 
 
-def route_schema(role: str) -> dict[str, Any]:
+def route_schema(role: str, *, include_web: bool = True) -> dict[str, Any]:
     """Grammar-JSON schema for the router call.
 
     `sources` is constrained to the ids this role may see, so — exactly like the NLQ
     planner constrained to catalog metrics — the model physically cannot route to a source
     that does not exist or that the user is not allowed to reach.
     """
-    ids = [s.id for s in visible_sources(role)]
+    ids = [s.id for s in visible_sources(role, include_web=include_web)]
     return {
         "type": "object",
         "additionalProperties": False,
@@ -207,7 +208,7 @@ def route_schema(role: str) -> dict[str, Any]:
     }
 
 
-def router_system_prompt(role: str) -> str:
+def router_system_prompt(role: str, *, include_web: bool = True) -> str:
     """Fixed, cacheable prefix describing every visible source."""
     lines = [
         "You are the router for a bank intelligence workbench. You decide which knowledge "
@@ -216,7 +217,7 @@ def router_system_prompt(role: str) -> str:
         "",
         "SOURCES (id | what it holds):",
     ]
-    for source in visible_sources(role):
+    for source in visible_sources(role, include_web=include_web):
         lines.append(f"- {source.id} | {source.describes}")
         if source.example_intents:
             examples = "; ".join(source.example_intents)

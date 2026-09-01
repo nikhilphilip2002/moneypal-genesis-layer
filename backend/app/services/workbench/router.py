@@ -194,13 +194,13 @@ class RouteDecision:
     source_intents: dict[str, str] = field(default_factory=dict)
 
 
-def _fallback(role: str, question: str) -> RouteDecision:
+def _fallback(role: str, question: str, *, include_web: bool = True) -> RouteDecision:
     """When routing itself fails, default to the loan book if the role can see it.
 
     A degraded router should still answer the common case rather than refuse everything.
     `db` is the modal source; if the role cannot see it, fall to the first visible one.
     """
-    visible = visible_sources(role)
+    visible = visible_sources(role, include_web=include_web)
     if not visible:
         return RouteDecision(route="refuse", reason="out_of_scope",
                              message="No sources are available for your role.")
@@ -247,6 +247,7 @@ async def route(
     role: str,
     pinned: str | None = None,
     history_messages: list[dict[str, str]] | None = None,
+    include_web: bool = True,
 ) -> RouteDecision:
     """Decide which source(s) answer this question.
 
@@ -265,15 +266,20 @@ async def route(
     )
 
     if pinned:
-        visible_ids = [s.id for s in visible_sources(role)]
+        visible_ids = [s.id for s in visible_sources(role, include_web=include_web)]
         if pinned in visible_ids:
             return RouteDecision(
                 route="dispatch", sources=[pinned], intent=normalized, model="pinned"
             )
 
     client = models.for_step("route", sensitive=True)
-    messages = [{"role": "system", "content": router_system_prompt(role)}]
-    visible_for_prompt = {s.id for s in visible_sources(role)}
+    messages = [{
+        "role": "system",
+        "content": router_system_prompt(role, include_web=include_web),
+    }]
+    visible_for_prompt = {
+        s.id for s in visible_sources(role, include_web=include_web)
+    }
     for user_text, assistant_json in ROUTER_FEW_SHOTS:
         if '"web"' in assistant_json and "web" not in visible_for_prompt:
             continue
@@ -285,19 +291,19 @@ async def route(
     try:
         result = await client.complete(
             messages=messages,
-            json_schema=route_schema(role),
+            json_schema=route_schema(role, include_web=include_web),
             max_tokens=300,
             temperature=0.0,
         )
         payload = result.json()
     except (LLMError, ValueError) as exc:
         logger.warning("workbench router failed, falling back: %s", exc)
-        return _fallback(role, normalized)
+        return _fallback(role, normalized, include_web=include_web)
 
     if not isinstance(payload, dict):
-        return _fallback(role, normalized)
+        return _fallback(role, normalized, include_web=include_web)
 
-    visible_ids = [s.id for s in visible_sources(role)]
+    visible_ids = [s.id for s in visible_sources(role, include_web=include_web)]
     external_only = _external_only_source(normalized, visible_ids)
     web_required = _requires_web(normalized, visible_ids)
     # The record grammar is itself curated Gold metadata, so a question it recognises is a
@@ -361,7 +367,7 @@ async def route(
     if value_intent and "db" not in chosen:
         chosen.insert(0, "db")
     if not chosen:
-        return _fallback(role, normalized)
+        return _fallback(role, normalized, include_web=include_web)
 
     raw_source_intents = payload.get("source_intents") or {}
     if not isinstance(raw_source_intents, dict):
@@ -385,7 +391,7 @@ async def route(
             chosen = [source for source in chosen if source != "web"]
             source_intents.pop("web", None)
             if not chosen:
-                return _fallback(role, normalized)
+                return _fallback(role, normalized, include_web=include_web)
 
     return RouteDecision(
         route="dispatch",

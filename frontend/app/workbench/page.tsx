@@ -108,7 +108,7 @@ export default function WorkbenchPage() {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
   }, [turns, completionsHeight]);
 
-  const ask = useCallback(async (question: string) => {
+  const ask = useCallback(async (question: string, webSearch = false) => {
     const id = `t-${Date.now()}`;
     setTurns((previous) => [
       ...previous,
@@ -125,7 +125,9 @@ export default function WorkbenchPage() {
       setTurns((previous) => previous.map((turn) => turn.id === id ? update(turn) : turn));
 
     try {
-      for await (const event of workbench.ask(question, conversationId, pinned, dataAccess, controller.signal)) {
+      for await (const event of workbench.ask(
+        question, conversationId, pinned, dataAccess, webSearch, controller.signal,
+      )) {
         switch (event.type) {
           case 'conversation':
             setConversationId(event.conversation_id);
