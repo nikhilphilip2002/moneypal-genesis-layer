@@ -148,6 +148,23 @@ async def run_db(
             ),
         )
     if response.chart is not None:
+        # The model ranks and phrases only compiler-checked drill actions. Keep this short
+        # and failure-tolerant: chart delivery must never depend on suggestion generation.
+        try:
+            from app.services.workbench import suggestions
+
+            client = models.for_step("route", sensitive=True)
+            response.chart.next_steps = await asyncio.wait_for(
+                suggestions.personalize(
+                    question=intent,
+                    summary=response.chart.summary,
+                    steps=response.chart.next_steps,
+                    client=client,
+                ),
+                timeout=4.0,
+            )
+        except Exception as exc:  # noqa: BLE001 - catalog steps remain the safe fallback
+            logger.debug("contextual next-step generation unavailable: %s", exc)
         return SourceResult(
             source="db",
             card_type="chart",
