@@ -1,7 +1,9 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import dynamic from 'next/dynamic';
+import { useTheme } from 'next-themes';
 import {
   AlertTriangle,
   Award,
@@ -16,14 +18,18 @@ import {
   Link2,
   Maximize2,
   Minimize2,
+  Move,
   Network,
   RefreshCw,
+  RotateCcw,
   Search,
   ShieldAlert,
   Table2,
   UserRound,
   Users,
   X,
+  ZoomIn,
+  ZoomOut,
 } from 'lucide-react';
 
 import { admin } from '@/lib/api';
@@ -31,9 +37,19 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 
+const ForceGraph2D = dynamic(() => import('react-force-graph-2d'), {
+  ssr: false,
+  loading: () => (
+    <div className="flex h-full min-h-[420px] items-center justify-center text-xs text-muted-foreground">
+      <Network className="mr-2 h-4 w-4 animate-spin text-primary" />
+      Loading the portfolio graph…
+    </div>
+  ),
+});
+
 type GraphLevel = 'portfolio' | 'product' | 'branch' | 'scheme' | 'agent' | 'customer';
 type WeightBy = 'borrowers' | 'outstanding' | 'accounts';
-type DisplayMode = 'graph' | 'table';
+type DisplayMode = 'graph' | 'cards' | 'table';
 
 interface Metrics {
   account_count?: number;
@@ -147,6 +163,28 @@ const levelTone: Record<string, string> = {
   related_agent: 'border-sky-500/50 bg-sky-500/10',
 };
 
+/** Canvas fills for the force graph; one hue per tier so a drill-down reads at a glance. */
+const levelColor: Record<string, string> = {
+  portfolio: '#7c3aed',
+  product: '#4f46e5',
+  branch: '#2563eb',
+  scheme: '#0891b2',
+  agent: '#0d9488',
+  customer: '#059669',
+  account: '#d97706',
+  related_agent: '#0284c7',
+};
+
+/** The tier a node of each type drills into, used for the canvas legend. */
+const childLevelOf: Record<GraphLevel, string> = {
+  portfolio: 'product',
+  product: 'branch',
+  branch: 'scheme',
+  scheme: 'agent',
+  agent: 'customer',
+  customer: 'account',
+};
+
 function formatMoney(raw?: number): string {
   const value = Number(raw || 0);
   const abs = Math.abs(value);
@@ -197,6 +235,10 @@ function KpiCard({ label, value, icon }: { label: string; value: string; icon: R
 }
 
 export default function DBSchemaGraph({ contained = false }: { contained?: boolean }) {
+  const { theme } = useTheme();
+  const graphRef = useRef<any>(null);
+  const canvasRef = useRef<HTMLDivElement>(null);
+
   const [mounted, setMounted] = useState(false);
   const [expanded, setExpanded] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -206,9 +248,13 @@ export default function DBSchemaGraph({ contained = false }: { contained?: boole
   const [weightBy, setWeightBy] = useState<WeightBy>('borrowers');
   const [displayMode, setDisplayMode] = useState<DisplayMode>('graph');
   const [selectedNode, setSelectedNode] = useState<GraphNode | null>(null);
+  const [hoverNode, setHoverNode] = useState<GraphNode | null>(null);
+  const [dimensions, setDimensions] = useState({ width: 800, height: 520 });
   const [month, setMonth] = useState('');
   const [search, setSearch] = useState('');
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
+
+  const isDark = theme === 'dark';
 
   useEffect(() => setMounted(true), []);
   useEffect(() => {
@@ -268,6 +314,154 @@ export default function DBSchemaGraph({ contained = false }: { contained?: boole
     [data],
   );
   const maxWeight = Math.max(1, ...children.map((node) => nodeWeight(node, weightBy)));
+
+  // The force graph mutates whatever objects it is handed, so hand it fresh copies on
+  // every payload and keep the API nodes immutable.
+  const forceGraphData = useMemo(() => {
+    if (!data) return { nodes: [], links: [] };
+    return {
+      nodes: data.nodes.map((node) => {
+        const isRoot = node.id === data.current.id;
+        const share = Math.sqrt(nodeWeight(node, weightBy) / maxWeight) || 0;
+        return {
+          ...node,
+          color: levelColor[node.type] || '#64748b',
+          size: isRoot ? 26 : 9 + Math.round(share * 13),
+        };
+      }),
+      links: data.edges.map((edge) => ({ ...edge })),
+    };
+  }, [data, weightBy, maxWeight]);
+
+  const linksByNode = useMemo(() => {
+    const map = new Map<string, Set<string>>();
+    for (const edge of data?.edges || []) {
+      if (!map.has(edge.source)) map.set(edge.source, new Set());
+      if (!map.has(edge.target)) map.set(edge.target, new Set());
+      map.get(edge.source)!.add(edge.target);
+      map.get(edge.target)!.add(edge.source);
+    }
+    return map;
+  }, [data]);
+
+  // Size the canvas to its container; the force graph needs explicit pixel dimensions.
+  useEffect(() => {
+    if (displayMode !== 'graph') return;
+    const resize = () => {
+      const rect = canvasRef.current?.getBoundingClientRect();
+      if (!rect) return;
+      setDimensions({ width: Math.max(360, rect.width), height: Math.max(380, rect.height) });
+    };
+    resize();
+    const timer = window.setTimeout(resize, 120);
+    window.addEventListener('resize', resize);
+    return () => {
+      window.clearTimeout(timer);
+      window.removeEventListener('resize', resize);
+    };
+  }, [displayMode, expanded, contained, data]);
+
+  useEffect(() => {
+    if (displayMode !== 'graph' || forceGraphData.nodes.length === 0) return;
+    const timer = window.setTimeout(() => {
+      graphRef.current?.d3Force('charge')?.strength(-620);
+      graphRef.current?.d3Force('link')?.distance(150);
+      graphRef.current?.zoomToFit(500, 90);
+    }, 160);
+    return () => window.clearTimeout(timer);
+  }, [displayMode, forceGraphData, dimensions]);
+
+  const paintNode = useCallback((node: any, ctx: CanvasRenderingContext2D, scale: number) => {
+    const size = node.size || 14;
+    const isSelected = selectedNode?.id === node.id;
+    const isHovered = hoverNode?.id === node.id;
+    const isDimmed = Boolean(hoverNode && hoverNode.id !== node.id && !linksByNode.get(hoverNode.id)?.has(node.id));
+
+    if (isSelected || isHovered) {
+      ctx.beginPath();
+      ctx.arc(node.x, node.y, size + 6 / scale, 0, 2 * Math.PI);
+      ctx.fillStyle = isDark ? 'rgba(124, 58, 237, 0.28)' : 'rgba(79, 70, 229, 0.22)';
+      ctx.fill();
+    }
+
+    ctx.beginPath();
+    ctx.arc(node.x, node.y, size + (isHovered ? 2 : 0), 0, 2 * Math.PI);
+    ctx.fillStyle = isDimmed ? (isDark ? '#1e293b' : '#e2e8f0') : node.color;
+    ctx.fill();
+    ctx.strokeStyle = isSelected
+      ? (isDark ? '#ffffff' : '#0f172a')
+      : isDark ? 'rgba(255,255,255,0.32)' : 'rgba(15,23,42,0.22)';
+    ctx.lineWidth = (isSelected ? 3 : 1.5) / scale;
+    ctx.stroke();
+
+    if (isDimmed) return;
+
+    // Keep labels near a constant on-screen size so they stay legible at any zoom.
+    const label = String(node.label || '');
+    const fontSize = Math.min((isSelected || isHovered ? 13 : 11) / scale, 34);
+    ctx.font = `${isSelected || isHovered ? 700 : 500} ${fontSize}px Inter, system-ui, sans-serif`;
+    const textWidth = ctx.measureText(label).width;
+    const textY = node.y + size + 5;
+
+    ctx.fillStyle = isDark ? 'rgba(15,23,42,0.88)' : 'rgba(255,255,255,0.92)';
+    ctx.beginPath();
+    ctx.roundRect(node.x - textWidth / 2 - 6, textY - 3, textWidth + 12, fontSize * 1.2 + 6, 4);
+    ctx.fill();
+    ctx.strokeStyle = isDark ? 'rgba(255,255,255,0.1)' : 'rgba(15,23,42,0.1)';
+    ctx.lineWidth = 1 / scale;
+    ctx.stroke();
+
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'top';
+    ctx.fillStyle = isDark ? '#f8fafc' : '#0f172a';
+    ctx.fillText(label, node.x, textY);
+
+    const weight = weightText(node as GraphNode, weightBy);
+    ctx.font = `500 ${fontSize * 0.85}px Inter, system-ui, sans-serif`;
+    ctx.fillStyle = isDark ? '#94a3b8' : '#475569';
+    ctx.fillText(weight, node.x, textY + fontSize * 1.35);
+  }, [selectedNode, hoverNode, linksByNode, isDark, weightBy]);
+
+  const paintLink = useCallback((link: any, ctx: CanvasRenderingContext2D, scale: number) => {
+    const start = link.source;
+    const end = link.target;
+    if (!start?.x || !end?.x) return;
+
+    const focus = hoverNode || selectedNode;
+    const isFocused = Boolean(focus && (start.id === focus.id || end.id === focus.id));
+    const isDimmed = Boolean(focus) && !isFocused;
+
+    ctx.beginPath();
+    ctx.moveTo(start.x, start.y);
+    ctx.lineTo(end.x, end.y);
+    ctx.strokeStyle = isFocused
+      ? (isDark ? 'rgba(168,85,247,0.95)' : 'rgba(124,58,237,0.9)')
+      : `rgba(${isDark ? '148,163,184' : '100,116,139'}, ${isDimmed ? 0.09 : 0.4})`;
+    ctx.lineWidth = isFocused ? 2.5 : 1.4;
+    ctx.stroke();
+
+    if (isDimmed || (scale <= 0.75 && !isFocused)) return;
+    const label = String(link.label || '');
+    const midX = (start.x + end.x) / 2;
+    const midY = (start.y + end.y) / 2;
+    ctx.font = `500 ${Math.max(8, 10 / Math.max(scale, 0.6))}px Inter, sans-serif`;
+    const width = ctx.measureText(label).width;
+    ctx.fillStyle = isDark ? 'rgba(15,23,42,0.85)' : 'rgba(241,245,249,0.9)';
+    ctx.fillRect(midX - width / 2 - 3, midY - 6, width + 6, 12);
+    ctx.fillStyle = isDark ? '#cbd5e1' : '#334155';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(label, midX, midY);
+  }, [hoverNode, selectedNode, isDark]);
+
+  const paintPointerArea = useCallback((node: any, color: string, ctx: CanvasRenderingContext2D) => {
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.arc(node.x, node.y, (node.size || 14) + 12, 0, 2 * Math.PI);
+    ctx.fill();
+  }, []);
+
+  const zoomBy = (factor: number) => graphRef.current?.zoom((graphRef.current?.zoom() || 1) * factor, 300);
 
   const navigateNode = (node: GraphNode) => {
     setSelectedNode(node);
@@ -409,7 +603,8 @@ export default function DBSchemaGraph({ contained = false }: { contained?: boole
               ))}
             </div>
             <div className="flex rounded-lg border bg-muted/30 p-0.5">
-              <button type="button" onClick={() => setDisplayMode('graph')} className={`rounded-md p-1.5 ${displayMode === 'graph' ? 'bg-background shadow-sm' : 'text-muted-foreground'}`} title="Graph"><LayoutGrid className="h-3.5 w-3.5" /></button>
+              <button type="button" onClick={() => setDisplayMode('graph')} className={`rounded-md p-1.5 ${displayMode === 'graph' ? 'bg-background shadow-sm' : 'text-muted-foreground'}`} title="Node graph"><Network className="h-3.5 w-3.5" /></button>
+              <button type="button" onClick={() => setDisplayMode('cards')} className={`rounded-md p-1.5 ${displayMode === 'cards' ? 'bg-background shadow-sm' : 'text-muted-foreground'}`} title="Ranked cards"><LayoutGrid className="h-3.5 w-3.5" /></button>
               <button type="button" onClick={() => setDisplayMode('table')} className={`rounded-md p-1.5 ${displayMode === 'table' ? 'bg-background shadow-sm' : 'text-muted-foreground'}`} title="Table"><Table2 className="h-3.5 w-3.5" /></button>
             </div>
           </div>
@@ -467,8 +662,67 @@ export default function DBSchemaGraph({ contained = false }: { contained?: boole
                 <Badge variant="outline" className="text-[10px]">{data?.children_total || 0} records</Badge>
               </div>
 
+              {displayMode === 'graph' ? (
+                <div ref={canvasRef} className="relative min-h-0 flex-1 overflow-hidden">
+                  <div className="pointer-events-none absolute left-3 top-3 z-10 max-w-[210px] rounded-xl border bg-background/85 p-2.5 shadow-sm backdrop-blur-md">
+                    <span className="flex items-center gap-1 text-[9px] font-semibold uppercase tracking-wider text-muted-foreground">
+                      <Move className="h-2.5 w-2.5" />Drag, zoom, click to drill down
+                    </span>
+                    <div className="mt-1.5 space-y-1 text-[10px]">
+                      {[data?.current.type || 'portfolio', ...new Set(children.map((node) => node.type))].map((type) => (
+                        <div key={type} className="flex items-center gap-1.5">
+                          <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: levelColor[type] }} />
+                          <span className="font-medium text-foreground/80">{levelLabel[type]}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="absolute right-3 top-3 z-10 flex items-center gap-1 rounded-xl border bg-background/85 p-1 shadow-sm backdrop-blur-md">
+                    <Button variant="ghost" size="sm" onClick={() => zoomBy(1.3)} title="Zoom in" className="h-7 w-7 rounded-lg p-0"><ZoomIn className="h-3.5 w-3.5" /></Button>
+                    <Button variant="ghost" size="sm" onClick={() => zoomBy(1 / 1.3)} title="Zoom out" className="h-7 w-7 rounded-lg p-0"><ZoomOut className="h-3.5 w-3.5" /></Button>
+                    <Button variant="ghost" size="sm" onClick={() => graphRef.current?.zoomToFit(400, 90)} title="Fit to view" className="h-7 w-7 rounded-lg p-0"><RotateCcw className="h-3.5 w-3.5" /></Button>
+                  </div>
+
+                  {mounted && forceGraphData.nodes.length > 0 && (
+                    <ForceGraph2D
+                      ref={graphRef}
+                      width={dimensions.width}
+                      height={dimensions.height}
+                      graphData={forceGraphData}
+                      backgroundColor={isDark ? '#090d16' : '#fafafa'}
+                      nodeCanvasObject={paintNode}
+                      nodePointerAreaPaint={paintPointerArea}
+                      linkCanvasObject={paintLink}
+                      onNodeClick={(node: any) => navigateNode(node as GraphNode)}
+                      onNodeHover={(node: any) => setHoverNode((node as GraphNode) || null)}
+                      enableNodeDrag
+                      minZoom={0.15}
+                      maxZoom={4}
+                      cooldownTicks={200}
+                      d3AlphaDecay={0.02}
+                      d3VelocityDecay={0.22}
+                      onEngineStop={() => graphRef.current?.zoomToFit(400, 90)}
+                    />
+                  )}
+
+                  <div className="absolute bottom-3 left-3 z-10 flex items-center gap-2 rounded-xl border bg-background/85 px-3 py-1.5 text-[11px] shadow-sm backdrop-blur-md">
+                    <Badge variant="outline" className="text-[10px] font-semibold uppercase">{levelLabel[data?.level || 'portfolio']} tier</Badge>
+                    <span className="font-mono text-muted-foreground">{forceGraphData.nodes.length} nodes · {forceGraphData.links.length} edges</span>
+                    <span className="hidden text-muted-foreground sm:inline">
+                      · click a {levelLabel[childLevelOf[data?.level || 'portfolio']]?.toLowerCase() || 'node'} to go deeper
+                    </span>
+                  </div>
+
+                  {!loading && forceGraphData.nodes.length === 0 && (
+                    <div className="flex h-full flex-col items-center justify-center text-center text-sm text-muted-foreground">
+                      <Network className="mb-2 h-7 w-7 opacity-40" />No governed relationships were found for this selection.
+                    </div>
+                  )}
+                </div>
+              ) : (
               <div className="min-h-0 flex-1 overflow-auto p-4">
-                {displayMode === 'graph' ? (
+                {displayMode === 'cards' ? (
                   <div className="grid min-w-0 gap-5 xl:grid-cols-[240px_36px_minmax(0,1fr)]">
                     <button type="button" onClick={() => data?.current && setSelectedNode(data.current)} className={`h-fit rounded-2xl border-2 p-4 text-left shadow-sm transition hover:-translate-y-0.5 ${levelTone[data?.current.type || 'portfolio']}`}>
                       <div className="flex items-center gap-2 text-xs font-semibold uppercase text-muted-foreground"><NodeIcon type={data?.current.type || 'portfolio'} />Current {levelLabel[data?.current.type || 'portfolio']}</div>
@@ -519,6 +773,7 @@ export default function DBSchemaGraph({ contained = false }: { contained?: boole
                 )}
                 {!loading && children.length === 0 && <div className="flex min-h-64 flex-col items-center justify-center text-center text-sm text-muted-foreground"><Network className="mb-2 h-7 w-7 opacity-40" />No governed relationships were found for this selection.</div>}
               </div>
+              )}
 
               {(data?.children_total || 0) > PAGE_SIZE && (
                 <div className="flex items-center justify-between border-t px-4 py-2 text-xs">

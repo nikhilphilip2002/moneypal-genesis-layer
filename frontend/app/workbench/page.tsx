@@ -437,7 +437,7 @@ function WorkbenchHeader({
 function MoneypalLogo() {
   return (
     <div
-      className="relative h-7 w-[156px] shrink-0 overflow-hidden sm:h-8 sm:w-[180px]"
+      className="relative h-7 w-[156px] shrink-0 overflow-hidden rounded-sm dark:bg-white sm:h-8 sm:w-[180px]"
       aria-label="Moneypal"
     >
       {/* The source PNG has a large transparent canvas. Scale and offset it so the actual
