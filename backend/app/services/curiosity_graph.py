@@ -8,7 +8,9 @@ agent populations remain usable.
 
 from __future__ import annotations
 
+import copy
 import os
+import time
 from typing import Any, Iterable
 
 from app.services.db_schema import db_cursor
@@ -18,6 +20,20 @@ GICC_ENTITY = os.environ.get("CURIOSITY_GRAPH_ENTITY_NUM", "1").strip() or "1"
 GRAPH_LIMIT_MAX = 100
 LEVELS = ("portfolio", "product", "branch", "scheme", "agent", "customer")
 WEIGHTS = {"borrowers": "borrower_count", "outstanding": "principal_outstanding", "accounts": "account_count"}
+CACHE_TTL_SECONDS = 120.0
+
+_META_CACHE: dict[str, tuple[Any, float]] = {}
+_TITLE_CACHE: dict[str, tuple[str, float]] = {}
+_GRAPH_CACHE: dict[tuple, tuple[dict[str, Any], float]] = {}
+_SEARCH_CACHE: dict[tuple, tuple[list[dict[str, str]], float]] = {}
+
+
+def clear_graph_cache() -> None:
+    """Clear in-memory metadata, title, search, and query caches."""
+    _META_CACHE.clear()
+    _TITLE_CACHE.clear()
+    _GRAPH_CACHE.clear()
+    _SEARCH_CACHE.clear()
 
 # reporting_branch_code is the business-preferred key.  The live Gold audit on 2026-09-02
 # found it empty on every loan, while application_branch_code is complete.  Keep the
@@ -141,26 +157,40 @@ def _aggregate(cur: Any, filters: dict[str, str], month: str | None) -> dict[str
 
 
 def _snapshot_info(cur: Any) -> dict[str, Any]:
+    now = time.time()
+    cache_entry = _META_CACHE.get("snapshot_info")
+    if cache_entry and now < cache_entry[1]:
+        return dict(cache_entry[0])
+
     cur.execute(
         "SELECT MAX(snapshot_date), MAX(data_as_of), COUNT(DISTINCT entity_num) "
         "FROM gold.semantic_portfolio_snapshot WHERE entity_num = %s",
         (GICC_ENTITY,),
     )
     snapshot_date, data_as_of, entities = cur.fetchone()
-    return {
+    res = {
         "snapshot_date": snapshot_date.isoformat() if snapshot_date else None,
         "snapshot_data_as_of": data_as_of.isoformat() if data_as_of else None,
         "snapshot_entity_count": int(entities or 0),
     }
+    _META_CACHE["snapshot_info"] = (res, now + CACHE_TTL_SECONDS)
+    return res
 
 
 def _branch_names(cur: Any) -> dict[str, str]:
+    now = time.time()
+    cache_entry = _META_CACHE.get("branch_names")
+    if cache_entry and now < cache_entry[1]:
+        return dict(cache_entry[0])
+
     cur.execute(
         "SELECT branch_code::text, branch_name FROM gold.semantic_branch "
         "WHERE entity_num = %s AND branch_code IS NOT NULL",
         (GICC_ENTITY,),
     )
-    return {_text(code): (_text(name) or f"Branch {code}") for code, name in cur.fetchall()}
+    res = {_text(code): (_text(name) or f"Branch {code}") for code, name in cur.fetchall()}
+    _META_CACHE["branch_names"] = (res, now + CACHE_TTL_SECONDS)
+    return res
 
 
 def _title(cur: Any, level: str, filters: dict[str, str], branch_names: dict[str, str]) -> str:
@@ -169,6 +199,14 @@ def _title(cur: Any, level: str, filters: dict[str, str], branch_names: dict[str
     if level == "branch":
         code = filters.get("branch_code", "UNASSIGNED")
         return branch_names.get(code, "Unassigned branch" if code == "UNASSIGNED" else f"Branch {code}")
+
+    code = filters.get(f"{level}_code") or filters.get("customer_id", "")
+    cache_key = f"{level}:{code}:{filters.get('product_code', '')}:{filters.get('branch_code', '')}"
+    now = time.time()
+    cached = _TITLE_CACHE.get(cache_key)
+    if cached and now < cached[1]:
+        return cached[0]
+
     where, params = _where(filters, None)
     field = {
         "product": "MAX(NULLIF(BTRIM(l.product_name), ''))",
@@ -178,8 +216,9 @@ def _title(cur: Any, level: str, filters: dict[str, str], branch_names: dict[str
     }[level]
     cur.execute(f"SELECT {field} FROM gold.semantic_loan_account l WHERE {where}", tuple(params))
     label = _text(cur.fetchone()[0])
-    code = filters.get(f"{level}_code") or filters.get("customer_id", "")
-    return label or (f"Unassigned {level}" if code == "UNASSIGNED" else f"{level.title()} {code}")
+    title = label or (f"Unassigned {level}" if code == "UNASSIGNED" else f"{level.title()} {code}")
+    _TITLE_CACHE[cache_key] = (title, now + CACHE_TTL_SECONDS)
+    return title
 
 
 def _node(node_id: str, node_type: str, label: str, metrics: dict[str, Any], **extra: Any) -> dict[str, Any]:
@@ -342,6 +381,19 @@ def get_curiosity_graph(
         level = "portfolio"
         filters = {}
 
+    cache_key = (
+        level,
+        tuple(sorted(filters.items())),
+        month or "",
+        weight_by,
+        limit,
+        offset,
+    )
+    now = time.time()
+    cached_graph = _GRAPH_CACHE.get(cache_key)
+    if cached_graph and now < cached_graph[1]:
+        return copy.deepcopy(cached_graph[0])
+
     with db_cursor() as (_conn, cur):
         # These small Gold views have incomplete planner statistics in the current
         # warehouse. PostgreSQL otherwise chooses a nested loop for the latest-snapshot
@@ -392,15 +444,21 @@ def get_curiosity_graph(
             ("scheme", "scheme_code"), ("agent", "agent_code"),
         ):
             if filters.get(key):
-                scoped = {k: v for k, v in filters.items() if k != "customer_id"}
+                if path_level == level:
+                    path_label = current_title
+                elif path_level == "branch":
+                    path_label = branch_names.get(filters[key], f"Branch {filters[key]}")
+                else:
+                    scoped = {k: v for k, v in filters.items() if k != "customer_id"}
+                    path_label = _title(cur, path_level, scoped, branch_names)
                 path.append({
                     "level": path_level, "code": filters[key],
-                    "label": _title(cur, path_level, scoped, branch_names),
+                    "label": path_label,
                 })
         if filters.get("customer_id"):
             path.append({"level": "customer", "code": filters["customer_id"], "label": current_title})
 
-    return {
+    result = {
         "version": 2,
         "level": level,
         "current": current,
@@ -429,6 +487,10 @@ def get_curiosity_graph(
             ],
         },
     }
+    if len(_GRAPH_CACHE) > 500:
+        _GRAPH_CACHE.clear()
+    _GRAPH_CACHE[cache_key] = (result, now + CACHE_TTL_SECONDS)
+    return result
 
 
 def search_curiosity_entities(query: str, limit: int = 15) -> list[dict[str, str]]:
@@ -436,6 +498,12 @@ def search_curiosity_entities(query: str, limit: int = 15) -> list[dict[str, str
     term = " ".join((query or "").split())
     if len(term) < 2:
         return []
+    cache_key = (term.lower(), min(limit, 50))
+    now = time.time()
+    cached = _SEARCH_CACHE.get(cache_key)
+    if cached and now < cached[1]:
+        return [dict(item) for item in cached[0]]
+
     like = f"%{term.lower()}%"
     results: list[dict[str, str]] = []
     with db_cursor() as (_conn, cur):
@@ -459,4 +527,7 @@ def search_curiosity_entities(query: str, limit: int = 15) -> list[dict[str, str
         )
         for kind, code, label in cur.fetchall():
             results.append({"type": kind, "code": _text(code), "label": _text(label) or f"{kind.title()} {code}"})
+    if len(_SEARCH_CACHE) > 300:
+        _SEARCH_CACHE.clear()
+    _SEARCH_CACHE[cache_key] = (results, now + CACHE_TTL_SECONDS)
     return results

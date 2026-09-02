@@ -208,6 +208,20 @@ function nodeWeight(node: GraphNode, weight: WeightBy): number {
   return Number(node.metrics?.borrower_count || 0);
 }
 
+const textMeasureCache = new Map<string, number>();
+
+function getCachedTextWidth(ctx: CanvasRenderingContext2D, text: string, font: string): number {
+  const key = `${font}:${text}`;
+  let width = textMeasureCache.get(key);
+  if (width === undefined) {
+    ctx.font = font;
+    width = ctx.measureText(text).width;
+    if (textMeasureCache.size > 1500) textMeasureCache.clear();
+    textMeasureCache.set(key, width);
+  }
+  return width;
+}
+
 function weightText(node: GraphNode, weight: WeightBy): string {
   const value = nodeWeight(node, weight);
   if (weight === 'outstanding') return formatMoney(value);
@@ -327,6 +341,7 @@ export default function DBSchemaGraph({ contained = false }: { contained?: boole
           ...node,
           color: levelColor[node.type] || '#64748b',
           size: isRoot ? 26 : 9 + Math.round(share * 13),
+          formattedWeight: weightText(node as GraphNode, weightBy),
         };
       }),
       links: data.edges.map((edge) => ({ ...edge })),
@@ -366,10 +381,10 @@ export default function DBSchemaGraph({ contained = false }: { contained?: boole
     const timer = window.setTimeout(() => {
       graphRef.current?.d3Force('charge')?.strength(-620);
       graphRef.current?.d3Force('link')?.distance(150);
-      graphRef.current?.zoomToFit(500, 90);
-    }, 160);
+      graphRef.current?.zoomToFit(400, 90);
+    }, 120);
     return () => window.clearTimeout(timer);
-  }, [displayMode, forceGraphData, dimensions]);
+  }, [displayMode, data?.current?.id]);
 
   const paintNode = useCallback((node: any, ctx: CanvasRenderingContext2D, scale: number) => {
     const size = node.size || 14;
@@ -398,9 +413,10 @@ export default function DBSchemaGraph({ contained = false }: { contained?: boole
 
     // Keep labels near a constant on-screen size so they stay legible at any zoom.
     const label = String(node.label || '');
-    const fontSize = Math.min((isSelected || isHovered ? 13 : 11) / scale, 34);
-    ctx.font = `${isSelected || isHovered ? 700 : 500} ${fontSize}px Inter, system-ui, sans-serif`;
-    const textWidth = ctx.measureText(label).width;
+    const isSpecial = isSelected || isHovered;
+    const fontSize = Math.min((isSpecial ? 13 : 11) / scale, 34);
+    const font = `${isSpecial ? 700 : 500} ${fontSize}px Inter, system-ui, sans-serif`;
+    const textWidth = getCachedTextWidth(ctx, label, font);
     const textY = node.y + size + 5;
 
     ctx.fillStyle = isDark ? 'rgba(15,23,42,0.88)' : 'rgba(255,255,255,0.92)';
@@ -411,12 +427,13 @@ export default function DBSchemaGraph({ contained = false }: { contained?: boole
     ctx.lineWidth = 1 / scale;
     ctx.stroke();
 
+    ctx.font = font;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'top';
     ctx.fillStyle = isDark ? '#f8fafc' : '#0f172a';
     ctx.fillText(label, node.x, textY);
 
-    const weight = weightText(node as GraphNode, weightBy);
+    const weight = node.formattedWeight || weightText(node as GraphNode, weightBy);
     ctx.font = `500 ${fontSize * 0.85}px Inter, system-ui, sans-serif`;
     ctx.fillStyle = isDark ? '#94a3b8' : '#475569';
     ctx.fillText(weight, node.x, textY + fontSize * 1.35);
@@ -440,14 +457,15 @@ export default function DBSchemaGraph({ contained = false }: { contained?: boole
     ctx.lineWidth = isFocused ? 2.5 : 1.4;
     ctx.stroke();
 
-    if (isDimmed || (scale <= 0.75 && !isFocused)) return;
+    if (isDimmed || (!isFocused && scale <= 0.85)) return;
     const label = String(link.label || '');
     const midX = (start.x + end.x) / 2;
     const midY = (start.y + end.y) / 2;
-    ctx.font = `500 ${Math.max(8, 10 / Math.max(scale, 0.6))}px Inter, sans-serif`;
-    const width = ctx.measureText(label).width;
+    const linkFont = `500 ${Math.max(8, 10 / Math.max(scale, 0.6))}px Inter, sans-serif`;
+    const width = getCachedTextWidth(ctx, label, linkFont);
     ctx.fillStyle = isDark ? 'rgba(15,23,42,0.85)' : 'rgba(241,245,249,0.9)';
     ctx.fillRect(midX - width / 2 - 3, midY - 6, width + 6, 12);
+    ctx.font = linkFont;
     ctx.fillStyle = isDark ? '#cbd5e1' : '#334155';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
@@ -699,9 +717,11 @@ export default function DBSchemaGraph({ contained = false }: { contained?: boole
                       enableNodeDrag
                       minZoom={0.15}
                       maxZoom={4}
-                      cooldownTicks={200}
-                      d3AlphaDecay={0.02}
-                      d3VelocityDecay={0.22}
+                      warmupTicks={60}
+                      cooldownTicks={80}
+                      cooldownTime={2500}
+                      d3AlphaDecay={0.04}
+                      d3VelocityDecay={0.3}
                       onEngineStop={() => graphRef.current?.zoomToFit(400, 90)}
                     />
                   )}
