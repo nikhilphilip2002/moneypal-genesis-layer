@@ -99,11 +99,11 @@ export default function AnalysisCard({
             aria-expanded={expanded}
           >
             {expanded ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
-            {expanded ? 'Hide' : 'Show'} the {analysis.charts.length} charts behind this
+            {expanded ? 'Close' : 'Open'} {analysis.charts.length}-chart dashboard
           </button>
 
           {expanded && (
-            <div className="space-y-6">
+            <div className="grid gap-4 lg:grid-cols-2">
               {analysis.charts.map((chart, index) => (
                 <StepChart key={`${chart.title}-${index}`} chart={chart} onDrilldown={onDrilldown} />
               ))}
@@ -170,7 +170,7 @@ function StepChart({
   onDrilldown?: (spec: QuerySpec, question: string) => void;
 }) {
   return (
-    <div className="rounded-lg border border-border/70 p-3">
+    <div className="min-w-0 rounded-xl border border-border/70 bg-background/40 p-3.5">
       <ChartRenderer chart={chart} onDrilldown={(spec) => onDrilldown?.(spec, chart.title)} />
       <NextQuestions
         steps={chart.next_steps ?? []}

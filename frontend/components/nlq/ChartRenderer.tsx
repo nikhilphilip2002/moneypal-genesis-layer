@@ -1,7 +1,7 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import { BarChart3, Lightbulb, Table2 } from 'lucide-react';
+import { BarChart3, Lightbulb, Maximize2, Table2 } from 'lucide-react';
 import {
   Area, AreaChart, Bar, BarChart, CartesianGrid, Cell, LabelList, Legend, Line, LineChart, Pie, PieChart,
   ReferenceLine, ResponsiveContainer, Scatter, ScatterChart, Tooltip, XAxis, YAxis, ZAxis,
@@ -10,6 +10,9 @@ import type { ChartSpec, ColumnSpec, SeriesSpec } from '@/lib/api';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
+import {
+  Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle,
+} from '@/components/ui/dialog';
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '@/components/ui/table';
@@ -35,6 +38,8 @@ type Props = {
 
 export default function ChartRenderer({ chart, onDrilldown, hideHeader = false }: Props) {
   const [asTable, setAsTable] = useState(false);
+  const [expanded, setExpanded] = useState(false);
+  const [expandedAsTable, setExpandedAsTable] = useState(false);
   const mode = useChartMode();
   const showTable = asTable || chart.chart_type === 'table';
   const canToggle = chart.chart_type !== 'table';
@@ -51,18 +56,33 @@ export default function ChartRenderer({ chart, onDrilldown, hideHeader = false }
               )}
             </div>
           )}
-          {canToggle && (
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => setAsTable((v) => !v)}
-              className="h-8 shrink-0 gap-1.5 rounded-lg border-border/70 bg-background/70 px-2.5 text-xs font-medium text-muted-foreground shadow-sm hover:text-foreground"
-            >
-              {asTable ? <BarChart3 className="size-3.5" /> : <Table2 className="size-3.5" />}
-              {asTable ? 'Chart' : 'Table'}
-            </Button>
-          )}
+          <div className="flex shrink-0 items-center gap-1.5">
+            {canToggle && (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => setAsTable((v) => !v)}
+                className="h-8 shrink-0 gap-1.5 rounded-lg border-border/70 bg-background/70 px-2.5 text-xs font-medium text-muted-foreground shadow-sm hover:text-foreground"
+              >
+                {asTable ? <BarChart3 className="size-3.5" /> : <Table2 className="size-3.5" />}
+                {asTable ? 'Chart' : 'Table'}
+              </Button>
+            )}
+            {!asTable && chart.chart_type !== 'table' && (
+              <Button
+                type="button"
+                variant="outline"
+                size="icon"
+                onClick={() => setExpanded(true)}
+                className="size-8 rounded-lg border-border/70 bg-background/70 text-muted-foreground shadow-sm hover:text-foreground"
+                aria-label={`Expand ${chart.title}`}
+                title="Expand chart"
+              >
+                <Maximize2 className="size-3.5" />
+              </Button>
+            )}
+          </div>
         </div>
       )}
 
@@ -89,6 +109,43 @@ export default function ChartRenderer({ chart, onDrilldown, hideHeader = false }
           </div>
         </div>
       )}
+
+      <Dialog open={expanded} onOpenChange={setExpanded}>
+        <DialogContent className="flex h-[94svh] w-[96vw] max-w-7xl flex-col gap-0 overflow-hidden p-0">
+          <DialogHeader className="shrink-0 border-b border-border/60 px-5 py-4 pr-14 text-left">
+            <div className="flex items-start justify-between gap-4 pr-2">
+              <div className="min-w-0">
+                <DialogTitle className="truncate text-base">{chart.title}</DialogTitle>
+                <DialogDescription className="mt-1 truncate">{chart.subtitle}</DialogDescription>
+              </div>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => setExpandedAsTable((value) => !value)}
+                className="h-8 shrink-0 gap-1.5 rounded-lg px-2.5 text-xs"
+              >
+                {expandedAsTable ? <BarChart3 className="size-3.5" /> : <Table2 className="size-3.5" />}
+                {expandedAsTable ? 'Chart' : 'Table'}
+              </Button>
+            </div>
+          </DialogHeader>
+          <div className="min-h-0 flex-1 overflow-auto p-5 sm:p-7">
+            <div className="mx-auto w-full max-w-6xl">
+              {expandedAsTable ? (
+                <TableView chart={chart} />
+              ) : (
+                <ChartBody chart={chart} mode={mode} onDrilldown={onDrilldown} />
+              )}
+              {chart.summary && (
+                <p className="mt-5 rounded-xl border border-border/60 bg-muted/40 px-4 py-3 text-sm leading-6 text-foreground/90">
+                  {chart.summary}
+                </p>
+              )}
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -140,6 +197,30 @@ function ChartBody({
 // `series_by` names the column to pivot on so this never has to be inferred from the data.
 
 type Wide = { rows: Record<string, unknown>[]; series: SeriesSpec[]; folded: number };
+
+const VISIBILITY_FLOOR_PX = 4;
+const COMPRESSED_RATIO = 50;
+
+// A linear scale is still the honest default, but at sufficiently different magnitudes a
+// real value can become sub-pixel. Marks get a small visibility floor while tooltips,
+// labels and the table retain the exact number. This never changes axis values or ordering.
+function hasCompressedValues(rows: Record<string, unknown>[], fields: string[]): boolean {
+  const values = rows.flatMap((row) => fields.map((field) => row[field]))
+    .filter((value): value is number => typeof value === 'number' && Number.isFinite(value))
+    .map(Math.abs)
+    .filter((value) => value > 0);
+  if (values.length < 2) return false;
+  return Math.max(...values) / Math.min(...values) >= COMPRESSED_RATIO;
+}
+
+function VisibilityFloorNote({ show, form = 'marks' }: { show: boolean; form?: string }) {
+  if (!show) return null;
+  return (
+    <p className="mt-1.5 text-[11px] leading-4 text-muted-foreground">
+      Very small {form} use a {VISIBILITY_FLOOR_PX}px visibility floor; labels and tooltips show exact values.
+    </p>
+  );
+}
 
 function usePivot(chart: ChartSpec): Wide {
   return useMemo(() => {
@@ -219,6 +300,7 @@ function TimeView({ chart, mode }: { chart: ChartSpec; mode: 'light' | 'dark' })
   const xKey = chart.x?.field ?? 'x';
   const filled = chart.chart_type !== 'line';
   const stacked = chart.chart_type === 'stacked_area';
+  const compressed = hasCompressedValues(rows, series.map((item) => item.field));
 
   // A single series gets a dotted mean line. It is data, not chrome — the one dashed
   // element on the plot, so it cannot be mistaken for a gridline.
@@ -281,10 +363,12 @@ function TimeView({ chart, mode }: { chart: ChartSpec; mode: 'light' | 'dark' })
                 // the surface colour separating them — a gap, not a border drawn around
                 // each shape. A lone band keeps its own hue as the line above a faint wash.
                 stroke={stacked ? palette.surface : seriesColor(index, mode)}
-                strokeWidth={2}
+                strokeWidth={stacked ? 1.5 : 2}
                 fill={seriesColor(index, mode)}
                 fillOpacity={stacked ? 0.9 : 0.14}
+                dot={compressed ? { r: 2.5, strokeWidth: 0, fill: seriesColor(index, mode) } : false}
                 activeDot={{ r: 5, stroke: palette.surface, strokeWidth: 2 }}
+                isAnimationActive={false}
                 connectNulls={false}
               />
             ) : (
@@ -297,6 +381,7 @@ function TimeView({ chart, mode }: { chart: ChartSpec; mode: 'light' | 'dark' })
                 strokeWidth={2}
                 dot={{ r: 3, strokeWidth: 0 }}
                 activeDot={{ r: 5, stroke: palette.surface, strokeWidth: 2 }}
+                isAnimationActive={false}
                 // A gap in the data must read as a gap, not as a line drawn straight
                 // through months where nothing was recorded.
                 connectNulls={false}
@@ -305,6 +390,7 @@ function TimeView({ chart, mode }: { chart: ChartSpec; mode: 'light' | 'dark' })
           )}
         </Chart>
       </ResponsiveContainer>
+      <VisibilityFloorNote show={compressed} form="series" />
       <FoldedNote folded={folded} />
     </>
   );
@@ -351,6 +437,7 @@ function BarView({
   const height = horizontal
     ? Math.max(compactCategories ? 112 : 220, rows.length * 42 + 36)
     : 280;
+  const compressed = hasCompressedValues(rows, chart.series.map((series) => series.field));
 
   if (single && rows.length === 1) {
     const series = chart.series[0];
@@ -425,11 +512,14 @@ function BarView({
               key={series.field}
               dataKey={series.field}
               name={series.label}
+              fill={!single ? seriesColor(seriesIndex, mode) : undefined}
               maxBarSize={compactCategories ? 28 : 44}
+              minPointSize={compressed ? VISIBILITY_FLOOR_PX : 0}
               stackId={chart.chart_type === 'stacked_bar' ? 'stack' : undefined}
               radius={horizontal ? [0, 4, 4, 0] : [4, 4, 0, 0]}
               cursor={onDrilldown && chart.drilldown ? 'pointer' : undefined}
               onClick={() => chart.drilldown && onDrilldown?.(chart.drilldown)}
+              isAnimationActive={false}
             >
               {/* One series: the bars are one entity split by category, so they take a
                   single hue — varying colour there would imply an identity that is not
@@ -438,7 +528,6 @@ function BarView({
                 rows.map((_, rowIndex) => (
                   <Cell key={rowIndex} fill={seriesColor(0, mode)} />
                 ))}
-              {!single && <Cell fill={seriesColor(seriesIndex, mode)} />}
               {single && horizontal && (
                 <LabelList
                   dataKey={series.field}
@@ -453,6 +542,7 @@ function BarView({
           ))}
         </BarChart>
       </ResponsiveContainer>
+      <VisibilityFloorNote show={compressed} form="bars" />
       <FoldedNote folded={folded} />
     </>
   );
@@ -504,6 +594,7 @@ function DonutView({ chart, mode }: { chart: ChartSpec; mode: 'light' | 'dark' }
     }));
     return { data: items, total: items.reduce((sum, item) => sum + item.value, 0) };
   }, [chart, field, labelKey]);
+  const compressed = hasCompressedValues(data, ['value']);
 
   return (
     <div className="flex flex-col items-center gap-4 rounded-2xl border border-border/60 bg-muted/20 p-3 sm:flex-row sm:items-center sm:p-4">
@@ -516,11 +607,13 @@ function DonutView({ chart, mode }: { chart: ChartSpec; mode: 'light' | 'dark' }
             nameKey="name"
             innerRadius="58%"
             outerRadius="88%"
+            minAngle={2}
             paddingAngle={1.5}
             // The gap between slices is the surface showing through, not a stroke drawn
             // around each one.
             stroke={palette.surface}
             strokeWidth={2}
+            isAnimationActive={false}
           >
             {data.map((_, index) => (
               <Cell key={index} fill={seriesColor(index, mode)} />
@@ -538,7 +631,8 @@ function DonutView({ chart, mode }: { chart: ChartSpec; mode: 'light' | 'dark' }
       </div>
       {/* Direct labels, not a colour-only legend: every slice carries its name, its value
           and its share, so identity never rests on hue alone. */}
-      <ul className="w-full min-w-0 flex-1 space-y-1.5">
+      <div className="w-full min-w-0 flex-1">
+      <ul className="space-y-1.5">
         {data.map((item, index) => (
           <li key={item.name} className="flex items-center gap-2 text-sm">
             <span
@@ -556,6 +650,12 @@ function DonutView({ chart, mode }: { chart: ChartSpec; mode: 'light' | 'dark' }
           </li>
         ))}
       </ul>
+      {compressed && (
+        <p className="mt-3 text-[11px] leading-4 text-muted-foreground">
+          Tiny slices are widened slightly for visibility; the labels show exact values and shares.
+        </p>
+      )}
+      </div>
     </div>
   );
 }
@@ -569,6 +669,7 @@ function VarianceView({ chart, mode }: { chart: ChartSpec; mode: 'light' | 'dark
   const field = chart.series[0]?.field ?? 'delta';
   const unit = chart.series[0]?.unit ?? 'count';
   const xKey = chart.x?.field ?? 'x';
+  const compressed = hasCompressedValues(chart.rows, [field]);
 
   if (chart.rows.length === 1) {
     return <SingleVarianceView chart={chart} mode={mode} />;
@@ -579,10 +680,8 @@ function VarianceView({ chart, mode }: { chart: ChartSpec; mode: 'light' | 'dark
   const horizontal = !chart.x?.grain && chart.rows.length > 8;
 
   return (
-    <ResponsiveContainer
-      width="100%"
-      height={horizontal ? Math.max(220, chart.rows.length * 34) : 280}
-    >
+    <>
+    <ResponsiveContainer width="100%" height={horizontal ? Math.max(220, chart.rows.length * 34) : 280}>
       <BarChart
         data={chart.rows}
         layout={horizontal ? 'vertical' : 'horizontal'}
@@ -635,7 +734,7 @@ function VarianceView({ chart, mode }: { chart: ChartSpec; mode: 'light' | 'dark
           stroke={palette.secondary}
           strokeWidth={1}
         />
-        <Bar dataKey={field} name="Change" radius={2}>
+        <Bar dataKey={field} name="Change" radius={2} minPointSize={compressed ? VISIBILITY_FLOOR_PX : 0} isAnimationActive={false}>
           {chart.rows.map((row, index) => (
             <Cell
               key={index}
@@ -645,6 +744,8 @@ function VarianceView({ chart, mode }: { chart: ChartSpec; mode: 'light' | 'dark
         </Bar>
       </BarChart>
     </ResponsiveContainer>
+    <VisibilityFloorNote show={compressed} form="bars" />
+    </>
   );
 }
 
@@ -660,22 +761,24 @@ function WaterfallView({ chart, mode }: { chart: ChartSpec; mode: 'light' | 'dar
     return chart.rows.map((row) => {
       const value = typeof row.value === 'number' ? row.value : 0;
       const isTotal = row.kind === 'total';
-      // Recharts stacks from the base up, so an invisible `base` bar carries each floating
-      // segment to its position on the running balance.
-      const base = isTotal ? 0 : running;
-      if (!isTotal) running += value;
-      else running = value;
+      const start = isTotal ? 0 : running;
+      const end = isTotal ? value : running + value;
+      running = end;
       return {
         step: String(row.step ?? ''),
-        base: Math.min(base, base + value),
-        span: Math.abs(value),
+        // Recharts supports a [low, high] tuple for floating bars. Using the native range
+        // form is important here: in Recharts 3 a transparent spacer in a stacked pair can
+        // leave the visible member without rectangle geometry, producing an empty chart.
+        range: [Math.min(start, end), Math.max(start, end)],
         value,
         isTotal,
       };
     });
   }, [chart.rows]);
+  const compressed = hasCompressedValues(chart.rows, ['value']);
 
   return (
+    <>
     <ResponsiveContainer width="100%" height={Math.max(260, data.length * 30)}>
       <BarChart
         data={data}
@@ -702,19 +805,15 @@ function WaterfallView({ chart, mode }: { chart: ChartSpec; mode: 'light' | 'dar
         />
         <Tooltip content={<WaterfallTooltip unit={unit} />} cursor={{ fill: palette.grid }} />
         <ReferenceLine y={0} stroke={palette.secondary} strokeWidth={1} />
-        {/* The spacer that floats each segment onto the running balance. It carries no
-            meaning, so it must not appear in the tooltip as if it were data. */}
+        {/* `range` positions each floating bar, while WaterfallTooltip reports the signed
+            `value` so equal-sized rises and falls never read the same. */}
         <Bar
-          dataKey="base"
-          stackId="bridge"
-          fill="transparent"
+          dataKey="range"
+          name="Contribution"
+          radius={2}
+          minPointSize={compressed ? VISIBILITY_FLOOR_PX : 0}
           isAnimationActive={false}
-          tooltipType="none"
-        />
-        {/* `span` is drawn (bar heights are magnitudes) but WaterfallTooltip reports the
-            signed `value` — a fall of ₹40 L and a rise of ₹40 L are the same height and
-            must never read the same. */}
-        <Bar dataKey="span" stackId="bridge" name="Contribution" radius={2}>
+        >
           {data.map((row, index) => (
             <Cell
               key={index}
@@ -726,6 +825,8 @@ function WaterfallView({ chart, mode }: { chart: ChartSpec; mode: 'light' | 'dar
         </Bar>
       </BarChart>
     </ResponsiveContainer>
+    <VisibilityFloorNote show={compressed} form="steps" />
+    </>
   );
 }
 
@@ -770,7 +871,14 @@ function SingleVarianceView({
   const previousLabel = chart.columns.find((column) => column.name === 'previous')?.label ?? 'Previous';
   const currentLabel = chart.columns.find((column) => column.name === 'current')?.label ?? 'Current';
   const max = Math.max(Math.abs(previous ?? 0), Math.abs(current ?? 0), 1);
-  const widthOf = (value: number | null) => value === null ? 0 : Math.abs(value) / max * 100;
+  const compressed = hasCompressedValues(
+    [{ previous: previous ?? 0, current: current ?? 0 }],
+    ['previous', 'current'],
+  );
+  const widthOf = (value: number | null) => {
+    if (value === null || value === 0) return 0;
+    return Math.max(Math.abs(value) / max * 100, compressed ? 1 : 0);
+  };
   const changeColor = divergingColor(delta ?? 0, mode);
   const changeText = delta === null
     ? 'No comparison available'
@@ -816,6 +924,7 @@ function SingleVarianceView({
           {deltaPct !== null && ` · ${deltaPct > 0 ? '+' : ''}${deltaPct.toFixed(1)}% relative`}
         </Badge>
       </div>
+      <VisibilityFloorNote show={compressed} form="bars" />
     </div>
   );
 }
@@ -912,10 +1021,21 @@ function ScatterView({ chart, mode }: { chart: ChartSpec; mode: 'light' | 'dark'
   const [xMetric, yMetric] = chart.series;
   const labelKey = chart.x?.field ?? 'x';
 
-  const data = useMemo(
+  const data: Record<string, unknown>[] = useMemo(
     () => chart.rows.map((row) => ({ ...row, __label: String(row[labelKey] ?? '—') })),
     [chart, labelKey],
   );
+  const [xDomain, yDomain] = useMemo(() => {
+    const extent = (field: string | undefined): [number, number] => {
+      const values = data.map((row) => field ? row[field] : null)
+        .filter((value): value is number => typeof value === 'number' && Number.isFinite(value));
+      const min = Math.min(...values, 0);
+      const max = Math.max(...values, 0);
+      const pad = (max - min || Math.abs(max) || 1) * 0.06;
+      return [min < 0 ? min - pad : 0, max + pad];
+    };
+    return [extent(xMetric?.field), extent(yMetric?.field)];
+  }, [data, xMetric?.field, yMetric?.field]);
 
   return (
     <ResponsiveContainer width="100%" height={300}>
@@ -925,6 +1045,7 @@ function ScatterView({ chart, mode }: { chart: ChartSpec; mode: 'light' | 'dark'
           type="number"
           dataKey={xMetric?.field}
           name={xMetric?.label}
+          domain={xDomain}
           tick={{ fill: palette.secondary, fontSize: 12 }}
           tickLine={false}
           axisLine={{ stroke: palette.grid }}
@@ -938,6 +1059,7 @@ function ScatterView({ chart, mode }: { chart: ChartSpec; mode: 'light' | 'dark'
           type="number"
           dataKey={yMetric?.field}
           name={yMetric?.label}
+          domain={yDomain}
           tick={{ fill: palette.secondary, fontSize: 12 }}
           tickLine={false}
           axisLine={false}
@@ -961,6 +1083,7 @@ function ScatterView({ chart, mode }: { chart: ChartSpec; mode: 'light' | 'dark'
           fill={seriesColor(0, mode)}
           stroke={palette.surface}
           strokeWidth={2}
+          isAnimationActive={false}
         />
       </ScatterChart>
     </ResponsiveContainer>
@@ -1054,6 +1177,9 @@ function HeatmapView({ chart, mode }: { chart: ChartSpec; mode: 'light' | 'dark'
         ))}
         <span>{formatTick(max, unit)}</span>
       </div>
+      <p className="text-[11px] leading-4 text-muted-foreground">
+        Colour uses square-root bands so smaller non-zero values remain visible; cells show exact values.
+      </p>
     </div>
   );
 }
@@ -1069,6 +1195,7 @@ function SmallMultiplesView({ chart, mode }: { chart: ChartSpec; mode: 'light' |
   const unit = chart.series[0]?.unit ?? 'count';
   const xKey = chart.x?.field ?? 'x';
   const splitKey = chart.series_by?.field ?? '';
+  const compressed = hasCompressedValues(chart.rows, [field]);
 
   const { panels, domain } = useMemo(() => {
     const byName = new Map<string, Record<string, unknown>[]>();
@@ -1108,10 +1235,11 @@ function SmallMultiplesView({ chart, mode }: { chart: ChartSpec; mode: 'light' |
                   dataKey={field}
                   name={name}
                   stroke={seriesColor(0, mode)}
-                  strokeWidth={1.5}
-                  dot={false}
+                  strokeWidth={2}
+                  dot={compressed ? { r: 2, strokeWidth: 0 } : false}
                   activeDot={{ r: 4, stroke: palette.surface, strokeWidth: 2 }}
                   connectNulls={false}
+                  isAnimationActive={false}
                 />
               </LineChart>
             </ResponsiveContainer>
@@ -1121,6 +1249,7 @@ function SmallMultiplesView({ chart, mode }: { chart: ChartSpec; mode: 'light' |
       <p className="text-xs text-muted-foreground">
         {panels.length} panels on a shared scale, largest first · {formatTick(domain[1], unit)} full height
       </p>
+      <VisibilityFloorNote show={compressed} form="series" />
     </div>
   );
 }

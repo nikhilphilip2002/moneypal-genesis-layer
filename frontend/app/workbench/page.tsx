@@ -7,6 +7,7 @@ import {
   BarChart3,
   Clock3,
   Landmark,
+  LayoutDashboard,
   Loader2,
   LogOut,
   Plus,
@@ -457,6 +458,12 @@ const EXAMPLES = [
   { icon: TrendingUp, label: 'Market outlook', question: 'What is the current macroeconomic outlook for our lending business?' },
   { icon: Scale, label: 'Regulatory changes', question: 'What recent regulatory changes should we pay attention to?' },
   { icon: Landmark, label: 'Competitive landscape', question: 'How does our MSME portfolio compare with the wider market?' },
+  {
+    icon: LayoutDashboard,
+    label: 'Build a quick dashboard',
+    question: 'Build an executive portfolio dashboard covering current KPIs, the recent portfolio trend, product mix, branch performance, and risk movement. Highlight the most important findings and offer relevant follow-up questions for each chart.',
+    featured: true,
+  },
 ];
 
 function EmptyState({
@@ -481,17 +488,28 @@ function EmptyState({
         <div className="mt-8 text-left">{children}</div>
 
         <div className="mt-4 grid gap-2 sm:grid-cols-2">
-          {EXAMPLES.map(({ icon: Icon, label, question }) => (
+          {EXAMPLES.map(({ icon: Icon, label, question, featured }) => (
             <button
               key={label}
               type="button"
               onClick={() => onAsk(question)}
-              className="group flex items-center gap-3 rounded-xl border border-border/70 bg-card px-3.5 py-3 text-left text-sm text-muted-foreground transition hover:border-primary/25 hover:bg-accent/50 hover:text-foreground"
+              className={`group flex items-center gap-3 rounded-xl border px-3.5 py-3 text-left text-sm transition hover:border-primary/25 hover:text-foreground ${
+                featured
+                  ? 'border-primary/20 bg-primary/[0.045] text-foreground sm:col-span-2'
+                  : 'border-border/70 bg-card text-muted-foreground hover:bg-accent/50'
+              }`}
             >
               <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-muted text-primary transition group-hover:bg-primary group-hover:text-primary-foreground">
                 <Icon className="size-4" />
               </span>
-              <span className="font-medium">{label}</span>
+              <span className="min-w-0">
+                <span className="block font-medium">{label}</span>
+                {featured && (
+                  <span className="mt-0.5 block text-xs font-normal text-muted-foreground">
+                    KPIs, trends, mix, rankings, risk signals, and guided follow-ups
+                  </span>
+                )}
+              </span>
             </button>
           ))}
         </div>

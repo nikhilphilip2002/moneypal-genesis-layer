@@ -72,14 +72,16 @@ export function seriesColor(index: number, mode: Mode): string {
 export function heatColor(value: number, max: number, mode: Mode): string {
   const ramp = mode === 'dark' ? SEQUENTIAL_DARK : SEQUENTIAL_LIGHT;
   if (!Number.isFinite(value) || max <= 0) return ink(mode).grid;
-  const share = Math.min(Math.max(value / max, 0), 1);
+  // Square-root scaling keeps a ₹1 L cell legible beside a ₹2 Cr cell without pretending
+  // the values are close. The printed value remains exact and is the primary encoding.
+  const share = Math.sqrt(Math.min(Math.max(value / max, 0), 1));
   return ramp[Math.min(Math.round(share * (SEQUENTIAL_BINS - 1)), SEQUENTIAL_BINS - 1)];
 }
 
 /** Cells go dark at the top of the ramp; label ink has to follow or it disappears. */
 export function heatInk(value: number, max: number, mode: Mode): string {
   if (!Number.isFinite(value) || max <= 0) return ink(mode).muted;
-  const share = Math.min(Math.max(value / max, 0), 1);
+  const share = Math.sqrt(Math.min(Math.max(value / max, 0), 1));
   const bin = Math.round(share * (SEQUENTIAL_BINS - 1));
   if (mode === 'dark') return bin >= 3 ? '#ffffff' : '#0b0b0b';
   return bin >= 2 ? '#ffffff' : '#0b0b0b';
