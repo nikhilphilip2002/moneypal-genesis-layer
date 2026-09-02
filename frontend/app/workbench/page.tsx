@@ -280,6 +280,7 @@ export default function WorkbenchPage() {
       <WorkbenchWorkspace
         view={workspaceView}
         onOpenChange={(open) => !open && setWorkspaceView(null)}
+        onAsk={ask}
       />
     </div>
   );
@@ -453,7 +454,13 @@ function MoneypalLogo() {
   );
 }
 
-const EXAMPLES = [
+const EXAMPLES: Array<{
+  icon: typeof BarChart3;
+  label: string;
+  question?: string;
+  view?: WorkspaceView;
+  featured?: boolean;
+}> = [
   { icon: BarChart3, label: 'Portfolio performance', question: 'Summarize our current portfolio performance and the most important risks.' },
   { icon: TrendingUp, label: 'Market outlook', question: 'What is the current macroeconomic outlook for our lending business?' },
   { icon: Scale, label: 'Regulatory changes', question: 'What recent regulatory changes should we pay attention to?' },
@@ -461,7 +468,7 @@ const EXAMPLES = [
   {
     icon: LayoutDashboard,
     label: 'Build a quick dashboard',
-    question: 'Build an executive portfolio dashboard covering current KPIs, the recent portfolio trend, product mix, branch performance, and risk movement. Highlight the most important findings and offer relevant follow-up questions for each chart.',
+    view: 'portfolio-dashboard',
     featured: true,
   },
 ];
@@ -488,11 +495,11 @@ function EmptyState({
         <div className="mt-8 text-left">{children}</div>
 
         <div className="mt-4 grid gap-2 sm:grid-cols-2">
-          {EXAMPLES.map(({ icon: Icon, label, question, featured }) => (
+          {EXAMPLES.map(({ icon: Icon, label, question, view, featured }) => (
             <button
               key={label}
               type="button"
-              onClick={() => onAsk(question)}
+              onClick={() => view ? onOpenWorkspace(view) : question && onAsk(question)}
               className={`group flex items-center gap-3 rounded-xl border px-3.5 py-3 text-left text-sm transition hover:border-primary/25 hover:text-foreground ${
                 featured
                   ? 'border-primary/20 bg-primary/[0.045] text-foreground sm:col-span-2'

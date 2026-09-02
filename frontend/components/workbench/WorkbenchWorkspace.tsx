@@ -6,6 +6,7 @@ import {
   ClipboardCheck,
   FileSpreadsheet,
   Landmark,
+  LayoutDashboard,
   Network,
   Scale,
   Settings2,
@@ -52,8 +53,12 @@ const CompetitivePage = dynamic(() => import('@/app/competitive/page'), {
 const RegulatoryPage = dynamic(() => import('@/app/regulatory/page'), {
   loading: () => <WorkspaceLoading label="Loading regulatory intelligence…" />,
 });
+const PortfolioDashboard = dynamic(() => import('./PortfolioDashboard'), {
+  loading: () => <WorkspaceLoading label="Loading the portfolio dashboard…" />,
+});
 
 export type WorkspaceView =
+  | 'portfolio-dashboard'
   | 'curiosity-graph'
   | 'regulatory-reports'
   | 'profile'
@@ -70,6 +75,12 @@ export const WORKSPACE_TOOLS: Array<{
   description: string;
   icon: typeof Network;
 }> = [
+  {
+    id: 'portfolio-dashboard',
+    label: 'Portfolio dashboard',
+    description: 'KPIs, trends, product mix, branch performance, and risk movement in one view.',
+    icon: LayoutDashboard,
+  },
   {
     id: 'curiosity-graph',
     label: 'Enterprise Curiosity Graph',
@@ -149,9 +160,11 @@ export function modulesForRole(role: string | undefined) {
 export default function WorkbenchWorkspace({
   view,
   onOpenChange,
+  onAsk,
 }: {
   view: WorkspaceView | null;
   onOpenChange: (open: boolean) => void;
+  onAsk: (question: string) => void;
 }) {
   const tool = [...WORKSPACE_TOOLS, ...WORKSPACE_MODULES].find((item) => item.id === view);
   const isModule = WORKSPACE_MODULES.some((item) => item.id === view);
@@ -161,18 +174,22 @@ export default function WorkbenchWorkspace({
       <DialogContent
         className={cn(
           'flex grid-cols-none flex-col gap-0 overflow-hidden bg-background p-0',
-          view === 'curiosity-graph' || isModule
+          view === 'curiosity-graph' || view === 'portfolio-dashboard' || isModule
             ? 'h-svh w-screen max-w-none rounded-none border-0 sm:rounded-none'
             : 'h-[96svh] w-[98vw] max-w-[1600px] rounded-2xl sm:rounded-2xl',
         )}
       >
-        <DialogHeader className="shrink-0 border-b bg-card px-5 py-4 pr-14 text-left">
-          <DialogTitle className="flex items-center gap-2 text-base">
-            {tool && <tool.icon className="size-4 text-primary" />}
-            {tool?.label ?? 'Workbench tool'}
-          </DialogTitle>
-          <DialogDescription className="text-xs">{tool?.description}</DialogDescription>
-        </DialogHeader>
+        {view === 'portfolio-dashboard' ? (
+          <DialogTitle className="sr-only">Portfolio dashboard</DialogTitle>
+        ) : (
+          <DialogHeader className="shrink-0 border-b bg-card px-5 py-4 pr-14 text-left">
+            <DialogTitle className="flex items-center gap-2 text-base">
+              {tool && <tool.icon className="size-4 text-primary" />}
+              {tool?.label ?? 'Workbench tool'}
+            </DialogTitle>
+            <DialogDescription className="text-xs">{tool?.description}</DialogDescription>
+          </DialogHeader>
+        )}
 
         <div className={cn(
           'relative min-h-0 flex-1',
@@ -184,6 +201,9 @@ export default function WorkbenchWorkspace({
             <div className="h-full min-h-0 overflow-hidden rounded-2xl border border-border/70 bg-card p-3 sm:p-4">
               <DBSchemaGraph contained />
             </div>
+          )}
+          {view === 'portfolio-dashboard' && (
+            <PortfolioDashboard onAsk={(question) => { onOpenChange(false); onAsk(question); }} />
           )}
           {view === 'regulatory-reports' && (
             <div className="mx-auto w-full max-w-7xl">

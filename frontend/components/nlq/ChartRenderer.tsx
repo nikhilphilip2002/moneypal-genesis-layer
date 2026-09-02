@@ -34,9 +34,10 @@ type Props = {
   chart: ChartSpec;
   onDrilldown?: (spec: NonNullable<ChartSpec['drilldown']>) => void;
   hideHeader?: boolean;
+  hideSummary?: boolean;
 };
 
-export default function ChartRenderer({ chart, onDrilldown, hideHeader = false }: Props) {
+export default function ChartRenderer({ chart, onDrilldown, hideHeader = false, hideSummary = false }: Props) {
   const [asTable, setAsTable] = useState(false);
   const [expanded, setExpanded] = useState(false);
   const [expandedAsTable, setExpandedAsTable] = useState(false);
@@ -94,7 +95,7 @@ export default function ChartRenderer({ chart, onDrilldown, hideHeader = false }
         <ChartBody chart={chart} mode={mode} onDrilldown={onDrilldown} />
       )}
 
-      {chart.summary && (
+      {chart.summary && !hideSummary && (
         <div className="mt-4 flex items-start gap-2.5 rounded-xl border border-border/60 bg-muted/40 px-3.5 py-3">
           {/* Same icon-box rule as StatusRow: a fixed box the height of the first line, so
               the bulb centres on the eyebrow instead of floating between the two lines. */}
@@ -137,7 +138,7 @@ export default function ChartRenderer({ chart, onDrilldown, hideHeader = false }
               ) : (
                 <ChartBody chart={chart} mode={mode} onDrilldown={onDrilldown} />
               )}
-              {chart.summary && (
+              {chart.summary && !hideSummary && (
                 <p className="mt-5 rounded-xl border border-border/60 bg-muted/40 px-4 py-3 text-sm leading-6 text-foreground/90">
                   {chart.summary}
                 </p>
@@ -268,7 +269,7 @@ function usePivot(chart: ChartSpec): Wide {
 function KpiTiles({ chart }: { chart: ChartSpec }) {
   const row = chart.rows[0] ?? {};
   return (
-    <div className="grid gap-3 sm:grid-cols-2">
+    <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
       {chart.series.map((series) => (
         <Card
           key={series.field}
