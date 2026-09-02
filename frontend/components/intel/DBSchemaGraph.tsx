@@ -228,6 +228,43 @@ function weightText(node: GraphNode, weight: WeightBy): string {
   return `${formatCount(value)} ${weight === 'accounts' ? 'accounts' : 'customers'}`;
 }
 
+/** Branch and scheme names run long; an untrimmed label chip swallows its neighbours. */
+function shortLabel(label: string, max = 24): string {
+  const text = String(label || '');
+  return text.length > max ? `${text.slice(0, max - 1).trimEnd()}…` : text;
+}
+
+/**
+ * A d3-compatible collision force. force-graph bundles d3-force internally but does not
+ * re-export it, so this keeps the graph free of a new dependency. The naive pairwise
+ * sweep is fine at one page of children (≤ 21 nodes).
+ */
+function collisionForce(radiusOf: (node: any) => number) {
+  let nodes: any[] = [];
+  const force = (alpha: number) => {
+    for (let i = 0; i < nodes.length; i += 1) {
+      for (let j = i + 1; j < nodes.length; j += 1) {
+        const a = nodes[i];
+        const b = nodes[j];
+        const dx = (b.x || 0) - (a.x || 0);
+        const dy = (b.y || 0) - (a.y || 0);
+        const minimum = radiusOf(a) + radiusOf(b);
+        const distance = Math.sqrt(dx * dx + dy * dy) || 0.001;
+        if (distance >= minimum) continue;
+        const push = ((minimum - distance) / distance) * alpha * 0.6;
+        const shiftX = dx * push;
+        const shiftY = dy * push;
+        a.vx = (a.vx || 0) - shiftX;
+        a.vy = (a.vy || 0) - shiftY;
+        b.vx = (b.vx || 0) + shiftX;
+        b.vy = (b.vy || 0) + shiftY;
+      }
+    }
+  };
+  force.initialize = (next: any[]) => { nodes = next; };
+  return force;
+}
+
 function NodeIcon({ type }: { type: GraphNode['type'] }) {
   if (type === 'portfolio') return <Award className="h-4 w-4" />;
   if (type === 'branch') return <Building2 className="h-4 w-4" />;
@@ -249,9 +286,12 @@ function KpiCard({ label, value, icon }: { label: string; value: string; icon: R
 }
 
 export default function DBSchemaGraph({ contained = false }: { contained?: boolean }) {
-  const { theme } = useTheme();
+  // forcedTheme wins over the stored theme, so a stale `dark` in localStorage must not
+  // paint a near-black canvas inside the light app shell.
+  const { resolvedTheme, forcedTheme } = useTheme();
   const graphRef = useRef<any>(null);
   const canvasRef = useRef<HTMLDivElement>(null);
+  const fittedForRef = useRef<string>('');
 
   const [mounted, setMounted] = useState(false);
   const [expanded, setExpanded] = useState(false);
@@ -268,7 +308,7 @@ export default function DBSchemaGraph({ contained = false }: { contained?: boole
   const [search, setSearch] = useState('');
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
 
-  const isDark = theme === 'dark';
+  const isDark = (forcedTheme ?? resolvedTheme) === 'dark';
 
   useEffect(() => setMounted(true), []);
   useEffect(() => {
@@ -339,8 +379,9 @@ export default function DBSchemaGraph({ contained = false }: { contained?: boole
         const share = Math.sqrt(nodeWeight(node, weightBy) / maxWeight) || 0;
         return {
           ...node,
+          isRoot,
           color: levelColor[node.type] || '#64748b',
-          size: isRoot ? 26 : 9 + Math.round(share * 13),
+          size: isRoot ? 24 : 9 + Math.round(share * 12),
           formattedWeight: weightText(node as GraphNode, weightBy),
         };
       }),
@@ -359,32 +400,59 @@ export default function DBSchemaGraph({ contained = false }: { contained?: boole
     return map;
   }, [data]);
 
-  // Size the canvas to its container; the force graph needs explicit pixel dimensions.
+  // The force graph needs explicit pixel dimensions and must track its container exactly:
+  // the Workbench resizes this panel without ever firing a window resize.
   useEffect(() => {
     if (displayMode !== 'graph') return;
+    const element = canvasRef.current;
+    if (!element) return;
     const resize = () => {
-      const rect = canvasRef.current?.getBoundingClientRect();
-      if (!rect) return;
-      setDimensions({ width: Math.max(360, rect.width), height: Math.max(380, rect.height) });
+      const rect = element.getBoundingClientRect();
+      if (rect.width < 1 || rect.height < 1) return;
+      setDimensions({ width: Math.round(rect.width), height: Math.round(rect.height) });
     };
     resize();
-    const timer = window.setTimeout(resize, 120);
-    window.addEventListener('resize', resize);
-    return () => {
-      window.clearTimeout(timer);
-      window.removeEventListener('resize', resize);
-    };
-  }, [displayMode, expanded, contained, data]);
+    const observer = new ResizeObserver(resize);
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [displayMode]);
 
+  // Spread the layout with the page size: 20 children at a fixed link distance collapse
+  // into an unreadable knot of overlapping label chips.
   useEffect(() => {
     if (displayMode !== 'graph' || forceGraphData.nodes.length === 0) return;
-    const timer = window.setTimeout(() => {
-      graphRef.current?.d3Force('charge')?.strength(-620);
-      graphRef.current?.d3Force('link')?.distance(150);
-      graphRef.current?.zoomToFit(400, 90);
-    }, 120);
+    // ForceGraph2D is a dynamic import, so the ref can still be empty on the render that
+    // first has data. Retry briefly rather than silently shipping the default layout.
+    let attempts = 0;
+    const apply = () => {
+      const graph = graphRef.current;
+      if (!graph?.d3Force) {
+        attempts += 1;
+        if (attempts < 20) timer = window.setTimeout(apply, 80);
+        return;
+      }
+      const count = forceGraphData.nodes.length;
+      graph.d3Force('charge')?.strength(-(360 + count * 26));
+      graph.d3Force('link')?.distance(Math.min(320, 120 + count * 9));
+      graph.d3Force('collide', collisionForce((node) => (node.size || 14) + 34));
+      graph.d3ReheatSimulation?.();
+    };
+    let timer = window.setTimeout(apply, 0);
     return () => window.clearTimeout(timer);
-  }, [displayMode, data?.current?.id]);
+  }, [displayMode, forceGraphData]);
+
+  // Auto-fit once per payload only. Re-fitting on every engine stop yanked the view back
+  // whenever the user dragged a node or zoomed in.
+  useEffect(() => {
+    fittedForRef.current = '';
+  }, [data?.current?.id, displayMode]);
+
+  const fitOnce = useCallback(() => {
+    const key = `${data?.current?.id || ''}:${displayMode}`;
+    if (fittedForRef.current === key) return;
+    fittedForRef.current = key;
+    graphRef.current?.zoomToFit(400, 70);
+  }, [data?.current?.id, displayMode]);
 
   const paintNode = useCallback((node: any, ctx: CanvasRenderingContext2D, scale: number) => {
     const size = node.size || 14;
@@ -411,17 +479,24 @@ export default function DBSchemaGraph({ contained = false }: { contained?: boole
 
     if (isDimmed) return;
 
-    // Keep labels near a constant on-screen size so they stay legible at any zoom.
-    const label = String(node.label || '');
-    const isSpecial = isSelected || isHovered;
-    const fontSize = Math.min((isSpecial ? 13 : 11) / scale, 34);
+    // Keep labels near a constant on-screen size, but cap them hard: an uncapped
+    // 11px/scale label at a fitted zoom grows wider than the gap between two nodes.
+    const isSpecial = isSelected || isHovered || node.isRoot;
+    const fontSize = Math.min((isSpecial ? 13 : 11) / scale, 15);
+    // Below this zoom the chips collide no matter how they are drawn; only the node
+    // under the cursor and the node being inspected keep their label.
+    if (scale < 0.55 && !isSpecial) return;
+
+    const label = shortLabel(node.label, isSpecial ? 34 : 22);
     const font = `${isSpecial ? 700 : 500} ${fontSize}px Inter, system-ui, sans-serif`;
     const textWidth = getCachedTextWidth(ctx, label, font);
+    const showWeight = isSpecial || scale > 1;
+    const boxHeight = fontSize * (showWeight ? 2.4 : 1.2) + 6;
     const textY = node.y + size + 5;
 
     ctx.fillStyle = isDark ? 'rgba(15,23,42,0.88)' : 'rgba(255,255,255,0.92)';
     ctx.beginPath();
-    ctx.roundRect(node.x - textWidth / 2 - 6, textY - 3, textWidth + 12, fontSize * 1.2 + 6, 4);
+    ctx.roundRect(node.x - textWidth / 2 - 6, textY - 3, textWidth + 12, boxHeight, 4);
     ctx.fill();
     ctx.strokeStyle = isDark ? 'rgba(255,255,255,0.1)' : 'rgba(15,23,42,0.1)';
     ctx.lineWidth = 1 / scale;
@@ -433,16 +508,18 @@ export default function DBSchemaGraph({ contained = false }: { contained?: boole
     ctx.fillStyle = isDark ? '#f8fafc' : '#0f172a';
     ctx.fillText(label, node.x, textY);
 
-    const weight = node.formattedWeight || weightText(node as GraphNode, weightBy);
+    if (!showWeight) return;
     ctx.font = `500 ${fontSize * 0.85}px Inter, system-ui, sans-serif`;
     ctx.fillStyle = isDark ? '#94a3b8' : '#475569';
-    ctx.fillText(weight, node.x, textY + fontSize * 1.35);
+    ctx.fillText(node.formattedWeight || weightText(node as GraphNode, weightBy), node.x, textY + fontSize * 1.3);
   }, [selectedNode, hoverNode, linksByNode, isDark, weightBy]);
 
   const paintLink = useCallback((link: any, ctx: CanvasRenderingContext2D, scale: number) => {
     const start = link.source;
     const end = link.target;
-    if (!start?.x || !end?.x) return;
+    // A node parked at exactly x = 0 is falsy; guard on null, not truthiness, or its
+    // edges silently vanish.
+    if (start?.x == null || start?.y == null || end?.x == null || end?.y == null) return;
 
     const focus = hoverNode || selectedNode;
     const isFocused = Boolean(focus && (start.id === focus.id || end.id === focus.id));
@@ -472,11 +549,16 @@ export default function DBSchemaGraph({ contained = false }: { contained?: boole
     ctx.fillText(label, midX, midY);
   }, [hoverNode, selectedNode, isDark]);
 
+  // The hit area has to cover the label chip too — the label is what people aim at —
+  // but stay tight enough that neighbouring nodes do not steal each other's clicks.
   const paintPointerArea = useCallback((node: any, color: string, ctx: CanvasRenderingContext2D) => {
+    const size = (node.size || 14) + 4;
     ctx.fillStyle = color;
     ctx.beginPath();
-    ctx.arc(node.x, node.y, (node.size || 14) + 12, 0, 2 * Math.PI);
+    ctx.arc(node.x, node.y, size, 0, 2 * Math.PI);
     ctx.fill();
+    const labelWidth = Math.max(70, Math.min(190, shortLabel(node.label, 22).length * 7 + 16));
+    ctx.fillRect(node.x - labelWidth / 2, node.y + size, labelWidth, 22);
   }, []);
 
   const zoomBy = (factor: number) => graphRef.current?.zoom((graphRef.current?.zoom() || 1) * factor, 300);
@@ -484,6 +566,9 @@ export default function DBSchemaGraph({ contained = false }: { contained?: boole
   const navigateNode = (node: GraphNode) => {
     setSelectedNode(node);
     if (node.type === 'account') return;
+    // Clicking the node you are already on should inspect it, not refetch the same level
+    // and throw away the current page.
+    if (node.id === data?.current.id) return;
     if (node.type === 'related_agent') {
       setWeightBy('outstanding');
       void loadGraph({ level: 'agent', agent_code: node.code }, 0, 'outstanding');
@@ -687,7 +772,7 @@ export default function DBSchemaGraph({ contained = false }: { contained?: boole
                       <Move className="h-2.5 w-2.5" />Drag, zoom, click to drill down
                     </span>
                     <div className="mt-1.5 space-y-1 text-[10px]">
-                      {[data?.current.type || 'portfolio', ...new Set(children.map((node) => node.type))].map((type) => (
+                      {[...new Set([data?.current.type || 'portfolio', ...children.map((node) => node.type)])].map((type) => (
                         <div key={type} className="flex items-center gap-1.5">
                           <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: levelColor[type] }} />
                           <span className="font-medium text-foreground/80">{levelLabel[type]}</span>
@@ -722,7 +807,7 @@ export default function DBSchemaGraph({ contained = false }: { contained?: boole
                       cooldownTime={2500}
                       d3AlphaDecay={0.04}
                       d3VelocityDecay={0.3}
-                      onEngineStop={() => graphRef.current?.zoomToFit(400, 90)}
+                      onEngineStop={fitOnce}
                     />
                   )}
 
