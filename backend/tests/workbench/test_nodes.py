@@ -212,7 +212,7 @@ class TestRegulatory:
 class TestSchema:
     @pytest.mark.anyio
     async def test_returns_a_schema_card_with_entity_and_relationship_counts(self, monkeypatch):
-        from app.services import db_schema
+        from app.services import curiosity_graph
 
         graph = {
             "nodes": [
@@ -221,7 +221,7 @@ class TestSchema:
             ],
             "edges": [{"source": "C", "target": "L", "label": "1:N"}],
         }
-        monkeypatch.setattr(db_schema, "get_db_schema_graph", lambda **kw: graph)
+        monkeypatch.setattr(curiosity_graph, "get_curiosity_graph", lambda **kw: graph)
         result = await nodes.run_schema("show the schema for accounts and customers")
 
         assert result.source == "schema"
@@ -232,11 +232,11 @@ class TestSchema:
 
     @pytest.mark.anyio
     async def test_service_failure_degrades_to_an_error_card(self, monkeypatch):
-        from app.services import db_schema
+        from app.services import curiosity_graph
 
         def boom(**kw):
             raise RuntimeError("warehouse down")
 
-        monkeypatch.setattr(db_schema, "get_db_schema_graph", boom)
+        monkeypatch.setattr(curiosity_graph, "get_curiosity_graph", boom)
         result = await nodes.run_schema("anything")
         assert result.card_type == "error"

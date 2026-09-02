@@ -1,4 +1,4 @@
-"""Tests for the Enterprise Curiosity Graph.
+"""Tests for the Enterprise Information Graph.
 
 The previous suite only checked that node details contained certain keys and that
 efficiency equalled repaid/disbursed - it would have passed unchanged on entirely

@@ -585,7 +585,7 @@ async def run_schema(intent: str, *, access_mode: str | None = None) -> SourceRe
     """Answer 'how is the data organised' from the live schema graph. The card carries a
     trimmed node/edge list — the chat shows the shape; the full interactive graph opens on
     demand — which keeps the answer inside one viewport."""
-    from app.services import db_schema
+    from app.services import curiosity_graph
 
     try:
         effective_mode = access_mode if access_mode in ("direct", "mcp") else settings.postgres_access_mode
@@ -594,7 +594,7 @@ async def run_schema(intent: str, *, access_mode: str | None = None) -> SourceRe
 
             graph = await postgres_client.curiosity_graph(search=intent or "")
         else:
-            graph = db_schema.get_db_schema_graph(search_term=intent or None)
+            graph = curiosity_graph.get_curiosity_graph()
     except Exception as exc:  # noqa: BLE001
         logger.warning("workbench schema node failed: %s", exc)
         return SourceResult(source="schema", card_type="error",
@@ -606,7 +606,7 @@ async def run_schema(intent: str, *, access_mode: str | None = None) -> SourceRe
                      for n in raw_nodes]
     trimmed_edges = [{"source": e.get("source"), "target": e.get("target"),
                       "label": e.get("label", "")} for e in raw_edges]
-    summary = f"{len(trimmed_nodes)} tables, {len(trimmed_edges)} relationships."
+    summary = f"{len(trimmed_nodes)} portfolio nodes, {len(trimmed_edges)} relationships."
     return SourceResult(
         source="schema",
         card_type="schema",

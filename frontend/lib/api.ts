@@ -480,19 +480,33 @@ export const regulatory = {
 
 export const admin = {
   status: (): Promise<PlatformStatus> => apiRequest('/admin/status'),
-  dbSchema: (params?: { search?: string; view_level?: string; zonal_id?: string; manager_id?: string; agent_id?: string; customer_id?: string; month?: string } | string): Promise<any> => {
+  dbSchema: (params?: {
+    level?: string;
+    product_code?: string;
+    branch_code?: string;
+    scheme_code?: string;
+    agent_code?: string;
+    customer_id?: string;
+    month?: string;
+    weight_by?: string;
+    limit?: number;
+    offset?: number;
+  } | string): Promise<any> => {
     let q = '';
     if (typeof params === 'string') {
       q = params ? `?search=${encodeURIComponent(params)}` : '';
     } else if (params) {
       const parts: string[] = [];
-      if (params.search) parts.push(`search=${encodeURIComponent(params.search)}`);
-      if (params.view_level) parts.push(`view_level=${encodeURIComponent(params.view_level)}`);
-      if (params.zonal_id) parts.push(`zonal_id=${encodeURIComponent(params.zonal_id)}`);
-      if (params.manager_id) parts.push(`manager_id=${encodeURIComponent(params.manager_id)}`);
-      if (params.agent_id) parts.push(`agent_id=${encodeURIComponent(params.agent_id)}`);
+      if (params.level) parts.push(`level=${encodeURIComponent(params.level)}`);
+      if (params.product_code) parts.push(`product_code=${encodeURIComponent(params.product_code)}`);
+      if (params.branch_code) parts.push(`branch_code=${encodeURIComponent(params.branch_code)}`);
+      if (params.scheme_code) parts.push(`scheme_code=${encodeURIComponent(params.scheme_code)}`);
+      if (params.agent_code) parts.push(`agent_code=${encodeURIComponent(params.agent_code)}`);
       if (params.customer_id) parts.push(`customer_id=${encodeURIComponent(params.customer_id)}`);
       if (params.month) parts.push(`month=${encodeURIComponent(params.month)}`);
+      if (params.weight_by) parts.push(`weight_by=${encodeURIComponent(params.weight_by)}`);
+      if (params.limit != null) parts.push(`limit=${encodeURIComponent(String(params.limit))}`);
+      if (params.offset != null) parts.push(`offset=${encodeURIComponent(String(params.offset))}`);
       if (parts.length > 0) q = '?' + parts.join('&');
     }
     return apiRequest(`/admin/db-schema${q}`);

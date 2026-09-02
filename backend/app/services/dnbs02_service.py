@@ -22,7 +22,7 @@ import openpyxl
 
 logger = logging.getLogger(__name__)
 
-# Connection handling and section provenance are shared with the curiosity graph so a
+# Connection handling and section provenance are shared with the information graph so a
 # change to either is made once. Aliased to the private names this module already used.
 from app.services.db_schema import (
     get_connection,

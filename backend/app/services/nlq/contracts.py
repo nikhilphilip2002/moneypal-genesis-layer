@@ -245,8 +245,8 @@ class LookupPlan(_Model):
 
     route: Literal["lookup"] = "lookup"
     selector: Literal[
-        "borrower_name", "customer_id", "loan_account", "agent_code", "product_code",
-        "branch", "gender"
+        "borrower_name", "customer_id", "loan_account", "agent_code", "agent_name",
+        "product_code", "branch", "gender"
     ]
     value: str
     detail: Literal[
@@ -258,7 +258,7 @@ class LookupPlan(_Model):
         "sanction_amount", "sanction_date", "disbursed_amount", "first_disbursement_date",
         "agent_name", "agent_type", "designation", "mobile", "email", "branch_code",
         "role_code", "joined_on", "linked_customer_count", "linked_loan_count",
-        "borrower_name",
+        "borrower_name", "scheme_name", "number_of_emis",
     ]] = Field(default_factory=list)
     confidence: float = Field(default=1.0, ge=0.0, le=1.0)
     reasoning: str = Field(default="", max_length=500)

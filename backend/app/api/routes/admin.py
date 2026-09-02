@@ -3,11 +3,10 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from app.services import brief_cache, platform
+from app.services.curiosity_graph import get_curiosity_graph, search_curiosity_entities
 from app.services.db_schema import (
-    get_db_schema_graph,
     get_monthly_breakdown,
     get_mom_loan_start_analysis,
-    search_entities,
 )
 
 router = APIRouter(tags=["admin"])
@@ -31,18 +30,34 @@ def db_schema(
     manager_id: str = None,
     agent_id: str = None,
     customer_id: str = None,
-    month: str = None
+    month: str = None,
+    level: str = None,
+    product_code: str = None,
+    branch_code: str = None,
+    scheme_code: str = None,
+    agent_code: str = None,
+    weight_by: str = "borrowers",
+    limit: int = 20,
+    offset: int = 0,
 ):
-    """Retrieve the Enterprise Curiosity Graph with optional monthly basis filter."""
-    return get_db_schema_graph(
-        search_term=search,
-        entity_type=entity_type,
-        view_level=view_level,
-        zonal_id=zonal_id,
-        manager_id=manager_id,
-        agent_id=agent_id,
+    """Retrieve a Gold-only GICC portfolio hierarchy slice.
+
+    The legacy parameter names remain accepted while old clients roll forward.
+    """
+    effective_level = level or {
+        "executive": "portfolio", "zonal": "product", "manager": "branch",
+    }.get(view_level, view_level)
+    return get_curiosity_graph(
+        level=effective_level,
+        product_code=product_code or (zonal_id or "").removeprefix("product:"),
+        branch_code=branch_code or (manager_id or "").removeprefix("branch:"),
+        scheme_code=scheme_code,
+        agent_code=agent_code or (agent_id or "").removeprefix("agent:"),
         customer_id=customer_id,
-        month=month
+        month=month,
+        weight_by=weight_by,
+        limit=limit,
+        offset=offset,
     )
 
 
@@ -60,8 +75,11 @@ def mom_loan_analysis():
 
 @router.get("/admin/db-schema/search")
 def db_schema_search(q: str = "", entity_type: str = "all"):
-    """Instant live autocomplete search across customers, loan accounts, and branches."""
-    return {"query": q, "entity_type": entity_type, "results": search_entities(q, entity_type)}
+    """Instant Gold-layer autocomplete for agents and borrowers."""
+    results = search_curiosity_entities(q)
+    if entity_type not in ("", "all"):
+        results = [row for row in results if row["type"] == entity_type]
+    return {"query": q, "entity_type": entity_type, "results": results}
 
 
 @router.post("/intelligence/search")

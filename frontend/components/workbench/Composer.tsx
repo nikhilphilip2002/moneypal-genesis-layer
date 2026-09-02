@@ -286,14 +286,12 @@ export default function Composer({
                 <X className="size-3.5" />
               </button>
             </span>
-          ) : (
+          ) : dataAccess !== 'mcp' ? (
             <span className="hidden items-center gap-1.5 px-1.5 text-[11px] text-muted-foreground sm:flex">
               <ShieldCheck className="size-3.5 text-primary" />
-              {dataAccess === 'mcp'
-                ? 'PostgreSQL via MCP'
-                : mode === 'local' ? 'Local and private' : mode}
+              {mode === 'local' ? 'Local and private' : mode}
             </span>
-          )}
+          ) : null}
         </div>
 
         {/* Send and stop are the same control in two states — same 36×36 target, same

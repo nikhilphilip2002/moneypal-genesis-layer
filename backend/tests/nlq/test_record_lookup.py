@@ -8,6 +8,7 @@ from app.services.nlq.contracts import Lineage, LookupPlan
 from app.services.nlq.executor import QueryResult
 from app.services.nlq.lookup import (
     _agent_accounts,
+    _candidate_agents,
     _agent_count,
     _agent_details,
     _shape_agent_details,
@@ -372,15 +373,159 @@ def test_agent_accounts_use_exact_code_and_return_only_linked_account_numbers():
     assert "customer_name" not in attempt.sql
 
 
-def test_agent_account_names_join_the_governed_loan_only_when_requested():
+def test_agent_account_names_use_the_governed_linked_loan_row_when_requested():
     plan_result = detect("show agent 45 account numbers along with borrower names")
 
     assert plan_result is not None
     assert plan_result.requested_fields == ["borrower_name"]
     attempt = _agent_accounts(plan_result, get_catalog())
-    assert "JOIN gold.semantic_loan_account AS loan" in attempt.sql
-    assert "loan.customer_name AS borrower_name" in attempt.sql
+    assert "JOIN gold.semantic_loan_account AS loan" not in attempt.sql
+    assert "reporting.customer_name AS borrower_name" in attempt.sql
     assert attempt.pii_columns == ["customer_name"]
+
+
+def test_agent_account_projection_preserves_every_explicitly_requested_field():
+    plan_result = detect(
+        "select borrower name,sanctioned amount,scheme name,tenure where agent code = agnt45"
+    )
+
+    assert plan_result is not None
+    assert plan_result.detail == "agent_accounts"
+    assert plan_result.value == "AGNT45"
+    assert plan_result.requested_fields == [
+        "borrower_name", "sanction_amount", "scheme_name", "number_of_emis",
+    ]
+    attempt = _agent_accounts(plan_result, get_catalog())
+    assert "reporting.customer_name AS borrower_name" in attempt.sql
+    assert "reporting.sanction_amount" in attempt.sql
+    assert "reporting.scheme_name" in attempt.sql
+    assert "reporting.number_of_emis" in attempt.sql
+
+
+def test_agent_name_account_lookup_preserves_requested_fields_for_resolution():
+    plan_result = detect("borrowers name,sanctioned amount under agent vanitha")
+
+    assert plan_result is not None
+    assert plan_result.selector == "agent_name"
+    assert plan_result.value == "vanitha"
+    assert plan_result.detail == "agent_accounts"
+    assert plan_result.requested_fields == ["borrower_name", "sanction_amount"]
+
+
+def test_agent_name_candidates_use_the_governed_agent_directory(monkeypatch):
+    from app.services.nlq import lookup
+
+    captured = {}
+    monkeypatch.setattr(lookup, "execute_raw", lambda sql: (
+        captured.setdefault("sql", sql),
+        QueryResult(rows=[], columns=[], status="ok", duration_ms=1, sql=sql, row_count=0),
+    )[1])
+
+    assert _candidate_agents("Vanitha", get_catalog()) == []
+    assert "FROM gold.semantic_agent" in captured["sql"]
+    assert "agent_name" in captured["sql"]
+    assert "= 'vanitha'" in captured["sql"]
+
+
+def test_unique_agent_name_is_resolved_to_code_before_account_query(monkeypatch):
+    from app.services.nlq import executor, lookup
+
+    monkeypatch.setattr(lookup, "execute_raw", lambda sql: QueryResult(
+        rows=[{"agent_code": "AGNT45", "agent_name": "VANITHA", "branch_code": "101"}],
+        columns=["agent_code", "agent_name", "branch_code"],
+        status="ok", duration_ms=1, sql=sql, row_count=1,
+    ))
+    captured = {}
+
+    def execute_accounts(sql):
+        captured["sql"] = sql
+        return QueryResult(
+            rows=[{
+                "loan_account_number": "1000400000007", "borrower_name": "PRAMILA D",
+                "sanction_amount": 700000, "total_linked_account_count": 1,
+            }],
+            columns=[
+                "loan_account_number", "borrower_name", "sanction_amount",
+                "total_linked_account_count",
+            ],
+            status="ok", duration_ms=1, sql=sql, row_count=1,
+        )
+
+    monkeypatch.setattr(executor, "execute_raw", execute_accounts)
+    result = run(
+        detect("borrowers name,sanctioned amount under agent vanitha"),
+        role="admin", catalog=get_catalog(),
+    )
+
+    assert result.chart is not None
+    assert "LOWER(reporting.agent_code) = 'agnt45'" in captured["sql"]
+    assert result.chart.rows[0]["borrower_name"] == "PRAMILA D"
+    assert result.chart.rows[0]["sanction_amount"] == 700000
+
+
+def test_ambiguous_agent_name_asks_for_the_code_instead_of_combining_agents(monkeypatch):
+    from app.services.nlq import lookup
+
+    monkeypatch.setattr(lookup, "execute_raw", lambda sql: QueryResult(
+        rows=[
+            {"agent_code": "AGNT45", "agent_name": "VANITHA", "branch_code": "101"},
+            {"agent_code": "AGNT91", "agent_name": "VANITHA R", "branch_code": "205"},
+        ],
+        columns=["agent_code", "agent_name", "branch_code"],
+        status="ok", duration_ms=1, sql=sql, row_count=2,
+    ))
+
+    result = run(
+        detect("borrowers name,sanctioned amount under agent vanitha"),
+        role="admin", catalog=get_catalog(),
+    )
+
+    assert result.chart is None
+    assert result.clarification is not None
+    assert "Several agents match vanitha" in result.clarification.question
+    assert result.clarification.suggestions == [
+        "Show borrower names, sanctioned amounts under agent code AGNT45 "
+        "(VANITHA, branch 101)",
+        "Show borrower names, sanctioned amounts under agent code AGNT91 "
+        "(VANITHA R, branch 205)",
+    ]
+
+
+def test_agent_account_projection_is_retained_in_the_table(monkeypatch):
+    from app.services.nlq import executor
+
+    monkeypatch.setattr(executor, "execute_raw", lambda _sql: QueryResult(
+        rows=[{
+            "loan_account_number": "1000400000007", "borrower_name": "PRAMILA D",
+            "sanction_amount": 700000, "scheme_name": "MSME Term Loan",
+            "number_of_emis": 36, "total_linked_account_count": 1,
+        }],
+        columns=[
+            "loan_account_number", "borrower_name", "sanction_amount", "scheme_name",
+            "number_of_emis", "total_linked_account_count",
+        ],
+        status="ok", duration_ms=1, sql="SELECT 1", row_count=1,
+    ))
+    result = run(
+        LookupPlan(
+            selector="agent_code", value="AGNT45", detail="agent_accounts",
+            requested_fields=[
+                "borrower_name", "sanction_amount", "scheme_name", "number_of_emis",
+            ],
+            reasoning="test",
+        ),
+        role="admin", catalog=get_catalog(),
+    )
+
+    assert result.chart is not None
+    assert result.chart.rows == [{
+        "loan_account_number": "1000400000007", "borrower_name": "PRAMILA D",
+        "sanction_amount": 700000, "scheme_name": "MSME Term Loan", "number_of_emis": 36,
+    }]
+    assert [column.label for column in result.chart.columns] == [
+        "Loan Account Number", "Borrower Name", "Sanction Amount", "Scheme name",
+        "Tenure (EMIs)",
+    ]
 
 
 def test_agent_account_record_list_is_always_a_table(monkeypatch):

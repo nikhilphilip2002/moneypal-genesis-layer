@@ -72,7 +72,8 @@ _GENDER_ACCOUNT_SAMPLE = re.compile(
     re.I,
 )
 _LOAN_DETAIL_CUE = re.compile(
-    r"\b(?:loan\s+amount|sanction(?:ed)?|disburs(?:ed|e?ment)|loan\s+date|date)\b",
+    r"\b(?:loan\s+amount|sanction(?:ed)?|disburs(?:ed|e?ment)|loan\s+date|date|"
+    r"schemes?|tenure|tenor|loan\s+term|number\s+of\s+(?:emis|instalments?|installments?))\b",
     re.I,
 )
 _SANCTION_AMOUNT_CUE = re.compile(
@@ -87,6 +88,11 @@ _DISBURSEMENT_AMOUNT_CUE = re.compile(
 _DISBURSEMENT_DATE_CUE = re.compile(
     r"\b(?:first\s+)?disburs(?:ed|e?ment)\s+date\b|"
     r"\bdate\s+(?:of\s+)?(?:the\s+)?disburs(?:ed|e?ment)\b",
+    re.I,
+)
+_SCHEME_NAME_CUE = re.compile(r"\bschemes?(?:\s+names?)?\b", re.I)
+_TENURE_CUE = re.compile(
+    r"\b(?:tenure|tenor|loan\s+term|number\s+of\s+(?:emis|instalments?|installments?))\b",
     re.I,
 )
 _CUSTOMER_DETAIL_CUE = re.compile(
@@ -172,6 +178,11 @@ _BRANCH_DIRECTORY_CUE = re.compile(
     re.I,
 )
 _AGENT_CODE = re.compile(r"\b(?P<value>(?:agnt|agent)[-_ ]?\d+)\b", re.I)
+_AGENT_NAME_REF = re.compile(
+    r"\b(?:under|for|of|with|handled\s+by|linked\s+to)\s+(?:the\s+)?agent\s+"
+    r"(?P<value>[a-z][\w .'-]{1,100}?)\s*[?!.]*$",
+    re.I,
+)
 _AGENT_DETAIL_CUE = re.compile(
     r"\b(?:details?|profiles?|names?|information|info|infor\w*|show|get|give|about|who)\b",
     re.I,
@@ -273,7 +284,8 @@ _REFINEMENT_FIELD = (
     r"email(?:\s+address(?:es)?)?|designations?|branch\s+codes?|"
     r"(?:loan\s+)?account\s+numbers?|customer\s+ids?|"
     r"sanction(?:ed)?\s+amounts?|sanction\s+dates?|loan\s+amounts?|"
-    r"disburs(?:ed|e?ment)\s+(?:amounts?|dates?))"
+    r"disburs(?:ed|e?ment)\s+(?:amounts?|dates?)|schemes?(?:\s+names?)?|"
+    r"tenures?|tenors?|loan\s+terms?|number\s+of\s+(?:emis|instalments?|installments?))"
 )
 _RECORD_REFINEMENT = re.compile(
     r"^(?:(?:ok|and|also|plus|now)\s+)?"
@@ -437,6 +449,10 @@ def _requested_loan_fields(text: str) -> list[str]:
         fields.append("disbursed_amount")
     if _DISBURSEMENT_DATE_CUE.search(text):
         fields.append("first_disbursement_date")
+    if _SCHEME_NAME_CUE.search(text):
+        fields.append("scheme_name")
+    if _TENURE_CUE.search(text):
+        fields.append("number_of_emis")
     # In an amount-and-date question, an otherwise unqualified "date" is the loan's
     # sanction date. A disbursement-date cue above remains unambiguous.
     if (
@@ -505,6 +521,7 @@ def detect(question: str) -> LookupPlan | None:
     customer = _CUSTOMER_ID.search(text)
     account = _ACCOUNT_ID.search(text) or _ACCOUNT_ID_BARE.search(text)
     agent = _AGENT_CODE.search(text)
+    agent_name = _AGENT_NAME_REF.search(text) if not agent else None
     product = _PRODUCT_CODE.search(text) or _PRODUCT_CODE_BARE.search(text)
     # An explicit "product code 13" is already a request for that product; only the bare
     # "product 13" form needs a cue to tell a lookup from a filter on a metric question.
@@ -520,16 +537,29 @@ def detect(question: str) -> LookupPlan | None:
         agent and _AGENT_BORROWER_CUE.search(text) and not _COUNT_CUE.search(text)
     )
     if agent and (_AGENT_ACCOUNT_CUE.search(text) or agent_borrowers):
-        requested = (
-            ["borrower_name"]
-            if _BORROWER_NAME_CUE.search(text) or agent_borrowers
-            else []
-        )
+        requested = []
+        if _BORROWER_NAME_CUE.search(text) or agent_borrowers:
+            requested.append("borrower_name")
+        requested.extend(_requested_loan_fields(text))
         return LookupPlan(
             selector="agent_code",
             value=_agent_code(agent.group("value")),
             detail="agent_accounts", requested_fields=requested,
             reasoning="loan accounts linked to the governed agent code",
+        )
+    named_agent_borrowers = bool(
+        agent_name and _AGENT_BORROWER_CUE.search(text) and not _COUNT_CUE.search(text)
+    )
+    if agent_name and (_AGENT_ACCOUNT_CUE.search(text) or named_agent_borrowers):
+        requested = []
+        if _BORROWER_NAME_CUE.search(text) or named_agent_borrowers:
+            requested.append("borrower_name")
+        requested.extend(_requested_loan_fields(text))
+        return LookupPlan(
+            selector="agent_name",
+            value=_clean_name(agent_name.group("value")),
+            detail="agent_accounts", requested_fields=requested,
+            reasoning="loan accounts linked to the resolved governed agent name",
         )
     if agent:
         # Naming a directory field is itself the request: "agent 45 phone number" asks for
@@ -768,6 +798,25 @@ def _candidate_customers(name: str, catalog: Catalog) -> list[dict]:
     )
 
 
+def _candidate_agents(name: str, catalog: Catalog) -> list[dict]:
+    normalized = _literal(" ".join(name.lower().split()))
+    stored_name = "LOWER(TRIM(REGEXP_REPLACE(agent_name, '\\s+', ' ', 'g')))"
+    sql = (
+        "SELECT agent_code::text AS agent_code, agent_name, branch_code "
+        "FROM gold.semantic_agent WHERE " + stored_name + " = " + normalized +
+        " OR " + stored_name + " LIKE " + normalized + " || '%' "
+        "ORDER BY CASE WHEN " + stored_name + " = " + normalized +
+        " THEN 0 ELSE 1 END, agent_name, agent_code LIMIT 20"
+    )
+    attempt = _validated_attempt(
+        sql, catalog=catalog,
+        explanation="Agent candidates from the governed agent directory.",
+        units={"agent_code": "text", "agent_name": "text", "branch_code": "text"},
+        pii_columns={"agent_name"},
+    )
+    return execute_raw(attempt.sql).rows
+
+
 def _where(plan: LookupPlan) -> str:
     value = _literal(_plain_identifier(plan.value).lower())
     if plan.selector == "loan_account":
@@ -783,6 +832,8 @@ def _loan_details(plan: LookupPlan, catalog: Catalog) -> SqlAttempt:
         "sanction_date": "date",
         "disbursed_amount": "inr",
         "first_disbursement_date": "date",
+        "scheme_name": "text",
+        "number_of_emis": "count",
     }
     requested = list(dict.fromkeys(plan.requested_fields)) or list(available)
     selected = ", ".join(requested)
@@ -812,6 +863,8 @@ def _shape_loan_details(chart: ChartSpec, plan: LookupPlan) -> None:
         "sanction_date": "Sanction date",
         "disbursed_amount": "Disbursed amount",
         "first_disbursement_date": "First disbursement date",
+        "scheme_name": "Scheme name",
+        "number_of_emis": "Tenure (EMIs)",
     }
     requested = list(dict.fromkeys(plan.requested_fields))
     chart.title = "Requested loan details"
@@ -1038,18 +1091,22 @@ def _agent_count(catalog: Catalog) -> SqlAttempt:
 
 def _agent_accounts(plan: LookupPlan, catalog: Catalog) -> SqlAttempt:
     value = _literal(plan.value.lower())
-    include_name = "borrower_name" in plan.requested_fields
-    name_projection = ", loan.customer_name AS borrower_name" if include_name else ""
-    join = (
-        " JOIN gold.semantic_loan_account AS loan "
-        "ON reporting.entity_num = loan.entity_num "
-        "AND reporting.loan_account_number = loan.loan_account_number"
-        if include_name else ""
-    )
+    requested = list(dict.fromkeys(plan.requested_fields))
+    available = {
+        "borrower_name": ("reporting.customer_name AS borrower_name", "text"),
+        "sanction_amount": ("reporting.sanction_amount", "inr"),
+        "sanction_date": ("reporting.sanction_date", "date"),
+        "disbursed_amount": ("reporting.disbursed_amount", "inr"),
+        "first_disbursement_date": ("reporting.first_disbursement_date", "date"),
+        "scheme_name": ("reporting.scheme_name", "text"),
+        "number_of_emis": ("reporting.number_of_emis", "count"),
+    }
+    projections = [available[field][0] for field in requested]
+    selected = ", " + ", ".join(projections) if projections else ""
     sql = (
-        "SELECT reporting.loan_account_number::text AS loan_account_number" + name_projection + ", "
+        "SELECT reporting.loan_account_number::text AS loan_account_number" + selected + ", "
         "COUNT(reporting.loan_account_number) OVER () AS total_linked_account_count "
-        "FROM gold.semantic_loan_account AS reporting" + join +
+        "FROM gold.semantic_loan_account AS reporting" +
         " WHERE LOWER(reporting.agent_code) = " + value +
         " ORDER BY reporting.loan_account_number LIMIT 500"
     )
@@ -1058,9 +1115,9 @@ def _agent_accounts(plan: LookupPlan, catalog: Catalog) -> SqlAttempt:
         explanation="Loan account numbers linked to the requested governed agent code.",
         units={
             "loan_account_number": "text", "total_linked_account_count": "count",
-            **({"borrower_name": "text"} if include_name else {}),
+            **{field: available[field][1] for field in requested},
         },
-        pii_columns={"customer_name"} if include_name else None,
+        pii_columns={"customer_name"} if "borrower_name" in requested else None,
     )
 
 
@@ -1146,6 +1203,36 @@ def run(plan: LookupPlan, *, role: str | None, catalog: Catalog | None = None) -
         customer_id = next(iter(identities))
         effective = plan.model_copy(update={"selector": "customer_id", "value": customer_id})
 
+    if plan.selector == "agent_name":
+        candidates = _candidate_agents(plan.value, cat)
+        identities = {
+            _agent_code(str(row.get("agent_code", ""))): row
+            for row in candidates if str(row.get("agent_code", "")).strip()
+        }
+        if not identities:
+            return LookupResult(no_match=True)
+        if len(identities) != 1:
+            fields = {
+                "borrower_name": "borrower names", "sanction_amount": "sanctioned amounts",
+                "sanction_date": "sanction dates", "disbursed_amount": "disbursed amounts",
+                "first_disbursement_date": "first disbursement dates",
+                "scheme_name": "scheme names", "number_of_emis": "tenure",
+            }
+            requested = ", ".join(fields[field] for field in plan.requested_fields)
+            subject = requested or "loan accounts"
+            suggestions = []
+            for code, row in list(identities.items())[:3]:
+                name = str(row.get("agent_name", "")).strip()
+                branch = str(row.get("branch_code", "")).strip()
+                context = ", ".join(part for part in (name, f"branch {branch}" if branch else "") if part)
+                suggestions.append(f"Show {subject} under agent code {code} ({context})")
+            return LookupResult(clarification=ClarifyPlan(
+                question=f"Several agents match {plan.value}. Choose the intended agent:",
+                suggestions=suggestions,
+            ))
+        agent_code = next(iter(identities))
+        effective = plan.model_copy(update={"selector": "agent_code", "value": agent_code})
+
     if effective.detail == "customer_summary":
         attempt = _customer_summary(effective, cat)
     elif effective.detail == "loan_details":
@@ -1225,7 +1312,19 @@ def run(plan: LookupPlan, *, role: str | None, catalog: Catalog | None = None) -
         chart.x = None
         chart.series_by = None
         chart.title = f"Loan accounts linked to {effective.value}"
-        suffix = " with borrower names" if "borrower_name" in effective.requested_fields else ""
+        labels = {
+            "borrower_name": "borrower names", "sanction_amount": "sanctioned amounts",
+            "sanction_date": "sanction dates", "disbursed_amount": "disbursed amounts",
+            "first_disbursement_date": "first disbursement dates",
+            "scheme_name": "scheme names", "number_of_emis": "tenure (EMIs)",
+        }
+        for column in chart.columns:
+            if column.name == "number_of_emis":
+                column.label = "Tenure (EMIs)"
+            elif column.name == "scheme_name":
+                column.label = "Scheme name"
+        named = [labels[field] for field in effective.requested_fields]
+        suffix = f" with {', '.join(named)}" if named else ""
         chart.summary = (
             f"Showing {len(chart.rows):,} of {total:,} linked loan account(s){suffix}."
         )

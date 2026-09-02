@@ -327,11 +327,11 @@ export default function AdminPage() {
                 </Card>
               </div>
 
-              {/* Database Curiosity Graph Quick-Access Banner */}
+              {/* Database Information Graph Quick-Access Banner */}
               <Card className="dashboard-surface rounded-[1.5rem] border-border/70 shadow-none overflow-hidden bg-gradient-to-br from-primary/[0.03] to-transparent">
                 <CardHeader className="pb-2">
                   <CardTitle className="flex items-center gap-2 font-headline text-base font-semibold">
-                    <Database className="h-4 w-4 text-primary" /> Database Curiosity Graph
+                    <Database className="h-4 w-4 text-primary" /> Database Information Graph
                   </CardTitle>
                   <CardDescription className="text-xs">
                     Explore active lending tables (GENLNACNTS, LOANREPAY, LOANSCHEDULE, GENLNDISB) and logical relationships.
@@ -342,7 +342,7 @@ export default function AdminPage() {
                     Interact with a live 2D force-directed link graph showing entity row count scaling, logical join keys, schema descriptions, and SQL conditions. Useful for validating migration structures.
                   </div>
                   <Button size="sm" className="rounded-xl shrink-0 gap-1.5" onClick={() => router.push('/regulatory?tab=schema')}>
-                    Open Curiosity Graph <ArrowRight className="h-3.5 w-3.5" />
+                    Open Information Graph <ArrowRight className="h-3.5 w-3.5" />
                   </Button>
                 </CardContent>
               </Card>

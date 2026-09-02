@@ -147,7 +147,7 @@ export default function RegulatoryPage() {
           <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
             <TabsList className="mb-4">
               <TabsTrigger value="briefings">RBI Regulation Briefings</TabsTrigger>
-              <TabsTrigger value="schema">Database Curiosity Graph</TabsTrigger>
+              <TabsTrigger value="schema">Database Information Graph</TabsTrigger>
               <TabsTrigger value="dnbs">RBI DNBS Return</TabsTrigger>
             </TabsList>
 

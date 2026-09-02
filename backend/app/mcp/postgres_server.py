@@ -12,7 +12,7 @@ from typing import Any
 
 from mcp.server.fastmcp import FastMCP
 
-from app.services import db_schema
+from app.services.curiosity_graph import get_curiosity_graph
 from app.services.nlq import db as nlq_db
 from app.services.nlq.ask import AskContext, ask_once
 
@@ -67,18 +67,29 @@ def curiosity_graph(
     customer_id: str = "",
     month: str = "",
     limit: int = 40,
+    level: str = "",
+    product_code: str = "",
+    branch_code: str = "",
+    scheme_code: str = "",
+    agent_code: str = "",
+    weight_by: str = "borrowers",
+    offset: int = 0,
 ) -> dict[str, Any]:
-    """Retrieve a read-only slice of the Enterprise Curiosity Graph."""
-    return db_schema.get_db_schema_graph(
-        search_term=search or None,
-        entity_type=entity_type or "all",
-        view_level=view_level or "executive",
-        zonal_id=zonal_id or None,
-        manager_id=manager_id or None,
-        agent_id=agent_id or None,
+    """Retrieve a read-only slice of the Enterprise Information Graph."""
+    effective_level = level or {"executive": "portfolio", "zonal": "product", "manager": "branch"}.get(
+        view_level or "executive", view_level or "portfolio"
+    )
+    return get_curiosity_graph(
+        level=effective_level,
+        product_code=product_code or (zonal_id or "").removeprefix("product:") or None,
+        branch_code=branch_code or (manager_id or "").removeprefix("branch:") or None,
+        scheme_code=scheme_code or None,
+        agent_code=agent_code or (agent_id or "").removeprefix("agent:") or None,
         customer_id=customer_id or None,
         month=month or None,
+        weight_by=weight_by,
         limit=max(1, min(limit, 100)),
+        offset=max(0, offset),
     )
 
 

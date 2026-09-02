@@ -24,7 +24,7 @@ import { cn } from '@/lib/utils';
 
 const DBSchemaGraph = dynamic(() => import('@/components/intel/DBSchemaGraph'), {
   ssr: false,
-  loading: () => <WorkspaceLoading label="Loading the Enterprise Curiosity Graph…" />,
+  loading: () => <WorkspaceLoading label="Loading the Enterprise Information Graph…" />,
 });
 
 const DNBSReport = dynamic(() => import('@/components/intel/DNBSReport'), {
@@ -83,7 +83,7 @@ export const WORKSPACE_TOOLS: Array<{
   },
   {
     id: 'curiosity-graph',
-    label: 'Enterprise Curiosity Graph',
+    label: 'Enterprise Information Graph',
     description: 'Explore customers, accounts, branches, products, and their relationships.',
     icon: Network,
   },

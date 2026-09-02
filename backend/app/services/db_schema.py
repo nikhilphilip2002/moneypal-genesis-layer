@@ -1,4 +1,4 @@
-"""Enterprise Curiosity Graph - a navigable view of the loan book in PostgreSQL.
+"""Enterprise Information Graph - a navigable view of the loan book in PostgreSQL.
 
 Portfolio nodes and edges are derived from semantic `silver` tables. Where the warehouse
 has no source for something (branch geography, for instance) the field is omitted rather
@@ -144,7 +144,7 @@ def run_section(
             name, "ok" if count else "empty", count, note=note
         ).as_dict()
     except Exception as exc:  # noqa: BLE001 - one bad section must not kill the graph
-        logger.exception("Curiosity graph section %r failed", name)
+        logger.exception("Information graph section %r failed", name)
         if conn is not None:
             with contextlib.suppress(Exception):
                 conn.rollback()
@@ -353,7 +353,7 @@ def search_entities(query_str: str, entity_type: str = "all") -> List[Dict[str, 
                         }
                     )
     except Exception:
-        logger.exception("Curiosity graph search failed for %r", query_str)
+        logger.exception("Information graph search failed for %r", query_str)
         return []
 
     return results[:15]
@@ -538,7 +538,7 @@ def get_db_schema_graph(
     month: Optional[str] = None,
     limit: int = 40,
 ) -> Dict[str, Any]:
-    """Build the curiosity graph for the requested drill-down level."""
+    """Build the information graph for the requested drill-down level."""
     nodes: List[Dict[str, Any]] = []
     edges: List[Dict[str, Any]] = []
     provenance: Dict[str, Dict[str, Any]] = {}

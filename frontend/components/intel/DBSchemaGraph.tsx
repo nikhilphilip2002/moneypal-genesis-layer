@@ -1,1245 +1,546 @@
 'use client';
 
-import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { admin } from '@/lib/api';
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import { Input } from '@/components/ui/input';
-import { useTheme } from 'next-themes';
-import dynamic from 'next/dynamic';
 import {
-  User,
+  AlertTriangle,
+  Award,
+  Building2,
+  ChevronLeft,
+  ChevronRight,
+  CircleDollarSign,
   CreditCard,
-  ArrowUpRight,
-  ArrowDownLeft,
-  Calendar,
-  Search,
-  X,
-  Network,
+  Database,
+  GitBranch,
+  LayoutGrid,
+  Link2,
   Maximize2,
   Minimize2,
+  Network,
   RefreshCw,
-  Info,
-  Link2,
-  Building2,
-  ZoomIn,
-  ZoomOut,
-  RotateCcw,
-  Move,
-  ChevronRight,
-  ShieldCheck,
-  UserCheck,
-  Award,
-  Globe2,
-  Building,
-  Database,
-  TrendingUp,
-  DollarSign,
-  Users
+  Search,
+  ShieldAlert,
+  Table2,
+  UserRound,
+  Users,
+  X,
 } from 'lucide-react';
 
-const ForceGraph2D = dynamic(() => import('react-force-graph-2d'), {
-  ssr: false,
-  loading: () => (
-    <div className="flex h-[540px] items-center justify-center bg-card/30 rounded-2xl border border-border/50">
-      <div className="flex items-center gap-2 text-muted-foreground animate-pulse text-xs">
-        <Network className="h-4 w-4 animate-spin text-primary" />
-        <span>Loading Enterprise Curiosity Graph...</span>
-      </div>
-    </div>
-  ),
-});
+import { admin } from '@/lib/api';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+
+type GraphLevel = 'portfolio' | 'product' | 'branch' | 'scheme' | 'agent' | 'customer';
+type WeightBy = 'borrowers' | 'outstanding' | 'accounts';
+type DisplayMode = 'graph' | 'table';
+
+interface Metrics {
+  account_count?: number;
+  active_account_count?: number;
+  borrower_count?: number;
+  sanctioned_amount?: number;
+  disbursed_amount?: number;
+  principal_outstanding?: number;
+  total_overdue?: number;
+  par30_ratio?: number;
+  npa_ratio?: number;
+  risk_coverage_pct?: number;
+  loan_data_as_of?: string | null;
+  active?: boolean;
+  loan_status?: string;
+  dpd_days?: number;
+  is_par30?: boolean;
+  is_npa?: boolean;
+}
 
 interface GraphNode {
   id: string;
-  type: 'executive' | 'zonal' | 'manager' | 'agent' | 'customer' | 'account' | 'disbursement' | 'repayment';
-  title: string;
-  subtitle?: string;
-  node_label: string;
-  color: string;
-  size: number;
-  zonal_id?: string;
-  manager_id?: string;
-  agent_id?: string;
-  customer_id?: string;
-  details: Record<string, string>;
-  x?: number;
-  y?: number;
-}
-
-interface GraphEdge {
-  source: string | GraphNode;
-  target: string | GraphNode;
+  type: GraphLevel | 'account' | 'related_agent';
+  code: string;
   label: string;
-  purpose: string;
-  weight?: number;
+  metrics?: Metrics;
+  rank?: number;
+  is_leader?: boolean;
+  weight_value?: number;
+  account_count?: number;
+  is_selected_path?: boolean;
+  product_code?: string;
+  product_name?: string;
+  branch_code?: string;
+  scheme_code?: string;
+  scheme_name?: string;
+  agent_code?: string;
 }
 
-interface ZonalItem {
-  id: string;
-  name: string;
+interface PathItem {
+  level: GraphLevel;
   code: string;
-  cust_count: number;
-  acnt_count: number;
-  total_vol: number;
-  repay_vol: number;
-  /** Cumulative principal repaid as a share of principal disbursed. */
-  repaid_pct: number;
+  label: string;
 }
 
-interface BranchItem {
-  id: string;
-  code: string;
-  name: string;
-  display_title: string;
-  cust_count: number;
-  acnt_count: number;
-  total_vol: number;
-  repay_vol: number;
-  repaid_pct: number;
-  /** The branch's dominant product by account count. */
-  zone_id: string;
-  /** Every product this branch actually originates - a branch may carry several. */
-  zone_ids: string[];
-  zone_name: string;
+interface Coverage {
+  snapshot_date?: string | null;
+  snapshot_data_as_of?: string | null;
+  entity_num: string;
+  entity_basis: string;
+  excluded_entity_note: string;
+  effective_branch_basis: string;
+  branch_basis_note: string;
+  source_schema: string;
+  source_views: string[];
 }
 
-/** One real branch-to-product relationship, straight from GROUP BY branch, product. */
-interface BranchProductLink {
-  branch_id: string;
-  branch_code: string;
-  zone_id: string;
-  product_code: string;
-  acnt_count: number;
-  total_vol: number;
-  repay_vol: number;
+interface GraphPayload {
+  version: number;
+  level: GraphLevel;
+  current: GraphNode;
+  nodes: GraphNode[];
+  edges: Array<{ source: string; target: string; label: string }>;
+  path: PathItem[];
+  kpis: Metrics;
+  children_total: number;
+  visible_children: number;
+  limit: number;
+  offset: number;
+  weight_by: WeightBy;
+  month?: string | null;
+  coverage: Coverage;
 }
 
-interface SectionProvenance {
-  status: 'ok' | 'empty' | 'error' | 'no_source';
-  row_count: number;
-  error?: string;
-  note?: string;
-}
-
-interface SearchResultItem {
-  id: string;
-  title: string;
-  subtitle: string;
-  type: string;
-  view_level: 'executive' | 'zonal' | 'manager' | 'agent' | 'customer';
-  zonal_id?: string;
-  manager_id?: string;
-  agent_id?: string;
+interface Selection {
+  level: GraphLevel;
+  product_code?: string;
+  branch_code?: string;
+  scheme_code?: string;
+  agent_code?: string;
   customer_id?: string;
 }
 
-interface HierarchicalGraphPayload {
-  nodes: GraphNode[];
-  edges: GraphEdge[];
-  view_level: 'executive' | 'zonal' | 'manager' | 'agent' | 'customer';
-  executive_info: {
-    id: string;
-    name: string;
-    role: string;
-    org: string;
-  };
-  zonals: ZonalItem[];
-  selected_zonal?: ZonalItem | null;
-  branches: BranchItem[];
-  branch_product_links: BranchProductLink[];
-  selected_manager?: BranchItem | null;
-  selected_agent?: any;
-  selected_customer?: any;
-  total_database_metrics?: {
-    total_customers: number;
-    total_loan_borrowers?: number;
-    total_active_loan_borrowers?: number;
-    total_registered_customers?: number;
-    total_accounts: number;
-    total_branches: number;
-  };
-  monthly_summary?: any;
-  provenance: Record<string, SectionProvenance>;
-  metadata: {
-    /** True only when every query resolved with rows. */
-    is_live: boolean;
-    live_sections: string[];
-    degraded_sections: string[];
-    schema: string;
-    total_nodes: number;
-    total_edges: number;
-  };
+interface SearchResult {
+  type: 'agent' | 'customer';
+  code: string;
+  label: string;
+}
+
+const PAGE_SIZE = 20;
+
+const levelLabel: Record<string, string> = {
+  portfolio: 'Loan Book',
+  product: 'Product',
+  branch: 'Branch',
+  scheme: 'Scheme',
+  agent: 'Agent',
+  customer: 'Customer',
+  account: 'Loan Account',
+  related_agent: 'Linked Agent',
+};
+
+const levelTone: Record<string, string> = {
+  portfolio: 'border-violet-500/50 bg-violet-500/10',
+  product: 'border-indigo-500/50 bg-indigo-500/10',
+  branch: 'border-blue-500/50 bg-blue-500/10',
+  scheme: 'border-cyan-500/50 bg-cyan-500/10',
+  agent: 'border-teal-500/50 bg-teal-500/10',
+  customer: 'border-emerald-500/50 bg-emerald-500/10',
+  account: 'border-amber-500/50 bg-amber-500/10',
+  related_agent: 'border-sky-500/50 bg-sky-500/10',
+};
+
+function formatMoney(raw?: number): string {
+  const value = Number(raw || 0);
+  const abs = Math.abs(value);
+  if (abs >= 10_000_000) return `₹${(value / 10_000_000).toFixed(abs >= 1_000_000_000 ? 1 : 2)} Cr`;
+  if (abs >= 100_000) return `₹${(value / 100_000).toFixed(abs >= 10_000_000 ? 1 : 2)} L`;
+  if (abs >= 1_000) return `₹${(value / 1_000).toFixed(abs >= 100_000 ? 1 : 2)} K`;
+  return `₹${value.toLocaleString('en-IN', { maximumFractionDigits: 0 })}`;
+}
+
+function formatCount(value?: number): string {
+  return Number(value || 0).toLocaleString('en-IN');
+}
+
+function nodeWeight(node: GraphNode, weight: WeightBy): number {
+  if (node.type === 'related_agent') return Number(node.account_count || 0);
+  if (node.type === 'account') {
+    return Number(weight === 'outstanding' ? node.metrics?.principal_outstanding : 1);
+  }
+  if (weight === 'outstanding') return Number(node.metrics?.principal_outstanding || 0);
+  if (weight === 'accounts') return Number(node.metrics?.account_count || 0);
+  return Number(node.metrics?.borrower_count || 0);
+}
+
+function weightText(node: GraphNode, weight: WeightBy): string {
+  const value = nodeWeight(node, weight);
+  if (weight === 'outstanding') return formatMoney(value);
+  return `${formatCount(value)} ${weight === 'accounts' ? 'accounts' : 'customers'}`;
+}
+
+function NodeIcon({ type }: { type: GraphNode['type'] }) {
+  if (type === 'portfolio') return <Award className="h-4 w-4" />;
+  if (type === 'branch') return <Building2 className="h-4 w-4" />;
+  if (type === 'agent' || type === 'related_agent') return <UserRound className="h-4 w-4" />;
+  if (type === 'customer') return <Users className="h-4 w-4" />;
+  if (type === 'account') return <CreditCard className="h-4 w-4" />;
+  return <GitBranch className="h-4 w-4" />;
+}
+
+function KpiCard({ label, value, icon }: { label: string; value: string; icon: React.ReactNode }) {
+  return (
+    <div className="rounded-xl border border-border/70 bg-background/70 p-3">
+      <div className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+        {icon}{label}
+      </div>
+      <div className="mt-1.5 font-mono text-base font-bold tracking-tight text-foreground">{value}</div>
+    </div>
+  );
 }
 
 export default function DBSchemaGraph({ contained = false }: { contained?: boolean }) {
-  const { theme } = useTheme();
-  const graphRef = useRef<any>(null);
-  const containerRef = useRef<HTMLDivElement>(null);
-
+  const [mounted, setMounted] = useState(false);
+  const [expanded, setExpanded] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [data, setData] = useState<HierarchicalGraphPayload | null>(null);
-  const [isMounted, setIsMounted] = useState(false);
-  
-  // Navigation State Across 5 Enterprise Tiers
-  const [viewLevel, setViewLevel] = useState<'executive' | 'zonal' | 'manager' | 'agent' | 'customer'>('executive');
-  const [selectedZonalId, setSelectedZonalId] = useState<string | null>(null);
-  const [selectedManagerId, setSelectedManagerId] = useState<string | null>(null);
-  const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
-  const [selectedCustomerId, setSelectedCustomerId] = useState<string | null>(null);
-  const [selectedMonth, setSelectedMonth] = useState<string>('all');
+  const [error, setError] = useState('');
+  const [data, setData] = useState<GraphPayload | null>(null);
+  const [selection, setSelection] = useState<Selection>({ level: 'portfolio' });
+  const [weightBy, setWeightBy] = useState<WeightBy>('borrowers');
+  const [displayMode, setDisplayMode] = useState<DisplayMode>('graph');
   const [selectedNode, setSelectedNode] = useState<GraphNode | null>(null);
-  const [hoverNode, setHoverNode] = useState<GraphNode | null>(null);
-  
-  // Search & Lucide Dropdown State
-  // Search is fixed to borrowers — matched by name or customer ID. The entity-type
-  // selector (branch/officer/zone) was removed; name + customer ID is all that's needed.
-  const searchEntityType = 'customer';
-  const [searchQuery, setSearchQuery] = useState('');
-  const [searchResults, setSearchResults] = useState<SearchResultItem[]>([]);
-  const [isSearchOpen, setIsSearchOpen] = useState(false);
+  const [month, setMonth] = useState('');
+  const [search, setSearch] = useState('');
+  const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
 
-  // Month-on-Month (MoM) Vintage Analysis State
-  const [isMomOpen, setIsMomOpen] = useState(false);
-  const [momData, setMomData] = useState<any>(null);
-  const [loadingMom, setLoadingMom] = useState(false);
-
-  const fetchMomData = useCallback(async () => {
-    setLoadingMom(true);
-    try {
-      const res = await admin.momLoanAnalysis();
-      setMomData(res);
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setLoadingMom(false);
-    }
-  }, []);
-
-  const [isExpanded, setIsExpanded] = useState(false);
-  const [dimensions, setDimensions] = useState({ width: 800, height: 540 });
-
-  const isDark = theme === 'dark';
-
+  useEffect(() => setMounted(true), []);
   useEffect(() => {
-    setIsMounted(true);
-  }, []);
-
-  // The Workbench hosts the graph in its own fullscreen workspace. Never retain the
-  // component's legacy body-portal fullscreen state in that contained mode.
-  useEffect(() => {
-    if (contained) setIsExpanded(false);
+    if (contained) setExpanded(false);
   }, [contained]);
 
-  const loadGraph = useCallback(async (opts?: {
-    level?: 'executive' | 'zonal' | 'manager' | 'agent' | 'customer';
-    zonalId?: string;
-    managerId?: string;
-    agentId?: string;
-    custId?: string;
-    search?: string;
-    month?: string;
-  }) => {
+  const loadGraph = useCallback(async (
+    nextSelection: Selection,
+    nextOffset = 0,
+    nextWeight: WeightBy = weightBy,
+    nextMonth: string = month,
+  ) => {
     setLoading(true);
+    setError('');
     try {
-      const levelToFetch = opts?.level || viewLevel;
-      const zId = opts?.zonalId !== undefined ? opts.zonalId : selectedZonalId;
-      const mId = opts?.managerId !== undefined ? opts.managerId : selectedManagerId;
-      const agtId = opts?.agentId !== undefined ? opts.agentId : selectedAgentId;
-      const cId = opts?.custId !== undefined ? opts.custId : selectedCustomerId;
-      const term = opts?.search !== undefined ? opts.search : searchQuery;
-      const monthToFetch = opts?.month !== undefined ? opts.month : selectedMonth;
-
-      const res = await admin.dbSchema({
-        view_level: levelToFetch,
-        zonal_id: zId || undefined,
-        manager_id: mId || undefined,
-        agent_id: agtId || undefined,
-        customer_id: cId || undefined,
-        search: term || undefined,
-        month: monthToFetch === 'all' ? undefined : monthToFetch
-      });
-
-      setData(res);
-      setViewLevel(res.view_level || levelToFetch);
-
-      if (res && res.nodes && res.nodes.length > 0) {
-        const targetType = res.view_level || levelToFetch;
-        let primaryNode = res.nodes.find((n: GraphNode) => n.type === targetType);
-        
-        if (!primaryNode) {
-          if (targetType === 'agent') primaryNode = res.nodes.find((n: GraphNode) => n.type === 'agent');
-          else if (targetType === 'manager') primaryNode = res.nodes.find((n: GraphNode) => n.type === 'manager');
-          else if (targetType === 'zonal') primaryNode = res.nodes.find((n: GraphNode) => n.type === 'zonal');
-          else if (targetType === 'customer') primaryNode = res.nodes.find((n: GraphNode) => n.type === 'customer');
-          else if (targetType === 'executive') primaryNode = res.nodes.find((n: GraphNode) => n.type === 'executive');
-        }
-
-        setSelectedNode(primaryNode || res.nodes[0]);
+      const response = await admin.dbSchema({
+        ...nextSelection,
+        weight_by: nextWeight,
+        month: nextMonth || undefined,
+        limit: PAGE_SIZE,
+        offset: nextOffset,
+      }) as GraphPayload;
+      if (response?.version !== 2 || !response.current || !Array.isArray(response.nodes)) {
+        throw new Error('The Information Graph API is still on the legacy Silver contract. Deploy the Gold backend and frontend together.');
       }
-    } catch (err) {
-      console.error('Failed to load Enterprise Curiosity Graph:', err);
+      setData(response);
+      setSelection(nextSelection);
+      setSelectedNode(response.current);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Could not load the Gold portfolio graph.');
     } finally {
       setLoading(false);
     }
-  }, [viewLevel, selectedZonalId, selectedManagerId, selectedAgentId, selectedCustomerId, searchQuery]);
+  }, [month, weightBy]);
 
   useEffect(() => {
-    loadGraph();
-  }, [loadGraph]);
-
-  // Canvas Dimensions Calculation
-  useEffect(() => {
-    const handleResize = () => {
-      if (isExpanded && !contained) {
-        setDimensions({
-          width: Math.max(600, window.innerWidth - 48),
-          height: Math.max(450, window.innerHeight - 170),
-        });
-      } else if (containerRef.current) {
-        const rect = containerRef.current.getBoundingClientRect();
-        setDimensions({
-          width: Math.max(400, rect.width),
-          height: isExpanded ? Math.max(450, rect.height - 150) : 540,
-        });
-      }
-    };
-
-    window.addEventListener('resize', handleResize);
-    handleResize();
-    const timeout = setTimeout(handleResize, 100);
-    return () => {
-      window.removeEventListener('resize', handleResize);
-      clearTimeout(timeout);
-    };
-  }, [data, isExpanded, contained]);
-
-  // Live Autocomplete Suggestions as user types
-  useEffect(() => {
-    if (!searchQuery.trim() || searchQuery.length < 2) {
-      setSearchResults([]);
-      setIsSearchOpen(false);
-      return;
-    }
-
-    const timer = setTimeout(() => {
-      admin.dbSchemaSearch(searchQuery.trim(), searchEntityType)
-        .then((res) => {
-          if (res && res.results) {
-            setSearchResults(res.results);
-            setIsSearchOpen(true);
-          }
-        })
-        .catch(() => setSearchResults([]));
-    }, 200);
-
-    return () => clearTimeout(timer);
-  }, [searchQuery, searchEntityType]);
-
-  const forceGraphData = useMemo(() => {
-    return data
-      ? {
-          nodes: data.nodes.map((n) => ({ ...n, id: n.id })),
-          links: data.edges.map((e) => ({
-            source: typeof e.source === 'object' ? e.source.id : e.source,
-            target: typeof e.target === 'object' ? e.target.id : e.target,
-            label: e.label,
-            purpose: e.purpose
-          })),
-        }
-      : { nodes: [], links: [] };
-  }, [data]);
-
-  useEffect(() => {
-    if (!graphRef.current || forceGraphData.nodes.length === 0) return;
-
-    const timer = setTimeout(() => {
-      const chargeForce = graphRef.current.d3Force('charge');
-      if (chargeForce?.strength) {
-        chargeForce.strength(-680);
-      }
-      const linkForce = graphRef.current.d3Force('link');
-      if (linkForce?.distance) {
-        linkForce.distance(180);
-      }
-      graphRef.current.zoomToFit(500, 220);
-    }, 150);
-
-    return () => clearTimeout(timer);
-  }, [forceGraphData, dimensions]);
-
-  // Tier Navigation Handlers
-  const navigateToExecutive = () => {
-    setViewLevel('executive');
-    setSelectedZonalId(null);
-    setSelectedManagerId(null);
-    setSelectedAgentId(null);
-    setSelectedCustomerId(null);
-    setSearchQuery('');
-    loadGraph({ level: 'executive', zonalId: undefined, managerId: undefined, agentId: undefined, custId: undefined, search: '' });
-  };
-
-  const navigateToZonal = (zonalId: string) => {
-    setViewLevel('zonal');
-    setSelectedZonalId(zonalId);
-    setSelectedManagerId(null);
-    setSelectedAgentId(null);
-    setSelectedCustomerId(null);
-    loadGraph({ level: 'zonal', zonalId, managerId: undefined, agentId: undefined, custId: undefined });
-  };
-
-  const navigateToManager = (managerId: string) => {
-    setViewLevel('manager');
-    setSelectedManagerId(managerId);
-    setSelectedAgentId(null);
-    setSelectedCustomerId(null);
-    loadGraph({ level: 'manager', managerId, agentId: undefined, custId: undefined });
-  };
-
-  const navigateToAgent = (agentId: string) => {
-    setViewLevel('agent');
-    setSelectedAgentId(agentId);
-    setSelectedCustomerId(null);
-    loadGraph({ level: 'agent', agentId, custId: undefined });
-  };
-
-  const navigateToCustomer = (custId: string) => {
-    setViewLevel('customer');
-    setSelectedCustomerId(custId);
-    loadGraph({ level: 'customer', custId });
-  };
-
-  const handleNodeClick = (node: GraphNode) => {
-    setSelectedNode(node);
-
-    if (node.type === 'zonal' && node.zonal_id) {
-      navigateToZonal(node.zonal_id);
-    } else if (node.type === 'manager' && node.manager_id) {
-      navigateToManager(node.manager_id);
-    } else if (node.type === 'agent' && node.agent_id) {
-      navigateToAgent(node.agent_id);
-    } else if (node.type === 'customer' && node.customer_id) {
-      navigateToCustomer(node.customer_id);
-    } else if (node.type === 'executive') {
-      navigateToExecutive();
-    } else if (graphRef.current && node.x != null && node.y != null) {
-      graphRef.current.centerAt(node.x, node.y, 500);
-      graphRef.current.zoom(2.0, 500);
-    }
-  };
-
-  const handleSelectSearchResult = (item: SearchResultItem) => {
-    setIsSearchOpen(false);
-    setSearchQuery('');
-
-    if (item.view_level === 'zonal' && item.zonal_id) {
-      navigateToZonal(item.zonal_id);
-    } else if (item.view_level === 'manager' && item.manager_id) {
-      navigateToManager(item.manager_id);
-    } else if (item.view_level === 'agent' && item.agent_id) {
-      navigateToAgent(item.agent_id);
-    } else if (item.view_level === 'customer' && item.customer_id) {
-      navigateToCustomer(item.customer_id);
-    }
-  };
-
-  const handleSearchSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (searchQuery.trim()) {
-      setIsSearchOpen(false);
-      loadGraph({ search: searchQuery.trim() });
-    }
-  };
-
-  const handleZoomIn = () => {
-    if (graphRef.current) graphRef.current.zoom(graphRef.current.zoom() * 1.3, 300);
-  };
-  const handleZoomOut = () => {
-    if (graphRef.current) graphRef.current.zoom(graphRef.current.zoom() / 1.3, 300);
-  };
-  const handleResetZoom = () => {
-    if (graphRef.current) graphRef.current.zoomToFit(400, 220);
-  };
-
-  const linksByNode = useMemo(() => {
-    const map = new Map<string, Set<string>>();
-    if (!data) return map;
-
-    data.edges.forEach((edge) => {
-      const src = typeof edge.source === 'object' ? edge.source.id : edge.source;
-      const tgt = typeof edge.target === 'object' ? edge.target.id : edge.target;
-
-      if (!map.has(src)) map.set(src, new Set());
-      if (!map.has(tgt)) map.set(tgt, new Set());
-
-      map.get(src)!.add(tgt);
-      map.get(tgt)!.add(src);
-    });
-    return map;
-  }, [data]);
-
-  const paintNode = useCallback(
-    (node: any, ctx: CanvasRenderingContext2D, globalScale: number) => {
-      const size = node.size || 20;
-      const isSelected = selectedNode?.id === node.id;
-      const isHovered = hoverNode?.id === node.id;
-      const isNeighborOfSelected = selectedNode
-        ? linksByNode.get(selectedNode.id)?.has(node.id) || false
-        : false;
-
-      let isDimmed = false;
-      if (hoverNode && hoverNode.id !== node.id) {
-        const isConnected = linksByNode.get(hoverNode.id)?.has(node.id) || false;
-        if (!isConnected) isDimmed = true;
-      }
-
-      if (isSelected || isHovered) {
-        ctx.beginPath();
-        ctx.arc(node.x!, node.y!, size + 6 / globalScale, 0, 2 * Math.PI);
-        ctx.fillStyle = isDark ? 'rgba(124, 58, 237, 0.25)' : 'rgba(79, 70, 229, 0.25)';
-        ctx.fill();
-      }
-
-      ctx.beginPath();
-      ctx.arc(node.x!, node.y!, size + (isHovered ? 2 : 0), 0, 2 * Math.PI);
-      
-      let fillColor = node.color || '#075fac';
-      if (isDimmed) fillColor = isDark ? '#1e293b' : '#e2e8f0';
-
-      ctx.fillStyle = fillColor;
-      ctx.fill();
-
-      ctx.strokeStyle = isSelected
-        ? (isDark ? '#ffffff' : '#000000')
-        : isHovered || isNeighborOfSelected
-        ? (isDark ? '#e2e8f0' : '#1e293b')
-        : (isDark ? 'rgba(255, 255, 255, 0.3)' : 'rgba(0, 0, 0, 0.2)');
-      
-      ctx.lineWidth = (isSelected ? 3 : isHovered ? 2.5 : 1.5) / globalScale;
-      ctx.stroke();
-
-      const titleText = String(node.title || '');
-      const isRootNode = node.type === 'executive';
-      // Keep labels a near-constant on-screen size so they stay legible when zoomed
-      // out; the root/portfolio node is drawn a step larger and always bold.
-      const baseFontSize = isRootNode ? 16 : isHovered || isSelected ? 13 : 11;
-      const scaledFontSize = Math.min(baseFontSize / globalScale, baseFontSize * 3);
-
-      ctx.font = `${isRootNode || isSelected || isHovered ? '700' : '500'} ${scaledFontSize}px Inter, system-ui, sans-serif`;
-      const textWidth = ctx.measureText(titleText).width;
-      const textHeight = scaledFontSize * 1.2;
-      const textY = node.y! + size + 5;
-
-      if (!isDimmed) {
-        ctx.fillStyle = isDark ? 'rgba(15, 23, 42, 0.88)' : 'rgba(255, 255, 255, 0.92)';
-        const padX = 6;
-        const padY = 3;
-        ctx.beginPath();
-        ctx.roundRect(
-          node.x! - textWidth / 2 - padX,
-          textY - padY,
-          textWidth + padX * 2,
-          textHeight + padY * 2,
-          4
-        );
-        ctx.fill();
-        ctx.strokeStyle = isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)';
-        ctx.lineWidth = 1 / globalScale;
-        ctx.stroke();
-
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'top';
-        ctx.fillStyle = isDark ? '#f8fafc' : '#0f172a';
-        ctx.fillText(titleText, node.x!, textY);
-      }
-    },
-    [selectedNode, hoverNode, linksByNode, isDark]
-  );
-
-  const paintLink = useCallback(
-    (link: any, ctx: CanvasRenderingContext2D, globalScale: number) => {
-      const start = link.source;
-      const end = link.target;
-
-      if (!start || !end || start.x == null || start.y == null || end.x == null || end.y == null) return;
-
-      let isConnectedToHover = false;
-      let isDimmed = hoverNode !== null;
-
-      if (hoverNode) {
-        if (start.id === hoverNode.id || end.id === hoverNode.id) {
-          isConnectedToHover = true;
-          isDimmed = false;
-        }
-      } else if (selectedNode) {
-        if (start.id === selectedNode.id || end.id === selectedNode.id) {
-          isConnectedToHover = true;
-          isDimmed = false;
-        }
-      } else {
-        isDimmed = false;
-      }
-
-      ctx.beginPath();
-      ctx.moveTo(start.x, start.y);
-      ctx.lineTo(end.x, end.y);
-
-      let opacity = isDimmed ? 0.08 : 0.45;
-      let strokeColor = isDark ? '148, 163, 184' : '100, 116, 139';
-      let lineWidth = 1.5;
-
-      if (isConnectedToHover) {
-        opacity = 0.95;
-        strokeColor = isDark ? '168, 85, 247' : '124, 58, 237';
-        lineWidth = 2.5;
-      }
-
-      ctx.strokeStyle = `rgba(${strokeColor}, ${opacity})`;
-      ctx.lineWidth = lineWidth;
-      ctx.stroke();
-
-      if ((globalScale > 0.75 || isConnectedToHover) && !isDimmed) {
-        const midX = (start.x + end.x) / 2;
-        const midY = (start.y + end.y) / 2;
-        const labelText = String(link.label || '');
-        ctx.font = `500 ${Math.max(8, 10 / Math.max(globalScale, 0.6))}px Inter, sans-serif`;
-        
-        ctx.fillStyle = isDark ? 'rgba(15, 23, 42, 0.85)' : 'rgba(241, 245, 249, 0.9)';
-        const lWidth = ctx.measureText(labelText).width;
-        ctx.fillRect(midX - lWidth / 2 - 3, midY - 6, lWidth + 6, 12);
-
-        ctx.fillStyle = isDark ? '#cbd5e1' : '#334155';
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        ctx.fillText(labelText, midX, midY);
-      }
-    },
-    [hoverNode, selectedNode, isDark]
-  );
-
-  const drawNodePointerArea = useCallback((node: any, color: string, ctx: CanvasRenderingContext2D) => {
-    const size = (node.size || 20) + 16;
-    ctx.fillStyle = color;
-    ctx.beginPath();
-    ctx.arc(node.x!, node.y!, size, 0, 2 * Math.PI);
-    ctx.fill();
-
-    const titleText = String(node.title || '');
-    const labelWidth = Math.max(100, Math.min(260, titleText.length * 9 + 24));
-    ctx.fillRect(
-      node.x! - labelWidth / 2,
-      node.y! + size - 8,
-      labelWidth,
-      28
-    );
+    void loadGraph({ level: 'portfolio' }, 0, 'borrowers', '');
+    // The initial request must run once; subsequent requests are driven by navigation.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const getNodeIcon = (type: string) => {
-    switch (type) {
-      case 'executive':
-        return <Award className="h-4 w-4 text-purple-500" />;
-      case 'zonal':
-        return <Globe2 className="h-4 w-4 text-violet-500" />;
-      case 'manager':
-        return <Building className="h-4 w-4 text-indigo-500" />;
-      case 'agent':
-        return <UserCheck className="h-4 w-4 text-sky-500" />;
-      case 'customer':
-        return <Building2 className="h-4 w-4 text-teal-500" />;
-      case 'account':
-        return <CreditCard className="h-4 w-4 text-primary" />;
-      case 'disbursement':
-        return <ArrowUpRight className="h-4 w-4 text-orange-500" />;
-      case 'repayment':
-        return <ArrowDownLeft className="h-4 w-4 text-emerald-500" />;
-      default:
-        return <Info className="h-4 w-4 text-muted-foreground" />;
+  useEffect(() => {
+    if (search.trim().length < 2) {
+      setSearchResults([]);
+      return;
     }
+    const timer = window.setTimeout(() => {
+      admin.dbSchemaSearch(search.trim())
+        .then((response) => setSearchResults(response.results as SearchResult[]))
+        .catch(() => setSearchResults([]));
+    }, 220);
+    return () => window.clearTimeout(timer);
+  }, [search]);
+
+  const children = useMemo(
+    () => data?.nodes.filter((node) => node.id !== data.current.id) || [],
+    [data],
+  );
+  const maxWeight = Math.max(1, ...children.map((node) => nodeWeight(node, weightBy)));
+
+  const navigateNode = (node: GraphNode) => {
+    setSelectedNode(node);
+    if (node.type === 'account') return;
+    if (node.type === 'related_agent') {
+      setWeightBy('outstanding');
+      void loadGraph({ level: 'agent', agent_code: node.code }, 0, 'outstanding');
+      return;
+    }
+    const next: Selection = { ...selection, level: node.type as GraphLevel };
+    if (node.type === 'product') {
+      Object.assign(next, { product_code: node.code, branch_code: undefined, scheme_code: undefined, agent_code: undefined, customer_id: undefined });
+    } else if (node.type === 'branch') {
+      Object.assign(next, { branch_code: node.code, scheme_code: undefined, agent_code: undefined, customer_id: undefined });
+    } else if (node.type === 'scheme') {
+      Object.assign(next, { scheme_code: node.code, agent_code: undefined, customer_id: undefined });
+    } else if (node.type === 'agent') {
+      Object.assign(next, { agent_code: node.code, customer_id: undefined });
+      setWeightBy('outstanding');
+    } else if (node.type === 'customer') {
+      Object.assign(next, { customer_id: node.code });
+    } else if (node.type === 'portfolio') {
+      Object.keys(next).forEach((key) => { if (key !== 'level') delete next[key as keyof Selection]; });
+    }
+    void loadGraph(next, 0, node.type === 'agent' ? 'outstanding' : weightBy);
   };
 
-  const m = data?.total_database_metrics;
+  const navigatePath = (item: PathItem) => {
+    if (item.level === 'portfolio') {
+      void loadGraph({ level: 'portfolio' }, 0);
+      return;
+    }
+    const next: Selection = { level: item.level };
+    for (const pathItem of data?.path || []) {
+      if (pathItem.level === 'product') next.product_code = pathItem.code;
+      if (pathItem.level === 'branch') next.branch_code = pathItem.code;
+      if (pathItem.level === 'scheme') next.scheme_code = pathItem.code;
+      if (pathItem.level === 'agent') next.agent_code = pathItem.code;
+      if (pathItem.level === 'customer') next.customer_id = pathItem.code;
+      if (pathItem.level === item.level) break;
+    }
+    if (item.level === 'agent') setWeightBy('outstanding');
+    void loadGraph(next, 0, item.level === 'agent' ? 'outstanding' : weightBy);
+  };
 
-  const graphContent = (
-    <div className={`flex flex-col ${isExpanded
-      ? contained
-        ? 'absolute inset-0 z-20 h-full w-full overflow-hidden bg-background p-4'
-        : 'fixed inset-0 z-[9999] h-screen w-screen overflow-hidden bg-background p-6'
-      : 'h-full min-h-[580px] w-full'}`}>
-      {/* Top Header Bar */}
-      <div className="flex flex-wrap items-center justify-between border-b pb-4 mb-3 gap-3 shrink-0">
-        <div>
-          <div className="flex items-center gap-2 flex-wrap">
-            <h2 className="text-base font-headline font-semibold tracking-tight md:text-lg flex items-center gap-2">
-              <Network className="h-5 w-5 text-primary" /> Enterprise Curiosity Graph
-            </h2>
-            <Badge variant="outline" className="text-xs border-purple-500/30 bg-purple-500/10 text-purple-500 font-semibold uppercase">
-              Tier: {viewLevel}
-            </Badge>
-            {m && (
-              <Badge variant="secondary" className="text-xs font-mono font-medium flex items-center gap-1">
-                <Database className="h-3 w-3 text-primary" />
-                {(m.total_loan_borrowers ?? m.total_customers).toLocaleString()} Loan Borrowers
-                {' • '}{m.total_active_loan_borrowers?.toLocaleString() ?? '—'} Active
-                {' • '}{m.total_registered_customers?.toLocaleString() ?? '—'} Registered Customers
-                {' • '}{m.total_branches} Branches
+  const chooseSearch = (result: SearchResult) => {
+    setSearch('');
+    setSearchResults([]);
+    if (result.type === 'agent') {
+      setWeightBy('outstanding');
+      void loadGraph({ level: 'agent', agent_code: result.code }, 0, 'outstanding');
+    }
+    else void loadGraph({ level: 'customer', customer_id: result.code }, 0);
+  };
+
+  const changeWeight = (next: WeightBy) => {
+    setWeightBy(next);
+    void loadGraph(selection, 0, next);
+  };
+
+  const changeMonth = (next: string) => {
+    setMonth(next);
+    void loadGraph(selection, 0, weightBy, next);
+  };
+
+  const inspector = selectedNode || data?.current;
+  const inspectorMetrics = inspector?.metrics || {};
+  const pageStart = (data?.offset || 0) + 1;
+  const pageEnd = Math.min((data?.offset || 0) + PAGE_SIZE, data?.children_total || 0);
+
+  const content = (
+    <div className={`${expanded ? (contained ? 'absolute inset-0 z-30' : 'fixed inset-0 z-[9999]') : 'h-full min-h-[620px]'} flex w-full flex-col overflow-hidden bg-background`}>
+      <div className="shrink-0 border-b border-border/70 px-4 py-3">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <div className="flex flex-wrap items-center gap-2">
+              <Network className="h-5 w-5 text-primary" />
+              <h2 className="font-headline text-lg font-semibold">GICC Portfolio Information Graph</h2>
+              <Badge variant="outline" className="border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300">
+                Gold governed views
               </Badge>
-            )}
+            </div>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Loan Book → Product → Branch → Scheme → Agent → Customer → Loan Account
+            </p>
           </div>
-          <p className="text-[11px] text-muted-foreground mt-0.5">
-            The graph shows customers with loan accounts; the registered CIF population is shown separately. Click any portfolio, product, branch, scheme, or borrower node to inspect details.
-          </p>
-        </div>
 
-        {/* SEARCH WITH LUCIDE ENTITY DROPDOWN & LIVE AUTOCOMPLETE */}
-        <div className="flex items-center gap-2 relative flex-wrap">
-          <form onSubmit={handleSearchSubmit} className="flex items-center gap-1.5 relative">
+          <div className="flex flex-wrap items-center gap-2">
             <div className="relative">
-              <Search className="h-3.5 w-3.5 absolute left-2.5 top-2.5 text-muted-foreground" />
-              <Input
-                placeholder="Search by name or customer ID..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                onFocus={() => {
-                  if (searchResults.length > 0) setIsSearchOpen(true);
-                }}
-                className="h-8 text-xs pl-8 w-[190px] md:w-[260px] rounded-xl border-border/80"
-              />
-              {searchQuery && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setSearchQuery('');
-                    setIsSearchOpen(false);
-                    loadGraph({ search: '' });
-                  }}
-                  className="absolute right-2.5 top-2.5 text-muted-foreground hover:text-foreground"
-                >
-                  <X className="h-3.5 w-3.5" />
-                </button>
+              <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
+              <Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search agent or customer" className="h-9 w-[230px] pl-8 text-xs" />
+              {search && <button type="button" onClick={() => { setSearch(''); setSearchResults([]); }} className="absolute right-2.5 top-2.5"><X className="h-3.5 w-3.5" /></button>}
+              {searchResults.length > 0 && (
+                <div className="absolute right-0 top-10 z-50 max-h-72 w-[320px] overflow-auto rounded-xl border bg-card p-1 shadow-xl">
+                  {searchResults.map((result) => (
+                    <button key={`${result.type}:${result.code}`} type="button" onClick={() => chooseSearch(result)} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left hover:bg-muted">
+                      <NodeIcon type={result.type} />
+                      <span className="min-w-0 flex-1 truncate text-xs font-medium">{result.label}</span>
+                      <Badge variant="outline" className="text-[9px] uppercase">{result.type}</Badge>
+                    </button>
+                  ))}
+                </div>
               )}
             </div>
-
-            <Button type="submit" variant="default" size="sm" disabled={loading} className="h-8 rounded-xl text-xs px-3">
-              {loading ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : 'Inspect'}
+            <Button variant="outline" size="sm" onClick={() => void loadGraph(selection, data?.offset || 0)} disabled={loading}>
+              <RefreshCw className={`mr-1.5 h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} />Refresh
             </Button>
-          </form>
+            {!contained && (
+              <Button variant="outline" size="sm" onClick={() => setExpanded((value) => !value)}>
+                {expanded ? <Minimize2 className="mr-1.5 h-3.5 w-3.5" /> : <Maximize2 className="mr-1.5 h-3.5 w-3.5" />}
+                {expanded ? 'Exit' : 'Expand'}
+              </Button>
+            )}
+          </div>
+        </div>
 
-          {/* Live Autocomplete Dropdown List */}
-          {isSearchOpen && searchResults.length > 0 && (
-            <div className="absolute top-10 right-[100px] z-50 w-[320px] bg-card rounded-xl border shadow-xl max-h-[300px] overflow-y-auto p-1 text-xs">
-              <div className="px-2 py-1 text-[10px] uppercase font-semibold text-muted-foreground border-b flex justify-between">
-                <span>Matching Suggestions</span>
-                <span>{searchResults.length} items</span>
+        <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
+          <div className="flex min-w-0 items-center gap-1 overflow-x-auto">
+            {(data?.path || [{ level: 'portfolio', code: '1', label: 'GICC Loan Book' } as PathItem]).map((item, index) => (
+              <div key={`${item.level}:${item.code}`} className="flex shrink-0 items-center gap-1">
+                {index > 0 && <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />}
+                <button type="button" onClick={() => navigatePath(item)} className={`rounded-lg border px-2.5 py-1.5 text-xs transition-colors hover:bg-muted ${item.level === data?.level ? 'border-primary bg-primary/10 font-semibold text-primary' : 'border-border/70 text-muted-foreground'}`}>
+                  {item.label}
+                </button>
               </div>
-              {searchResults.map((item) => (
-                <button
-                  key={item.id}
-                  type="button"
-                  onClick={() => handleSelectSearchResult(item)}
-                  className="w-full text-left p-2 rounded-lg hover:bg-muted/70 flex items-start gap-2 border-b border-border/40 last:border-0"
-                >
-                  {getNodeIcon(item.type)}
-                  <div className="min-w-0 flex-1">
-                    <p className="font-semibold text-foreground truncate">{item.title}</p>
-                    <p className="text-[10px] text-muted-foreground truncate">{item.subtitle}</p>
-                  </div>
-                  <Badge variant="outline" className="text-[9px] uppercase shrink-0">
-                    {item.type}
-                  </Badge>
+            ))}
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <label className="flex items-center gap-1.5 rounded-lg border bg-background px-2 py-1 text-[10px] font-semibold uppercase text-muted-foreground">
+              Origination month
+              <input type="month" value={month} onChange={(event) => changeMonth(event.target.value)} className="bg-transparent text-xs font-medium normal-case text-foreground outline-none" />
+              {month && <button type="button" onClick={() => changeMonth('')} title="Clear month"><X className="h-3 w-3" /></button>}
+            </label>
+            <div className="flex rounded-lg border bg-muted/30 p-0.5">
+              {(['borrowers', 'outstanding', 'accounts'] as WeightBy[]).map((weight) => (
+                <button key={weight} type="button" disabled={weight === 'borrowers' && (data?.level === 'agent' || data?.level === 'customer')} onClick={() => changeWeight(weight)} className={`rounded-md px-2.5 py-1 text-[10px] font-semibold capitalize disabled:cursor-not-allowed disabled:opacity-35 ${weightBy === weight ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground'}`} title={weight === 'borrowers' && (data?.level === 'agent' || data?.level === 'customer') ? 'Every child represents one customer; use outstanding or accounts.' : undefined}>
+                  {weight === 'borrowers' ? 'Customers' : weight}
                 </button>
               ))}
             </div>
-          )}
+            <div className="flex rounded-lg border bg-muted/30 p-0.5">
+              <button type="button" onClick={() => setDisplayMode('graph')} className={`rounded-md p-1.5 ${displayMode === 'graph' ? 'bg-background shadow-sm' : 'text-muted-foreground'}`} title="Graph"><LayoutGrid className="h-3.5 w-3.5" /></button>
+              <button type="button" onClick={() => setDisplayMode('table')} className={`rounded-md p-1.5 ${displayMode === 'table' ? 'bg-background shadow-sm' : 'text-muted-foreground'}`} title="Table"><Table2 className="h-3.5 w-3.5" /></button>
+            </div>
+          </div>
+        </div>
+      </div>
 
-          {/* MoM Loan Start Analysis Button */}
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => {
-              setIsMomOpen(true);
-              if (!momData) fetchMomData();
-            }}
-            className="rounded-xl h-8 text-xs px-3 shrink-0 flex items-center gap-1.5 border-emerald-500/40 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/10 shadow-sm"
-          >
-            <TrendingUp className="h-3.5 w-3.5 text-emerald-500" />
-            <span>MoM Loan Analysis</span>
-          </Button>
-
-          {/* Workbench already supplies a fullscreen shell; the legacy nested portal is
-              only useful when this component is embedded on an ordinary page. */}
-          {!contained && (
-            <Button
-              type="button"
-              variant={isExpanded ? "default" : "outline"}
-              size="sm"
-              onClick={() => setIsExpanded((previous) => !previous)}
-              className="rounded-xl h-8 text-xs px-3 shrink-0 flex items-center gap-1.5"
-            >
-              {isExpanded ? (
+      {error ? (
+        <div className="m-4 flex items-center gap-2 rounded-xl border border-destructive/40 bg-destructive/10 p-4 text-sm text-destructive"><AlertTriangle className="h-4 w-4" />{error}</div>
+      ) : (
+        <div className="grid min-h-0 flex-1 grid-cols-1 gap-3 overflow-hidden p-3 lg:grid-cols-[310px_minmax(0,1fr)]">
+          <aside className="flex min-h-0 flex-col overflow-hidden rounded-2xl border bg-card">
+            <div className={`border-b border-border/70 p-4 ${levelTone[inspector?.type || 'portfolio']}`}>
+              <div className="flex items-center gap-2 text-xs font-semibold uppercase text-muted-foreground"><NodeIcon type={inspector?.type || 'portfolio'} />{levelLabel[inspector?.type || 'portfolio']}</div>
+              <h3 className="mt-1.5 truncate text-base font-bold" title={inspector?.label}>{inspector?.label || 'Loading…'}</h3>
+              {inspector?.code && <div className="mt-1 font-mono text-[10px] text-muted-foreground">Code: {inspector.code}</div>}
+            </div>
+            <div className="grid grid-cols-2 gap-2 border-b p-3">
+              <KpiCard label="Outstanding" value={formatMoney(inspectorMetrics.principal_outstanding)} icon={<CircleDollarSign className="h-3 w-3" />} />
+              <KpiCard label="Customers" value={formatCount(inspectorMetrics.borrower_count)} icon={<Users className="h-3 w-3" />} />
+              <KpiCard label="Active loans" value={formatCount(inspectorMetrics.active_account_count)} icon={<CreditCard className="h-3 w-3" />} />
+              <KpiCard label="Total overdue" value={formatMoney(inspectorMetrics.total_overdue)} icon={<ShieldAlert className="h-3 w-3" />} />
+              <KpiCard label="PAR 30" value={`${Number(inspectorMetrics.par30_ratio || 0).toFixed(2)}%`} icon={<AlertTriangle className="h-3 w-3" />} />
+              <KpiCard label="NPA ratio" value={`${Number(inspectorMetrics.npa_ratio || 0).toFixed(2)}%`} icon={<ShieldAlert className="h-3 w-3" />} />
+            </div>
+            <div className="min-h-0 flex-1 space-y-2 overflow-y-auto p-3 text-xs">
+              <div className="flex justify-between gap-3 rounded-lg bg-muted/40 p-2"><span className="text-muted-foreground">Sanctioned</span><strong>{formatMoney(inspectorMetrics.sanctioned_amount)}</strong></div>
+              <div className="flex justify-between gap-3 rounded-lg bg-muted/40 p-2"><span className="text-muted-foreground">Disbursed</span><strong>{formatMoney(inspectorMetrics.disbursed_amount)}</strong></div>
+              <div className="flex justify-between gap-3 rounded-lg bg-muted/40 p-2"><span className="text-muted-foreground">Risk coverage</span><strong>{Number(inspectorMetrics.risk_coverage_pct || 0).toFixed(1)}%</strong></div>
+              {inspector?.type === 'account' && (
                 <>
-                  <Minimize2 className="h-3.5 w-3.5" /> Exit Full Screen
-                </>
-              ) : (
-                <>
-                  <Maximize2 className="h-3.5 w-3.5" /> Expand Canvas
+                  <div className="flex justify-between gap-3 rounded-lg bg-muted/40 p-2"><span className="text-muted-foreground">Product</span><strong>{inspector.product_name || inspector.product_code || '—'}</strong></div>
+                  <div className="flex justify-between gap-3 rounded-lg bg-muted/40 p-2"><span className="text-muted-foreground">Scheme</span><strong>{inspector.scheme_name || inspector.scheme_code || '—'}</strong></div>
+                  <div className="flex justify-between gap-3 rounded-lg bg-muted/40 p-2"><span className="text-muted-foreground">Agent code</span><strong>{inspector.agent_code || '—'}</strong></div>
                 </>
               )}
-            </Button>
-          )}
-        </div>
-      </div>
-
-      {/* 5-Tier Breadcrumb Navigation Header */}
-      <div className="flex flex-wrap items-center justify-between gap-2 mb-3 bg-muted/40 p-2.5 rounded-xl border shrink-0 text-xs">
-        <div className="flex items-center gap-1.5 font-medium overflow-x-auto">
-          <button
-            onClick={navigateToExecutive}
-            className={`flex items-center gap-1 px-2.5 py-1 rounded-lg border transition-all ${
-              viewLevel === 'executive'
-                ? 'bg-purple-500/15 border-purple-500 text-purple-600 font-semibold dark:text-purple-400'
-                : 'border-border/70 hover:bg-muted text-muted-foreground'
-            }`}
-          >
-            <Award className="h-3.5 w-3.5 text-purple-500" />
-            {data?.executive_info?.name || 'Portfolio Master'}
-          </button>
-
-          {(viewLevel === 'zonal' || viewLevel === 'manager' || viewLevel === 'agent' || viewLevel === 'customer') && data?.selected_zonal && (
-            <>
-              <ChevronRight className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-              <button
-                onClick={() => navigateToZonal(data.selected_zonal!.id)}
-                className={`flex items-center gap-1 px-2.5 py-1 rounded-lg border transition-all ${
-                  viewLevel === 'zonal'
-                    ? 'bg-violet-500/15 border-violet-500 text-violet-600 font-semibold dark:text-violet-400'
-                    : 'border-border/70 hover:bg-muted text-muted-foreground'
-                }`}
-              >
-                <Globe2 className="h-3.5 w-3.5 text-violet-500" />
-                Zone: {data.selected_zonal.name}
-              </button>
-            </>
-          )}
-
-          {(viewLevel === 'manager' || viewLevel === 'agent' || viewLevel === 'customer') && data?.selected_manager && (
-            <>
-              <ChevronRight className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-              <button
-                onClick={() => navigateToManager(data.selected_manager!.id)}
-                className={`flex items-center gap-1 px-2.5 py-1 rounded-lg border transition-all ${
-                  viewLevel === 'manager'
-                    ? 'bg-indigo-500/15 border-indigo-500 text-indigo-600 font-semibold dark:text-indigo-400'
-                    : 'border-border/70 hover:bg-muted text-muted-foreground'
-                }`}
-              >
-                <Building className="h-3.5 w-3.5 text-indigo-500" />
-                Branch: {data.selected_manager.display_title || data.selected_manager.name}
-              </button>
-            </>
-          )}
-
-          {(viewLevel === 'agent' || viewLevel === 'customer') && data?.selected_agent && (
-            <>
-              <ChevronRight className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-              <button
-                onClick={() => navigateToAgent(data.selected_agent!.id)}
-                className={`flex items-center gap-1 px-2.5 py-1 rounded-lg border transition-all ${
-                  viewLevel === 'agent'
-                    ? 'bg-sky-500/15 border-sky-500 text-sky-600 font-semibold dark:text-sky-400'
-                    : 'border-border/70 hover:bg-muted text-muted-foreground'
-                }`}
-              >
-                <UserCheck className="h-3.5 w-3.5 text-sky-500" />
-                Officer: {data.selected_agent.name}
-              </button>
-            </>
-          )}
-
-          {viewLevel === 'customer' && data?.selected_customer && (
-            <>
-              <ChevronRight className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-              <div className="flex items-center gap-1 px-2.5 py-1 rounded-lg border border-teal-500 bg-teal-500/15 text-teal-600 font-semibold dark:text-teal-400">
-                <Building2 className="h-3.5 w-3.5 text-teal-500" />
-                Customer: {data.selected_customer.cust_name}
-              </div>
-            </>
-          )}
-        </div>
-
-        {/* Monthly Basis Selector */}
-        <div className="flex items-center gap-1.5 bg-background border rounded-lg px-2.5 py-1 text-xs shrink-0 shadow-sm">
-          <Calendar className="h-3.5 w-3.5 text-primary shrink-0" />
-          <span className="text-muted-foreground font-medium hidden sm:inline">Monthly Basis:</span>
-          <select
-            value={selectedMonth}
-            onChange={(e) => {
-              const newMonth = e.target.value;
-              setSelectedMonth(newMonth);
-              loadGraph({ month: newMonth });
-            }}
-            className="bg-transparent font-semibold text-foreground focus:outline-none cursor-pointer text-xs"
-          >
-            <option value="all">All Months (Cumulative Portfolio)</option>
-            {data?.monthly_summary?.monthly_series?.map((m: any) => (
-              <option key={m.month} value={m.month}>
-                {m.month} ({m.loan_count} loans • ₹{(m.total_sanctioned / 10000000).toFixed(2)} Cr)
-              </option>
-            ))}
-          </select>
-        </div>
-      </div>
-
-      {/* Main Workspace Layout (LEFT OVERVIEW INSPECTOR + RIGHT GRAPH CANVAS) */}
-      <div className="flex flex-col lg:flex-row gap-4 min-h-0 flex-1">
-        
-        {/* LEFT-SIDE OVERVIEW INSPECTOR PANEL */}
-        <div className="w-full lg:w-[360px] shrink-0 flex flex-col bg-card rounded-2xl border border-border/70 overflow-hidden order-2 lg:order-1">
-          {selectedNode ? (
-            <div className="flex flex-col h-full min-h-0">
-              <div className="p-4 border-b shrink-0 bg-muted/20" style={{ borderTop: `4px solid ${selectedNode.color}` }}>
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    {getNodeIcon(selectedNode.type)}
-                    <div>
-                      <h3 className="font-headline font-semibold text-sm tracking-tight">
-                        {selectedNode.title}
-                      </h3>
-                      {selectedNode.subtitle && (
-                        <p className="text-[10px] text-muted-foreground font-mono mt-0.5">
-                          {selectedNode.subtitle}
-                        </p>
-                      )}
-                    </div>
-                  </div>
-
-                  <Badge variant="outline" className="text-[9px] uppercase font-mono px-1.5 py-0.5">
-                    {selectedNode.node_label}
-                  </Badge>
-                </div>
-              </div>
-
-              {/* FEATURED METRIC SUMMARY CARDS FOR OFFICERS / MANAGERS */}
-              <div className="p-3 bg-muted/20 border-b shrink-0">
-                <div className="grid grid-cols-2 gap-2 text-xs">
-                  <div className="p-2 bg-card rounded-xl border border-border/80 flex flex-col">
-                    <span className="text-[9px] uppercase text-muted-foreground font-medium flex items-center gap-1">
-                      <Users className="h-2.5 w-2.5 text-sky-500" /> Borrowers
-                    </span>
-                    <span className="font-mono font-bold text-foreground mt-0.5 text-xs truncate">
-                      {(() => {
-                        const raw = selectedNode.details["Total Borrowers"] ||
-                                    selectedNode.details["Serviced Borrowers"] ||
-                                    selectedNode.details["Total Customer Base"] ||
-                                    selectedNode.details["Active Customers"] ||
-                                    "1";
-                        const match = String(raw).match(/[\d,]+/);
-                        return match ? match[0] : (selectedNode.type === 'customer' ? '1' : '1');
-                      })()}
-                    </span>
-                  </div>
-
-                  <div className="p-2 bg-card rounded-xl border border-border/80 flex flex-col">
-                    <span className="text-[9px] uppercase text-muted-foreground font-medium flex items-center gap-1">
-                      <DollarSign className="h-2.5 w-2.5 text-orange-500" /> Disbursed
-                    </span>
-                    <span className="font-mono font-bold text-orange-600 dark:text-orange-400 mt-0.5 text-xs truncate">
-                      {selectedNode.details["Total Disbursed"] || selectedNode.details["Sanctioned Limit"] || "N/A"}
-                    </span>
-                  </div>
-
-                  <div className="p-2 bg-card rounded-xl border border-border/80 flex flex-col">
-                    <span className="text-[9px] uppercase text-muted-foreground font-medium flex items-center gap-1">
-                      <CreditCard className="h-2.5 w-2.5 text-emerald-500" /> Repaid
-                    </span>
-                    <span className="font-mono font-bold text-emerald-600 dark:text-emerald-400 mt-0.5 text-xs truncate">
-                      {selectedNode.details["Total Repaid"] || selectedNode.details["Repayment Amount"] || "N/A"}
-                    </span>
-                  </div>
-
-                  <div className="p-2 bg-card rounded-xl border border-border/80 flex flex-col">
-                    <span className="text-[9px] uppercase text-muted-foreground font-medium flex items-center gap-1">
-                      <TrendingUp className="h-2.5 w-2.5 text-purple-500" /> Efficiency
-                    </span>
-                    <span className="font-mono font-bold text-purple-600 dark:text-purple-400 mt-0.5 text-xs">
-                      {selectedNode.details["Collection Efficiency (paid/due)"] ||
-                       selectedNode.details["Principal Repaid"] || "—"}
-                    </span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Attributes Key-Value Table */}
-              <div className="flex-1 overflow-y-auto p-4 space-y-2">
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-[9px] uppercase tracking-wider font-semibold text-muted-foreground">
-                    Record Overview & Details
-                  </span>
-                  {selectedNode.type === 'zonal' && selectedNode.zonal_id && (
-                    <Button variant="ghost" size="sm" onClick={() => navigateToZonal(selectedNode.zonal_id!)} className="h-6 text-[10px] px-2 text-violet-500">
-                      View Zone Branches →
-                    </Button>
-                  )}
-                  {selectedNode.type === 'manager' && selectedNode.manager_id && (
-                    <Button variant="ghost" size="sm" onClick={() => navigateToManager(selectedNode.manager_id!)} className="h-6 text-[10px] px-2 text-indigo-500">
-                      View Branch Officers →
-                    </Button>
-                  )}
-                  {selectedNode.type === 'agent' && selectedNode.agent_id && (
-                    <Button variant="ghost" size="sm" onClick={() => navigateToAgent(selectedNode.agent_id!)} className="h-6 text-[10px] px-2 text-sky-500">
-                      View Officer Borrowers →
-                    </Button>
-                  )}
-                  {selectedNode.type === 'customer' && selectedNode.customer_id && (
-                    <Button variant="ghost" size="sm" onClick={() => navigateToCustomer(selectedNode.customer_id!)} className="h-6 text-[10px] px-2 text-teal-500">
-                      View Loan Accounts →
-                    </Button>
-                  )}
-                </div>
-
-                {Object.entries(selectedNode.details).map(([key, val]) => (
-                  <div key={key} className="p-2.5 rounded-xl border border-border/60 bg-muted/30 flex items-center justify-between text-[11px]">
-                    <span className="text-muted-foreground font-medium">{key}</span>
-                    <span className="font-mono font-semibold text-foreground">{val}</span>
-                  </div>
-                ))}
-              </div>
-
-              <div className="p-3 bg-muted/40 border-t shrink-0">
-                <span className="text-[9px] uppercase tracking-wider font-semibold text-muted-foreground block mb-1">
-                  Relational Join Paths ({data?.edges.filter(e => {
-                    const src = typeof e.source === 'object' ? e.source.id : e.source;
-                    const tgt = typeof e.target === 'object' ? e.target.id : e.target;
-                    return src === selectedNode.id || tgt === selectedNode.id;
-                  }).length})
-                </span>
-                <div className="space-y-1">
-                  {data?.edges
-                    .filter((e) => {
-                      const src = typeof e.source === 'object' ? e.source.id : e.source;
-                      const tgt = typeof e.target === 'object' ? e.target.id : e.target;
-                      return src === selectedNode.id || tgt === selectedNode.id;
-                    })
-                    .map((edge, i) => {
-                      const src = typeof edge.source === 'object' ? edge.source.title : edge.source;
-                      const tgt = typeof edge.target === 'object' ? edge.target.title : edge.target;
-                      return (
-                        <div key={i} className="text-[10px] p-2 bg-card rounded-lg border border-border/80 flex items-center justify-between">
-                          <span className="font-medium text-foreground/80 flex items-center gap-1">
-                            <Link2 className="h-2.5 w-2.5 text-primary" /> {src} ⇄ {tgt}
-                          </span>
-                          <span className="font-mono text-[9px] text-muted-foreground bg-muted px-1.5 py-0.5 rounded">
-                            {edge.label}
-                          </span>
-                        </div>
-                      );
-                    })}
-                </div>
+              <div className="mt-3 rounded-xl border border-amber-500/30 bg-amber-500/5 p-3 text-[10px] leading-relaxed text-muted-foreground">
+                <div className="mb-1 flex items-center gap-1 font-semibold uppercase text-amber-700 dark:text-amber-300"><Database className="h-3 w-3" />Data basis</div>
+                Latest risk snapshot: <strong>{data?.coverage.snapshot_date || 'Unavailable'}</strong><br />
+                Branch: {data?.coverage.effective_branch_basis}<br />
+                {data?.coverage.branch_basis_note}
               </div>
             </div>
-          ) : (
-            <div className="flex flex-col items-center justify-center h-full p-6 text-muted-foreground text-center">
-              <Network className="h-6 w-6 stroke-1 animate-pulse mb-2 text-muted-foreground/60" />
-              <p className="text-xs">Click any node or label to inspect overview details on the left.</p>
-            </div>
-          )}
-        </div>
+          </aside>
 
-        {/* RIGHT GRAPH CANVAS */}
-        <div ref={containerRef} className="flex-1 bg-card/20 rounded-2xl border border-border/70 overflow-hidden relative flex flex-col justify-between order-1 lg:order-2">
-          <div className="absolute top-3 left-3 z-10 flex flex-col gap-1 bg-background/85 backdrop-blur-md border rounded-xl p-2.5 max-w-[210px] pointer-events-none shadow-sm">
-            <span className="text-[9px] uppercase tracking-wider font-semibold text-muted-foreground flex items-center gap-1">
-              <Move className="h-2.5 w-2.5" /> Move & Click Nodes
-            </span>
-            <div className="space-y-1 mt-1 text-[10px]">
-              <div className="flex items-center gap-1.5">
-                <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: '#4c1d95' }} />
-                <span className="font-medium text-foreground/80">Portfolio Master (Oracle DB)</span>
-              </div>
-              <div className="flex items-center gap-1.5">
-                <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: '#6d28d9' }} />
-                <span className="font-medium text-foreground/80">Product Division</span>
-              </div>
-              <div className="flex items-center gap-1.5">
-                <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: '#4338ca' }} />
-                <span className="font-medium text-foreground/80">District Virtual Branch</span>
-              </div>
-              <div className="flex items-center gap-1.5">
-                <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: '#0284c7' }} />
-                <span className="font-medium text-foreground/80">Lending Scheme Desk</span>
-              </div>
-              <div className="flex items-center gap-1.5">
-                <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: '#0f766e' }} />
-                <span className="font-medium text-foreground/80">Customer / Borrower</span>
-              </div>
-            </div>
-          </div>
-
-          <div className="absolute top-3 right-3 z-10 flex items-center gap-1 bg-background/85 backdrop-blur-md border rounded-xl p-1 shadow-sm">
-            <Button variant="ghost" size="sm" onClick={handleZoomIn} title="Zoom In" className="h-7 w-7 p-0 rounded-lg">
-              <ZoomIn className="h-3.5 w-3.5" />
-            </Button>
-            <Button variant="ghost" size="sm" onClick={handleZoomOut} title="Zoom Out" className="h-7 w-7 p-0 rounded-lg">
-              <ZoomOut className="h-3.5 w-3.5" />
-            </Button>
-            <Button variant="ghost" size="sm" onClick={handleResetZoom} title="Reset View" className="h-7 w-7 p-0 rounded-lg">
-              <RotateCcw className="h-3.5 w-3.5" />
-            </Button>
-          </div>
-
-          {data && (
-            <ForceGraph2D
-              ref={graphRef}
-              width={dimensions.width}
-              height={dimensions.height}
-              graphData={forceGraphData}
-              backgroundColor={isDark ? '#090d16' : '#fafafa'}
-              nodeCanvasObject={paintNode}
-              linkCanvasObject={paintLink}
-              onNodeClick={(node) => handleNodeClick(node as GraphNode)}
-              onNodeHover={(node) => setHoverNode(node ? (node as GraphNode) : null)}
-              enableNodeDrag={true}
-              enableZoomInteraction={true}
-              enablePanInteraction={true}
-              minZoom={0.15}
-              maxZoom={1.6}
-              nodePointerAreaPaint={drawNodePointerArea}
-              cooldownTicks={200}
-              d3AlphaDecay={0.02}
-              d3VelocityDecay={0.2}
-              onEngineStop={() => {
-                graphRef.current?.zoomToFit(400, 220);
-              }}
-            />
-          )}
-
-          <div className="absolute bottom-3 left-3 z-10 flex items-center gap-2 bg-background/85 backdrop-blur-md px-3 py-1.5 rounded-xl border border-border/80 text-[11px] shadow-sm">
-            <Badge variant="outline" className="font-semibold text-[10px] uppercase">
-              {viewLevel} Tier
-            </Badge>
-            <span className="font-mono text-muted-foreground">• {data?.nodes.length || 0} active nodes</span>
-            <span className="text-muted-foreground">• Click any node or label to inspect</span>
-          </div>
-        </div>
-
-      </div>
-
-      {/* MONTH-ON-MONTH (MoM) LOAN START DATE & INSTITUTION IMPROVEMENT MODAL */}
-      {isMomOpen && (
-        <div className="fixed inset-0 z-50 bg-background/80 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-card border border-border rounded-2xl shadow-2xl max-w-4xl w-full max-h-[85vh] flex flex-col overflow-hidden">
-            <div className="p-4 border-b flex items-center justify-between bg-muted/30">
-              <div className="flex items-center gap-2">
-                <TrendingUp className="h-5 w-5 text-emerald-500" />
+          <main className="relative min-h-0 overflow-hidden rounded-2xl border bg-muted/10">
+            {loading && <div className="absolute inset-0 z-20 flex items-center justify-center bg-background/65 backdrop-blur-[1px]"><RefreshCw className="h-5 w-5 animate-spin text-primary" /></div>}
+            <div className="flex h-full min-h-[480px] flex-col">
+              <div className="flex items-center justify-between border-b px-4 py-3">
                 <div>
-                  <h3 className="font-semibold text-sm text-foreground">Month-on-Month (MoM) Loan Start Date Analysis</h3>
-                  <p className="text-[11px] text-muted-foreground">Tracking institution origination growth & portfolio improvement over time</p>
+                  <h3 className="text-sm font-semibold">{data?.level === 'customer' ? 'Accounts and linked agents' : `Ranked ${levelLabel[children[0]?.type || 'product']} nodes`}</h3>
+                  <p className="text-[10px] text-muted-foreground">
+                    {month ? `Loans originated in ${month}; risk remains as at ${data?.coverage.snapshot_date || 'latest snapshot'}.` : `Current Gold portfolio as at ${data?.coverage.snapshot_date || 'latest available snapshot'}.`}
+                  </p>
                 </div>
+                <Badge variant="outline" className="text-[10px]">{data?.children_total || 0} records</Badge>
               </div>
-              <Button variant="ghost" size="sm" onClick={() => setIsMomOpen(false)} className="h-8 w-8 p-0 rounded-lg">
-                <X className="h-4 w-4" />
-              </Button>
-            </div>
 
-            <div className="p-4 overflow-y-auto space-y-4 text-xs">
-              {loadingMom ? (
-                <div className="py-12 text-center text-muted-foreground animate-pulse">Loading Month-on-Month loan vintage analytics from database...</div>
-              ) : momData ? (
-                <>
-                  {/* Institution Improvement Metric Cards */}
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                    <div className="bg-muted/40 p-3 rounded-xl border">
-                      <p className="text-[10px] text-muted-foreground uppercase font-semibold">Origination Growth</p>
-                      <p className="text-lg font-bold text-emerald-600 dark:text-emerald-400 mt-1">
-                        {momData.institution_improvement?.origination_growth_multiplier}x
-                      </p>
-                      <p className="text-[10px] text-muted-foreground mt-0.5">
-                        {momData.institution_improvement?.start_period} to {momData.institution_improvement?.latest_period}
-                      </p>
-                    </div>
-
-                    <div className="bg-muted/40 p-3 rounded-xl border">
-                      <p className="text-[10px] text-muted-foreground uppercase font-semibold">Avg MoM Volume Growth</p>
-                      <p className="text-lg font-bold text-blue-600 dark:text-blue-400 mt-1">
-                        {momData.institution_improvement?.average_mom_growth_pct == null
-                          ? '—'
-                          : `+${momData.institution_improvement.average_mom_growth_pct}%`}
-                      </p>
-                      <p className="text-[10px] text-muted-foreground mt-0.5">Average monthly rate</p>
-                    </div>
-
-                    <div className="bg-muted/40 p-3 rounded-xl border">
-                      <p className="text-[10px] text-muted-foreground uppercase font-semibold">Total New Originations</p>
-                      <p className="text-lg font-bold text-purple-600 dark:text-purple-400 mt-1">
-                        ₹{((momData.institution_improvement?.total_new_volume_started || 0) / 10000000).toFixed(1)} Cr
-                      </p>
-                      <p className="text-[10px] text-muted-foreground mt-0.5">Loans started in period</p>
-                    </div>
-
-                    <div className="bg-muted/40 p-3 rounded-xl border">
-                      <p className="text-[10px] text-muted-foreground uppercase font-semibold">Portfolio Trend</p>
-                      <p className="text-xs font-bold text-teal-600 dark:text-teal-400 mt-1">
-                        {momData.institution_improvement?.portfolio_health_trend}
-                      </p>
-                      <p className="text-[10px] text-muted-foreground mt-0.5">Institutional status</p>
+              <div className="min-h-0 flex-1 overflow-auto p-4">
+                {displayMode === 'graph' ? (
+                  <div className="grid min-w-0 gap-5 xl:grid-cols-[240px_36px_minmax(0,1fr)]">
+                    <button type="button" onClick={() => data?.current && setSelectedNode(data.current)} className={`h-fit rounded-2xl border-2 p-4 text-left shadow-sm transition hover:-translate-y-0.5 ${levelTone[data?.current.type || 'portfolio']}`}>
+                      <div className="flex items-center gap-2 text-xs font-semibold uppercase text-muted-foreground"><NodeIcon type={data?.current.type || 'portfolio'} />Current {levelLabel[data?.current.type || 'portfolio']}</div>
+                      <div className="mt-2 text-base font-bold">{data?.current.label}</div>
+                      <div className="mt-3 text-xl font-black text-primary">{weightText(data?.current || { id: '', type: 'portfolio', code: '', label: '' }, weightBy)}</div>
+                    </button>
+                    <div className="hidden items-start justify-center pt-12 xl:flex"><ChevronRight className="h-7 w-7 text-muted-foreground/50" /></div>
+                    <div className="grid content-start gap-2 sm:grid-cols-2 2xl:grid-cols-3">
+                      {children.map((node) => {
+                        const progress = Math.max(4, Math.round(nodeWeight(node, weightBy) / maxWeight * 100));
+                        return (
+                          <button key={node.id} type="button" onClick={() => navigateNode(node)} className={`group relative overflow-hidden rounded-xl border p-3 text-left transition hover:-translate-y-0.5 hover:border-primary/60 hover:shadow-md ${levelTone[node.type] || ''}`}>
+                            <div className="absolute inset-x-0 bottom-0 h-1 bg-muted"><div className="h-full bg-primary/70 transition-all" style={{ width: `${progress}%` }} /></div>
+                            <div className="flex items-start justify-between gap-2">
+                              <div className="min-w-0">
+                                <div className="flex items-center gap-1.5 text-[9px] font-semibold uppercase text-muted-foreground"><NodeIcon type={node.type} />{levelLabel[node.type]}</div>
+                                <div className="mt-1 truncate text-sm font-semibold" title={node.label}>{node.label}</div>
+                                <div className="mt-0.5 font-mono text-[9px] text-muted-foreground">{node.code}</div>
+                              </div>
+                              {node.rank && <span className="font-mono text-xs font-bold text-muted-foreground">#{node.rank}</span>}
+                            </div>
+                            <div className="mt-2 text-base font-black text-foreground">{weightText(node, weightBy)}</div>
+                            {node.metrics && <div className="mt-1 text-[10px] text-muted-foreground">{formatCount(node.metrics.account_count)} loans · {formatMoney(node.metrics.principal_outstanding)}</div>}
+                            {node.is_leader && <Badge className="mt-2 bg-primary text-[9px]">{weightBy === 'borrowers' ? 'Most customers' : weightBy === 'accounts' ? 'Most accounts' : 'Highest outstanding'}</Badge>}
+                            {node.type === 'related_agent' && node.is_selected_path && <Badge variant="secondary" className="mt-2 text-[9px]">Selected path</Badge>}
+                          </button>
+                        );
+                      })}
                     </div>
                   </div>
-
-                  {/* MoM Cohorts Table */}
-                  <div className="border rounded-xl overflow-hidden">
-                    <table className="w-full text-left border-collapse">
-                      <thead className="bg-muted/60 text-[10px] uppercase tracking-wider font-semibold text-muted-foreground">
-                        <tr className="border-b">
-                          <th className="p-2.5">Start Month</th>
-                          <th className="p-2.5">Loans Started</th>
-                          <th className="p-2.5">Borrowers</th>
-                          <th className="p-2.5">Volume Sanctioned</th>
-                          <th className="p-2.5">MoM Growth</th>
-                          <th className="p-2.5">Avg Yield (ROI)</th>
-                          <th className="p-2.5">Status</th>
-                        </tr>
+                ) : (
+                  <div className="overflow-x-auto rounded-xl border bg-card">
+                    <table className="w-full min-w-[760px] border-collapse text-left text-xs">
+                      <thead className="sticky top-0 bg-muted text-[10px] uppercase text-muted-foreground">
+                        <tr><th className="p-3">Rank</th><th className="p-3">Name</th><th className="p-3">Code</th><th className="p-3 text-right">Customers</th><th className="p-3 text-right">Accounts</th><th className="p-3 text-right">Outstanding</th><th className="p-3 text-right">Sanctioned</th></tr>
                       </thead>
-                      <tbody className="divide-y text-xs">
-                        {momData.monthly_cohorts?.map((c: any) => (
-                          <tr key={c.start_month} className="hover:bg-muted/20 transition-colors">
-                            <td className="p-2.5 font-semibold font-mono">{c.start_month}</td>
-                            <td className="p-2.5 font-mono">{c.loans_started?.toLocaleString()} loans</td>
-                            <td className="p-2.5 font-mono">{c.borrowers_onboarded?.toLocaleString()}</td>
-                            <td className="p-2.5 font-bold font-mono">₹{(c.volume_sanctioned / 10000000).toFixed(2)} Cr</td>
-                            <td className="p-2.5 font-mono">
-                              <span className={`px-1.5 py-0.5 rounded text-[10px] font-semibold ${c.mom_growth_pct != null && c.mom_growth_pct > 0 ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400' : 'bg-muted text-muted-foreground'}`}>
-                                {c.mom_growth_pct == null ? '—' : c.mom_growth_pct > 0 ? `+${c.mom_growth_pct}%` : `${c.mom_growth_pct}%`}
-                              </span>
-                            </td>
-                            <td className="p-2.5 font-mono">{c.avg_interest_rate == null ? '—' : `${c.avg_interest_rate}%`}</td>
-                            <td className="p-2.5">
-                              <Badge variant="outline" className="text-[10px]">
-                                {c.principal_repaid_pct != null ? `${c.principal_repaid_pct}% repaid` : '—'}
-                              </Badge>
-                            </td>
+                      <tbody className="divide-y">
+                        {children.map((node) => (
+                          <tr key={node.id} onClick={() => navigateNode(node)} className="cursor-pointer hover:bg-muted/40">
+                            <td className="p-3 font-mono">{node.rank || '—'}</td><td className="p-3 font-semibold">{node.label}</td><td className="p-3 font-mono text-muted-foreground">{node.code}</td>
+                            <td className="p-3 text-right font-mono">{formatCount(node.metrics?.borrower_count)}</td><td className="p-3 text-right font-mono">{formatCount(node.metrics?.account_count || node.account_count)}</td>
+                            <td className="p-3 text-right font-mono font-semibold">{formatMoney(node.metrics?.principal_outstanding)}</td><td className="p-3 text-right font-mono">{formatMoney(node.metrics?.sanctioned_amount)}</td>
                           </tr>
                         ))}
                       </tbody>
                     </table>
                   </div>
-                </>
-              ) : null}
-            </div>
+                )}
+                {!loading && children.length === 0 && <div className="flex min-h-64 flex-col items-center justify-center text-center text-sm text-muted-foreground"><Network className="mb-2 h-7 w-7 opacity-40" />No governed relationships were found for this selection.</div>}
+              </div>
 
-            <div className="p-3 border-t bg-muted/20 flex justify-end">
-              <Button size="sm" onClick={() => setIsMomOpen(false)} className="text-xs px-4">
-                Close Analysis
-              </Button>
+              {(data?.children_total || 0) > PAGE_SIZE && (
+                <div className="flex items-center justify-between border-t px-4 py-2 text-xs">
+                  <span className="text-muted-foreground">Showing {pageStart}–{pageEnd} of {data?.children_total}</span>
+                  <div className="flex gap-1">
+                    <Button variant="outline" size="sm" disabled={(data?.offset || 0) === 0 || loading} onClick={() => void loadGraph(selection, Math.max(0, (data?.offset || 0) - PAGE_SIZE))}><ChevronLeft className="mr-1 h-3.5 w-3.5" />Previous</Button>
+                    <Button variant="outline" size="sm" disabled={pageEnd >= (data?.children_total || 0) || loading} onClick={() => void loadGraph(selection, (data?.offset || 0) + PAGE_SIZE)}>Next<ChevronRight className="ml-1 h-3.5 w-3.5" /></Button>
+                  </div>
+                </div>
+              )}
             </div>
-          </div>
+          </main>
         </div>
       )}
+
+      <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-t px-4 py-2 text-[10px] text-muted-foreground">
+        <div className="flex items-center gap-1.5"><Database className="h-3 w-3" />Entity {data?.coverage.entity_num || '1'} · {data?.coverage.source_views.join(' · ')}</div>
+        <div className="flex items-center gap-1.5"><Link2 className="h-3 w-3" />Customer counts are distinct within each node; shared customers are not added to portfolio totals twice.</div>
+      </div>
     </div>
   );
 
-  if (isExpanded && isMounted && !contained) {
-    return createPortal(graphContent, document.body);
-  }
-
-  return graphContent;
+  if (expanded && mounted && !contained) return createPortal(content, document.body);
+  return content;
 }
