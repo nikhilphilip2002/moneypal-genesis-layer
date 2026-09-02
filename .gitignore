@@ -42,3 +42,17 @@ Regulations/
 
 # Generated brief cache + local fallback index
 backend/vector_store/
+
+# Generated benchmark / evaluation reports
+# Keep the runner scripts in Git; ignore their local report output. Existing historical
+# reports that are already tracked remain tracked until explicitly removed.
+/benchmark_*_report*.md
+/benchmark_*_queries*.md
+/benchmark_random_*.md
+/query_test_results_*.md
+/test_*_results.md
+/fix.md
+
+# Rendered documentation previews (the authored source/checklists remain trackable)
+/docs/*_architecture_diagram.html
+/docs/*_architecture_diagram.jpg
