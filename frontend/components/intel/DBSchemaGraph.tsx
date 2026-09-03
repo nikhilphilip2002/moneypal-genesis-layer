@@ -160,36 +160,37 @@ const levelLabel: Record<string, string> = {
   related_agent: 'Linked Agent',
 };
 
-/** Official Catppuccin palettes (Mocha for dark themes, Latte for light themes). */
-const catppuccinMocha: Record<string, string> = {
-  portfolio: '#cba6f7', // Mauve
-  product: '#89b4fa',   // Blue
-  branch: '#74c7ec',    // Sapphire
-  scheme: '#94e2d5',    // Teal
-  agent: '#a6e3a1',     // Green
-  tenure: '#89dceb',    // Sky
-  loan_size: '#b4befe', // Lavender
-  customer: '#fab387',  // Peach
-  account: '#f9e2af',   // Yellow
-  related_agent: '#f5c2e7', // Pink
+/** Low-saturation, balanced architectural palette ensuring visual harmony across all views. */
+const nodePaletteDark: Record<string, string> = {
+  portfolio: '#8e8ba8',     // Muted Iris / Mauve-Slate
+  product: '#758ba6',       // Muted Steel Blue
+  branch: '#6b8f94',        // Muted Celadon / Cyan-Slate
+  scheme: '#799480',        // Muted Sage
+  agent: '#999175',         // Muted Warm Khaki
+  tenure: '#738596',        // Muted Slate
+  loan_size: '#887c94',     // Muted Heather / Violet-Slate
+  customer: '#a68376',      // Muted Terracotta
+  account: '#a39775',       // Muted Sandstone
+  related_agent: '#9e7d8a', // Muted Dusty Rose
 };
 
-const catppuccinLatte: Record<string, string> = {
-  portfolio: '#8839ef', // Mauve
-  product: '#1e66f5',   // Blue
-  branch: '#209fb5',    // Sapphire
-  scheme: '#179299',    // Teal
-  agent: '#40a02b',     // Green
-  tenure: '#04a5e5',    // Sky
-  loan_size: '#7287fd', // Lavender
-  customer: '#fe640b',  // Peach
-  account: '#df8e1d',   // Yellow
-  related_agent: '#ea76cb', // Pink
+const nodePaletteLight: Record<string, string> = {
+  portfolio: '#63607a',     // Muted Deep Iris
+  product: '#4a5f78',       // Muted Deep Steel Blue
+  branch: '#47666b',        // Muted Deep Celadon
+  scheme: '#4e6954',        // Muted Deep Sage
+  agent: '#6b6348',         // Muted Deep Khaki
+  tenure: '#4c5d6e',        // Muted Deep Slate
+  loan_size: '#5f546b',     // Muted Deep Heather
+  customer: '#78594d',      // Muted Deep Terracotta
+  account: '#736849',       // Muted Deep Sandstone
+  related_agent: '#6e4f5c', // Muted Deep Dusty Rose
 };
 
-
-/** Canvas fills for the force graph using Catppuccin. */
-const levelColor: Record<string, string> = catppuccinMocha;
+function getNodeColor(type: string, isDark: boolean): string {
+  const palette = isDark ? nodePaletteDark : nodePaletteLight;
+  return palette[type] || (isDark ? '#64748b' : '#475569');
+}
 
 /** The tier a node of each type drills into, used for the canvas legend. */
 const childLevelOf: Record<GraphLevel, string> = {
@@ -421,11 +422,10 @@ export default function DBSchemaGraph({ contained = false }: { contained?: boole
       nodes: data.nodes.map((node) => {
         const isRoot = node.id === data.current.id;
         const share = Math.sqrt(nodeWeight(node, weightBy) / maxWeight) || 0;
-        const catppuccinPalette = isDark ? catppuccinMocha : catppuccinLatte;
         return {
           ...node,
           isRoot,
-          color: catppuccinPalette[node.type] || levelColor[node.type] || '#64748b',
+          color: getNodeColor(node.type, isDark),
           size: isRoot ? 24 : 9 + Math.round(share * 12),
           formattedWeight: weightText(node as GraphNode, weightBy),
         };
@@ -507,19 +507,19 @@ export default function DBSchemaGraph({ contained = false }: { contained?: boole
 
     if (isSelected || isHovered) {
       ctx.beginPath();
-      ctx.arc(node.x, node.y, size + 6 / scale, 0, 2 * Math.PI);
-      ctx.fillStyle = isDark ? 'rgba(124, 58, 237, 0.28)' : 'rgba(79, 70, 229, 0.22)';
+      ctx.arc(node.x, node.y, size + 5 / scale, 0, 2 * Math.PI);
+      ctx.fillStyle = isDark ? 'rgba(148, 163, 184, 0.22)' : 'rgba(71, 85, 105, 0.16)';
       ctx.fill();
     }
 
     ctx.beginPath();
-    ctx.arc(node.x, node.y, size + (isHovered ? 2 : 0), 0, 2 * Math.PI);
-    ctx.fillStyle = isDimmed ? (isDark ? '#1e293b' : '#e2e8f0') : node.color;
+    ctx.arc(node.x, node.y, size + (isHovered ? 1.5 : 0), 0, 2 * Math.PI);
+    ctx.fillStyle = isDimmed ? (isDark ? '#1e293b' : '#cbd5e1') : node.color;
     ctx.fill();
     ctx.strokeStyle = isSelected
-      ? (isDark ? '#ffffff' : '#0f172a')
-      : isDark ? 'rgba(255,255,255,0.32)' : 'rgba(15,23,42,0.22)';
-    ctx.lineWidth = (isSelected ? 3 : 1.5) / scale;
+      ? (isDark ? '#f8fafc' : '#0f172a')
+      : isDark ? 'rgba(255,255,255,0.22)' : 'rgba(15,23,42,0.22)';
+    ctx.lineWidth = (isSelected ? 2.5 : 1.2) / scale;
     ctx.stroke();
 
     if (isDimmed) return;
@@ -573,10 +573,17 @@ export default function DBSchemaGraph({ contained = false }: { contained?: boole
     ctx.beginPath();
     ctx.moveTo(start.x, start.y);
     ctx.lineTo(end.x, end.y);
-    ctx.strokeStyle = isFocused
-      ? (isDark ? 'rgba(168,85,247,0.95)' : 'rgba(124,58,237,0.9)')
-      : `rgba(${isDark ? '148,163,184' : '100,116,139'}, ${isDimmed ? 0.09 : 0.4})`;
-    ctx.lineWidth = isFocused ? 2.5 : 1.4;
+
+    // Consistent dark gray edges for both dark and light modes
+    const baseEdgeColor = isDark
+      ? (isDimmed ? 'rgba(51, 65, 85, 0.3)' : 'rgba(71, 85, 105, 0.85)')   // Dark gray slate-600/700
+      : (isDimmed ? 'rgba(71, 85, 105, 0.2)' : 'rgba(51, 65, 85, 0.75)');  // Dark gray slate-700
+    const focusedEdgeColor = isDark
+      ? 'rgba(203, 213, 225, 0.95)'  // Slate-300 contrast highlight
+      : 'rgba(15, 23, 42, 0.95)';     // Slate-900 contrast highlight
+
+    ctx.strokeStyle = isFocused ? focusedEdgeColor : baseEdgeColor;
+    ctx.lineWidth = isFocused ? 2 : 1.3;
     ctx.stroke();
 
     if (isDimmed || (!isFocused && scale <= 0.85)) return;
@@ -585,10 +592,10 @@ export default function DBSchemaGraph({ contained = false }: { contained?: boole
     const midY = (start.y + end.y) / 2;
     const linkFont = `500 ${Math.max(8, 10 / Math.max(scale, 0.6))}px Inter, sans-serif`;
     const width = getCachedTextWidth(ctx, label, linkFont);
-    ctx.fillStyle = isDark ? 'rgba(15,23,42,0.85)' : 'rgba(241,245,249,0.9)';
+    ctx.fillStyle = isDark ? 'rgba(15,23,42,0.92)' : 'rgba(248,250,252,0.94)';
     ctx.fillRect(midX - width / 2 - 3, midY - 6, width + 6, 12);
     ctx.font = linkFont;
-    ctx.fillStyle = isDark ? '#cbd5e1' : '#334155';
+    ctx.fillStyle = isDark ? '#94a3b8' : '#475569';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText(label, midX, midY);
@@ -912,7 +919,7 @@ export default function DBSchemaGraph({ contained = false }: { contained?: boole
                     <div key={type} className="flex items-center gap-1 shrink-0">
                       <span
                         className="h-2 w-2 rounded-full"
-                        style={{ backgroundColor: (isDark ? catppuccinMocha[type] : catppuccinLatte[type]) || levelColor[type] }}
+                        style={{ backgroundColor: getNodeColor(type, isDark) }}
                       />
                       <span className="text-foreground/80 font-medium">{levelLabel[type]}</span>
                     </div>
@@ -988,7 +995,7 @@ export default function DBSchemaGraph({ contained = false }: { contained?: boole
                           </span>
                           <span
                             className="h-2 w-2 rounded-full shrink-0"
-                            style={{ backgroundColor: (isDark ? catppuccinMocha[node.type] : catppuccinLatte[node.type]) || '#64748b' }}
+                            style={{ backgroundColor: getNodeColor(node.type, isDark) }}
                           />
                           <div className="min-w-0 truncate">
                             <div className="truncate font-medium text-foreground group-hover:text-primary transition-colors">
@@ -1112,14 +1119,7 @@ export default function DBSchemaGraph({ contained = false }: { contained?: boole
                   <div className="flex items-center gap-1.5">
                     <span
                       className="h-2 w-2 rounded-full shrink-0"
-                      style={{
-                        backgroundColor:
-                          (isDark
-                            ? catppuccinMocha[inspector?.type || 'portfolio']
-                            : catppuccinLatte[inspector?.type || 'portfolio']) ||
-                          levelColor[inspector?.type || 'portfolio'] ||
-                          '#64748b',
-                      }}
+                      style={{ backgroundColor: getNodeColor(inspector?.type || 'portfolio', isDark) }}
                     />
                     <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
                       {levelLabel[inspector?.type || 'portfolio']}
