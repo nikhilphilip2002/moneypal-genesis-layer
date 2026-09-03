@@ -91,6 +91,7 @@ interface GraphNode {
   scheme_code?: string;
   scheme_name?: string;
   agent_code?: string;
+  total_accounts?: number;
 }
 
 interface PathItem {
@@ -636,11 +637,6 @@ export default function DBSchemaGraph({ contained = false }: { contained?: boole
   const navigateNode = (node: GraphNode) => {
     setSelectedNode(node);
     if (node.type === 'account') return;
-    if (node.type === 'customer') {
-      setCustomerModalId(node.code);
-      setCustomerModalOpen(true);
-      return;
-    }
     // Clicking the node you are already on should inspect it, not refetch the same level
     // and throw away the current page.
     if (node.id === data?.current.id) return;
@@ -681,10 +677,15 @@ export default function DBSchemaGraph({ contained = false }: { contained?: boole
         loan_size_bucket: node.code,
         customer_id: undefined,
       });
+    } else if (node.type === 'customer') {
+      Object.assign(next, {
+        customer_id: node.code,
+      });
+      setWeightBy('outstanding');
     } else if (node.type === 'portfolio') {
       Object.keys(next).forEach((key) => { if (key !== 'level') delete next[key as keyof Selection]; });
     }
-    void loadGraph(next, 0, (node.type === 'agent' || node.type === 'loan_size') ? 'outstanding' : weightBy);
+    void loadGraph(next, 0, (node.type === 'agent' || node.type === 'loan_size' || node.type === 'customer') ? 'outstanding' : weightBy);
   };
 
   const navigatePath = (item: PathItem) => {
@@ -703,8 +704,8 @@ export default function DBSchemaGraph({ contained = false }: { contained?: boole
       if (pathItem.level === 'customer') next.customer_id = pathItem.code;
       if (pathItem.level === item.level) break;
     }
-    if (item.level === 'agent' || item.level === 'loan_size') setWeightBy('outstanding');
-    void loadGraph(next, 0, (item.level === 'agent' || item.level === 'loan_size') ? 'outstanding' : weightBy);
+    if (item.level === 'agent' || item.level === 'loan_size' || item.level === 'customer') setWeightBy('outstanding');
+    void loadGraph(next, 0, (item.level === 'agent' || item.level === 'loan_size' || item.level === 'customer') ? 'outstanding' : weightBy);
   };
 
   const chooseSearch = (result: SearchResult) => {
@@ -714,8 +715,8 @@ export default function DBSchemaGraph({ contained = false }: { contained?: boole
       setWeightBy('outstanding');
       void loadGraph({ level: 'agent', agent_code: result.code }, 0, 'outstanding');
     } else {
-      setCustomerModalId(result.code);
-      setCustomerModalOpen(true);
+      setWeightBy('outstanding');
+      void loadGraph({ level: 'customer', customer_id: result.code }, 0, 'outstanding');
     }
   };
 
@@ -1024,7 +1025,12 @@ export default function DBSchemaGraph({ contained = false }: { contained?: boole
                               {node.metrics && (
                                 <>
                                   <span>·</span>
-                                  <span>{formatCount(node.metrics.account_count)} loans</span>
+                                  <span>
+                                    {formatCount(node.metrics.account_count)} loan{node.metrics.account_count === 1 ? '' : 's'}
+                                    {node.total_accounts && node.total_accounts > (node.metrics.account_count || 0) ? (
+                                      <span className="text-primary font-medium ml-1">({node.total_accounts} total)</span>
+                                    ) : null}
+                                  </span>
                                   <span>·</span>
                                   <span>{formatMoney(node.metrics.principal_outstanding)}</span>
                                 </>
@@ -1077,7 +1083,12 @@ export default function DBSchemaGraph({ contained = false }: { contained?: boole
                         <td className="p-2.5 font-medium text-foreground">{node.label}</td>
                         <td className="p-2.5 font-mono text-muted-foreground">{node.code}</td>
                         <td className="p-2.5 text-right font-mono">{formatCount(node.metrics?.borrower_count)}</td>
-                        <td className="p-2.5 text-right font-mono">{formatCount(node.metrics?.account_count || node.account_count)}</td>
+                        <td className="p-2.5 text-right font-mono">
+                          {formatCount(node.metrics?.account_count || node.account_count)}
+                          {node.total_accounts && node.total_accounts > (node.metrics?.account_count || 0) ? (
+                            <span className="text-[10px] text-muted-foreground ml-1 font-sans">({node.total_accounts} tot)</span>
+                          ) : null}
+                        </td>
                         <td className="p-2.5 text-right font-mono font-medium text-foreground">{formatMoney(node.metrics?.principal_outstanding)}</td>
                         <td className="p-2.5 text-right font-mono">{formatMoney(node.metrics?.sanctioned_amount)}</td>
                       </tr>
@@ -1187,8 +1198,12 @@ export default function DBSchemaGraph({ contained = false }: { contained?: boole
                       icon={<Users className="h-3.5 w-3.5 text-muted-foreground/70" />}
                     />
                     <MetricStat
-                      label="Active Loans"
-                      value={formatCount(inspectorMetrics.active_account_count)}
+                      label={inspector?.total_accounts && inspector.total_accounts > (inspectorMetrics.account_count || 0) ? "Slice / Total Loans" : "Active Loans"}
+                      value={
+                        inspector?.total_accounts && inspector.total_accounts > (inspectorMetrics.account_count || 0)
+                          ? `${formatCount(inspectorMetrics.account_count)} / ${inspector.total_accounts}`
+                          : formatCount(inspectorMetrics.active_account_count)
+                      }
                       icon={<CreditCard className="h-3.5 w-3.5 text-muted-foreground/70" />}
                     />
                     <MetricStat
@@ -1241,19 +1256,26 @@ export default function DBSchemaGraph({ contained = false }: { contained?: boole
                           <span className="text-muted-foreground">Agent</span>
                           <span className="font-mono font-medium text-foreground">{inspector.agent_code || '—'}</span>
                         </div>
+                        <div className="flex items-center justify-between py-1">
+                          <span className="text-muted-foreground">Status</span>
+                          <span className="font-mono font-medium text-foreground">{inspector.metrics?.active ? 'Active' : 'Closed'}</span>
+                        </div>
                       </>
                     )}
                   </div>
                 </div>
 
                 {/* Customer 360 CTA */}
-                {inspector?.type === 'customer' && (
+                {(inspector?.type === 'customer' || data?.current?.type === 'customer') && (
                   <Button
                     className="w-full text-xs gap-1.5 font-medium shadow-none"
                     size="sm"
                     onClick={() => {
-                      setCustomerModalId(inspector.code);
-                      setCustomerModalOpen(true);
+                      const cid = inspector?.type === 'customer' ? inspector.code : data?.current?.code;
+                      if (cid) {
+                        setCustomerModalId(cid);
+                        setCustomerModalOpen(true);
+                      }
                     }}
                   >
                     <Users className="h-3.5 w-3.5" />

@@ -515,6 +515,7 @@ def _get_portfolio_data(entity_num: str = GICC_ENTITY) -> dict[str, Any]:
     scheme_names: dict[str, str] = {}
     agent_names: dict[str, str] = {}
     customer_names: dict[str, str] = {}
+    customer_total_accounts: dict[str, int] = {}
     max_snapshot_date = None
     max_data_as_of = None
 
@@ -552,6 +553,8 @@ def _get_portfolio_data(entity_num: str = GICC_ENTITY) -> dict[str, Any]:
             agent_names[agcode] = agname
         if cname and cid and cid not in customer_names:
             customer_names[cid] = cname
+        if cid:
+            customer_total_accounts[cid] = customer_total_accounts.get(cid, 0) + 1
 
         if snap_date and (max_snapshot_date is None or snap_date > max_snapshot_date):
             max_snapshot_date = snap_date
@@ -601,6 +604,7 @@ def _get_portfolio_data(entity_num: str = GICC_ENTITY) -> dict[str, Any]:
         "scheme_names": scheme_names,
         "agent_names": agent_names,
         "customer_names": customer_names,
+        "customer_total_accounts": customer_total_accounts,
         "snapshot_info": snapshot_info,
     }
     _PORTFOLIO_CACHE[entity_num] = (meta, now + CACHE_TTL_SECONDS)
@@ -830,6 +834,7 @@ def get_curiosity_graph(
         child_nodes: list[dict[str, Any]] = []
         for code, group_records in groups.items():
             metrics = _calc_kpis(group_records)
+            extra_kwargs: dict[str, Any] = {}
             if next_level == "branch":
                 label = branch_names.get(code, "Unassigned branch" if code == "UNASSIGNED" else f"Branch {code}")
             elif next_level == "tenure":
@@ -844,6 +849,9 @@ def get_curiosity_graph(
                 label = meta["agent_names"].get(code) or (f"Unassigned agent" if code == "UNASSIGNED" else f"Agent {code}")
             elif next_level == "customer":
                 label = meta["customer_names"].get(code) or f"Customer {code}"
+                total_accts = meta.get("customer_total_accounts", {}).get(code, metrics["account_count"])
+                metrics["total_customer_accounts"] = total_accts
+                extra_kwargs["total_accounts"] = total_accts
             else:
                 label = f"{next_level.title()} {code}"
 
@@ -851,6 +859,7 @@ def get_curiosity_graph(
                 f"{next_level}:{code}", next_level, label, metrics,
                 code=code,
                 weight_value=metrics[order_alias],
+                **extra_kwargs,
             ))
 
         # Sort: metrics[order_alias] DESC, code ASC
@@ -902,17 +911,26 @@ def get_curiosity_graph(
                 "branch_code": _text(r["branch_code"]), "scheme_code": _text(r["scheme_code"]),
                 "scheme_name": _text(r["scheme_name"]), "agent_code": agent_code,
             })
-            related.setdefault(agent_code, {
-                "id": f"related-agent:{agent_code}", "type": "related_agent", "code": agent_code,
-                "label": agent_name, "account_count": 0,
-                "is_selected_path": agent_code == selected_agent_code,
-            })["account_count"] += 1
-            links.append({"source": f"related-agent:{agent_code}", "target": f"account:{account}", "label": "HANDLES"})
+            if agent_code != "UNASSIGNED":
+                related.setdefault(agent_code, {
+                    "id": f"related-agent:{agent_code}", "type": "related_agent", "code": agent_code,
+                    "label": agent_name, "account_count": 0,
+                    "is_selected_path": agent_code == selected_agent_code,
+                })["account_count"] += 1
+                links.append({"source": f"related-agent:{agent_code}", "target": f"account:{account}", "label": "HANDLES"})
 
+        visible_accounts = account_nodes[offset:offset + limit]
+        for index, acc in enumerate(visible_accounts):
+            acc["is_leader"] = (offset + index == 0)
+            acc["rank"] = offset + index + 1
+            acc["weight_value"] = acc["metrics"]["principal_outstanding"]
+
+        nodes.extend(visible_accounts)
         agents_list = list(related.values())
         nodes.extend(agents_list)
-        visible_accounts = account_nodes[offset:offset + limit]
-        nodes.extend(visible_accounts)
+
+        # Direct relationship: Customer owns all their loan accounts
+        edges.extend({"source": current["id"], "target": acc["id"], "label": "OWNS_ACCOUNT"} for acc in visible_accounts)
         edges.extend({"source": agent["id"], "target": current["id"], "label": "SERVES"} for agent in agents_list)
         visible_account_ids = {node["id"] for node in visible_accounts}
         edges.extend(link for link in links if link["target"] in visible_account_ids)

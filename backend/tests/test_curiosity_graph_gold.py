@@ -125,3 +125,22 @@ def test_admin_customer_details_endpoint(monkeypatch):
     assert "loans" in result
     assert "repayment_history" in result
 
+
+def test_admin_route_passes_customer_level(monkeypatch):
+    seen = {}
+
+    def fake_graph(**kwargs):
+        seen.update(kwargs)
+        return {"version": 2}
+
+    monkeypatch.setattr(admin, "get_curiosity_graph", fake_graph)
+    response = admin.db_schema(
+        level="customer",
+        customer_id="121",
+    )
+
+    assert response == {"version": 2}
+    assert seen["level"] == "customer"
+    assert seen["customer_id"] == "121"
+
+
