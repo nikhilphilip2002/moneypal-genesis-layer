@@ -25,16 +25,16 @@
     --input: 223 17% 79%;
     --ring: 207 100% 33%;
     --radius: 1rem;
-    --chart-1: 245 14% 43%;
-    --chart-2: 213 24% 38%;
-    --chart-3: 187 20% 35%;
-    --chart-4: 136 15% 36%;
-    --chart-5: 47 19% 35%;
-    --chart-6: 209 18% 36%;
-    --chart-7: 270 12% 37%;
-    --chart-8: 16 22% 39%;
-    --chart-9: 44 22% 37%;
-    --chart-10: 335 16% 37%;
+    --chart-1: 267 84% 58%;   /* Mauve: #8839ef */
+    --chart-2: 220 91% 54%;   /* Blue: #1e66f5 */
+    --chart-3: 189 70% 42%;   /* Sapphire: #209fb5 */
+    --chart-4: 183 74% 35%;   /* Teal: #179299 */
+    --chart-5: 109 58% 40%;   /* Green: #40a02b */
+    --chart-6: 197 97% 46%;   /* Sky: #04a5e5 */
+    --chart-7: 231 97% 72%;   /* Lavender: #7287fd */
+    --chart-8: 22 99% 52%;    /* Peach: #fe640b */
+    --chart-9: 35 77% 49%;    /* Yellow: #df8e1d */
+    --chart-10: 317 73% 69%;  /* Pink: #ea76cb */
     --sidebar-background: 220 27% 98%;
     --sidebar-foreground: 204 9% 11%;
     --sidebar-primary: 207 100% 33%;
@@ -82,16 +82,16 @@
     --border: 204 9% 17%;
     --input: 204 9% 17%;
     --ring: 207 90% 45%;
-    --chart-1: 245 15% 60%;
-    --chart-2: 213 21% 56%;
-    --chart-3: 187 16% 50%;
-    --chart-4: 136 12% 53%;
-    --chart-5: 47 14% 53%;
-    --chart-6: 209 14% 52%;
-    --chart-7: 270 10% 53%;
-    --chart-8: 16 20% 56%;
-    --chart-9: 44 18% 55%;
-    --chart-10: 335 14% 55%;
+    --chart-1: 267 83% 81%;   /* Mauve: #cba6f7 */
+    --chart-2: 217 92% 76%;   /* Blue: #89b4fa */
+    --chart-3: 199 76% 69%;   /* Sapphire: #74c7ec */
+    --chart-4: 170 57% 73%;   /* Teal: #94e2d5 */
+    --chart-5: 115 54% 76%;   /* Green: #a6e3a1 */
+    --chart-6: 189 70% 73%;   /* Sky: #89dceb */
+    --chart-7: 232 97% 85%;   /* Lavender: #b4befe */
+    --chart-8: 23 92% 75%;    /* Peach: #fab387 */
+    --chart-9: 41 86% 83%;    /* Yellow: #f9e2af */
+    --chart-10: 316 73% 86%;  /* Pink: #f5c2e7 */
     --sidebar-background: 204 9% 5%;
     --sidebar-foreground: 210 20% 94%;
     --sidebar-primary: 207 90% 45%;

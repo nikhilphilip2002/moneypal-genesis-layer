@@ -161,33 +161,32 @@ const levelLabel: Record<string, string> = {
 };
 
 /**
- * Shadcn chart color tokens (chart-1 through chart-10).
- * Standard shadcn variable naming scheme with low-saturation architectural values.
+ * Pastel chart color tokens (chart-1 through chart-10) using shadcn variable naming scheme.
  */
 const chartColorsDark: Record<string, string> = {
-  'chart-1': '#8e8ba8', // Portfolio: Muted Iris / Mauve-Slate
-  'chart-2': '#758ba6', // Product: Muted Steel Blue
-  'chart-3': '#6b8f94', // Branch: Muted Celadon / Cyan-Slate
-  'chart-4': '#799480', // Scheme: Muted Sage
-  'chart-5': '#999175', // Agent: Muted Warm Khaki
-  'chart-6': '#738596', // Tenure: Muted Slate
-  'chart-7': '#887c94', // Loan Size: Muted Heather / Violet-Slate
-  'chart-8': '#a68376', // Customer: Muted Terracotta
-  'chart-9': '#a39775', // Account: Muted Sandstone
-  'chart-10': '#9e7d8a', // Linked Agent: Muted Dusty Rose
+  'chart-1': '#cba6f7', // Mauve
+  'chart-2': '#89b4fa', // Blue
+  'chart-3': '#74c7ec', // Sapphire
+  'chart-4': '#94e2d5', // Teal
+  'chart-5': '#a6e3a1', // Green
+  'chart-6': '#89dceb', // Sky
+  'chart-7': '#b4befe', // Lavender
+  'chart-8': '#fab387', // Peach
+  'chart-9': '#f9e2af', // Yellow
+  'chart-10': '#f5c2e7', // Pink
 };
 
 const chartColorsLight: Record<string, string> = {
-  'chart-1': '#63607a', // Portfolio: Muted Deep Iris
-  'chart-2': '#4a5f78', // Product: Muted Deep Steel Blue
-  'chart-3': '#47666b', // Branch: Muted Deep Celadon
-  'chart-4': '#4e6954', // Scheme: Muted Deep Sage
-  'chart-5': '#6b6348', // Agent: Muted Deep Khaki
-  'chart-6': '#4c5d6e', // Tenure: Muted Deep Slate
-  'chart-7': '#5f546b', // Loan Size: Muted Deep Heather
-  'chart-8': '#78594d', // Customer: Muted Deep Terracotta
-  'chart-9': '#736849', // Account: Muted Deep Sandstone
-  'chart-10': '#6e4f5c', // Linked Agent: Muted Deep Dusty Rose
+  'chart-1': '#8839ef', // Mauve
+  'chart-2': '#1e66f5', // Blue
+  'chart-3': '#209fb5', // Sapphire
+  'chart-4': '#179299', // Teal
+  'chart-5': '#40a02b', // Green
+  'chart-6': '#04a5e5', // Sky
+  'chart-7': '#7287fd', // Lavender
+  'chart-8': '#fe640b', // Peach
+  'chart-9': '#df8e1d', // Yellow
+  'chart-10': '#ea76cb', // Pink
 };
 
 /** Mapping from graph entity level to shadcn chart variable name */
