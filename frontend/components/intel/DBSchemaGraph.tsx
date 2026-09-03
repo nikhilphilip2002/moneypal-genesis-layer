@@ -21,6 +21,8 @@ import {
   Minimize2,
   Move,
   Network,
+  PanelRightClose,
+  PanelRightOpen,
   RefreshCw,
   RotateCcw,
   Search,
@@ -330,6 +332,7 @@ export default function DBSchemaGraph({ contained = false }: { contained?: boole
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
   const [customerModalId, setCustomerModalId] = useState<string | null>(null);
   const [customerModalOpen, setCustomerModalOpen] = useState(false);
+  const [showInspector, setShowInspector] = useState(true);
 
   const isDark = (forcedTheme ?? resolvedTheme) === 'dark';
 
@@ -707,407 +710,555 @@ export default function DBSchemaGraph({ contained = false }: { contained?: boole
   const pageEnd = Math.min((data?.offset || 0) + PAGE_SIZE, data?.children_total || 0);
 
   const content = (
-    <div className={`${expanded ? (contained ? 'absolute inset-0 z-30' : 'fixed inset-0 z-[9999]') : 'h-full min-h-[620px]'} flex w-full flex-col overflow-hidden bg-background`}>
-      <div className={`shrink-0 border-b border-border/70 px-4 py-3 ${contained ? 'pr-14' : ''}`}>
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <div className="flex flex-wrap items-center gap-2">
-              <Network className="h-5 w-5 text-primary" />
-              <h2 className="font-headline text-lg font-semibold">GICC Portfolio Information Graph</h2>
-              <Badge variant="outline" className="border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300">
-                Gold governed views
-              </Badge>
-            </div>
-            <p className="mt-1 text-xs text-muted-foreground">
-              Loan Book → Product → Branch → Scheme → Agent → Customer → Loan Account
-            </p>
+    <div className={`${expanded ? (contained ? 'absolute inset-0 z-30' : 'fixed inset-0 z-[9999]') : 'h-full min-h-[640px]'} flex w-full flex-col overflow-hidden bg-background`}>
+      {/* ── 1. Unified Control Header (Single row, 48px) ── */}
+      <header className={`shrink-0 flex items-center justify-between border-b border-border/40 px-3.5 h-12 bg-background/95 gap-3 ${contained ? 'pr-12' : ''}`}>
+        {/* Left: Navigation path / Breadcrumbs */}
+        <div className="flex items-center gap-2 min-w-0 flex-1">
+          <div className="flex items-center gap-1.5 shrink-0 pr-2.5 border-r border-border/40 text-foreground">
+            <Network className="h-4 w-4 text-primary shrink-0" />
+            <span className="font-semibold text-xs tracking-tight hidden sm:inline">Info Graph</span>
+            <Badge variant="outline" className="text-[9px] uppercase px-1 py-0 h-4 font-semibold border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 hidden md:inline-flex">
+              Gold
+            </Badge>
           </div>
 
-          <div className="flex flex-wrap items-center gap-2">
-            <div className="relative">
-              <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
-              <Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search agent or customer" className="h-9 w-[230px] pl-8 text-xs" />
-              {search && <button type="button" onClick={() => { setSearch(''); setSearchResults([]); }} className="absolute right-2.5 top-2.5"><X className="h-3.5 w-3.5" /></button>}
-              {searchResults.length > 0 && (
-                <div className="absolute right-0 top-10 z-50 max-h-72 w-[320px] overflow-auto rounded-lg border border-border/50 bg-popover/95 p-1 shadow-lg backdrop-blur-md">
-                  {searchResults.map((result) => (
-                    <button key={`${result.type}:${result.code}`} type="button" onClick={() => chooseSearch(result)} className="flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left hover:bg-muted/70">
-                      <NodeIcon type={result.type} />
-                      <span className="min-w-0 flex-1 truncate text-xs font-medium">{result.label}</span>
-                      <Badge variant="outline" className="text-[9px] uppercase">{result.type}</Badge>
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-            <Button variant="outline" size="sm" onClick={() => void loadGraph(selection, data?.offset || 0, weightBy, month, true)} disabled={loading}>
-              <RefreshCw className={`mr-1.5 h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} />Refresh
-            </Button>
-            {!contained && (
-              <Button variant="outline" size="sm" onClick={() => setExpanded((value) => !value)}>
-                {expanded ? <Minimize2 className="mr-1.5 h-3.5 w-3.5" /> : <Maximize2 className="mr-1.5 h-3.5 w-3.5" />}
-                {expanded ? 'Exit' : 'Expand'}
-              </Button>
-            )}
-          </div>
-        </div>
-
-        <div className="mt-2.5 flex flex-wrap items-center justify-between gap-2">
-          <div className="flex min-w-0 items-center gap-1 overflow-x-auto py-0.5">
+          <nav className="flex items-center gap-0.5 overflow-x-auto min-w-0 text-xs scrollbar-none py-0.5">
             {(data?.path || [{ level: 'portfolio', code: '1', label: 'GICC Loan Book' } as PathItem]).map((item, index) => (
-              <div key={`${item.level}:${item.code}`} className="flex shrink-0 items-center gap-1">
-                {index > 0 && <ChevronRight className="h-3 w-3 text-muted-foreground/60" />}
+              <div key={`${item.level}:${item.code}`} className="flex shrink-0 items-center gap-0.5">
+                {index > 0 && <ChevronRight className="h-3 w-3 text-muted-foreground/40 shrink-0" />}
                 <button
                   type="button"
                   onClick={() => navigatePath(item)}
-                  className={`rounded px-1.5 py-1 text-xs transition-colors hover:bg-muted/60 ${
+                  className={`px-2 py-1 rounded text-xs transition-colors truncate max-w-[150px] ${
                     item.level === data?.level
-                      ? 'font-semibold text-foreground bg-muted/40'
-                      : 'text-muted-foreground hover:text-foreground'
+                      ? 'font-semibold text-foreground bg-muted/60'
+                      : 'text-muted-foreground hover:text-foreground hover:bg-muted/30'
                   }`}
+                  title={item.label}
                 >
                   {item.label}
                 </button>
               </div>
             ))}
+          </nav>
+        </div>
+
+        {/* Right: Studio Controls */}
+        <div className="flex items-center gap-2 shrink-0">
+          {/* Search */}
+          <div className="relative">
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
+            <Input
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="Search agent / customer…"
+              className="h-8 w-[160px] md:w-[210px] pl-8 pr-7 text-xs bg-muted/20 border-border/50 rounded-md focus-visible:ring-1"
+            />
+            {search && (
+              <button
+                type="button"
+                onClick={() => { setSearch(''); setSearchResults([]); }}
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+              >
+                <X className="h-3 w-3" />
+              </button>
+            )}
+            {searchResults.length > 0 && (
+              <div className="absolute right-0 top-full mt-1 z-50 max-h-72 w-[300px] overflow-auto rounded-lg border border-border/50 bg-popover/98 p-1 shadow-xl backdrop-blur-md">
+                {searchResults.map((result) => (
+                  <button
+                    key={`${result.type}:${result.code}`}
+                    type="button"
+                    onClick={() => chooseSearch(result)}
+                    className="flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left hover:bg-muted/70 text-xs"
+                  >
+                    <NodeIcon type={result.type} />
+                    <span className="min-w-0 flex-1 truncate font-medium">{result.label}</span>
+                    <Badge variant="outline" className="text-[9px] uppercase">{result.type}</Badge>
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <label className="flex items-center gap-1.5 rounded-md border border-border/60 bg-background px-2 py-1 text-[10px] font-medium text-muted-foreground">
-              Month
-              <input type="month" value={month} onChange={(event) => changeMonth(event.target.value)} className="bg-transparent text-xs font-medium text-foreground outline-none" />
-              {month && <button type="button" onClick={() => changeMonth('')} title="Clear month"><X className="h-3 w-3" /></button>}
-            </label>
-            <div className="flex rounded-md border border-border/60 bg-muted/30 p-0.5">
-              {(['borrowers', 'outstanding', 'accounts'] as WeightBy[]).map((weight) => (
-                <button key={weight} type="button" disabled={weight === 'borrowers' && (data?.level === 'agent' || data?.level === 'customer')} onClick={() => changeWeight(weight)} className={`rounded px-2 py-0.5 text-[10px] font-medium capitalize disabled:cursor-not-allowed disabled:opacity-35 ${weightBy === weight ? 'bg-background text-foreground shadow-xs font-semibold' : 'text-muted-foreground'}`} title={weight === 'borrowers' && (data?.level === 'agent' || data?.level === 'customer') ? 'Every child represents one customer; use outstanding or accounts.' : undefined}>
-                  {weight === 'borrowers' ? 'Customers' : weight}
-                </button>
-              ))}
-            </div>
-            <div className="flex rounded-md border border-border/60 bg-muted/30 p-0.5">
-              <button type="button" onClick={() => setDisplayMode('graph')} className={`rounded p-1 ${displayMode === 'graph' ? 'bg-background shadow-xs text-foreground' : 'text-muted-foreground'}`} title="Node graph"><Network className="h-3.5 w-3.5" /></button>
-              <button type="button" onClick={() => setDisplayMode('cards')} className={`rounded p-1 ${displayMode === 'cards' ? 'bg-background shadow-xs text-foreground' : 'text-muted-foreground'}`} title="Ranked list"><LayoutGrid className="h-3.5 w-3.5" /></button>
-              <button type="button" onClick={() => setDisplayMode('table')} className={`rounded p-1 ${displayMode === 'table' ? 'bg-background shadow-xs text-foreground' : 'text-muted-foreground'}`} title="Table"><Table2 className="h-3.5 w-3.5" /></button>
-            </div>
+
+          {/* Month picker */}
+          <div className="hidden lg:flex items-center gap-1 rounded-md border border-border/50 bg-muted/20 px-2 h-8 text-[11px] text-muted-foreground">
+            <span>Month:</span>
+            <input
+              type="month"
+              value={month}
+              onChange={(event) => changeMonth(event.target.value)}
+              className="bg-transparent text-xs font-medium text-foreground outline-none cursor-pointer"
+            />
+            {month && (
+              <button type="button" onClick={() => changeMonth('')} title="Clear month" className="text-muted-foreground hover:text-foreground">
+                <X className="h-3 w-3" />
+              </button>
+            )}
+          </div>
+
+          {/* Metric weighting segmented toggle */}
+          <div className="hidden sm:flex items-center rounded-md border border-border/50 bg-muted/20 p-0.5 h-8">
+            {(['borrowers', 'outstanding', 'accounts'] as WeightBy[]).map((weight) => (
+              <button
+                key={weight}
+                type="button"
+                disabled={weight === 'borrowers' && (data?.level === 'agent' || data?.level === 'customer')}
+                onClick={() => changeWeight(weight)}
+                className={`px-2 py-0.5 rounded text-[11px] font-medium transition-all disabled:cursor-not-allowed disabled:opacity-35 ${
+                  weightBy === weight
+                    ? 'bg-background text-foreground shadow-xs font-semibold'
+                    : 'text-muted-foreground hover:text-foreground'
+                }`}
+                title={weight === 'borrowers' && (data?.level === 'agent' || data?.level === 'customer') ? 'Every child represents one customer; use outstanding or accounts.' : undefined}
+              >
+                {weight === 'borrowers' ? 'Customers' : weight === 'outstanding' ? 'Outstanding' : 'Loans'}
+              </button>
+            ))}
+          </div>
+
+          {/* View mode toggle */}
+          <div className="flex items-center rounded-md border border-border/50 bg-muted/20 p-0.5 h-8">
+            <button
+              type="button"
+              onClick={() => setDisplayMode('graph')}
+              className={`p-1 rounded transition-colors ${displayMode === 'graph' ? 'bg-background text-foreground shadow-xs' : 'text-muted-foreground hover:text-foreground'}`}
+              title="Force-directed Graph"
+            >
+              <Network className="h-3.5 w-3.5" />
+            </button>
+            <button
+              type="button"
+              onClick={() => setDisplayMode('cards')}
+              className={`p-1 rounded transition-colors ${displayMode === 'cards' ? 'bg-background text-foreground shadow-xs' : 'text-muted-foreground hover:text-foreground'}`}
+              title="Ranked List"
+            >
+              <LayoutGrid className="h-3.5 w-3.5" />
+            </button>
+            <button
+              type="button"
+              onClick={() => setDisplayMode('table')}
+              className={`p-1 rounded transition-colors ${displayMode === 'table' ? 'bg-background text-foreground shadow-xs' : 'text-muted-foreground hover:text-foreground'}`}
+              title="Data Table"
+            >
+              <Table2 className="h-3.5 w-3.5" />
+            </button>
+          </div>
+
+          {/* Quick action buttons */}
+          <div className="flex items-center gap-0.5 pl-1.5 border-l border-border/40">
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8 text-muted-foreground hover:text-foreground"
+              onClick={() => void loadGraph(selection, data?.offset || 0, weightBy, month, true)}
+              disabled={loading}
+              title="Refresh graph"
+            >
+              <RefreshCw className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} />
+            </Button>
+
+            <Button
+              variant="ghost"
+              size="icon"
+              className={`h-8 w-8 ${showInspector ? 'text-foreground bg-muted/50' : 'text-muted-foreground hover:text-foreground'}`}
+              onClick={() => setShowInspector(!showInspector)}
+              title={showInspector ? "Hide Inspector" : "Show Inspector"}
+            >
+              {showInspector ? <PanelRightClose className="h-3.5 w-3.5" /> : <PanelRightOpen className="h-3.5 w-3.5" />}
+            </Button>
+
+            {!contained && (
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8 text-muted-foreground hover:text-foreground"
+                onClick={() => setExpanded((value) => !value)}
+                title={expanded ? "Exit Fullscreen" : "Fullscreen"}
+              >
+                {expanded ? <Minimize2 className="h-3.5 w-3.5" /> : <Maximize2 className="h-3.5 w-3.5" />}
+              </Button>
+            )}
           </div>
         </div>
-      </div>
+      </header>
 
-      {error ? (
-        <div className="m-4 flex items-center gap-2 rounded-lg border border-destructive/40 bg-destructive/10 p-4 text-sm text-destructive"><AlertTriangle className="h-4 w-4" />{error}</div>
-      ) : (
-        <div className="grid min-h-0 flex-1 grid-cols-1 overflow-hidden divide-y lg:grid-cols-[280px_minmax(0,1fr)] lg:divide-x lg:divide-y-0 divide-border/40">
-          <aside className="flex min-h-0 flex-col overflow-hidden bg-background">
-            <div className="border-b border-border/40 p-3.5">
-              <div className="flex items-center gap-2">
-                <span
-                  className="h-2 w-2 rounded-full shrink-0"
-                  style={{ backgroundColor: (isDark ? catppuccinMocha[inspector?.type || 'portfolio'] : catppuccinLatte[inspector?.type || 'portfolio']) || levelColor[inspector?.type || 'portfolio'] || '#64748b' }}
-                />
-                <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-                  {levelLabel[inspector?.type || 'portfolio']}
-                </span>
-                {inspector?.code && (
-                  <span className="ml-auto font-mono text-[10px] text-muted-foreground">
-                    #{inspector.code}
-                  </span>
-                )}
-              </div>
-              <h3 className="mt-1 truncate text-sm font-semibold text-foreground" title={inspector?.label}>
-                {inspector?.label || 'Loading…'}
-              </h3>
-            </div>
-
-            <div className="grid grid-cols-2 gap-x-3 gap-y-3 border-b border-border/40 p-3.5">
-              <MetricStat label="Outstanding" value={formatMoney(inspectorMetrics.principal_outstanding)} icon={<CircleDollarSign className="h-3.5 w-3.5 text-muted-foreground/70" />} />
-              <MetricStat label="Customers" value={formatCount(inspectorMetrics.borrower_count)} icon={<Users className="h-3.5 w-3.5 text-muted-foreground/70" />} />
-              <MetricStat label="Active loans" value={formatCount(inspectorMetrics.active_account_count)} icon={<CreditCard className="h-3.5 w-3.5 text-muted-foreground/70" />} />
-              <MetricStat label="Total overdue" value={formatMoney(inspectorMetrics.total_overdue)} icon={<ShieldAlert className="h-3.5 w-3.5 text-muted-foreground/70" />} />
-              <MetricStat label="PAR 30" value={`${Number(inspectorMetrics.par30_ratio || 0).toFixed(2)}%`} icon={<AlertTriangle className="h-3.5 w-3.5 text-muted-foreground/70" />} />
-              <MetricStat label="NPA ratio" value={`${Number(inspectorMetrics.npa_ratio || 0).toFixed(2)}%`} icon={<ShieldAlert className="h-3.5 w-3.5 text-muted-foreground/70" />} />
-            </div>
-
-            <div className="min-h-0 flex-1 space-y-3.5 overflow-y-auto p-3.5 text-xs">
-              <div className="space-y-1 divide-y divide-border/30">
-                <div className="flex items-center justify-between py-1">
-                  <span className="text-muted-foreground">Sanctioned</span>
-                  <span className="font-mono font-medium text-foreground">{formatMoney(inspectorMetrics.sanctioned_amount)}</span>
-                </div>
-                <div className="flex items-center justify-between py-1">
-                  <span className="text-muted-foreground">Disbursed</span>
-                  <span className="font-mono font-medium text-foreground">{formatMoney(inspectorMetrics.disbursed_amount)}</span>
-                </div>
-                <div className="flex items-center justify-between py-1">
-                  <span className="text-muted-foreground">Risk coverage</span>
-                  <span className="font-mono font-medium text-foreground">{Number(inspectorMetrics.risk_coverage_pct || 0).toFixed(1)}%</span>
-                </div>
-                {inspector?.type === 'account' && (
-                  <>
-                    <div className="flex items-center justify-between py-1">
-                      <span className="text-muted-foreground">Product</span>
-                      <span className="font-medium text-foreground truncate ml-2">{inspector.product_name || inspector.product_code || '—'}</span>
-                    </div>
-                    <div className="flex items-center justify-between py-1">
-                      <span className="text-muted-foreground">Scheme</span>
-                      <span className="font-medium text-foreground truncate ml-2">{inspector.scheme_name || inspector.scheme_code || '—'}</span>
-                    </div>
-                    <div className="flex items-center justify-between py-1">
-                      <span className="text-muted-foreground">Agent code</span>
-                      <span className="font-mono font-medium text-foreground">{inspector.agent_code || '—'}</span>
-                    </div>
-                  </>
-                )}
-              </div>
-
-              {inspector?.type === 'customer' && (
-                <Button
-                  className="w-full text-xs gap-1.5 font-medium"
-                  size="sm"
-                  onClick={() => {
-                    setCustomerModalId(inspector.code);
-                    setCustomerModalOpen(true);
-                  }}
-                >
-                  <Users className="h-3.5 w-3.5" />
-                  View 360 Profile & Repayment History
-                </Button>
-              )}
-
-              <div className="border-t border-border/30 pt-3 text-[11px] leading-relaxed text-muted-foreground">
-                <div className="mb-1 flex items-center gap-1.5 font-medium text-foreground/80">
-                  <Database className="h-3 w-3 text-muted-foreground" />
-                  <span>Data basis</span>
-                </div>
-                <div>Snapshot: <span className="font-medium text-foreground">{data?.coverage.snapshot_date || 'Unavailable'}</span></div>
-                <div className="text-[10px] text-muted-foreground/80 mt-0.5">{data?.coverage.branch_basis_note}</div>
-              </div>
-            </div>
-          </aside>
-
-          <main className="relative min-h-0 overflow-hidden bg-background">
-            {loading && <div className="absolute inset-0 z-20 flex items-center justify-center bg-background/65 backdrop-blur-[1px]"><RefreshCw className="h-5 w-5 animate-spin text-primary" /></div>}
-            <div className="flex h-full min-h-[480px] flex-col">
-              <div className="flex items-center justify-between border-b px-4 py-3">
-                <div>
-                  <h3 className="text-sm font-semibold">{data?.level === 'customer' ? 'Accounts and linked agents' : `Ranked ${levelLabel[children[0]?.type || 'product']} nodes`}</h3>
-                  <p className="text-[10px] text-muted-foreground">
-                    {month ? `Loans originated in ${month}; risk remains as at ${data?.coverage.snapshot_date || 'latest snapshot'}.` : `Current Gold portfolio as at ${data?.coverage.snapshot_date || 'latest available snapshot'}.`}
-                  </p>
-                </div>
-                <Badge variant="outline" className="text-[10px]">{data?.children_total || 0} records</Badge>
-              </div>
-
-              {displayMode === 'graph' ? (
-                <div ref={canvasRef} className="relative min-h-0 flex-1 overflow-hidden">
-                  <div className="pointer-events-none absolute left-3 top-3 z-10 max-w-[210px] rounded-xl border bg-background/85 p-2.5 shadow-sm backdrop-blur-md">
-                    <span className="flex items-center gap-1 text-[9px] font-semibold uppercase tracking-wider text-muted-foreground">
-                      <Move className="h-2.5 w-2.5" />Drag, zoom, click to drill down
-                    </span>
-                    <div className="mt-1.5 space-y-1 text-[10px]">
-                      {[...new Set([data?.current.type || 'portfolio', ...children.map((node) => node.type)])].map((type) => (
-                        <div key={type} className="flex items-center gap-1.5">
-                          <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: (isDark ? catppuccinMocha[type] : catppuccinLatte[type]) || levelColor[type] }} />
-                          <span className="font-medium text-foreground/80">{levelLabel[type]}</span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-
-                  <div className="absolute right-3 top-3 z-10 flex items-center gap-1 rounded-xl border bg-background/85 p-1 shadow-sm backdrop-blur-md">
-                    <Button variant="ghost" size="sm" onClick={() => zoomBy(1.3)} title="Zoom in" className="h-7 w-7 rounded-lg p-0"><ZoomIn className="h-3.5 w-3.5" /></Button>
-                    <Button variant="ghost" size="sm" onClick={() => zoomBy(1 / 1.3)} title="Zoom out" className="h-7 w-7 rounded-lg p-0"><ZoomOut className="h-3.5 w-3.5" /></Button>
-                    <Button variant="ghost" size="sm" onClick={() => graphRef.current?.zoomToFit(400, 90)} title="Fit to view" className="h-7 w-7 rounded-lg p-0"><RotateCcw className="h-3.5 w-3.5" /></Button>
-                  </div>
-
-                  {mounted && forceGraphData.nodes.length > 0 && (
-                    <ForceGraph2D
-                      ref={graphRef}
-                      width={dimensions.width}
-                      height={dimensions.height}
-                      graphData={forceGraphData}
-                      backgroundColor={isDark ? '#090d16' : '#fafafa'}
-                      nodeCanvasObject={paintNode}
-                      nodePointerAreaPaint={paintPointerArea}
-                      linkCanvasObject={paintLink}
-                      onNodeClick={(node: any) => navigateNode(node as GraphNode)}
-                      onNodeHover={(node: any) => setHoverNode((node as GraphNode) || null)}
-                      enableNodeDrag
-                      minZoom={0.15}
-                      maxZoom={4}
-                      warmupTicks={60}
-                      cooldownTicks={80}
-                      cooldownTime={2500}
-                      d3AlphaDecay={0.04}
-                      d3VelocityDecay={0.3}
-                      onEngineStop={fitOnce}
-                    />
-                  )}
-
-                  <div className="absolute bottom-3 left-1/2 -translate-x-1/2 z-10 flex flex-wrap items-center justify-center gap-2 rounded-xl bg-background/85 px-3.5 py-1.5 text-[11px] shadow-sm backdrop-blur-md border-0 whitespace-nowrap">
-                    <Badge variant="secondary" className="border-0 bg-muted/60 text-foreground text-[10px] font-semibold uppercase shadow-none">
-                      {levelLabel[data?.level || 'portfolio']} tier
-                    </Badge>
-                    <span className="font-mono text-muted-foreground">{forceGraphData.nodes.length} nodes · {forceGraphData.links.length} edges</span>
-                    <span className="hidden text-muted-foreground sm:inline">
-                      · click a {levelLabel[childLevelOf[data?.level || 'portfolio']]?.toLowerCase() || 'node'} to go deeper
-                    </span>
-                    {Boolean(data?.children_total) && (
-                      <span className="font-mono text-muted-foreground">
-                        · showing {data?.offset ? `${pageStart}–${pageEnd}` : pageEnd} out of {data?.children_total}
-                      </span>
-                    )}
-                    {(data?.children_total || 0) > PAGE_SIZE && (
-                      <div className="flex items-center gap-1 ml-1">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="h-6 px-2 text-[10px] shadow-none border border-border/80 hover:shadow-none hover:bg-muted font-medium"
-                          disabled={(data?.offset || 0) === 0 || loading}
-                          onClick={() => void loadGraph(selection, Math.max(0, (data?.offset || 0) - PAGE_SIZE))}
-                        >
-                          <ChevronLeft className="mr-0.5 h-3 w-3" />Previous
-                        </Button>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="h-6 px-2 text-[10px] shadow-none border border-border/80 hover:shadow-none hover:bg-muted font-medium"
-                          disabled={pageEnd >= (data?.children_total || 0) || loading}
-                          onClick={() => void loadGraph(selection, (data?.offset || 0) + PAGE_SIZE)}
-                        >
-                          Next<ChevronRight className="ml-0.5 h-3 w-3" />
-                        </Button>
-                      </div>
-                    )}
-                  </div>
-
-                  {!loading && forceGraphData.nodes.length === 0 && (
-                    <div className="flex h-full flex-col items-center justify-center text-center text-sm text-muted-foreground">
-                      <Network className="mb-2 h-7 w-7 opacity-40" />No governed relationships were found for this selection.
-                    </div>
-                  )}
-                </div>
-              ) : (
-              <div className="min-h-0 flex-1 overflow-auto p-4">
-                {displayMode === 'cards' ? (
-                  <div className="space-y-3 max-w-4xl mx-auto">
-                    <div className="flex items-center justify-between rounded-lg border border-border/40 bg-muted/20 px-3.5 py-2.5 text-xs">
-                      <div className="flex items-center gap-2">
-                        <span
-                          className="h-2 w-2 rounded-full shrink-0"
-                          style={{ backgroundColor: (isDark ? catppuccinMocha[data?.current.type || 'portfolio'] : catppuccinLatte[data?.current.type || 'portfolio']) || '#64748b' }}
-                        />
-                        <span className="font-medium text-muted-foreground uppercase text-[10px] tracking-wider">Scope</span>
-                        <span className="font-semibold text-foreground">{data?.current.label}</span>
-                      </div>
-                      <div className="font-mono font-semibold text-foreground">
-                        {weightText(data?.current || { id: '', type: 'portfolio', code: '', label: '' }, weightBy)}
-                      </div>
-                    </div>
-
-                    <div className="divide-y divide-border/30 rounded-lg border border-border/40 overflow-hidden bg-background">
-                      {children.map((node) => (
-                        <div
-                          key={node.id}
-                          onClick={() => navigateNode(node)}
-                          className="group flex items-center justify-between p-3 text-left transition-colors hover:bg-muted/40 cursor-pointer text-xs"
-                        >
-                          <div className="flex items-center gap-3 min-w-0">
-                            <span className="font-mono text-[11px] font-semibold text-muted-foreground/70 w-5 text-right shrink-0">
-                              #{node.rank || '—'}
-                            </span>
-                            <span
-                              className="h-2 w-2 rounded-full shrink-0"
-                              style={{ backgroundColor: (isDark ? catppuccinMocha[node.type] : catppuccinLatte[node.type]) || '#64748b' }}
-                            />
-                            <div className="min-w-0 truncate">
-                              <div className="truncate font-medium text-foreground group-hover:text-primary transition-colors">
-                                {node.label}
-                              </div>
-                              <div className="font-mono text-[10px] text-muted-foreground flex items-center gap-1.5 mt-0.5">
-                                <span>{node.code}</span>
-                                {node.metrics && (
-                                  <>
-                                    <span>·</span>
-                                    <span>{formatCount(node.metrics.account_count)} loans</span>
-                                    <span>·</span>
-                                    <span>{formatMoney(node.metrics.principal_outstanding)}</span>
-                                  </>
-                                )}
-                              </div>
-                            </div>
-                          </div>
-
-                          <div className="flex items-center gap-2.5 shrink-0 ml-4">
-                            {node.is_leader && (
-                              <Badge variant="secondary" className="text-[9px] font-medium hidden sm:inline-flex">
-                                {weightBy === 'borrowers' ? 'Most customers' : weightBy === 'accounts' ? 'Most accounts' : 'Highest outstanding'}
-                              </Badge>
-                            )}
-                            <span className="font-mono font-semibold text-xs text-foreground">
-                              {weightText(node, weightBy)}
-                            </span>
-                            <ChevronRight className="h-3.5 w-3.5 text-muted-foreground/40 group-hover:text-foreground transition-colors" />
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                ) : (
-                  <div className="overflow-x-auto rounded-lg border border-border/40 bg-background">
-                    <table className="w-full min-w-[760px] border-collapse text-left text-xs">
-                      <thead className="sticky top-0 bg-muted/60 text-[10px] uppercase text-muted-foreground border-b border-border/40">
-                        <tr><th className="p-2.5 font-medium">Rank</th><th className="p-2.5 font-medium">Name</th><th className="p-2.5 font-medium">Code</th><th className="p-2.5 text-right font-medium">Customers</th><th className="p-2.5 text-right font-medium">Accounts</th><th className="p-2.5 text-right font-medium">Outstanding</th><th className="p-2.5 text-right font-medium">Sanctioned</th></tr>
-                      </thead>
-                      <tbody className="divide-y divide-border/30">
-                        {children.map((node) => (
-                          <tr key={node.id} onClick={() => navigateNode(node)} className="cursor-pointer hover:bg-muted/40 transition-colors">
-                            <td className="p-2.5 font-mono text-muted-foreground">#{node.rank || '—'}</td><td className="p-2.5 font-medium text-foreground">{node.label}</td><td className="p-2.5 font-mono text-muted-foreground">{node.code}</td>
-                            <td className="p-2.5 text-right font-mono">{formatCount(node.metrics?.borrower_count)}</td><td className="p-2.5 text-right font-mono">{formatCount(node.metrics?.account_count || node.account_count)}</td>
-                            <td className="p-2.5 text-right font-mono font-medium text-foreground">{formatMoney(node.metrics?.principal_outstanding)}</td><td className="p-2.5 text-right font-mono">{formatMoney(node.metrics?.sanctioned_amount)}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-                {!loading && children.length === 0 && <div className="flex min-h-64 flex-col items-center justify-center text-center text-sm text-muted-foreground"><Network className="mb-2 h-7 w-7 opacity-40" />No governed relationships were found for this selection.</div>}
-              </div>
-              )}
-
-              {(data?.children_total || 0) > PAGE_SIZE && (
-                <div className="flex items-center justify-between border-t px-4 py-2 text-xs">
-                  <span className="text-muted-foreground">Showing {pageStart}–{pageEnd} of {data?.children_total}</span>
-                  <div className="flex gap-1.5">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="shadow-none border border-border/80 hover:shadow-none hover:bg-muted font-medium"
-                      disabled={(data?.offset || 0) === 0 || loading}
-                      onClick={() => void loadGraph(selection, Math.max(0, (data?.offset || 0) - PAGE_SIZE))}
-                    >
-                      <ChevronLeft className="mr-1 h-3.5 w-3.5" />Previous
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="shadow-none border border-border/80 hover:shadow-none hover:bg-muted font-medium"
-                      disabled={pageEnd >= (data?.children_total || 0) || loading}
-                      onClick={() => void loadGraph(selection, (data?.offset || 0) + PAGE_SIZE)}
-                    >
-                      Next<ChevronRight className="ml-1 h-3.5 w-3.5" />
-                    </Button>
-                  </div>
-                </div>
-              )}
-            </div>
-          </main>
+      {/* ── 2. Error Display (if any) ── */}
+      {error && (
+        <div className="m-3 flex items-center gap-2 rounded-md border border-destructive/40 bg-destructive/10 p-3 text-xs text-destructive">
+          <AlertTriangle className="h-4 w-4 shrink-0" />
+          <span>{error}</span>
         </div>
       )}
 
-      <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-t px-4 py-2 text-[10px] text-muted-foreground">
-        <div className="flex items-center gap-1.5"><Database className="h-3 w-3" />Entity {data?.coverage.entity_num || '1'} · {data?.coverage.source_views.join(' · ')}</div>
-        <div className="flex items-center gap-1.5"><Link2 className="h-3 w-3" />Customer counts are distinct within each node; shared customers are not added to portfolio totals twice.</div>
-      </div>
+      {/* ── 3. Main Workspace Area (Center Canvas + Docked Right Inspector) ── */}
+      {!error && (
+        <div className="flex-1 min-h-0 flex overflow-hidden relative">
+          {/* Main Visual Workspace */}
+          <main className="flex-1 min-w-0 flex flex-col min-h-0 relative bg-background">
+            {loading && (
+              <div className="absolute inset-0 z-30 flex items-center justify-center bg-background/50 backdrop-blur-[1px]">
+                <RefreshCw className="h-5 w-5 animate-spin text-primary" />
+              </div>
+            )}
+
+            {displayMode === 'graph' ? (
+              <div ref={canvasRef} className="relative flex-1 min-h-0 overflow-hidden">
+                {/* Minimal Top-Left Legend: Clean horizontal tags */}
+                <div className="pointer-events-none absolute left-3 top-3 z-10 flex items-center gap-2 rounded-md border border-border/40 bg-background/80 px-2.5 py-1 backdrop-blur-md text-[10px]">
+                  <span className="font-semibold uppercase tracking-wider text-muted-foreground">Legend:</span>
+                  {[...new Set([data?.current.type || 'portfolio', ...children.map((n) => n.type)])].map((type) => (
+                    <div key={type} className="flex items-center gap-1 shrink-0">
+                      <span
+                        className="h-2 w-2 rounded-full"
+                        style={{ backgroundColor: (isDark ? catppuccinMocha[type] : catppuccinLatte[type]) || levelColor[type] }}
+                      />
+                      <span className="text-foreground/80 font-medium">{levelLabel[type]}</span>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Minimal Top-Right Zoom Controls */}
+                <div className="absolute right-3 top-3 z-10 flex items-center gap-0.5 rounded-md border border-border/40 bg-background/80 p-0.5 backdrop-blur-md">
+                  <Button variant="ghost" size="icon" onClick={() => zoomBy(1.3)} title="Zoom in" className="h-6 w-6 p-0 rounded">
+                    <ZoomIn className="h-3 w-3" />
+                  </Button>
+                  <Button variant="ghost" size="icon" onClick={() => zoomBy(1 / 1.3)} title="Zoom out" className="h-6 w-6 p-0 rounded">
+                    <ZoomOut className="h-3 w-3" />
+                  </Button>
+                  <Button variant="ghost" size="icon" onClick={() => graphRef.current?.zoomToFit(400, 70)} title="Fit to view" className="h-6 w-6 p-0 rounded">
+                    <RotateCcw className="h-3 w-3" />
+                  </Button>
+                </div>
+
+                {/* ForceGraph2D Canvas */}
+                {mounted && forceGraphData.nodes.length > 0 && (
+                  <ForceGraph2D
+                    ref={graphRef}
+                    width={dimensions.width}
+                    height={dimensions.height}
+                    graphData={forceGraphData}
+                    backgroundColor={isDark ? '#090d16' : '#fafafa'}
+                    nodeCanvasObject={paintNode}
+                    nodePointerAreaPaint={paintPointerArea}
+                    linkCanvasObject={paintLink}
+                    onNodeClick={(node: any) => navigateNode(node as GraphNode)}
+                    onNodeHover={(node: any) => setHoverNode((node as GraphNode) || null)}
+                    enableNodeDrag
+                    minZoom={0.15}
+                    maxZoom={4}
+                    warmupTicks={60}
+                    cooldownTicks={80}
+                    cooldownTime={2500}
+                    d3AlphaDecay={0.04}
+                    d3VelocityDecay={0.3}
+                    onEngineStop={fitOnce}
+                  />
+                )}
+
+                {!loading && forceGraphData.nodes.length === 0 && (
+                  <div className="flex h-full flex-col items-center justify-center text-center text-sm text-muted-foreground">
+                    <Network className="mb-2 h-7 w-7 opacity-40" />
+                    No governed relationships were found for this selection.
+                  </div>
+                )}
+              </div>
+            ) : displayMode === 'cards' ? (
+              /* Clean Ranked List View */
+              <div className="flex-1 min-h-0 overflow-y-auto p-4 space-y-3">
+                <div className="max-w-4xl mx-auto space-y-3">
+                  <div className="flex items-center justify-between py-1 px-1 text-xs text-muted-foreground">
+                    <span>Ranked {levelLabel[children[0]?.type || 'product']} entities by {weightBy === 'borrowers' ? 'customer count' : weightBy === 'outstanding' ? 'outstanding volume' : 'loan accounts'}</span>
+                    <span className="font-mono">{data?.children_total || 0} total records</span>
+                  </div>
+
+                  <div className="divide-y divide-border/30 rounded-lg border border-border/40 overflow-hidden bg-background">
+                    {children.map((node) => (
+                      <div
+                        key={node.id}
+                        onClick={() => navigateNode(node)}
+                        className={`group flex items-center justify-between p-3 text-left transition-colors hover:bg-muted/40 cursor-pointer text-xs ${
+                          selectedNode?.id === node.id ? 'bg-muted/50' : ''
+                        }`}
+                      >
+                        <div className="flex items-center gap-3 min-w-0">
+                          <span className="font-mono text-[11px] font-semibold text-muted-foreground/70 w-6 text-right shrink-0">
+                            #{node.rank || '—'}
+                          </span>
+                          <span
+                            className="h-2 w-2 rounded-full shrink-0"
+                            style={{ backgroundColor: (isDark ? catppuccinMocha[node.type] : catppuccinLatte[node.type]) || '#64748b' }}
+                          />
+                          <div className="min-w-0 truncate">
+                            <div className="truncate font-medium text-foreground group-hover:text-primary transition-colors">
+                              {node.label}
+                            </div>
+                            <div className="font-mono text-[10px] text-muted-foreground flex items-center gap-2 mt-0.5">
+                              <span>{node.code}</span>
+                              {node.metrics && (
+                                <>
+                                  <span>·</span>
+                                  <span>{formatCount(node.metrics.account_count)} loans</span>
+                                  <span>·</span>
+                                  <span>{formatMoney(node.metrics.principal_outstanding)}</span>
+                                </>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-3 shrink-0 ml-4">
+                          {node.is_leader && (
+                            <Badge variant="secondary" className="text-[9px] font-medium hidden sm:inline-flex">
+                              {weightBy === 'borrowers' ? 'Top Borrowers' : weightBy === 'accounts' ? 'Top Loans' : 'Top Outstanding'}
+                            </Badge>
+                          )}
+                          <span className="font-mono font-semibold text-xs text-foreground">
+                            {weightText(node, weightBy)}
+                          </span>
+                          <ChevronRight className="h-3.5 w-3.5 text-muted-foreground/40 group-hover:text-foreground transition-colors" />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            ) : (
+              /* Clean Table View */
+              <div className="flex-1 min-h-0 overflow-auto">
+                <table className="w-full min-w-[760px] border-collapse text-left text-xs">
+                  <thead className="sticky top-0 bg-muted/80 backdrop-blur-xs text-[10px] uppercase text-muted-foreground border-b border-border/40 z-10">
+                    <tr>
+                      <th className="p-2.5 font-medium w-14">Rank</th>
+                      <th className="p-2.5 font-medium">Name</th>
+                      <th className="p-2.5 font-medium">Code</th>
+                      <th className="p-2.5 text-right font-medium">Customers</th>
+                      <th className="p-2.5 text-right font-medium">Accounts</th>
+                      <th className="p-2.5 text-right font-medium">Outstanding</th>
+                      <th className="p-2.5 text-right font-medium">Sanctioned</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-border/30">
+                    {children.map((node) => (
+                      <tr
+                        key={node.id}
+                        onClick={() => navigateNode(node)}
+                        className={`cursor-pointer hover:bg-muted/40 transition-colors ${
+                          selectedNode?.id === node.id ? 'bg-muted/50' : ''
+                        }`}
+                      >
+                        <td className="p-2.5 font-mono text-muted-foreground">#{node.rank || '—'}</td>
+                        <td className="p-2.5 font-medium text-foreground">{node.label}</td>
+                        <td className="p-2.5 font-mono text-muted-foreground">{node.code}</td>
+                        <td className="p-2.5 text-right font-mono">{formatCount(node.metrics?.borrower_count)}</td>
+                        <td className="p-2.5 text-right font-mono">{formatCount(node.metrics?.account_count || node.account_count)}</td>
+                        <td className="p-2.5 text-right font-mono font-medium text-foreground">{formatMoney(node.metrics?.principal_outstanding)}</td>
+                        <td className="p-2.5 text-right font-mono">{formatMoney(node.metrics?.sanctioned_amount)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            {/* Structured Bottom Status Bar (h-8) */}
+            <footer className="shrink-0 h-8 flex items-center justify-between border-t border-border/40 px-3 bg-background/95 text-[11px] text-muted-foreground select-none">
+              <div className="flex items-center gap-2">
+                <span className="font-semibold text-foreground">{levelLabel[data?.level || 'portfolio']} Tier</span>
+                <span>·</span>
+                <span>{data?.children_total || 0} records</span>
+                <span>·</span>
+                <span className="hidden md:inline text-muted-foreground/70">Snapshot: {data?.coverage.snapshot_date || 'Latest'}</span>
+              </div>
+
+              <div className="flex items-center gap-3">
+                <span className="hidden xl:inline text-muted-foreground/60">
+                  {displayMode === 'graph' ? 'Click node to inspect/drill · Scroll to zoom' : 'Click row to inspect'}
+                </span>
+                {(data?.children_total || 0) > PAGE_SIZE && (
+                  <div className="flex items-center gap-1 pl-2 border-l border-border/40">
+                    <span className="font-mono text-[10px]">{data?.offset ? `${pageStart}–${pageEnd}` : pageEnd} of {data?.children_total}</span>
+                    <button
+                      type="button"
+                      onClick={() => void loadGraph(selection, Math.max(0, (data?.offset || 0) - PAGE_SIZE))}
+                      disabled={(data?.offset || 0) === 0 || loading}
+                      className="p-1 rounded hover:bg-muted disabled:opacity-30"
+                      title="Previous page"
+                    >
+                      <ChevronLeft className="h-3 w-3" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void loadGraph(selection, (data?.offset || 0) + PAGE_SIZE)}
+                      disabled={pageEnd >= (data?.children_total || 0) || loading}
+                      className="p-1 rounded hover:bg-muted disabled:opacity-30"
+                      title="Next page"
+                    >
+                      <ChevronRight className="h-3 w-3" />
+                    </button>
+                  </div>
+                )}
+              </div>
+            </footer>
+          </main>
+
+          {/* ── Docked Right Inspector Panel (310px) ── */}
+          {showInspector && (
+            <aside className="w-[310px] shrink-0 border-l border-border/40 flex flex-col min-h-0 bg-background overflow-hidden">
+              {/* Header */}
+              <div className="shrink-0 border-b border-border/40 p-3.5">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-1.5">
+                    <span
+                      className="h-2 w-2 rounded-full shrink-0"
+                      style={{
+                        backgroundColor:
+                          (isDark
+                            ? catppuccinMocha[inspector?.type || 'portfolio']
+                            : catppuccinLatte[inspector?.type || 'portfolio']) ||
+                          levelColor[inspector?.type || 'portfolio'] ||
+                          '#64748b',
+                      }}
+                    />
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+                      {levelLabel[inspector?.type || 'portfolio']}
+                    </span>
+                  </div>
+                  {inspector?.code && (
+                    <span className="font-mono text-[10px] text-muted-foreground bg-muted/40 px-1.5 py-0.5 rounded">
+                      #{inspector.code}
+                    </span>
+                  )}
+                </div>
+
+                <h3 className="mt-1.5 text-sm font-semibold text-foreground leading-snug break-words" title={inspector?.label}>
+                  {inspector?.label || 'Loading…'}
+                </h3>
+
+                {/* If selected node is a drillable child, offer a direct drill button */}
+                {inspector && inspector.id !== data?.current?.id && inspector.type !== 'account' && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="mt-2.5 w-full h-7 text-[11px] font-medium justify-between border-border/60 hover:bg-muted/50 shadow-none"
+                    onClick={() => navigateNode(inspector)}
+                  >
+                    <span>Drill down into {levelLabel[inspector.type]}</span>
+                    <ChevronRight className="h-3 w-3 text-muted-foreground" />
+                  </Button>
+                )}
+              </div>
+
+              {/* Inspector Body */}
+              <div className="flex-1 min-h-0 overflow-y-auto p-3.5 space-y-4 text-xs scrollbar-thin">
+                {/* Core KPIs */}
+                <div className="space-y-2">
+                  <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/80 block">
+                    Portfolio Metrics
+                  </span>
+                  <div className="grid grid-cols-2 gap-x-3 gap-y-2.5">
+                    <MetricStat
+                      label="Outstanding"
+                      value={formatMoney(inspectorMetrics.principal_outstanding)}
+                      icon={<CircleDollarSign className="h-3.5 w-3.5 text-muted-foreground/70" />}
+                    />
+                    <MetricStat
+                      label="Customers"
+                      value={formatCount(inspectorMetrics.borrower_count)}
+                      icon={<Users className="h-3.5 w-3.5 text-muted-foreground/70" />}
+                    />
+                    <MetricStat
+                      label="Active Loans"
+                      value={formatCount(inspectorMetrics.active_account_count)}
+                      icon={<CreditCard className="h-3.5 w-3.5 text-muted-foreground/70" />}
+                    />
+                    <MetricStat
+                      label="Total Overdue"
+                      value={formatMoney(inspectorMetrics.total_overdue)}
+                      icon={<ShieldAlert className="h-3.5 w-3.5 text-muted-foreground/70" />}
+                    />
+                    <MetricStat
+                      label="PAR 30 Ratio"
+                      value={`${Number(inspectorMetrics.par30_ratio || 0).toFixed(2)}%`}
+                      icon={<AlertTriangle className="h-3.5 w-3.5 text-muted-foreground/70" />}
+                    />
+                    <MetricStat
+                      label="NPA Ratio"
+                      value={`${Number(inspectorMetrics.npa_ratio || 0).toFixed(2)}%`}
+                      icon={<ShieldAlert className="h-3.5 w-3.5 text-muted-foreground/70" />}
+                    />
+                  </div>
+                </div>
+
+                {/* Financial Details */}
+                <div className="pt-3 border-t border-border/30 space-y-2">
+                  <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/80 block">
+                    Financial Summary
+                  </span>
+                  <div className="space-y-1 divide-y divide-border/20 text-xs">
+                    <div className="flex items-center justify-between py-1">
+                      <span className="text-muted-foreground">Sanctioned</span>
+                      <span className="font-mono font-medium text-foreground">{formatMoney(inspectorMetrics.sanctioned_amount)}</span>
+                    </div>
+                    <div className="flex items-center justify-between py-1">
+                      <span className="text-muted-foreground">Disbursed</span>
+                      <span className="font-mono font-medium text-foreground">{formatMoney(inspectorMetrics.disbursed_amount)}</span>
+                    </div>
+                    <div className="flex items-center justify-between py-1">
+                      <span className="text-muted-foreground">Risk Coverage</span>
+                      <span className="font-mono font-medium text-foreground">{Number(inspectorMetrics.risk_coverage_pct || 0).toFixed(1)}%</span>
+                    </div>
+                    {inspector?.type === 'account' && (
+                      <>
+                        <div className="flex items-center justify-between py-1">
+                          <span className="text-muted-foreground">Product</span>
+                          <span className="font-medium text-foreground truncate ml-2">{inspector.product_name || inspector.product_code || '—'}</span>
+                        </div>
+                        <div className="flex items-center justify-between py-1">
+                          <span className="text-muted-foreground">Scheme</span>
+                          <span className="font-medium text-foreground truncate ml-2">{inspector.scheme_name || inspector.scheme_code || '—'}</span>
+                        </div>
+                        <div className="flex items-center justify-between py-1">
+                          <span className="text-muted-foreground">Agent</span>
+                          <span className="font-mono font-medium text-foreground">{inspector.agent_code || '—'}</span>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                </div>
+
+                {/* Customer 360 CTA */}
+                {inspector?.type === 'customer' && (
+                  <Button
+                    className="w-full text-xs gap-1.5 font-medium shadow-none"
+                    size="sm"
+                    onClick={() => {
+                      setCustomerModalId(inspector.code);
+                      setCustomerModalOpen(true);
+                    }}
+                  >
+                    <Users className="h-3.5 w-3.5" />
+                    Customer 360 & Ledger
+                  </Button>
+                )}
+
+                {/* Governance Info */}
+                <div className="pt-3 border-t border-border/30 text-[11px] leading-relaxed text-muted-foreground">
+                  <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/80 block mb-1">
+                    Governance
+                  </span>
+                  <div className="space-y-1">
+                    <div>Snapshot: <span className="font-mono font-medium text-foreground">{data?.coverage.snapshot_date || 'Unavailable'}</span></div>
+                    <div>Basis: <span className="text-foreground/90">{data?.coverage.effective_branch_basis}</span></div>
+                    <p className="text-[10px] text-muted-foreground/70 mt-1">{data?.coverage.branch_basis_note}</p>
+                  </div>
+                </div>
+              </div>
+            </aside>
+          )}
+        </div>
+      )}
     </div>
   );
 
