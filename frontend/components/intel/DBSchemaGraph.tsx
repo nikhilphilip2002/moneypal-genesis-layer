@@ -347,12 +347,29 @@ export default function DBSchemaGraph({ contained = false }: { contained?: boole
     if (contained) setExpanded(false);
   }, [contained]);
 
+  const clientCacheRef = useRef<Map<string, GraphPayload>>(new Map());
+
   const loadGraph = useCallback(async (
     nextSelection: Selection,
     nextOffset = 0,
     nextWeight: WeightBy = weightBy,
     nextMonth: string = month,
+    forceRefresh = false,
   ) => {
+    const cacheKey = `${nextSelection.level}:${nextSelection.product_code || ''}:${nextSelection.branch_code || ''}:${nextSelection.scheme_code || ''}:${nextSelection.agent_code || ''}:${nextSelection.tenure_band || ''}:${nextSelection.loan_size_bucket || ''}:${nextSelection.customer_id || ''}:${nextWeight}:${nextMonth}:${nextOffset}`;
+
+    if (!forceRefresh) {
+      const cached = clientCacheRef.current.get(cacheKey);
+      if (cached) {
+        setData(cached);
+        setSelection(nextSelection);
+        setSelectedNode(cached.current);
+        setLoading(false);
+        setError('');
+        return;
+      }
+    }
+
     setLoading(true);
     setError('');
     try {
@@ -366,6 +383,7 @@ export default function DBSchemaGraph({ contained = false }: { contained?: boole
       if (response?.version !== 2 || !response.current || !Array.isArray(response.nodes)) {
         throw new Error('The Information Graph API is still on the legacy Silver contract. Deploy the Gold backend and frontend together.');
       }
+      clientCacheRef.current.set(cacheKey, response);
       setData(response);
       setSelection(nextSelection);
       setSelectedNode(response.current);
@@ -731,7 +749,7 @@ export default function DBSchemaGraph({ contained = false }: { contained?: boole
                 </div>
               )}
             </div>
-            <Button variant="outline" size="sm" onClick={() => void loadGraph(selection, data?.offset || 0)} disabled={loading}>
+            <Button variant="outline" size="sm" onClick={() => void loadGraph(selection, data?.offset || 0, weightBy, month, true)} disabled={loading}>
               <RefreshCw className={`mr-1.5 h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} />Refresh
             </Button>
             {!contained && (

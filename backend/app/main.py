@@ -31,6 +31,9 @@ async def _lifespan(_app: FastAPI):
 
     scan_task = signal_scheduler.start(_app.state)
 
+    from app.services.curiosity_graph import warm_curiosity_graph
+    warm_graph_task = asyncio.create_task(asyncio.to_thread(warm_curiosity_graph))
+
     yield
 
     await signal_scheduler.stop(scan_task)
@@ -38,6 +41,10 @@ async def _lifespan(_app: FastAPI):
         warmup_task.cancel()
         with contextlib.suppress(asyncio.CancelledError):
             await warmup_task
+    if warm_graph_task is not None and not warm_graph_task.done():
+        warm_graph_task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await warm_graph_task
 
 
 def create_app() -> FastAPI:
