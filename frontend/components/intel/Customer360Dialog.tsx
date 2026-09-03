@@ -108,16 +108,32 @@ export default function Customer360Dialog({
     );
   }, [data?.repayment_history, selectedLoanAccount]);
 
+  const repaymentTotals = useMemo(() => {
+    let due = 0;
+    let principalPaid = 0;
+    let interestPaid = 0;
+    let totalPaid = 0;
+    let shortfall = 0;
+    for (const r of filteredRepayments) {
+      due += Number(r.total_due || 0);
+      principalPaid += Number(r.principal_paid || 0);
+      interestPaid += Number(r.interest_paid || 0);
+      totalPaid += Number(r.total_paid || 0);
+      shortfall += Number(r.collection_shortfall || 0);
+    }
+    return { due, principalPaid, interestPaid, totalPaid, shortfall };
+  }, [filteredRepayments]);
+
   const profile = data?.profile;
   const summary = data?.summary;
   const loans = data?.loans || [];
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-4xl max-h-[90vh] overflow-hidden flex flex-col p-0 gap-0 sm:rounded-2xl bg-card border-border/80 shadow-2xl">
+      <DialogContent className="max-w-5xl max-h-[90vh] overflow-hidden flex flex-col p-0 gap-0 sm:rounded-2xl bg-card border-border/80 shadow-2xl">
         {/* Header Ribbon */}
-        <DialogHeader className="px-6 pt-5 pb-4 border-b border-border/70 bg-muted/20 shrink-0">
-          <div className="flex flex-wrap items-start justify-between gap-3">
+        <DialogHeader className="p-6 pb-4 border-b border-border/70 bg-muted/20 shrink-0">
+          <div className="flex flex-wrap items-start justify-between gap-3 pr-10">
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-2">
                 <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-primary/10 text-primary">
@@ -172,7 +188,7 @@ export default function Customer360Dialog({
 
           {/* Quick Metrics Bar */}
           {summary && (
-            <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
+            <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-5">
               <div className="rounded-xl border bg-background/80 p-2.5">
                 <div className="text-[10px] font-semibold uppercase text-muted-foreground">Sanctioned</div>
                 <div className="mt-0.5 font-mono text-sm font-bold text-foreground">
@@ -183,6 +199,12 @@ export default function Customer360Dialog({
                 <div className="text-[10px] font-semibold uppercase text-muted-foreground">Disbursed</div>
                 <div className="mt-0.5 font-mono text-sm font-bold text-foreground">
                   {formatCompactMoney(summary.total_disbursed)}
+                </div>
+              </div>
+              <div className="rounded-xl border bg-background/80 p-2.5 border-emerald-500/20 bg-emerald-500/5">
+                <div className="text-[10px] font-semibold uppercase text-emerald-600 dark:text-emerald-400">Total Amount Paid</div>
+                <div className="mt-0.5 font-mono text-sm font-bold text-emerald-600 dark:text-emerald-400">
+                  {formatCompactMoney(summary.total_paid)}
                 </div>
               </div>
               <div className="rounded-xl border bg-background/80 p-2.5">
@@ -265,13 +287,15 @@ export default function Customer360Dialog({
                   </div>
                 ) : (
                   <div className="overflow-x-auto rounded-xl border bg-card">
-                    <table className="w-full min-w-[700px] border-collapse text-left text-xs">
+                    <table className="w-full min-w-[850px] border-collapse text-left text-xs">
                       <thead className="sticky top-0 bg-muted/80 text-[10px] uppercase text-muted-foreground backdrop-blur-sm">
                         <tr>
                           <th className="p-3">Seq</th>
                           <th className="p-3">Due Date</th>
                           <th className="p-3">Loan Account</th>
                           <th className="p-3 text-right">Total Due</th>
+                          <th className="p-3 text-right">Principal Paid</th>
+                          <th className="p-3 text-right">Interest Paid</th>
                           <th className="p-3 text-right">Total Paid</th>
                           <th className="p-3 text-right">Shortfall</th>
                           <th className="p-3 text-right">Efficiency</th>
@@ -285,6 +309,8 @@ export default function Customer360Dialog({
                             <td className="p-3 font-medium whitespace-nowrap">{event.repayment_date || '—'}</td>
                             <td className="p-3 font-mono text-[11px]">{event.loan_account_number}</td>
                             <td className="p-3 text-right font-mono font-medium">{formatExactMoney(event.total_due)}</td>
+                            <td className="p-3 text-right font-mono text-muted-foreground">{formatExactMoney(event.principal_paid)}</td>
+                            <td className="p-3 text-right font-mono text-muted-foreground">{formatExactMoney(event.interest_paid)}</td>
                             <td className="p-3 text-right font-mono font-bold text-foreground">{formatExactMoney(event.total_paid)}</td>
                             <td className={`p-3 text-right font-mono ${event.collection_shortfall > 0 ? 'text-destructive font-semibold' : 'text-muted-foreground'}`}>
                               {formatExactMoney(event.collection_shortfall)}
@@ -312,6 +338,21 @@ export default function Customer360Dialog({
                           </tr>
                         ))}
                       </tbody>
+                      {filteredRepayments.length > 0 && (
+                        <tfoot className="sticky bottom-0 bg-muted/95 font-mono text-xs font-bold border-t border-border backdrop-blur-sm">
+                          <tr>
+                            <td colSpan={3} className="p-3 uppercase text-[10px] text-muted-foreground">Totals</td>
+                            <td className="p-3 text-right">{formatExactMoney(repaymentTotals.due)}</td>
+                            <td className="p-3 text-right text-muted-foreground">{formatExactMoney(repaymentTotals.principalPaid)}</td>
+                            <td className="p-3 text-right text-muted-foreground">{formatExactMoney(repaymentTotals.interestPaid)}</td>
+                            <td className="p-3 text-right text-emerald-600 dark:text-emerald-400">{formatExactMoney(repaymentTotals.totalPaid)}</td>
+                            <td className={`p-3 text-right ${repaymentTotals.shortfall > 0 ? 'text-destructive' : 'text-muted-foreground'}`}>
+                              {formatExactMoney(repaymentTotals.shortfall)}
+                            </td>
+                            <td colSpan={2} />
+                          </tr>
+                        </tfoot>
+                      )}
                     </table>
                   </div>
                 )}

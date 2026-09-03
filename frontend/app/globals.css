@@ -25,16 +25,16 @@
     --input: 223 17% 79%;
     --ring: 207 100% 33%;
     --radius: 1rem;
-    --chart-1: 249 65% 90%;   /* Pastel Lavender: #dcd6f7 */
-    --chart-2: 213 75% 87%;   /* Pastel Sky Blue: #c7dcf7 */
-    --chart-3: 193 68% 86%;   /* Pastel Ice Aqua: #c2e9f4 */
-    --chart-4: 168 55% 85%;   /* Pastel Mint: #c5ede5 */
-    --chart-5: 110 48% 85%;   /* Pastel Pistachio: #cdeac7 */
-    --chart-6: 200 60% 86%;   /* Pastel Powder Blue: #c6e3f2 */
-    --chart-7: 248 65% 90%;   /* Pastel Lilac: #d8d3f6 */
-    --chart-8: 23 75% 87%;    /* Pastel Peach Cream: #fad8c3 */
-    --chart-9: 45 78% 86%;    /* Pastel Buttercream: #f7e9be */
-    --chart-10: 336 65% 89%;  /* Pastel Blush Pink: #f5d0de */
+    --chart-1: 258 90% 76%;   /* Vibrant Pastel Lavender: #a78bfa */
+    --chart-2: 217 91% 68%;   /* Vibrant Pastel Sky Blue: #60a5fa */
+    --chart-3: 198 93% 60%;   /* Vibrant Pastel Ice Aqua: #38bdf8 */
+    --chart-4: 160 84% 52%;   /* Vibrant Pastel Seafoam Mint: #34d399 */
+    --chart-5: 142 69% 58%;   /* Vibrant Pastel Spring Green: #4ade80 */
+    --chart-6: 189 85% 53%;   /* Vibrant Pastel Cyan Sky: #22d3ee */
+    --chart-7: 234 89% 74%;   /* Vibrant Pastel Periwinkle: #818cf8 */
+    --chart-8: 27 96% 61%;    /* Vibrant Pastel Peach: #fb923c */
+    --chart-9: 48 96% 53%;    /* Vibrant Pastel Sunny Butter: #facc15 */
+    --chart-10: 330 81% 60%;  /* Vibrant Pastel Blush Rose: #f472b6 */
     --sidebar-background: 220 27% 98%;
     --sidebar-foreground: 204 9% 11%;
     --sidebar-primary: 207 100% 33%;
@@ -82,16 +82,16 @@
     --border: 204 9% 17%;
     --input: 204 9% 17%;
     --ring: 207 90% 45%;
-    --chart-1: 254 55% 79%;   /* Pastel Lavender: #b8a9e8 */
-    --chart-2: 213 76% 79%;   /* Pastel Sky Blue: #a0c4f2 */
-    --chart-3: 198 64% 73%;   /* Pastel Ice Aqua: #8ecde8 */
-    --chart-4: 167 56% 75%;   /* Pastel Mint: #98e4d4 */
-    --chart-5: 139 48% 76%;   /* Pastel Pistachio: #a3dfb6 */
-    --chart-6: 188 62% 78%;   /* Pastel Powder Blue: #a4e2ec */
-    --chart-7: 230 70% 85%;   /* Pastel Lilac: #bec7f4 */
-    --chart-8: 24 78% 78%;    /* Pastel Peach: #f5be98 */
-    --chart-9: 46 78% 75%;    /* Pastel Buttercream: #f3dc8e */
-    --chart-10: 330 70% 80%;  /* Pastel Blush Pink: #f0a8cb */
+    --chart-1: 258 90% 76%;   /* Vibrant Pastel Lavender: #a78bfa */
+    --chart-2: 217 91% 68%;   /* Vibrant Pastel Sky Blue: #60a5fa */
+    --chart-3: 198 93% 60%;   /* Vibrant Pastel Ice Aqua: #38bdf8 */
+    --chart-4: 160 84% 52%;   /* Vibrant Pastel Seafoam Mint: #34d399 */
+    --chart-5: 142 69% 58%;   /* Vibrant Pastel Spring Green: #4ade80 */
+    --chart-6: 189 85% 53%;   /* Vibrant Pastel Cyan Sky: #22d3ee */
+    --chart-7: 234 89% 74%;   /* Vibrant Pastel Periwinkle: #818cf8 */
+    --chart-8: 27 96% 61%;    /* Vibrant Pastel Peach: #fb923c */
+    --chart-9: 48 96% 53%;    /* Vibrant Pastel Sunny Butter: #facc15 */
+    --chart-10: 330 81% 60%;  /* Vibrant Pastel Blush Rose: #f472b6 */
     --sidebar-background: 204 9% 5%;
     --sidebar-foreground: 210 20% 94%;
     --sidebar-primary: 207 90% 45%;

@@ -161,33 +161,33 @@ const levelLabel: Record<string, string> = {
 };
 
 /**
- * True pastel chart color tokens (chart-1 through chart-10) using shadcn variable naming scheme.
- * High brightness (L: 85%–90%) and reduced saturation (S: 45%–65%) for soft, milky pastel aesthetics.
+ * Vibrant pastel chart color tokens (chart-1 through chart-10) using shadcn variable naming scheme.
+ * Enhanced saturation with high brightness for crisp entity pop and clear contrast.
  */
 const chartColorsDark: Record<string, string> = {
-  'chart-1': '#b8a9e8', // Pastel Lavender / Mauve
-  'chart-2': '#a0c4f2', // Pastel Sky Blue
-  'chart-3': '#8ecde8', // Pastel Ice Aqua
-  'chart-4': '#98e4d4', // Pastel Mint
-  'chart-5': '#a3dfb6', // Pastel Pistachio
-  'chart-6': '#a4e2ec', // Pastel Powder Blue
-  'chart-7': '#bec7f4', // Pastel Lilac
-  'chart-8': '#f5be98', // Pastel Peach (soft apricot, never neon orange)
-  'chart-9': '#f3dc8e', // Pastel Buttercream
-  'chart-10': '#f0a8cb', // Pastel Blush Pink
+  'chart-1': '#a78bfa', // Vibrant Pastel Lavender / Mauve
+  'chart-2': '#60a5fa', // Vibrant Pastel Sky Blue
+  'chart-3': '#38bdf8', // Vibrant Pastel Ice Aqua
+  'chart-4': '#34d399', // Vibrant Pastel Seafoam Mint
+  'chart-5': '#4ade80', // Vibrant Pastel Spring Green
+  'chart-6': '#22d3ee', // Vibrant Pastel Cyan Sky
+  'chart-7': '#818cf8', // Vibrant Pastel Periwinkle
+  'chart-8': '#fb923c', // Vibrant Pastel Peach / Warm Apricot
+  'chart-9': '#facc15', // Vibrant Pastel Sunny Butter
+  'chart-10': '#f472b6', // Vibrant Pastel Blush Rose
 };
 
 const chartColorsLight: Record<string, string> = {
-  'chart-1': '#dcd6f7', // Pastel Lavender / Mauve
-  'chart-2': '#c7dcf7', // Pastel Sky Blue
-  'chart-3': '#c2e9f4', // Pastel Ice Aqua
-  'chart-4': '#c5ede5', // Pastel Mint
-  'chart-5': '#cdeac7', // Pastel Pistachio
-  'chart-6': '#c6e3f2', // Pastel Powder Blue
-  'chart-7': '#d8d3f6', // Pastel Lilac
-  'chart-8': '#fad8c3', // Pastel Peach Cream (soft and milky, never orange)
-  'chart-9': '#f7e9be', // Pastel Buttercream
-  'chart-10': '#f5d0de', // Pastel Blush Pink
+  'chart-1': '#a78bfa', // Vibrant Pastel Lavender / Mauve
+  'chart-2': '#60a5fa', // Vibrant Pastel Sky Blue
+  'chart-3': '#38bdf8', // Vibrant Pastel Ice Aqua
+  'chart-4': '#34d399', // Vibrant Pastel Seafoam Mint
+  'chart-5': '#4ade80', // Vibrant Pastel Spring Green
+  'chart-6': '#22d3ee', // Vibrant Pastel Cyan Sky
+  'chart-7': '#818cf8', // Vibrant Pastel Periwinkle
+  'chart-8': '#fb923c', // Vibrant Pastel Peach / Warm Apricot
+  'chart-9': '#facc15', // Vibrant Pastel Sunny Butter
+  'chart-10': '#f472b6', // Vibrant Pastel Blush Rose
 };
 
 /** Mapping from graph entity level to shadcn chart variable name */
@@ -525,19 +525,19 @@ export default function DBSchemaGraph({ contained = false }: { contained?: boole
 
     if (isSelected || isHovered) {
       ctx.beginPath();
-      ctx.arc(node.x, node.y, size + 5 / scale, 0, 2 * Math.PI);
-      ctx.fillStyle = isDark ? 'rgba(148, 163, 184, 0.22)' : 'rgba(71, 85, 105, 0.16)';
+      ctx.arc(node.x, node.y, size + 3.5 / scale, 0, 2 * Math.PI);
+      ctx.fillStyle = isDark ? 'rgba(140, 145, 155, 0.18)' : 'rgba(80, 85, 95, 0.12)';
       ctx.fill();
     }
 
     ctx.beginPath();
-    ctx.arc(node.x, node.y, size + (isHovered ? 1.5 : 0), 0, 2 * Math.PI);
-    ctx.fillStyle = isDimmed ? (isDark ? '#1e293b' : '#cbd5e1') : node.color;
+    ctx.arc(node.x, node.y, size + (isHovered ? 1 : 0), 0, 2 * Math.PI);
+    ctx.fillStyle = isDimmed ? (isDark ? '#1e2026' : '#d1d5db') : node.color;
     ctx.fill();
     ctx.strokeStyle = isSelected
-      ? (isDark ? '#f8fafc' : '#0f172a')
-      : isDark ? 'rgba(255,255,255,0.22)' : 'rgba(15,23,42,0.22)';
-    ctx.lineWidth = (isSelected ? 2.5 : 1.2) / scale;
+      ? (isDark ? '#f1f5f9' : '#0f172a')
+      : isDark ? 'rgba(255,255,255,0.18)' : 'rgba(15,23,42,0.18)';
+    ctx.lineWidth = (isSelected ? 1.8 : 1.0) / scale;
     ctx.stroke();
 
     if (isDimmed) return;
@@ -592,16 +592,16 @@ export default function DBSchemaGraph({ contained = false }: { contained?: boole
     ctx.moveTo(start.x, start.y);
     ctx.lineTo(end.x, end.y);
 
-    // Consistent dark gray edges for both dark and light modes
+    // Neutral gray edges with reduced brightness
     const baseEdgeColor = isDark
-      ? (isDimmed ? 'rgba(51, 65, 85, 0.3)' : 'rgba(71, 85, 105, 0.85)')   // Dark gray slate-600/700
-      : (isDimmed ? 'rgba(71, 85, 105, 0.2)' : 'rgba(51, 65, 85, 0.75)');  // Dark gray slate-700
+      ? (isDimmed ? 'rgba(35, 37, 42, 0.25)' : 'rgba(52, 55, 62, 0.7)')   // Reduced brightness neutral dark gray
+      : (isDimmed ? 'rgba(140, 144, 152, 0.2)' : 'rgba(100, 104, 112, 0.55)');  // Medium neutral gray
     const focusedEdgeColor = isDark
-      ? 'rgba(203, 213, 225, 0.95)'  // Slate-300 contrast highlight
-      : 'rgba(15, 23, 42, 0.95)';     // Slate-900 contrast highlight
+      ? 'rgba(155, 160, 170, 0.85)'  // Neutral gray focused highlight
+      : 'rgba(30, 32, 38, 0.85)';     // Dark neutral gray focused highlight
 
     ctx.strokeStyle = isFocused ? focusedEdgeColor : baseEdgeColor;
-    ctx.lineWidth = isFocused ? 2 : 1.3;
+    ctx.lineWidth = isFocused ? 1.8 : 1.1;
     ctx.stroke();
 
     if (isDimmed || (!isFocused && scale <= 0.85)) return;
