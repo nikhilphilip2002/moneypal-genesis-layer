@@ -185,18 +185,6 @@ const catppuccinLatte: Record<string, string> = {
   related_agent: '#ea76cb', // Pink
 };
 
-const levelTone: Record<string, string> = {
-  portfolio: 'border-[#cba6f7]/50 bg-[#cba6f7]/10 dark:border-[#cba6f7]/40 dark:bg-[#cba6f7]/10',
-  product: 'border-[#89b4fa]/50 bg-[#89b4fa]/10 dark:border-[#89b4fa]/40 dark:bg-[#89b4fa]/10',
-  branch: 'border-[#74c7ec]/50 bg-[#74c7ec]/10 dark:border-[#74c7ec]/40 dark:bg-[#74c7ec]/10',
-  scheme: 'border-[#94e2d5]/50 bg-[#94e2d5]/10 dark:border-[#94e2d5]/40 dark:bg-[#94e2d5]/10',
-  agent: 'border-[#a6e3a1]/50 bg-[#a6e3a1]/10 dark:border-[#a6e3a1]/40 dark:bg-[#a6e3a1]/10',
-  tenure: 'border-[#89dceb]/50 bg-[#89dceb]/10 dark:border-[#89dceb]/40 dark:bg-[#89dceb]/10',
-  loan_size: 'border-[#b4befe]/50 bg-[#b4befe]/10 dark:border-[#b4befe]/40 dark:bg-[#b4befe]/10',
-  customer: 'border-[#fab387]/50 bg-[#fab387]/10 dark:border-[#fab387]/40 dark:bg-[#fab387]/10',
-  account: 'border-[#f9e2af]/50 bg-[#f9e2af]/10 dark:border-[#f9e2af]/40 dark:bg-[#f9e2af]/10',
-  related_agent: 'border-[#f5c2e7]/50 bg-[#f5c2e7]/10 dark:border-[#f5c2e7]/40 dark:bg-[#f5c2e7]/10',
-};
 
 /** Canvas fills for the force graph using Catppuccin. */
 const levelColor: Record<string, string> = catppuccinMocha;
@@ -304,13 +292,16 @@ function NodeIcon({ type }: { type: GraphNode['type'] }) {
   return <GitBranch className="h-4 w-4" />;
 }
 
-function KpiCard({ label, value, icon }: { label: string; value: string; icon: React.ReactNode }) {
+function MetricStat({ label, value, icon }: { label: string; value: string; icon: React.ReactNode }) {
   return (
-    <div className="rounded-xl border border-border/70 bg-background/70 p-3">
-      <div className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
-        {icon}{label}
+    <div className="flex flex-col py-0.5">
+      <div className="flex items-center gap-1 text-[11px] font-medium text-muted-foreground">
+        {icon}
+        <span>{label}</span>
       </div>
-      <div className="mt-1.5 font-mono text-base font-bold tracking-tight text-foreground">{value}</div>
+      <div className="mt-1 font-mono text-sm font-semibold tracking-tight text-foreground">
+        {value}
+      </div>
     </div>
   );
 }
@@ -738,9 +729,9 @@ export default function DBSchemaGraph({ contained = false }: { contained?: boole
               <Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search agent or customer" className="h-9 w-[230px] pl-8 text-xs" />
               {search && <button type="button" onClick={() => { setSearch(''); setSearchResults([]); }} className="absolute right-2.5 top-2.5"><X className="h-3.5 w-3.5" /></button>}
               {searchResults.length > 0 && (
-                <div className="absolute right-0 top-10 z-50 max-h-72 w-[320px] overflow-auto rounded-xl border bg-card p-1 shadow-xl">
+                <div className="absolute right-0 top-10 z-50 max-h-72 w-[320px] overflow-auto rounded-lg border border-border/50 bg-popover/95 p-1 shadow-lg backdrop-blur-md">
                   {searchResults.map((result) => (
-                    <button key={`${result.type}:${result.code}`} type="button" onClick={() => chooseSearch(result)} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left hover:bg-muted">
+                    <button key={`${result.type}:${result.code}`} type="button" onClick={() => chooseSearch(result)} className="flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left hover:bg-muted/70">
                       <NodeIcon type={result.type} />
                       <span className="min-w-0 flex-1 truncate text-xs font-medium">{result.label}</span>
                       <Badge variant="outline" className="text-[9px] uppercase">{result.type}</Badge>
@@ -761,71 +752,116 @@ export default function DBSchemaGraph({ contained = false }: { contained?: boole
           </div>
         </div>
 
-        <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
-          <div className="flex min-w-0 items-center gap-1 overflow-x-auto">
+        <div className="mt-2.5 flex flex-wrap items-center justify-between gap-2">
+          <div className="flex min-w-0 items-center gap-1 overflow-x-auto py-0.5">
             {(data?.path || [{ level: 'portfolio', code: '1', label: 'GICC Loan Book' } as PathItem]).map((item, index) => (
               <div key={`${item.level}:${item.code}`} className="flex shrink-0 items-center gap-1">
-                {index > 0 && <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />}
-                <button type="button" onClick={() => navigatePath(item)} className={`rounded-lg border px-2.5 py-1.5 text-xs transition-colors hover:bg-muted ${item.level === data?.level ? 'border-primary bg-primary/10 font-semibold text-primary' : 'border-border/70 text-muted-foreground'}`}>
+                {index > 0 && <ChevronRight className="h-3 w-3 text-muted-foreground/60" />}
+                <button
+                  type="button"
+                  onClick={() => navigatePath(item)}
+                  className={`rounded px-1.5 py-1 text-xs transition-colors hover:bg-muted/60 ${
+                    item.level === data?.level
+                      ? 'font-semibold text-foreground bg-muted/40'
+                      : 'text-muted-foreground hover:text-foreground'
+                  }`}
+                >
                   {item.label}
                 </button>
               </div>
             ))}
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <label className="flex items-center gap-1.5 rounded-lg border bg-background px-2 py-1 text-[10px] font-semibold uppercase text-muted-foreground">
-              Origination month
-              <input type="month" value={month} onChange={(event) => changeMonth(event.target.value)} className="bg-transparent text-xs font-medium normal-case text-foreground outline-none" />
+            <label className="flex items-center gap-1.5 rounded-md border border-border/60 bg-background px-2 py-1 text-[10px] font-medium text-muted-foreground">
+              Month
+              <input type="month" value={month} onChange={(event) => changeMonth(event.target.value)} className="bg-transparent text-xs font-medium text-foreground outline-none" />
               {month && <button type="button" onClick={() => changeMonth('')} title="Clear month"><X className="h-3 w-3" /></button>}
             </label>
-            <div className="flex rounded-lg border bg-muted/30 p-0.5">
+            <div className="flex rounded-md border border-border/60 bg-muted/30 p-0.5">
               {(['borrowers', 'outstanding', 'accounts'] as WeightBy[]).map((weight) => (
-                <button key={weight} type="button" disabled={weight === 'borrowers' && (data?.level === 'agent' || data?.level === 'customer')} onClick={() => changeWeight(weight)} className={`rounded-md px-2.5 py-1 text-[10px] font-semibold capitalize disabled:cursor-not-allowed disabled:opacity-35 ${weightBy === weight ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground'}`} title={weight === 'borrowers' && (data?.level === 'agent' || data?.level === 'customer') ? 'Every child represents one customer; use outstanding or accounts.' : undefined}>
+                <button key={weight} type="button" disabled={weight === 'borrowers' && (data?.level === 'agent' || data?.level === 'customer')} onClick={() => changeWeight(weight)} className={`rounded px-2 py-0.5 text-[10px] font-medium capitalize disabled:cursor-not-allowed disabled:opacity-35 ${weightBy === weight ? 'bg-background text-foreground shadow-xs font-semibold' : 'text-muted-foreground'}`} title={weight === 'borrowers' && (data?.level === 'agent' || data?.level === 'customer') ? 'Every child represents one customer; use outstanding or accounts.' : undefined}>
                   {weight === 'borrowers' ? 'Customers' : weight}
                 </button>
               ))}
             </div>
-            <div className="flex rounded-lg border bg-muted/30 p-0.5">
-              <button type="button" onClick={() => setDisplayMode('graph')} className={`rounded-md p-1.5 ${displayMode === 'graph' ? 'bg-background shadow-sm' : 'text-muted-foreground'}`} title="Node graph"><Network className="h-3.5 w-3.5" /></button>
-              <button type="button" onClick={() => setDisplayMode('cards')} className={`rounded-md p-1.5 ${displayMode === 'cards' ? 'bg-background shadow-sm' : 'text-muted-foreground'}`} title="Ranked cards"><LayoutGrid className="h-3.5 w-3.5" /></button>
-              <button type="button" onClick={() => setDisplayMode('table')} className={`rounded-md p-1.5 ${displayMode === 'table' ? 'bg-background shadow-sm' : 'text-muted-foreground'}`} title="Table"><Table2 className="h-3.5 w-3.5" /></button>
+            <div className="flex rounded-md border border-border/60 bg-muted/30 p-0.5">
+              <button type="button" onClick={() => setDisplayMode('graph')} className={`rounded p-1 ${displayMode === 'graph' ? 'bg-background shadow-xs text-foreground' : 'text-muted-foreground'}`} title="Node graph"><Network className="h-3.5 w-3.5" /></button>
+              <button type="button" onClick={() => setDisplayMode('cards')} className={`rounded p-1 ${displayMode === 'cards' ? 'bg-background shadow-xs text-foreground' : 'text-muted-foreground'}`} title="Ranked list"><LayoutGrid className="h-3.5 w-3.5" /></button>
+              <button type="button" onClick={() => setDisplayMode('table')} className={`rounded p-1 ${displayMode === 'table' ? 'bg-background shadow-xs text-foreground' : 'text-muted-foreground'}`} title="Table"><Table2 className="h-3.5 w-3.5" /></button>
             </div>
           </div>
         </div>
       </div>
 
       {error ? (
-        <div className="m-4 flex items-center gap-2 rounded-xl border border-destructive/40 bg-destructive/10 p-4 text-sm text-destructive"><AlertTriangle className="h-4 w-4" />{error}</div>
+        <div className="m-4 flex items-center gap-2 rounded-lg border border-destructive/40 bg-destructive/10 p-4 text-sm text-destructive"><AlertTriangle className="h-4 w-4" />{error}</div>
       ) : (
-        <div className="grid min-h-0 flex-1 grid-cols-1 gap-3 overflow-hidden p-3 lg:grid-cols-[310px_minmax(0,1fr)]">
-          <aside className="flex min-h-0 flex-col overflow-hidden rounded-2xl border bg-card">
-            <div className={`border-b border-border/70 p-4 ${levelTone[inspector?.type || 'portfolio']}`}>
-              <div className="flex items-center gap-2 text-xs font-semibold uppercase text-muted-foreground"><NodeIcon type={inspector?.type || 'portfolio'} />{levelLabel[inspector?.type || 'portfolio']}</div>
-              <h3 className="mt-1.5 truncate text-base font-bold" title={inspector?.label}>{inspector?.label || 'Loading…'}</h3>
-              {inspector?.code && <div className="mt-1 font-mono text-[10px] text-muted-foreground">Code: {inspector.code}</div>}
+        <div className="grid min-h-0 flex-1 grid-cols-1 overflow-hidden divide-y lg:grid-cols-[280px_minmax(0,1fr)] lg:divide-x lg:divide-y-0 divide-border/40">
+          <aside className="flex min-h-0 flex-col overflow-hidden bg-background">
+            <div className="border-b border-border/40 p-3.5">
+              <div className="flex items-center gap-2">
+                <span
+                  className="h-2 w-2 rounded-full shrink-0"
+                  style={{ backgroundColor: (isDark ? catppuccinMocha[inspector?.type || 'portfolio'] : catppuccinLatte[inspector?.type || 'portfolio']) || levelColor[inspector?.type || 'portfolio'] || '#64748b' }}
+                />
+                <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                  {levelLabel[inspector?.type || 'portfolio']}
+                </span>
+                {inspector?.code && (
+                  <span className="ml-auto font-mono text-[10px] text-muted-foreground">
+                    #{inspector.code}
+                  </span>
+                )}
+              </div>
+              <h3 className="mt-1 truncate text-sm font-semibold text-foreground" title={inspector?.label}>
+                {inspector?.label || 'Loading…'}
+              </h3>
             </div>
-            <div className="grid grid-cols-2 gap-2 border-b p-3">
-              <KpiCard label="Outstanding" value={formatMoney(inspectorMetrics.principal_outstanding)} icon={<CircleDollarSign className="h-3 w-3" />} />
-              <KpiCard label="Customers" value={formatCount(inspectorMetrics.borrower_count)} icon={<Users className="h-3 w-3" />} />
-              <KpiCard label="Active loans" value={formatCount(inspectorMetrics.active_account_count)} icon={<CreditCard className="h-3 w-3" />} />
-              <KpiCard label="Total overdue" value={formatMoney(inspectorMetrics.total_overdue)} icon={<ShieldAlert className="h-3 w-3" />} />
-              <KpiCard label="PAR 30" value={`${Number(inspectorMetrics.par30_ratio || 0).toFixed(2)}%`} icon={<AlertTriangle className="h-3 w-3" />} />
-              <KpiCard label="NPA ratio" value={`${Number(inspectorMetrics.npa_ratio || 0).toFixed(2)}%`} icon={<ShieldAlert className="h-3 w-3" />} />
+
+            <div className="grid grid-cols-2 gap-x-3 gap-y-3 border-b border-border/40 p-3.5">
+              <MetricStat label="Outstanding" value={formatMoney(inspectorMetrics.principal_outstanding)} icon={<CircleDollarSign className="h-3.5 w-3.5 text-muted-foreground/70" />} />
+              <MetricStat label="Customers" value={formatCount(inspectorMetrics.borrower_count)} icon={<Users className="h-3.5 w-3.5 text-muted-foreground/70" />} />
+              <MetricStat label="Active loans" value={formatCount(inspectorMetrics.active_account_count)} icon={<CreditCard className="h-3.5 w-3.5 text-muted-foreground/70" />} />
+              <MetricStat label="Total overdue" value={formatMoney(inspectorMetrics.total_overdue)} icon={<ShieldAlert className="h-3.5 w-3.5 text-muted-foreground/70" />} />
+              <MetricStat label="PAR 30" value={`${Number(inspectorMetrics.par30_ratio || 0).toFixed(2)}%`} icon={<AlertTriangle className="h-3.5 w-3.5 text-muted-foreground/70" />} />
+              <MetricStat label="NPA ratio" value={`${Number(inspectorMetrics.npa_ratio || 0).toFixed(2)}%`} icon={<ShieldAlert className="h-3.5 w-3.5 text-muted-foreground/70" />} />
             </div>
-            <div className="min-h-0 flex-1 space-y-2 overflow-y-auto p-3 text-xs">
-              <div className="flex justify-between gap-3 rounded-lg bg-muted/40 p-2"><span className="text-muted-foreground">Sanctioned</span><strong>{formatMoney(inspectorMetrics.sanctioned_amount)}</strong></div>
-              <div className="flex justify-between gap-3 rounded-lg bg-muted/40 p-2"><span className="text-muted-foreground">Disbursed</span><strong>{formatMoney(inspectorMetrics.disbursed_amount)}</strong></div>
-              <div className="flex justify-between gap-3 rounded-lg bg-muted/40 p-2"><span className="text-muted-foreground">Risk coverage</span><strong>{Number(inspectorMetrics.risk_coverage_pct || 0).toFixed(1)}%</strong></div>
-              {inspector?.type === 'account' && (
-                <>
-                  <div className="flex justify-between gap-3 rounded-lg bg-muted/40 p-2"><span className="text-muted-foreground">Product</span><strong>{inspector.product_name || inspector.product_code || '—'}</strong></div>
-                  <div className="flex justify-between gap-3 rounded-lg bg-muted/40 p-2"><span className="text-muted-foreground">Scheme</span><strong>{inspector.scheme_name || inspector.scheme_code || '—'}</strong></div>
-                  <div className="flex justify-between gap-3 rounded-lg bg-muted/40 p-2"><span className="text-muted-foreground">Agent code</span><strong>{inspector.agent_code || '—'}</strong></div>
-                </>
-              )}
+
+            <div className="min-h-0 flex-1 space-y-3.5 overflow-y-auto p-3.5 text-xs">
+              <div className="space-y-1 divide-y divide-border/30">
+                <div className="flex items-center justify-between py-1">
+                  <span className="text-muted-foreground">Sanctioned</span>
+                  <span className="font-mono font-medium text-foreground">{formatMoney(inspectorMetrics.sanctioned_amount)}</span>
+                </div>
+                <div className="flex items-center justify-between py-1">
+                  <span className="text-muted-foreground">Disbursed</span>
+                  <span className="font-mono font-medium text-foreground">{formatMoney(inspectorMetrics.disbursed_amount)}</span>
+                </div>
+                <div className="flex items-center justify-between py-1">
+                  <span className="text-muted-foreground">Risk coverage</span>
+                  <span className="font-mono font-medium text-foreground">{Number(inspectorMetrics.risk_coverage_pct || 0).toFixed(1)}%</span>
+                </div>
+                {inspector?.type === 'account' && (
+                  <>
+                    <div className="flex items-center justify-between py-1">
+                      <span className="text-muted-foreground">Product</span>
+                      <span className="font-medium text-foreground truncate ml-2">{inspector.product_name || inspector.product_code || '—'}</span>
+                    </div>
+                    <div className="flex items-center justify-between py-1">
+                      <span className="text-muted-foreground">Scheme</span>
+                      <span className="font-medium text-foreground truncate ml-2">{inspector.scheme_name || inspector.scheme_code || '—'}</span>
+                    </div>
+                    <div className="flex items-center justify-between py-1">
+                      <span className="text-muted-foreground">Agent code</span>
+                      <span className="font-mono font-medium text-foreground">{inspector.agent_code || '—'}</span>
+                    </div>
+                  </>
+                )}
+              </div>
+
               {inspector?.type === 'customer' && (
                 <Button
-                  className="w-full text-xs gap-1.5 mt-2 font-semibold shadow-sm"
+                  className="w-full text-xs gap-1.5 font-medium"
                   size="sm"
                   onClick={() => {
                     setCustomerModalId(inspector.code);
@@ -836,16 +872,19 @@ export default function DBSchemaGraph({ contained = false }: { contained?: boole
                   View 360 Profile & Repayment History
                 </Button>
               )}
-              <div className="mt-3 rounded-xl border border-amber-500/30 bg-amber-500/5 p-3 text-[10px] leading-relaxed text-muted-foreground">
-                <div className="mb-1 flex items-center gap-1 font-semibold uppercase text-amber-700 dark:text-amber-300"><Database className="h-3 w-3" />Data basis</div>
-                Latest risk snapshot: <strong>{data?.coverage.snapshot_date || 'Unavailable'}</strong><br />
-                Branch: {data?.coverage.effective_branch_basis}<br />
-                {data?.coverage.branch_basis_note}
+
+              <div className="border-t border-border/30 pt-3 text-[11px] leading-relaxed text-muted-foreground">
+                <div className="mb-1 flex items-center gap-1.5 font-medium text-foreground/80">
+                  <Database className="h-3 w-3 text-muted-foreground" />
+                  <span>Data basis</span>
+                </div>
+                <div>Snapshot: <span className="font-medium text-foreground">{data?.coverage.snapshot_date || 'Unavailable'}</span></div>
+                <div className="text-[10px] text-muted-foreground/80 mt-0.5">{data?.coverage.branch_basis_note}</div>
               </div>
             </div>
           </aside>
 
-          <main className="relative min-h-0 overflow-hidden rounded-2xl border bg-muted/10">
+          <main className="relative min-h-0 overflow-hidden bg-background">
             {loading && <div className="absolute inset-0 z-20 flex items-center justify-center bg-background/65 backdrop-blur-[1px]"><RefreshCw className="h-5 w-5 animate-spin text-primary" /></div>}
             <div className="flex h-full min-h-[480px] flex-col">
               <div className="flex items-center justify-between border-b px-4 py-3">
@@ -950,48 +989,81 @@ export default function DBSchemaGraph({ contained = false }: { contained?: boole
               ) : (
               <div className="min-h-0 flex-1 overflow-auto p-4">
                 {displayMode === 'cards' ? (
-                  <div className="grid min-w-0 gap-5 xl:grid-cols-[240px_36px_minmax(0,1fr)]">
-                    <button type="button" onClick={() => data?.current && setSelectedNode(data.current)} className={`h-fit rounded-2xl border-2 p-4 text-left shadow-sm transition hover:-translate-y-0.5 ${levelTone[data?.current.type || 'portfolio']}`}>
-                      <div className="flex items-center gap-2 text-xs font-semibold uppercase text-muted-foreground"><NodeIcon type={data?.current.type || 'portfolio'} />Current {levelLabel[data?.current.type || 'portfolio']}</div>
-                      <div className="mt-2 text-base font-bold">{data?.current.label}</div>
-                      <div className="mt-3 text-xl font-black text-primary">{weightText(data?.current || { id: '', type: 'portfolio', code: '', label: '' }, weightBy)}</div>
-                    </button>
-                    <div className="hidden items-start justify-center pt-12 xl:flex"><ChevronRight className="h-7 w-7 text-muted-foreground/50" /></div>
-                    <div className="grid content-start gap-2 sm:grid-cols-2 2xl:grid-cols-3">
-                      {children.map((node) => {
-                        const progress = Math.max(4, Math.round(nodeWeight(node, weightBy) / maxWeight * 100));
-                        return (
-                          <button key={node.id} type="button" onClick={() => navigateNode(node)} className={`group relative overflow-hidden rounded-xl border p-3 text-left transition hover:-translate-y-0.5 hover:border-primary/60 hover:shadow-md ${levelTone[node.type] || ''}`}>
-                            <div className="absolute inset-x-0 bottom-0 h-1 bg-muted"><div className="h-full bg-primary/70 transition-all" style={{ width: `${progress}%` }} /></div>
-                            <div className="flex items-start justify-between gap-2">
-                              <div className="min-w-0">
-                                <div className="flex items-center gap-1.5 text-[9px] font-semibold uppercase text-muted-foreground"><NodeIcon type={node.type} />{levelLabel[node.type]}</div>
-                                <div className="mt-1 truncate text-sm font-semibold" title={node.label}>{node.label}</div>
-                                <div className="mt-0.5 font-mono text-[9px] text-muted-foreground">{node.code}</div>
+                  <div className="space-y-3 max-w-4xl mx-auto">
+                    <div className="flex items-center justify-between rounded-lg border border-border/40 bg-muted/20 px-3.5 py-2.5 text-xs">
+                      <div className="flex items-center gap-2">
+                        <span
+                          className="h-2 w-2 rounded-full shrink-0"
+                          style={{ backgroundColor: (isDark ? catppuccinMocha[data?.current.type || 'portfolio'] : catppuccinLatte[data?.current.type || 'portfolio']) || '#64748b' }}
+                        />
+                        <span className="font-medium text-muted-foreground uppercase text-[10px] tracking-wider">Scope</span>
+                        <span className="font-semibold text-foreground">{data?.current.label}</span>
+                      </div>
+                      <div className="font-mono font-semibold text-foreground">
+                        {weightText(data?.current || { id: '', type: 'portfolio', code: '', label: '' }, weightBy)}
+                      </div>
+                    </div>
+
+                    <div className="divide-y divide-border/30 rounded-lg border border-border/40 overflow-hidden bg-background">
+                      {children.map((node) => (
+                        <div
+                          key={node.id}
+                          onClick={() => navigateNode(node)}
+                          className="group flex items-center justify-between p-3 text-left transition-colors hover:bg-muted/40 cursor-pointer text-xs"
+                        >
+                          <div className="flex items-center gap-3 min-w-0">
+                            <span className="font-mono text-[11px] font-semibold text-muted-foreground/70 w-5 text-right shrink-0">
+                              #{node.rank || '—'}
+                            </span>
+                            <span
+                              className="h-2 w-2 rounded-full shrink-0"
+                              style={{ backgroundColor: (isDark ? catppuccinMocha[node.type] : catppuccinLatte[node.type]) || '#64748b' }}
+                            />
+                            <div className="min-w-0 truncate">
+                              <div className="truncate font-medium text-foreground group-hover:text-primary transition-colors">
+                                {node.label}
                               </div>
-                              {node.rank && <span className="font-mono text-xs font-bold text-muted-foreground">#{node.rank}</span>}
+                              <div className="font-mono text-[10px] text-muted-foreground flex items-center gap-1.5 mt-0.5">
+                                <span>{node.code}</span>
+                                {node.metrics && (
+                                  <>
+                                    <span>·</span>
+                                    <span>{formatCount(node.metrics.account_count)} loans</span>
+                                    <span>·</span>
+                                    <span>{formatMoney(node.metrics.principal_outstanding)}</span>
+                                  </>
+                                )}
+                              </div>
                             </div>
-                            <div className="mt-2 text-base font-black text-foreground">{weightText(node, weightBy)}</div>
-                            {node.metrics && <div className="mt-1 text-[10px] text-muted-foreground">{formatCount(node.metrics.account_count)} loans · {formatMoney(node.metrics.principal_outstanding)}</div>}
-                            {node.is_leader && <Badge className="mt-2 bg-primary text-[9px]">{weightBy === 'borrowers' ? 'Most customers' : weightBy === 'accounts' ? 'Most accounts' : 'Highest outstanding'}</Badge>}
-                            {node.type === 'related_agent' && node.is_selected_path && <Badge variant="secondary" className="mt-2 text-[9px]">Selected path</Badge>}
-                          </button>
-                        );
-                      })}
+                          </div>
+
+                          <div className="flex items-center gap-2.5 shrink-0 ml-4">
+                            {node.is_leader && (
+                              <Badge variant="secondary" className="text-[9px] font-medium hidden sm:inline-flex">
+                                {weightBy === 'borrowers' ? 'Most customers' : weightBy === 'accounts' ? 'Most accounts' : 'Highest outstanding'}
+                              </Badge>
+                            )}
+                            <span className="font-mono font-semibold text-xs text-foreground">
+                              {weightText(node, weightBy)}
+                            </span>
+                            <ChevronRight className="h-3.5 w-3.5 text-muted-foreground/40 group-hover:text-foreground transition-colors" />
+                          </div>
+                        </div>
+                      ))}
                     </div>
                   </div>
                 ) : (
-                  <div className="overflow-x-auto rounded-xl border bg-card">
+                  <div className="overflow-x-auto rounded-lg border border-border/40 bg-background">
                     <table className="w-full min-w-[760px] border-collapse text-left text-xs">
-                      <thead className="sticky top-0 bg-muted text-[10px] uppercase text-muted-foreground">
-                        <tr><th className="p-3">Rank</th><th className="p-3">Name</th><th className="p-3">Code</th><th className="p-3 text-right">Customers</th><th className="p-3 text-right">Accounts</th><th className="p-3 text-right">Outstanding</th><th className="p-3 text-right">Sanctioned</th></tr>
+                      <thead className="sticky top-0 bg-muted/60 text-[10px] uppercase text-muted-foreground border-b border-border/40">
+                        <tr><th className="p-2.5 font-medium">Rank</th><th className="p-2.5 font-medium">Name</th><th className="p-2.5 font-medium">Code</th><th className="p-2.5 text-right font-medium">Customers</th><th className="p-2.5 text-right font-medium">Accounts</th><th className="p-2.5 text-right font-medium">Outstanding</th><th className="p-2.5 text-right font-medium">Sanctioned</th></tr>
                       </thead>
-                      <tbody className="divide-y">
+                      <tbody className="divide-y divide-border/30">
                         {children.map((node) => (
-                          <tr key={node.id} onClick={() => navigateNode(node)} className="cursor-pointer hover:bg-muted/40">
-                            <td className="p-3 font-mono">{node.rank || '—'}</td><td className="p-3 font-semibold">{node.label}</td><td className="p-3 font-mono text-muted-foreground">{node.code}</td>
-                            <td className="p-3 text-right font-mono">{formatCount(node.metrics?.borrower_count)}</td><td className="p-3 text-right font-mono">{formatCount(node.metrics?.account_count || node.account_count)}</td>
-                            <td className="p-3 text-right font-mono font-semibold">{formatMoney(node.metrics?.principal_outstanding)}</td><td className="p-3 text-right font-mono">{formatMoney(node.metrics?.sanctioned_amount)}</td>
+                          <tr key={node.id} onClick={() => navigateNode(node)} className="cursor-pointer hover:bg-muted/40 transition-colors">
+                            <td className="p-2.5 font-mono text-muted-foreground">#{node.rank || '—'}</td><td className="p-2.5 font-medium text-foreground">{node.label}</td><td className="p-2.5 font-mono text-muted-foreground">{node.code}</td>
+                            <td className="p-2.5 text-right font-mono">{formatCount(node.metrics?.borrower_count)}</td><td className="p-2.5 text-right font-mono">{formatCount(node.metrics?.account_count || node.account_count)}</td>
+                            <td className="p-2.5 text-right font-mono font-medium text-foreground">{formatMoney(node.metrics?.principal_outstanding)}</td><td className="p-2.5 text-right font-mono">{formatMoney(node.metrics?.sanctioned_amount)}</td>
                           </tr>
                         ))}
                       </tbody>
