@@ -11,6 +11,7 @@ import {
   ChevronLeft,
   ChevronRight,
   CircleDollarSign,
+  Clock,
   CreditCard,
   Database,
   GitBranch,
@@ -33,6 +34,7 @@ import {
 } from 'lucide-react';
 
 import { admin } from '@/lib/api';
+import Customer360Dialog from '@/components/intel/Customer360Dialog';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -47,7 +49,7 @@ const ForceGraph2D = dynamic(() => import('react-force-graph-2d'), {
   ),
 });
 
-type GraphLevel = 'portfolio' | 'product' | 'branch' | 'scheme' | 'agent' | 'customer';
+type GraphLevel = 'portfolio' | 'product' | 'branch' | 'scheme' | 'agent' | 'tenure' | 'loan_size' | 'customer';
 type WeightBy = 'borrowers' | 'outstanding' | 'accounts';
 type DisplayMode = 'graph' | 'cards' | 'table';
 
@@ -130,6 +132,8 @@ interface Selection {
   branch_code?: string;
   scheme_code?: string;
   agent_code?: string;
+  tenure_band?: string;
+  loan_size_bucket?: string;
   customer_id?: string;
 }
 
@@ -147,33 +151,55 @@ const levelLabel: Record<string, string> = {
   branch: 'Branch',
   scheme: 'Scheme',
   agent: 'Agent',
+  tenure: 'Tenure',
+  loan_size: 'Loan Size',
   customer: 'Customer',
   account: 'Loan Account',
   related_agent: 'Linked Agent',
 };
 
-const levelTone: Record<string, string> = {
-  portfolio: 'border-violet-500/50 bg-violet-500/10',
-  product: 'border-indigo-500/50 bg-indigo-500/10',
-  branch: 'border-blue-500/50 bg-blue-500/10',
-  scheme: 'border-cyan-500/50 bg-cyan-500/10',
-  agent: 'border-teal-500/50 bg-teal-500/10',
-  customer: 'border-emerald-500/50 bg-emerald-500/10',
-  account: 'border-amber-500/50 bg-amber-500/10',
-  related_agent: 'border-sky-500/50 bg-sky-500/10',
+/** Official Catppuccin palettes (Mocha for dark themes, Latte for light themes). */
+const catppuccinMocha: Record<string, string> = {
+  portfolio: '#cba6f7', // Mauve
+  product: '#89b4fa',   // Blue
+  branch: '#74c7ec',    // Sapphire
+  scheme: '#94e2d5',    // Teal
+  agent: '#a6e3a1',     // Green
+  tenure: '#89dceb',    // Sky
+  loan_size: '#b4befe', // Lavender
+  customer: '#fab387',  // Peach
+  account: '#f9e2af',   // Yellow
+  related_agent: '#f5c2e7', // Pink
 };
 
-/** Canvas fills for the force graph; one hue per tier so a drill-down reads at a glance. */
-const levelColor: Record<string, string> = {
-  portfolio: '#7c3aed',
-  product: '#4f46e5',
-  branch: '#2563eb',
-  scheme: '#0891b2',
-  agent: '#0d9488',
-  customer: '#059669',
-  account: '#d97706',
-  related_agent: '#0284c7',
+const catppuccinLatte: Record<string, string> = {
+  portfolio: '#8839ef', // Mauve
+  product: '#1e66f5',   // Blue
+  branch: '#209fb5',    // Sapphire
+  scheme: '#179299',    // Teal
+  agent: '#40a02b',     // Green
+  tenure: '#04a5e5',    // Sky
+  loan_size: '#7287fd', // Lavender
+  customer: '#fe640b',  // Peach
+  account: '#df8e1d',   // Yellow
+  related_agent: '#ea76cb', // Pink
 };
+
+const levelTone: Record<string, string> = {
+  portfolio: 'border-[#cba6f7]/50 bg-[#cba6f7]/10 dark:border-[#cba6f7]/40 dark:bg-[#cba6f7]/10',
+  product: 'border-[#89b4fa]/50 bg-[#89b4fa]/10 dark:border-[#89b4fa]/40 dark:bg-[#89b4fa]/10',
+  branch: 'border-[#74c7ec]/50 bg-[#74c7ec]/10 dark:border-[#74c7ec]/40 dark:bg-[#74c7ec]/10',
+  scheme: 'border-[#94e2d5]/50 bg-[#94e2d5]/10 dark:border-[#94e2d5]/40 dark:bg-[#94e2d5]/10',
+  agent: 'border-[#a6e3a1]/50 bg-[#a6e3a1]/10 dark:border-[#a6e3a1]/40 dark:bg-[#a6e3a1]/10',
+  tenure: 'border-[#89dceb]/50 bg-[#89dceb]/10 dark:border-[#89dceb]/40 dark:bg-[#89dceb]/10',
+  loan_size: 'border-[#b4befe]/50 bg-[#b4befe]/10 dark:border-[#b4befe]/40 dark:bg-[#b4befe]/10',
+  customer: 'border-[#fab387]/50 bg-[#fab387]/10 dark:border-[#fab387]/40 dark:bg-[#fab387]/10',
+  account: 'border-[#f9e2af]/50 bg-[#f9e2af]/10 dark:border-[#f9e2af]/40 dark:bg-[#f9e2af]/10',
+  related_agent: 'border-[#f5c2e7]/50 bg-[#f5c2e7]/10 dark:border-[#f5c2e7]/40 dark:bg-[#f5c2e7]/10',
+};
+
+/** Canvas fills for the force graph using Catppuccin. */
+const levelColor: Record<string, string> = catppuccinMocha;
 
 /** The tier a node of each type drills into, used for the canvas legend. */
 const childLevelOf: Record<GraphLevel, string> = {
@@ -181,7 +207,9 @@ const childLevelOf: Record<GraphLevel, string> = {
   product: 'branch',
   branch: 'scheme',
   scheme: 'agent',
-  agent: 'customer',
+  agent: 'scheme',
+  tenure: 'loan_size',
+  loan_size: 'customer',
   customer: 'account',
 };
 
@@ -269,6 +297,8 @@ function NodeIcon({ type }: { type: GraphNode['type'] }) {
   if (type === 'portfolio') return <Award className="h-4 w-4" />;
   if (type === 'branch') return <Building2 className="h-4 w-4" />;
   if (type === 'agent' || type === 'related_agent') return <UserRound className="h-4 w-4" />;
+  if (type === 'tenure') return <Clock className="h-4 w-4" />;
+  if (type === 'loan_size') return <CircleDollarSign className="h-4 w-4" />;
   if (type === 'customer') return <Users className="h-4 w-4" />;
   if (type === 'account') return <CreditCard className="h-4 w-4" />;
   return <GitBranch className="h-4 w-4" />;
@@ -307,6 +337,8 @@ export default function DBSchemaGraph({ contained = false }: { contained?: boole
   const [month, setMonth] = useState('');
   const [search, setSearch] = useState('');
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
+  const [customerModalId, setCustomerModalId] = useState<string | null>(null);
+  const [customerModalOpen, setCustomerModalOpen] = useState(false);
 
   const isDark = (forcedTheme ?? resolvedTheme) === 'dark';
 
@@ -377,17 +409,18 @@ export default function DBSchemaGraph({ contained = false }: { contained?: boole
       nodes: data.nodes.map((node) => {
         const isRoot = node.id === data.current.id;
         const share = Math.sqrt(nodeWeight(node, weightBy) / maxWeight) || 0;
+        const catppuccinPalette = isDark ? catppuccinMocha : catppuccinLatte;
         return {
           ...node,
           isRoot,
-          color: levelColor[node.type] || '#64748b',
+          color: catppuccinPalette[node.type] || levelColor[node.type] || '#64748b',
           size: isRoot ? 24 : 9 + Math.round(share * 12),
           formattedWeight: weightText(node as GraphNode, weightBy),
         };
       }),
       links: data.edges.map((edge) => ({ ...edge })),
     };
-  }, [data, weightBy, maxWeight]);
+  }, [data, weightBy, maxWeight, isDark]);
 
   const linksByNode = useMemo(() => {
     const map = new Map<string, Set<string>>();
@@ -566,6 +599,11 @@ export default function DBSchemaGraph({ contained = false }: { contained?: boole
   const navigateNode = (node: GraphNode) => {
     setSelectedNode(node);
     if (node.type === 'account') return;
+    if (node.type === 'customer') {
+      setCustomerModalId(node.code);
+      setCustomerModalOpen(true);
+      return;
+    }
     // Clicking the node you are already on should inspect it, not refetch the same level
     // and throw away the current page.
     if (node.id === data?.current.id) return;
@@ -576,20 +614,40 @@ export default function DBSchemaGraph({ contained = false }: { contained?: boole
     }
     const next: Selection = { ...selection, level: node.type as GraphLevel };
     if (node.type === 'product') {
-      Object.assign(next, { product_code: node.code, branch_code: undefined, scheme_code: undefined, agent_code: undefined, customer_id: undefined });
+      Object.assign(next, {
+        product_code: node.code, branch_code: undefined, scheme_code: undefined,
+        agent_code: undefined, tenure_band: undefined, loan_size_bucket: undefined, customer_id: undefined,
+      });
     } else if (node.type === 'branch') {
-      Object.assign(next, { branch_code: node.code, scheme_code: undefined, agent_code: undefined, customer_id: undefined });
+      Object.assign(next, {
+        branch_code: node.code, scheme_code: undefined,
+        agent_code: undefined, tenure_band: undefined, loan_size_bucket: undefined, customer_id: undefined,
+      });
     } else if (node.type === 'scheme') {
-      Object.assign(next, { scheme_code: node.code, agent_code: undefined, customer_id: undefined });
+      Object.assign(next, {
+        scheme_code: node.code,
+        tenure_band: undefined, loan_size_bucket: undefined, customer_id: undefined,
+      });
     } else if (node.type === 'agent') {
-      Object.assign(next, { agent_code: node.code, customer_id: undefined });
+      Object.assign(next, {
+        agent_code: node.code,
+        tenure_band: undefined, loan_size_bucket: undefined, customer_id: undefined,
+      });
       setWeightBy('outstanding');
-    } else if (node.type === 'customer') {
-      Object.assign(next, { customer_id: node.code });
+    } else if (node.type === 'tenure') {
+      Object.assign(next, {
+        tenure_band: node.code,
+        loan_size_bucket: undefined, customer_id: undefined,
+      });
+    } else if (node.type === 'loan_size') {
+      Object.assign(next, {
+        loan_size_bucket: node.code,
+        customer_id: undefined,
+      });
     } else if (node.type === 'portfolio') {
       Object.keys(next).forEach((key) => { if (key !== 'level') delete next[key as keyof Selection]; });
     }
-    void loadGraph(next, 0, node.type === 'agent' ? 'outstanding' : weightBy);
+    void loadGraph(next, 0, (node.type === 'agent' || node.type === 'loan_size') ? 'outstanding' : weightBy);
   };
 
   const navigatePath = (item: PathItem) => {
@@ -603,11 +661,13 @@ export default function DBSchemaGraph({ contained = false }: { contained?: boole
       if (pathItem.level === 'branch') next.branch_code = pathItem.code;
       if (pathItem.level === 'scheme') next.scheme_code = pathItem.code;
       if (pathItem.level === 'agent') next.agent_code = pathItem.code;
+      if (pathItem.level === 'tenure') next.tenure_band = pathItem.code;
+      if (pathItem.level === 'loan_size') next.loan_size_bucket = pathItem.code;
       if (pathItem.level === 'customer') next.customer_id = pathItem.code;
       if (pathItem.level === item.level) break;
     }
-    if (item.level === 'agent') setWeightBy('outstanding');
-    void loadGraph(next, 0, item.level === 'agent' ? 'outstanding' : weightBy);
+    if (item.level === 'agent' || item.level === 'loan_size') setWeightBy('outstanding');
+    void loadGraph(next, 0, (item.level === 'agent' || item.level === 'loan_size') ? 'outstanding' : weightBy);
   };
 
   const chooseSearch = (result: SearchResult) => {
@@ -616,8 +676,10 @@ export default function DBSchemaGraph({ contained = false }: { contained?: boole
     if (result.type === 'agent') {
       setWeightBy('outstanding');
       void loadGraph({ level: 'agent', agent_code: result.code }, 0, 'outstanding');
+    } else {
+      setCustomerModalId(result.code);
+      setCustomerModalOpen(true);
     }
-    else void loadGraph({ level: 'customer', customer_id: result.code }, 0);
   };
 
   const changeWeight = (next: WeightBy) => {
@@ -637,7 +699,7 @@ export default function DBSchemaGraph({ contained = false }: { contained?: boole
 
   const content = (
     <div className={`${expanded ? (contained ? 'absolute inset-0 z-30' : 'fixed inset-0 z-[9999]') : 'h-full min-h-[620px]'} flex w-full flex-col overflow-hidden bg-background`}>
-      <div className="shrink-0 border-b border-border/70 px-4 py-3">
+      <div className={`shrink-0 border-b border-border/70 px-4 py-3 ${contained ? 'pr-14' : ''}`}>
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <div className="flex flex-wrap items-center gap-2">
@@ -743,6 +805,19 @@ export default function DBSchemaGraph({ contained = false }: { contained?: boole
                   <div className="flex justify-between gap-3 rounded-lg bg-muted/40 p-2"><span className="text-muted-foreground">Agent code</span><strong>{inspector.agent_code || '—'}</strong></div>
                 </>
               )}
+              {inspector?.type === 'customer' && (
+                <Button
+                  className="w-full text-xs gap-1.5 mt-2 font-semibold shadow-sm"
+                  size="sm"
+                  onClick={() => {
+                    setCustomerModalId(inspector.code);
+                    setCustomerModalOpen(true);
+                  }}
+                >
+                  <Users className="h-3.5 w-3.5" />
+                  View 360 Profile & Repayment History
+                </Button>
+              )}
               <div className="mt-3 rounded-xl border border-amber-500/30 bg-amber-500/5 p-3 text-[10px] leading-relaxed text-muted-foreground">
                 <div className="mb-1 flex items-center gap-1 font-semibold uppercase text-amber-700 dark:text-amber-300"><Database className="h-3 w-3" />Data basis</div>
                 Latest risk snapshot: <strong>{data?.coverage.snapshot_date || 'Unavailable'}</strong><br />
@@ -774,7 +849,7 @@ export default function DBSchemaGraph({ contained = false }: { contained?: boole
                     <div className="mt-1.5 space-y-1 text-[10px]">
                       {[...new Set([data?.current.type || 'portfolio', ...children.map((node) => node.type)])].map((type) => (
                         <div key={type} className="flex items-center gap-1.5">
-                          <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: levelColor[type] }} />
+                          <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: (isDark ? catppuccinMocha[type] : catppuccinLatte[type]) || levelColor[type] }} />
                           <span className="font-medium text-foreground/80">{levelLabel[type]}</span>
                         </div>
                       ))}
@@ -811,12 +886,41 @@ export default function DBSchemaGraph({ contained = false }: { contained?: boole
                     />
                   )}
 
-                  <div className="absolute bottom-3 left-3 z-10 flex items-center gap-2 rounded-xl border bg-background/85 px-3 py-1.5 text-[11px] shadow-sm backdrop-blur-md">
-                    <Badge variant="outline" className="text-[10px] font-semibold uppercase">{levelLabel[data?.level || 'portfolio']} tier</Badge>
+                  <div className="absolute bottom-3 left-1/2 -translate-x-1/2 z-10 flex flex-wrap items-center justify-center gap-2 rounded-xl bg-background/85 px-3.5 py-1.5 text-[11px] shadow-sm backdrop-blur-md border-0 whitespace-nowrap">
+                    <Badge variant="secondary" className="border-0 bg-muted/60 text-foreground text-[10px] font-semibold uppercase shadow-none">
+                      {levelLabel[data?.level || 'portfolio']} tier
+                    </Badge>
                     <span className="font-mono text-muted-foreground">{forceGraphData.nodes.length} nodes · {forceGraphData.links.length} edges</span>
                     <span className="hidden text-muted-foreground sm:inline">
                       · click a {levelLabel[childLevelOf[data?.level || 'portfolio']]?.toLowerCase() || 'node'} to go deeper
                     </span>
+                    {Boolean(data?.children_total) && (
+                      <span className="font-mono text-muted-foreground">
+                        · showing {data?.offset ? `${pageStart}–${pageEnd}` : pageEnd} out of {data?.children_total}
+                      </span>
+                    )}
+                    {(data?.children_total || 0) > PAGE_SIZE && (
+                      <div className="flex items-center gap-1 ml-1">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="h-6 px-2 text-[10px] shadow-none border border-border/80 hover:shadow-none hover:bg-muted font-medium"
+                          disabled={(data?.offset || 0) === 0 || loading}
+                          onClick={() => void loadGraph(selection, Math.max(0, (data?.offset || 0) - PAGE_SIZE))}
+                        >
+                          <ChevronLeft className="mr-0.5 h-3 w-3" />Previous
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="h-6 px-2 text-[10px] shadow-none border border-border/80 hover:shadow-none hover:bg-muted font-medium"
+                          disabled={pageEnd >= (data?.children_total || 0) || loading}
+                          onClick={() => void loadGraph(selection, (data?.offset || 0) + PAGE_SIZE)}
+                        >
+                          Next<ChevronRight className="ml-0.5 h-3 w-3" />
+                        </Button>
+                      </div>
+                    )}
                   </div>
 
                   {!loading && forceGraphData.nodes.length === 0 && (
@@ -883,9 +987,25 @@ export default function DBSchemaGraph({ contained = false }: { contained?: boole
               {(data?.children_total || 0) > PAGE_SIZE && (
                 <div className="flex items-center justify-between border-t px-4 py-2 text-xs">
                   <span className="text-muted-foreground">Showing {pageStart}–{pageEnd} of {data?.children_total}</span>
-                  <div className="flex gap-1">
-                    <Button variant="outline" size="sm" disabled={(data?.offset || 0) === 0 || loading} onClick={() => void loadGraph(selection, Math.max(0, (data?.offset || 0) - PAGE_SIZE))}><ChevronLeft className="mr-1 h-3.5 w-3.5" />Previous</Button>
-                    <Button variant="outline" size="sm" disabled={pageEnd >= (data?.children_total || 0) || loading} onClick={() => void loadGraph(selection, (data?.offset || 0) + PAGE_SIZE)}>Next<ChevronRight className="ml-1 h-3.5 w-3.5" /></Button>
+                  <div className="flex gap-1.5">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="shadow-none border border-border/80 hover:shadow-none hover:bg-muted font-medium"
+                      disabled={(data?.offset || 0) === 0 || loading}
+                      onClick={() => void loadGraph(selection, Math.max(0, (data?.offset || 0) - PAGE_SIZE))}
+                    >
+                      <ChevronLeft className="mr-1 h-3.5 w-3.5" />Previous
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="shadow-none border border-border/80 hover:shadow-none hover:bg-muted font-medium"
+                      disabled={pageEnd >= (data?.children_total || 0) || loading}
+                      onClick={() => void loadGraph(selection, (data?.offset || 0) + PAGE_SIZE)}
+                    >
+                      Next<ChevronRight className="ml-1 h-3.5 w-3.5" />
+                    </Button>
                   </div>
                 </div>
               )}
@@ -901,6 +1021,14 @@ export default function DBSchemaGraph({ contained = false }: { contained?: boole
     </div>
   );
 
-  if (expanded && mounted && !contained) return createPortal(content, document.body);
-  return content;
+  return (
+    <>
+      {expanded && mounted && !contained ? createPortal(content, document.body) : content}
+      <Customer360Dialog
+        customerId={customerModalId}
+        open={customerModalOpen}
+        onOpenChange={setCustomerModalOpen}
+      />
+    </>
+  );
 }

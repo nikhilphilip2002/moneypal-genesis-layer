@@ -179,8 +179,10 @@ export default function WorkbenchWorkspace({
             : 'h-[96svh] w-[98vw] max-w-[1600px] rounded-2xl sm:rounded-2xl',
         )}
       >
-        {view === 'portfolio-dashboard' ? (
-          <DialogTitle className="sr-only">Portfolio dashboard</DialogTitle>
+        {view === 'portfolio-dashboard' || view === 'curiosity-graph' ? (
+          <DialogTitle className="sr-only">
+            {view === 'portfolio-dashboard' ? 'Portfolio dashboard' : 'GICC Portfolio Information Graph'}
+          </DialogTitle>
         ) : (
           <DialogHeader className="shrink-0 border-b bg-card px-5 py-4 pr-14 text-left">
             <DialogTitle className="flex items-center gap-2 text-base">
@@ -194,11 +196,11 @@ export default function WorkbenchWorkspace({
         <div className={cn(
           'relative min-h-0 flex-1',
           view === 'curiosity-graph'
-            ? 'overflow-hidden p-3'
+            ? 'overflow-hidden p-0'
             : isModule ? 'overflow-auto bg-background' : 'overflow-auto p-3 sm:p-5',
         )}>
           {view === 'curiosity-graph' && (
-            <div className="h-full min-h-0 overflow-hidden rounded-2xl border border-border/70 bg-card p-3 sm:p-4">
+            <div className="h-full w-full min-h-0 overflow-hidden">
               <DBSchemaGraph contained />
             </div>
           )}

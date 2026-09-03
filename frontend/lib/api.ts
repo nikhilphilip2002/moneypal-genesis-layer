@@ -478,6 +478,87 @@ export const regulatory = {
 
 // ─── Platform administration (Moneypal Administrator) ───
 
+export interface CustomerProfile {
+  customer_id: string;
+  full_name: string;
+  mobile_primary?: string | null;
+  mobile_secondary?: string | null;
+  email?: string | null;
+  address: string;
+  pan_number?: string | null;
+  aadhaar_masked?: string | null;
+  kyc_verified: boolean;
+  kyc_document_count: number;
+  yearly_income: number;
+  monthly_income: number;
+  occupation_name?: string | null;
+  occupation_type?: string | null;
+  risk_rating: string;
+  home_branch_code?: string | null;
+  home_branch_name?: string | null;
+}
+
+export interface CustomerLoanAccount {
+  loan_account_number: string;
+  product_code: string;
+  product_name: string;
+  scheme_code: string;
+  scheme_name: string;
+  sanction_date?: string | null;
+  closure_date?: string | null;
+  sanction_amount: number;
+  disbursed_amount: number;
+  principal_repaid: number;
+  interest_repaid: number;
+  interest_rate: number;
+  number_of_emis: number;
+  emi_amount: number;
+  loan_status: string;
+  active: boolean;
+  agent_code: string;
+  agent_name: string;
+  principal_outstanding: number;
+  total_overdue: number;
+  dpd_days: number;
+  is_par30: boolean;
+  is_npa: boolean;
+  asset_classification: string;
+}
+
+export interface CustomerRepaymentEvent {
+  loan_account_number: string;
+  sequence: number;
+  repayment_date?: string | null;
+  principal_due: number;
+  interest_due: number;
+  total_due: number;
+  principal_paid: number;
+  interest_paid: number;
+  total_paid: number;
+  collection_shortfall: number;
+  collection_efficiency: number;
+  status: 'PAID' | 'PARTIAL' | 'MISSED';
+}
+
+export interface Customer360Response {
+  profile: CustomerProfile;
+  summary: {
+    total_accounts: number;
+    active_accounts: number;
+    closed_accounts: number;
+    total_sanctioned: number;
+    total_disbursed: number;
+    total_principal_repaid: number;
+    principal_outstanding: number;
+    total_overdue: number;
+    total_due: number;
+    total_paid: number;
+    overall_collection_efficiency: number;
+  };
+  loans: CustomerLoanAccount[];
+  repayment_history: CustomerRepaymentEvent[];
+}
+
 export const admin = {
   status: (): Promise<PlatformStatus> => apiRequest('/admin/status'),
   dbSchema: (params?: {
@@ -486,6 +567,8 @@ export const admin = {
     branch_code?: string;
     scheme_code?: string;
     agent_code?: string;
+    tenure_band?: string;
+    loan_size_bucket?: string;
     customer_id?: string;
     month?: string;
     weight_by?: string;
@@ -502,6 +585,8 @@ export const admin = {
       if (params.branch_code) parts.push(`branch_code=${encodeURIComponent(params.branch_code)}`);
       if (params.scheme_code) parts.push(`scheme_code=${encodeURIComponent(params.scheme_code)}`);
       if (params.agent_code) parts.push(`agent_code=${encodeURIComponent(params.agent_code)}`);
+      if (params.tenure_band) parts.push(`tenure_band=${encodeURIComponent(params.tenure_band)}`);
+      if (params.loan_size_bucket) parts.push(`loan_size_bucket=${encodeURIComponent(params.loan_size_bucket)}`);
       if (params.customer_id) parts.push(`customer_id=${encodeURIComponent(params.customer_id)}`);
       if (params.month) parts.push(`month=${encodeURIComponent(params.month)}`);
       if (params.weight_by) parts.push(`weight_by=${encodeURIComponent(params.weight_by)}`);
@@ -511,6 +596,8 @@ export const admin = {
     }
     return apiRequest(`/admin/db-schema${q}`);
   },
+  customerDetails: (customerId: string): Promise<Customer360Response> =>
+    apiRequest(`/admin/customers/${encodeURIComponent(customerId)}/details`),
   monthlyBreakdown: (month?: string): Promise<any> =>
     apiRequest(`/admin/monthly-breakdown${month ? `?month=${encodeURIComponent(month)}` : ''}`),
   momLoanAnalysis: (): Promise<any> =>

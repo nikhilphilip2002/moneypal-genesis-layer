@@ -3,7 +3,11 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from app.services import brief_cache, platform
-from app.services.curiosity_graph import get_curiosity_graph, search_curiosity_entities
+from app.services.curiosity_graph import (
+    get_curiosity_graph,
+    get_customer_360_details,
+    search_curiosity_entities,
+)
 from app.services.db_schema import (
     get_monthly_breakdown,
     get_mom_loan_start_analysis,
@@ -36,6 +40,8 @@ def db_schema(
     branch_code: str = None,
     scheme_code: str = None,
     agent_code: str = None,
+    tenure_band: str = None,
+    loan_size_bucket: str = None,
     weight_by: str = "borrowers",
     limit: int = 20,
     offset: int = 0,
@@ -53,12 +59,23 @@ def db_schema(
         branch_code=branch_code or (manager_id or "").removeprefix("branch:"),
         scheme_code=scheme_code,
         agent_code=agent_code or (agent_id or "").removeprefix("agent:"),
+        tenure_band=tenure_band,
+        loan_size_bucket=loan_size_bucket,
         customer_id=customer_id,
         month=month,
         weight_by=weight_by,
         limit=limit,
         offset=offset,
     )
+
+
+@router.get("/admin/customers/{customer_id}/details")
+def customer_details(customer_id: str):
+    """Retrieve full 360 customer profile, linked active loans, and repayment history."""
+    result = get_customer_360_details(customer_id)
+    if "error" in result:
+        raise HTTPException(404, result["error"])
+    return result
 
 
 @router.get("/admin/monthly-breakdown")
