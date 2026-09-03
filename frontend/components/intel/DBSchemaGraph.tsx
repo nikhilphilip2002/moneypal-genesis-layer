@@ -160,36 +160,54 @@ const levelLabel: Record<string, string> = {
   related_agent: 'Linked Agent',
 };
 
-/** Low-saturation, balanced architectural palette ensuring visual harmony across all views. */
-const nodePaletteDark: Record<string, string> = {
-  portfolio: '#8e8ba8',     // Muted Iris / Mauve-Slate
-  product: '#758ba6',       // Muted Steel Blue
-  branch: '#6b8f94',        // Muted Celadon / Cyan-Slate
-  scheme: '#799480',        // Muted Sage
-  agent: '#999175',         // Muted Warm Khaki
-  tenure: '#738596',        // Muted Slate
-  loan_size: '#887c94',     // Muted Heather / Violet-Slate
-  customer: '#a68376',      // Muted Terracotta
-  account: '#a39775',       // Muted Sandstone
-  related_agent: '#9e7d8a', // Muted Dusty Rose
+/**
+ * Shadcn chart color tokens (chart-1 through chart-10).
+ * Standard shadcn variable naming scheme with low-saturation architectural values.
+ */
+const chartColorsDark: Record<string, string> = {
+  'chart-1': '#8e8ba8', // Portfolio: Muted Iris / Mauve-Slate
+  'chart-2': '#758ba6', // Product: Muted Steel Blue
+  'chart-3': '#6b8f94', // Branch: Muted Celadon / Cyan-Slate
+  'chart-4': '#799480', // Scheme: Muted Sage
+  'chart-5': '#999175', // Agent: Muted Warm Khaki
+  'chart-6': '#738596', // Tenure: Muted Slate
+  'chart-7': '#887c94', // Loan Size: Muted Heather / Violet-Slate
+  'chart-8': '#a68376', // Customer: Muted Terracotta
+  'chart-9': '#a39775', // Account: Muted Sandstone
+  'chart-10': '#9e7d8a', // Linked Agent: Muted Dusty Rose
 };
 
-const nodePaletteLight: Record<string, string> = {
-  portfolio: '#63607a',     // Muted Deep Iris
-  product: '#4a5f78',       // Muted Deep Steel Blue
-  branch: '#47666b',        // Muted Deep Celadon
-  scheme: '#4e6954',        // Muted Deep Sage
-  agent: '#6b6348',         // Muted Deep Khaki
-  tenure: '#4c5d6e',        // Muted Deep Slate
-  loan_size: '#5f546b',     // Muted Deep Heather
-  customer: '#78594d',      // Muted Deep Terracotta
-  account: '#736849',       // Muted Deep Sandstone
-  related_agent: '#6e4f5c', // Muted Deep Dusty Rose
+const chartColorsLight: Record<string, string> = {
+  'chart-1': '#63607a', // Portfolio: Muted Deep Iris
+  'chart-2': '#4a5f78', // Product: Muted Deep Steel Blue
+  'chart-3': '#47666b', // Branch: Muted Deep Celadon
+  'chart-4': '#4e6954', // Scheme: Muted Deep Sage
+  'chart-5': '#6b6348', // Agent: Muted Deep Khaki
+  'chart-6': '#4c5d6e', // Tenure: Muted Deep Slate
+  'chart-7': '#5f546b', // Loan Size: Muted Deep Heather
+  'chart-8': '#78594d', // Customer: Muted Deep Terracotta
+  'chart-9': '#736849', // Account: Muted Deep Sandstone
+  'chart-10': '#6e4f5c', // Linked Agent: Muted Deep Dusty Rose
+};
+
+/** Mapping from graph entity level to shadcn chart variable name */
+const levelToChartVariable: Record<string, keyof typeof chartColorsDark> = {
+  portfolio: 'chart-1',
+  product: 'chart-2',
+  branch: 'chart-3',
+  scheme: 'chart-4',
+  agent: 'chart-5',
+  tenure: 'chart-6',
+  loan_size: 'chart-7',
+  customer: 'chart-8',
+  account: 'chart-9',
+  related_agent: 'chart-10',
 };
 
 function getNodeColor(type: string, isDark: boolean): string {
-  const palette = isDark ? nodePaletteDark : nodePaletteLight;
-  return palette[type] || (isDark ? '#64748b' : '#475569');
+  const chartVar = levelToChartVariable[type] || 'chart-1';
+  const palette = isDark ? chartColorsDark : chartColorsLight;
+  return palette[chartVar] || (isDark ? '#64748b' : '#475569');
 }
 
 /** The tier a node of each type drills into, used for the canvas legend. */
