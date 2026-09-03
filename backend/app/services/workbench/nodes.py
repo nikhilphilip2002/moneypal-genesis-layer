@@ -231,8 +231,6 @@ async def run_macro(
                 *(history_messages or []),
                 {"role": "user", "content": f"Question: {intent}\n\nContext:\n{context}"},
             ]),
-            max_tokens=500,
-            temperature=0.2,
         )
         answer = result.text.strip()
     except Exception as exc:  # noqa: BLE001
@@ -299,8 +297,6 @@ async def run_web(intent: str, *, user: str) -> SourceResult:
                 {"role": "system", "content": _WEB_SYSTEM},
                 {"role": "user", "content": f"Question: {query}\n\n{web.context(raw_text, evidence)}"},
             ],
-            max_tokens=700,
-            temperature=0.1,
         )
         answer = result.text.strip()
     except Exception as exc:
@@ -361,8 +357,6 @@ async def run_knowledge(
                 *(history_messages or []),
                 {"role": "user", "content": f"Question: {question}\n\nCatalog context:\n{context}"},
             ]),
-            max_tokens=350,
-            temperature=0.1,
         )
         answer = result.text.strip()
     except Exception as exc:  # noqa: BLE001 - catalog fallback can still answer a definition
@@ -468,8 +462,6 @@ async def run_competitive(intent: str) -> SourceResult:
                 {"role": "system", "content": system},
                 {"role": "user", "content": f"Question: {intent}\n\nIndexed evidence:\n{context}"},
             ],
-            max_tokens=550,
-            temperature=0.1,
         )
         answer = completion.text.strip()
     except Exception as exc:  # noqa: BLE001 - retrieval evidence still has value
@@ -562,8 +554,6 @@ async def run_regulatory(intent: str) -> SourceResult:
                     f"\n\nEvidence:\n{context}"
                 )},
             ],
-            max_tokens=550,
-            temperature=0.1,
         )
         answer = completion.text.strip()
     except Exception as exc:  # noqa: BLE001

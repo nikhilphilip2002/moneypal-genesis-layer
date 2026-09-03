@@ -161,7 +161,6 @@ def generate_with_groq(prompt: str) -> str | None:
                     },
                     {"role": "user", "content": prompt},
                 ],
-                temperature=0.2,
             )
             if key == keys[0]:
                 _note_groq_pressure(raw.headers)

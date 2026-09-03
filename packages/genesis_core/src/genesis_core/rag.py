@@ -261,7 +261,7 @@ def _note_rate_headers(headers) -> None:
             return
 
 
-def _chat(messages: list[dict], temperature: float) -> str:
+def _chat(messages: list[dict]) -> str:
     import time
 
     keys = _api_keys()
@@ -277,7 +277,6 @@ def _chat(messages: list[dict], temperature: float) -> str:
         try:
             raw = _groq_client(key).chat.completions.with_raw_response.create(
                 model=settings.groq_model,
-                temperature=temperature,
                 messages=messages,
             )
             if key == keys[0]:
@@ -293,7 +292,7 @@ def _chat(messages: list[dict], temperature: float) -> str:
     raise last_error  # type: ignore[misc]
 
 
-def _chat_stream(messages: list[dict], temperature: float):
+def _chat_stream(messages: list[dict]):
     """Streaming counterpart of _chat. Yields content deltas.
 
     Fails over to the secondary key only if the primary errors *before* emitting
@@ -316,7 +315,6 @@ def _chat_stream(messages: list[dict], temperature: float):
         try:
             stream = _groq_client(key).chat.completions.create(
                 model=settings.groq_model,
-                temperature=temperature,
                 messages=messages,
                 stream=True,
             )
@@ -373,7 +371,6 @@ def generate(
     prompt: str,
     context_chunks: list[dict],
     system: str = DEFAULT_SYSTEM,
-    temperature: float = 0.3,
 ) -> str:
     """Generate an answer grounded in retrieved context chunks."""
     return _chat(
@@ -381,7 +378,6 @@ def generate(
             {"role": "system", "content": system},
             {"role": "user", "content": _context_user(prompt, context_chunks)},
         ],
-        temperature,
     )
 
 
@@ -389,7 +385,6 @@ def generate_stream(
     prompt: str,
     context_chunks: list[dict],
     system: str = DEFAULT_SYSTEM,
-    temperature: float = 0.3,
 ):
     """Stream a grounded answer token-by-token. Yields text deltas as they arrive."""
     yield from _chat_stream(
@@ -397,7 +392,6 @@ def generate_stream(
             {"role": "system", "content": system},
             {"role": "user", "content": _context_user(prompt, context_chunks)},
         ],
-        temperature,
     )
 
 

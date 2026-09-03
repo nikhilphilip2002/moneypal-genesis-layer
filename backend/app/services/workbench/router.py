@@ -288,8 +288,6 @@ async def route(
         result = await client.complete(
             messages=messages,
             json_schema=route_schema(role),
-            max_tokens=300,
-            temperature=0.0,
         )
         payload = result.json()
     except (LLMError, ValueError) as exc:

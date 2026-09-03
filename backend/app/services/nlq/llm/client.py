@@ -71,8 +71,7 @@ class LLMResult:
                 + (f" (finish_reason={self.finish_reason})" if self.finish_reason else "")
                 + (
                     f"; it spent the budget on {len(self.reasoning)} chars of reasoning — "
-                    "disable thinking for this model (NLQ_LLM_THINKING=false) or raise "
-                    "max_tokens"
+                    "disable thinking for this model (NLQ_LLM_THINKING=false)"
                     if self.reasoning
                     else ""
                 )
@@ -105,8 +104,6 @@ class LLMClient(Protocol):
         *,
         messages: list[dict[str, str]],
         json_schema: dict[str, Any] | None = None,
-        max_tokens: int = 1024,
-        temperature: float = 0.0,
         timeout_s: float | None = None,
     ) -> LLMResult: ...
 
@@ -121,14 +118,6 @@ class _ProviderProfile:
     supports_json_schema: bool
     health_path: str
     health_method: str = "GET"
-    chat_template_kwargs: dict[str, Any] | None = None
-    """Extra arguments for the server-side chat template. llama.cpp uses these to switch a
-    hybrid-reasoning model out of thinking mode; providers that do not know the field
-    ignore it, so it is only sent where it is known to be honoured."""
-    cache_prompt: bool = False
-    cache_reuse_tokens: int = 0
-    """llama.cpp KV-cache controls. Kept provider-scoped so hosted OpenAI-compatible
-    services never receive llama.cpp extension fields."""
 
 
 @dataclass
@@ -207,23 +196,13 @@ class OpenAICompatibleClient:
         *,
         messages: list[dict[str, str]],
         json_schema: dict[str, Any] | None = None,
-        max_tokens: int = 1024,
-        temperature: float = 0.0,
         timeout_s: float | None = None,
     ) -> LLMResult:
         payload: dict[str, Any] = {
             "model": self.model,
             "messages": self._prepare_messages(messages, json_schema),
-            "temperature": temperature,  # 0.0 — this is translation, not authorship
-            "max_tokens": max_tokens,
             "stream": False,
         }
-        if self.profile.chat_template_kwargs:
-            payload["chat_template_kwargs"] = dict(self.profile.chat_template_kwargs)
-        if self.profile.cache_prompt:
-            payload["cache_prompt"] = True
-            if self.profile.cache_reuse_tokens > 0:
-                payload["n_cache_reuse"] = self.profile.cache_reuse_tokens
         response_format = self._response_format(json_schema)
         if response_format:
             payload["response_format"] = response_format
@@ -280,8 +259,8 @@ class OpenAICompatibleClient:
             )
             if result.finish_reason == "length":
                 logger.warning(
-                    "LLM output hit max_tokens=%s (prompt=%s completion=%s)",
-                    max_tokens, result.prompt_tokens, result.completion_tokens,
+                    "LLM output hit token length limit (prompt=%s completion=%s)",
+                    result.prompt_tokens, result.completion_tokens,
                 )
             return result
 
@@ -317,15 +296,6 @@ def _profile(provider: str) -> _ProviderProfile:
             supports_json_schema=True,
             # llama-server exposes /health at the server root, one level above /v1.
             health_path=settings.nlq_llm_base_url.rstrip("/").removesuffix("/v1") + "/health",
-            # Qwen3-class models think first and answer second. The plan is a form to fill
-            # in, not a problem to reason about, and the trace costs the whole token budget
-            # before a single character of JSON is emitted.
-            chat_template_kwargs=None if settings.nlq_llm_thinking else {"enable_thinking": False},
-            # Keep the complete Gold catalog resident in each active slot. Chunk reuse is
-            # especially important when the final user question changes: on the deployed
-            # Qwen server this reduced prompt evaluation from ~11,447 tokens to ~30.
-            cache_prompt=True,
-            cache_reuse_tokens=256,
         )
     if provider == "groq":
         return _ProviderProfile(
@@ -382,8 +352,6 @@ async def warm_catalog_prompt_cache() -> None:
                 catalog=catalog,
             ),
             json_schema=plan_schema(catalog),
-            max_tokens=1,
-            temperature=0.0,
         )
         logger.info(
             "Warmed NLQ Gold prompt cache: prompt_tokens=%s cached_prompt_tokens=%s "

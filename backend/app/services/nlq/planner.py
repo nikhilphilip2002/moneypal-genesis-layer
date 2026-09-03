@@ -1143,7 +1143,7 @@ async def plan(
             )
         try:
             result = await llm.complete(
-                messages=messages, json_schema=schema, max_tokens=700, temperature=0.0
+                messages=messages, json_schema=schema
             )
         except LLMError as exc:
             logger.warning("NLQ planner LLM call failed: %s", exc)

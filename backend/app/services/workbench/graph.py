@@ -295,8 +295,6 @@ async def _synthesize_node(state: WorkbenchState) -> dict[str, Any]:
                     *state.get("history_messages", []),
                     {"role": "user", "content": f"Question: {state['question']}\n\nFindings:\n{findings}"},
                 ]),
-                max_tokens=500,
-                temperature=0.1,
             )
             text = result.text.strip() or text
     except Exception as exc:  # noqa: BLE001 - deterministic findings remain usable

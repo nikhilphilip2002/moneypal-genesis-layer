@@ -166,7 +166,7 @@ async def generate(
         attempt.attempts += 1
         try:
             result = await llm.complete(
-                messages=messages, json_schema=schema, max_tokens=800, temperature=0.0
+                messages=messages, json_schema=schema
             )
         except LLMError as exc:
             attempt.error = str(exc)

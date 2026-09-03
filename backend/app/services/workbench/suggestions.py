@@ -61,8 +61,6 @@ async def personalize(
             )},
         ],
         json_schema=schema,
-        max_tokens=220,
-        temperature=0.0,
     )
     payload = result.json()
     proposed = payload.get("suggestions", []) if isinstance(payload, dict) else []

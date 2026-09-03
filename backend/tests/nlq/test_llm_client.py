@@ -112,47 +112,19 @@ class TestThinkingModels:
         assert result.reasoning == "thinking..."
 
     @pytest.mark.anyio
-    async def test_chat_template_kwargs_are_sent_when_declared(self):
+    async def test_extension_fields_not_sent(self):
         seen = {}
 
         def handler(request):
             seen.update(json.loads(request.content))
             return _ok('{"route":"refuse"}')
 
-        profile = _ProviderProfile(
-            name="llamacpp",
-            base_url="http://stub/v1",
-            api_key=None,
-            supports_json_schema=True,
-            health_path="/health",
-            chat_template_kwargs={"enable_thinking": False},
-            cache_prompt=True,
-            cache_reuse_tokens=256,
-        )
-        client = OpenAICompatibleClient(profile=profile, model="m")
-        client._client = httpx.AsyncClient(
-            base_url="http://stub/v1", transport=httpx.MockTransport(handler)
-        )
-        await client.complete(messages=[{"role": "user", "content": "hi"}])
-        assert seen["chat_template_kwargs"] == {"enable_thinking": False}
-        assert seen["cache_prompt"] is True
-        assert seen["n_cache_reuse"] == 256
-
-    @pytest.mark.anyio
-    async def test_chat_template_kwargs_absent_by_default(self):
-        """Groq and friends must not receive a llama.cpp-specific field."""
-        seen = {}
-
-        def handler(request):
-            seen.update(json.loads(request.content))
-            return _ok('{"route":"refuse"}')
-
-        await _client(handler, supports_json_schema=False, name="groq").complete(
-            messages=[{"role": "user", "content": "hi"}]
-        )
+        await _client(handler).complete(messages=[{"role": "user", "content": "hi"}])
         assert "chat_template_kwargs" not in seen
         assert "cache_prompt" not in seen
         assert "n_cache_reuse" not in seen
+        assert "temperature" not in seen
+        assert "max_tokens" not in seen
 
     @pytest.mark.anyio
     async def test_cached_prompt_token_count_is_captured(self):
@@ -244,16 +216,18 @@ class TestResponseFormat:
         assert seen["messages"][0]["content"] == "Primary instructions\n\nSession state"
 
     @pytest.mark.anyio
-    async def test_temperature_defaults_to_zero(self):
-        """Translation, not authorship — a nonzero default would make plans nondeterministic."""
+    async def test_temperature_and_max_tokens_omitted_from_payload(self):
         seen = {}
 
         def handler(request):
             seen.update(json.loads(request.content))
             return _ok()
 
-        await _client(handler).complete(messages=[{"role": "user", "content": "hi"}])
-        assert seen["temperature"] == 0.0
+        await _client(handler).complete(
+            messages=[{"role": "user", "content": "hi"}],
+        )
+        assert "temperature" not in seen
+        assert "max_tokens" not in seen
         assert seen["stream"] is False
 
 

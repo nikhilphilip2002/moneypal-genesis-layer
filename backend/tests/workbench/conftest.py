@@ -40,7 +40,7 @@ class FakeLLM:
     def __post_init__(self):
         self.calls = []
 
-    async def complete(self, *, messages, json_schema=None, max_tokens=1024, temperature=0.0, timeout_s=None):
+    async def complete(self, *, messages, json_schema=None, timeout_s=None):
         self.calls.append({"messages": messages, "json_schema": json_schema})
         return FakeResult(text=self.reply)
 
