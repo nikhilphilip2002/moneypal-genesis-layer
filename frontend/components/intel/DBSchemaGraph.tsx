@@ -161,32 +161,33 @@ const levelLabel: Record<string, string> = {
 };
 
 /**
- * Pastel chart color tokens (chart-1 through chart-10) using shadcn variable naming scheme.
+ * True pastel chart color tokens (chart-1 through chart-10) using shadcn variable naming scheme.
+ * High brightness (L: 85%–90%) and reduced saturation (S: 45%–65%) for soft, milky pastel aesthetics.
  */
 const chartColorsDark: Record<string, string> = {
-  'chart-1': '#cba6f7', // Mauve
-  'chart-2': '#89b4fa', // Blue
-  'chart-3': '#74c7ec', // Sapphire
-  'chart-4': '#94e2d5', // Teal
-  'chart-5': '#a6e3a1', // Green
-  'chart-6': '#89dceb', // Sky
-  'chart-7': '#b4befe', // Lavender
-  'chart-8': '#fab387', // Peach
-  'chart-9': '#f9e2af', // Yellow
-  'chart-10': '#f5c2e7', // Pink
+  'chart-1': '#b8a9e8', // Pastel Lavender / Mauve
+  'chart-2': '#a0c4f2', // Pastel Sky Blue
+  'chart-3': '#8ecde8', // Pastel Ice Aqua
+  'chart-4': '#98e4d4', // Pastel Mint
+  'chart-5': '#a3dfb6', // Pastel Pistachio
+  'chart-6': '#a4e2ec', // Pastel Powder Blue
+  'chart-7': '#bec7f4', // Pastel Lilac
+  'chart-8': '#f5be98', // Pastel Peach (soft apricot, never neon orange)
+  'chart-9': '#f3dc8e', // Pastel Buttercream
+  'chart-10': '#f0a8cb', // Pastel Blush Pink
 };
 
 const chartColorsLight: Record<string, string> = {
-  'chart-1': '#8839ef', // Mauve
-  'chart-2': '#1e66f5', // Blue
-  'chart-3': '#209fb5', // Sapphire
-  'chart-4': '#179299', // Teal
-  'chart-5': '#40a02b', // Green
-  'chart-6': '#04a5e5', // Sky
-  'chart-7': '#7287fd', // Lavender
-  'chart-8': '#fe640b', // Peach
-  'chart-9': '#df8e1d', // Yellow
-  'chart-10': '#ea76cb', // Pink
+  'chart-1': '#dcd6f7', // Pastel Lavender / Mauve
+  'chart-2': '#c7dcf7', // Pastel Sky Blue
+  'chart-3': '#c2e9f4', // Pastel Ice Aqua
+  'chart-4': '#c5ede5', // Pastel Mint
+  'chart-5': '#cdeac7', // Pastel Pistachio
+  'chart-6': '#c6e3f2', // Pastel Powder Blue
+  'chart-7': '#d8d3f6', // Pastel Lilac
+  'chart-8': '#fad8c3', // Pastel Peach Cream (soft and milky, never orange)
+  'chart-9': '#f7e9be', // Pastel Buttercream
+  'chart-10': '#f5d0de', // Pastel Blush Pink
 };
 
 /** Mapping from graph entity level to shadcn chart variable name */

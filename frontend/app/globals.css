@@ -25,16 +25,16 @@
     --input: 223 17% 79%;
     --ring: 207 100% 33%;
     --radius: 1rem;
-    --chart-1: 267 84% 58%;   /* Mauve: #8839ef */
-    --chart-2: 220 91% 54%;   /* Blue: #1e66f5 */
-    --chart-3: 189 70% 42%;   /* Sapphire: #209fb5 */
-    --chart-4: 183 74% 35%;   /* Teal: #179299 */
-    --chart-5: 109 58% 40%;   /* Green: #40a02b */
-    --chart-6: 197 97% 46%;   /* Sky: #04a5e5 */
-    --chart-7: 231 97% 72%;   /* Lavender: #7287fd */
-    --chart-8: 22 99% 52%;    /* Peach: #fe640b */
-    --chart-9: 35 77% 49%;    /* Yellow: #df8e1d */
-    --chart-10: 317 73% 69%;  /* Pink: #ea76cb */
+    --chart-1: 249 65% 90%;   /* Pastel Lavender: #dcd6f7 */
+    --chart-2: 213 75% 87%;   /* Pastel Sky Blue: #c7dcf7 */
+    --chart-3: 193 68% 86%;   /* Pastel Ice Aqua: #c2e9f4 */
+    --chart-4: 168 55% 85%;   /* Pastel Mint: #c5ede5 */
+    --chart-5: 110 48% 85%;   /* Pastel Pistachio: #cdeac7 */
+    --chart-6: 200 60% 86%;   /* Pastel Powder Blue: #c6e3f2 */
+    --chart-7: 248 65% 90%;   /* Pastel Lilac: #d8d3f6 */
+    --chart-8: 23 75% 87%;    /* Pastel Peach Cream: #fad8c3 */
+    --chart-9: 45 78% 86%;    /* Pastel Buttercream: #f7e9be */
+    --chart-10: 336 65% 89%;  /* Pastel Blush Pink: #f5d0de */
     --sidebar-background: 220 27% 98%;
     --sidebar-foreground: 204 9% 11%;
     --sidebar-primary: 207 100% 33%;
@@ -82,16 +82,16 @@
     --border: 204 9% 17%;
     --input: 204 9% 17%;
     --ring: 207 90% 45%;
-    --chart-1: 267 83% 81%;   /* Mauve: #cba6f7 */
-    --chart-2: 217 92% 76%;   /* Blue: #89b4fa */
-    --chart-3: 199 76% 69%;   /* Sapphire: #74c7ec */
-    --chart-4: 170 57% 73%;   /* Teal: #94e2d5 */
-    --chart-5: 115 54% 76%;   /* Green: #a6e3a1 */
-    --chart-6: 189 70% 73%;   /* Sky: #89dceb */
-    --chart-7: 232 97% 85%;   /* Lavender: #b4befe */
-    --chart-8: 23 92% 75%;    /* Peach: #fab387 */
-    --chart-9: 41 86% 83%;    /* Yellow: #f9e2af */
-    --chart-10: 316 73% 86%;  /* Pink: #f5c2e7 */
+    --chart-1: 254 55% 79%;   /* Pastel Lavender: #b8a9e8 */
+    --chart-2: 213 76% 79%;   /* Pastel Sky Blue: #a0c4f2 */
+    --chart-3: 198 64% 73%;   /* Pastel Ice Aqua: #8ecde8 */
+    --chart-4: 167 56% 75%;   /* Pastel Mint: #98e4d4 */
+    --chart-5: 139 48% 76%;   /* Pastel Pistachio: #a3dfb6 */
+    --chart-6: 188 62% 78%;   /* Pastel Powder Blue: #a4e2ec */
+    --chart-7: 230 70% 85%;   /* Pastel Lilac: #bec7f4 */
+    --chart-8: 24 78% 78%;    /* Pastel Peach: #f5be98 */
+    --chart-9: 46 78% 75%;    /* Pastel Buttercream: #f3dc8e */
+    --chart-10: 330 70% 80%;  /* Pastel Blush Pink: #f0a8cb */
     --sidebar-background: 204 9% 5%;
     --sidebar-foreground: 210 20% 94%;
     --sidebar-primary: 207 90% 45%;
