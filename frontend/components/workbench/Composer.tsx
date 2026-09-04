@@ -19,6 +19,7 @@ import {
   type WorkbenchTool,
 } from '@/lib/api';
 import { Button } from '@/components/ui/button';
+import { Switch } from '@/components/ui/switch';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -46,6 +47,8 @@ type Props = {
   onOpenWorkspace: (view: WorkspaceView) => void;
   dataAccess: 'direct' | 'mcp';
   onDataAccess: (mode: 'direct' | 'mcp') => void;
+  externalSourcesEnabled: boolean;
+  onExternalSourcesEnabled: (enabled: boolean) => void;
   onCompletionHeightChange?: (height: number) => void;
 };
 
@@ -59,6 +62,8 @@ export default function Composer({
   onOpenWorkspace,
   dataAccess,
   onDataAccess,
+  externalSourcesEnabled,
+  onExternalSourcesEnabled,
   onCompletionHeightChange,
 }: Props) {
   const [value, setValue] = useState('');
@@ -169,6 +174,11 @@ export default function Composer({
 
   const pinnedLabel = sources.find((source) => source.id === pinned)?.label ?? pinned;
 
+  useEffect(() => {
+    const selected = sources.find((source) => source.id === pinned);
+    if (!externalSourcesEnabled && selected?.requires_external_consent) onPin(null);
+  }, [externalSourcesEnabled, onPin, pinned, sources]);
+
   return (
     // Focus is neutral by design: a blue rim around a permanently visible input reads as an
     // alert and competes with the response cards below it. Border width never changes, and
@@ -246,7 +256,9 @@ export default function Composer({
           }
         }}
         rows={1}
-        placeholder="Ask about the loan book, market, competitors, or regulations..."
+        placeholder={externalSourcesEnabled
+          ? 'Ask about the loan book, market, competitors, or regulations...'
+          : 'Ask about the loan book...'}
         aria-label="Ask Moneypal Workbench"
         aria-autocomplete="list"
         aria-expanded={completionsOpen}
@@ -271,7 +283,28 @@ export default function Composer({
             dataAccess={dataAccess}
             onDataAccess={onDataAccess}
             onOpen={loadData}
+            externalSourcesEnabled={externalSourcesEnabled}
           />
+
+          <label
+            htmlFor="workbench-external-sources"
+            className="flex cursor-pointer items-center gap-2 rounded-lg px-1.5 py-1 text-[11px] text-muted-foreground"
+            title="Allow macro, competitive, regulatory, and web sources for this conversation"
+          >
+            <Switch
+              id="workbench-external-sources"
+              checked={externalSourcesEnabled}
+              onCheckedChange={onExternalSourcesEnabled}
+              className="h-5 w-9 data-[state=checked]:bg-primary"
+              aria-describedby="workbench-external-sources-description"
+            />
+            <span className="hidden sm:inline">
+              {externalSourcesEnabled ? 'Loan book + external' : 'Loan book only'}
+            </span>
+            <span id="workbench-external-sources-description" className="sr-only">
+              Enables macro, competitive, regulatory, and live web sources together.
+            </span>
+          </label>
 
           {pinned ? (
             <span className="flex min-w-0 items-center gap-1.5 rounded-lg bg-accent px-2.5 py-1.5 text-xs font-medium text-accent-foreground">
@@ -395,6 +428,7 @@ function PlusMenu({
   dataAccess,
   onDataAccess,
   onOpen,
+  externalSourcesEnabled,
 }: {
   sources: WorkbenchSource[];
   tools: WorkbenchTool[];
@@ -405,6 +439,7 @@ function PlusMenu({
   dataAccess: 'direct' | 'mcp';
   onDataAccess: (mode: 'direct' | 'mcp') => void;
   onOpen: () => void;
+  externalSourcesEnabled: boolean;
 }) {
   return (
     <DropdownMenu onOpenChange={(open) => open && onOpen()}>
@@ -448,6 +483,11 @@ function PlusMenu({
                 key={tool.id}
                 className="cursor-pointer flex-col items-start gap-0.5 rounded-lg py-2"
                 onClick={() => onRunTool(tool)}
+                disabled={
+                  !sources.find((source) => source.id === tool.source_id)?.deployment_available
+                  || (!externalSourcesEnabled
+                    && Boolean(sources.find((source) => source.id === tool.source_id)?.requires_external_consent))
+                }
               >
                 <span className="text-sm font-medium text-foreground">{tool.label}</span>
                 <span className="text-[11px] leading-4 text-muted-foreground">{tool.description}</span>
@@ -472,6 +512,9 @@ function PlusMenu({
                 key={source.id}
                 className="gap-2 rounded-lg"
                 onClick={() => onPin(source.id)}
+                disabled={!source.deployment_available || (
+                  source.requires_external_consent && !externalSourcesEnabled
+                )}
               >
                 <Check className={cn('size-4', pinned === source.id ? 'opacity-100' : 'opacity-0')} />
                 {source.label}

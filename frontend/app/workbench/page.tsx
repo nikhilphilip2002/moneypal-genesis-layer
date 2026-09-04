@@ -43,6 +43,14 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 
+const EXTERNAL_WORKSPACES = new Set<WorkspaceView>([
+  'macro-intelligence',
+  'competitive-intelligence',
+  'regulatory-intelligence',
+  'intelligence-review',
+  'policy-workspace',
+]);
+
 export default function WorkbenchPage() {
   const router = useRouter();
   const [authorized, setAuthorized] = useState(false);
@@ -52,6 +60,7 @@ export default function WorkbenchPage() {
   const [busy, setBusy] = useState(false);
   const [pinned, setPinned] = useState<string | null>(null);
   const [dataAccess, setDataAccess] = useState<'direct' | 'mcp'>('direct');
+  const [externalSourcesEnabled, setExternalSourcesEnabled] = useState(false);
   const [conversations, setConversations] = useState<WorkbenchConversation[]>([]);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [workspaceView, setWorkspaceView] = useState<WorkspaceView | null>(null);
@@ -78,6 +87,8 @@ export default function WorkbenchPage() {
     setTurns([]);
     setConversationId(null);
     setBusy(false);
+    setPinned(null);
+    setExternalSourcesEnabled(false);
   }, []);
 
   const openConversation = useCallback(async (id: string) => {
@@ -100,6 +111,7 @@ export default function WorkbenchPage() {
         partial: turn.status === 'partial',
       })));
       setConversationId(id);
+      setExternalSourcesEnabled(record.external_sources_enabled ?? false);
     } catch {
       // Keep the current conversation visible when a saved thread cannot be loaded.
     }
@@ -108,6 +120,12 @@ export default function WorkbenchPage() {
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
   }, [turns, completionsHeight]);
+
+  useEffect(() => {
+    if (!externalSourcesEnabled && workspaceView && EXTERNAL_WORKSPACES.has(workspaceView)) {
+      setWorkspaceView(null);
+    }
+  }, [externalSourcesEnabled, workspaceView]);
 
   const ask = useCallback(async (question: string) => {
     const id = `t-${Date.now()}`;
@@ -126,7 +144,9 @@ export default function WorkbenchPage() {
       setTurns((previous) => previous.map((turn) => turn.id === id ? update(turn) : turn));
 
     try {
-      for await (const event of workbench.ask(question, conversationId, pinned, dataAccess, controller.signal)) {
+      for await (const event of workbench.ask(
+        question, conversationId, pinned, dataAccess, externalSourcesEnabled, controller.signal,
+      )) {
         switch (event.type) {
           case 'conversation':
             setConversationId(event.conversation_id);
@@ -170,7 +190,7 @@ export default function WorkbenchPage() {
       abortRef.current = null;
       refreshHistory();
     }
-  }, [conversationId, pinned, dataAccess, refreshHistory]);
+  }, [conversationId, pinned, dataAccess, externalSourcesEnabled, refreshHistory]);
 
   const runTool = useCallback(async (tool: WorkbenchTool) => {
     const id = `t-${Date.now()}`;
@@ -191,14 +211,37 @@ export default function WorkbenchPage() {
       setTurns((previous) => previous.map((turn) => turn.id === id ? { ...turn, ...changes } : turn));
 
     try {
-      const card = await workbench.runTool(tool.id);
+      const card = await workbench.runTool(tool.id, {}, externalSourcesEnabled);
       patch({ cards: [card], done: true });
     } catch (error: any) {
       patch({ error: error?.message ?? 'The tool failed.', done: true });
     } finally {
       setBusy(false);
     }
-  }, []);
+  }, [externalSourcesEnabled]);
+
+  const openWorkspace = useCallback((view: WorkspaceView) => {
+    if (EXTERNAL_WORKSPACES.has(view) && !externalSourcesEnabled) {
+      const id = `policy-${Date.now()}`;
+      setTurns((previous) => [...previous, {
+        id,
+        question: `Open ${view.replaceAll('-', ' ')}`,
+        pending: [],
+        cards: [],
+        answer: {
+          status: 'refused',
+          text: 'Enable “Use external sources” to open macro, competitive, regulatory, review, or policy workspaces.',
+          sources: [],
+          citations: [],
+          unavailable_sources: [],
+          limitations: [{ source: view, reason: 'External sources are disabled for this conversation.' }],
+        },
+        done: true,
+      }]);
+      return;
+    }
+    setWorkspaceView(view);
+  }, [externalSourcesEnabled]);
 
   const logout = async () => {
     await auth.logout();
@@ -222,9 +265,11 @@ export default function WorkbenchPage() {
       pinned={pinned}
       onPin={setPinned}
       onRunTool={runTool}
-      onOpenWorkspace={setWorkspaceView}
+      onOpenWorkspace={openWorkspace}
       dataAccess={dataAccess}
       onDataAccess={setDataAccess}
+      externalSourcesEnabled={externalSourcesEnabled}
+      onExternalSourcesEnabled={setExternalSourcesEnabled}
       onCompletionHeightChange={setCompletionsHeight}
     />
   );
@@ -235,15 +280,16 @@ export default function WorkbenchPage() {
     <div className="fixed inset-0 flex flex-col overflow-hidden bg-background">
       <WorkbenchHeader
         user={user}
+        externalSourcesEnabled={externalSourcesEnabled}
         onNew={newConversation}
         onHistory={() => setHistoryOpen(true)}
-        onOpenWorkspace={setWorkspaceView}
+        onOpenWorkspace={openWorkspace}
         onLogout={logout}
       />
 
       <main className="flex min-h-0 w-full flex-1 flex-col">
         {turns.length === 0 ? (
-          <EmptyState onAsk={ask} onOpenWorkspace={setWorkspaceView}>{composer}</EmptyState>
+          <EmptyState onAsk={ask} onOpenWorkspace={openWorkspace}>{composer}</EmptyState>
         ) : (
           <>
             <div className="min-h-0 flex-1 overflow-y-auto py-6 sm:py-8">
@@ -288,12 +334,14 @@ export default function WorkbenchPage() {
 
 function WorkbenchHeader({
   user,
+  externalSourcesEnabled,
   onNew,
   onHistory,
   onOpenWorkspace,
   onLogout,
 }: {
   user: DemoUser | null;
+  externalSourcesEnabled: boolean;
   onNew: () => void;
   onHistory: () => void;
   onOpenWorkspace: (view: WorkspaceView) => void;
@@ -384,6 +432,8 @@ function WorkbenchHeader({
                     <DropdownMenuItem
                       key={module.id}
                       onClick={() => onOpenWorkspace(module.id)}
+                      disabled={EXTERNAL_WORKSPACES.has(module.id) && !externalSourcesEnabled}
+                      aria-describedby={EXTERNAL_WORKSPACES.has(module.id) ? 'external-workspace-hint' : undefined}
                       className="cursor-pointer items-start gap-2.5 rounded-lg py-2.5"
                     >
                       <module.icon className="mt-0.5 size-4 text-primary" />
@@ -393,6 +443,11 @@ function WorkbenchHeader({
                       </span>
                     </DropdownMenuItem>
                   ))}
+                  {!externalSourcesEnabled && (
+                    <span id="external-workspace-hint" className="block px-2 py-1 text-[11px] text-muted-foreground">
+                      Enable “Use external sources” to open external intelligence modules.
+                    </span>
+                  )}
                 </>
               )}
             </DropdownMenuContent>

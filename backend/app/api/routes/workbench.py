@@ -15,7 +15,7 @@ from fastapi import APIRouter, Header, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
-from app.services.workbench import history, models, tools
+from app.services.workbench import access, history, models, tools
 from app.services.workbench.graph import run_workbench
 from app.services.workbench.sources import visible_sources
 from app.services.nlq import lookup as record_lookup
@@ -43,24 +43,22 @@ class AskRequest(BaseModel):
     # role's visible set, so it can never widen access.
     pinned_source: str | None = None
     data_access: Literal["direct", "mcp"] | None = None
+    external_sources_enabled: bool = False
 
 
 @router.get("/sources")
-def sources(authorization: str | None = Header(default=None)):
+async def sources(authorization: str | None = Header(default=None)):
     """The sources this role can reach — drives the '+' pin-source menu and the mode badge."""
     _, role = _identity(authorization)
     return {
         "mode": models.active_mode(),
         "data_access": settings.postgres_access_mode,
-        "sources": [
-            {"id": s.id, "label": s.label, "describes": s.describes, "sensitive": s.sensitive}
-            for s in visible_sources(role)
-        ],
+        "sources": access.source_metadata(role),
     }
 
 
 @router.get("/conversations")
-def list_conversations(limit: int = 50, authorization: str | None = Header(default=None)):
+async def list_conversations(limit: int = 50, authorization: str | None = Header(default=None)):
     """Recent conversations for the History rail, most-recent first."""
     username, _ = _identity(authorization)
     return {
@@ -73,7 +71,7 @@ def list_conversations(limit: int = 50, authorization: str | None = Header(defau
 
 
 @router.get("/conversations/{conversation_id}")
-def get_conversation(conversation_id: str, authorization: str | None = Header(default=None)):
+async def get_conversation(conversation_id: str, authorization: str | None = Header(default=None)):
     username, _ = _identity(authorization)
     rec = history.get(conversation_id, user=username)
     if rec is None:
@@ -83,6 +81,7 @@ def get_conversation(conversation_id: str, authorization: str | None = Header(de
         "title": rec.title,
         "updated_at": rec.updated_at.isoformat(),
         "record_version": rec.record_version,
+        "external_sources_enabled": rec.external_sources_enabled,
         "turns": [_turn_for_api(turn) for turn in rec.turns],
     }
 
@@ -110,25 +109,32 @@ def _turn_for_api(turn: dict) -> dict:
         "status": turn.get("status", "complete"),
         "created_at": turn.get("created_at") or turn.get("at"),
         "completed_at": turn.get("completed_at"),
+        "usage": turn.get("usage"),
+        "timing": turn.get("timing"),
+        "source_policy": turn.get("source_policy") or {
+            "version": "legacy",
+            "external_sources_enabled": False,
+            "effective_sources": sources,
+        },
         "legacy_answer_unavailable": legacy,
     }
 
 
 @router.get("/tools")
-def list_tools(authorization: str | None = Header(default=None)):
+async def list_tools(authorization: str | None = Header(default=None)):
     """Tools this role may run — populates the '+' menu."""
     _, role = _identity(authorization)
     return {
         "tools": [
             {"id": t.id, "label": t.label, "description": t.description,
-             "kind": t.kind, "params": t.params}
+             "kind": t.kind, "params": t.params, "source_id": t.source_id}
             for t in tools.visible_tools(role)
         ],
     }
 
 
 @router.get("/completions")
-def chat_completions(
+async def chat_completions(
     q: str = Query(default="", max_length=100),
     kind: Literal["all", "borrower", "customer", "account", "agent"] = "all",
     authorization: str | None = Header(default=None),
@@ -147,6 +153,7 @@ def chat_completions(
 
 class ToolRequest(BaseModel):
     params: dict = Field(default_factory=dict)
+    external_sources_enabled: bool = False
 
 
 @router.post("/tool/{tool_id}")
@@ -156,7 +163,10 @@ async def run_tool(tool_id: str, req: ToolRequest | None = None,
     _, role = _identity(authorization)
     params = req.params if req else {}
     try:
-        result = await tools.run_tool(tool_id, role=role, params=params)
+        result = await tools.run_tool(
+            tool_id, role=role, params=params,
+            external_sources_enabled=bool(req and req.external_sources_enabled),
+        )
     except tools.ToolNotFound as exc:
         raise HTTPException(404, f"Unknown tool: {tool_id}") from exc
     except tools.ToolAccessError as exc:
@@ -185,6 +195,7 @@ async def ask(req: AskRequest, authorization: str | None = Header(default=None))
             role=role,
             pinned=req.pinned_source,
             data_access=req.data_access,
+            external_sources_enabled=req.external_sources_enabled,
         ),
         media_type="text/event-stream",
         headers={

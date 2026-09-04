@@ -1102,6 +1102,9 @@ export type WorkbenchSource = {
   label: string;
   describes: string;
   sensitive: boolean;
+  group: 'internal_data' | 'internal_metadata' | 'local_knowledge' | 'external_indexed' | 'live_external';
+  requires_external_consent: boolean;
+  deployment_available: boolean;
 };
 
 export type WorkbenchCompletion = {
@@ -1150,7 +1153,7 @@ export type WorkbenchConversation = {
 export type WorkbenchStreamEvent =
   | { type: 'conversation'; conversation_id: string }
   | { type: 'stage'; stage: string }
-  | { type: 'route'; sources: string[]; intent: string; model: string }
+  | { type: 'route'; sources: string[]; intent: string; model: string; reason?: string; confidence?: number; fallback_used?: boolean; policy_version?: string }
   | { type: 'source_start'; source: string }
   | { type: 'source_card'; card: WorkbenchCard }
   | { type: 'answer'; answer: WorkbenchAnswer }
@@ -1165,6 +1168,7 @@ export type WorkbenchTool = {
   description: string;
   kind: string;
   params: Record<string, any>;
+  source_id: string;
 };
 
 export const workbench = {
@@ -1187,6 +1191,7 @@ export const workbench = {
     title: string;
     updated_at: string;
     record_version: number;
+    external_sources_enabled: boolean;
     turns: {
       id: string;
       question: string;
@@ -1204,10 +1209,14 @@ export const workbench = {
     }[];
   }> => apiRequest(`/workbench/conversations/${id}`),
 
-  runTool: async (toolId: string, params: Record<string, any> = {}): Promise<WorkbenchCard> => {
+  runTool: async (
+    toolId: string,
+    params: Record<string, any> = {},
+    externalSourcesEnabled = false,
+  ): Promise<WorkbenchCard> => {
     const { source, card_type, ...payload } = await apiRequest(`/workbench/tool/${toolId}`, {
       method: 'POST',
-      body: JSON.stringify({ params }),
+      body: JSON.stringify({ params, external_sources_enabled: externalSourcesEnabled }),
     });
     return { source, card_type, payload };
   },
@@ -1217,6 +1226,7 @@ export const workbench = {
     conversationId: string | null,
     pinnedSource?: string | null,
     dataAccess?: 'direct' | 'mcp',
+    externalSourcesEnabled = false,
     signal?: AbortSignal,
   ): AsyncGenerator<WorkbenchStreamEvent> {
     const token = getToken();
@@ -1231,6 +1241,7 @@ export const workbench = {
         conversation_id: conversationId,
         pinned_source: pinnedSource ?? null,
         data_access: dataAccess ?? null,
+        external_sources_enabled: externalSourcesEnabled,
       }),
       signal,
     });
@@ -1269,7 +1280,12 @@ export const workbench = {
           case 'conversation': yield { type: 'conversation', conversation_id: payload.conversation_id }; break;
           case 'stage': yield { type: 'stage', stage: payload.stage }; break;
           case 'route':
-            yield { type: 'route', sources: payload.sources || [], intent: payload.intent || '', model: payload.model || '' };
+            yield {
+              type: 'route', sources: payload.sources || [], intent: payload.intent || '',
+              model: payload.model || '', reason: payload.reason,
+              confidence: payload.confidence, fallback_used: payload.fallback_used,
+              policy_version: payload.policy_version,
+            };
             break;
           case 'source_start': yield { type: 'source_start', source: payload.source }; break;
           case 'source_card': {

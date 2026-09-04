@@ -6,14 +6,15 @@ it (403), so a hidden tool cannot be invoked by calling the endpoint directly.
 from __future__ import annotations
 
 import pytest
-from fastapi.testclient import TestClient
+from httpx import ASGITransport, AsyncClient
 
 from app.main import app
 
 
 @pytest.fixture
-def client():
-    return TestClient(app)
+async def client():
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as value:
+        yield value
 
 
 def _auth(username: str) -> dict:
@@ -21,21 +22,24 @@ def _auth(username: str) -> dict:
 
 
 class TestListTools:
-    def test_admin_sees_all_tools(self, client):
-        r = client.get("/workbench/tools", headers=_auth("moneypal_admin"))
+    @pytest.mark.anyio
+    async def test_admin_sees_all_tools(self, client):
+        r = await client.get("/workbench/tools", headers=_auth("moneypal_admin"))
         assert r.status_code == 200
         ids = {t["id"] for t in r.json()["tools"]}
         assert {"show_schema", "competitor_landscape"} <= ids
 
-    def test_policy_maker_does_not_see_the_schema_tool(self, client):
-        r = client.get("/workbench/tools", headers=_auth("gicc_policy"))
+    @pytest.mark.anyio
+    async def test_policy_maker_does_not_see_the_schema_tool(self, client):
+        r = await client.get("/workbench/tools", headers=_auth("gicc_policy"))
         ids = {t["id"] for t in r.json()["tools"]}
         assert "competitor_landscape" in ids
         assert "show_schema" not in ids
 
 
 class TestCompletions:
-    def test_returns_governed_chat_completions(self, client, monkeypatch):
+    @pytest.mark.anyio
+    async def test_returns_governed_chat_completions(self, client, monkeypatch):
         from app.api.routes import workbench as route
 
         monkeypatch.setattr(route.record_lookup, "completions", lambda q, kind: [{
@@ -43,7 +47,7 @@ class TestCompletions:
             "detail": "AGNT45 · Officer",
         }])
 
-        response = client.get(
+        response = await client.get(
             "/workbench/completions?q=AGNT4&kind=agent",
             headers=_auth("gicc_policy"),
         )
@@ -53,15 +57,18 @@ class TestCompletions:
 
 
 class TestRunTool:
-    def test_unknown_tool_is_404(self, client):
-        r = client.post("/workbench/tool/nope", headers=_auth("moneypal_admin"), json={})
+    @pytest.mark.anyio
+    async def test_unknown_tool_is_404(self, client):
+        r = await client.post("/workbench/tool/nope", headers=_auth("moneypal_admin"), json={})
         assert r.status_code == 404
 
-    def test_unauthorized_tool_is_403(self, client):
-        r = client.post("/workbench/tool/show_schema", headers=_auth("gicc_policy"), json={})
+    @pytest.mark.anyio
+    async def test_unauthorized_tool_is_403(self, client):
+        r = await client.post("/workbench/tool/show_schema", headers=_auth("gicc_policy"), json={})
         assert r.status_code == 403
 
-    def test_authorized_run_returns_a_card(self, client, monkeypatch):
+    @pytest.mark.anyio
+    async def test_authorized_run_returns_a_card(self, client, monkeypatch):
         from app.services.workbench import nodes
 
         async def fake_schema(intent):
@@ -69,7 +76,7 @@ class TestRunTool:
                                       payload={"node_count": 3, "edge_count": 2, "nodes": [], "edges": []})
 
         monkeypatch.setattr(nodes, "run_schema", fake_schema)
-        r = client.post("/workbench/tool/show_schema", headers=_auth("moneypal_admin"), json={})
+        r = await client.post("/workbench/tool/show_schema", headers=_auth("moneypal_admin"), json={})
         assert r.status_code == 200
         body = r.json()
         assert body["card_type"] == "schema"
@@ -86,25 +93,27 @@ class TestConversationOwnership:
         yield
         history._MEMORY.clear()
 
-    def test_conversation_is_visible_only_to_its_owner(self, client):
+    @pytest.mark.anyio
+    async def test_conversation_is_visible_only_to_its_owner(self, client):
         from app.services.workbench import history
 
         history.record_turn("private", "Policy question", ["macro"], user="gicc_policy")
 
-        owner = client.get(
+        owner = await client.get(
             "/workbench/conversations/private", headers=_auth("gicc_policy"),
         )
-        other = client.get(
+        other = await client.get(
             "/workbench/conversations/private", headers=_auth("gicc_director"),
         )
 
         assert owner.status_code == 200
         assert other.status_code == 404
-        assert client.get(
+        assert (await client.get(
             "/workbench/conversations", headers=_auth("gicc_director"),
-        ).json()["conversations"] == []
+        )).json()["conversations"] == []
 
-    def test_saved_cards_are_returned_for_ui_hydration(self, client):
+    @pytest.mark.anyio
+    async def test_saved_cards_are_returned_for_ui_hydration(self, client):
         from app.services.workbench import history
 
         turn_id = history.begin_turn("cards", "gicc_policy", "Macro outlook")
@@ -114,9 +123,9 @@ class TestConversationOwnership:
         })
         history.complete_turn("cards", "gicc_policy", turn_id)
 
-        body = client.get(
+        body = (await client.get(
             "/workbench/conversations/cards", headers=_auth("gicc_policy"),
-        ).json()
+        )).json()
 
         assert body["record_version"] == history.RECORD_VERSION
         assert body["turns"][0]["cards"][0]["payload"]["summary"] == "Growth is stable."

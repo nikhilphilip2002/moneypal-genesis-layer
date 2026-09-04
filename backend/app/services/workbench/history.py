@@ -38,9 +38,9 @@ MIGRATIONS = (
 )
 
 TITLE_MAX = 80
-# v3 adds `compaction` (checkpoint summary + mechanically extracted session state) and
-# per-turn `usage`. v2 records load with compaction=None and behave exactly as before.
-RECORD_VERSION = 3
+# v4 adds the conversation's latest explicit external-source consent and a frozen policy
+# snapshot per turn. Older records load with consent off.
+RECORD_VERSION = 4
 OLDER_TURN_MAX_CHARS = 900
 CARD_ROWS_IN_CONTEXT = 20
 _table_ready = False
@@ -58,6 +58,7 @@ class ConversationRecord:
     # the token budget, and safe to delete at any time — the turns themselves are kept,
     # so dropping it only costs context, never data.
     compaction: dict[str, Any] | None = None
+    external_sources_enabled: bool = False
 
 
 @dataclass(slots=True)
@@ -113,6 +114,7 @@ def _record_payload(record: ConversationRecord) -> dict[str, Any]:
     }
     if record.compaction:
         payload["compaction"] = record.compaction
+    payload["external_sources_enabled"] = record.external_sources_enabled
     return payload
 
 
@@ -143,6 +145,7 @@ def _load(conversation_id: str, user: str) -> ConversationRecord | None:
                 record_version=row[4] or payload.get("version", 1),
                 # Absent on v1/v2 rows; those conversations simply have no checkpoint yet.
                 compaction=payload.get("compaction"),
+                external_sources_enabled=bool(payload.get("external_sources_enabled", False)),
             )
         except Exception as exc:  # noqa: BLE001
             logger.warning("workbench history load failed, using memory: %s", exc)
@@ -233,7 +236,8 @@ def _mutate(
 
 
 def begin_turn(
-    conversation_id: str, user: str, question: str, *, pinned: str | None = None
+    conversation_id: str, user: str, question: str, *, pinned: str | None = None,
+    source_policy: dict[str, Any] | None = None,
 ) -> str:
     """Create the user half of a turn before routing or tool calls begin.
 
@@ -250,10 +254,15 @@ def begin_turn(
             updated_at=_now(),
         )
     turn_id = uuid.uuid4().hex[:12]
+    if source_policy is not None:
+        record.external_sources_enabled = bool(
+            source_policy.get("external_sources_enabled", False)
+        )
     record.turns.append({
         "id": turn_id,
         "question": question,
         "pinned": pinned,
+        "source_policy": source_policy,
         "route": None,
         "sources": [],  # compatibility with version-1 clients
         "cards": [],
@@ -277,10 +286,20 @@ def set_route(
     sources: list[str],
     intent: str,
     model: str = "",
+    reason: str = "",
+    confidence: float = 0.0,
+    fallback_used: bool = False,
+    ambiguity_class: str = "",
+    effective_sources: list[str] | tuple[str, ...] = (),
 ) -> None:
     def apply(turn: dict[str, Any]) -> None:
         turn["sources"] = list(sources)
-        turn["route"] = {"sources": list(sources), "intent": intent, "model": model}
+        turn["route"] = {
+            "sources": list(sources), "intent": intent, "model": model,
+            "reason": reason, "confidence": confidence, "fallback_used": fallback_used,
+            "ambiguity_class": ambiguity_class,
+            "effective_sources": list(effective_sources),
+        }
 
     _mutate(conversation_id, user, turn_id, apply)
 
@@ -311,6 +330,15 @@ def set_usage(
     *,
     prompt_tokens: int,
     completion_tokens: int = 0,
+    total_prompt_tokens: int | None = None,
+    cached_prompt_tokens: int = 0,
+    cache_write_prompt_tokens: int = 0,
+    uncached_prompt_tokens: int | None = None,
+    model_duration_ms: int = 0,
+    model_call_count: int = 0,
+    retry_count: int = 0,
+    weighted_input_units: float = 0.0,
+    calls: list[dict[str, Any]] | None = None,
 ) -> None:
     """Record what the provider actually charged for this turn.
 
@@ -321,7 +349,41 @@ def set_usage(
     def apply(turn: dict[str, Any]) -> None:
         turn["usage"] = {
             "prompt_tokens": int(prompt_tokens),
+            "total_prompt_tokens": int(
+                prompt_tokens if total_prompt_tokens is None else total_prompt_tokens
+            ),
+            "cached_prompt_tokens": int(cached_prompt_tokens),
+            "cache_write_prompt_tokens": int(cache_write_prompt_tokens),
+            "uncached_prompt_tokens": int(
+                max(0, prompt_tokens - cached_prompt_tokens)
+                if uncached_prompt_tokens is None else uncached_prompt_tokens
+            ),
             "completion_tokens": int(completion_tokens),
+            "model_duration_ms": int(model_duration_ms),
+            "model_call_count": int(model_call_count),
+            "retry_count": int(retry_count),
+            "weighted_input_units": float(weighted_input_units),
+            "calls": list(calls or []),
+        }
+
+    _mutate(conversation_id, user, turn_id, apply)
+
+
+def set_timing(
+    conversation_id: str, user: str, turn_id: str, *,
+    first_event_ms: int = 0, first_card_ms: int = 0, final_answer_ms: int = 0,
+    total_ms: int = 0, source_attempts: list[str] | None = None,
+    source_completions: list[str] | None = None,
+) -> None:
+    """Persist end-to-end streaming latency and connector-operation counters."""
+    def apply(turn: dict[str, Any]) -> None:
+        turn["timing"] = {
+            "first_event_ms": int(first_event_ms),
+            "first_card_ms": int(first_card_ms),
+            "final_answer_ms": int(final_answer_ms),
+            "total_ms": int(total_ms),
+            "source_attempts": list(source_attempts or []),
+            "source_completions": list(source_completions or []),
         }
 
     _mutate(conversation_id, user, turn_id, apply)

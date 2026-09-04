@@ -21,6 +21,7 @@ import yaml
 from app.services.nlq.catalog import Catalog, get_catalog
 from app.services.nlq.catalog.loader import ACTIVE_DEFS_DIR
 from app.services.nlq.llm.messages import coalesce_system_messages
+from app.services.nlq.llm.telemetry import prefix_hash
 
 PROMPT_VERSION = "planner-v3"
 
@@ -415,6 +416,22 @@ def build_messages(
             }
         )
     return coalesce_system_messages(messages)
+
+
+def stable_prefix(catalog: Catalog | None = None) -> list[dict[str, str]]:
+    """Return the byte-stable planner prefix, excluding history and the live question."""
+    messages = [{
+        "role": "system",
+        "content": gold_yaml_block(catalog) + "\n\nPLANNER TASK INSTRUCTIONS\n" + SYSTEM_PROMPT,
+    }]
+    for user_text, assistant_json in FEW_SHOTS:
+        messages.append({"role": "user", "content": user_text})
+        messages.append({"role": "assistant", "content": assistant_json})
+    return coalesce_system_messages(messages)
+
+
+def stable_prefix_hash(catalog: Catalog | None = None) -> str:
+    return prefix_hash(stable_prefix(catalog))
 
 
 REWRITE_SYSTEM_PROMPT = """\

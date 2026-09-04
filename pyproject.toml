@@ -23,9 +23,6 @@ dependencies = [
     "beautifulsoup4>=4.13.0",
     "lxml>=5.3.0",
     "APScheduler>=3.10,<4",
-    # Hard-imported by app/services/workbench/graph.py; previously only ever installed
-    # ad-hoc, so a clean `uv sync` produced a backend that could not start.
-    "langgraph>=1.0",
 ]
 
 [dependency-groups]

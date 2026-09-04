@@ -1,10 +1,15 @@
-# Workbench Single-Agent Simplification Plan
+# Workbench Source-Access and Single-Agent Simplification Plan
 
 ## Document status
 
-- Status: proposed for implementation
-- Scope: backend orchestration, model-call reduction, prompt-cache stability, and conversation state
-- Compatibility target: preserve the Workbench HTTP API, SSE events, cards, history UI, and governed NLQ safety boundary
+- Status: repository implementation complete; deployment measurement/canary validation pending
+- Local verification: Workbench 225 passed/1 skipped, scoped NLQ 852 passed/90 skipped,
+  TypeScript clean, production frontend build passed
+- Remaining authority boundary: live PostgreSQL/Qdrant/web/model/cache validation and
+  rollback/canary execution must run on the deployment machine
+- Scope: data-source consent, backend orchestration, model-call reduction, prompt-cache stability, and conversation state
+- Compatibility target: evolve the Workbench request additively while preserving SSE events,
+  cards, existing history, and the governed NLQ safety boundary
 - Primary outcome: reduce redundant model calls without weakening database, PII, role, source, or citation controls
 - Related data-layer plan: docs/semantic-views-low-token-plan.md
 
@@ -21,9 +26,19 @@ completions and constrained JSON, but not tool-call request/response messages. T
 implementation gets most of the cost benefit with less risk by using application-controlled
 tool execution and one final composition call only when retrieved evidence needs prose.
 
+Do not use one universal model prompt. Router fallback, DB planning, and answer composition
+have different jobs and receive separate minimal, versioned prompts. The composer never
+receives routing instructions, complete tool descriptions, DB schema mechanics, or rules
+already enforced by structured output and application code.
+
 The target is one conversational-agent experience, not necessarily one model invocation for
 every request. DB planning may remain a separate constrained call because it produces
 validated structured intent rather than user-facing prose.
+
+The data-source policy is independent of routing and model-provider policy. PostgreSQL is
+available by default. A single explicit, conversation-scoped toggle additionally permits all
+role-authorized Qdrant sources and web search. The backend enforces this boundary before
+routing, dispatch, direct tool execution, or external network access.
 
 ## 2. Why this change
 
@@ -52,6 +67,11 @@ Two state stores currently exist:
 They have different purposes. Workbench history becomes the canonical prose history, while
 the structured NLQ state remains temporarily as an internal DB-tool implementation detail.
 
+The current build also makes every role-visible source eligible for automatic routing. Its
+Direct/MCP selector changes only the PostgreSQL transport, source pinning forces one source,
+and local/Groq settings choose a model provider. None is the required consent control for
+Qdrant and web access. This plan adds that missing boundary.
+
 ## 3. Goals
 
 ### Product goals
@@ -62,6 +82,10 @@ the structured NLQ state remains temporarily as an internal DB-tool implementati
   clarifications, refusals, errors, and partial answers.
 - Continue streaming progress and completed source cards.
 - Keep source pinning and role-specific visibility.
+- Default every new conversation to PostgreSQL/internal sources only.
+- Provide one clearly labeled toggle that enables or disables all Qdrant and web sources
+  together for the current conversation.
+- Make the active data-source mode visible beside the composer and in restored history.
 
 ### Cost and performance goals
 
@@ -86,6 +110,10 @@ the structured NLQ state remains temporarily as an internal DB-tool implementati
 - Keep citations and lineage attached to structured tool results.
 - Fail closed for permissions and unsafe DB requests.
 - Never send sensitive DB evidence to an external provider.
+- Enforce external-source consent on the server; UI hiding is not a security boundary.
+- Prevent router, pin, tool, workspace, or direct endpoint paths from bypassing consent.
+- Intersect user consent with role permissions and deployment availability; consent never
+  grants a role new access.
 
 ## 4. Non-goals
 
@@ -94,11 +122,85 @@ the structured NLQ state remains temporarily as an internal DB-tool implementati
 - Moving loan-book data to an external model.
 - Merging the conversation tables in the first release.
 - Adding unrestricted autonomous actions or write-capable DB tools.
-- Changing the /api/v1/workbench/ask request shape.
+- Breaking existing `/workbench/ask` callers (or `/api/workbench/ask` through nginx); the
+  new request field defaults safely.
 - Redesigning Workbench cards or navigation.
 - Completing the separate semantic-view/catalog initiative in this change.
 
-## 5. Baseline to measure
+## 5. Data-source access policy
+
+### Source groups
+
+| Group | Sources | Default | Notes |
+|---|---|---|---|
+| Internal data | db | Enabled | Governed read-only PostgreSQL loan-book access |
+| Internal metadata | schema | Enabled only for authorized explicit schema requests | PostgreSQL-derived abstracted views/relationships |
+| Local governed knowledge | knowledge | Enabled | Static catalog definitions; no Qdrant or web access |
+| External indexed data | macro, competitive, regulatory | Disabled | Qdrant sources enabled together by the toggle |
+| Live external data | web | Disabled | Network search enabled by the same toggle and deployment configuration |
+
+The toggle controls data provenance, not whether infrastructure is physically local. A local
+Qdrant deployment still contains external/indexed sources and remains disabled until the user
+enables other sources.
+
+### Effective allowed-source set
+
+For every request:
+
+    effective sources
+      = sources allowed by the conversation toggle
+      ∩ sources allowed by the user's role
+      ∩ sources available in the deployment
+
+With the toggle off, automatic routing may use db and local governed knowledge; schema is
+available only for an explicit authorized schema request. It may not use macro, competitive,
+regulatory, or web. With the toggle on, those external sources become candidates while db
+remains available.
+
+### Toggle semantics
+
+- Request field: external_sources_enabled: boolean, optional and false when absent.
+- Scope: current conversation, not a global account setting.
+- New conversation: false.
+- Existing pre-change conversation: false until explicitly enabled.
+- Reopened conversation: restore the last explicitly persisted value and display it.
+- Turning the toggle off: immediately remove external sources from subsequent requests and
+  clear an external pinned source.
+- In-flight request: use an immutable snapshot of the value at submission time.
+- External pin while disabled: reject with a typed access response; never silently enable it.
+- External-only question while disabled: do not call the router, Qdrant, or web. Explain that
+  other sources are disabled and invite the user to enable the toggle.
+- Mixed internal/external question while disabled: answer the supported DB portion and mark
+  external evidence unavailable because it is disabled.
+
+### Backend enforcement points
+
+Enforce the effective set at all of these boundaries:
+
+1. request validation and policy construction;
+2. source list returned to routing;
+3. deterministic and model-router output validation;
+4. dispatch immediately before a handler runs;
+5. source pin validation;
+6. POST /workbench/tool/{id};
+7. Workbench workspace actions that retrieve Qdrant or web evidence;
+8. web client immediately before any external network call.
+
+The same policy object should flow through the request rather than being recomputed
+differently in each module. Denials must be audited without storing sensitive question text
+in general application logs.
+
+### Independent controls
+
+- external_sources_enabled controls Qdrant/web data access.
+- data_access controls direct versus MCP PostgreSQL transport.
+- pinned_source narrows routing to one already-allowed source.
+- WORKBENCH_LOCAL_ONLY and WORKBENCH_GROQ_OPT_IN control inference provider policy.
+- Role policy controls which sources the authenticated user may use.
+
+These controls must not imply or mutate one another.
+
+## 6. Baseline to measure
 
 | Request family | Current approximate calls | Main calls |
 |---|---:|---|
@@ -121,18 +223,20 @@ Capture:
 - cache-hit and cached-token ratios;
 - time to first event, first card, final answer, and total latency;
 - source-selection correctness;
+- attempted and completed Qdrant/web calls by toggle state;
+- external consent denials and attempted pin/tool bypasses;
 - answer correctness, completeness, and refusal correctness;
 - SQL validation and repair rates;
 - retrieval latency and empty-result rate.
 
-## 6. Target architecture
+## 7. Target architecture
 
-    canonical Workbench conversation
+    canonical Workbench conversation + external-source consent
                  │
-    user → auth/role → transcript + structured follow-up resolution
+    user → auth/role → consent gate → transcript + follow-up resolution
                  │
                  v
-       deterministic policy/source selection
+       deterministic selection from effective allowed sources
           │        │        │        │
           v        v        v        v
        DB tool   vector   schema   public web
@@ -151,34 +255,41 @@ The plain async orchestrator must:
 
 1. load the bounded transcript once;
 2. begin and persist the turn;
-3. enforce roles, visible sources, and pins;
-4. resolve safe structural follow-ups;
-5. select tools deterministically where confidence is high;
-6. run independent tools concurrently;
-7. stream source lifecycle events;
-8. isolate individual source failures;
-9. render deterministically when one result already answers the question;
-10. call one composer when evidence requires prose or comparison;
-11. persist the definitive answer and usage;
-12. trigger bounded compaction after the turn only when required.
+3. snapshot external-source consent and compute the role/deployment/consent intersection;
+4. enforce the effective source set on pins, routing, dispatch, tools, and web calls;
+5. resolve safe structural follow-ups;
+6. select tools deterministically where confidence is high;
+7. run independent allowed tools concurrently;
+8. stream source lifecycle events;
+9. isolate individual source failures;
+10. render deterministically when one result already answers the question;
+11. call one composer when evidence requires prose or comparison;
+12. persist consent, the definitive answer, and usage;
+13. trigger bounded compaction after the turn only when required.
 
 ### Source-selection policy
 
 Selection is layered:
 
-1. Authorization removes sources the role cannot use.
-2. An allowed explicit pin selects a source without a model.
-3. Deterministic grammar recognizes schema, record lookup, DB value, explicit web,
+1. Build the effective set from conversation consent, role, and deployment availability.
+2. Reject every source outside that set before model routing.
+3. An allowed explicit pin selects a source without a model.
+4. Deterministic grammar recognizes schema, record lookup, DB value, explicit web,
    freshness, regulatory, macro, competitor, and stable-definition requests.
-4. Exact and lexical catalog evidence confirms DB coverage.
-5. The existing constrained router handles only genuinely ambiguous requests.
-6. All model selections are post-validated against role and registered-source policy.
-7. Refusal occurs only after policy and catalog checks find no permitted supporting source.
+5. Exact and lexical catalog evidence confirms DB coverage.
+6. External-only questions short-circuit to a consent-required response while disabled.
+7. The existing constrained router handles only genuinely ambiguous allowed requests.
+8. All model selections are post-validated against the effective source set.
+9. Refusal occurs only after policy and catalog checks find no permitted supporting source.
 
 The model router is a temporary ambiguity fallback, not a mandatory stage. Remove it only
 after deterministic routing and fallback behavior meet acceptance thresholds.
 
-## 7. Governed tool contracts
+The router must never decide whether external access is allowed. It receives only the
+effective source set. Enabling external sources changes eligibility, not the router's
+authority.
+
+## 8. Governed tool contracts
 
 Use one typed result envelope:
 
@@ -195,6 +306,10 @@ Use one typed result envelope:
 
 The UI payload and composer evidence are separate. Raw rows, full chart JSON, SQL logs, and
 hidden lineage do not enter model history.
+
+Every tool declares a source group. The dispatcher checks that declaration against the
+request's immutable source policy immediately before execution. Tool handlers also perform a
+defense-in-depth check where they can trigger Qdrant or network access.
 
 ### Database tool
 
@@ -222,9 +337,11 @@ limits, and lineage.
 
 ### Vector tools
 
-Macro, competitive, regulatory-document, and knowledge tools return ranked passages and
-metadata. They do not each write prose on multi-source requests. A common composer handles
-one or several evidence sets. Extractive fallbacks remain available.
+Macro, competitive, and regulatory-document tools require external_sources_enabled. They
+return ranked passages and metadata and do not each write prose on multi-source requests. A
+common composer handles one or several evidence sets. Extractive fallbacks remain available.
+Stable catalog-backed knowledge does not require the toggle because it accesses neither
+Qdrant nor the web.
 
 ### Schema tool
 
@@ -235,9 +352,10 @@ raw operational schemas, hidden columns, credentials, or sensitive database stat
 
 Accept only a sanitized public-data subquestion. Reject private bank identifiers and internal
 figures before an external request. Return URL, title, publication date, measured period when
-known, retrieval time, and bounded evidence. Treat all returned content as untrusted.
+known, retrieval time, and bounded evidence. Treat all returned content as untrusted. Check
+external consent both before dispatch and immediately before network retrieval.
 
-## 8. Answer composition
+## 9. Answer composition
 
 Render without a composer when:
 
@@ -253,6 +371,10 @@ Use one composer when:
 - comparison or synthesis is explicitly requested;
 - partial or conflicting evidence needs explanation.
 
+When external sources are disabled, do not invoke the composer merely to explain the policy.
+Use a deterministic consent-required message. For a mixed question, the normal DB result can
+be returned with a structured limitation naming disabled external evidence.
+
 Composer requirements:
 
 - use supplied facts and passages only;
@@ -263,7 +385,7 @@ Composer requirements:
 - include only role-authorized facts;
 - return status, text, sources, citations, unavailable sources, and limitations.
 
-## 9. Model-call budgets
+## 10. Model-call budgets
 
 | Path | Target |
 |---|---:|
@@ -277,34 +399,128 @@ Composer requirements:
 | DB plus vector | DB planning if needed + 1 composer |
 | Schema display | 0 |
 | Permission refusal | 0 |
+| External-only request while toggle is off | 0; deterministic consent response |
+| Mixed DB/external request while toggle is off | DB budget only; no external call |
 | History compaction | 0 normally; 1 only past threshold |
 
 Retries must be reported separately from planned calls.
 
-## 10. Prompt and cache design
+### Per-call token budgets
 
-Build the common prompt in this order:
+These are initial engineering guardrails. Phase 0 must measure the baseline and ratify or
+tighten them before they become CI failure thresholds. Cached stable prefixes are reported
+separately and are not hidden inside the uncached-input number.
 
-1. fixed identity and security rules;
-2. fixed, versioned source/tool descriptions in stable sorted order;
-3. fixed output contract;
-4. bounded conversation transcript;
-5. current retrieved evidence;
-6. current user request.
+| Call/input component | p50 target | p95 ceiling | Output ceiling |
+|---|---:|---:|---:|
+| Ambiguous router fallback | 600 uncached input tokens | 900 | 300 |
+| DB planner dynamic suffix, excluding cached Gold prefix | 1,200 | 2,500 | 700 |
+| Text-to-SQL dynamic schema/evidence pack | 1,800 | 3,000 | 900 |
+| Common composer total input | 2,000 | 4,000 | 700 |
+| Replayed conversation history | 1,000 | 2,000 | n/a |
+| Evidence from one source | 600 | 1,200 | n/a |
+| Evidence across all sources | 1,500 | 3,000 | n/a |
+| Compaction input | 2,000 | 4,000 | 1,200 |
 
-Rules:
+Track total input, cached input, cache-write input when the provider reports it, and uncached
+input independently. Optimize the whole turn using:
 
-- No timestamps, random ids, availability state, or evidence in the stable prefix.
+    uncached prompt work = sum(uncached input tokens for every model call)
+
+For providers that charge separately for cache writes and reads, also report a
+provider-weighted input cost. Do not optimize only total system-prompt length: a longer,
+stable cached prefix may be cheaper and faster than a shorter prefix that changes each turn.
+
+## 11. Prompt and cache design
+
+### Instruction ownership
+
+Each rule has one authoritative owner:
+
+| Concern | Owner | Must not be repeated in |
+|---|---|---|
+| Role, consent, source eligibility | Application policy | Composer prompt |
+| SQL tables, columns, joins, PII, read-only execution | DB tool/compiler/validator | Router and composer |
+| Source retrieval mechanics | Tool implementation/contract | Composer prompt |
+| Source-specific limitations and provenance | ToolResult evidence envelope | Global system prompt |
+| Grounding and untrusted-evidence behavior | Composer system prompt | Every evidence item |
+| Citation and answer behavior | Composer system prompt | Router prompt |
+| Output fields and types | Structured-output schema | Duplicated prose instructions |
+| Current user/consent/evidence state | Dynamic request suffix | Stable prefix |
+
+Do not describe a JSON schema again in prose when constrained structured output already
+enforces it. Prose may explain semantic invariants that a schema cannot express, such as
+“never alter a supplied figure.”
+
+### Purpose-specific prompts
+
+#### Router fallback
+
+The router receives only:
+
+1. a short fixed routing contract;
+2. compact descriptions of sources in the effective allowed set;
+3. the constrained route schema;
+4. only the conversation facts needed to resolve the source;
+5. the current normalized question.
+
+It does not receive evidence, SQL schema, chart payloads, composer instructions, or sources
+the request is not allowed to use.
+
+#### DB planner
+
+The DB planner keeps its own stable governed Gold prefix, compact conversation/query anchor,
+and current question. It does not receive external-source descriptions or composer rules.
+Its structured schema owns the plan format.
+
+#### Composer
+
+The composer system prompt contains only:
+
+1. grounding and untrusted-evidence invariants;
+2. citation requirements;
+3. concise answer and partial-evidence behavior;
+4. semantic requirements not expressible in the structured-output schema.
+
+The composer receives selected ToolResult evidence, limitations, relevant recent history,
+and the question as a dynamic suffix. It does not receive the complete source registry, tool
+implementation descriptions, routing examples, DB catalog, SQL instructions, or prose that
+duplicates its output schema.
+
+### Cacheable-prefix rules
+
+- Put stable instructions and shared reference material first; append dynamic user/history/
+  evidence state afterward.
+- No timestamps, random ids, availability state, consent value, or evidence in the stable
+  prefix.
+- Serialize every stable prefix deterministically and record its byte hash and version.
 - Keep provider/model affinity within a conversation when policy permits.
 - Record prompt version, tool-contract version, catalog version, provider, and model.
-- Record provider-reported cached tokens.
-- Keep tool descriptions byte-for-byte stable.
+- Record total, cached, cache-write, and uncached input tokens where available.
+- Preserve append-only recent messages where possible; record when compaction or truncation
+  changes the reusable prefix.
+- Keep router source descriptions byte-for-byte stable and in deterministic order, while the
+  effective source schema/state remains in the dynamic portion.
 - Avoid normal-path per-source system prompts.
 - Verify exact prefix reuse; logical history equality alone is not a cache hit.
-- Preserve the warmed Gold prefix for NLQ until the separate compact-pack work replaces it.
+- Preserve the warmed Gold prefix for NLQ until the compact semantic-pack project replaces it.
 - Test cache behavior under concurrent llama.cpp slots.
 
-## 11. Conversation state
+### Provider-specific cache controls
+
+- llama.cpp: retain and measure cache_prompt and n_cache_reuse behavior; tune slots and reuse
+  only from production-like load tests.
+- OpenAI Responses API, when selected and supported: use a stable prompt_cache_key, place an
+  explicit cache breakpoint immediately after reusable instructions when beneficial, and
+  measure cached_tokens, cache_write_tokens, latency, and weighted cost.
+- Other providers: use only documented controls and preserve the same provider-neutral prompt
+  ordering.
+- Never add OpenAI-only fields to llama.cpp or Groq requests.
+
+Minimum cacheable length and breakpoint behavior vary by provider/model. Do not pad prompts
+with irrelevant instructions merely to qualify for caching; measure the deployed model.
+
+## 12. Conversation state
 
 public.workbench_conversations is the canonical user-visible store. Model history contains:
 
@@ -314,66 +530,110 @@ public.workbench_conversations is the canonical user-visible store. Model histor
 - final assistant answers, not duplicate source-card prose;
 - no raw SQL, full chart payloads, large row sets, or hidden lineage.
 
+“Single history” means one ordered conversational list of user questions and definitive
+assistant answers. It does not mean one raw list containing router prompts, planner JSON,
+tool traces, retrieved documents, and UI cards. Those remain typed per-turn state and are
+projected into a bounded prompt only when relevant. This keeps conversational continuity
+without paying repeatedly for internal execution detail.
+
+Each turn also records external_sources_enabled and the effective source ids used for that
+request. The conversation record stores the latest explicit toggle state so reopening a
+conversation restores it visibly. New and pre-change conversations default to false. This is
+policy/audit state and is not summarized away during compaction.
+
 Keep public.nlq_conversations temporarily for structured analytics state only. A later
 migration can place active QuerySpec, entities, and sticky filters in the Workbench record.
 Do not combine that migration with the orchestration rollout.
 
-## 12. API and frontend compatibility
+## 13. API and frontend compatibility
 
 Keep:
 
 - POST /api/v1/workbench/ask
 - existing question, conversation_id, pinned_source, and data_access fields;
+- add optional external_sources_enabled with a server-side default of false;
 - text/event-stream response;
 - conversation, stage, route, source_start, source_card, answer, refusal, error, and done
   events and their current shapes;
-- readable version-1 through version-3 history records.
+- readable version-1 through version-3 history records; write the new policy state in a new
+  record version without requiring a relational-table migration.
 
-No frontend behavior change should be necessary. Run type-check, production build, and a
-streaming end-to-end smoke test. Change frontend code only if an undocumented dependency on
-stage timing or route labels appears.
+The frontend must add one toggle labeled in data-source terms, for example “Use external
+sources.” It controls macro, competitive, regulatory, and web together. It must not be named
+“local/cloud,” because Qdrant may be local while its data provenance is external. The current
+Direct/MCP PostgreSQL selector remains independent. The source-pin menu disables external
+pins while the toggle is off and clears one when the user turns access off.
 
-## 13. Repository change map
+GET /workbench/sources should return source group and availability metadata so the UI does not
+hardcode classifications. POST /workbench/tool/{id} and any relevant workspace request must
+carry or resolve the same conversation-scoped policy. Backend checks remain authoritative.
+
+## 14. Repository change map
 
 | File/area | Change | Risk |
 |---|---|---|
 | backend/app/services/workbench/graph.py | Replace StateGraph with plain async orchestration; preserve run_workbench | Medium |
 | backend/app/services/workbench/router.py | Deterministic-first selection, confidence, reason, optional model fallback | Medium |
+| backend/app/services/workbench/sources.py | Classify internal, external-indexed, and web groups; compute effective sources | Medium |
 | backend/app/services/workbench/nodes.py | Split retrieval/execution from per-source prose; typed results | Medium-high |
+| backend/app/services/workbench/tools.py | Attach source groups and enforce consent for direct tool execution | Medium |
 | backend/app/services/workbench/models.py | Simplify model purposes; retain sensitive/local enforcement | Low |
-| backend/app/services/workbench/history.py | Aggregate usage and source/tool state compatibly | Medium |
+| backend/app/services/workbench/history.py | Persist consent/effective sources and aggregate usage compatibly | Medium |
 | backend/app/services/workbench/compaction/* | Adapt only if result envelope changes require it | Low-medium |
 | backend/app/services/workbench/suggestions.py | Remove default critical-path model call | Low |
-| backend/app/api/routes/workbench.py | Import/documentation changes only | Low |
+| backend/app/api/routes/workbench.py | Add safe-default request field, policy construction, source metadata, and tool enforcement | Medium |
 | backend/app/services/nlq/ask.py | Telemetry/tool-boundary metadata; preserve behavior | Low-medium |
 | backend/app/services/nlq/llm/client.py | Call-purpose telemetry; no native tools initially | Low |
 | pyproject.toml, uv.lock, backend/Dockerfile | Remove unused graph dependencies | Low |
 | backend/tests/workbench/* | Framework-neutral orchestration, routing, contract, budget tests | Medium |
-| frontend | Expected no functional change; verify contracts | Low |
+| frontend/app/workbench/page.tsx | Own conversation-scoped toggle state and send it with requests | Medium |
+| frontend/components/workbench/Composer.tsx | Add the grouped external-source toggle and disabled pin states | Medium |
+| frontend/lib/api.ts | Add request/response types and payload field | Low |
 
-No DB migration is required for the recommended rollout.
+No relational DB migration is required. The JSON history record version changes additively;
+older records load with external_sources_enabled=false.
 
-## 14. Implementation phases
+## 15. Implementation phases
 
 ### Phase 0 — Baseline and safeguards
 
 - Add call-purpose and per-turn usage telemetry.
+- Define separate router, DB planner, and minimal composer prompt builders.
+- Serialize each stable prefix deterministically; record its version and byte hash.
+- Add prefix-stability tests before changing the call graph.
+- Record total, cached, cache-write, and uncached tokens per call where supported.
+- Baseline p50/p95 token use against the provisional per-call budgets.
 - Build a representative fixture for all sources and mixed paths.
 - Measure current calls, tokens, cache behavior, latency, correctness, and failures.
 - Add model-call-budget test helpers.
 - Add flags for the new orchestrator, deterministic routing, common composer, and optional
   suggestion personalization.
+- Add a deployment master switch for external connectors, independent of the user toggle.
+- Baseline external_sources_enabled=false and true, including attempted bypasses.
 - Run existing backend, NLQ, Workbench, and frontend checks.
 
 Exit:
 
 - Baseline is recorded.
 - Every target path has a measured call count.
+- Every model purpose has a measured p50/p95 uncached-token baseline and prefix hash.
+- Repeated identical prefixes demonstrate cache reuse where the provider supports it.
 - Legacy/new selection is tested.
 - Current suites pass or existing failures are documented.
 
-### Phase 1 — Remove optional critical-path calls
+### Phase 1 — Add data-source consent and remove optional critical-path calls
 
+- Add source-group classification and one shared SourceAccessPolicy object.
+- Add external_sources_enabled to ask requests with a false default.
+- Persist the submitted value and effective source set on each turn.
+- Restore the latest explicit value on reopen; default old records off.
+- Add the composer toggle and API types.
+- Keep Direct/MCP and local/Groq controls independent.
+- Filter candidates before routing and validate again before dispatch.
+- Reject an external pin while disabled and clear it when the UI toggle turns off.
+- Gate direct Workbench tools and relevant workspace actions on the backend.
+- Check consent immediately before Qdrant and web operations as defense in depth.
+- Return deterministic consent-required and mixed-question limitation responses.
 - Disable LLM next-step personalization by default.
 - Return existing compiler-checked suggestions.
 - Bypass model routing for allowed pins, deterministic lookups, and structural DB follow-ups.
@@ -382,6 +642,9 @@ Exit:
 Exit:
 
 - DB drill UX works.
+- Toggle-off requests cannot reach Qdrant or web through routing, pins, tools, or workspaces.
+- Toggle-on requests can use all role-permitted available external sources while retaining DB.
+- Old clients and history safely default to external access off.
 - Known deterministic paths meet their call budgets.
 - Safety suites pass.
 
@@ -390,6 +653,7 @@ Exit:
 - Extract ordinary async route, dispatch, and answer functions.
 - Preserve gather-based fan-out, SSE queue, failure isolation, cancellation, persistence, and
   background compaction.
+- Carry one immutable SourceAccessPolicy snapshot through selection, dispatch, and history.
 - Keep run_workbench at its current import path.
 - Remove graph imports and dependencies only after repository-wide verification.
 - Convert graph tests to framework-neutral orchestrator tests.
@@ -406,6 +670,9 @@ This phase simplifies code but does not itself save model calls.
 ### Phase 3 — Deterministic-first routing
 
 - Promote existing lexical/catalog fallback into the primary selector.
+- Run selection only against the effective source set.
+- Short-circuit external-only requests while consent is off without calling the model.
+- Return the DB-supported portion plus a disabled-external limitation for mixed requests.
 - Return confidence, reason, policy version, and fallback-used telemetry.
 - Define deterministic precedence for overlapping cues.
 - Use constrained routing only for ambiguous cases.
@@ -416,6 +683,7 @@ Exit:
 - Source-set accuracy is at least 95%.
 - At least 80% of representative turns avoid the router model.
 - Permission/destructive-request tests pass 100%.
+- External consent tests pass 100% for router, dispatch, pins, tools, and web.
 - Fallback remains safe and observable.
 
 ### Phase 4 — Retrieval-only vector sources
@@ -425,6 +693,7 @@ Exit:
 - Preserve metadata, citation/page protections, source failure isolation, and degraded modes.
 - Bound passages and evidence tokens.
 - Keep DB behavior behind the same typed boundary.
+- Require SourceAccessPolicy for every Qdrant/web ToolResult producer.
 
 Exit:
 
@@ -435,7 +704,9 @@ Exit:
 
 ### Phase 5 — Common composer
 
-- Define a stable versioned composer prompt and typed answer.
+- Implement the minimal composer prompt defined in Section 11 and a typed answer.
+- Exclude the source registry, complete tool descriptions, route examples, DB catalog, and
+  structured-schema prose from the composer.
 - Use deterministic rendering when sufficient.
 - Compose one or multiple vector evidence sets once.
 - Compose DB plus vector results once.
@@ -452,17 +723,24 @@ Exit:
 
 ### Phase 6 — Cache and history hardening
 
-- Freeze and version the common prefix.
-- Keep all dynamic data after it.
+- Revalidate and tune the purpose-specific prefix versions established in Phase 0.
+- Keep all dynamic data after each purpose-specific stable prefix.
 - Verify deployed llama.cpp cached-token behavior at production-like concurrency.
 - Confirm Workbench is the only prose transcript.
 - Keep NLQ state structured-only.
+- Persist consent as exact policy state that compaction cannot rewrite or discard.
 - Re-tune transcript and compaction thresholds from measured prompts.
 - Test long conversations and overflow behavior.
+- After the call graph and prompts are stable, evaluate lower reasoning effort and lower
+  output verbosity independently for router fallback, DB planner, and composer.
+- Adopt lower settings only when task-specific correctness and grounding evaluations pass.
 
 Exit:
 
 - Cached-token ratio improves from baseline.
+- Per-call and per-source p50/p95 token budgets pass or have a documented evidence-based
+  revision.
+- Selected reasoning/verbosity settings have benchmark evidence and no quality regression.
 - Long-history and compaction tests pass.
 - Cross-user isolation remains intact.
 - Prompts contain no unauthorized data.
@@ -472,6 +750,7 @@ Exit:
 - Shadow compare legacy and new paths where possible.
 - Canary by user or percentage.
 - Monitor calls, tokens, cache, latency, correctness, partial answers, errors, and validation.
+- Monitor denied external attempts, toggle adoption, connector use, and policy mismatches.
 - Test feature-flag rollback.
 - Complete an observation window.
 - Remove legacy orchestration, old prompts, adapters, and dependencies.
@@ -498,12 +777,14 @@ Treat this as a separate decision:
 Proceed only if benchmarks show better cost, quality, or extensibility than the
 application-controlled orchestrator.
 
-## 15. Testing strategy
+## 16. Testing strategy
 
 ### Unit
 
 - routing predicates and precedence;
 - role and pin filtering;
+- source grouping and effective-set intersection;
+- request-default, conversation restore, and toggle-off pin clearing;
 - exact DB question preservation;
 - typed tool/evidence contracts;
 - deterministic answer selection;
@@ -522,6 +803,9 @@ application-controlled orchestrator.
 - no-result, clarification, and refusal paths;
 - cancellation in selection, retrieval, DB execution, and composition;
 - local-only sensitive-data policy;
+- toggle-off proof that no Qdrant or web client is called;
+- toggle-on role/deployment intersections;
+- direct tool and workspace bypass prevention;
 - MCP and direct PostgreSQL modes;
 - persisted reload and follow-up.
 
@@ -529,6 +813,8 @@ application-controlled orchestrator.
 
 - schema/order checks for all SSE events;
 - existing frontend event consumption;
+- external-source toggle defaults, labels, accessibility, state restoration, and payload;
+- independence of external access, Direct/MCP transport, pinning, and local/Groq mode;
 - unchanged card payload rendering;
 - answer, citation, limitation, and error rendering;
 - old/new history loading;
@@ -543,9 +829,10 @@ application-controlled orchestrator.
 - destructive/write SQL requests;
 - PII by role;
 - cross-user conversation ids;
+- omitted/false/true external-source flags and forged external pins/tool calls;
 - stale, empty, conflicting, and partial evidence.
 
-## 16. Acceptance criteria
+## 17. Acceptance criteria
 
 ### Correctness and safety
 
@@ -555,13 +842,21 @@ application-controlled orchestrator.
 - No unsupported numeric claim appears in mixed-source evaluation.
 - Material vector/web claims trace to supplied evidence.
 - Existing conversation records remain readable.
+- Omitted or false external_sources_enabled results in zero Qdrant/web operations.
+- True external_sources_enabled permits only the role/deployment-authorized intersection.
+- Turning access off prevents later turns and direct tools from using external sources.
 
 ### Cost and performance
 
 - Median model-call count falls at least 50% across the representative mix.
 - Non-cached prompt tokens fall at least 40%.
+- Purpose-specific p50/p95 token budgets in Section 10 pass or are revised from documented
+  production evidence before becoming release thresholds.
 - At least 80% of source selections avoid an LLM router.
 - No turn uses more than one user-facing composition call.
+- Composer prompts contain no router catalog, complete tool descriptions, DB schema, or
+  duplicated structured-output specification.
+- Prefix version/hash telemetry proves byte-stable reuse before cache-hit comparisons.
 - Single-source p95 latency does not regress.
 - Time to first source card does not regress more than 10%.
 
@@ -572,7 +867,7 @@ application-controlled orchestrator.
 - Legacy and new results can be compared during rollout.
 - Dependencies and documentation are current.
 
-## 17. Rollout and rollback
+## 18. Rollout and rollback
 
 Feature flags:
 
@@ -580,6 +875,8 @@ Feature flags:
 - WORKBENCH_DETERMINISTIC_ROUTING
 - WORKBENCH_COMMON_COMPOSER
 - WORKBENCH_PERSONALIZE_SUGGESTIONS
+- WORKBENCH_EXTERNAL_CONNECTORS_ENABLED as the deployment-wide kill switch; user consent is
+  still required when this is true.
 
 Rollout:
 
@@ -605,7 +902,7 @@ Rollback on:
 
 Rollback is configuration-first. No DB schema rollback is needed in Phases 0–7.
 
-## 18. Risks and mitigations
+## 19. Risks and mitigations
 
 | Risk | Mitigation |
 |---|---|
@@ -619,18 +916,31 @@ Rollback is configuration-first. No DB schema rollback is needed in Phases 0–7
 | UI depends on event timing | Preserve shapes and add contract tests |
 | Router fallback never disappears | Track fallback rate/classes and enforce a removal gate |
 | Native agent increases calls | Keep Phase 8 optional and benchmark-gated |
+| One universal prompt repeats irrelevant context | Separate router, planner, and minimal composer prompts with ownership tests |
+| Early measurements use unstable prefixes | Establish deterministic serialization, hashing, and cache telemetry in Phase 0 |
+| Lower reasoning/verbosity harms accuracy | Tune only after architecture changes and gate every setting with evaluations |
+| UI toggle is mistaken for enforcement | Enforce one shared policy at API, routing, dispatch, tool, and connector boundaries |
+| External pin/tool bypasses the chat gate | Reject server-side and cover every direct path with negative tests |
+| Old clients omit the new field | Pydantic/API default is false; old history also restores false |
+| Toggle is confused with Direct/MCP or local/Groq | Use data-provenance labeling and keep state fields independent |
 
-## 19. Blast radius and effort
+## 20. Blast radius and effort
+
+Actual repository blast radius after implementation: 35 tracked files changed and 20 new
+files at handoff, including production code, tests, lockfile, plan/checklist, and runbooks.
+There is no relational DB migration. History changes are additive JSON fields/versioning,
+and the frontend/API request change is backward-compatible because consent defaults off.
 
 Recommended Phases 0–7:
 
-- 5–7 substantially changed production files;
-- 4–6 lightly changed production files;
-- 8–12 changed or new test files;
-- zero expected frontend behavior changes;
+- 8–10 substantially changed production files;
+- 6–9 lightly changed production files;
+- 10–15 changed or new test files;
+- 3–4 required frontend files for toggle state, API typing, composer UI, and tests;
 - no DB migration;
-- approximately 700–1,200 production lines changed/added, with substantial deletions;
-- approximately 5–8 focused engineering days plus the canary observation window.
+- one additive JSON history-record version change;
+- approximately 1,000–1,700 production lines changed/added, with substantial deletions;
+- approximately 7–11 focused engineering days plus the canary observation window.
 
 Optional Phase 8:
 
@@ -639,20 +949,27 @@ Optional Phase 8:
 - approximately 4–7 additional engineering days;
 - primary risk is local tool-call protocol reliability.
 
-## 20. Definition of done
+## 21. Definition of done
 
 The simplification is complete when:
 
 1. LangGraph and unused LangChain dependencies are absent from Workbench runtime.
 2. Workbench uses one plain async orchestrator and one canonical prose transcript.
 3. Role/source policy is deterministic and outside model control.
-4. Governed NLQ remains the only route to DB execution.
-5. Ordinary source selection avoids an LLM call.
-6. Vector tools retrieve evidence without separately generating prose.
-7. A turn performs no more than one user-facing composition call.
-8. Structural DB follow-ups and deterministic lookups use zero model calls.
-9. Existing SSE events and history records remain compatible.
-10. Telemetry proves the cost and cache targets.
-11. Correctness, security, PII, and citation suites pass.
-12. Feature-flag rollback is tested.
-13. Legacy orchestration, obsolete prompts, and dependencies are removed after rollout.
+4. New and old conversations default to external sources disabled.
+5. One conversation-scoped toggle controls macro, competitive, regulatory, and web together.
+6. Effective access is consent ∩ role ∩ deployment and is enforced at every execution path.
+7. Direct/MCP, source pinning, and local/Groq settings remain independent controls.
+8. Governed NLQ remains the only route to DB execution.
+9. Ordinary source selection avoids an LLM call.
+10. Vector tools retrieve evidence without separately generating prose.
+11. A turn performs no more than one user-facing composition call.
+12. Structural DB follow-ups and deterministic lookups use zero model calls.
+13. Existing SSE events and old history remain compatible.
+14. Telemetry proves the cost and cache targets.
+15. Router, DB planner, and composer have distinct minimal prompts with no duplicated rules.
+16. Per-call p50/p95 token budgets and prefix-hash checks pass.
+17. Reasoning/verbosity settings are tuned only from post-refactor evaluation results.
+18. Correctness, security, PII, consent, and citation suites pass.
+19. Prior-image rollback and the external-connector kill switch are exercised in deployment.
+20. Legacy orchestration, obsolete prompts, and dependencies are removed after rollout.

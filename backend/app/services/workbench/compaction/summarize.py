@@ -83,6 +83,9 @@ async def write_checkpoint(
             {"role": "system", "content": prompts.SYSTEM_PROMPT},
             {"role": "user", "content": body},
         ],
+        call_purpose="compaction",
+        prompt_version="workbench-compaction-v1",
+        max_output_tokens=settings.workbench_compaction_max_tokens,
     )
     text = (result.text or "").strip()
     if not text:

@@ -48,3 +48,15 @@ uvicorn app.main:app --app-dir backend --reload --port 8000
 - `GET /regulatory/categories`
 - `GET /regulatory/{category_id}`
 - `GET /regulatory/alerts`
+
+## Workbench architecture
+
+`POST /workbench/ask` uses an ordinary async select → concurrent dispatch → answer flow.
+PostgreSQL loan-book access is available by default. `external_sources_enabled=true` permits
+the role/deployment intersection of macro, competitive, regulatory, and web sources for that
+conversation. The same immutable policy gates pins and direct Workbench tools.
+
+Qdrant and web handlers return bounded typed evidence. They do not make per-source language-
+model calls; one common grounded composer handles all retrieved evidence. The durable
+Workbench record is the only prose transcript. NLQ conversation state contains structured
+query anchors only and is not a second chat history.

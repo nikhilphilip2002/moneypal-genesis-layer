@@ -200,6 +200,26 @@ class Settings:
         self.workbench_router_model = get("WORKBENCH_ROUTER_MODEL") or self.nlq_llm_model
         self.workbench_synth_model = get("WORKBENCH_SYNTH_MODEL") or self.nlq_llm_model
 
+        # Workbench simplification controls. The plain-async orchestrator is now the only
+        # implementation; its legacy flag remains readable for deployment compatibility.
+        self.workbench_orchestrator_v2 = (
+            get("WORKBENCH_ORCHESTRATOR_V2", "true") or "true"
+        ).lower() in ("1", "true", "yes", "on")
+        self.workbench_deterministic_routing = (
+            get("WORKBENCH_DETERMINISTIC_ROUTING", "true") or "true"
+        ).lower() in ("1", "true", "yes", "on")
+        self.workbench_common_composer = (
+            get("WORKBENCH_COMMON_COMPOSER", "true") or "true"
+        ).lower() in ("1", "true", "yes", "on")
+        self.workbench_personalize_suggestions = (
+            get("WORKBENCH_PERSONALIZE_SUGGESTIONS", "false") or "false"
+        ).lower() in ("1", "true", "yes", "on")
+        # Deployment availability is independent of per-conversation consent.  True keeps
+        # the legacy path compatible; Phase 1 additionally requires explicit user consent.
+        self.workbench_external_connectors_enabled = (
+            get("WORKBENCH_EXTERNAL_CONNECTORS_ENABLED", "true") or "true"
+        ).lower() in ("1", "true", "yes", "on")
+
         # --- Workbench conversation compaction --------------------------------------
         # The transcript budget was previously expressed in characters because no token
         # count was persisted. Real prompt_tokens from the provider are now recorded per

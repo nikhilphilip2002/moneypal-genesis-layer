@@ -20,6 +20,7 @@ from app.services.nlq.llm.client import (
     _ProviderProfile,
     get_llm_client,
 )
+from app.services.nlq.llm.telemetry import collect_calls
 
 SCHEMA = {"title": "PlanResult", "type": "object", "properties": {"route": {"type": "string"}}}
 
@@ -127,6 +128,19 @@ class TestThinkingModels:
         assert "max_tokens" not in seen
 
     @pytest.mark.anyio
+    async def test_explicit_output_budget_is_sent_as_standard_max_tokens(self):
+        seen = {}
+
+        def handler(request):
+            seen.update(json.loads(request.content))
+            return _ok()
+
+        await _client(handler).complete(
+            messages=[{"role": "user", "content": "hi"}], max_output_tokens=300,
+        )
+        assert seen["max_tokens"] == 300
+
+    @pytest.mark.anyio
     async def test_cached_prompt_token_count_is_captured(self):
         def handler(_request):
             response = _ok('{"route":"refuse"}')
@@ -137,6 +151,33 @@ class TestThinkingModels:
         result = await _client(handler).complete(messages=[{"role": "user", "content": "hi"}])
         assert result.prompt_tokens == 10
         assert result.cached_prompt_tokens == 9000
+        assert result.uncached_prompt_tokens == 10
+
+    @pytest.mark.anyio
+    async def test_purpose_prefix_and_uncached_usage_are_recorded(self):
+        def handler(_request):
+            response = _ok('{"route":"refuse"}')
+            body = json.loads(response.content)
+            body["usage"]["prompt_tokens"] = 100
+            body["usage"]["prompt_tokens_details"] = {
+                "cached_tokens": 70,
+                "cache_creation_tokens": 20,
+            }
+            return httpx.Response(200, json=body)
+
+        with collect_calls() as calls:
+            result = await _client(handler).complete(
+                messages=[{"role": "system", "content": "fixed"}],
+                call_purpose="route",
+                prompt_version="router-v1",
+            )
+
+        assert result.uncached_prompt_tokens == 30
+        assert result.cache_write_prompt_tokens == 20
+        assert result.prefix_hash
+        assert len(calls) == 1
+        assert calls[0].purpose == "route"
+        assert calls[0].prompt_version == "router-v1"
 
 
 class TestResponseFormat:
@@ -255,9 +296,16 @@ class TestFailureHandling:
             calls["n"] += 1
             return httpx.Response(400, text="unknown model")
 
-        with pytest.raises(LLMError):
-            await _client(handler).complete(messages=[{"role": "user", "content": "hi"}])
+        with collect_calls() as recorded:
+            with pytest.raises(LLMError):
+                await _client(handler).complete(
+                    messages=[{"role": "user", "content": "hi"}],
+                    call_purpose="route",
+                )
         assert calls["n"] == 1
+        assert len(recorded) == 1
+        assert recorded[0].finish_reason == "error"
+        assert recorded[0].attempts == 1
 
     @pytest.mark.anyio
     async def test_timeout_surfaces_as_llmtimeout(self):

@@ -166,23 +166,35 @@ SOURCES: dict[str, Source] = {
 }
 
 ROUTE_VALUES = ("dispatch", "refuse")
+EXTERNAL_CONNECTOR_SOURCES = frozenset({"macro", "competitive", "regulatory", "web"})
 
 
-def visible_sources(role: str) -> list[Source]:
+def visible_sources(
+    role: str, allowed_source_ids: tuple[str, ...] | list[str] | set[str] | None = None,
+) -> list[Source]:
+    allowed = set(allowed_source_ids) if allowed_source_ids is not None else None
     return [
         s for s in SOURCES.values()
-        if s.visible_to(role) and (s.id != "web" or settings.exa_mcp_enabled)
+        if s.visible_to(role)
+        and (allowed is None or s.id in allowed)
+        and (
+            settings.workbench_external_connectors_enabled
+            or s.id not in EXTERNAL_CONNECTOR_SOURCES
+        )
+        and (s.id != "web" or settings.exa_mcp_enabled)
     ]
 
 
-def route_schema(role: str) -> dict[str, Any]:
+def route_schema(
+    role: str, allowed_source_ids: tuple[str, ...] | list[str] | set[str] | None = None,
+) -> dict[str, Any]:
     """Grammar-JSON schema for the router call.
 
     `sources` is constrained to the ids this role may see, so — exactly like the NLQ
     planner constrained to catalog metrics — the model physically cannot route to a source
     that does not exist or that the user is not allowed to reach.
     """
-    ids = [s.id for s in visible_sources(role)]
+    ids = [s.id for s in visible_sources(role, allowed_source_ids)]
     return {
         "type": "object",
         "additionalProperties": False,
@@ -207,44 +219,32 @@ def route_schema(role: str) -> dict[str, Any]:
     }
 
 
-def router_system_prompt(role: str) -> str:
+def router_system_prompt(
+    role: str, allowed_source_ids: tuple[str, ...] | list[str] | set[str] | None = None,
+) -> str:
     """Fixed, cacheable prefix describing every visible source."""
+    compact = {
+        "db": "governed bank loan book values, records, metrics and breakdowns",
+        "schema": "authorized abstracted loan-book views and relationships",
+        "knowledge": "stable governed banking definitions; no current facts",
+        "macro": "indexed public macroeconomic and sector evidence",
+        "competitive": "indexed peer lender, product and market evidence",
+        "regulatory": "indexed RBI and banking-regulation evidence",
+        "web": "fresh public internet evidence; never private bank data",
+    }
     lines = [
-        "You are the router for a bank intelligence workbench. You decide which knowledge "
-        "source(s) a question should be answered from. You never answer the question "
-        "yourself and never state a figure — downstream engines do that.",
-        "",
-        "SOURCES (id | what it holds):",
+        "Select source ids for a bank intelligence question; do not answer it.",
+        "Allowed sources:",
     ]
-    for source in visible_sources(role):
-        lines.append(f"- {source.id} | {source.describes}")
-        if source.example_intents:
-            examples = "; ".join(source.example_intents)
-            lines.append(f"    e.g. {examples}")
+    for source in visible_sources(role, allowed_source_ids):
+        lines.append(f"- {source.id}: {compact[source.id]}")
     lines += [
-        "",
-        "The examples are illustrative, not a list to match literally. Route by meaning.",
-        "",
-        "RULES",
-        "- Pick every source needed. A question comparing our book to the market needs "
-        "both `db` and the applicable public source; most questions need exactly one.",
-        "- Use `web` only when the user explicitly asks to search online or freshness is "
-        "material (latest/current/recent/news). Stable indexed macro questions use `macro`.",
-        "- Never put borrower names, customer/account identifiers, repayment histories, "
-        "phone numbers or other private bank details in a `web` source_intent.",
-        "- A stable definition or explanation goes to `knowledge`. A request for our values, "
-        "records, rates, counts or breakdowns goes to `db`, even if it uses the same term.",
-        '- route="dispatch" with the chosen `sources` and a one-line `intent` restating '
-        "the question, whenever any source can contribute.",
-        "- For a multi-source question, also return `source_intents`: one standalone, "
-        "source-specific question for each chosen source. The db task must ask only for "
-        "the internal fact or calculation; macro/competitive/regulatory tasks must ask "
-        "only for their external evidence. Preserve all names, dates, rates and filters.",
-        '- route="refuse" only when no source applies at all (small talk, or a request to '
-        "modify or delete data). Read-only lists and exports are allowed. Give a short "
-        "`reason` and `message`. Do not refuse merely "
-        "because a question is hard — dispatch it and let the source handle the detail.",
-        "- Never invent a source id. Use only the ids listed above.",
+        "Pick every needed source; comparisons may need db plus one external source.",
+        "Use web only for explicit online search or material freshness.",
+        "Never send names, account/customer ids, repayment history, or private facts to web.",
+        "Use knowledge for definitions and db for our values/records.",
+        "Return dispatch with sources/intent (and focused source_intents for hybrids), or "
+        "refuse only when no allowed source can contribute. Preserve exact names and filters.",
     ]
     return "\n".join(lines)
 

@@ -61,6 +61,8 @@ async def personalize(
             )},
         ],
         json_schema=schema,
+        call_purpose="suggestions",
+        prompt_version="workbench-suggestions-v1",
     )
     payload = result.json()
     proposed = payload.get("suggestions", []) if isinstance(payload, dict) else []

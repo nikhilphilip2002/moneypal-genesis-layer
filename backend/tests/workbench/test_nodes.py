@@ -57,7 +57,7 @@ class TestMacro:
 
 class TestKnowledge:
     @pytest.mark.anyio
-    async def test_returns_a_descriptive_brief_without_database_rows(self, monkeypatch):
+    async def test_returns_a_governed_catalog_brief_without_model_or_database_rows(self, monkeypatch):
         fake = FakeLLM(
             "An interest rate is the percentage charged on principal over a stated period. "
             "Interest paid is a rupee amount, so it is different from the rate."
@@ -68,8 +68,9 @@ class TestKnowledge:
 
         assert result.source == "knowledge"
         assert result.card_type == "brief"
-        assert "percentage" in result.payload["summary"]
-        assert "interest rate" in fake.calls[0]["messages"][-1]["content"].lower()
+        assert "interest rate" in result.payload["summary"].lower()
+        assert result.evidence
+        assert fake.calls == []
 
 
 class TestPostgresMCP:
@@ -103,6 +104,41 @@ class TestPostgresMCP:
         assert result.payload["message"] == "Not in the governed catalog."
 
     @pytest.mark.anyio
+    async def test_db_chart_keeps_compiler_steps_without_personalization(self, monkeypatch):
+        class Chart:
+            summary = "Grounded summary"
+            next_steps = [SimpleNamespace(id="safe", label="Safe drill")]
+
+            def model_dump(self, mode="json"):
+                return {
+                    "summary": self.summary,
+                    "next_steps": [
+                        {"id": step.id, "label": step.label} for step in self.next_steps
+                    ],
+                }
+
+        response = SimpleNamespace(
+            status="answered", clarification=None, refusal=None, analysis=None,
+            briefing=None, worklist=None, chart=Chart(), plan_summary="",
+        )
+
+        async def fake_ask(_ctx):
+            return response
+
+        monkeypatch.setattr(nodes, "ask_once", fake_ask)
+        monkeypatch.setattr(nodes.settings, "workbench_personalize_suggestions", False)
+        monkeypatch.setattr(
+            nodes.models, "for_step",
+            lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("model called")),
+        )
+
+        result = await nodes.run_db(
+            "question", conversation_id="c1", user="u", role="admin", access_mode="direct",
+        )
+        assert result.card_type == "chart"
+        assert result.payload["next_steps"] == [{"id": "safe", "label": "Safe drill"}]
+
+    @pytest.mark.anyio
     async def test_schema_source_can_use_mcp(self, monkeypatch):
         from app.mcp import postgres_client
 
@@ -121,7 +157,7 @@ class TestPostgresMCP:
 
 class TestCompetitive:
     @pytest.mark.anyio
-    async def test_returns_a_question_specific_brief_via_workbench_model(self, monkeypatch):
+    async def test_returns_question_specific_retrieval_for_common_composer(self, monkeypatch):
         from app.services import institution_loader
 
         monkeypatch.setattr(institution_loader, "load_all", lambda: [{
@@ -140,7 +176,8 @@ class TestCompetitive:
         result = await nodes.run_competitive("who competes for MSME borrowers")
         assert result.source == "competitive"
         assert result.card_type == "brief"
-        assert "Rivals price low." in result.payload["summary"]
+        assert "Retrieved 1 competitive passage" in result.payload["summary"]
+        assert result.evidence[0].excerpt.startswith("Peer Bank prices")
         assert result.summary  # non-empty, so multi-source synthesis has something to use
 
     @pytest.mark.anyio

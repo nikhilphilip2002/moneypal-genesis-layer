@@ -40,7 +40,7 @@ from app.services.nlq.contracts import (
     WorklistPlan,
 )
 from app.services.nlq.llm import LLMError, get_llm_client
-from app.services.nlq.llm.prompts import PROMPT_VERSION, build_messages
+from app.services.nlq.llm.prompts import PROMPT_VERSION, build_messages, stable_prefix_hash
 from app.services.nlq.llm.schemas import plan_schema
 from app.services.nlq.normalization import normalize_lending_question
 from app.services.nlq.text_to_sql import (
@@ -1143,7 +1143,14 @@ async def plan(
             )
         try:
             result = await llm.complete(
-                messages=messages, json_schema=schema
+                messages=messages,
+                json_schema=schema,
+                call_purpose="db_plan",
+                call_kind="repair" if attempt else "planned",
+                prompt_version=PROMPT_VERSION,
+                catalog_version=cat.version,
+                prefix_hash=stable_prefix_hash(cat),
+                max_output_tokens=700,
             )
         except LLMError as exc:
             logger.warning("NLQ planner LLM call failed: %s", exc)

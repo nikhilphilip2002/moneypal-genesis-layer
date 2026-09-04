@@ -21,7 +21,7 @@ An advanced regulatory, competitive, and macro-economic intelligence dashboard d
 
 - **Frontend:** Next.js (TypeScript), Tailwind CSS, Lucide Icons, Radix UI.
 - **Backend:** FastAPI (Python), Uvicorn.
-- **Orchestration:** LangGraph Workbench with governed source routing.
+- **Orchestration:** Plain async Workbench with deterministic-first governed source routing.
 - **MCP:** Python MCP client for internal PostgreSQL access and hosted Exa web search.
 - **Vector DB:** Qdrant (Tailscale shared/local container).
 - **Embeddings:** `BAAI/bge-m3` (1024-dimension).
@@ -130,11 +130,13 @@ unrestricted access to arbitrary tools.
 ```text
 Next.js Workbench
         ↓
-FastAPI + LangGraph router
+FastAPI + plain async orchestrator
         ├── db         → governed PostgreSQL
-        ├── macro      → local Qdrant RAG
+        ├── macro      → local Qdrant retrieval
         ├── regulatory → local regulatory index
         └── web        → Exa remote MCP → public internet
+                     ↓
+              one common composer
 ```
 
 The integration uses Exa's hosted Streamable HTTP endpoint. `web_search_exa` handles normal
@@ -143,6 +145,11 @@ available for bounded page retrieval. See the [canonical Exa MCP documentation](
 
 ### Routing Rules
 
+- New conversations use the governed PostgreSQL loan book by default. One conversation-
+  scoped **Use external sources** toggle enables macro, competitive, regulatory, and live
+  web sources together, subject to role and deployment availability.
+- Omitting `external_sources_enabled` is equivalent to `false`. External pins and direct
+  Workbench tools cannot bypass this policy.
 - Fresh public questions containing cues such as `latest`, `current`, `today`, `recent`,
   `news`, or an explicit request to search online route to `web`.
 - Stable economic questions continue to use the local `macro` index, avoiding unnecessary
@@ -151,8 +158,11 @@ available for bounded page retrieval. See the [canonical Exa MCP documentation](
   Each source receives a separate task.
 - Deterministic routing guards enforce these rules even if the routing model returns an
   incorrect source or is unavailable.
-- Disabling `EXA_MCP_ENABLED` removes `web` from both the role-visible source list and the
-  router's allowed JSON schema.
+- Vector and web handlers return bounded evidence rather than generating separate prose.
+  One common composer handles one or many retrieved sources, while complete DB/schema cards
+  and deterministic refusals bypass composition.
+- Disabling `WORKBENCH_EXTERNAL_CONNECTORS_ENABLED` removes every connector-backed source;
+  disabling `EXA_MCP_ENABLED` additionally removes live web even when consent is on.
 
 ### Privacy Boundary
 

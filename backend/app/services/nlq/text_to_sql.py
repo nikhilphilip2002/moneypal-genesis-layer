@@ -30,10 +30,13 @@ from app.services.nlq.contracts import Lineage
 from app.services.nlq.llm import LLMError, get_llm_client
 from app.services.nlq.llm.prompts import gold_yaml_block
 from app.services.nlq.llm.schemas import sql_schema
+from app.services.nlq.llm.telemetry import stable_hash
 from app.services.nlq.normalization import normalize_lending_question
 from app.services.nlq.validator import ValidationError, validate
 
 logger = logging.getLogger(__name__)
+
+SQL_PROMPT_VERSION = "sql-v1"
 
 SYSTEM_PROMPT = """\
 You write a single PostgreSQL SELECT statement answering the user's question about a \
@@ -166,7 +169,18 @@ async def generate(
         attempt.attempts += 1
         try:
             result = await llm.complete(
-                messages=messages, json_schema=schema
+                messages=messages,
+                json_schema=schema,
+                call_purpose="sql_repair" if round_number else "sql_generate",
+                call_kind="repair" if round_number else "planned",
+                prompt_version=SQL_PROMPT_VERSION,
+                catalog_version=cat.version,
+                prefix_hash=stable_hash(
+                    gold_yaml_block(cat)
+                    + "\n\nSQL GENERATION TASK INSTRUCTIONS\n"
+                    + _system_prompt(allow_pii)
+                ),
+                max_output_tokens=900,
             )
         except LLMError as exc:
             attempt.error = str(exc)

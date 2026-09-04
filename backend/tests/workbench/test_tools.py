@@ -6,8 +6,6 @@ bypassed by calling the endpoint directly.
 
 from __future__ import annotations
 
-from types import SimpleNamespace
-
 import pytest
 
 from app.services.workbench import tools
@@ -56,7 +54,7 @@ class TestRunTool:
     async def test_competitor_landscape_returns_a_brief(self, monkeypatch):
         from app.services.workbench import nodes
 
-        async def fake_competitive(intent):
+        async def fake_competitive(intent, **kwargs):
             return nodes.SourceResult(
                 source="competitive", card_type="brief",
                 payload={"summary": "Rivals.", "key_points": []},
@@ -64,6 +62,9 @@ class TestRunTool:
             )
 
         monkeypatch.setattr(nodes, "run_competitive", fake_competitive)
-        result = await tools.run_tool("competitor_landscape", role="gicc_admin", params={})
+        result = await tools.run_tool(
+            "competitor_landscape", role="gicc_admin", params={},
+            external_sources_enabled=True,
+        )
         assert result.card_type == "brief"
         assert "Rivals." in result.payload["summary"]

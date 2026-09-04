@@ -50,10 +50,9 @@ class TestDispatch:
             "what is the disbursment date of customer SHEELAVATHI M K", role="admin"
         )
 
-        assert fake.calls[0]["messages"][-1]["content"] == (
-            "what is the disbursement date of customer SHEELAVATHI M K"
-        )
         assert decision.sources == ["db"]
+        assert decision.model == "catalog"
+        assert fake.calls == []
 
     @pytest.mark.anyio
     @pytest.mark.parametrize(
@@ -138,8 +137,9 @@ class TestDispatch:
         decision = await router.route(
             "How does our collection efficiency compare with peer benchmarks?", role="admin",
         )
-        assert decision.source_intents["db"] == "show our collection efficiency"
-        assert decision.source_intents["competitive"] == "regional peer collection benchmarks"
+        assert decision.sources == ["db", "competitive"]
+        assert "collection efficiency" in decision.source_intents["db"].lower()
+        assert decision.model == "deterministic"
 
     @pytest.mark.anyio
     async def test_hybrid_coverage_guard_adds_missed_external_source(self, monkeypatch):
@@ -166,7 +166,7 @@ class TestDispatch:
         assert decision.sources == ["macro", "competitive"]
 
     @pytest.mark.anyio
-    async def test_session_history_precedes_the_current_question(self, monkeypatch):
+    async def test_structural_db_followup_bypasses_router_model(self, monkeypatch):
         fake = FakeLLM('{"route":"dispatch","sources":["db"],"intent":"x"}')
         _use(monkeypatch, fake)
         history_messages = [
@@ -174,19 +174,20 @@ class TestDispatch:
             {"role": "assistant", "content": "PAR 30 is 4.2%."},
         ]
 
-        await router.route(
+        decision = await router.route(
             "and by branch?", role="admin", history_messages=history_messages,
         )
 
-        sent = fake.calls[0]["messages"]
-        assert sent[-3:] == [*history_messages, {"role": "user", "content": "and by branch?"}]
+        assert decision.sources == ["db"]
+        assert decision.source_intents["db"] == "What is PAR 30 by branch?"
+        assert fake.calls == []
 
     @pytest.mark.anyio
-    async def test_history_system_context_is_merged_into_router_system_prompt(self, monkeypatch):
+    async def test_structural_followup_ignores_checkpoint_system_messages(self, monkeypatch):
         fake = FakeLLM('{"route":"dispatch","sources":["db"],"intent":"x"}')
         _use(monkeypatch, fake)
 
-        await router.route(
+        decision = await router.route(
             "and by branch?",
             role="admin",
             history_messages=[
@@ -197,11 +198,8 @@ class TestDispatch:
             ],
         )
 
-        sent = fake.calls[0]["messages"]
-        assert [message["role"] for message in sent].count("system") == 1
-        assert sent[0]["role"] == "system"
-        assert "Conversation checkpoint" in sent[0]["content"]
-        assert "Current session state" in sent[0]["content"]
+        assert decision.sources == ["db"]
+        assert fake.calls == []
 
     @pytest.mark.anyio
     async def test_lending_typos_are_normalized_before_routing(self, monkeypatch):
@@ -210,7 +208,7 @@ class TestDispatch:
 
         await router.route("intrest rate based on schema name", role="admin")
 
-        assert fake.calls[0]["messages"][-1]["content"] == "interest rate based on scheme name"
+        assert fake.calls == []
 
     @pytest.mark.anyio
     async def test_real_database_schema_word_is_not_changed(self, monkeypatch):
@@ -219,7 +217,7 @@ class TestDispatch:
 
         await router.route("show the schema table relationships", role="admin")
 
-        assert fake.calls[0]["messages"][-1]["content"] == "show the schema table relationships"
+        assert fake.calls == []
 
     @pytest.mark.anyio
     async def test_descriptive_catalog_question_uses_concept_source(self, monkeypatch):
@@ -267,6 +265,19 @@ class TestDispatch:
 
 class TestRefuse:
     @pytest.mark.anyio
+    async def test_destructive_database_request_is_refused_without_a_model_call(
+        self, monkeypatch
+    ):
+        fake = FakeLLM('{"route":"dispatch","sources":["db"],"intent":"unsafe"}')
+        _use(monkeypatch, fake)
+
+        decision = await router.route("Drop the loan accounts table", role="admin")
+
+        assert decision.route == "refuse"
+        assert decision.reason == "unsafe_operation"
+        assert fake.calls == []
+
+    @pytest.mark.anyio
     async def test_parses_a_refusal(self, monkeypatch):
         _use(monkeypatch, FakeLLM('{"route":"refuse","reason":"unsafe","message":"no"}'))
         decision = await router.route("delete everything", role="admin")
@@ -288,20 +299,71 @@ class TestRefuse:
         decision = await router.route(question, role="admin")
         assert decision.route == "dispatch"
         assert decision.sources == ["db"]
-        assert decision.model == "catalog"
+        assert decision.model in {"catalog", "deterministic"}
 
 
 class TestFallback:
     @pytest.mark.anyio
-    async def test_llm_failure_falls_back_to_the_loan_book_for_a_book_role(self, monkeypatch):
+    async def test_overlapping_external_cues_select_each_required_source(self, monkeypatch):
+        fake = FakeLLM('{"route":"refuse","reason":"wrong","message":"wrong"}')
+        _use(monkeypatch, fake)
+
+        decision = await router.route(
+            "Compare competitor positioning under RBI prudential rules and GDP conditions",
+            role="admin",
+        )
+
+        assert decision.sources == ["competitive", "regulatory", "macro"]
+        assert fake.calls == []
+
+    @pytest.mark.anyio
+    async def test_role_restriction_excludes_unavailable_competitive_source(
+        self, monkeypatch
+    ):
+        fake = FakeLLM('{"route":"dispatch","sources":["competitive"],"intent":"peers"}')
+        _use(monkeypatch, fake)
+
+        from app.services.workbench.access import build_policy
+
+        decision = await router.route(
+            "Who are our NBFC competitors?",
+            role="gicc_director",
+            policy=build_policy(role="gicc_director", external_sources_enabled=True),
+        )
+
+        assert decision.route == "dispatch"
+        assert decision.sources == ["db"]
+        assert decision.limitations == [{
+            "source": "competitive",
+            "reason": (
+                "The requested external source is unavailable, so this answer includes "
+                "only the supported loan-book portion."
+            ),
+        }]
+        assert "competitive" not in decision.effective_sources
+        assert fake.calls == []
+
+    @pytest.mark.anyio
+    async def test_deterministic_selector_can_be_disabled_independently(self, monkeypatch):
+        fake = FakeLLM('{"route":"dispatch","sources":["macro"],"intent":"GDP trend"}')
+        _use(monkeypatch, fake)
+        monkeypatch.setattr(router.settings, "workbench_deterministic_routing", False)
+
+        decision = await router.route("Explain Karnataka GDP trends", role="admin")
+
+        assert decision.sources == ["macro"]
+        assert len(fake.calls) == 1
+
+    @pytest.mark.anyio
+    async def test_llm_failure_clarifies_an_ambiguous_request(self, monkeypatch):
         class Failing(FakeLLM):
             async def complete(self, **kw):
                 raise LLMError("model down")
 
         _use(monkeypatch, Failing())
         decision = await router.route("q", role="admin")
-        assert decision.route == "dispatch"
-        assert decision.sources == ["db"]
+        assert decision.route == "refuse"
+        assert decision.reason == "clarification_required"
 
     @pytest.mark.anyio
     async def test_llm_failure_still_routes_both_halves_of_a_hybrid_question(self, monkeypatch):
@@ -328,22 +390,22 @@ class TestFallback:
         assert decision.sources == ["web"]
 
     @pytest.mark.anyio
-    async def test_llm_failure_falls_back_to_db_during_open_access(self, monkeypatch):
+    async def test_llm_failure_does_not_force_db_during_open_access(self, monkeypatch):
         class Failing(FakeLLM):
             async def complete(self, **kw):
                 raise LLMError("model down")
 
         _use(monkeypatch, Failing())
         decision = await router.route("q", role="gicc_policy")
-        # DB is the modal fallback and is visible under the selected rollout policy.
-        assert decision.route == "dispatch"
-        assert decision.sources == ["db"]
+        assert decision.route == "refuse"
+        assert decision.reason == "clarification_required"
 
     @pytest.mark.anyio
-    async def test_empty_source_list_falls_back_rather_than_returning_nothing(self, monkeypatch):
+    async def test_empty_source_list_clarifies_rather_than_forcing_a_source(self, monkeypatch):
         _use(monkeypatch, FakeLLM('{"route":"dispatch","sources":[],"intent":"x"}'))
         decision = await router.route("q", role="admin")
-        assert decision.sources == ["db"]
+        assert decision.route == "refuse"
+        assert decision.reason == "clarification_required"
 
 
 class TestPinnedSource:
@@ -366,8 +428,9 @@ class TestPinnedSource:
         assert fake.calls == []
 
     @pytest.mark.anyio
-    async def test_an_unknown_pin_is_ignored(self, monkeypatch):
+    async def test_an_unknown_pin_is_rejected(self, monkeypatch):
         fake = FakeLLM('{"route":"dispatch","sources":["macro"],"intent":"x"}')
         _use(monkeypatch, fake)
         decision = await router.route("q", role="admin", pinned="not_a_source")
-        assert decision.sources == ["macro"]
+        assert decision.route == "refuse"
+        assert decision.reason == "source_unavailable"

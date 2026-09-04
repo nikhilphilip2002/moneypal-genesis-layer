@@ -13,7 +13,6 @@ every compaction. Whatever the prose summary says or forgets, this block is exac
 
 from __future__ import annotations
 
-import re
 from dataclasses import dataclass, field
 from typing import Any, Iterable
 

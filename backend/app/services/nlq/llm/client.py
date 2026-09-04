@@ -24,6 +24,13 @@ import httpx
 
 from app.core.config import settings
 from app.services.nlq.llm.messages import coalesce_system_messages
+from app.services.nlq.llm.telemetry import (
+    CallKind,
+    CallPurpose,
+    CallRecord,
+    prefix_hash as compute_prefix_hash,
+    record_call,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -52,6 +59,15 @@ class LLMResult:
     completion_tokens: int = 0
     duration_ms: int = 0
     finish_reason: str = ""
+    cache_write_prompt_tokens: int = 0
+    uncached_prompt_tokens: int = 0
+    attempts: int = 1
+    retries: int = 0
+    call_purpose: str = "unspecified"
+    call_kind: str = "planned"
+    prompt_version: str = ""
+    catalog_version: str = ""
+    prefix_hash: str = ""
     reasoning: str = ""
     """Whatever the server split out as chain of thought. Never parsed — kept only so an
     empty `text` can be diagnosed as "it thought instead of answering"."""
@@ -105,6 +121,12 @@ class LLMClient(Protocol):
         messages: list[dict[str, str]],
         json_schema: dict[str, Any] | None = None,
         timeout_s: float | None = None,
+        call_purpose: CallPurpose | str = "unspecified",
+        call_kind: CallKind | str = "planned",
+        prompt_version: str = "",
+        catalog_version: str = "",
+        prefix_hash: str = "",
+        max_output_tokens: int | None = None,
     ) -> LLMResult: ...
 
     async def health(self) -> dict[str, Any]: ...
@@ -197,19 +219,31 @@ class OpenAICompatibleClient:
         messages: list[dict[str, str]],
         json_schema: dict[str, Any] | None = None,
         timeout_s: float | None = None,
+        call_purpose: CallPurpose | str = "unspecified",
+        call_kind: CallKind | str = "planned",
+        prompt_version: str = "",
+        catalog_version: str = "",
+        prefix_hash: str = "",
+        max_output_tokens: int | None = None,
     ) -> LLMResult:
+        request_started = asyncio.get_event_loop().time()
+        prepared_messages = self._prepare_messages(messages, json_schema)
+        effective_prefix_hash = prefix_hash or compute_prefix_hash(prepared_messages[:1])
         payload: dict[str, Any] = {
             "model": self.model,
-            "messages": self._prepare_messages(messages, json_schema),
+            "messages": prepared_messages,
             "stream": False,
         }
+        if max_output_tokens is not None:
+            payload["max_tokens"] = max(1, int(max_output_tokens))
         response_format = self._response_format(json_schema)
         if response_format:
             payload["response_format"] = response_format
 
         last_exc: Exception | None = None
+        attempts_run = 0
         for attempt in range(self.max_retries + 1):
-            started = asyncio.get_event_loop().time()
+            attempts_run = attempt + 1
             try:
                 resp = await self._http().post(
                     "/chat/completions",
@@ -232,30 +266,61 @@ class OpenAICompatibleClient:
                 continue
             if resp.status_code >= 400:
                 # 4xx is a request bug (bad schema, bad model name) — retrying repeats it.
-                raise LLMError(f"{self.provider} rejected the request: {resp.text[:300]}")
+                last_exc = LLMError(
+                    f"{self.provider} rejected the request: {resp.text[:300]}"
+                )
+                break
 
             body = resp.json()
             choice = (body.get("choices") or [{}])[0]
             usage = body.get("usage") or {}
             prompt_details = usage.get("prompt_tokens_details") or {}
+            cache_write_tokens = int(
+                prompt_details.get("cache_write_tokens")
+                or prompt_details.get("cache_creation_tokens")
+                or usage.get("cache_write_tokens")
+                or usage.get("cache_creation_input_tokens")
+                or 0
+            )
+            prompt_tokens = int(usage.get("prompt_tokens", 0) or 0)
+            cached_prompt_tokens = int(prompt_details.get("cached_tokens", 0) or 0)
             message = choice.get("message") or {}
             result = LLMResult(
                 text=message.get("content") or "",
                 reasoning=message.get("reasoning_content") or "",
                 model=body.get("model", self.model),
                 provider=self.provider,
-                prompt_tokens=usage.get("prompt_tokens", 0),
-                cached_prompt_tokens=prompt_details.get("cached_tokens", 0),
-                completion_tokens=usage.get("completion_tokens", 0),
-                duration_ms=int((asyncio.get_event_loop().time() - started) * 1000),
+                prompt_tokens=prompt_tokens,
+                cached_prompt_tokens=cached_prompt_tokens,
+                cache_write_prompt_tokens=cache_write_tokens,
+                # OpenAI includes cached tokens inside prompt_tokens; some llama.cpp
+                # builds report only newly evaluated prompt tokens alongside a larger
+                # cached count. Preserve the provider's uncached value in that shape.
+                uncached_prompt_tokens=(
+                    prompt_tokens - cached_prompt_tokens
+                    if cached_prompt_tokens <= prompt_tokens
+                    else prompt_tokens
+                ),
+                completion_tokens=int(usage.get("completion_tokens", 0) or 0),
+                duration_ms=int((asyncio.get_event_loop().time() - request_started) * 1000),
                 finish_reason=choice.get("finish_reason", ""),
+                attempts=attempt + 1,
+                retries=attempt,
+                call_purpose=str(call_purpose),
+                call_kind=str(call_kind),
+                prompt_version=prompt_version,
+                catalog_version=catalog_version,
+                prefix_hash=effective_prefix_hash,
             )
             logger.info(
-                "LLM completion provider=%s model=%s prompt_tokens=%s cached_prompt_tokens=%s "
-                "completion_tokens=%s finish_reason=%s duration_ms=%s",
+                "LLM completion purpose=%s kind=%s provider=%s model=%s prompt_tokens=%s "
+                "cached_prompt_tokens=%s cache_write_prompt_tokens=%s uncached_prompt_tokens=%s "
+                "completion_tokens=%s finish_reason=%s duration_ms=%s retries=%s prefix=%s",
+                result.call_purpose, result.call_kind,
                 result.provider, result.model, result.prompt_tokens,
-                result.cached_prompt_tokens, result.completion_tokens, result.finish_reason,
-                result.duration_ms,
+                result.cached_prompt_tokens, result.cache_write_prompt_tokens,
+                result.uncached_prompt_tokens, result.completion_tokens, result.finish_reason,
+                result.duration_ms, result.retries, result.prefix_hash,
             )
             from app.core.logging import log_raw_trace
 
@@ -271,13 +336,40 @@ class OpenAICompatibleClient:
                 duration_ms=result.duration_ms,
                 status_code=resp.status_code,
                 finish_reason=result.finish_reason,
+                call_purpose=result.call_purpose,
+                call_kind=result.call_kind,
+                prompt_version=result.prompt_version,
+                catalog_version=result.catalog_version,
+                prefix_hash=result.prefix_hash,
+                attempts=result.attempts,
+                retries=result.retries,
                 usage={
                     "prompt_tokens": result.prompt_tokens,
                     "cached_prompt_tokens": result.cached_prompt_tokens,
+                    "cache_write_prompt_tokens": result.cache_write_prompt_tokens,
+                    "uncached_prompt_tokens": result.uncached_prompt_tokens,
                     "completion_tokens": result.completion_tokens,
                     "total_tokens": result.prompt_tokens + result.completion_tokens,
                 },
             )
+            record_call(CallRecord(
+                purpose=result.call_purpose,
+                call_kind=result.call_kind,
+                provider=result.provider,
+                model=result.model,
+                prompt_version=result.prompt_version,
+                catalog_version=result.catalog_version,
+                prefix_hash=result.prefix_hash,
+                prompt_tokens=result.prompt_tokens,
+                cached_prompt_tokens=result.cached_prompt_tokens,
+                cache_write_prompt_tokens=result.cache_write_prompt_tokens,
+                uncached_prompt_tokens=result.uncached_prompt_tokens,
+                completion_tokens=result.completion_tokens,
+                duration_ms=result.duration_ms,
+                attempts=result.attempts,
+                retries=result.retries,
+                finish_reason=result.finish_reason,
+            ))
             if result.finish_reason == "length":
                 logger.warning(
                     "LLM output hit token length limit (prompt=%s completion=%s)",
@@ -286,11 +378,41 @@ class OpenAICompatibleClient:
             return result
         from app.core.logging import log_raw_trace
 
+        failed_attempts = attempts_run
+        failed_duration_ms = int(
+            (asyncio.get_event_loop().time() - request_started) * 1000
+        )
+        record_call(CallRecord(
+            purpose=str(call_purpose),
+            call_kind=str(call_kind),
+            provider=self.provider,
+            model=self.model,
+            prompt_version=prompt_version,
+            catalog_version=catalog_version,
+            prefix_hash=effective_prefix_hash,
+            prompt_tokens=0,
+            cached_prompt_tokens=0,
+            cache_write_prompt_tokens=0,
+            uncached_prompt_tokens=0,
+            completion_tokens=0,
+            duration_ms=failed_duration_ms,
+            attempts=failed_attempts,
+            retries=max(0, failed_attempts - 1),
+            finish_reason="error",
+        ))
         log_raw_trace(
             f"LLM request failed: {last_exc}",
             event="llm_error",
             provider=self.provider,
             model=self.model,
+            call_purpose=str(call_purpose),
+            call_kind=str(call_kind),
+            prompt_version=prompt_version,
+            catalog_version=catalog_version,
+            prefix_hash=effective_prefix_hash,
+            duration_ms=failed_duration_ms,
+            attempts=failed_attempts,
+            retries=max(0, failed_attempts - 1),
             raw_payload=payload,
             error=str(last_exc),
             level=logging.WARNING,
@@ -371,7 +493,7 @@ async def warm_catalog_prompt_cache() -> None:
         return
 
     from app.services.nlq.catalog import get_catalog
-    from app.services.nlq.llm.prompts import build_messages
+    from app.services.nlq.llm.prompts import PROMPT_VERSION, build_messages, stable_prefix_hash
     from app.services.nlq.llm.schemas import plan_schema
 
     catalog = get_catalog()
@@ -383,6 +505,11 @@ async def warm_catalog_prompt_cache() -> None:
                 catalog=catalog,
             ),
             json_schema=plan_schema(catalog),
+            call_purpose="db_plan",
+            call_kind="warmup",
+            prompt_version=PROMPT_VERSION,
+            catalog_version=catalog.version,
+            prefix_hash=stable_prefix_hash(catalog),
         )
         logger.info(
             "Warmed NLQ Gold prompt cache: prompt_tokens=%s cached_prompt_tokens=%s "

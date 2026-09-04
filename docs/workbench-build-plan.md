@@ -1,4 +1,7 @@
-# Genesis Workbench — Build Plan
+# Genesis Workbench — Build Plan (historical)
+
+> Superseded by `plan.md` and the plain-async, deterministic-first implementation. This
+> document describes the original LangGraph build and is retained only for provenance.
 
 A single chat interface ("workbench") that replaces the multi-module navigation. One LLM
 orchestrator understands each query, routes it to the right knowledge source (DB / macro /

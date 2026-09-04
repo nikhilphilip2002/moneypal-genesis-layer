@@ -11,6 +11,7 @@ import pytest
 
 from app.services.workbench import graph, models, nodes, router
 from app.services.workbench.nodes import SourceResult
+from app.services.workbench.results import Evidence
 from tests.workbench.conftest import FakeLLM
 
 
@@ -38,11 +39,14 @@ async def _collect(**kwargs) -> list[tuple[str, dict]]:
 
 
 def _run(question="q", role="admin"):
-    return _collect(question=question, conversation_id="c1", user="u", role=role)
+    return _collect(
+        question=question, conversation_id="c1", user="u", role=role,
+        external_sources_enabled=True,
+    )
 
 
 def _stub_route(monkeypatch, decision):
-    async def fake_route(question, *, role, pinned=None, history_messages=None):
+    async def fake_route(question, *, role, pinned=None, history_messages=None, policy=None):
         return decision
     monkeypatch.setattr(router, "route", fake_route)
 
@@ -170,7 +174,7 @@ class TestDispatchTable:
         ))
         received = {}
 
-        async def fake_web(intent, *, user):
+        async def fake_web(intent, *, user, policy=None):
             received.update(intent=intent, user=user)
             return SourceResult(
                 source="web", card_type="brief", payload={"summary": "fresh"},
@@ -222,6 +226,73 @@ class TestMultiSource:
         assert answers[0]["text"] == "A merged view."
 
     @pytest.mark.anyio
+    async def test_single_vector_result_uses_exactly_one_common_composer_call(self, monkeypatch):
+        _stub_route(monkeypatch, router.RouteDecision(
+            route="dispatch", sources=["macro"], intent="GDP trend",
+        ))
+        _stub_node(monkeypatch, "run_macro", SourceResult(
+            source="macro", card_type="brief", payload={"summary": "Retrieved evidence"},
+            summary="Retrieved evidence",
+            evidence=[Evidence("GDP grew 6.5%.", document="Official release")],
+        ))
+        fake = FakeLLM("GDP grew 6.5%.")
+        monkeypatch.setattr(models, "for_step", lambda *args, **kwargs: fake)
+
+        events = await _run()
+
+        assert len(fake.calls) == 1
+        assert fake.calls[0]["call_purpose"] == "final_compose"
+        assert next(data for name, data in events if name == "answer")["text"] == "GDP grew 6.5%."
+
+    @pytest.mark.anyio
+    async def test_multiple_vector_results_still_use_one_composer_call(self, monkeypatch):
+        _stub_route(monkeypatch, router.RouteDecision(
+            route="dispatch", sources=["macro", "regulatory"], intent="compare",
+        ))
+        _stub_node(monkeypatch, "run_macro", SourceResult(
+            source="macro", card_type="brief", payload={}, summary="macro evidence",
+            evidence=[Evidence("Inflation is 4.0%.", document="CPI")],
+        ))
+        _stub_node(monkeypatch, "run_regulatory", SourceResult(
+            source="regulatory", card_type="brief", payload={}, summary="rule evidence",
+            evidence=[Evidence("The limit is 10%.", document="RBI")],
+        ))
+        fake = FakeLLM("Inflation is 4.0%; the limit is 10%.")
+        monkeypatch.setattr(models, "for_step", lambda *args, **kwargs: fake)
+
+        await _run()
+
+        assert len(fake.calls) == 1
+        assert fake.calls[0]["call_purpose"] == "final_compose"
+
+    @pytest.mark.anyio
+    async def test_db_evidence_forces_common_composer_to_local_sensitive_mode(self, monkeypatch):
+        _stub_route(monkeypatch, router.RouteDecision(
+            route="dispatch", sources=["db", "macro"], intent="compare",
+        ))
+        _stub_node(monkeypatch, "run_db", SourceResult(
+            source="db", card_type="chart", payload={}, summary="Our growth is 5%.",
+            sensitive=True,
+        ))
+        _stub_node(monkeypatch, "run_macro", SourceResult(
+            source="macro", card_type="brief", payload={}, summary="retrieved evidence",
+            evidence=[Evidence("Market growth is 4%.", document="Official release")],
+        ))
+        seen = {}
+        fake = FakeLLM("Our growth is 5% versus market growth of 4%.")
+
+        def choose(step, *, sensitive):
+            seen.update(step=step, sensitive=sensitive)
+            return fake
+
+        monkeypatch.setattr(models, "for_step", choose)
+
+        await _run()
+
+        assert seen == {"step": "synthesize", "sensitive": True}
+        assert len(fake.calls) == 1
+
+    @pytest.mark.anyio
     async def test_one_success_and_one_failure_emit_a_partial_answer(self, monkeypatch):
         _stub_route(monkeypatch, router.RouteDecision(
             route="dispatch", sources=["db", "competitive"], intent="i"))
@@ -263,7 +334,10 @@ class TestPinnedThreading:
         # exactly that source without a model call. This proves run_workbench forwards `pinned`.
         _stub_node(monkeypatch, "run_macro",
                    SourceResult(source="macro", card_type="brief", payload={"summary": "m"}))
-        events = await _collect(question="q", conversation_id="c1", user="u", role="admin", pinned="macro")
+        events = await _collect(
+            question="q", conversation_id="c1", user="u", role="admin", pinned="macro",
+            external_sources_enabled=True,
+        )
         cards = [d for n, d in events if n == "source_card"]
         assert {c["source"] for c in cards} == {"macro"}
 
@@ -279,3 +353,124 @@ class TestRefuse:
         assert answer["status"] == "refused"
         assert "source_card" not in names
         assert names[-1] == "done"
+
+
+class TestOrchestratorSelection:
+    @pytest.mark.anyio
+    async def test_plain_async_path_preserves_event_contract(self, monkeypatch):
+        _stub_route(monkeypatch, router.RouteDecision(
+            route="dispatch", sources=["db"], intent="i",
+        ))
+        _stub_node(monkeypatch, "run_db", SourceResult(
+            source="db", card_type="chart", payload={"title": "T"}, summary="answer",
+        ))
+
+        events = await _run()
+        assert _names(events) == [
+            "conversation", "stage", "stage", "route", "source_start", "source_card",
+            "answer", "done",
+        ]
+
+
+class TestConsentAtEntryPoint:
+    @pytest.mark.anyio
+    async def test_default_off_external_pin_never_reaches_handler(self, monkeypatch):
+        async def must_not_run(*_args, **_kwargs):  # pragma: no cover - call is failure
+            raise AssertionError("external handler called")
+
+        monkeypatch.setattr(nodes, "run_macro", must_not_run)
+        events = await _collect(
+            question="macro outlook", conversation_id="c1", user="u", role="admin",
+            pinned="macro",
+        )
+        answer = next(data for name, data in events if name == "answer")
+        assert answer["status"] == "refused"
+        assert "source_card" not in _names(events)
+
+    @pytest.mark.anyio
+    async def test_default_off_mixed_question_runs_only_db_and_reports_gap(self, monkeypatch):
+        fake = FakeLLM("unused")
+        monkeypatch.setattr(models, "for_step", lambda *args, **kwargs: fake)
+        _stub_node(monkeypatch, "run_db", SourceResult(
+            source="db", card_type="chart", payload={}, summary="Loan growth is 5%.",
+        ))
+        async def must_not_run(*_args, **_kwargs):  # pragma: no cover - call is failure
+            raise AssertionError("external handler called")
+        monkeypatch.setattr(nodes, "run_macro", must_not_run)
+
+        events = await _collect(
+            question="Compare our loan growth with inflation",
+            conversation_id="c1", user="u", role="admin",
+        )
+        cards = [data for name, data in events if name == "source_card"]
+        answer = next(data for name, data in events if name == "answer")
+        assert [card["source"] for card in cards] == ["db"]
+        assert answer["status"] == "partial"
+        assert answer["limitations"]
+        assert fake.calls == []
+
+
+class TestResilience:
+    @pytest.mark.anyio
+    async def test_closing_before_orchestration_marks_turn_partial(self):
+        stream = graph.run_workbench(
+            question="q", conversation_id="cancel-early", user="u", role="admin",
+        )
+        assert "event: conversation" in await anext(stream)
+        await stream.aclose()
+
+        record = graph.history.get("cancel-early", user="u")
+        assert record is not None
+        assert record.turns[0]["status"] == "partial"
+
+    @pytest.mark.anyio
+    async def test_closing_during_dispatch_cancels_and_persists_partial(self, monkeypatch):
+        import asyncio
+
+        entered = asyncio.Event()
+        release = asyncio.Event()
+        _stub_route(monkeypatch, router.RouteDecision(
+            route="dispatch", sources=["db"], intent="q",
+        ))
+
+        async def waiting_db(*args, **kwargs):
+            entered.set()
+            await release.wait()
+            return SourceResult(source="db", card_type="chart", payload={}, summary="answer")
+
+        monkeypatch.setattr(nodes, "run_db", waiting_db)
+        stream = graph.run_workbench(
+            question="q", conversation_id="cancel-dispatch", user="u", role="admin",
+        )
+        while True:
+            frame = await anext(stream)
+            if "event: source_start" in frame:
+                break
+        await entered.wait()
+        await stream.aclose()
+        await asyncio.sleep(0)
+
+        record = graph.history.get("cancel-dispatch", user="u")
+        assert record is not None
+        assert record.turns[0]["status"] == "partial"
+
+    @pytest.mark.anyio
+    async def test_answer_stream_survives_history_write_failure(self, monkeypatch):
+        _stub_route(monkeypatch, router.RouteDecision(
+            route="dispatch", sources=["db"], intent="q",
+        ))
+        _stub_node(monkeypatch, "run_db", SourceResult(
+            source="db", card_type="chart", payload={}, summary="answer",
+        ))
+        monkeypatch.setattr(
+            graph.history, "set_answer",
+            lambda *args, **kwargs: (_ for _ in ()).throw(OSError("disk unavailable")),
+        )
+
+        events = await _collect(
+            question="q", conversation_id="history-failure", user="u", role="admin",
+            external_sources_enabled=True,
+        )
+
+        assert next(data for name, data in events if name == "answer")["text"] == "answer"
+        assert events[-1][0] == "done"

@@ -257,7 +257,7 @@ _NON_NAME_WORDS = frozenset({
     "portfolio", "gold", "microfinance", "msme", "retail", "male", "female", "gender",
     "many", "much", "which", "where", "when", "why", "year", "month", "quarter",
     "week", "day", "today", "yesterday", "current", "latest", "period", "fiscal",
-    "financial", "time",
+    "financial", "time", "scheme", "schemes",
 })
 """One of these anywhere in a captured name means the phrase is a question about the book.
 "Show the loan-count split between open and closed accounts" ends in the word the account
