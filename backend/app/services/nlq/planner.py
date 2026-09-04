@@ -1168,9 +1168,32 @@ async def plan(
                         confidence=0.7,
                         reasoning="curated Gold catalog overrides an unsupported data refusal",
                     )
+            from app.core.logging import log_parsed_output
+
+            plan_dict = parsed.to_dict() if hasattr(parsed, "to_dict") else str(parsed)
+            log_parsed_output(
+                f"NLQ plan parsed successfully on attempt {attempts}",
+                event="nlq_plan",
+                schema_name="planner_grammar_schema",
+                parsed=plan_dict,
+                duration_ms=getattr(result, "duration_ms", 0.0),
+                status="success",
+                attempt=attempts,
+            )
         except (PlanValidationError, ValidationError, LLMError) as exc:
             error = str(exc)
             logger.info("NLQ plan rejected on attempt %d: %s", attempts, error)
+            from app.core.logging import log_parsed_output
+
+            log_parsed_output(
+                f"NLQ plan rejected on attempt {attempts}: {error}",
+                event="nlq_plan",
+                schema_name="planner_grammar_schema",
+                status="validation_error",
+                error=error,
+                duration_ms=getattr(result, "duration_ms", 0.0),
+                attempt=attempts,
+            )
             continue
 
         outcome = PlanOutcome(

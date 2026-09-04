@@ -55,8 +55,33 @@ async def run_once() -> None:
             logger.info("signal scan abstained on: %s", ", ".join(report.abstained))
         for warning in report.warnings:
             logger.warning("signal scan: %s", warning)
+
+        from app.core.logging import log_app_event
+
+        log_app_event(
+            f"Signal scan finished: {len(report.signals)} signals ({new} new)",
+            event="signals_scan",
+            outcome="success",
+            duration_ms=report.duration_ms,
+            data={
+                "scopes_run": report.scopes_run,
+                "signals_count": len(report.signals),
+                "signals_new": new,
+                "abstained_count": len(report.abstained),
+                "scopes_failed": report.scopes_failed,
+            },
+        )
     except Exception as exc:  # noqa: BLE001 - the loop must survive anything
         logger.exception("signal scan failed after %s: %s", started, exc)
+        from app.core.logging import log_app_event
+
+        log_app_event(
+            f"Signal scan failed: {exc}",
+            event="signals_scan",
+            outcome="error",
+            error=str(exc),
+            level=logging.ERROR,
+        )
 
 
 def start(app_state) -> asyncio.Task | None:

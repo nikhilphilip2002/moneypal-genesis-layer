@@ -290,8 +290,27 @@ async def route(
             json_schema=route_schema(role),
         )
         payload = result.json()
+        from app.core.logging import log_parsed_output
+
+        log_parsed_output(
+            "Workbench router response parsed",
+            event="router_decision",
+            schema_name="workbench_route_schema",
+            parsed=payload,
+            duration_ms=getattr(result, "duration_ms", 0.0),
+            status="success",
+        )
     except (LLMError, ValueError) as exc:
         logger.warning("workbench router failed, falling back: %s", exc)
+        from app.core.logging import log_parsed_output
+
+        log_parsed_output(
+            f"Workbench router parse failed: {exc}",
+            event="router_decision",
+            schema_name="workbench_route_schema",
+            status="fallback",
+            error=str(exc),
+        )
         return _fallback(role, normalized)
 
     if not isinstance(payload, dict):

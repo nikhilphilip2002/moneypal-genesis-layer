@@ -82,6 +82,21 @@ async def ask_stream(ctx: AskContext, catalog: Catalog | None = None) -> AsyncIt
     turn_id = uuid.uuid4().hex[:12]
     started = time.perf_counter()
 
+    from app.core.logging import log_app_event, set_trace_context
+
+    set_trace_context(
+        turn_id=turn_id,
+        conversation_id=ctx.conversation_id,
+        username=ctx.user,
+        role=ctx.role,
+    )
+    log_app_event(
+        "NLQ ask turn started",
+        event="nlq_turn_started",
+        stage="understanding",
+        data={"question": ctx.question, "conversation_id": ctx.conversation_id},
+    )
+
     state = conversation.load(ctx.conversation_id)
     yield sse("stage", {"stage": "understanding", "turn_id": turn_id})
 

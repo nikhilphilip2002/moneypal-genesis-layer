@@ -115,6 +115,28 @@ def record(
     if touches_pii:
         logger.info("NLQ query touched PII tables (turn %s, user %s)", turn_id, entry["username"])
 
+    from app.core.logging import log_app_event
+
+    log_app_event(
+        f"NLQ turn audit record: route={route} outcome={outcome}",
+        event="nlq_turn_completed",
+        stage=route,
+        outcome=outcome,
+        duration_ms=duration_ms,
+        turn_id=turn_id,
+        conversation_id=entry["conversation_id"],
+        username=entry["username"],
+        role=entry["role"],
+        data={
+            "question": entry["question"],
+            "resolved_question": entry["resolved_question"],
+            "sql": entry["sql"],
+            "row_count": entry["row_count"],
+            "touches_pii": entry["touches_pii"],
+            "detail": entry["detail"],
+        },
+    )
+
     if not ensure_table():
         _fallback.append(entry)
         return

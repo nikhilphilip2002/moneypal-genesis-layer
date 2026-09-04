@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import math
 import os
 import re
@@ -152,6 +153,7 @@ def generate_with_groq(prompt: str) -> str | None:
 
     for key in ordered:
         try:
+            t0 = time.perf_counter()
             raw = Groq(api_key=key).chat.completions.with_raw_response.create(
                 model=settings.groq_model,
                 messages=[
@@ -162,10 +164,34 @@ def generate_with_groq(prompt: str) -> str | None:
                     {"role": "user", "content": prompt},
                 ],
             )
+            duration_ms = (time.perf_counter() - t0) * 1000.0
             if key == keys[0]:
                 _note_groq_pressure(raw.headers)
-            return raw.parse().choices[0].message.content
-        except Exception:
+            parsed_content = raw.parse().choices[0].message.content
+            from app.core.logging import log_raw_trace
+
+            log_raw_trace(
+                "Groq completion received",
+                event="llm_completion",
+                provider="groq",
+                model=settings.groq_model,
+                prompt=prompt,
+                completion=parsed_content,
+                duration_ms=duration_ms,
+            )
+            return parsed_content
+        except Exception as exc:
+            from app.core.logging import log_raw_trace
+
+            log_raw_trace(
+                f"Groq generation failed: {exc}",
+                event="llm_error",
+                provider="groq",
+                model=settings.groq_model,
+                prompt=prompt,
+                error=str(exc),
+                level=logging.WARNING,
+            )
             if key == keys[0]:
                 _groq_state["primary_blocked_until"] = time.time() + 60.0
     return None

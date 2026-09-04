@@ -219,6 +219,23 @@ class Settings:
             get("WORKBENCH_COMPACTION_MAX_TOKENS", "1200") or "1200"
         )
 
+        # --- Rotating Logging Subsystem ---------------------------------------------
+        self.log_dir = Path(get("LOG_DIR", str(DATA_DIR / "logs")) or DATA_DIR / "logs")
+        self.log_raw_traces_enabled = (get("LOG_RAW_TRACES_ENABLED", "true") or "true").lower() in (
+            "1", "true", "yes", "on",
+        )
+        self.log_parsed_outputs_enabled = (get("LOG_PARSED_OUTPUTS_ENABLED", "true") or "true").lower() in (
+            "1", "true", "yes", "on",
+        )
+        self.log_app_events_enabled = (get("LOG_APP_EVENTS_ENABLED", "true") or "true").lower() in (
+            "1", "true", "yes", "on",
+        )
+        self.log_rotation_max_bytes = int(get("LOG_ROTATION_MAX_BYTES", str(50 * 1024 * 1024)) or 50 * 1024 * 1024)
+        self.log_rotation_backup_count = int(get("LOG_ROTATION_BACKUP_COUNT", "10") or "10")
+        self.log_mask_pii = (get("LOG_MASK_PII", "false") or "false").lower() in (
+            "1", "true", "yes", "on",
+        )
+
 
 @lru_cache
 def get_settings() -> Settings:

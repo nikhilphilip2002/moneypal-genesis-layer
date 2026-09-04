@@ -118,9 +118,54 @@ def get_tool(tool_id: str) -> Tool | None:
 
 async def run_tool(tool_id: str, *, role: str, params: dict | None = None) -> SourceResult:
     """Run a tool, enforcing role access. Raises ToolNotFound / ToolAccessError."""
+    import time
+    from app.core.logging import log_parsed_output
+
     tool = get_tool(tool_id)
     if tool is None:
+        log_parsed_output(
+            f"Tool not found: {tool_id}",
+            event="tool_call",
+            tool_name=tool_id,
+            tool_args=params or {},
+            status="error",
+            error=f"ToolNotFound: {tool_id}",
+        )
         raise ToolNotFound(tool_id)
     if not tool.visible_to(role):
+        log_parsed_output(
+            f"Tool access denied: {tool_id}",
+            event="tool_call",
+            tool_name=tool_id,
+            tool_args=params or {},
+            status="denied",
+            error=f"ToolAccessError for role {role}",
+        )
         raise ToolAccessError(tool_id)
-    return await tool.handler(params or {})
+
+    t0 = time.perf_counter()
+    try:
+        result = await tool.handler(params or {})
+        duration_ms = (time.perf_counter() - t0) * 1000.0
+        log_parsed_output(
+            f"Tool {tool_id} executed successfully",
+            event="tool_call",
+            tool_name=tool_id,
+            tool_args=params or {},
+            tool_result={"kind": getattr(result, "kind", ""), "item_count": len(getattr(result, "items", []) or [])},
+            duration_ms=duration_ms,
+            status="success",
+        )
+        return result
+    except Exception as exc:
+        duration_ms = (time.perf_counter() - t0) * 1000.0
+        log_parsed_output(
+            f"Tool {tool_id} execution failed: {exc}",
+            event="tool_call",
+            tool_name=tool_id,
+            tool_args=params or {},
+            duration_ms=duration_ms,
+            status="error",
+            error=str(exc),
+        )
+        raise

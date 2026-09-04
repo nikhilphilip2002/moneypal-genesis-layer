@@ -13,10 +13,12 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.routes import admin, auth, competitive, intelligence, macro, nlq, policy, regulatory, review, workbench
 from app.core.config import settings
+from app.core.logging import bind_trace, start_logging, stop_logging
 
 
 @asynccontextmanager
 async def _lifespan(_app: FastAPI):
+    start_logging()
     warmup_task = None
     if settings.nlq_llm_provider == "llamacpp":
         from app.services.nlq.llm import warm_catalog_prompt_cache
@@ -45,6 +47,7 @@ async def _lifespan(_app: FastAPI):
         warm_graph_task.cancel()
         with contextlib.suppress(asyncio.CancelledError):
             await warm_graph_task
+    stop_logging()
 
 
 def create_app() -> FastAPI:
@@ -56,6 +59,13 @@ def create_app() -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+
+    @app.middleware("http")
+    async def trace_context_middleware(request, call_next):
+        trace_id = request.headers.get("x-trace-id") or request.headers.get("x-request-id")
+        with bind_trace(trace_id=trace_id):
+            response = await call_next(request)
+            return response
 
     app.include_router(auth.router)
     app.include_router(macro.router)

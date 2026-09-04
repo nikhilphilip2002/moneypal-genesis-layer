@@ -75,6 +75,14 @@ async def _route_node(state: WorkbenchState) -> dict[str, Any]:
     if decision.route == "dispatch":
         await emit.put(sse("route", {"sources": decision.sources, "intent": decision.intent,
                                      "model": decision.model}))
+    from app.core.logging import log_app_event
+
+    log_app_event(
+        f"Workbench routed to: {decision.sources if decision.route == 'dispatch' else decision.route}",
+        event="workbench_routed",
+        stage="routing",
+        data={"sources": decision.sources, "route": decision.route, "model": decision.model},
+    )
     try:
         chosen = decision.sources if decision.route == "dispatch" else []
         history.set_route(
@@ -376,6 +384,21 @@ async def run_workbench(
     built = history.build_transcript(conversation_id, user=user)
     history_messages = built.messages
     turn_id = history.begin_turn(conversation_id, user, question, pinned=pinned)
+    from app.core.logging import log_app_event, set_trace_context
+
+    set_trace_context(
+        turn_id=turn_id,
+        conversation_id=conversation_id,
+        username=user,
+        role=role,
+    )
+    log_app_event(
+        "Workbench turn started",
+        event="workbench_turn_started",
+        stage="understanding",
+        data={"question": question, "conversation_id": conversation_id, "pinned": pinned},
+    )
+
     # Announce the conversation id first so the client can thread follow-ups and the History
     # rail onto it.
     yield sse("conversation", {"conversation_id": conversation_id})
@@ -402,6 +425,11 @@ async def run_workbench(
         partial = False
         try:
             await _compiled().ainvoke(state)
+            log_app_event(
+                "Workbench turn completed successfully",
+                event="workbench_turn_completed",
+                outcome="success",
+            )
         except asyncio.CancelledError:
             partial = True
             raise
@@ -415,6 +443,12 @@ async def run_workbench(
             else:
                 logger.exception("workbench graph failed")
                 message, retryable = "The workbench hit an error.", True
+            log_app_event(
+                f"Workbench turn failed: {message}",
+                event="workbench_turn_completed",
+                outcome="error",
+                error=str(exc),
+            )
             history.set_error(conversation_id, user, turn_id, message)
             await emit.put(sse("error", {"message": message, "retryable": retryable}))
         finally:

@@ -257,13 +257,44 @@ class OpenAICompatibleClient:
                 result.cached_prompt_tokens, result.completion_tokens, result.finish_reason,
                 result.duration_ms,
             )
+            from app.core.logging import log_raw_trace
+
+            log_raw_trace(
+                "LLM completion received",
+                event="llm_completion",
+                provider=result.provider,
+                model=result.model,
+                prompt=payload.get("messages"),
+                completion=result.text,
+                raw_payload=payload,
+                raw_response=body,
+                duration_ms=result.duration_ms,
+                status_code=resp.status_code,
+                finish_reason=result.finish_reason,
+                usage={
+                    "prompt_tokens": result.prompt_tokens,
+                    "cached_prompt_tokens": result.cached_prompt_tokens,
+                    "completion_tokens": result.completion_tokens,
+                    "total_tokens": result.prompt_tokens + result.completion_tokens,
+                },
+            )
             if result.finish_reason == "length":
                 logger.warning(
                     "LLM output hit token length limit (prompt=%s completion=%s)",
                     result.prompt_tokens, result.completion_tokens,
                 )
             return result
+        from app.core.logging import log_raw_trace
 
+        log_raw_trace(
+            f"LLM request failed: {last_exc}",
+            event="llm_error",
+            provider=self.provider,
+            model=self.model,
+            raw_payload=payload,
+            error=str(last_exc),
+            level=logging.WARNING,
+        )
         raise last_exc or LLMUnavailable(f"{self.provider} failed with no diagnosis")
 
     async def health(self) -> dict[str, Any]:

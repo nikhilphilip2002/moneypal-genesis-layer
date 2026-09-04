@@ -195,9 +195,31 @@ async def generate(
                     if column_id in cat.columns
                 } if allow_pii else None,
             )
+            from app.core.logging import log_parsed_output
+
+            log_parsed_output(
+                f"NLQ text-to-SQL validated on round {round_number + 1}",
+                event="text_to_sql",
+                sql=candidate,
+                explanation=attempt.explanation,
+                duration_ms=getattr(result, "duration_ms", 0.0),
+                status="validated",
+                round=round_number + 1,
+            )
         except ValidationError as exc:
             attempt.error = str(exc)
             logger.info("NLQ text-to-SQL rejected on round %d: %s", round_number + 1, exc)
+            from app.core.logging import log_parsed_output
+
+            log_parsed_output(
+                f"NLQ text-to-SQL rejected on round {round_number + 1}: {exc}",
+                event="text_to_sql",
+                sql=candidate,
+                status="validation_error",
+                error=str(exc),
+                duration_ms=getattr(result, "duration_ms", 0.0),
+                round=round_number + 1,
+            )
             # The model sees the specific reason. An open-ended "try again" reproduces the
             # same mistake.
             messages = [
