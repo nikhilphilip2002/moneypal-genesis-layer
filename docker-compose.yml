@@ -14,11 +14,13 @@ services:
       # Workbench reaches PostgreSQL through the governed MCP boundary by default.
       POSTGRES_ACCESS_MODE: mcp
       POSTGRES_MCP_URL: http://postgres-mcp:8001/mcp
+      LOG_DIR: /srv/backend/data/logs
       REGULATIONS_DIR: /srv/Regulations
       REGISTRY_DIR: /srv/backend/registry/regulations
       LOCAL_INDEX_PATH: /srv/backend/vector_store/regulatory_chunks.jsonl
     volumes:
       - ./Regulations:/srv/Regulations:ro
+      - ./backend/data/logs:/srv/backend/data/logs
     depends_on:
       - postgres-mcp
 
@@ -34,12 +36,14 @@ services:
       # Do not download/load the 2GB-class embedding stack in the middle of an MCP call.
       # The governed catalog's curated lexical synonyms remain available for SQL fallback.
       NLQ_CATALOG_VECTORS: "false"
+      LOG_DIR: /srv/backend/data/logs
       REGULATIONS_DIR: /srv/Regulations
       REGISTRY_DIR: /srv/backend/registry/regulations
       LOCAL_INDEX_PATH: /srv/backend/vector_store/regulatory_chunks.jsonl
     command: ["python", "-m", "app.mcp.postgres_server"]
     volumes:
       - ./Regulations:/srv/Regulations:ro
+      - ./backend/data/logs:/srv/backend/data/logs
 
   # Weekly macro refresh (Sunday 10:00 IST by default — MACRO_SCHEDULE_* in .env).
   # Long-lived so bge-m3 stays resident and the scheduled run pays no cold start.
@@ -51,6 +55,7 @@ services:
       dockerfile: backend/Dockerfile
     env_file: .env
     environment:
+      LOG_DIR: /srv/backend/data/logs
       REGULATIONS_DIR: /srv/Regulations
       REGISTRY_DIR: /srv/backend/registry/regulations
       MACRO_DATA_DIR: /srv/backend/data/macro
@@ -64,6 +69,7 @@ services:
       # restart re-downloads and re-embeds everything.
       - macro-data:/srv/backend/data/macro
       - ./Regulations:/srv/Regulations:ro
+      - ./backend/data/logs:/srv/backend/data/logs
 
   frontend:
     build:
