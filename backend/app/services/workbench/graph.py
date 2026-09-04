@@ -10,6 +10,7 @@ import time
 import uuid
 from typing import Any, AsyncIterator, NotRequired, TypedDict
 
+from app.core.config import settings
 from app.services.nlq.llm.telemetry import collect_calls, summarize_calls
 from app.services.workbench import access, compaction, composer, history, models, nodes, prompts, router
 from app.services.workbench.results import SourceResult
@@ -319,6 +320,7 @@ async def answer_results(state: WorkbenchState) -> dict[str, Any]:
     findings = composer.evidence_text(results)
     text = results[0].summary.strip()
     result = None
+    composition_limitation: dict[str, str] | None = None
     needs_composition = len(results) > 1 or any(
         r.evidence and r.source in {"macro", "competitive", "regulatory", "web"}
         for r in results
@@ -332,18 +334,34 @@ async def answer_results(state: WorkbenchState) -> dict[str, Any]:
                 question=state["question"], findings=findings,
                 history_messages=composer.relevant_history(state.get("history_messages", [])),
             )
-            result = await client.complete(
-                messages=prompt.messages,
-                call_purpose="final_compose",
-                prompt_version=prompt.version,
-                prefix_hash=prompt.prefix_hash,
-                max_output_tokens=700,
-            )
+            async with asyncio.timeout(settings.workbench_composer_timeout_s):
+                result = await client.complete(
+                    messages=prompt.messages,
+                    timeout_s=settings.workbench_composer_timeout_s,
+                    call_purpose="final_compose",
+                    prompt_version=prompt.version,
+                    prefix_hash=prompt.prefix_hash,
+                    max_output_tokens=settings.workbench_composer_max_tokens,
+                )
             candidate = result.text.strip()
-            text = candidate if candidate and composer.numbers_are_grounded(candidate, findings) else composer.extractive_fallback(results)
+            if candidate and composer.numbers_are_grounded(candidate, findings):
+                text = candidate
+            else:
+                text = composer.extractive_fallback(results)
+                composition_limitation = {
+                    "source": "composer",
+                    "reason": "The generated synthesis was not fully grounded; showing retrieved evidence instead.",
+                }
     except Exception as exc:  # noqa: BLE001 - deterministic findings remain usable
         logger.warning("workbench synthesis failed, using grounded findings: %s", exc)
         text = composer.extractive_fallback(results)
+        composition_limitation = {
+            "source": "composer",
+            "reason": "The answer composer was unavailable; showing retrieved evidence instead.",
+        }
+
+    if composition_limitation is not None:
+        limitations.append(composition_limitation)
 
     citations: list[dict[str, Any]] = []
     seen_citations: set[tuple[str, str]] = set()

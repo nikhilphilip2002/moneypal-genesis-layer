@@ -52,6 +52,38 @@ class TestAuthority:
         assert evidence[0].primary is True
         assert "utm_source" not in evidence[1].url
 
+    @pytest.mark.parametrize("wrapped", [False, True])
+    def test_json_text_results_do_not_leak_serialized_fields_into_urls(self, wrapped):
+        encoded = (
+            '{"results":[{"title":"RBI repo announcement",'
+            '"url":"https://www.rbi.org.in/Scripts/BS_PressReleaseDisplay.aspx?prid=1",'
+            '"text":"The Monetary Policy Committee announced the policy repo rate."}]}'
+        )
+        structured = (
+            {"content": [{"type": "text", "text": encoded}]}
+            if wrapped else None
+        )
+        result = ExaToolResult(structured=structured, text=encoded)
+
+        evidence = web.normalize(result)
+
+        assert len(evidence) == 1
+        assert evidence[0].url == (
+            "https://www.rbi.org.in/Scripts/BS_PressReleaseDisplay.aspx?prid=1"
+        )
+        assert evidence[0].title == "RBI repo announcement"
+        assert "policy repo rate" in evidence[0].excerpt
+
+    def test_malformed_serialized_url_fragment_is_rejected(self):
+        result = ExaToolResult(
+            structured=None,
+            text=(
+                'https://www.rbi.org.in/release.aspx\\",\\"url\\":\\"https://evil.test'
+            ),
+        )
+
+        assert web.normalize(result) == []
+
 
 class TestNode:
     @pytest.mark.anyio

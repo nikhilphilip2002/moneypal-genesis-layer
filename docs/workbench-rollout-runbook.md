@@ -11,20 +11,34 @@
 Build, start, and run the automated smoke verifier on the deployment machine:
 
 ```bash
-docker compose build backend postgres-mcp frontend
+docker compose build backend frontend
 docker compose up -d postgres-mcp backend frontend nginx
 curl --fail --silent --show-error http://127.0.0.1:48106/api/health
 python backend/scripts/verify_workbench_rollout.py \
   --base-url http://127.0.0.1:48106/api \
   --token mock-token-moneypal_admin \
-  --include-web
+  --include-web \
+  --require-llm
 ```
 
 Pass the FastAPI origin without `/api` when verifying a backend process directly. Pass the
 nginx origin with `/api`, as above, because nginx strips that prefix before proxying.
+`--require-llm` prevents deterministic database and retrieval fallbacks from producing a
+false-green rollout while the configured model endpoint is down, still loading, serving a
+different model, or unable to prove its model identity through `/v1/models`.
+
+The LLM is intentionally hosted outside this Compose stack. Before deploying the app, start
+`llama-server` on the private GPU host using the command in `GENESIS_NLQ_RUNBOOK.md`, confirm
+its `/health` and `/v1/models` endpoints from the backend host, and set `NLQ_LLM_MODEL` to the
+exact id returned by `/v1/models`. Restart the backend after changing `.env`.
 
 Run it once with `POSTGRES_ACCESS_MODE=direct` and once with
 `POSTGRES_ACCESS_MODE=mcp`, using the deployment's normal non-demo token when applicable.
+
+The API, PostgreSQL MCP server, and macro pipeline reuse `moneypal-backend:local`. The
+Dockerfile installs CPU-only PyTorch before `genesis-core`, and `.dockerignore` excludes the
+local `.venv`; together these prevent the multi-GB CUDA/context pressure that can terminate
+BuildKit with `rpc error: ... EOF` on smaller hosts.
 
 ## Canary
 

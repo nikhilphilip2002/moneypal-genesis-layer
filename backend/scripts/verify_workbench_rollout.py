@@ -3,7 +3,8 @@
 
 Example:
   python backend/scripts/verify_workbench_rollout.py \
-    --base-url http://backend:8000 --token mock-token-moneypal_admin --include-web
+    --base-url http://backend:8000 --token mock-token-moneypal_admin \
+    --include-web --require-llm
 """
 
 from __future__ import annotations
@@ -59,20 +60,50 @@ def percentile(values: list[int], percent: float) -> int:
     return ordered[min(len(ordered) - 1, int((len(ordered) - 1) * percent))]
 
 
+def assert_required_llm(health: dict[str, Any]) -> None:
+    """Reject false-green rollout states where generation is not proven ready."""
+    llm = health.get("llm") or {}
+    ready = bool((health.get("capabilities") or {}).get("ask"))
+    identity_proven = not (
+        llm.get("provider") == "llamacpp"
+        and llm.get("model_match") is not True
+    )
+    if ready and identity_proven:
+        return
+    raise AssertionError(
+        "LLM is not ready: "
+        f"status={llm.get('status', 'unknown')} "
+        f"provider={llm.get('provider', 'unknown')} "
+        f"model={llm.get('model', 'unknown')} "
+        f"served_models={llm.get('served_models', 'unknown')} "
+        f"detail={llm.get('detail', '')}"
+    )
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--base-url", required=True)
     parser.add_argument("--token", required=True)
     parser.add_argument("--include-web", action="store_true")
+    parser.add_argument(
+        "--require-llm",
+        action="store_true",
+        help="fail before smoke cases unless /nlq/health confirms free-text asking is ready",
+    )
     args = parser.parse_args()
     base_url = args.base_url.rstrip("/")
     conversation_id = f"rollout-{uuid.uuid4().hex[:10]}"
     report: dict[str, Any] = {"conversation_id": conversation_id, "cases": []}
 
+    health = request_json(f"{base_url}/nlq/health", args.token)
+    report["health"] = health
+    if args.require_llm:
+        assert_required_llm(health)
+
     sources = request_json(f"{base_url}/workbench/sources", args.token)["sources"]
     available = {item["id"] for item in sources if item.get("deployment_available")}
     cases = [
-        ("db_off", "Show our total principal outstanding", False, "db"),
+        ("db_off", "What is the product name for product code 16?", False, "db"),
         ("macro_off", "Explain Karnataka GDP growth trends", False, None),
         ("macro_on", "Explain Karnataka GDP growth trends", True, "macro"),
     ]

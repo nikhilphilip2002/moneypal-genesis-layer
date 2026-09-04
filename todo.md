@@ -232,7 +232,7 @@ optional/deferred and have not been started.
 
 ### Phase 2 exit gate
 
-- [x] Workbench backend tests pass (225 passed, 1 live-model test skipped).
+- [x] Workbench backend tests pass (239 passed, 1 live-model test skipped).
 - [x] Frontend consumes the unchanged stream.
 - [x] Event, route, card, answer, and history compatibility pass.
 - [x] No unused graph dependency remains.
@@ -471,7 +471,8 @@ optional/deferred and have not been started.
 - [ ] Compaction input meets p50 2,000 and p95 4,000.
 - [x] Router output is capped at 300 tokens.
 - [x] DB planner output is capped at 700 tokens.
-- [x] Composer output is capped at 700 tokens.
+- [x] Composer output is capped at 160 tokens, with a 20-second whole-call deadline and
+  grounded partial fallback.
 - [ ] Document any evidence-based budget revision before changing a CI threshold.
 
 ### Post-architecture model tuning
@@ -531,9 +532,13 @@ optional/deferred and have not been started.
 - [x] Run frontend type-check and production build.
 - [ ] Build/smoke-test backend container.
 - [ ] Test direct PostgreSQL.
-- [ ] Test PostgreSQL MCP.
+- [x] Test PostgreSQL MCP with a live deterministic governed lookup (752 ms total;
+  90 ms SQL execution).
 - [x] Test Qdrant unavailable with dependency fakes.
 - [x] Test local LLM unavailable with dependency fakes.
+- [x] Test stalled router and composer calls against whole-call deadlines.
+- [x] Make the rollout verifier reject an unavailable or mismatched required LLM.
+- [x] Route unqualified current whole-book outstanding directly from the governed catalog.
 - [x] Test optional public-only Groq routing/model isolation with configuration tests.
 - [ ] Test all external connectors with consent off and on.
 - [x] Test role ∩ deployment ∩ consent intersections locally.

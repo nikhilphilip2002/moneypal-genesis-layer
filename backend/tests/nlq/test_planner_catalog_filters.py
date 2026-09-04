@@ -8,6 +8,7 @@ from app.services.nlq.analysis import build
 from app.services.nlq.catalog import get_catalog
 from app.services.nlq.compiler import compile_spec
 from app.services.nlq.contracts import AnalysisPlan, QuerySpecPlan
+from app.services.nlq.llm import LLMUnavailable
 from app.services.nlq.planner import plan
 
 
@@ -120,6 +121,49 @@ async def test_named_scheme_filter_is_not_dropped_by_total_sanction_shortcut():
     compiled = compile_spec(outcome.plan.spec)
     assert 'lam."scheme_code"::text = :f0' in compiled.sql
     assert compiled.params["f0"] == "1601"
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    "question",
+    [
+        "Show our total principal outstanding",
+        "What is the current outstanding balance?",
+        "How much principal is outstanding today?",
+    ],
+)
+async def test_current_whole_book_outstanding_is_deterministic(question):
+    outcome = await plan(question, client=ExplodingClient())
+
+    assert isinstance(outcome.plan, QuerySpecPlan)
+    assert outcome.model == "deterministic"
+    assert outcome.attempts == 0
+    assert outcome.plan.spec.metrics == ["principal_outstanding_book"]
+    assert outcome.plan.spec.period.relative == "today"
+    assert outcome.plan.spec.filters == []
+    assert compile_spec(outcome.plan.spec).sql
+
+
+@pytest.mark.anyio
+async def test_long_tail_question_fails_before_completion_when_llamacpp_is_not_ready():
+    class DownClient:
+        provider = "llamacpp"
+        model = "configured-model"
+        completion_called = False
+
+        async def health(self):
+            return {"status": "down", "detail": "connection refused"}
+
+        async def complete(self, **_kwargs):
+            self.completion_called = True
+            raise AssertionError("completion must not be queued while health is down")
+
+    client = DownClient()
+
+    with pytest.raises(LLMUnavailable, match="connection refused"):
+        await plan("Which portfolio trend deserves attention?", client=client)
+
+    assert client.completion_called is False
 
 
 def test_derived_bucket_and_account_state_filters_use_governed_expressions():

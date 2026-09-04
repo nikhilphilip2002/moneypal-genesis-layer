@@ -1,10 +1,12 @@
-# Full stack behind nginx on http://localhost:46100 — set GROQ_API_KEY (and
+# Full stack behind nginx on http://localhost:48106 — set GROQ_API_KEY (and
 # QDRANT_URL for the shared instance at 192.168.1.183:6333) in .env first.
 #
-#   nginx :8070  ->  /api/* -> backend :8000 (prefix stripped)
+#   nginx :48106 ->  /api/* -> backend :8000 (prefix stripped)
 #                    /*     -> frontend :3000
 services:
   backend:
+    # Built once and reused by the API, PostgreSQL MCP, and macro worker.
+    image: moneypal-backend:local
     build:
       context: .
       dockerfile: backend/Dockerfile
@@ -25,9 +27,7 @@ services:
       - postgres-mcp
 
   postgres-mcp:
-    build:
-      context: .
-      dockerfile: backend/Dockerfile
+    image: moneypal-backend:local
     env_file: .env
     environment:
       # The MCP server is the boundary. Its implementation uses the existing hardened
@@ -50,9 +50,7 @@ services:
   # Qdrant credentials come from .env; it writes to MACRO_COLLECTION and purges any
   # point not stamped with the current run id.
   macro-pipeline:
-    build:
-      context: .
-      dockerfile: backend/Dockerfile
+    image: moneypal-backend:local
     env_file: .env
     environment:
       LOG_DIR: /srv/backend/data/logs

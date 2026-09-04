@@ -39,7 +39,7 @@ from app.services.nlq.contracts import (
     SqlPlan,
     WorklistPlan,
 )
-from app.services.nlq.llm import LLMError, get_llm_client
+from app.services.nlq.llm import LLMError, LLMUnavailable, get_llm_client
 from app.services.nlq.llm.prompts import PROMPT_VERSION, build_messages, stable_prefix_hash
 from app.services.nlq.llm.schemas import plan_schema
 from app.services.nlq.normalization import normalize_lending_question
@@ -247,7 +247,8 @@ _DATA_HEALTH_RE = re.compile(
 )
 
 _PRINCIPAL_OUTSTANDING_RE = re.compile(
-    r"\b(?:principal\s+outstanding|total\s+outstanding|outstanding\s+(?:balance|amount))\b",
+    r"\b(?:principal(?:\s+amount)?\s+(?:is\s+)?outstanding|total\s+outstanding|"
+    r"outstanding\s+(?:balance|amount))\b",
     re.IGNORECASE,
 )
 _COLLECTION_EFFICIENCY_RE = re.compile(r"\bcollection\s+efficiency\b", re.IGNORECASE)
@@ -463,6 +464,61 @@ def _catalog_filtered_plan(question: str, catalog: Catalog) -> PlanResult | None
         },
         confidence=1.0,
         reasoning="metric and filter values resolved from governed catalog vocabulary",
+    )
+
+
+def _whole_book_outstanding_plan(
+    question: str, catalog: Catalog
+) -> QuerySpecPlan | None:
+    """Resolve the catalog's unambiguous current whole-book KPI without an LLM.
+
+    `principal_outstanding` is the classified snapshot subset; the catalog explicitly
+    declares `principal_outstanding_book` as the whole-book figure. An unqualified
+    request for our total therefore has one governed interpretation. Filtered and dated
+    variants are handled elsewhere and must not be widened by this shortcut.
+    """
+    if not _PRINCIPAL_OUTSTANDING_RE.search(question):
+        return None
+    if not re.search(
+        r"\b(?:our|total|overall|current(?:ly)?|today|right now|whole\s+book|portfolio|"
+        r"balance|amount|how\s+much|show|give)\b",
+        question,
+        re.I,
+    ):
+        return None
+    if _EXPLICIT_TIME_SCOPE_RE.search(question) and not re.search(
+        r"\b(?:today|right now|current(?:ly)?)\b", question, re.I
+    ):
+        return None
+    filters = _catalog_entity_filters(question, catalog)
+    # "Current" is a governed synonym for the Standard asset class, but in
+    # "current outstanding balance" it is plainly a time qualifier rather than a
+    # portfolio classification.
+    filters = [
+        item
+        for item in filters
+        if not (
+            item.field == "asset_class"
+            and item.value == "STD"
+            and re.search(r"\bcurrent\s+outstanding\b", question, re.I)
+            and not re.search(r"\b(?:asset|class(?:ification)?)\b", question, re.I)
+        )
+    ]
+    if filters:
+        return None
+    if re.search(
+        r"\b(?:by|breakdown|split|composition|trend|compare|versus|vs\.?)\b",
+        question,
+        re.I,
+    ):
+        return None
+    return QuerySpecPlan(
+        spec={
+            "metrics": ["principal_outstanding_book"],
+            "period": {"relative": "today"},
+        },
+        confidence=1.0,
+        reasoning="current whole-book outstanding resolved from the governed metric catalog",
     )
 
 
@@ -991,6 +1047,17 @@ async def plan(
             duration_ms=0,
         )
 
+    whole_book_outstanding = _whole_book_outstanding_plan(planning_question, cat)
+    if whole_book_outstanding is not None:
+        return PlanOutcome(
+            plan=whole_book_outstanding,
+            attempts=0,
+            prompt_version=PROMPT_VERSION,
+            model="deterministic",
+            provider="catalog",
+            duration_ms=0,
+        )
+
     filtered = _catalog_filtered_plan(planning_question, cat)
     if filtered is not None:
         return PlanOutcome(
@@ -1111,6 +1178,15 @@ async def plan(
         )
 
     llm = client or get_llm_client()
+
+    # llama-server can accept TCP connections while the model is still loading or while
+    # the configured endpoint is serving a different model. Do not enqueue an expensive
+    # planner request in that state; deterministic plans above remain fully available.
+    if getattr(llm, "provider", "") == "llamacpp":
+        readiness = await llm.health()
+        if readiness.get("status") != "ok":
+            detail = readiness.get("detail") or "model endpoint is not ready"
+            raise LLMUnavailable(f"llamacpp planner unavailable: {detail}")
 
     # Repeated and rehearsed questions skip the model entirely. The key carries the catalog
     # version, so a catalog edit — which can change what a question *should* plan to —

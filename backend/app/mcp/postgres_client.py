@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from datetime import timedelta
 from typing import Any
 
@@ -15,20 +16,39 @@ class PostgresMCPError(RuntimeError):
     """The MCP transport or remote tool returned an error."""
 
 
+MCP_SHUTDOWN_GRACE_S = 5.0
+
+
 async def call_tool(name: str, arguments: dict[str, Any]) -> dict[str, Any]:
     timeout = timedelta(seconds=settings.postgres_mcp_timeout_s)
-    async with streamablehttp_client(
-        settings.postgres_mcp_url,
-        timeout=settings.postgres_mcp_timeout_s,
-        sse_read_timeout=settings.postgres_mcp_timeout_s,
-    ) as (read_stream, write_stream, _get_session_id):
-        async with ClientSession(
-            read_stream,
-            write_stream,
-            read_timeout_seconds=timeout,
-        ) as session:
-            await session.initialize()
-            result = await session.call_tool(name, arguments, read_timeout_seconds=timeout)
+    try:
+        # Bound connection, tool execution, and session shutdown together. A remote tool
+        # may continue working after its HTTP client disconnects; without this outer
+        # deadline, an MCP context-manager shutdown can leave the Workbench SSE stream open
+        # beyond the configured read timeout.
+        async with asyncio.timeout(
+            settings.postgres_mcp_timeout_s + MCP_SHUTDOWN_GRACE_S
+        ):
+            async with streamablehttp_client(
+                settings.postgres_mcp_url,
+                timeout=settings.postgres_mcp_timeout_s,
+                sse_read_timeout=settings.postgres_mcp_timeout_s,
+                terminate_on_close=False,
+            ) as (read_stream, write_stream, _get_session_id):
+                async with ClientSession(
+                    read_stream,
+                    write_stream,
+                    read_timeout_seconds=timeout,
+                ) as session:
+                    await session.initialize()
+                    result = await session.call_tool(
+                        name, arguments, read_timeout_seconds=timeout,
+                    )
+    except TimeoutError as exc:
+        raise PostgresMCPError(
+            f"PostgreSQL MCP tool {name!r} timed out after "
+            f"{settings.postgres_mcp_timeout_s:g} seconds"
+        ) from exc
 
     if result.isError:
         detail = " ".join(

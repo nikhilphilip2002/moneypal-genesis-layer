@@ -5,6 +5,8 @@ failure degrades to a sensible default rather than a dead end.
 
 from __future__ import annotations
 
+import asyncio
+
 import pytest
 
 from app.services.nlq.llm import LLMError
@@ -364,6 +366,22 @@ class TestFallback:
         decision = await router.route("q", role="admin")
         assert decision.route == "refuse"
         assert decision.reason == "clarification_required"
+
+    @pytest.mark.anyio
+    async def test_stalled_llm_is_bounded_and_uses_fallback(self, monkeypatch):
+        class Stalled(FakeLLM):
+            async def complete(self, **kw):
+                await asyncio.Event().wait()
+
+        _use(monkeypatch, Stalled())
+        monkeypatch.setattr(router.settings, "workbench_router_timeout_s", 0.001)
+
+        decision = await router.route("q", role="admin")
+
+        assert decision.route == "refuse"
+        assert decision.reason == "clarification_required"
+        assert decision.fallback_used is True
+        assert decision.ambiguity_class == "router_failure"
 
     @pytest.mark.anyio
     async def test_llm_failure_still_routes_both_halves_of_a_hybrid_question(self, monkeypatch):

@@ -2,6 +2,12 @@
 .git
 .env
 .env.*
+.venv/
+.pytest_cache/
+.ruff_cache/
+**/.pytest_cache/
+**/.ruff_cache/
+**/*.egg-info/
 tmp/
 docs/
 assets/

@@ -5,6 +5,7 @@ dispatched to its handler, and every usable turn emits one definitive answer.
 
 from __future__ import annotations
 
+import asyncio
 import json
 
 import pytest
@@ -242,6 +243,7 @@ class TestMultiSource:
 
         assert len(fake.calls) == 1
         assert fake.calls[0]["call_purpose"] == "final_compose"
+        assert fake.calls[0]["max_output_tokens"] == graph.settings.workbench_composer_max_tokens
         assert next(data for name, data in events if name == "answer")["text"] == "GDP grew 6.5%."
 
     @pytest.mark.anyio
@@ -325,6 +327,35 @@ class TestMultiSource:
         assert answer["limitations"] == [
             {"source": "macro", "reason": "SIDBI benchmark evidence is unavailable."}
         ]
+
+    @pytest.mark.anyio
+    async def test_stalled_composer_is_bounded_and_answer_is_marked_partial(
+        self, monkeypatch
+    ):
+        _stub_route(monkeypatch, router.RouteDecision(
+            route="dispatch", sources=["macro"], intent="GDP trend",
+        ))
+        _stub_node(monkeypatch, "run_macro", SourceResult(
+            source="macro", card_type="brief", payload={}, summary="GDP grew 6.5%.",
+            evidence=[Evidence("GDP grew 6.5%.", document="Official release")],
+        ))
+
+        class Stalled(FakeLLM):
+            async def complete(self, **kw):
+                await asyncio.Event().wait()
+
+        monkeypatch.setattr(models, "for_step", lambda *a, **k: Stalled())
+        monkeypatch.setattr(graph.settings, "workbench_composer_timeout_s", 0.001)
+
+        events = await _run()
+
+        answer = next(data for name, data in events if name == "answer")
+        assert answer["status"] == "partial"
+        assert answer["text"] == "Macro: GDP grew 6.5%."
+        assert answer["limitations"] == [{
+            "source": "composer",
+            "reason": "The answer composer was unavailable; showing retrieved evidence instead.",
+        }]
 
 
 class TestPinnedThreading:

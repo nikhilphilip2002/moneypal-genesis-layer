@@ -346,6 +346,20 @@ class TestHealth:
     async def test_error_status_is_degraded(self):
         assert (await _client(lambda r: httpx.Response(500)).health())["status"] == "degraded"
 
+    @pytest.mark.anyio
+    async def test_llamacpp_reports_a_different_served_model_as_degraded(self):
+        def handler(request):
+            if request.url.path == "/v1/models":
+                return httpx.Response(200, json={"data": [{"id": "actual-35b"}]})
+            return httpx.Response(200)
+
+        health = await _client(handler).health()
+
+        assert health["status"] == "degraded"
+        assert health["model"] == "m"
+        assert health["served_models"] == ["actual-35b"]
+        assert health["model_match"] is False
+
 
 class TestProviderSelection:
     def test_llamacpp_health_path_sits_above_v1(self):

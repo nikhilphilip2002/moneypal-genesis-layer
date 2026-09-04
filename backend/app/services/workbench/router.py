@@ -8,6 +8,7 @@ malformed answers becomes impossible rather than merely unlikely.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import re
 from dataclasses import dataclass, field
@@ -532,14 +533,16 @@ async def route(
     )
 
     try:
-        result = await client.complete(
-            messages=prompt.messages,
-            json_schema=route_schema(role, allowed_source_ids),
-            call_purpose="route",
-            prompt_version=prompt.version,
-            prefix_hash=prompt.prefix_hash,
-            max_output_tokens=300,
-        )
+        async with asyncio.timeout(settings.workbench_router_timeout_s):
+            result = await client.complete(
+                messages=prompt.messages,
+                json_schema=route_schema(role, allowed_source_ids),
+                timeout_s=settings.workbench_router_timeout_s,
+                call_purpose="route",
+                prompt_version=prompt.version,
+                prefix_hash=prompt.prefix_hash,
+                max_output_tokens=300,
+            )
         payload = result.json()
         from app.core.logging import log_parsed_output
 
@@ -551,7 +554,7 @@ async def route(
             duration_ms=getattr(result, "duration_ms", 0.0),
             status="success",
         )
-    except (LLMError, ValueError) as exc:
+    except (LLMError, TimeoutError, ValueError) as exc:
         logger.warning("workbench router failed, falling back: %s", exc)
         from app.core.logging import log_parsed_output
 

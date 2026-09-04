@@ -3,7 +3,7 @@
 ## Document status
 
 - Status: repository implementation complete; deployment measurement/canary validation pending
-- Local verification: Workbench 225 passed/1 skipped, scoped NLQ 852 passed/90 skipped,
+- Local verification: Workbench 239 passed/1 skipped, scoped NLQ 857 passed/90 skipped,
   TypeScript clean, production frontend build passed
 - Remaining authority boundary: live PostgreSQL/Qdrant/web/model/cache validation and
   rollback/canary execution must run on the deployment machine
@@ -416,7 +416,7 @@ separately and are not hidden inside the uncached-input number.
 | Ambiguous router fallback | 600 uncached input tokens | 900 | 300 |
 | DB planner dynamic suffix, excluding cached Gold prefix | 1,200 | 2,500 | 700 |
 | Text-to-SQL dynamic schema/evidence pack | 1,800 | 3,000 | 900 |
-| Common composer total input | 2,000 | 4,000 | 700 |
+| Common composer total input | 2,000 | 4,000 | 160 |
 | Replayed conversation history | 1,000 | 2,000 | n/a |
 | Evidence from one source | 600 | 1,200 | n/a |
 | Evidence across all sources | 1,500 | 3,000 | n/a |

@@ -121,6 +121,19 @@ class Settings:
         self.nlq_request_budget_s = float(
             get("NLQ_REQUEST_BUDGET_S", "60") or "60"
         )
+        # Workbench model calls are optional coordination steps: routing has a safe
+        # deterministic fallback and composition has a grounded extractive fallback.
+        # Bound the *whole* call (including provider retries) so a loading or wedged
+        # llama-server cannot turn a retrieved source card into a minute-long spinner.
+        self.workbench_router_timeout_s = float(
+            get("WORKBENCH_ROUTER_TIMEOUT_S", "10") or "10"
+        )
+        self.workbench_composer_timeout_s = float(
+            get("WORKBENCH_COMPOSER_TIMEOUT_S", "20") or "20"
+        )
+        self.workbench_composer_max_tokens = int(
+            get("WORKBENCH_COMPOSER_MAX_TOKENS", "160") or "160"
+        )
         # Qwen3 and its relatives think by default, and llama-server returns that trace in
         # `reasoning_content` with `content` left empty — the planner then sees no JSON at
         # all. Nothing on this path wants free-form reasoning, so thinking is off unless a

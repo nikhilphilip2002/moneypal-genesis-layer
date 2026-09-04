@@ -165,8 +165,13 @@ _TRACKING_KEYS = {"fbclid", "gclid", "mc_cid", "mc_eid"}
 
 
 def _canonical_url(value: str) -> str | None:
+    raw = value.strip()
+    # Quotes/backslashes here mean a regex captured across serialized JSON fields, not a
+    # real URL. Reject instead of percent-encoding the injected `,"url":...` fragment.
+    if not raw or any(character in raw for character in ('"', "'", "\\", "<", ">")):
+        return None
     try:
-        parsed = urlsplit(value.strip().rstrip(".,);]"))
+        parsed = urlsplit(raw.rstrip(".,);]"))
     except ValueError:
         return None
     if parsed.scheme not in {"http", "https"} or not parsed.netloc:
@@ -186,19 +191,53 @@ def _authority(domain: str) -> Authority | None:
     )
 
 
+def _decode_json_text(value: str) -> Any | None:
+    text = value.strip()
+    if text.startswith("```") and text.endswith("```"):
+        text = re.sub(r"^```(?:json)?\s*|\s*```$", "", text, flags=re.I)
+    try:
+        return json.loads(text)
+    except (TypeError, ValueError):
+        pass
+    # Some MCP servers prefix a JSON result with one explanatory line.
+    starts = [position for token in ("{", "[") if (position := text.find(token)) >= 0]
+    if not starts:
+        return None
+    try:
+        decoded, _end = json.JSONDecoder().raw_decode(text[min(starts):])
+        return decoded
+    except ValueError:
+        return None
+
+
 def _candidate_results(structured: Any) -> list[dict[str, Any]]:
+    if isinstance(structured, str):
+        decoded = _decode_json_text(structured)
+        return _candidate_results(decoded) if decoded is not None else []
     if isinstance(structured, list):
-        return [item for item in structured if isinstance(item, dict)]
+        direct = [
+            item for item in structured
+            if isinstance(item, dict) and (item.get("url") or item.get("id"))
+        ]
+        if direct:
+            return direct
+        nested: list[dict[str, Any]] = []
+        for item in structured:
+            nested.extend(_candidate_results(item))
+        return nested
     if not isinstance(structured, dict):
         return []
-    for key in ("results", "data", "items"):
+    if structured.get("url") or structured.get("id"):
+        return [structured]
+    for key in ("results", "data", "items", "result", "content"):
         value = structured.get(key)
-        if isinstance(value, list):
-            return [item for item in value if isinstance(item, dict)]
-        if isinstance(value, dict):
-            nested = _candidate_results(value)
-            if nested:
-                return nested
+        nested = _candidate_results(value)
+        if nested:
+            return nested
+    # MCP text content is commonly wrapped as {"type":"text","text":"<json>"}.
+    nested = _candidate_results(structured.get("text"))
+    if nested:
+        return nested
     return []
 
 
@@ -209,7 +248,8 @@ _BARE_URL = re.compile(r"https?://[^\s<>\]})]+")
 def normalize(result: exa_client.ExaToolResult) -> list[WebEvidence]:
     retrieved = datetime.now(UTC).isoformat()
     evidence: list[WebEvidence] = []
-    for item in _candidate_results(result.structured):
+    candidates = _candidate_results(result.structured) or _candidate_results(result.text)
+    for item in candidates:
         raw_url = str(item.get("url") or item.get("id") or "")
         url = _canonical_url(raw_url)
         if not url:

@@ -21,8 +21,8 @@ Date: 2026-09-04
 
 ## Local checks
 
-- Workbench: 225 passed, 1 live-model test skipped.
-- NLQ excluding its HTTP module: 852 passed, 90 environment-dependent skips.
+- Workbench: 239 passed, 1 live-model test skipped.
+- NLQ excluding its HTTP module: 857 passed, 90 environment-dependent skips.
 - The prior CCF Low ROI Scheme deterministic planner failure was fixed.
 - Frontend TypeScript check passes.
 
@@ -36,3 +36,11 @@ Real p50/p95 token, cache-read/write, and latency measurements require the deplo
 PostgreSQL, Qdrant, Exa, provider credentials, and production-like concurrency. Canary and
 observation-window checklist items must be signed off in that environment; this repository
 does not fabricate those measurements.
+
+The first live smoke on 2026-09-04 is recorded in
+`docs/workbench-live-smoke-2026-09-04.md`. It validates consent enforcement, deterministic
+PostgreSQL MCP, Qdrant retrieval, and web transport, but blocks canary expansion on deployed
+composer/planner latency and a web-result normalization defect fixed after that deployment.
+The post-smoke repository also routes the common whole-book outstanding KPI without a model,
+bounds optional routing/composition calls, marks extractive fallbacks partial, verifies the
+served llama.cpp model identity, and requires LLM readiness in the rollout verifier.
