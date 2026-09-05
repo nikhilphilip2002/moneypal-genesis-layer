@@ -206,6 +206,26 @@ class TestDispatch:
         assert fake.calls == []
 
     @pytest.mark.anyio
+    async def test_add_fields_typo_refinement_stays_on_loan_book(self, monkeypatch):
+        fake = FakeLLM('{"route":"dispatch","sources":["schema"],"intent":"wrong"}')
+        _use(monkeypatch, fake)
+
+        decision = await router.route(
+            "add scheme name an tenure",
+            role="admin",
+            history_messages=[
+                {"role": "user", "content": "customers under vanitha"},
+                {"role": "assistant", "content": "Showing 338 linked customers."},
+            ],
+        )
+
+        assert decision.sources == ["db"]
+        assert "scheme name" in decision.source_intents["db"].lower()
+        assert "tenure" in decision.source_intents["db"].lower()
+        assert "agent vanitha" in decision.source_intents["db"].lower()
+        assert fake.calls == []
+
+    @pytest.mark.anyio
     async def test_structural_followup_ignores_checkpoint_system_messages(self, monkeypatch):
         fake = FakeLLM('{"route":"dispatch","sources":["db"],"intent":"x"}')
         _use(monkeypatch, fake)

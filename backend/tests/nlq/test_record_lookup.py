@@ -464,6 +464,23 @@ def test_named_agent_customer_table_can_be_refined_with_disbursed_amount_and_ten
     assert "reporting.number_of_emis" in attempt.sql
 
 
+def test_agent_customer_table_accepts_add_and_misspelled_and_refinement():
+    question = resolve_followup(
+        "add scheme name an tenure",
+        [{"role": "user", "content": "customers under vanitha"}],
+    )
+
+    plan_result = detect(question)
+
+    assert plan_result is not None
+    assert plan_result.selector == "agent_name"
+    assert plan_result.value == "vanitha"
+    assert plan_result.detail == "agent_accounts"
+    assert plan_result.requested_fields == [
+        "borrower_name", "scheme_name", "number_of_emis",
+    ]
+
+
 def test_agent_name_account_lookup_preserves_requested_fields_for_resolution():
     plan_result = detect("borrowers name,sanctioned amount under agent vanitha")
 

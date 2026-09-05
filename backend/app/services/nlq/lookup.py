@@ -303,8 +303,8 @@ _RECORD_REFINEMENT = re.compile(
     r"^(?:(?:ok|and|also|plus|now)\s+)?"
     r"(?:(?:can\s+you\s+)?(?:please\s+)?(?:show|list|give|get|display|add|include)"
     r"\s+(?:me\s+)?)?"
-    r"(?:along\s+with|together\s+with|with|and|also|plus|including|include)\s+"
-    rf"{_REFINEMENT_FIELD}(?:\s*(?:,|and)\s*{_REFINEMENT_FIELD})*"
+    r"(?:along\s+with|together\s+with|with|and|also|plus|add|including|include)\s+"
+    rf"{_REFINEMENT_FIELD}(?:\s*(?:,|and|an)\s*{_REFINEMENT_FIELD})*"
     r"(?:\s+(?:as\s+well|too|also|please))?"
     r"(?:\s+along\s+with\s+(?:the\s+)?(?:above|same|previous)\s+table)?\s*[?!.]*$",
     re.I,
