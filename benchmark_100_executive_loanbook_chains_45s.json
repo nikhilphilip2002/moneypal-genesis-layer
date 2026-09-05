@@ -1,0 +1,2268 @@
+[
+  {
+    "id": 1,
+    "chain_id": 1,
+    "turn": 1,
+    "role": "CEO",
+    "category": "Enterprise pulse",
+    "chain_title": "Scale and account mix",
+    "question": "How many sanctioned loan accounts are in the loan book?",
+    "conversation_id": "fe22db66adab",
+    "status": "Answered",
+    "latency_s": 1.41358182499971,
+    "db_duration_ms": 439,
+    "route_sources": [
+      "db"
+    ],
+    "route_model": "deterministic",
+    "card_types": [
+      "chart"
+    ],
+    "row_count": 4,
+    "answer": "ACTIVE has the highest loans sanctioned, at 5,396 in all time, 94% of the total across 4 account statuses. This measures count of loan accounts sanctioned in the period, grouped by account status.",
+    "sql": "SELECT lam.\"loan_status\" AS account_status,\n       COUNT(*) AS loan_count\nFROM gold.semantic_loan_account AS lam\nWHERE lam.\"sanction_date\" BETWEEN DATE '2000-01-01' AND DATE '2026-09-05'\nGROUP BY lam.\"loan_status\"\nORDER BY COUNT(*) DESC NULLS LAST\nLIMIT 200",
+    "error": ""
+  },
+  {
+    "id": 2,
+    "chain_id": 1,
+    "turn": 2,
+    "role": "CEO",
+    "category": "Enterprise pulse",
+    "chain_title": "Scale and account mix",
+    "question": "Break that down by account status.",
+    "conversation_id": "fe22db66adab",
+    "status": "Error",
+    "latency_s": 45.29513874799886,
+    "db_duration_ms": null,
+    "route_sources": [
+      "db"
+    ],
+    "route_model": "deterministic",
+    "card_types": [],
+    "row_count": null,
+    "answer": "",
+    "sql": "",
+    "error": "Request timed out after 45s"
+  },
+  {
+    "id": 3,
+    "chain_id": 1,
+    "turn": 3,
+    "role": "CEO",
+    "category": "Enterprise pulse",
+    "chain_title": "Scale and account mix",
+    "question": "Now show it by scheme.",
+    "conversation_id": "fe22db66adab",
+    "status": "Error",
+    "latency_s": 45.52396649900038,
+    "db_duration_ms": null,
+    "route_sources": [
+      "db"
+    ],
+    "route_model": "deterministic",
+    "card_types": [],
+    "row_count": null,
+    "answer": "",
+    "sql": "",
+    "error": "Request timed out after 45s"
+  },
+  {
+    "id": 4,
+    "chain_id": 1,
+    "turn": 4,
+    "role": "CEO",
+    "category": "Enterprise pulse",
+    "chain_title": "Scale and account mix",
+    "question": "Which application branches have the most accounts?",
+    "conversation_id": "fe22db66adab",
+    "status": "Error",
+    "latency_s": 45.70991774999857,
+    "db_duration_ms": null,
+    "route_sources": [
+      "db"
+    ],
+    "route_model": "deterministic",
+    "card_types": [],
+    "row_count": null,
+    "answer": "",
+    "sql": "",
+    "error": "Request timed out after 45s"
+  },
+  {
+    "id": 5,
+    "chain_id": 1,
+    "turn": 5,
+    "role": "CEO",
+    "category": "Enterprise pulse",
+    "chain_title": "Scale and account mix",
+    "question": "Show the top 10 borrowers by principal outstanding.",
+    "conversation_id": "fe22db66adab",
+    "status": "Answered",
+    "latency_s": 1.5922931989989593,
+    "db_duration_ms": 149,
+    "route_sources": [
+      "db"
+    ],
+    "route_model": "deterministic",
+    "card_types": [
+      "chart"
+    ],
+    "row_count": 10,
+    "answer": "MANJULA has the highest principal outstanding (whole book), at \u20b967.37 L in 2026-09-05, 15% of the total across 10 borrowers. This measures cumulative disbursed minus cumulative principal repaid across loan accounts, grouped by borrower.",
+    "sql": "SELECT lam.\"customer_name\" AS borrower,\n       SUM(lam.disbursed_amount - lam.principal_repaid) AS principal_outstanding_book\nFROM gold.semantic_loan_account AS lam\nGROUP BY lam.\"customer_name\"\nORDER BY SUM(lam.disbursed_amount - lam.principal_repaid) DESC NULLS LAST\nLIMIT 10",
+    "error": ""
+  },
+  {
+    "id": 6,
+    "chain_id": 2,
+    "turn": 1,
+    "role": "CEO",
+    "category": "Growth",
+    "chain_title": "Disbursement trajectory",
+    "question": "What is our total disbursed amount this financial year?",
+    "conversation_id": "5fb02688d468",
+    "status": "Answered",
+    "latency_s": 1.5363241649974952,
+    "db_duration_ms": 593,
+    "route_sources": [
+      "db"
+    ],
+    "route_model": "deterministic",
+    "card_types": [
+      "chart"
+    ],
+    "row_count": 1,
+    "answer": "Disbursement was \u20b9137.16 Cr in FY27 to date. This measures sum of disbursement event amounts in the period.",
+    "sql": "SELECT SUM(disb.disbursement_amount) AS disbursement_total\nFROM gold.semantic_disbursement_event AS disb\nWHERE disb.\"disbursement_date\" BETWEEN DATE '2026-04-01' AND DATE '2026-09-05'\nLIMIT 200",
+    "error": ""
+  },
+  {
+    "id": 7,
+    "chain_id": 2,
+    "turn": 2,
+    "role": "CEO",
+    "category": "Growth",
+    "chain_title": "Disbursement trajectory",
+    "question": "Show the monthly trend.",
+    "conversation_id": "5fb02688d468",
+    "status": "Error",
+    "latency_s": 45.40946248600085,
+    "db_duration_ms": null,
+    "route_sources": [
+      "db"
+    ],
+    "route_model": "deterministic",
+    "card_types": [],
+    "row_count": null,
+    "answer": "",
+    "sql": "",
+    "error": "Request timed out after 45s"
+  },
+  {
+    "id": 8,
+    "chain_id": 2,
+    "turn": 3,
+    "role": "CEO",
+    "category": "Growth",
+    "chain_title": "Disbursement trajectory",
+    "question": "Compare it with the previous financial year.",
+    "conversation_id": "5fb02688d468",
+    "status": "Error",
+    "latency_s": 45.669513135999296,
+    "db_duration_ms": null,
+    "route_sources": [
+      "db"
+    ],
+    "route_model": "deterministic",
+    "card_types": [],
+    "row_count": null,
+    "answer": "",
+    "sql": "",
+    "error": "Request timed out after 45s"
+  },
+  {
+    "id": 9,
+    "chain_id": 2,
+    "turn": 4,
+    "role": "CEO",
+    "category": "Growth",
+    "chain_title": "Disbursement trajectory",
+    "question": "Break the current financial year down by application branch.",
+    "conversation_id": "5fb02688d468",
+    "status": "Error",
+    "latency_s": 45.7689575000004,
+    "db_duration_ms": null,
+    "route_sources": [
+      "db"
+    ],
+    "route_model": "deterministic",
+    "card_types": [],
+    "row_count": null,
+    "answer": "",
+    "sql": "",
+    "error": "Request timed out after 45s"
+  },
+  {
+    "id": 10,
+    "chain_id": 2,
+    "turn": 5,
+    "role": "CEO",
+    "category": "Growth",
+    "chain_title": "Disbursement trajectory",
+    "question": "Which five schemes disbursed the most?",
+    "conversation_id": "5fb02688d468",
+    "status": "Error",
+    "latency_s": 45.731772939998336,
+    "db_duration_ms": null,
+    "route_sources": [
+      "db"
+    ],
+    "route_model": "deterministic",
+    "card_types": [],
+    "row_count": null,
+    "answer": "",
+    "sql": "",
+    "error": "Request timed out after 45s"
+  },
+  {
+    "id": 11,
+    "chain_id": 3,
+    "turn": 1,
+    "role": "CEO",
+    "category": "Customer franchise",
+    "chain_title": "Borrower reach and mix",
+    "question": "How many distinct borrowers have sanctioned loan accounts?",
+    "conversation_id": "ef6e54426411",
+    "status": "Answered",
+    "latency_s": 1.241046159000689,
+    "db_duration_ms": 108,
+    "route_sources": [
+      "db"
+    ],
+    "route_model": "deterministic",
+    "card_types": [
+      "chart"
+    ],
+    "row_count": 1,
+    "answer": "Borrowers was 5,719 in all time. This measures distinct borrowers with an account sanctioned in the period.",
+    "sql": "SELECT COUNT(DISTINCT lam.customer_id) AS customer_count\nFROM gold.semantic_loan_account AS lam\nWHERE lam.\"sanction_date\" BETWEEN DATE '2000-01-01' AND DATE '2026-09-05'\nLIMIT 200",
+    "error": ""
+  },
+  {
+    "id": 12,
+    "chain_id": 3,
+    "turn": 2,
+    "role": "CEO",
+    "category": "Customer franchise",
+    "chain_title": "Borrower reach and mix",
+    "question": "Break the borrower count down by scheme.",
+    "conversation_id": "ef6e54426411",
+    "status": "Error",
+    "latency_s": 45.39610584899856,
+    "db_duration_ms": null,
+    "route_sources": [
+      "db"
+    ],
+    "route_model": "deterministic",
+    "card_types": [],
+    "row_count": null,
+    "answer": "",
+    "sql": "",
+    "error": "Request timed out after 45s"
+  },
+  {
+    "id": 13,
+    "chain_id": 3,
+    "turn": 3,
+    "role": "CEO",
+    "category": "Customer franchise",
+    "chain_title": "Borrower reach and mix",
+    "question": "Now split it by gender.",
+    "conversation_id": "ef6e54426411",
+    "status": "Error",
+    "latency_s": 46.49439719200018,
+    "db_duration_ms": null,
+    "route_sources": [
+      "db"
+    ],
+    "route_model": "deterministic",
+    "card_types": [],
+    "row_count": null,
+    "answer": "",
+    "sql": "",
+    "error": "Request timed out after 45s"
+  },
+  {
+    "id": 14,
+    "chain_id": 3,
+    "turn": 4,
+    "role": "CEO",
+    "category": "Customer franchise",
+    "chain_title": "Borrower reach and mix",
+    "question": "Show borrower count by application branch.",
+    "conversation_id": "ef6e54426411",
+    "status": "Error",
+    "latency_s": 45.59088275900285,
+    "db_duration_ms": null,
+    "route_sources": [
+      "db"
+    ],
+    "route_model": "deterministic",
+    "card_types": [],
+    "row_count": null,
+    "answer": "",
+    "sql": "",
+    "error": "Request timed out after 45s"
+  },
+  {
+    "id": 15,
+    "chain_id": 3,
+    "turn": 5,
+    "role": "CEO",
+    "category": "Customer franchise",
+    "chain_title": "Borrower reach and mix",
+    "question": "Which ten agents have the highest customer count?",
+    "conversation_id": "ef6e54426411",
+    "status": "Answered",
+    "latency_s": 1.5637922340029036,
+    "db_duration_ms": 383,
+    "route_sources": [
+      "db"
+    ],
+    "route_model": "deterministic",
+    "card_types": [
+      "chart"
+    ],
+    "row_count": 1,
+    "answer": "Borrowers was 0 in all time. This measures distinct borrowers with an account sanctioned in the period.",
+    "sql": "SELECT COUNT(DISTINCT lam.customer_id) AS customer_count\nFROM gold.semantic_loan_account AS lam\nWHERE lam.\"sanction_date\" BETWEEN DATE '2000-01-01' AND DATE '2026-09-05'\n  AND LOWER(lam.\"agent_code\"::text) = ANY(ARRAY['s'])\nLIMIT 200",
+    "error": ""
+  },
+  {
+    "id": 16,
+    "chain_id": 4,
+    "turn": 1,
+    "role": "CEO",
+    "category": "Balance sheet",
+    "chain_title": "Outstanding portfolio concentration",
+    "question": "What is the current principal outstanding across the loan book?",
+    "conversation_id": "88bbdba9b1b0",
+    "status": "Answered",
+    "latency_s": 1.3357778600002348,
+    "db_duration_ms": 509,
+    "route_sources": [
+      "db"
+    ],
+    "route_model": "deterministic",
+    "card_types": [
+      "chart"
+    ],
+    "row_count": 1,
+    "answer": "Principal outstanding was \u20b9194.43 Cr for asset classification Standard as at 05 Sep 2026. This measures principal outstanding from each classified account at the requested snapshot.",
+    "sql": "SELECT SUM(portfolio.principal_outstanding) AS principal_outstanding\nFROM gold.portfolio_snapshot_as_of(DATE '2026-09-05') AS portfolio\nWHERE portfolio.\"asset_code\"::text = 'STD'\nLIMIT 200",
+    "error": ""
+  },
+  {
+    "id": 17,
+    "chain_id": 4,
+    "turn": 2,
+    "role": "CEO",
+    "category": "Balance sheet",
+    "chain_title": "Outstanding portfolio concentration",
+    "question": "Break it down by scheme.",
+    "conversation_id": "88bbdba9b1b0",
+    "status": "Error",
+    "latency_s": 45.40739221700278,
+    "db_duration_ms": null,
+    "route_sources": [
+      "db"
+    ],
+    "route_model": "deterministic",
+    "card_types": [],
+    "row_count": null,
+    "answer": "",
+    "sql": "",
+    "error": "Request timed out after 45s"
+  },
+  {
+    "id": 18,
+    "chain_id": 4,
+    "turn": 3,
+    "role": "CEO",
+    "category": "Balance sheet",
+    "chain_title": "Outstanding portfolio concentration",
+    "question": "Now show it by application branch.",
+    "conversation_id": "88bbdba9b1b0",
+    "status": "Error",
+    "latency_s": 45.67327746199953,
+    "db_duration_ms": null,
+    "route_sources": [
+      "db"
+    ],
+    "route_model": "deterministic",
+    "card_types": [],
+    "row_count": null,
+    "answer": "",
+    "sql": "",
+    "error": "Request timed out after 45s"
+  },
+  {
+    "id": 19,
+    "chain_id": 4,
+    "turn": 4,
+    "role": "CEO",
+    "category": "Balance sheet",
+    "chain_title": "Outstanding portfolio concentration",
+    "question": "Split it by account status.",
+    "conversation_id": "88bbdba9b1b0",
+    "status": "Error",
+    "latency_s": 45.665923937001935,
+    "db_duration_ms": null,
+    "route_sources": [
+      "db"
+    ],
+    "route_model": "deterministic",
+    "card_types": [],
+    "row_count": null,
+    "answer": "",
+    "sql": "",
+    "error": "Request timed out after 45s"
+  },
+  {
+    "id": 20,
+    "chain_id": 4,
+    "turn": 5,
+    "role": "CEO",
+    "category": "Balance sheet",
+    "chain_title": "Outstanding portfolio concentration",
+    "question": "Which ten borrowers have the largest principal outstanding?",
+    "conversation_id": "88bbdba9b1b0",
+    "status": "Error",
+    "latency_s": 45.58506597700034,
+    "db_duration_ms": null,
+    "route_sources": [
+      "db"
+    ],
+    "route_model": "deterministic",
+    "card_types": [],
+    "row_count": null,
+    "answer": "",
+    "sql": "",
+    "error": "Request timed out after 45s"
+  },
+  {
+    "id": 21,
+    "chain_id": 5,
+    "turn": 1,
+    "role": "CEO",
+    "category": "Risk",
+    "chain_title": "NPA profile",
+    "question": "What is our current NPA ratio?",
+    "conversation_id": "134eaf2d0206",
+    "status": "Answered",
+    "latency_s": 1.6821704260000843,
+    "db_duration_ms": 642,
+    "route_sources": [
+      "db"
+    ],
+    "route_model": "deterministic",
+    "card_types": [
+      "chart"
+    ],
+    "row_count": 1,
+    "answer": "NPA ratio was 0.02% as at 05 Sep 2026. This measures nPA-classified principal outstanding divided by classified principal outstanding. Definition of NPA ratio is pending client sign-off.",
+    "sql": "SELECT (100.0 * COALESCE(SUM(portfolio.principal_outstanding) FILTER (WHERE portfolio.is_npa), 0) / NULLIF(SUM(portfolio.principal_outstanding), 0)) AS npa_ratio\nFROM gold.portfolio_snapshot_as_of(DATE '2026-09-05') AS portfolio\nLIMIT 200",
+    "error": ""
+  },
+  {
+    "id": 22,
+    "chain_id": 5,
+    "turn": 2,
+    "role": "CEO",
+    "category": "Risk",
+    "chain_title": "NPA profile",
+    "question": "Break it down by scheme.",
+    "conversation_id": "134eaf2d0206",
+    "status": "Error",
+    "latency_s": 45.41035071599981,
+    "db_duration_ms": null,
+    "route_sources": [
+      "db"
+    ],
+    "route_model": "deterministic",
+    "card_types": [],
+    "row_count": null,
+    "answer": "",
+    "sql": "",
+    "error": "Request timed out after 45s"
+  },
+  {
+    "id": 23,
+    "chain_id": 5,
+    "turn": 3,
+    "role": "CEO",
+    "category": "Risk",
+    "chain_title": "NPA profile",
+    "question": "Now show it by application branch.",
+    "conversation_id": "134eaf2d0206",
+    "status": "Error",
+    "latency_s": 45.68030246700073,
+    "db_duration_ms": null,
+    "route_sources": [
+      "db"
+    ],
+    "route_model": "deterministic",
+    "card_types": [],
+    "row_count": null,
+    "answer": "",
+    "sql": "",
+    "error": "Request timed out after 45s"
+  },
+  {
+    "id": 24,
+    "chain_id": 5,
+    "turn": 4,
+    "role": "CEO",
+    "category": "Risk",
+    "chain_title": "NPA profile",
+    "question": "Which borrowers have the highest NPA principal outstanding?",
+    "conversation_id": "134eaf2d0206",
+    "status": "Answered",
+    "latency_s": 1.8907598279984086,
+    "db_duration_ms": 659,
+    "route_sources": [
+      "db"
+    ],
+    "route_model": "deterministic",
+    "card_types": [
+      "chart"
+    ],
+    "row_count": 1,
+    "answer": "No principal outstanding found as at 05 Sep 2026 with Asset classification eq NPA. This measures principal outstanding from each classified account at the requested snapshot.",
+    "sql": "SELECT SUM(portfolio.principal_outstanding) AS principal_outstanding\nFROM gold.portfolio_snapshot_as_of(DATE '2026-09-05') AS portfolio\nWHERE portfolio.\"asset_code\"::text = 'NPA'\nLIMIT 200",
+    "error": ""
+  },
+  {
+    "id": 25,
+    "chain_id": 5,
+    "turn": 5,
+    "role": "CEO",
+    "category": "Risk",
+    "chain_title": "NPA profile",
+    "question": "How many accounts are currently classified as NPA?",
+    "conversation_id": "134eaf2d0206",
+    "status": "Error",
+    "latency_s": 45.41595613699974,
+    "db_duration_ms": null,
+    "route_sources": [
+      "db"
+    ],
+    "route_model": "deterministic",
+    "card_types": [],
+    "row_count": null,
+    "answer": "",
+    "sql": "",
+    "error": "Request timed out after 45s"
+  },
+  {
+    "id": 26,
+    "chain_id": 6,
+    "turn": 1,
+    "role": "CEO",
+    "category": "Risk",
+    "chain_title": "Portfolio at risk",
+    "question": "What is our current PAR 30 ratio?",
+    "conversation_id": "73aa03e4d51c",
+    "status": "Error",
+    "latency_s": 45.483803310999065,
+    "db_duration_ms": null,
+    "route_sources": [
+      "db"
+    ],
+    "route_model": "deterministic",
+    "card_types": [],
+    "row_count": null,
+    "answer": "",
+    "sql": "",
+    "error": "Request timed out after 45s"
+  },
+  {
+    "id": 27,
+    "chain_id": 6,
+    "turn": 2,
+    "role": "CEO",
+    "category": "Risk",
+    "chain_title": "Portfolio at risk",
+    "question": "Break PAR 30 down by scheme.",
+    "conversation_id": "73aa03e4d51c",
+    "status": "Error",
+    "latency_s": 45.647514020001836,
+    "db_duration_ms": null,
+    "route_sources": [
+      "db"
+    ],
+    "route_model": "deterministic",
+    "card_types": [],
+    "row_count": null,
+    "answer": "",
+    "sql": "",
+    "error": "Request timed out after 45s"
+  },
+  {
+    "id": 28,
+    "chain_id": 6,
+    "turn": 3,
+    "role": "CEO",
+    "category": "Risk",
+    "chain_title": "Portfolio at risk",
+    "question": "Now show PAR 30 by application branch.",
+    "conversation_id": "73aa03e4d51c",
+    "status": "Error",
+    "latency_s": 45.621450681999704,
+    "db_duration_ms": null,
+    "route_sources": [
+      "db"
+    ],
+    "route_model": "deterministic",
+    "card_types": [],
+    "row_count": null,
+    "answer": "",
+    "sql": "",
+    "error": "Request timed out after 45s"
+  },
+  {
+    "id": 29,
+    "chain_id": 6,
+    "turn": 4,
+    "role": "CEO",
+    "category": "Risk",
+    "chain_title": "Portfolio at risk",
+    "question": "What is our current PAR 90 ratio?",
+    "conversation_id": "73aa03e4d51c",
+    "status": "Error",
+    "latency_s": 45.61688334700011,
+    "db_duration_ms": null,
+    "route_sources": [
+      "db"
+    ],
+    "route_model": "deterministic",
+    "card_types": [],
+    "row_count": null,
+    "answer": "",
+    "sql": "",
+    "error": "Request timed out after 45s"
+  },
+  {
+    "id": 30,
+    "chain_id": 6,
+    "turn": 5,
+    "role": "CEO",
+    "category": "Risk",
+    "chain_title": "Portfolio at risk",
+    "question": "Which schemes have the highest overdue principal?",
+    "conversation_id": "73aa03e4d51c",
+    "status": "Error",
+    "latency_s": 45.670763167003315,
+    "db_duration_ms": null,
+    "route_sources": [
+      "db"
+    ],
+    "route_model": "deterministic",
+    "card_types": [],
+    "row_count": null,
+    "answer": "",
+    "sql": "",
+    "error": "Request timed out after 45s"
+  },
+  {
+    "id": 31,
+    "chain_id": 7,
+    "turn": 1,
+    "role": "CEO",
+    "category": "Strategy",
+    "chain_title": "Product and scheme portfolio",
+    "question": "Which schemes have the largest principal outstanding?",
+    "conversation_id": "134d05f90b67",
+    "status": "Answered",
+    "latency_s": 1.793233552001766,
+    "db_duration_ms": 686,
+    "route_sources": [
+      "db"
+    ],
+    "route_model": "deterministic",
+    "card_types": [
+      "chart"
+    ],
+    "row_count": 8,
+    "answer": "MSME Loans has the highest principal outstanding, at \u20b959.81 Cr as at 05 Sep 2026, 29% of the total across 8 schemes. This measures principal outstanding from each classified account at the requested snapshot, grouped by scheme.",
+    "sql": "SELECT lam.\"scheme_code\" AS scheme,\n       SUM(portfolio.principal_outstanding) AS principal_outstanding\nFROM gold.portfolio_snapshot_as_of(DATE '2026-09-05') AS portfolio\n     JOIN gold.semantic_loan_account AS lam ON portfolio.\"entity_num\"::text = lam.\"entity_num\"::text AND portfolio.\"loan_account_number\"::text = lam.\"loan_account_number\"::text\nGROUP BY lam.\"scheme_code\"\nORDER BY SUM(portfolio.principal_outstanding) DESC NULLS LAST\nLIMIT 200",
+    "error": ""
+  },
+  {
+    "id": 32,
+    "chain_id": 7,
+    "turn": 2,
+    "role": "CEO",
+    "category": "Strategy",
+    "chain_title": "Product and scheme portfolio",
+    "question": "For those schemes, show total disbursed amount.",
+    "conversation_id": "134d05f90b67",
+    "status": "Answered",
+    "latency_s": 1.1298493280010007,
+    "db_duration_ms": 141,
+    "route_sources": [
+      "db"
+    ],
+    "route_model": "catalog",
+    "card_types": [
+      "chart"
+    ],
+    "row_count": 1,
+    "answer": "Principal outstanding (whole book) was \u20b9214.00 Cr in 2026-09-05. This measures cumulative disbursed minus cumulative principal repaid across loan accounts.",
+    "sql": "SELECT SUM(lam.disbursed_amount - lam.principal_repaid) AS principal_outstanding_book\nFROM gold.semantic_loan_account AS lam\nLIMIT 200",
+    "error": ""
+  },
+  {
+    "id": 33,
+    "chain_id": 7,
+    "turn": 3,
+    "role": "CEO",
+    "category": "Strategy",
+    "chain_title": "Product and scheme portfolio",
+    "question": "Also show their sanctioned loan count.",
+    "conversation_id": "134d05f90b67",
+    "status": "Error",
+    "latency_s": 45.409148553000705,
+    "db_duration_ms": null,
+    "route_sources": [
+      "db"
+    ],
+    "route_model": "deterministic",
+    "card_types": [],
+    "row_count": null,
+    "answer": "",
+    "sql": "",
+    "error": "Request timed out after 45s"
+  },
+  {
+    "id": 34,
+    "chain_id": 7,
+    "turn": 4,
+    "role": "CEO",
+    "category": "Strategy",
+    "chain_title": "Product and scheme portfolio",
+    "question": "Which schemes have the highest average ticket size?",
+    "conversation_id": "134d05f90b67",
+    "status": "Error",
+    "latency_s": 45.66746405500089,
+    "db_duration_ms": null,
+    "route_sources": [
+      "db"
+    ],
+    "route_model": "deterministic",
+    "card_types": [],
+    "row_count": null,
+    "answer": "",
+    "sql": "",
+    "error": "Request timed out after 45s"
+  },
+  {
+    "id": 35,
+    "chain_id": 7,
+    "turn": 5,
+    "role": "CEO",
+    "category": "Strategy",
+    "chain_title": "Product and scheme portfolio",
+    "question": "Which schemes combine high growth with low PAR 30?",
+    "conversation_id": "134d05f90b67",
+    "status": "Error",
+    "latency_s": 45.77274480900087,
+    "db_duration_ms": null,
+    "route_sources": [
+      "db"
+    ],
+    "route_model": "deterministic",
+    "card_types": [],
+    "row_count": null,
+    "answer": "",
+    "sql": "",
+    "error": "Request timed out after 45s"
+  },
+  {
+    "id": 36,
+    "chain_id": 8,
+    "turn": 1,
+    "role": "CFO",
+    "category": "Conversion",
+    "chain_title": "Sanction-to-disbursement",
+    "question": "Compare total sanctioned amount with total disbursed amount.",
+    "conversation_id": "01bbfcf1a352",
+    "status": "Answered",
+    "latency_s": 1.085393068002304,
+    "db_duration_ms": 98,
+    "route_sources": [
+      "db"
+    ],
+    "route_model": "deterministic",
+    "card_types": [
+      "chart"
+    ],
+    "row_count": 1,
+    "answer": "Sanctioned amount was \u20b9229.10 Cr in all time. This measures sum of sanctioned amounts for accounts sanctioned in the period.",
+    "sql": "SELECT SUM(lam.sanction_amount) AS sanctioned_amount\nFROM gold.semantic_loan_account AS lam\nWHERE lam.\"sanction_date\" BETWEEN DATE '2000-01-01' AND DATE '2026-09-05'\nLIMIT 200",
+    "error": ""
+  },
+  {
+    "id": 37,
+    "chain_id": 8,
+    "turn": 2,
+    "role": "CFO",
+    "category": "Conversion",
+    "chain_title": "Sanction-to-disbursement",
+    "question": "Show the difference by scheme.",
+    "conversation_id": "01bbfcf1a352",
+    "status": "Error",
+    "latency_s": 45.4094253459989,
+    "db_duration_ms": null,
+    "route_sources": [
+      "db"
+    ],
+    "route_model": "deterministic",
+    "card_types": [],
+    "row_count": null,
+    "answer": "",
+    "sql": "",
+    "error": "Request timed out after 45s"
+  },
+  {
+    "id": 38,
+    "chain_id": 8,
+    "turn": 3,
+    "role": "CFO",
+    "category": "Conversion",
+    "chain_title": "Sanction-to-disbursement",
+    "question": "Now show it by application branch.",
+    "conversation_id": "01bbfcf1a352",
+    "status": "Error",
+    "latency_s": 45.566910389999975,
+    "db_duration_ms": null,
+    "route_sources": [
+      "db"
+    ],
+    "route_model": "deterministic",
+    "card_types": [],
+    "row_count": null,
+    "answer": "",
+    "sql": "",
+    "error": "Request timed out after 45s"
+  },
+  {
+    "id": 39,
+    "chain_id": 8,
+    "turn": 4,
+    "role": "CFO",
+    "category": "Conversion",
+    "chain_title": "Sanction-to-disbursement",
+    "question": "What is the sanction-to-disbursement conversion rate?",
+    "conversation_id": "01bbfcf1a352",
+    "status": "Error",
+    "latency_s": 45.569114559999434,
+    "db_duration_ms": null,
+    "route_sources": [
+      "db"
+    ],
+    "route_model": "deterministic",
+    "card_types": [],
+    "row_count": null,
+    "answer": "",
+    "sql": "",
+    "error": "Request timed out after 45s"
+  },
+  {
+    "id": 40,
+    "chain_id": 8,
+    "turn": 5,
+    "role": "CFO",
+    "category": "Conversion",
+    "chain_title": "Sanction-to-disbursement",
+    "question": "Which schemes have the lowest conversion rate?",
+    "conversation_id": "01bbfcf1a352",
+    "status": "Error",
+    "latency_s": 45.6695751690022,
+    "db_duration_ms": null,
+    "route_sources": [
+      "db"
+    ],
+    "route_model": "deterministic",
+    "card_types": [],
+    "row_count": null,
+    "answer": "",
+    "sql": "",
+    "error": "Request timed out after 45s"
+  },
+  {
+    "id": 41,
+    "chain_id": 9,
+    "turn": 1,
+    "role": "CFO",
+    "category": "Collections",
+    "chain_title": "Collection efficiency",
+    "question": "What is our collection efficiency this month?",
+    "conversation_id": "db94370814b0",
+    "status": "Error",
+    "latency_s": 45.569455275999644,
+    "db_duration_ms": null,
+    "route_sources": [
+      "db"
+    ],
+    "route_model": "deterministic",
+    "card_types": [],
+    "row_count": null,
+    "answer": "",
+    "sql": "",
+    "error": "Request timed out after 45s"
+  },
+  {
+    "id": 42,
+    "chain_id": 9,
+    "turn": 2,
+    "role": "CFO",
+    "category": "Collections",
+    "chain_title": "Collection efficiency",
+    "question": "Show total amount due and total amount collected behind that result.",
+    "conversation_id": "db94370814b0",
+    "status": "Error",
+    "latency_s": 45.466011413998785,
+    "db_duration_ms": null,
+    "route_sources": [
+      "db"
+    ],
+    "route_model": "deterministic",
+    "card_types": [],
+    "row_count": null,
+    "answer": "",
+    "sql": "",
+    "error": "Request timed out after 45s"
+  },
+  {
+    "id": 43,
+    "chain_id": 9,
+    "turn": 3,
+    "role": "CFO",
+    "category": "Collections",
+    "chain_title": "Collection efficiency",
+    "question": "Break collection efficiency down by scheme.",
+    "conversation_id": "db94370814b0",
+    "status": "Answered",
+    "latency_s": 1.2846566600019287,
+    "db_duration_ms": 0,
+    "route_sources": [
+      "db"
+    ],
+    "route_model": "deterministic",
+    "card_types": [
+      "chart"
+    ],
+    "row_count": 8,
+    "answer": "MSME Loans has the highest amount collected, at \u20b96.96 Cr in all time, 31% of the total across 8 schemes. This measures principal plus interest paid in the period, grouped by scheme.",
+    "sql": "SELECT lam.\"scheme_code\" AS scheme,\n       SUM(repay.total_paid) AS amount_collected\nFROM gold.semantic_repayment_event AS repay\n     JOIN gold.semantic_loan_account AS lam ON repay.\"entity_num\"::text = lam.\"entity_num\"::text AND repay.\"loan_account_number\"::text = lam.\"loan_account_number\"::text\nWHERE repay.\"repayment_date\" BETWEEN DATE '2000-01-01' AND DATE '2026-09-05'\nGROUP BY lam.\"scheme_code\"\nORDER BY SUM(repay.total_paid) DESC NULLS LAST\nLIMIT 200",
+    "error": ""
+  },
+  {
+    "id": 44,
+    "chain_id": 9,
+    "turn": 4,
+    "role": "CFO",
+    "category": "Collections",
+    "chain_title": "Collection efficiency",
+    "question": "Now show it by application branch.",
+    "conversation_id": "db94370814b0",
+    "status": "Error",
+    "latency_s": 45.421178999000404,
+    "db_duration_ms": null,
+    "route_sources": [
+      "db"
+    ],
+    "route_model": "deterministic",
+    "card_types": [],
+    "row_count": null,
+    "answer": "",
+    "sql": "",
+    "error": "Request timed out after 45s"
+  },
+  {
+    "id": 45,
+    "chain_id": 9,
+    "turn": 5,
+    "role": "CFO",
+    "category": "Collections",
+    "chain_title": "Collection efficiency",
+    "question": "Compare this month with last month.",
+    "conversation_id": "db94370814b0",
+    "status": "Error",
+    "latency_s": 45.55183323399979,
+    "db_duration_ms": null,
+    "route_sources": [
+      "db"
+    ],
+    "route_model": "deterministic",
+    "card_types": [],
+    "row_count": null,
+    "answer": "",
+    "sql": "",
+    "error": "Request timed out after 45s"
+  },
+  {
+    "id": 46,
+    "chain_id": 10,
+    "turn": 1,
+    "role": "CFO",
+    "category": "Income",
+    "chain_title": "Interest performance",
+    "question": "How much interest have we collected this financial year?",
+    "conversation_id": "70e2f058289c",
+    "status": "Error",
+    "latency_s": 45.56835344399951,
+    "db_duration_ms": null,
+    "route_sources": [
+      "db"
+    ],
+    "route_model": "deterministic",
+    "card_types": [],
+    "row_count": null,
+    "answer": "",
+    "sql": "",
+    "error": "Request timed out after 45s"
+  },
+  {
+    "id": 47,
+    "chain_id": 10,
+    "turn": 2,
+    "role": "CFO",
+    "category": "Income",
+    "chain_title": "Interest performance",
+    "question": "Show the monthly trend.",
+    "conversation_id": "70e2f058289c",
+    "status": "Error",
+    "latency_s": 45.5734399690009,
+    "db_duration_ms": null,
+    "route_sources": [
+      "db"
+    ],
+    "route_model": "deterministic",
+    "card_types": [],
+    "row_count": null,
+    "answer": "",
+    "sql": "",
+    "error": "Request timed out after 45s"
+  },
+  {
+    "id": 48,
+    "chain_id": 10,
+    "turn": 3,
+    "role": "CFO",
+    "category": "Income",
+    "chain_title": "Interest performance",
+    "question": "Break it down by scheme.",
+    "conversation_id": "70e2f058289c",
+    "status": "Error",
+    "latency_s": 45.66675248300089,
+    "db_duration_ms": null,
+    "route_sources": [
+      "db"
+    ],
+    "route_model": "deterministic",
+    "card_types": [],
+    "row_count": null,
+    "answer": "",
+    "sql": "",
+    "error": "Request timed out after 45s"
+  },
+  {
+    "id": 49,
+    "chain_id": 10,
+    "turn": 4,
+    "role": "CFO",
+    "category": "Income",
+    "chain_title": "Interest performance",
+    "question": "Now show it by application branch.",
+    "conversation_id": "70e2f058289c",
+    "status": "Error",
+    "latency_s": 45.66954225399968,
+    "db_duration_ms": null,
+    "route_sources": [
+      "db"
+    ],
+    "route_model": "deterministic",
+    "card_types": [],
+    "row_count": null,
+    "answer": "",
+    "sql": "",
+    "error": "Request timed out after 45s"
+  },
+  {
+    "id": 50,
+    "chain_id": 10,
+    "turn": 5,
+    "role": "CFO",
+    "category": "Income",
+    "chain_title": "Interest performance",
+    "question": "What is the weighted average contractual interest rate?",
+    "conversation_id": "70e2f058289c",
+    "status": "Answered",
+    "latency_s": 0.9923725959997682,
+    "db_duration_ms": null,
+    "route_sources": [
+      "knowledge"
+    ],
+    "route_model": "deterministic",
+    "card_types": [
+      "brief"
+    ],
+    "row_count": null,
+    "answer": "Average interest rate is measured as sanction-amount-weighted average account interest rate.",
+    "sql": "",
+    "error": ""
+  },
+  {
+    "id": 51,
+    "chain_id": 11,
+    "turn": 1,
+    "role": "CFO",
+    "category": "Repayment",
+    "chain_title": "Principal cash flows",
+    "question": "How much principal has been repaid this financial year?",
+    "conversation_id": "74ed16acf7f9",
+    "status": "Error",
+    "latency_s": 45.293215595997026,
+    "db_duration_ms": null,
+    "route_sources": [
+      "db"
+    ],
+    "route_model": "deterministic",
+    "card_types": [],
+    "row_count": null,
+    "answer": "",
+    "sql": "",
+    "error": "Request timed out after 45s"
+  },
+  {
+    "id": 52,
+    "chain_id": 11,
+    "turn": 2,
+    "role": "CFO",
+    "category": "Repayment",
+    "chain_title": "Principal cash flows",
+    "question": "Show the monthly principal repayment trend.",
+    "conversation_id": "74ed16acf7f9",
+    "status": "Error",
+    "latency_s": 45.66973050699744,
+    "db_duration_ms": null,
+    "route_sources": [
+      "db"
+    ],
+    "route_model": "deterministic",
+    "card_types": [],
+    "row_count": null,
+    "answer": "",
+    "sql": "",
+    "error": "Request timed out after 45s"
+  },
+  {
+    "id": 53,
+    "chain_id": 11,
+    "turn": 3,
+    "role": "CFO",
+    "category": "Repayment",
+    "chain_title": "Principal cash flows",
+    "question": "Break principal repaid down by scheme.",
+    "conversation_id": "74ed16acf7f9",
+    "status": "Error",
+    "latency_s": 45.670617630999914,
+    "db_duration_ms": null,
+    "route_sources": [
+      "db"
+    ],
+    "route_model": "deterministic",
+    "card_types": [],
+    "row_count": null,
+    "answer": "",
+    "sql": "",
+    "error": "Request timed out after 45s"
+  },
+  {
+    "id": 54,
+    "chain_id": 11,
+    "turn": 4,
+    "role": "CFO",
+    "category": "Repayment",
+    "chain_title": "Principal cash flows",
+    "question": "Now compare principal repaid with disbursed amount.",
+    "conversation_id": "74ed16acf7f9",
+    "status": "Error",
+    "latency_s": 45.67709873200147,
+    "db_duration_ms": null,
+    "route_sources": [
+      "db"
+    ],
+    "route_model": "deterministic",
+    "card_types": [],
+    "row_count": null,
+    "answer": "",
+    "sql": "",
+    "error": "Request timed out after 45s"
+  },
+  {
+    "id": 55,
+    "chain_id": 11,
+    "turn": 5,
+    "role": "CFO",
+    "category": "Repayment",
+    "chain_title": "Principal cash flows",
+    "question": "Which schemes have the lowest principal repayment percentage?",
+    "conversation_id": "74ed16acf7f9",
+    "status": "Error",
+    "latency_s": 45.69860052700096,
+    "db_duration_ms": null,
+    "route_sources": [
+      "db"
+    ],
+    "route_model": "deterministic",
+    "card_types": [],
+    "row_count": null,
+    "answer": "",
+    "sql": "",
+    "error": "Request timed out after 45s"
+  },
+  {
+    "id": 56,
+    "chain_id": 12,
+    "turn": 1,
+    "role": "CFO",
+    "category": "Unit economics",
+    "chain_title": "Ticket size",
+    "question": "What is the average sanctioned ticket size?",
+    "conversation_id": "d35a654a0ecb",
+    "status": "Answered",
+    "latency_s": 1.1518913359977887,
+    "db_duration_ms": 110,
+    "route_sources": [
+      "db"
+    ],
+    "route_model": "deterministic",
+    "card_types": [
+      "chart"
+    ],
+    "row_count": 1,
+    "answer": "Average ticket size was \u20b93.98 L in all time. This measures total sanctioned amount divided by number of loans.",
+    "sql": "SELECT (COALESCE(SUM(lam.sanction_amount), 0) / NULLIF(COUNT(*), 0)) AS avg_ticket_size\nFROM gold.semantic_loan_account AS lam\nWHERE lam.\"sanction_date\" BETWEEN DATE '2000-01-01' AND DATE '2026-09-05'\nLIMIT 200",
+    "error": ""
+  },
+  {
+    "id": 57,
+    "chain_id": 12,
+    "turn": 2,
+    "role": "CFO",
+    "category": "Unit economics",
+    "chain_title": "Ticket size",
+    "question": "Break average ticket size down by scheme.",
+    "conversation_id": "d35a654a0ecb",
+    "status": "Error",
+    "latency_s": 45.409340210000664,
+    "db_duration_ms": null,
+    "route_sources": [
+      "db"
+    ],
+    "route_model": "deterministic",
+    "card_types": [],
+    "row_count": null,
+    "answer": "",
+    "sql": "",
+    "error": "Request timed out after 45s"
+  },
+  {
+    "id": 58,
+    "chain_id": 12,
+    "turn": 3,
+    "role": "CFO",
+    "category": "Unit economics",
+    "chain_title": "Ticket size",
+    "question": "Now show it by application branch.",
+    "conversation_id": "d35a654a0ecb",
+    "status": "Error",
+    "latency_s": 45.67146727100044,
+    "db_duration_ms": null,
+    "route_sources": [
+      "db"
+    ],
+    "route_model": "deterministic",
+    "card_types": [],
+    "row_count": null,
+    "answer": "",
+    "sql": "",
+    "error": "Request timed out after 45s"
+  },
+  {
+    "id": 59,
+    "chain_id": 12,
+    "turn": 4,
+    "role": "CFO",
+    "category": "Unit economics",
+    "chain_title": "Ticket size",
+    "question": "Which ten borrowers received the largest sanctioned amounts?",
+    "conversation_id": "d35a654a0ecb",
+    "status": "Error",
+    "latency_s": 45.6693414040019,
+    "db_duration_ms": null,
+    "route_sources": [
+      "db"
+    ],
+    "route_model": "deterministic",
+    "card_types": [],
+    "row_count": null,
+    "answer": "",
+    "sql": "",
+    "error": "Request timed out after 45s"
+  },
+  {
+    "id": 60,
+    "chain_id": 12,
+    "turn": 5,
+    "role": "CFO",
+    "category": "Unit economics",
+    "chain_title": "Ticket size",
+    "question": "How has average ticket size changed by month this year?",
+    "conversation_id": "d35a654a0ecb",
+    "status": "Error",
+    "latency_s": 45.672053493999556,
+    "db_duration_ms": null,
+    "route_sources": [
+      "db"
+    ],
+    "route_model": "deterministic",
+    "card_types": [],
+    "row_count": null,
+    "answer": "",
+    "sql": "",
+    "error": "Request timed out after 45s"
+  },
+  {
+    "id": 61,
+    "chain_id": 13,
+    "turn": 1,
+    "role": "CFO",
+    "category": "Liquidity",
+    "chain_title": "Disbursement and collection cash flow",
+    "question": "Show monthly disbursements and total collections for this financial year.",
+    "conversation_id": "ff654f26e6b4",
+    "status": "Error",
+    "latency_s": 45.362797623001825,
+    "db_duration_ms": null,
+    "route_sources": [
+      "db"
+    ],
+    "route_model": "deterministic",
+    "card_types": [],
+    "row_count": null,
+    "answer": "",
+    "sql": "",
+    "error": "Request timed out after 45s"
+  },
+  {
+    "id": 62,
+    "chain_id": 13,
+    "turn": 2,
+    "role": "CFO",
+    "category": "Liquidity",
+    "chain_title": "Disbursement and collection cash flow",
+    "question": "Which months had collections below disbursements?",
+    "conversation_id": "ff654f26e6b4",
+    "status": "Error",
+    "latency_s": 45.67082022500108,
+    "db_duration_ms": null,
+    "route_sources": [
+      "db"
+    ],
+    "route_model": "deterministic",
+    "card_types": [],
+    "row_count": null,
+    "answer": "",
+    "sql": "",
+    "error": "Request timed out after 45s"
+  },
+  {
+    "id": 63,
+    "chain_id": 13,
+    "turn": 3,
+    "role": "CFO",
+    "category": "Liquidity",
+    "chain_title": "Disbursement and collection cash flow",
+    "question": "What was the largest monthly cash-flow gap?",
+    "conversation_id": "ff654f26e6b4",
+    "status": "Error",
+    "latency_s": 45.67216781400202,
+    "db_duration_ms": null,
+    "route_sources": [
+      "db"
+    ],
+    "route_model": "deterministic",
+    "card_types": [],
+    "row_count": null,
+    "answer": "",
+    "sql": "",
+    "error": "Request timed out after 45s"
+  },
+  {
+    "id": 64,
+    "chain_id": 13,
+    "turn": 4,
+    "role": "CFO",
+    "category": "Liquidity",
+    "chain_title": "Disbursement and collection cash flow",
+    "question": "Break the current total collection amount down by scheme.",
+    "conversation_id": "ff654f26e6b4",
+    "status": "Partial",
+    "latency_s": 1.79514025699973,
+    "db_duration_ms": 700,
+    "route_sources": [
+      "db"
+    ],
+    "route_model": "policy",
+    "card_types": [
+      "chart"
+    ],
+    "row_count": 8,
+    "answer": "MSME Loans has the highest amount collected, at \u20b96.96 Cr in all time, 31% of the total across 8 schemes. This measures principal plus interest paid in the period, grouped by scheme.",
+    "sql": "SELECT lam.\"scheme_code\" AS scheme,\n       SUM(repay.total_paid) AS amount_collected\nFROM gold.semantic_repayment_event AS repay\n     JOIN gold.semantic_loan_account AS lam ON repay.\"entity_num\"::text = lam.\"entity_num\"::text AND repay.\"loan_account_number\"::text = lam.\"loan_account_number\"::text\nWHERE repay.\"repayment_date\" BETWEEN DATE '2000-01-01' AND DATE '2026-09-05'\nGROUP BY lam.\"scheme_code\"\nORDER BY SUM(repay.total_paid) DESC NULLS LAST\nLIMIT 200",
+    "error": ""
+  },
+  {
+    "id": 65,
+    "chain_id": 13,
+    "turn": 5,
+    "role": "CFO",
+    "category": "Liquidity",
+    "chain_title": "Disbursement and collection cash flow",
+    "question": "Which branches collected the most this financial year?",
+    "conversation_id": "ff654f26e6b4",
+    "status": "Error",
+    "latency_s": 45.41029503199752,
+    "db_duration_ms": null,
+    "route_sources": [
+      "db"
+    ],
+    "route_model": "deterministic",
+    "card_types": [],
+    "row_count": null,
+    "answer": "",
+    "sql": "",
+    "error": "Request timed out after 45s"
+  },
+  {
+    "id": 66,
+    "chain_id": 14,
+    "turn": 1,
+    "role": "CFO",
+    "category": "Capital",
+    "chain_title": "Equity and book leverage",
+    "question": "What is the current share capital balance in the general ledger?",
+    "conversation_id": "28ea3f2ca5d4",
+    "status": "Answered",
+    "latency_s": 2.3073521189980966,
+    "db_duration_ms": 1139,
+    "route_sources": [
+      "db"
+    ],
+    "route_model": "deterministic",
+    "card_types": [
+      "chart"
+    ],
+    "row_count": 1,
+    "answer": "Share capital was \u20b985.50 L as at 05 Sep 2026. This measures current base-currency balance of governed GL accounts in access-code group 1001. Definition of Share capital is pending client sign-off.",
+    "sql": "SELECT SUM(CASE WHEN LEFT(COALESCE(gl.external_access_code, ''), 4) = '1001' THEN COALESCE(gl.base_currency_balance, 0) ELSE 0 END) AS share_capital\nFROM (\n       SELECT DISTINCT ON (\"entity_num\", \"branch_code\", \"gl_number\", \"currency_code\") *\n       FROM gold.semantic_gl_balance\n       WHERE \"balance_date\" <= DATE '2026-09-05'\n       ORDER BY \"entity_num\", \"branch_code\", \"gl_number\", \"currency_code\", \"balance_date\" DESC\n     ) AS gl\nLIMIT 200",
+    "error": ""
+  },
+  {
+    "id": 67,
+    "chain_id": 14,
+    "turn": 2,
+    "role": "CFO",
+    "category": "Capital",
+    "chain_title": "Equity and book leverage",
+    "question": "Show the general-ledger accounts included in that balance.",
+    "conversation_id": "28ea3f2ca5d4",
+    "status": "Error",
+    "latency_s": 45.41057887399802,
+    "db_duration_ms": null,
+    "route_sources": [
+      "db"
+    ],
+    "route_model": "deterministic",
+    "card_types": [],
+    "row_count": null,
+    "answer": "",
+    "sql": "",
+    "error": "Request timed out after 45s"
+  },
+  {
+    "id": 68,
+    "chain_id": 14,
+    "turn": 3,
+    "role": "CFO",
+    "category": "Capital",
+    "chain_title": "Equity and book leverage",
+    "question": "What is current principal outstanding relative to share capital?",
+    "conversation_id": "28ea3f2ca5d4",
+    "status": "Answered",
+    "latency_s": 1.0753524780011503,
+    "db_duration_ms": 0,
+    "route_sources": [
+      "db"
+    ],
+    "route_model": "deterministic",
+    "card_types": [
+      "chart"
+    ],
+    "row_count": 1,
+    "answer": "Share capital was \u20b985.50 L as at 05 Sep 2026. This measures current base-currency balance of governed GL accounts in access-code group 1001. Definition of Share capital is pending client sign-off.",
+    "sql": "SELECT SUM(CASE WHEN LEFT(COALESCE(gl.external_access_code, ''), 4) = '1001' THEN COALESCE(gl.base_currency_balance, 0) ELSE 0 END) AS share_capital\nFROM (\n       SELECT DISTINCT ON (\"entity_num\", \"branch_code\", \"gl_number\", \"currency_code\") *\n       FROM gold.semantic_gl_balance\n       WHERE \"balance_date\" <= DATE '2026-09-05'\n       ORDER BY \"entity_num\", \"branch_code\", \"gl_number\", \"currency_code\", \"balance_date\" DESC\n     ) AS gl\nLIMIT 200",
+    "error": ""
+  },
+  {
+    "id": 69,
+    "chain_id": 14,
+    "turn": 4,
+    "role": "CFO",
+    "category": "Capital",
+    "chain_title": "Equity and book leverage",
+    "question": "How much total interest is outstanding?",
+    "conversation_id": "28ea3f2ca5d4",
+    "status": "Error",
+    "latency_s": 45.32199003700225,
+    "db_duration_ms": null,
+    "route_sources": [
+      "db"
+    ],
+    "route_model": "deterministic",
+    "card_types": [],
+    "row_count": null,
+    "answer": "",
+    "sql": "",
+    "error": "Request timed out after 45s"
+  },
+  {
+    "id": 70,
+    "chain_id": 14,
+    "turn": 5,
+    "role": "CFO",
+    "category": "Capital",
+    "chain_title": "Equity and book leverage",
+    "question": "Break interest outstanding down by scheme.",
+    "conversation_id": "28ea3f2ca5d4",
+    "status": "Error",
+    "latency_s": 45.65762079900014,
+    "db_duration_ms": null,
+    "route_sources": [
+      "db"
+    ],
+    "route_model": "deterministic",
+    "card_types": [],
+    "row_count": null,
+    "answer": "",
+    "sql": "",
+    "error": "Request timed out after 45s"
+  },
+  {
+    "id": 71,
+    "chain_id": 15,
+    "turn": 1,
+    "role": "CGO",
+    "category": "Distribution",
+    "chain_title": "Agent customer franchise",
+    "question": "Show the top 10 agents with the highest customer count.",
+    "conversation_id": "30ef958c05a3",
+    "status": "Answered",
+    "latency_s": 1.4852879859972745,
+    "db_duration_ms": 390,
+    "route_sources": [
+      "db"
+    ],
+    "route_model": "deterministic",
+    "card_types": [
+      "chart"
+    ],
+    "row_count": 10,
+    "answer": "Vanitha has the highest borrowers, at 338 in all time, 20% of the total across 10 agents. This measures distinct borrowers with an account sanctioned in the period, grouped by agent.",
+    "sql": "SELECT lam.\"agent_code\" AS loan_agent,\n       COUNT(DISTINCT lam.customer_id) AS customer_count\nFROM gold.semantic_loan_account AS lam\nWHERE lam.\"sanction_date\" BETWEEN DATE '2000-01-01' AND DATE '2026-09-05'\nGROUP BY lam.\"agent_code\"\nORDER BY COUNT(DISTINCT lam.customer_id) DESC NULLS LAST\nLIMIT 10",
+    "error": ""
+  },
+  {
+    "id": 72,
+    "chain_id": 15,
+    "turn": 2,
+    "role": "CGO",
+    "category": "Distribution",
+    "chain_title": "Agent customer franchise",
+    "question": "Show me customers under Vanitha.",
+    "conversation_id": "30ef958c05a3",
+    "status": "Answered",
+    "latency_s": 1.8492143299990857,
+    "db_duration_ms": 368,
+    "route_sources": [
+      "db"
+    ],
+    "route_model": "catalog",
+    "card_types": [
+      "chart"
+    ],
+    "row_count": 338,
+    "answer": "Showing 338 of 338 linked customer(s).",
+    "sql": "SELECT\n  CAST(reporting.customer_id AS TEXT) AS customer_id,\n  MIN(TRIM(REGEXP_REPLACE(reporting.customer_name, '\\s+', ' ', 'g'))) AS borrower_name,\n  COUNT(DISTINCT reporting.loan_account_number) AS linked_loan_count,\n  COUNT(reporting.customer_id) OVER () AS total_linked_customer_count\nFROM gold.semantic_loan_account AS reporting\nWHERE\n  LOWER(reporting.agent_code) = 'agnt45'\n  AND reporting.sanction_date <= CURRENT_DATE\nGROUP BY\n  reporting.customer_id\nORDER BY\n  borrower_name,\n  customer_id\nLIMIT 500",
+    "error": ""
+  },
+  {
+    "id": 73,
+    "chain_id": 15,
+    "turn": 3,
+    "role": "CGO",
+    "category": "Distribution",
+    "chain_title": "Agent customer franchise",
+    "question": "Add scheme name and tenure.",
+    "conversation_id": "30ef958c05a3",
+    "status": "Answered",
+    "latency_s": 2.2580052650009748,
+    "db_duration_ms": 542,
+    "route_sources": [
+      "db"
+    ],
+    "route_model": "catalog",
+    "card_types": [
+      "chart"
+    ],
+    "row_count": 338,
+    "answer": "Showing 338 of 338 linked loan account(s) with borrower names, scheme names, tenure (EMIs).",
+    "sql": "SELECT\n  CAST(reporting.loan_account_number AS TEXT) AS loan_account_number,\n  reporting.customer_name AS borrower_name,\n  reporting.scheme_name,\n  reporting.number_of_emis,\n  COUNT(reporting.loan_account_number) OVER () AS total_linked_account_count\nFROM gold.semantic_loan_account AS reporting\nWHERE\n  LOWER(reporting.agent_code) = 'agnt45'\nORDER BY\n  reporting.loan_account_number\nLIMIT 500",
+    "error": ""
+  },
+  {
+    "id": 74,
+    "chain_id": 15,
+    "turn": 4,
+    "role": "CGO",
+    "category": "Distribution",
+    "chain_title": "Agent customer franchise",
+    "question": "Also include the disbursed loan amount.",
+    "conversation_id": "30ef958c05a3",
+    "status": "Error",
+    "latency_s": 45.472460279997904,
+    "db_duration_ms": null,
+    "route_sources": [
+      "db"
+    ],
+    "route_model": "deterministic",
+    "card_types": [],
+    "row_count": null,
+    "answer": "",
+    "sql": "",
+    "error": "Request timed out after 45s"
+  },
+  {
+    "id": 75,
+    "chain_id": 15,
+    "turn": 5,
+    "role": "CGO",
+    "category": "Distribution",
+    "chain_title": "Agent customer franchise",
+    "question": "Show the linked loan account numbers.",
+    "conversation_id": "30ef958c05a3",
+    "status": "Error",
+    "latency_s": 45.70390867900278,
+    "db_duration_ms": null,
+    "route_sources": [
+      "db"
+    ],
+    "route_model": "deterministic",
+    "card_types": [],
+    "row_count": null,
+    "answer": "",
+    "sql": "",
+    "error": "Request timed out after 45s"
+  },
+  {
+    "id": 76,
+    "chain_id": 16,
+    "turn": 1,
+    "role": "CGO",
+    "category": "Distribution",
+    "chain_title": "Branch customer franchise",
+    "question": "List customers in Ujire.",
+    "conversation_id": "95a25b0d37f5",
+    "status": "Refused",
+    "latency_s": 1.1746801669978595,
+    "db_duration_ms": null,
+    "route_sources": [
+      "db"
+    ],
+    "route_model": "catalog",
+    "card_types": [
+      "refusal"
+    ],
+    "row_count": null,
+    "answer": "No customer or loan records matched that lookup.",
+    "sql": "",
+    "error": ""
+  },
+  {
+    "id": 77,
+    "chain_id": 16,
+    "turn": 2,
+    "role": "CGO",
+    "category": "Distribution",
+    "chain_title": "Branch customer franchise",
+    "question": "Add scheme name and tenure.",
+    "conversation_id": "95a25b0d37f5",
+    "status": "Refused",
+    "latency_s": 0.9766000239978894,
+    "db_duration_ms": null,
+    "route_sources": [
+      "db"
+    ],
+    "route_model": "catalog",
+    "card_types": [
+      "refusal"
+    ],
+    "row_count": null,
+    "answer": "No customer or loan records matched that lookup.",
+    "sql": "",
+    "error": ""
+  },
+  {
+    "id": 78,
+    "chain_id": 16,
+    "turn": 3,
+    "role": "CGO",
+    "category": "Distribution",
+    "chain_title": "Branch customer franchise",
+    "question": "Also include disbursed amount.",
+    "conversation_id": "95a25b0d37f5",
+    "status": "Refused",
+    "latency_s": 1.2785116440027195,
+    "db_duration_ms": null,
+    "route_sources": [
+      "db"
+    ],
+    "route_model": "catalog",
+    "card_types": [
+      "refusal"
+    ],
+    "row_count": null,
+    "answer": "No customer or loan records matched that lookup.",
+    "sql": "",
+    "error": ""
+  },
+  {
+    "id": 79,
+    "chain_id": 16,
+    "turn": 4,
+    "role": "CGO",
+    "category": "Distribution",
+    "chain_title": "Branch customer franchise",
+    "question": "How many distinct customers are in that branch?",
+    "conversation_id": "95a25b0d37f5",
+    "status": "Error",
+    "latency_s": 45.36941793300139,
+    "db_duration_ms": null,
+    "route_sources": [
+      "db"
+    ],
+    "route_model": "deterministic",
+    "card_types": [],
+    "row_count": null,
+    "answer": "",
+    "sql": "",
+    "error": "Request timed out after 45s"
+  },
+  {
+    "id": 80,
+    "chain_id": 16,
+    "turn": 5,
+    "role": "CGO",
+    "category": "Distribution",
+    "chain_title": "Branch customer franchise",
+    "question": "What is total principal outstanding for that branch?",
+    "conversation_id": "95a25b0d37f5",
+    "status": "Answered",
+    "latency_s": 1.1193990569991001,
+    "db_duration_ms": 0,
+    "route_sources": [
+      "db"
+    ],
+    "route_model": "deterministic",
+    "card_types": [
+      "chart"
+    ],
+    "row_count": 1,
+    "answer": "Principal outstanding (whole book) was \u20b9214.00 Cr in 2026-09-05. This measures cumulative disbursed minus cumulative principal repaid across loan accounts.",
+    "sql": "SELECT SUM(lam.disbursed_amount - lam.principal_repaid) AS principal_outstanding_book\nFROM gold.semantic_loan_account AS lam\nLIMIT 200",
+    "error": ""
+  },
+  {
+    "id": 81,
+    "chain_id": 17,
+    "turn": 1,
+    "role": "CGO",
+    "category": "Product growth",
+    "chain_title": "Scheme origination",
+    "question": "Which ten schemes have the highest sanctioned loan count?",
+    "conversation_id": "2e880b5af681",
+    "status": "Answered",
+    "latency_s": 0.8151916960014205,
+    "db_duration_ms": 0,
+    "route_sources": [
+      "db"
+    ],
+    "route_model": "deterministic",
+    "card_types": [
+      "chart"
+    ],
+    "row_count": 10,
+    "answer": "MSME Loans has the highest loans sanctioned, at 1,588 in all time, 28% of the total across 10 schemes. This measures count of loan accounts sanctioned in the period, grouped by scheme.",
+    "sql": "SELECT lam.\"scheme_code\" AS scheme,\n       COUNT(*) AS loan_count\nFROM gold.semantic_loan_account AS lam\nWHERE lam.\"sanction_date\" BETWEEN DATE '2000-01-01' AND DATE '2026-09-05'\nGROUP BY lam.\"scheme_code\"\nORDER BY COUNT(*) DESC NULLS LAST\nLIMIT 10",
+    "error": ""
+  },
+  {
+    "id": 82,
+    "chain_id": 17,
+    "turn": 2,
+    "role": "CGO",
+    "category": "Product growth",
+    "chain_title": "Scheme origination",
+    "question": "Show their total sanctioned amount.",
+    "conversation_id": "2e880b5af681",
+    "status": "Answered",
+    "latency_s": 1.0232309190032538,
+    "db_duration_ms": 92,
+    "route_sources": [
+      "db"
+    ],
+    "route_model": "deterministic",
+    "card_types": [
+      "chart"
+    ],
+    "row_count": 1,
+    "answer": "Sanctioned amount was \u20b9229.10 Cr in all time. This measures sum of sanctioned amounts for accounts sanctioned in the period.",
+    "sql": "SELECT SUM(lam.sanction_amount) AS sanctioned_amount\nFROM gold.semantic_loan_account AS lam\nWHERE lam.\"sanction_date\" BETWEEN DATE '2000-01-01' AND DATE '2026-09-05'\nLIMIT 200",
+    "error": ""
+  },
+  {
+    "id": 83,
+    "chain_id": 17,
+    "turn": 3,
+    "role": "CGO",
+    "category": "Product growth",
+    "chain_title": "Scheme origination",
+    "question": "Now add total disbursed amount.",
+    "conversation_id": "2e880b5af681",
+    "status": "Error",
+    "latency_s": 45.412829659002455,
+    "db_duration_ms": null,
+    "route_sources": [
+      "db"
+    ],
+    "route_model": "deterministic",
+    "card_types": [],
+    "row_count": null,
+    "answer": "",
+    "sql": "",
+    "error": "Request timed out after 45s"
+  },
+  {
+    "id": 84,
+    "chain_id": 17,
+    "turn": 4,
+    "role": "CGO",
+    "category": "Product growth",
+    "chain_title": "Scheme origination",
+    "question": "What is their average ticket size?",
+    "conversation_id": "2e880b5af681",
+    "status": "Answered",
+    "latency_s": 1.073713712998142,
+    "db_duration_ms": null,
+    "route_sources": [
+      "knowledge"
+    ],
+    "route_model": "deterministic",
+    "card_types": [
+      "brief"
+    ],
+    "row_count": null,
+    "answer": "Average ticket size is measured as total sanctioned amount divided by number of loans.",
+    "sql": "",
+    "error": ""
+  },
+  {
+    "id": 85,
+    "chain_id": 17,
+    "turn": 5,
+    "role": "CGO",
+    "category": "Product growth",
+    "chain_title": "Scheme origination",
+    "question": "Which of those schemes grew fastest this financial year?",
+    "conversation_id": "2e880b5af681",
+    "status": "Error",
+    "latency_s": 45.411715113001264,
+    "db_duration_ms": null,
+    "route_sources": [
+      "db"
+    ],
+    "route_model": "deterministic",
+    "card_types": [],
+    "row_count": null,
+    "answer": "",
+    "sql": "",
+    "error": "Request timed out after 45s"
+  },
+  {
+    "id": 86,
+    "chain_id": 18,
+    "turn": 1,
+    "role": "CGO",
+    "category": "Inclusion",
+    "chain_title": "Gender participation",
+    "question": "How many borrowers are female and how many are male?",
+    "conversation_id": "a8f675d488f1",
+    "status": "Answered",
+    "latency_s": 1.2855905880023784,
+    "db_duration_ms": 0,
+    "route_sources": [
+      "db"
+    ],
+    "route_model": "deterministic",
+    "card_types": [
+      "chart"
+    ],
+    "row_count": 3,
+    "answer": "M has the highest borrowers, at 3,142 in all time, 55% of the total across 3 borrower genders. This measures distinct borrowers with an account sanctioned in the period, grouped by borrower gender.",
+    "sql": "SELECT customer.\"gender\" AS gender,\n       COUNT(DISTINCT lam.customer_id) AS customer_count\nFROM gold.semantic_loan_account AS lam\n     LEFT JOIN gold.semantic_customer_profile AS customer ON lam.\"entity_num\"::text = customer.\"entity_num\"::text AND lam.\"customer_id\"::text = customer.\"customer_id\"::text\nWHERE lam.\"sanction_date\" BETWEEN DATE '2000-01-01' AND DATE '2026-09-05'\nGROUP BY customer.\"gender\"\nORDER BY COUNT(DISTINCT lam.customer_id) DESC NULLS LAST\nLIMIT 200",
+    "error": ""
+  },
+  {
+    "id": 87,
+    "chain_id": 18,
+    "turn": 2,
+    "role": "CGO",
+    "category": "Inclusion",
+    "chain_title": "Gender participation",
+    "question": "Show total disbursed amount by gender.",
+    "conversation_id": "a8f675d488f1",
+    "status": "Error",
+    "latency_s": 45.408359740999,
+    "db_duration_ms": null,
+    "route_sources": [
+      "db"
+    ],
+    "route_model": "deterministic",
+    "card_types": [],
+    "row_count": null,
+    "answer": "",
+    "sql": "",
+    "error": "Request timed out after 45s"
+  },
+  {
+    "id": 88,
+    "chain_id": 18,
+    "turn": 3,
+    "role": "CGO",
+    "category": "Inclusion",
+    "chain_title": "Gender participation",
+    "question": "Now show average sanctioned ticket size by gender.",
+    "conversation_id": "a8f675d488f1",
+    "status": "Error",
+    "latency_s": 45.57683036600065,
+    "db_duration_ms": null,
+    "route_sources": [
+      "db"
+    ],
+    "route_model": "deterministic",
+    "card_types": [],
+    "row_count": null,
+    "answer": "",
+    "sql": "",
+    "error": "Request timed out after 45s"
+  },
+  {
+    "id": 89,
+    "chain_id": 18,
+    "turn": 4,
+    "role": "CGO",
+    "category": "Inclusion",
+    "chain_title": "Gender participation",
+    "question": "Break female borrower count down by scheme.",
+    "conversation_id": "a8f675d488f1",
+    "status": "Error",
+    "latency_s": 45.55687446400043,
+    "db_duration_ms": null,
+    "route_sources": [
+      "db"
+    ],
+    "route_model": "deterministic",
+    "card_types": [],
+    "row_count": null,
+    "answer": "",
+    "sql": "",
+    "error": "Request timed out after 45s"
+  },
+  {
+    "id": 90,
+    "chain_id": 18,
+    "turn": 5,
+    "role": "CGO",
+    "category": "Inclusion",
+    "chain_title": "Gender participation",
+    "question": "Which application branches serve the most female borrowers?",
+    "conversation_id": "a8f675d488f1",
+    "status": "Error",
+    "latency_s": 45.68062355499933,
+    "db_duration_ms": null,
+    "route_sources": [
+      "db"
+    ],
+    "route_model": "deterministic",
+    "card_types": [],
+    "row_count": null,
+    "answer": "",
+    "sql": "",
+    "error": "Request timed out after 45s"
+  },
+  {
+    "id": 91,
+    "chain_id": 19,
+    "turn": 1,
+    "role": "CGO",
+    "category": "Branch growth",
+    "chain_title": "Origination network",
+    "question": "Rank application branches by total disbursed amount this financial year.",
+    "conversation_id": "4c0cb07190c2",
+    "status": "Error",
+    "latency_s": 45.49486670900296,
+    "db_duration_ms": null,
+    "route_sources": [
+      "db"
+    ],
+    "route_model": "deterministic",
+    "card_types": [],
+    "row_count": null,
+    "answer": "",
+    "sql": "",
+    "error": "Request timed out after 45s"
+  },
+  {
+    "id": 92,
+    "chain_id": 19,
+    "turn": 2,
+    "role": "CGO",
+    "category": "Branch growth",
+    "chain_title": "Origination network",
+    "question": "Add sanctioned loan count for each branch.",
+    "conversation_id": "4c0cb07190c2",
+    "status": "Error",
+    "latency_s": 45.629986381998606,
+    "db_duration_ms": null,
+    "route_sources": [
+      "db"
+    ],
+    "route_model": "deterministic",
+    "card_types": [],
+    "row_count": null,
+    "answer": "",
+    "sql": "",
+    "error": "Request timed out after 45s"
+  },
+  {
+    "id": 93,
+    "chain_id": 19,
+    "turn": 3,
+    "role": "CGO",
+    "category": "Branch growth",
+    "chain_title": "Origination network",
+    "question": "Now add distinct borrower count.",
+    "conversation_id": "4c0cb07190c2",
+    "status": "Error",
+    "latency_s": 45.56804736800041,
+    "db_duration_ms": null,
+    "route_sources": [
+      "db"
+    ],
+    "route_model": "deterministic",
+    "card_types": [],
+    "row_count": null,
+    "answer": "",
+    "sql": "",
+    "error": "Request timed out after 45s"
+  },
+  {
+    "id": 94,
+    "chain_id": 19,
+    "turn": 4,
+    "role": "CGO",
+    "category": "Branch growth",
+    "chain_title": "Origination network",
+    "question": "Which branch has the highest average ticket size?",
+    "conversation_id": "4c0cb07190c2",
+    "status": "Answered",
+    "latency_s": 26.700758823000797,
+    "db_duration_ms": 97,
+    "route_sources": [
+      "db"
+    ],
+    "route_model": "deterministic",
+    "card_types": [
+      "chart"
+    ],
+    "row_count": 2,
+    "answer": "Head Office \u2014 Credit Division has the highest average ticket size, at \u20b93.98 L in all time, 54% of the total across 2 branches. This measures total sanctioned amount divided by number of loans, grouped by branch.",
+    "sql": "SELECT lam.\"application_branch_code\" AS branch,\n       (COALESCE(SUM(lam.sanction_amount), 0) / NULLIF(COUNT(*), 0)) AS avg_ticket_size\nFROM gold.semantic_loan_account AS lam\nWHERE lam.\"sanction_date\" BETWEEN DATE '2000-01-01' AND DATE '2026-09-05'\nGROUP BY lam.\"application_branch_code\"\nORDER BY (COALESCE(SUM(lam.sanction_amount), 0) / NULLIF(COUNT(*), 0)) DESC NULLS LAST\nLIMIT 200",
+    "error": ""
+  },
+  {
+    "id": 95,
+    "chain_id": 19,
+    "turn": 5,
+    "role": "CGO",
+    "category": "Branch growth",
+    "chain_title": "Origination network",
+    "question": "Which branches have declining monthly disbursements?",
+    "conversation_id": "4c0cb07190c2",
+    "status": "Answered",
+    "latency_s": 39.812268407000374,
+    "db_duration_ms": 712,
+    "route_sources": [
+      "db"
+    ],
+    "route_model": "deterministic",
+    "card_types": [
+      "chart"
+    ],
+    "row_count": 10,
+    "answer": "Disbursement rose from \u20b959.50 L (Oct 2025) to \u20b944.18 Cr (Jun 2026), a change of 7325.9%. This measures sum of disbursement event amounts in the period, grouped by branch and month.",
+    "sql": "SELECT lam.\"application_branch_code\" AS branch,\n       DATE_TRUNC('month', disb.\"disbursement_date\")::date AS month,\n       SUM(disb.disbursement_amount) AS disbursement_total\nFROM gold.semantic_disbursement_event AS disb\n     JOIN gold.semantic_loan_account AS lam ON disb.\"entity_num\"::text = lam.\"entity_num\"::text AND disb.\"loan_account_number\"::text = lam.\"loan_account_number\"::text\nWHERE disb.\"disbursement_date\" BETWEEN DATE '2024-04-01' AND DATE '2026-06-30'\nGROUP BY lam.\"application_branch_code\", DATE_TRUNC('month', disb.\"disbursement_date\")::date\nORDER BY DATE_TRUNC('month', disb.\"disbursement_date\")::date ASC\nLIMIT 200",
+    "error": ""
+  },
+  {
+    "id": 96,
+    "chain_id": 20,
+    "turn": 1,
+    "role": "CGO",
+    "category": "Agent productivity",
+    "chain_title": "Agent volume and quality",
+    "question": "Rank the top 10 agents by sanctioned loan count.",
+    "conversation_id": "12024cb43897",
+    "status": "Answered",
+    "latency_s": 0.7160063730007096,
+    "db_duration_ms": 0,
+    "route_sources": [
+      "db"
+    ],
+    "route_model": "deterministic",
+    "card_types": [
+      "chart"
+    ],
+    "row_count": 1,
+    "answer": "Loans sanctioned was 0 in all time. This measures count of loan accounts sanctioned in the period.",
+    "sql": "SELECT COUNT(*) AS loan_count\nFROM gold.semantic_loan_account AS lam\nWHERE lam.\"sanction_date\" BETWEEN DATE '2000-01-01' AND DATE '2026-09-05'\n  AND LOWER(lam.\"agent_code\"::text) = ANY(ARRAY['s'])\nLIMIT 200",
+    "error": ""
+  },
+  {
+    "id": 97,
+    "chain_id": 20,
+    "turn": 2,
+    "role": "CGO",
+    "category": "Agent productivity",
+    "chain_title": "Agent volume and quality",
+    "question": "Now rank them by total disbursed amount.",
+    "conversation_id": "12024cb43897",
+    "status": "Answered",
+    "latency_s": 38.51202674600063,
+    "db_duration_ms": 0,
+    "route_sources": [
+      "db"
+    ],
+    "route_model": "deterministic",
+    "card_types": [
+      "chart"
+    ],
+    "row_count": 10,
+    "answer": "Vanitha has the highest disbursement, at \u20b912.38 Cr in all time, 17% of the total across 10 agents. This measures sum of disbursement event amounts in the period, grouped by agent.",
+    "sql": "SELECT lam.\"agent_code\" AS agent,\n       SUM(disb.disbursement_amount) AS disbursement_total\nFROM gold.semantic_disbursement_event AS disb\n     JOIN gold.semantic_loan_account AS lam ON disb.\"entity_num\"::text = lam.\"entity_num\"::text AND disb.\"loan_account_number\"::text = lam.\"loan_account_number\"::text\nWHERE disb.\"disbursement_date\" BETWEEN DATE '2000-01-01' AND DATE '2026-09-05'\nGROUP BY lam.\"agent_code\"\nORDER BY SUM(disb.disbursement_amount) DESC NULLS LAST\nLIMIT 10",
+    "error": ""
+  },
+  {
+    "id": 98,
+    "chain_id": 20,
+    "turn": 3,
+    "role": "CGO",
+    "category": "Agent productivity",
+    "chain_title": "Agent volume and quality",
+    "question": "Add distinct borrower count.",
+    "conversation_id": "12024cb43897",
+    "status": "Error",
+    "latency_s": 45.39957752999908,
+    "db_duration_ms": null,
+    "route_sources": [
+      "db"
+    ],
+    "route_model": "deterministic",
+    "card_types": [],
+    "row_count": null,
+    "answer": "",
+    "sql": "",
+    "error": "Request timed out after 45s"
+  },
+  {
+    "id": 99,
+    "chain_id": 20,
+    "turn": 4,
+    "role": "CGO",
+    "category": "Agent productivity",
+    "chain_title": "Agent volume and quality",
+    "question": "Which agents have the highest principal outstanding?",
+    "conversation_id": "12024cb43897",
+    "status": "Error",
+    "latency_s": 45.67695853600162,
+    "db_duration_ms": null,
+    "route_sources": [
+      "db"
+    ],
+    "route_model": "deterministic",
+    "card_types": [],
+    "row_count": null,
+    "answer": "",
+    "sql": "",
+    "error": "Request timed out after 45s"
+  },
+  {
+    "id": 100,
+    "chain_id": 20,
+    "turn": 5,
+    "role": "CGO",
+    "category": "Agent productivity",
+    "chain_title": "Agent volume and quality",
+    "question": "For the leading agent, show the linked customers.",
+    "conversation_id": "12024cb43897",
+    "status": "Answered",
+    "latency_s": 1.0841090249996341,
+    "db_duration_ms": 0,
+    "route_sources": [
+      "db"
+    ],
+    "route_model": "catalog",
+    "card_types": [
+      "chart"
+    ],
+    "row_count": 1,
+    "answer": "Principal outstanding (whole book) was \u20b9214.00 Cr in 2026-09-05. This measures cumulative disbursed minus cumulative principal repaid across loan accounts.",
+    "sql": "SELECT SUM(lam.disbursed_amount - lam.principal_repaid) AS principal_outstanding_book\nFROM gold.semantic_loan_account AS lam\nLIMIT 200",
+    "error": ""
+  }
+]
