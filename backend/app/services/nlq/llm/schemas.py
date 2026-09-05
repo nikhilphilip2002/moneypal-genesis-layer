@@ -33,6 +33,24 @@ def plan_schema(catalog: Catalog | None = None) -> dict[str, Any]:
 
     from app.services.worklists.rules import FILTERABLE as worklist_filterable
 
+    scalar_filter_value = {
+        "anyOf": [
+            {"type": "string"},
+            {"type": "number"},
+            {"type": "boolean"},
+        ],
+    }
+    filter_value = {
+        "anyOf": [
+            *scalar_filter_value["anyOf"],
+            {
+                "type": "array",
+                "items": scalar_filter_value,
+                "minItems": 1,
+            },
+        ],
+    }
+
     period = {
         "type": "object",
         "properties": {
@@ -67,7 +85,7 @@ def plan_schema(catalog: Catalog | None = None) -> dict[str, Any]:
                     "between", "contains", "is_null",
                 ],
             },
-            "value": {},
+            "value": filter_value,
         },
         "required": ["field", "op"],
         "additionalProperties": False,
@@ -100,7 +118,7 @@ def plan_schema(catalog: Catalog | None = None) -> dict[str, Any]:
                             "type": "string",
                             "enum": ["eq", "ne", "gt", "gte", "lt", "lte", "between", "is_null"],
                         },
-                        "value": {},
+                        "value": filter_value,
                     },
                     "required": ["field", "op"],
                     "additionalProperties": False,
@@ -198,7 +216,7 @@ def plan_schema(catalog: Catalog | None = None) -> dict[str, Any]:
                             "properties": {
                                 "field": {"type": "string", "enum": sorted(worklist_filterable)},
                                 "op": {"type": "string", "enum": ["eq", "in"]},
-                                "value": {},
+                                "value": filter_value,
                             },
                             "required": ["field", "op", "value"],
                             "additionalProperties": False,

@@ -8,6 +8,7 @@ from app.services.nlq.contracts import Lineage, LookupPlan
 from app.services.nlq.executor import QueryResult
 from app.services.nlq.lookup import (
     _agent_accounts,
+    _agent_customers,
     _candidate_agents,
     _agent_count,
     _agent_details,
@@ -86,6 +87,14 @@ from app.services.nlq.planner import plan
             "agent_code", "AGNT45", "agent_accounts",
         ),
         (
+            "show me customers under vanitha",
+            "agent_name", "vanitha", "agent_customers",
+        ),
+        (
+            "borrowers under agent 45",
+            "agent_code", "AGNT45", "agent_customers",
+        ),
+        (
             "what are the branches is there",
             "branch", "all", "branch_directory",
         ),
@@ -147,6 +156,18 @@ async def test_record_lookup_bypasses_the_llm_planner():
     outcome = await plan("what is ARUNA P repayment history")
 
     assert isinstance(outcome.plan, LookupPlan)
+    assert outcome.attempts == 0
+    assert outcome.model == "deterministic"
+
+
+@pytest.mark.anyio
+async def test_implicit_agent_customer_followup_bypasses_the_llm_planner():
+    outcome = await plan("show me customers under vanitha")
+
+    assert isinstance(outcome.plan, LookupPlan)
+    assert outcome.plan.selector == "agent_name"
+    assert outcome.plan.value == "vanitha"
+    assert outcome.plan.detail == "agent_customers"
     assert outcome.attempts == 0
     assert outcome.model == "deterministic"
 
@@ -371,6 +392,23 @@ def test_agent_accounts_use_exact_code_and_return_only_linked_account_numbers():
     assert "loan_account_number" in attempt.sql
     assert "COUNT(reporting.loan_account_number) OVER ()" in attempt.sql
     assert "customer_name" not in attempt.sql
+
+
+def test_agent_customers_are_distinct_and_use_the_governed_loan_relation():
+    attempt = _agent_customers(
+        LookupPlan(
+            selector="agent_code", value="AGNT45", detail="agent_customers",
+            reasoning="test",
+        ),
+        get_catalog(),
+    )
+
+    assert attempt.validated and attempt.reviewed
+    assert "FROM gold.semantic_loan_account AS reporting" in attempt.sql
+    assert "LOWER(reporting.agent_code) = 'agnt45'" in attempt.sql
+    assert "GROUP BY" in attempt.sql and "reporting.customer_id" in attempt.sql
+    assert "COUNT(DISTINCT reporting.loan_account_number) AS linked_loan_count" in attempt.sql
+    assert attempt.pii_columns == ["customer_name"]
 
 
 def test_agent_account_names_use_the_governed_linked_loan_row_when_requested():

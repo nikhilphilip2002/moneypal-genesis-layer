@@ -183,6 +183,15 @@ _AGENT_NAME_REF = re.compile(
     r"(?P<value>[a-z][\w .'-]{1,100}?)\s*[?!.]*$",
     re.I,
 )
+_IMPLICIT_AGENT_NAME_REF = re.compile(
+    r"\b(?:borrowers?|customers?|clients?)\b[^?]{0,60}\b"
+    r"(?:under|handled\s+by|linked\s+to)\s+(?:the\s+)?"
+    r"(?P<value>[a-z][\w .'-]{1,100}?)\s*[?!.]*$",
+    re.I,
+)
+"""A person after "customers under …" is an agent even when chat shorthand omits the
+word "agent". The captured value still passes `_is_person_name`, so product/branch/period
+phrases cannot become person-level lookups."""
 _AGENT_DETAIL_CUE = re.compile(
     r"\b(?:details?|profiles?|names?|information|info|infor\w*|show|get|give|about|who)\b",
     re.I,
@@ -522,6 +531,10 @@ def detect(question: str) -> LookupPlan | None:
     account = _ACCOUNT_ID.search(text) or _ACCOUNT_ID_BARE.search(text)
     agent = _AGENT_CODE.search(text)
     agent_name = _AGENT_NAME_REF.search(text) if not agent else None
+    if agent_name is None and not agent:
+        implicit_agent = _IMPLICIT_AGENT_NAME_REF.search(text)
+        if implicit_agent and _is_person_name(_clean_name(implicit_agent.group("value"))):
+            agent_name = implicit_agent
     product = _PRODUCT_CODE.search(text) or _PRODUCT_CODE_BARE.search(text)
     # An explicit "product code 13" is already a request for that product; only the bare
     # "product 13" form needs a cue to tell a lookup from a filter on a metric question.
@@ -541,10 +554,15 @@ def detect(question: str) -> LookupPlan | None:
         if _BORROWER_NAME_CUE.search(text) or agent_borrowers:
             requested.append("borrower_name")
         requested.extend(_requested_loan_fields(text))
+        detail = (
+            "agent_customers"
+            if agent_borrowers and not _AGENT_ACCOUNT_CUE.search(text) and not requested[1:]
+            else "agent_accounts"
+        )
         return LookupPlan(
             selector="agent_code",
             value=_agent_code(agent.group("value")),
-            detail="agent_accounts", requested_fields=requested,
+            detail=detail, requested_fields=requested,
             reasoning="loan accounts linked to the governed agent code",
         )
     named_agent_borrowers = bool(
@@ -555,10 +573,15 @@ def detect(question: str) -> LookupPlan | None:
         if _BORROWER_NAME_CUE.search(text) or named_agent_borrowers:
             requested.append("borrower_name")
         requested.extend(_requested_loan_fields(text))
+        detail = (
+            "agent_customers"
+            if named_agent_borrowers and not _AGENT_ACCOUNT_CUE.search(text) and not requested[1:]
+            else "agent_accounts"
+        )
         return LookupPlan(
             selector="agent_name",
             value=_clean_name(agent_name.group("value")),
-            detail="agent_accounts", requested_fields=requested,
+            detail=detail, requested_fields=requested,
             reasoning="loan accounts linked to the resolved governed agent name",
         )
     if agent:
@@ -1121,6 +1144,38 @@ def _agent_accounts(plan: LookupPlan, catalog: Catalog) -> SqlAttempt:
     )
 
 
+def _agent_customers(plan: LookupPlan, catalog: Catalog) -> SqlAttempt:
+    """Return each borrower once for the selected agent, regardless of loan count."""
+    value = _literal(plan.value.lower())
+    display_name = "TRIM(REGEXP_REPLACE(reporting.customer_name, '\\s+', ' ', 'g'))"
+    sql = (
+        "SELECT reporting.customer_id::text AS customer_id, "
+        + "MIN("
+        + display_name
+        + ") AS borrower_name, "
+        "COUNT(DISTINCT reporting.loan_account_number) AS linked_loan_count, "
+        "COUNT(reporting.customer_id) OVER () AS total_linked_customer_count "
+        "FROM gold.semantic_loan_account AS reporting "
+        "WHERE LOWER(reporting.agent_code) = "
+        + value
+        + " AND reporting.sanction_date <= CURRENT_DATE "
+        "GROUP BY reporting.customer_id "
+        "ORDER BY borrower_name, customer_id LIMIT 500"
+    )
+    return _validated_attempt(
+        sql,
+        catalog=catalog,
+        explanation="Distinct governed borrowers linked to the requested agent code.",
+        units={
+            "customer_id": "text",
+            "borrower_name": "text",
+            "linked_loan_count": "count",
+            "total_linked_customer_count": "count",
+        },
+        pii_columns={"customer_name"},
+    )
+
+
 def _agent_directory(catalog: Catalog) -> SqlAttempt:
     sql = (
         "SELECT agent_code, agent_name, agent_type, designation, branch_code, "
@@ -1219,7 +1274,7 @@ def run(plan: LookupPlan, *, role: str | None, catalog: Catalog | None = None) -
                 "scheme_name": "scheme names", "number_of_emis": "tenure",
             }
             requested = ", ".join(fields[field] for field in plan.requested_fields)
-            subject = requested or "loan accounts"
+            subject = "customers" if plan.detail == "agent_customers" else requested or "loan accounts"
             suggestions = []
             for code, row in list(identities.items())[:3]:
                 name = str(row.get("agent_name", "")).strip()
@@ -1247,6 +1302,8 @@ def run(plan: LookupPlan, *, role: str | None, catalog: Catalog | None = None) -
         attempt = _agent_directory(cat)
     elif effective.detail == "agent_accounts":
         attempt = _agent_accounts(effective, cat)
+    elif effective.detail == "agent_customers":
+        attempt = _agent_customers(effective, cat)
     elif effective.detail == "branch_directory":
         attempt = _branch_directory(effective, cat)
     elif effective.detail == "product_details":
@@ -1328,6 +1385,25 @@ def run(plan: LookupPlan, *, role: str | None, catalog: Catalog | None = None) -
         chart.summary = (
             f"Showing {len(chart.rows):,} of {total:,} linked loan account(s){suffix}."
         )
+    elif effective.detail == "agent_customers":
+        total = int(chart.rows[0].get("total_linked_customer_count") or len(chart.rows))
+        for row in chart.rows:
+            row.pop("total_linked_customer_count", None)
+        chart.columns = [
+            column
+            for column in chart.columns
+            if column.name != "total_linked_customer_count"
+        ]
+        chart.series = [
+            series
+            for series in chart.series
+            if series.field != "total_linked_customer_count"
+        ]
+        chart.chart_type = "table"
+        chart.x = None
+        chart.series_by = None
+        chart.title = f"Customers linked to {effective.value}"
+        chart.summary = f"Showing {len(chart.rows):,} of {total:,} linked customer(s)."
     elif effective.detail == "repayment_history":
         first = chart.rows[0]
         totals = {

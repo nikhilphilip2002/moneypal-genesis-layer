@@ -82,3 +82,17 @@ class TestPlanSchemaIsTagged:
     def test_metric_enum_comes_from_the_catalog(self, schema):
         metrics = _branch(schema, "queryspec")["properties"]["spec"]["properties"]["metrics"]
         assert set(metrics["items"]["enum"]) == set(get_catalog().metrics)
+
+    @pytest.mark.parametrize("route", ["queryspec", "analysis", "worklist"])
+    def test_filter_values_cannot_be_arbitrary_objects(self, schema, route):
+        branch = _branch(schema, route)
+        if route == "queryspec":
+            filters = branch["properties"]["spec"]["properties"]["filters"]
+        else:
+            filters = branch["properties"]["filters"]
+        value = filters["items"]["properties"]["value"]
+
+        assert value != {}
+        assert {candidate.get("type") for candidate in value["anyOf"]} == {
+            "string", "number", "boolean", "array",
+        }
