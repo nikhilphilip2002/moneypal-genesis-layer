@@ -135,13 +135,45 @@ class TestStructuralFollowUps:
 
     @pytest.mark.parametrize(
         "question",
-        ["and by branch?", "by branch", "now show me by branch", "break it down by branch"],
+        [
+            "and by branch?",
+            "by branch",
+            "now show me by branch",
+            "now show it by branch",
+            "break it down by branch",
+            "break that down by branch.",
+            "split the result by branch",
+        ],
     )
     def test_adding_a_dimension_is_recognised(self, question, state, catalog):
         resolved, spec = conversation.resolve(question, state, catalog)
         assert spec is not None, "should not have needed the LLM"
         assert "branch" in spec.dimensions
         assert "disbursement" in resolved.lower()
+
+    def test_monthly_trend_adds_the_time_dimension(self, state, catalog):
+        resolved, spec = conversation.resolve("Show the monthly trend.", state, catalog)
+
+        assert spec is not None
+        assert "month" in spec.dimensions
+        assert "disbursement" in resolved.lower()
+
+    def test_application_branch_wording_uses_a_metric_compatible_dimension(self, catalog):
+        state = ConversationState(conversation_id="portfolio")
+        conversation.set_anchor(
+            state,
+            QuerySpec(
+                metrics=["principal_outstanding"],
+                period=Period(relative="today"),
+            ),
+        )
+
+        _resolved, spec = conversation.resolve(
+            "Now show it by application branch.", state, catalog,
+        )
+
+        assert spec is not None
+        assert spec.dimensions == ["branch"]
 
     def test_a_new_categorical_replaces_the_previous_one(self, state, catalog):
         """Stacking would produce a two-dimensional heatmap nobody asked for."""

@@ -46,8 +46,14 @@ _table_ready = False
 # deliberately conservative: a false positive silently answers the wrong question, so
 # anything not clearly elliptical goes down the normal planning path.
 _ADD_DIMENSION = re.compile(
-    r"^(?:and|also|now|ok)?\s*(?:show|split|break(?:\s*it)?\s*down|group)?\s*"
-    r"(?:me\s+)?(?:it\s+)?by\s+(?P<dimension>[a-z_ ]+)\??$",
+    r"^(?:and|also|now|ok)?\s*(?:show|split|break(?:\s+(?:it|that|this))?\s*down|group)?\s*"
+    r"(?:me\s+)?(?:(?:it|that|this|the\s+result)\s+)?by\s+"
+    r"(?P<dimension>[a-z_ ]+?)[?.!]*$",
+    re.IGNORECASE,
+)
+_ADD_TIME_TREND = re.compile(
+    r"^(?:and|also|now|ok)?\s*(?:show\s+)?(?:me\s+)?(?:the\s+)?"
+    r"(?P<dimension>monthly|quarterly|weekly|daily)\s+trend[?.!]*$",
     re.IGNORECASE,
 )
 _WHICH = re.compile(
@@ -287,13 +293,13 @@ def resolve(
     # The structural patterns are checked FIRST. "same for gold loans" contains the word
     # "loans", which lexically matches a metric label and would otherwise be misread as a
     # new subject — losing the follow-up and the anchor with it.
-    for pattern in (_ADD_DIMENSION, _WHICH):
+    for pattern in (_ADD_DIMENSION, _ADD_TIME_TREND, _WHICH):
         match = pattern.match(text)
         if not match:
             continue
-        dimension = _match_dimension(match.group("dimension"), cat)
+        base = _without_explanation(anchor, cat)
+        dimension = _match_dimension(match.group("dimension"), cat, anchor=base)
         if dimension:
-            base = _without_explanation(anchor, cat)
             spec = base.model_copy(
                 update={"dimensions": _replace_categorical(base, dimension, cat)}
             )
@@ -397,7 +403,9 @@ def _worklist_question(anchor: QuerySpec, catalog: Catalog) -> str:
     return f"today's collection priority list{scope}"
 
 
-def _match_dimension(text: str, catalog: Catalog) -> str | None:
+def _match_dimension(
+    text: str, catalog: Catalog, *, anchor: QuerySpec | None = None,
+) -> str | None:
     needle = text.strip().lower().rstrip("?").strip()
     # People drill in the plural — "which branches?", "which accounts?" — while the catalog
     # names dimensions in the singular.
@@ -407,17 +415,36 @@ def _match_dimension(text: str, catalog: Catalog) -> str | None:
     if needle.endswith("s") and len(needle) > 3:
         candidates.append(needle[:-1])
 
+    scored: list[tuple[int, str]] = []
     for candidate in candidates:
         for dim in catalog.dimensions.values():
             if candidate == dim.id or candidate == dim.label.lower():
-                return dim.id
-            if any(candidate == s.lower() for s in dim.synonyms):
-                return dim.id
-    for candidate in candidates:
-        for dim in catalog.dimensions.values():
-            if candidate and candidate in dim.label.lower():
-                return dim.id
-    return None
+                scored.append((2, dim.id))
+            elif any(candidate == s.lower() for s in dim.synonyms):
+                scored.append((2, dim.id))
+            elif candidate and (
+                candidate in dim.label.lower()
+                or (
+                    dim.label.lower() in candidate
+                    and len(candidate.split()) <= 3
+                )
+            ):
+                scored.append((1, dim.id))
+    scored = list(dict.fromkeys(scored))
+    if anchor is None:
+        return max(scored, default=(0, None))[1]
+
+    metric = catalog.metrics.get(anchor.metrics[0])
+    if metric is None:
+        return None
+    compatible = [
+        item
+        for item in scored
+        if catalog.dimensions[item[1]].is_time
+        or catalog.dimensions[item[1]].table == metric.base_table
+        or catalog.join_between(metric.base_table, catalog.dimensions[item[1]].table) is not None
+    ]
+    return max(compatible, default=(0, None))[1]
 
 
 def _match_filter_value(text: str, catalog: Catalog) -> tuple[str, str, str] | None:

@@ -256,6 +256,29 @@ class TestDispatch:
         assert fake.calls == []
 
     @pytest.mark.anyio
+    @pytest.mark.parametrize(
+        "question",
+        ["Break that down by scheme.", "Now show it by application branch."],
+    )
+    async def test_natural_structural_followups_bypass_router_model(
+        self, monkeypatch, question,
+    ):
+        fake = FakeLLM('{"route":"dispatch","sources":["web"],"intent":"wrong"}')
+        _use(monkeypatch, fake)
+
+        decision = await router.route(
+            question,
+            role="admin",
+            history_messages=[
+                {"role": "user", "content": "What is our current PAR 30 ratio?"},
+                {"role": "assistant", "content": "PAR 30 was 4.2%."},
+            ],
+        )
+
+        assert decision.sources == ["db"]
+        assert fake.calls == []
+
+    @pytest.mark.anyio
     async def test_lending_typos_are_normalized_before_routing(self, monkeypatch):
         fake = FakeLLM('{"route":"dispatch","sources":["db"],"intent":"x"}')
         _use(monkeypatch, fake)

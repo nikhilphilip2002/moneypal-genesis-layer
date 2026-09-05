@@ -59,7 +59,7 @@ _BORROWER_COUNT_RE = re.compile(
     re.IGNORECASE,
 )
 _AGENT_CODE_RE = re.compile(
-    r"\b(?:agent|agnt)\s*[-:# ]*(?P<code>[a-z0-9_-]+)\b", re.IGNORECASE
+    r"\b(?:agent|agnt)(?!s\b)\s*[-:# ]*(?P<code>(?:agent|agnt)?\d+)\b", re.IGNORECASE
 )
 _MONTHS = {
     name.lower(): number
@@ -708,6 +708,12 @@ def _common_business_plan(question: str) -> PlanResult | None:
     if (
         _TOTAL_SANCTIONED_LOAN_COUNT_RE.search(question)
         and not _SANCTION_METRIC_RE.search(question)
+        and not re.search(
+            r"\b(?:by|per|each|rank|top|bottom|which)\b[^?]{0,45}"
+            r"\b(?:agents?|branches?|schemes?|products?|borrowers?|customers?)\b",
+            question,
+            re.I,
+        )
     ):
         return QuerySpecPlan(
             spec={
@@ -730,6 +736,148 @@ def _common_business_plan(question: str) -> PlanResult | None:
             reasoning="total sanctioned amount across the full available loan book",
         )
     return None
+
+
+_GENERIC_METRIC_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
+    ("par_90", re.compile(r"\b(?:PAR\s*90|90\+\s*DPD)\b", re.I)),
+    ("par_60", re.compile(r"\b(?:PAR\s*60|60\+\s*DPD)\b", re.I)),
+    ("par_30", re.compile(r"\b(?:PAR\s*30|portfolio\s+at\s+risk|30\+\s*DPD)\b", re.I)),
+    ("npa_ratio", re.compile(r"\b(?:NPA|GNPA|non[- ]performing)\s+(?:ratio|rate)\b", re.I)),
+    ("collection_efficiency", re.compile(r"\bcollection\s+efficiency\b", re.I)),
+    ("avg_ticket_size", re.compile(r"\b(?:average|avg|mean)\s+(?:sanctioned\s+)?(?:ticket|loan\s+size)\b|\bticket\s+size\b", re.I)),
+    ("avg_interest_rate", re.compile(r"\b(?:weighted\s+)?average\s+(?:contractual\s+)?interest\s+rate\b", re.I)),
+    ("overdue_principal", re.compile(r"\b(?:overdue\s+principal|principal\s+(?:overdue|in\s+arrears))\b", re.I)),
+    ("principal_outstanding", re.compile(r"\bprincipal[- ]+outstanding\b", re.I)),
+    ("amount_due", re.compile(r"\b(?:total\s+)?amount\s+due\b", re.I)),
+    ("interest_collected", re.compile(r"\binterest\b[^?]{0,30}\b(?:collected|repaid|paid)\b|\b(?:collected|repaid|paid)\b[^?]{0,30}\binterest\b", re.I)),
+    (
+        "principal_collected",
+        re.compile(
+            r"\bprincipal\b[^?]{0,30}\b(?:collected|repaid|paid|repayments?)\b|"
+            r"\b(?:collected|repaid|paid|repayments?)\b[^?]{0,30}\bprincipal\b",
+            re.I,
+        ),
+    ),
+    ("amount_collected", re.compile(r"\b(?:total\s+)?(?:amount\s+)?collect(?:ed|ions?)\b", re.I)),
+    (
+        "customer_count",
+        re.compile(
+            r"\b(?:borrower|customer|client)\s+count\b|"
+            r"\b(?:distinct|unique|how\s+many)\s+(?:borrowers?|customers?|clients?)\b|"
+            r"\b(?:most|highest\s+(?:number|count)\s+of)\s+(?:female\s+|male\s+)?"
+            r"(?:borrowers?|customers?|clients?)\b",
+            re.I,
+        ),
+    ),
+    ("disbursement_count", re.compile(r"\b(?:number|count)\s+of\s+disbursements?\b|\bdisbursement\s+count\b", re.I)),
+    ("disbursement_total", re.compile(r"\b(?:total\s+)?disburs(?:ed|ement|ements)(?:\s+amount|\s+volume)?\b", re.I)),
+    ("sanctioned_amount", re.compile(r"\b(?:total\s+)?sanctioned\s+amounts?\b", re.I)),
+    ("loan_count", re.compile(r"\b(?:sanctioned\s+)?loan\s+count\b|\b(?:how\s+many|number\s+of)\s+(?:sanctioned\s+)?loan\s+accounts?\b|\bhow\s+many\s+accounts\b|\bmost\s+accounts\b", re.I)),
+)
+
+
+def _generic_governed_metric_plan(question: str, catalog: Catalog) -> QuerySpecPlan | None:
+    """Plan an explicit metric/group/period request from catalog vocabulary alone.
+
+    This deliberately handles only unambiguous single-metric questions. Comparative,
+    causal, and multi-metric analyses retain their specialised or model-backed paths.
+    """
+    if re.search(r"\bbelonging(?:\s+to)?\b", question, re.I):
+        return None
+    if _COMPARE_RE.search(question) or re.search(
+        r"\b(?:growth|grew|declin(?:e|ed|ing)|changed?|difference|gap|relative\s+to|"
+        r"combine|percentage)\b",
+        question,
+        re.I,
+    ):
+        return None
+
+    metrics = [metric for metric, pattern in _GENERIC_METRIC_PATTERNS if pattern.search(question)]
+    metrics = list(dict.fromkeys(metrics))
+    if "disbursement_count" in metrics and "disbursement_total" in metrics:
+        metrics.remove("disbursement_total")
+    if "amount_collected" in metrics and any(
+        specific in metrics
+        for specific in ("collection_efficiency", "principal_collected", "interest_collected")
+    ):
+        metrics.remove("amount_collected")
+    # "NPA principal outstanding" means outstanding filtered to NPA, not the NPA ratio.
+    if "principal_outstanding" in metrics and "npa_ratio" in metrics:
+        metrics.remove("npa_ratio")
+    if len(metrics) != 1:
+        return None
+    metric = metrics[0]
+
+    dimensions: list[str] = []
+    dimension_patterns = (
+        ("month", r"\b(?:monthly|by\s+month|each\s+month|month[- ]on[- ]month|trend)\b"),
+        ("scheme", r"\b(?:by|per|each)\s+(?:loan\s+)?schemes?\b|\b(?:which|rank|top|bottom)\b[^?]{0,35}\bschemes?\b"),
+        ("branch", r"\b(?:by|per|each)\s+(?:application\s+)?branches?\b|\b(?:which|rank|top|bottom)\b[^?]{0,35}\b(?:application\s+)?branches?\b"),
+        ("asset_class", r"\bby\s+asset\s+class(?:ification)?\b|\basset\s+class(?:ification)?\s+(?:breakdown|mix|composition)\b"),
+        ("gender", r"\bby\s+(?:borrower\s+|customer\s+)?gender\b"),
+        ("account_status", r"\bby\s+account\s+status\b"),
+        ("borrower", r"\b(?:top|which|rank)\b[^?]{0,35}\b(?:borrowers?|customers?|clients?)\b"),
+        ("loan_agent", r"\bby\s+agents?\b|\b(?:top|which|rank)\b[^?]{0,35}\bagents?\b"),
+    )
+    for dimension, pattern in dimension_patterns:
+        if re.search(pattern, question, re.I):
+            dimensions.append(dimension)
+
+    filters = _catalog_entity_filters(question, catalog)
+    gender = _enum_filter(question, catalog, "gender")
+    if gender is not None and "gender" not in dimensions:
+        filters.append(gender)
+    if metric == "loan_count" and any(item.field == "asset_class" for item in filters):
+        metric = "classified_account_count"
+
+    subject = catalog.metrics[metric]
+    if re.search(r"\b(?:this|current)\s+(?:financial|fiscal)\s+year\b|\bthis\s+fy\b", question, re.I):
+        relative = "fy_to_date"
+    elif re.search(r"\blast\s+(?:financial|fiscal)\s+year\b|\blast\s+fy\b", question, re.I):
+        relative = "last_fy"
+    elif re.search(r"\bthis\s+month\b", question, re.I):
+        relative = "this_month"
+    elif re.search(r"\blast\s+month\b", question, re.I):
+        relative = "last_month"
+    elif re.search(r"\blast\s+90\s+days?\b", question, re.I):
+        relative = "last_90_days"
+    elif re.search(r"\blast\s+30\s+days?\b", question, re.I):
+        relative = "last_30_days"
+    else:
+        relative = "today" if subject.grain == "point_in_time" or subject.point_in_time else "all_time"
+
+    limit_match = re.search(r"\b(?:top|bottom)\s+(?P<n>\d{1,4})\b", question, re.I)
+    word_limit = re.search(r"\b(?:top|which)\s+(?P<n>five|ten)\b", question, re.I)
+    limit = int(limit_match.group("n")) if limit_match else (
+        {"five": 5, "ten": 10}[word_limit.group("n").lower()] if word_limit else 200
+    )
+    ranking = bool(re.search(r"\b(?:top|bottom|rank|highest|lowest|largest|most|least)\w*\b", question, re.I))
+    direction = "asc" if re.search(r"\b(?:bottom|lowest|least|smallest)\b", question, re.I) else "desc"
+
+    spec: dict[str, Any] = {
+        "metrics": [metric],
+        "dimensions": dimensions,
+        "filters": filters,
+        "period": {"relative": relative},
+        "limit": max(1, min(limit, 5000)),
+    }
+    if ranking and dimensions:
+        spec["order_by"] = {"field": metric, "direction": direction}
+    if re.search(r"\b(?:share|mix|composition)\b", question, re.I):
+        spec["as_share"] = True
+    plan = QuerySpecPlan(
+        spec=spec,
+        confidence=1.0,
+        reasoning="explicit metric, grouping, filters, ranking, and period resolved from the governed catalog",
+    )
+    try:
+        compile_spec(plan.spec, catalog=catalog)
+    except CompileError:
+        # Some natural combinations require an undeclared multi-hop join (for example,
+        # disbursement events -> loan account -> customer gender). The generated-SQL path
+        # may answer those, but the governed compiler must never emit an invalid shortcut.
+        return None
+    return plan
 
 
 def _catalog_tables_for(question: str, catalog: Catalog) -> list[str]:
@@ -906,9 +1054,18 @@ def _top_agents_plan(question: str) -> QuerySpecPlan | None:
     requested_limit = match.groupdict().get("limit")
     limit = max(1, min(int(requested_limit), 5000)) if requested_limit else 10
     by_customers = bool(re.search(r"\b(?:borrowers?|customers?)\b", question, re.I))
-    metric = "customer_count" if by_customers else "agent_linked_loans"
-    dimension = "loan_agent" if by_customers else "agent_profile"
-    period = "all_time" if by_customers else "today"
+    if by_customers:
+        metric, dimension, period = "customer_count", "loan_agent", "all_time"
+    elif _DISBURSEMENT_METRIC_RE.search(question):
+        metric, dimension, period = "disbursement_total", "loan_agent", "all_time"
+    elif _SANCTION_METRIC_RE.search(question):
+        metric, dimension, period = "sanctioned_amount", "loan_agent", "all_time"
+    elif _AGENT_LOAN_COUNT_RE.search(question):
+        metric, dimension, period = "loan_count", "loan_agent", "all_time"
+    elif _PRINCIPAL_OUTSTANDING_RE.search(question):
+        metric, dimension, period = "principal_outstanding", "loan_agent", "today"
+    else:
+        metric, dimension, period = "agent_linked_loans", "agent_profile", "today"
     return QuerySpecPlan(
         spec={
             "metrics": [metric],
@@ -1170,6 +1327,17 @@ async def plan(
                 confidence=1.0,
                 reasoning="named-borrower principal lookup uses governed SQL",
             ),
+            attempts=0,
+            prompt_version=PROMPT_VERSION,
+            model="deterministic",
+            provider="catalog",
+            duration_ms=0,
+        )
+
+    governed_metric = _generic_governed_metric_plan(planning_question, cat)
+    if governed_metric is not None:
+        return PlanOutcome(
+            plan=governed_metric,
             attempts=0,
             prompt_version=PROMPT_VERSION,
             model="deterministic",

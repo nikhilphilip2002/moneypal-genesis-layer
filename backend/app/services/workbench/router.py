@@ -54,6 +54,8 @@ _DESCRIPTIVE_CUES = re.compile(
 )
 _STRUCTURAL_FOLLOWUP_CUE = re.compile(
     r"^\s*(?:and\s+|now\s+|also\s+|what\s+about\s+|how\s+about\s+)?"
+    r"(?:(?:show|split|group)\s+(?:(?:me\s+)?(?:it|that|this|the\s+result)\s+)?|"
+    r"break(?:\s+(?:it|that|this))?\s+down\s+)?"
     r"(?:by\s+|for\s+|in\s+|over\s+|with\s+|without\s+|top\s+|bottom\s+)",
     re.IGNORECASE,
 )
