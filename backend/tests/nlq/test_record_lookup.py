@@ -22,6 +22,7 @@ from app.services.nlq.lookup import (
     _product_details,
     _shape_loan_details,
     detect,
+    resolve_followup,
     run,
 )
 from app.services.nlq.planner import plan
@@ -437,6 +438,29 @@ def test_agent_account_projection_preserves_every_explicitly_requested_field():
     assert "reporting.customer_name AS borrower_name" in attempt.sql
     assert "reporting.sanction_amount" in attempt.sql
     assert "reporting.scheme_name" in attempt.sql
+    assert "reporting.number_of_emis" in attempt.sql
+
+
+def test_named_agent_customer_table_can_be_refined_with_disbursed_amount_and_tenure():
+    question = resolve_followup(
+        "also and the disbursed loan amount and tenure along with the above table",
+        [
+            {"role": "user", "content": "show me customers under Vanitha"},
+            {"role": "assistant", "content": "Showing 338 of 338 linked customers."},
+        ],
+    )
+
+    plan_result = detect(question)
+
+    assert plan_result is not None
+    assert plan_result.selector == "agent_name"
+    assert plan_result.value == "Vanitha"
+    assert plan_result.detail == "agent_accounts"
+    assert plan_result.requested_fields == [
+        "borrower_name", "disbursed_amount", "number_of_emis",
+    ]
+    attempt = _agent_accounts(plan_result, get_catalog())
+    assert "reporting.disbursed_amount" in attempt.sql
     assert "reporting.number_of_emis" in attempt.sql
 
 

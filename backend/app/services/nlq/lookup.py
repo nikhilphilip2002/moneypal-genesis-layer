@@ -77,12 +77,15 @@ _LOAN_DETAIL_CUE = re.compile(
     re.I,
 )
 _SANCTION_AMOUNT_CUE = re.compile(
-    r"\b(?:loan|sanction(?:ed)?)\s+amount\b|\bhow\s+much\s+(?:was\s+)?(?:the\s+)?loan\b",
+    r"(?<!disbursed )(?<!disbursement )(?<!disbursment )\bloan\s+amount\b|"
+    r"\bsanction(?:ed)?\s+amount\b|"
+    r"\bhow\s+much\s+(?:was\s+)?(?:the\s+)?loan\b",
     re.I,
 )
 _SANCTION_DATE_CUE = re.compile(r"\b(?:sanction|loan)\s+date\b", re.I)
 _DISBURSEMENT_AMOUNT_CUE = re.compile(
-    r"\bdisburs(?:ed|e?ment)\s+amount\b|\bamount\s+disburs(?:ed|e?ment)\b",
+    r"\bdisburs(?:ed|e?ment)\s+(?:loan\s+)?amount\b|"
+    r"\bamount\s+disburs(?:ed|e?ment)\b",
     re.I,
 )
 _DISBURSEMENT_DATE_CUE = re.compile(
@@ -293,7 +296,7 @@ _REFINEMENT_FIELD = (
     r"email(?:\s+address(?:es)?)?|designations?|branch\s+codes?|"
     r"(?:loan\s+)?account\s+numbers?|customer\s+ids?|"
     r"sanction(?:ed)?\s+amounts?|sanction\s+dates?|loan\s+amounts?|"
-    r"disburs(?:ed|e?ment)\s+(?:amounts?|dates?)|schemes?(?:\s+names?)?|"
+    r"disburs(?:ed|e?ment)\s+(?:loan\s+)?(?:amounts?|dates?)|schemes?(?:\s+names?)?|"
     r"tenures?|tenors?|loan\s+terms?|number\s+of\s+(?:emis|instalments?|installments?))"
 )
 _RECORD_REFINEMENT = re.compile(
@@ -302,7 +305,8 @@ _RECORD_REFINEMENT = re.compile(
     r"\s+(?:me\s+)?)?"
     r"(?:along\s+with|together\s+with|with|and|also|plus|including|include)\s+"
     rf"{_REFINEMENT_FIELD}(?:\s*(?:,|and)\s*{_REFINEMENT_FIELD})*"
-    r"(?:\s+(?:as\s+well|too|also|please))?\s*[?!.]*$",
+    r"(?:\s+(?:as\s+well|too|also|please))?"
+    r"(?:\s+along\s+with\s+(?:the\s+)?(?:above|same|previous)\s+table)?\s*[?!.]*$",
     re.I,
 )
 """«along with names» — a refinement that only widens the previous record request.
@@ -746,8 +750,37 @@ def resolve_followup(question: str, history_messages: list[dict[str, str]] | Non
         if code is None:
             return question
         return text[: anaphor.start()] + _agent_code(code.group("value")) + text[anaphor.end():]
-    if detect(previous) is None:
+    previous_plan = detect(previous)
+    if previous_plan is None:
         return question
+    # Keep a named agent at the end of the reconstructed request. The agent-name grammar
+    # is deliberately end-anchored so prose elsewhere in a question cannot be mistaken for
+    # a directory identity. Simply appending the refinement would therefore turn
+    # "customers under Vanitha" into a non-lookup and let the trailing word "table" route
+    # the request to the schema source.
+    if previous_plan.detail in {"agent_customers", "agent_accounts"}:
+        requested = list(previous_plan.requested_fields)
+        if previous_plan.detail == "agent_customers" and "borrower_name" not in requested:
+            requested.insert(0, "borrower_name")
+        for field in _requested_loan_fields(text):
+            if field not in requested:
+                requested.append(field)
+        labels = {
+            "borrower_name": "borrower names",
+            "sanction_amount": "sanctioned amount",
+            "sanction_date": "sanction date",
+            "disbursed_amount": "disbursed amount",
+            "first_disbursement_date": "first disbursement date",
+            "scheme_name": "scheme name",
+            "number_of_emis": "tenure",
+        }
+        fields = ", ".join(labels[field] for field in requested)
+        selector = (
+            f"agent code {previous_plan.value}"
+            if previous_plan.selector == "agent_code"
+            else f"agent {previous_plan.value}"
+        )
+        return f"show customers with {fields} under {selector}"
     return f"{previous} {text}"
 
 
