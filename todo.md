@@ -573,6 +573,13 @@ optional/deferred and have not been started.
 
 ### Final acceptance
 
+- [x] Serialize llama.cpp calls within and across the API/PostgreSQL MCP containers.
+- [x] Send explicit prompt-cache and no-thinking controls to llama.cpp.
+- [x] Limit prompt-cache warmup generation to one token.
+- [x] Replace the planner's complete column YAML with the compact governed semantic surface.
+- [x] Use retrieved table detail, rather than every catalog column, for text-to-SQL.
+- [x] Document the required single-slot Qwen3.5/3.6 server configuration.
+
 - [x] Safety, PII, role, and read-only scoped tests pass 100% locally.
 - [x] Omitted/false consent produces zero Qdrant and web operations in local tests.
 - [x] True consent enables only the role/deployment intersection.

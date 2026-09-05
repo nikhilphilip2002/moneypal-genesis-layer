@@ -9,7 +9,7 @@ import yaml
 from app.services.nlq.catalog import get_catalog
 from app.services.nlq.catalog.loader import ACTIVE_DEFS_DIR, DEFS_DIR
 from app.services.nlq.catalog.retrieval import retrieve
-from app.services.nlq.llm.prompts import build_messages, gold_yaml_block
+from app.services.nlq.llm.prompts import build_messages, catalog_block, gold_yaml_block
 
 
 @pytest.fixture(scope="module")
@@ -58,7 +58,7 @@ class TestLoads:
             assert "on_columns" in entry, f"{entry.get('id')} lost its join condition"
             assert True not in entry, f"{entry.get('id')} has a YAML-boolean key"
 
-    def test_complete_gold_yaml_is_sent_to_the_planner(self, catalog):
+    def test_complete_gold_yaml_projection_remains_available(self, catalog):
         block = gold_yaml_block(catalog)
         for name in (
             "tables.yaml", "columns.yaml", "metrics.yaml", "dimensions.yaml",
@@ -71,9 +71,25 @@ class TestLoads:
             assert column.column in block
         for name in ("tables.yaml", "metrics.yaml", "dimensions.yaml", "joins.yaml", "enums.yaml"):
             assert (ACTIVE_DEFS_DIR / name).read_text(encoding="utf-8") in block
+
+    def test_planner_uses_compact_complete_semantic_surface(self, catalog):
+        full = gold_yaml_block(catalog)
+        compact = catalog_block(catalog)
+        assert len(compact) < len(full) / 2
+        assert len(compact) < 25_000
+        for table in catalog.allowed_tables():
+            assert table in compact
+        for metric in catalog.metrics:
+            assert metric in compact
+        for dimension in catalog.dimensions:
+            assert dimension in compact
+        for persona in catalog.personas:
+            assert persona in compact
+
         messages = build_messages("total disbursement in July 2026", catalog=catalog)
         assert len([message for message in messages if message["role"] == "system"]) == 1
-        assert messages[0]["content"].startswith(block)
+        assert messages[0]["content"].startswith(compact)
+        assert "### columns.yaml" not in messages[0]["content"]
 
 
 class TestReferentialIntegrity:

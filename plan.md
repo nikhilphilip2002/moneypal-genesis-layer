@@ -503,13 +503,18 @@ duplicates its output schema.
   effective source schema/state remains in the dynamic portion.
 - Avoid normal-path per-source system prompts.
 - Verify exact prefix reuse; logical history equality alone is not a cache hit.
-- Preserve the warmed Gold prefix for NLQ until the compact semantic-pack project replaces it.
-- Test cache behavior under concurrent llama.cpp slots.
+- Preserve the compact, warmed Gold semantic prefix for NLQ. Retrieve column-level schema
+  only for the text-to-SQL long tail.
+- Test cache behavior under production traffic; serialize Qwen3.5/3.6 calls because their
+  hybrid recurrent checkpoints are not reliable across concurrent llama.cpp slots.
 
 ### Provider-specific cache controls
 
-- llama.cpp: retain and measure cache_prompt and n_cache_reuse behavior; tune slots and reuse
-  only from production-like load tests.
+- llama.cpp: send `cache_prompt=true` explicitly. For the deployed Qwen3.5/3.6 hybrid
+  recurrent model, serialize calls across the API and PostgreSQL MCP processes and operate
+  llama-server with one slot. Treat `n_cache_reuse` as a separate KV-shifting mechanism,
+  not as a fix for recurrent-state invalidation, and enable it only after a deployed-model
+  benchmark. Warm the stable planner prefix with a one-token completion.
 - OpenAI Responses API, when selected and supported: use a stable prompt_cache_key, place an
   explicit cache breakpoint immediately after reusable instructions when beneficial, and
   measure cached_tokens, cache_write_tokens, latency, and weighted cost.

@@ -28,7 +28,7 @@ from app.services.nlq.catalog import Catalog, get_catalog
 from app.services.nlq.catalog.retrieval import retrieve
 from app.services.nlq.contracts import Lineage
 from app.services.nlq.llm import LLMError, get_llm_client
-from app.services.nlq.llm.prompts import gold_yaml_block
+from app.services.nlq.llm.prompts import catalog_block
 from app.services.nlq.llm.schemas import sql_schema
 from app.services.nlq.llm.telemetry import stable_hash
 from app.services.nlq.normalization import normalize_lending_question
@@ -36,7 +36,7 @@ from app.services.nlq.validator import ValidationError, validate
 
 logger = logging.getLogger(__name__)
 
-SQL_PROMPT_VERSION = "sql-v1"
+SQL_PROMPT_VERSION = "sql-v2-compact-catalog"
 
 SYSTEM_PROMPT = """\
 You write a single PostgreSQL SELECT statement answering the user's question about a \
@@ -151,7 +151,7 @@ async def generate(
         {
             "role": "system",
             "content": (
-                gold_yaml_block(cat)
+                catalog_block(cat)
                 + "\n\nSQL GENERATION TASK INSTRUCTIONS\n"
                 + _system_prompt(allow_pii)
                 + "\n\nRETRIEVED TABLE DETAIL\n"
@@ -176,7 +176,7 @@ async def generate(
                 prompt_version=SQL_PROMPT_VERSION,
                 catalog_version=cat.version,
                 prefix_hash=stable_hash(
-                    gold_yaml_block(cat)
+                    catalog_block(cat)
                     + "\n\nSQL GENERATION TASK INSTRUCTIONS\n"
                     + _system_prompt(allow_pii)
                 ),

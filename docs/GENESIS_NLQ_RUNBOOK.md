@@ -36,6 +36,7 @@ NLQ_LLM_MODEL=qwen3.6-32b-instruct-q4_K_M
 NLQ_LLM_TIMEOUT_S=30
 NLQ_LLM_MAX_RETRIES=1
 NLQ_LLM_THINKING=false
+NLQ_LLM_LOCK_PATH=/srv/backend/data/logs/.llamacpp.lock
 
 NLQ_DB_USER=nlq_readonly
 NLQ_DB_PASSWORD=<different from POSTGRES_PASSWORD>
@@ -47,8 +48,15 @@ NLQ_MAX_ROWS=5000
 
 ```
 llama-server -m qwen3.6-32b-instruct-q4_K_M.gguf \
-  -ngl 99 -c 8192 --parallel 4 --host 0.0.0.0 --port 8080
+  -ngl 99 -c 32768 --parallel 1 --cache-prompt --reasoning off \
+  --host 0.0.0.0 --port 8080
 ```
+
+Keep `--parallel 1` for Qwen3.5/3.6. Their hybrid recurrent state can invalidate a matched
+prompt checkpoint when requests move across slots, and concurrent prefill also starves the
+active generation on the current GPU. The application serializes calls in-process and with
+the shared `NLQ_LLM_LOCK_PATH`; the server setting is the final queueing boundary for any
+other client that reaches port 8080.
 
 Pin the exact GGUF SHA-256 here when the node is provisioned, so a rebuild is reproducible:
 
@@ -152,6 +160,7 @@ WHERE feedback = 'down' ORDER BY ts DESC;
 | Every question refuses | Catalog failed to load | `/nlq/health` → `catalog.status`; check the YAML |
 | Every question refuses, catalog and DB healthy | The planner is failing and demoting to text-to-SQL, which then declines. The `plan` SSE frame shows `route: "sql", attempts: 2, repaired: true` | Read the `NLQ plan rejected on attempt N` log line — it carries the exact reason. A thinking model with `NLQ_LLM_THINKING=true` spends the whole token budget on `reasoning_content` and returns empty `content` |
 | `ask: false`, `execute: true` | LLM unreachable | Expected degradation. The ask bar says so; dashboards keep working |
+| A repeated ~18k prompt is fully evaluated despite high `f_keep` | Qwen3.5/3.6 recurrent checkpoint was invalidated, or concurrent traffic moved to another slot | Run llama-server with `--parallel 1 --cache-prompt`; verify both app containers share `NLQ_LLM_LOCK_PATH`. The compact planner prefix should now be about 8k tokens before history |
 | PAR looks impossibly low | Denominator is the classified subset (₹198.5 Cr), not the whole book (₹275.2 Cr) | Working as documented — see the coverage warning on every PAR answer, and §7 below |
 | Disbursement reads zero before Oct 2025 | The event log starts 2025-10-15 | Working as documented; the answer says so |
 | A trend has missing months | Classification history starts 2026-05-22 | Working as documented — gaps are shown rather than filled with zero |

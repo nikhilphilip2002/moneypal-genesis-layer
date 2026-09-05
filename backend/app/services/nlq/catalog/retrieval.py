@@ -7,11 +7,10 @@ different half of the questions.
 
 Two things worth stating plainly:
 
-1. **The planner does not use retrieval for metrics and dimensions.** The full metric and
-   dimension list is ~1,400 tokens — well inside the 4k budget — so it is sent whole, every
-   time. Retrieval that drops the one metric the user meant is a wrong answer; retrieval
-   that saves 1k tokens on a 4k budget buys nothing. `retrieve()` exists for the text-to-SQL
-   path, where the ~700 columns genuinely do not fit, and for resolving enum values.
+1. **The planner does not use retrieval for metrics and dimensions.** Its compact semantic
+   surface is roughly 5,000 tokens and is sent whole so retrieval cannot drop the one metric
+   the user meant. `retrieve()` exists for the text-to-SQL path, where the hundreds of
+   columns genuinely do not fit economically, and for resolving enum values.
 
 2. **Degradation is deliberate.** If Qdrant is unreachable or the embedding model cannot
    load, retrieval falls back to lexical-only and says so in `RetrievalResult.mode`. A

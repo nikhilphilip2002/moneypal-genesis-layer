@@ -14,9 +14,12 @@ pipeline: no model-specific quirk is allowed to leak past this module.
 from __future__ import annotations
 
 import asyncio
+import fcntl
 import json
 import logging
+import os
 import re
+from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from typing import Any, Protocol, runtime_checkable
 
@@ -35,6 +38,40 @@ from app.services.nlq.llm.telemetry import (
 logger = logging.getLogger(__name__)
 
 GROQ_BASE_URL = "https://api.groq.com/openai/v1"
+
+
+@asynccontextmanager
+async def _local_request_gate(provider: str):
+    """Serialize llama.cpp work across both application containers.
+
+    A normal asyncio lock only coordinates one process. The production API and PostgreSQL
+    MCP containers share ``LOG_DIR``, so an advisory lock there also prevents their local
+    model calls from occupying different llama-server slots concurrently. Acquisition is
+    non-blocking to the event loop and cancellation always closes the descriptor.
+    """
+    if provider != "llamacpp":
+        yield
+        return
+
+    from app.services.nlq.ratelimit import llm_semaphore
+
+    async with llm_semaphore():
+        path = settings.nlq_llm_lock_path
+        path.parent.mkdir(parents=True, exist_ok=True)
+        descriptor = os.open(path, os.O_CREAT | os.O_RDWR, 0o600)
+        acquired = False
+        try:
+            while not acquired:
+                try:
+                    fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    acquired = True
+                except BlockingIOError:
+                    await asyncio.sleep(0.05)
+            yield
+        finally:
+            if acquired:
+                fcntl.flock(descriptor, fcntl.LOCK_UN)
+            os.close(descriptor)
 
 
 class LLMError(RuntimeError):
@@ -234,6 +271,14 @@ class OpenAICompatibleClient:
             "messages": prepared_messages,
             "stream": False,
         }
+        if self.provider == "llamacpp":
+            # Current llama-server defaults cache_prompt to true, but making it explicit
+            # protects this latency contract from server-version/default drift. The
+            # thinking setting was previously documented and parsed but never applied.
+            payload["cache_prompt"] = True
+            payload["chat_template_kwargs"] = {
+                "enable_thinking": settings.nlq_llm_thinking,
+            }
         if max_output_tokens is not None:
             payload["max_tokens"] = max(1, int(max_output_tokens))
         response_format = self._response_format(json_schema)
@@ -243,38 +288,45 @@ class OpenAICompatibleClient:
         last_exc: Exception | None = None
         attempts_run = 0
         effective_timeout_s = timeout_s if timeout_s is not None else self.timeout_s
-        for attempt in range(self.max_retries + 1):
-            attempts_run = attempt + 1
-            try:
-                resp = await self._http().post(
-                    "/chat/completions",
-                    json=payload,
-                    timeout=effective_timeout_s,
-                )
-            except httpx.TimeoutException as exc:
-                last_exc = LLMTimeout(
-                    f"{self.provider} timed out after {effective_timeout_s}s"
-                )
-                logger.warning("NLQ LLM timeout (attempt %d): %s", attempt + 1, exc)
-                continue
-            except httpx.HTTPError as exc:
-                last_exc = LLMUnavailable(f"{self.provider} unreachable: {exc}")
-                logger.warning("NLQ LLM transport error (attempt %d): %s", attempt + 1, exc)
-                continue
+        successful_response: tuple[httpx.Response, dict[str, Any], int] | None = None
+        async with _local_request_gate(self.provider):
+            for attempt in range(self.max_retries + 1):
+                attempts_run = attempt + 1
+                try:
+                    resp = await self._http().post(
+                        "/chat/completions",
+                        json=payload,
+                        timeout=effective_timeout_s,
+                    )
+                except httpx.TimeoutException as exc:
+                    last_exc = LLMTimeout(
+                        f"{self.provider} timed out after {effective_timeout_s}s"
+                    )
+                    logger.warning("NLQ LLM timeout (attempt %d): %s", attempt + 1, exc)
+                    continue
+                except httpx.HTTPError as exc:
+                    last_exc = LLMUnavailable(f"{self.provider} unreachable: {exc}")
+                    logger.warning("NLQ LLM transport error (attempt %d): %s", attempt + 1, exc)
+                    continue
 
-            if resp.status_code == 429 or resp.status_code >= 500:
-                last_exc = LLMUnavailable(f"{self.provider} returned {resp.status_code}")
-                logger.warning("NLQ LLM %s on attempt %d", resp.status_code, attempt + 1)
-                await asyncio.sleep(0.5 * (attempt + 1))
-                continue
-            if resp.status_code >= 400:
-                # 4xx is a request bug (bad schema, bad model name) — retrying repeats it.
-                last_exc = LLMError(
-                    f"{self.provider} rejected the request: {resp.text[:300]}"
-                )
+                if resp.status_code == 429 or resp.status_code >= 500:
+                    last_exc = LLMUnavailable(f"{self.provider} returned {resp.status_code}")
+                    logger.warning("NLQ LLM %s on attempt %d", resp.status_code, attempt + 1)
+                    await asyncio.sleep(0.5 * (attempt + 1))
+                    continue
+                if resp.status_code >= 400:
+                    # 4xx is a request bug (bad schema, wrong model) — retrying repeats it.
+                    last_exc = LLMError(
+                        f"{self.provider} rejected the request: {resp.text[:300]}"
+                    )
+                    break
+
+                body = resp.json()
+                successful_response = (resp, body, attempt)
                 break
 
-            body = resp.json()
+        if successful_response is not None:
+            resp, body, successful_attempt = successful_response
             choice = (body.get("choices") or [{}])[0]
             usage = body.get("usage") or {}
             prompt_details = usage.get("prompt_tokens_details") or {}
@@ -307,8 +359,8 @@ class OpenAICompatibleClient:
                 completion_tokens=int(usage.get("completion_tokens", 0) or 0),
                 duration_ms=int((asyncio.get_event_loop().time() - request_started) * 1000),
                 finish_reason=choice.get("finish_reason", ""),
-                attempts=attempt + 1,
-                retries=attempt,
+                attempts=successful_attempt + 1,
+                retries=successful_attempt,
                 call_purpose=str(call_purpose),
                 call_kind=str(call_kind),
                 prompt_version=prompt_version,
@@ -543,6 +595,7 @@ async def warm_catalog_prompt_cache() -> None:
             prompt_version=PROMPT_VERSION,
             catalog_version=catalog.version,
             prefix_hash=stable_prefix_hash(catalog),
+            max_output_tokens=1,
         )
         logger.info(
             "Warmed NLQ Gold prompt cache: prompt_tokens=%s cached_prompt_tokens=%s "

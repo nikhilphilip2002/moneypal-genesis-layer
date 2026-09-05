@@ -5,6 +5,7 @@ differences stay inside client.py — the pipeline above it must never learn whi
 is talking to.
 """
 
+import asyncio
 import json
 
 import httpx
@@ -113,7 +114,7 @@ class TestThinkingModels:
         assert result.reasoning == "thinking..."
 
     @pytest.mark.anyio
-    async def test_extension_fields_not_sent(self):
+    async def test_llamacpp_cache_and_thinking_controls_are_sent(self):
         seen = {}
 
         def handler(request):
@@ -121,11 +122,52 @@ class TestThinkingModels:
             return _ok('{"route":"refuse"}')
 
         await _client(handler).complete(messages=[{"role": "user", "content": "hi"}])
-        assert "chat_template_kwargs" not in seen
-        assert "cache_prompt" not in seen
+        assert seen["chat_template_kwargs"] == {"enable_thinking": False}
+        assert seen["cache_prompt"] is True
         assert "n_cache_reuse" not in seen
         assert "temperature" not in seen
         assert "max_tokens" not in seen
+
+    @pytest.mark.anyio
+    async def test_groq_does_not_receive_llamacpp_extensions(self):
+        seen = {}
+
+        def handler(request):
+            seen.update(json.loads(request.content))
+            return _ok('{"route":"refuse"}')
+
+        await _client(handler, name="groq").complete(
+            messages=[{"role": "user", "content": "hi"}],
+        )
+        assert "chat_template_kwargs" not in seen
+        assert "cache_prompt" not in seen
+
+    @pytest.mark.anyio
+    async def test_local_requests_are_serialized(self, monkeypatch, tmp_path):
+        from app.core.config import settings
+        from app.services.nlq import ratelimit
+
+        ratelimit.reset()
+        monkeypatch.setattr(settings, "nlq_llm_lock_path", tmp_path / "llama.lock")
+        active = 0
+        peak = 0
+
+        async def handler(_request):
+            nonlocal active, peak
+            active += 1
+            peak = max(peak, active)
+            await asyncio.sleep(0.03)
+            active -= 1
+            return _ok()
+
+        client = _client(handler, max_retries=0)
+        await asyncio.gather(*(
+            client.complete(messages=[{"role": "user", "content": str(index)}])
+            for index in range(2)
+        ))
+        await client.aclose()
+        ratelimit.reset()
+        assert peak == 1
 
     @pytest.mark.anyio
     async def test_explicit_output_budget_is_sent_as_standard_max_tokens(self):
@@ -139,6 +181,26 @@ class TestThinkingModels:
             messages=[{"role": "user", "content": "hi"}], max_output_tokens=300,
         )
         assert seen["max_tokens"] == 300
+
+    @pytest.mark.anyio
+    async def test_catalog_warmup_generates_only_one_token(self, monkeypatch):
+        from app.core.config import settings
+        from app.services.nlq.llm import client as client_module
+
+        calls = []
+
+        class StubClient:
+            async def complete(self, **kwargs):
+                calls.append(kwargs)
+                return LLMResult(text="{}", model="m", provider="llamacpp")
+
+        monkeypatch.setattr(settings, "nlq_llm_provider", "llamacpp")
+        monkeypatch.setattr(client_module, "get_llm_client", lambda _provider: StubClient())
+
+        await client_module.warm_catalog_prompt_cache()
+
+        assert len(calls) == 1
+        assert calls[0]["max_output_tokens"] == 1
 
     @pytest.mark.anyio
     async def test_cached_prompt_token_count_is_captured(self):

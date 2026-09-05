@@ -16,7 +16,11 @@ import time
 from collections import defaultdict, deque
 
 QUESTIONS_PER_MINUTE = 30
-MAX_CONCURRENT_LLM = 4
+# One local inference at a time. On the deployed Qwen3.6 hybrid model, a second slot doing
+# prefill drops the active slot from ~20 token/s to effectively zero and makes recurrent
+# prompt-cache reuse unreliable. This in-process semaphore is paired with the shared-file
+# lock in llm/client.py because the API and PostgreSQL MCP are separate processes.
+MAX_CONCURRENT_LLM = 1
 
 _windows: dict[str, deque[float]] = defaultdict(deque)
 _lock = threading.Lock()

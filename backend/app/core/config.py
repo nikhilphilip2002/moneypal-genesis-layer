@@ -115,6 +115,15 @@ class Settings:
         self.nlq_llm_api_key = get("NLQ_LLM_API_KEY")          # llama.cpp ignores it; kept for gateways
         self.nlq_llm_timeout_s = float(get("NLQ_LLM_TIMEOUT_S", "30") or "30")
         self.nlq_llm_max_retries = int(get("NLQ_LLM_MAX_RETRIES", "1") or "1")
+        # Every local request is serialized across the API and PostgreSQL MCP containers.
+        # Qwen3.5/3.6 use recurrent state and llama-server can invalidate their reusable
+        # prompt state when concurrent requests move between slots. Both containers mount
+        # LOG_DIR from the same host directory, so this advisory-lock path is shared.
+        configured_log_dir = Path(get("LOG_DIR", str(DATA_DIR / "logs")) or DATA_DIR / "logs")
+        self.nlq_llm_lock_path = Path(
+            get("NLQ_LLM_LOCK_PATH", str(configured_log_dir / ".llamacpp.lock"))
+            or configured_log_dir / ".llamacpp.lock"
+        )
         # End-to-end budget for one streamed NLQ turn. Local llama.cpp deployments
         # can need more than 20 seconds to evaluate a cold Gold-catalog prompt even
         # when both the model and database are healthy.

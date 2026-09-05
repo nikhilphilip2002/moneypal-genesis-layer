@@ -23,7 +23,7 @@ from app.services.nlq.catalog.loader import ACTIVE_DEFS_DIR
 from app.services.nlq.llm.messages import coalesce_system_messages
 from app.services.nlq.llm.telemetry import prefix_hash
 
-PROMPT_VERSION = "planner-v3"
+PROMPT_VERSION = "planner-v4-compact-catalog"
 
 SYSTEM_PROMPT = """\
 You translate questions about an Indian co-operative bank's lending book into structured \
@@ -124,12 +124,19 @@ follow today's date and will silently answer about a different year.
 def catalog_block(catalog: Catalog | None = None) -> str:
     """The full metric and dimension list, compactly.
 
-    Sent whole rather than retrieved. At roughly 1,400 tokens it fits the 4k budget with
-    room to spare, and retrieval that drops the one metric the user meant costs a correct
-    answer to save tokens there is no shortage of.
+    Sent whole rather than retrieved. At roughly 5,000 tokens it fits the deployed 32K
+    context while avoiding the roughly 15,500-token complete column YAML. Retrieval that
+    drops the one metric the user meant would trade correctness for a small extra saving.
     """
     cat = catalog or get_catalog()
-    lines = ["METRICS (id | what it measures | unit | grain)"]
+    lines = ["GOVERNED GOLD CATALOG", "", "TABLES (qualified name | grain | purpose)"]
+    for table in cat.tables.values():
+        lines.append(
+            f"- {table.table} | {table.grain} | {table.label}: {table.description}"
+        )
+
+    lines.append("")
+    lines.append("METRICS (id | what it measures | unit | grain)")
     for metric in cat.metrics.values():
         synonyms = ", ".join(metric.synonyms[:6])
         lines.append(
@@ -154,7 +161,7 @@ def catalog_block(catalog: Catalog | None = None) -> str:
         lines.append(f"- {block.dimension}: {pairs}")
 
     lines.append("")
-    lines.append("ANALYSES (id | what it covers)")
+    lines.append("### ANALYSES (id | what it covers)")
     for definition in cat.analyses.values():
         summary = " ".join(definition.description.split())
         lines.append(f"- {definition.id} | {definition.title}. {summary}")
@@ -162,7 +169,7 @@ def catalog_block(catalog: Catalog | None = None) -> str:
             lines.append(f"    e.g. {'; '.join(definition.synonyms[:5])}")
 
     lines.append("")
-    lines.append("WORKLISTS (id | who is on it)")
+    lines.append("### WORKLISTS (id | who is on it)")
     for preset in cat.worklists.presets.values():
         summary = " ".join(preset.description.split())
         lines.append(f"- {preset.id} | {preset.title}. {summary}")
@@ -172,6 +179,13 @@ def catalog_block(catalog: Catalog | None = None) -> str:
         "  A worklist filter can only name: "
         + ", ".join(sorted(_worklist_filterable()))
     )
+
+    lines.append("")
+    lines.append("### DESKS (id | who is asking)")
+    for persona in cat.personas.values():
+        lines.append(f"- {persona.id} | {persona.label}: {persona.description}")
+        if persona.synonyms:
+            lines.append(f"    e.g. {'; '.join(persona.synonyms[:5])}")
 
     lines.append("")
     lines.append("CANNOT BE ANSWERED")
@@ -380,16 +394,18 @@ def build_messages(
 ) -> list[dict[str, str]]:
     """Assemble the planner call.
 
-    The system message is the fixed prefix (cacheable); the complete Gold YAML follows it
-    unchanged for a given catalog version, so it also stays cache-warm across questions.
+    The system message is the fixed prefix (cacheable). It carries the complete governed
+    metric/dimension surface and a compact table index, but not hundreds of column-level
+    definitions that the structured planner never emits. Text-to-SQL retrieves detailed
+    columns only after this planner selects that route.
     """
     # Qwen's llama.cpp chat template keeps only the first consecutive system message.
-    # Gold comes first so planner and text-to-SQL share the same long KV-cache prefix;
-    # their task-specific instructions follow inside that one system message.
+    # The compact catalog comes first so planner and text-to-SQL share a useful stable
+    # prefix without paying to prefill every governed column on every question.
     messages = [{
         "role": "system",
         "content": (
-            gold_yaml_block(catalog)
+            catalog_block(catalog)
             + "\n\nPLANNER TASK INSTRUCTIONS\n"
             + SYSTEM_PROMPT
         ),
@@ -422,7 +438,7 @@ def stable_prefix(catalog: Catalog | None = None) -> list[dict[str, str]]:
     """Return the byte-stable planner prefix, excluding history and the live question."""
     messages = [{
         "role": "system",
-        "content": gold_yaml_block(catalog) + "\n\nPLANNER TASK INSTRUCTIONS\n" + SYSTEM_PROMPT,
+        "content": catalog_block(catalog) + "\n\nPLANNER TASK INSTRUCTIONS\n" + SYSTEM_PROMPT,
     }]
     for user_text, assistant_json in FEW_SHOTS:
         messages.append({"role": "user", "content": user_text})
