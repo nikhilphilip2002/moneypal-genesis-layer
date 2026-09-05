@@ -3,7 +3,7 @@
 ## Document status
 
 - Status: repository implementation complete; deployment measurement/canary validation pending
-- Local verification: Workbench 239 passed/1 skipped, scoped NLQ 857 passed/90 skipped,
+- Local verification: Workbench 242 passed/1 skipped, scoped NLQ 857 passed/90 skipped,
   TypeScript clean, production frontend build passed
 - Remaining authority boundary: live PostgreSQL/Qdrant/web/model/cache validation and
   rollback/canary execution must run on the deployment machine

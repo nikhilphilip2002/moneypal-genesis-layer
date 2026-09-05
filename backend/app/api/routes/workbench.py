@@ -7,7 +7,11 @@ frontend maps to a renderer (chart, brief, clarify, refusal).
 
 from __future__ import annotations
 
+import asyncio
 import logging
+import re
+import threading
+import time
 import uuid
 from typing import Literal
 
@@ -24,6 +28,71 @@ from app.core.config import settings
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/workbench", tags=["workbench"])
+
+COMPLETION_DB_RETRY_S = 10.0
+_completion_db_retry_after = 0.0
+_completion_in_flight = False
+_COMPLETION_INTENT_CUES = re.compile(
+    r"\b(?:show|give|what|which|how|explain|compare|list|find|search|latest|total|top|"
+    r"bottom|loan|repay|sanction|disburse|collect|outstanding|principal|interest|amount|"
+    r"balance|portfolio|branch|product|scheme|macro|regulat|competitor)\w*\b",
+    re.IGNORECASE,
+)
+
+
+def _completion_query_allowed(q: str, kind: str) -> bool:
+    """Accept explicit entity lookups; reject ordinary question prose for `kind=all`."""
+    text = " ".join(q.split()).strip()
+    if len(text) < 2:
+        return False
+    if kind != "all":
+        return True
+    if _COMPLETION_INTENT_CUES.search(text):
+        return False
+    words = text.split()
+    return len(words) == 1 or all(word[:1].isupper() for word in words)
+
+
+async def _completion_results(q: str, kind: str) -> list[dict]:
+    """Run optional synchronous SQL without blocking the API event loop.
+
+    A dedicated daemon thread avoids coupling application shutdown to a stuck completion
+    query. The in-flight gate is released by the worker callback, even if the HTTP client
+    disconnects before the query finishes.
+    """
+    global _completion_db_retry_after, _completion_in_flight
+
+    loop = asyncio.get_running_loop()
+    future: asyncio.Future[list[dict]] = loop.create_future()
+
+    def deliver(results: list[dict] | None, error: BaseException | None) -> None:
+        global _completion_db_retry_after, _completion_in_flight
+
+        _completion_in_flight = False
+        if error is not None:
+            _completion_db_retry_after = time.monotonic() + COMPLETION_DB_RETRY_S
+            logger.warning(
+                "Workbench completion lookup unavailable; suppressing retries for %.0fs: %s",
+                COMPLETION_DB_RETRY_S,
+                error,
+            )
+        if future.done():
+            return
+        if error is not None:
+            future.set_exception(error)
+        else:
+            future.set_result(results or [])
+
+    def query() -> None:
+        try:
+            results = record_lookup.completions(q, kind)
+        except BaseException as exc:  # noqa: BLE001 - carried back to the event loop
+            loop.call_soon_threadsafe(deliver, None, exc)
+        else:
+            loop.call_soon_threadsafe(deliver, results, None)
+
+    threading.Thread(target=query, name="workbench-completion", daemon=True).start()
+    return await future
 
 
 def _identity(authorization: str | None) -> tuple[str, str]:
@@ -140,13 +209,24 @@ async def chat_completions(
     authorization: str | None = Header(default=None),
 ):
     """Bounded borrower/account/agent suggestions for Tab completion in chat."""
+    global _completion_db_retry_after, _completion_in_flight
+
     _username, role = _identity(authorization)
-    if "db" not in {source.id for source in visible_sources(role)}:
+    if (
+        "db" not in {source.id for source in visible_sources(role)}
+        or not _completion_query_allowed(q, kind)
+    ):
         return {"query": q, "kind": kind, "results": []}
+
+    # Completion is optional UI assistance. Never let a dead database turn it into a
+    # request storm or block the event loop while the user types. One request probes the
+    # database; overlapping and cooldown-period requests degrade immediately to no hints.
+    if time.monotonic() < _completion_db_retry_after or _completion_in_flight:
+        return {"query": q, "kind": kind, "results": []}
+    _completion_in_flight = True
     try:
-        results = record_lookup.completions(q, kind)
-    except Exception:
-        logger.warning("Workbench completion lookup failed", exc_info=True)
+        results = await _completion_results(q, kind)
+    except Exception:  # noqa: BLE001 - optional suggestions fail closed
         results = []
     return {"query": q, "kind": kind, "results": results}
 

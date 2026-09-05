@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import json
 import logging
+import time
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -44,6 +45,8 @@ RECORD_VERSION = 4
 OLDER_TURN_MAX_CHARS = 900
 CARD_ROWS_IN_CONTEXT = 20
 _table_ready = False
+HISTORY_DB_RETRY_S = 10.0
+_table_retry_after = 0.0
 
 
 @dataclass(slots=True)
@@ -88,9 +91,11 @@ def _title_from(question: str) -> str:
 
 
 def _ensure_table() -> bool:
-    global _table_ready
+    global _table_ready, _table_retry_after
     if _table_ready:
         return True
+    if time.monotonic() < _table_retry_after:
+        return False
     try:
         from app.services.db_schema import db_cursor
 
@@ -102,7 +107,12 @@ def _ensure_table() -> bool:
         _table_ready = True
         return True
     except Exception as exc:  # noqa: BLE001
-        logger.warning("workbench history table unavailable, using memory: %s", exc)
+        _table_retry_after = time.monotonic() + HISTORY_DB_RETRY_S
+        logger.warning(
+            "workbench history table unavailable; using memory and retrying in %.0fs: %s",
+            HISTORY_DB_RETRY_S,
+            exc,
+        )
         return False
 
 

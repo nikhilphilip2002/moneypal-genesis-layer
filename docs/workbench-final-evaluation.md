@@ -21,7 +21,7 @@ Date: 2026-09-04
 
 ## Local checks
 
-- Workbench: 239 passed, 1 live-model test skipped.
+- Workbench: 242 passed, 1 live-model test skipped.
 - NLQ excluding its HTTP module: 857 passed, 90 environment-dependent skips.
 - The prior CCF Low ROI Scheme deterministic planner failure was fixed.
 - Frontend TypeScript check passes.

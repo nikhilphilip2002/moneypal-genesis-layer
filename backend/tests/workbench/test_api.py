@@ -38,6 +38,13 @@ class TestListTools:
 
 
 class TestCompletions:
+    @pytest.fixture(autouse=True)
+    def _reset_completion_cooldown(self, monkeypatch):
+        from app.api.routes import workbench as route
+
+        monkeypatch.setattr(route, "_completion_db_retry_after", 0.0)
+        monkeypatch.setattr(route, "_completion_in_flight", False)
+
     @pytest.mark.anyio
     async def test_returns_governed_chat_completions(self, client, monkeypatch):
         from app.api.routes import workbench as route
@@ -54,6 +61,53 @@ class TestCompletions:
 
         assert response.status_code == 200
         assert response.json()["results"][0]["value"] == "AGNT45"
+
+    @pytest.mark.anyio
+    async def test_database_failure_starts_cooldown_instead_of_retrying_per_request(
+        self, client, monkeypatch
+    ):
+        from app.api.routes import workbench as route
+
+        calls = 0
+
+        def unavailable(_q, _kind):
+            nonlocal calls
+            calls += 1
+            raise RuntimeError("database down")
+
+        monkeypatch.setattr(route.record_lookup, "completions", unavailable)
+
+        first = await client.get(
+            "/workbench/completions?q=Sheelavati&kind=borrower",
+            headers=_auth("gicc_policy"),
+        )
+        second = await client.get(
+            "/workbench/completions?q=Sheelav&kind=borrower",
+            headers=_auth("gicc_policy"),
+        )
+
+        assert first.status_code == second.status_code == 200
+        assert first.json()["results"] == second.json()["results"] == []
+        assert calls == 1
+
+    @pytest.mark.anyio
+    async def test_question_prose_does_not_trigger_a_borrower_directory_query(
+        self, client, monkeypatch
+    ):
+        from app.api.routes import workbench as route
+
+        def must_not_query(_q, _kind):
+            raise AssertionError("question prose reached entity completion SQL")
+
+        monkeypatch.setattr(route.record_lookup, "completions", must_not_query)
+
+        response = await client.get(
+            "/workbench/completions?q=total%20lona&kind=all",
+            headers=_auth("gicc_policy"),
+        )
+
+        assert response.status_code == 200
+        assert response.json()["results"] == []
 
 
 class TestRunTool:

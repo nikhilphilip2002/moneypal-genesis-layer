@@ -43,7 +43,7 @@ Source: repository `benchmark.md`, generated 2026-08-26.
 
 The HTTP harness was migrated from deprecated `TestClient` usage to HTTPX ASGI transport,
 and synchronous Workbench GET handlers were made async. The Workbench API suite now runs
-without the prior deadlock. The full local Workbench suite passes 239 tests with one live-
+without the prior deadlock. The full local Workbench suite passes 242 tests with one live-
 model test skipped. The NLQ suite (excluding its separate legacy HTTP module) passes 857
 tests with 90 environment-dependent skips; the previously documented CCF Low ROI Scheme
 planner failure is fixed.

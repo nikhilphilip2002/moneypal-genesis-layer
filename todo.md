@@ -232,7 +232,7 @@ optional/deferred and have not been started.
 
 ### Phase 2 exit gate
 
-- [x] Workbench backend tests pass (239 passed, 1 live-model test skipped).
+- [x] Workbench backend tests pass (242 passed, 1 live-model test skipped).
 - [x] Frontend consumes the unchanged stream.
 - [x] Event, route, card, answer, and history compatibility pass.
 - [x] No unused graph dependency remains.
@@ -539,6 +539,9 @@ optional/deferred and have not been started.
 - [x] Test stalled router and composer calls against whole-call deadlines.
 - [x] Make the rollout verifier reject an unavailable or mismatched required LLM.
 - [x] Route unqualified current whole-book outstanding directly from the governed catalog.
+- [x] Keep optional entity completion SQL off the event loop, suppress overlapping probes,
+  and apply a database-outage cooldown.
+- [x] Apply a database-outage cooldown to Workbench history persistence retries.
 - [x] Test optional public-only Groq routing/model isolation with configuration tests.
 - [ ] Test all external connectors with consent off and on.
 - [x] Test role ∩ deployment ∩ consent intersections locally.

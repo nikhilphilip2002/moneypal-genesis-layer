@@ -114,7 +114,7 @@ export default function Composer({
         .catch(() => {
           if (completionRequestRef.current === requestId) setCompletions([]);
         });
-    }, 180);
+    }, 300);
     return () => window.clearTimeout(timer);
   }, [value, busy]);
 
@@ -406,11 +406,15 @@ function completionContext(input: string): CompletionContext | null {
   }
 
   const bare = input.trim();
-  const reserved = /\b(?:show|give|what|which|loan|repay|sanction|disburse|agent|customer|account)\b/i;
+  const reserved = /\b(?:show|give|what|which|how|explain|compare|list|find|search|latest|total|top|bottom|loan|repay|sanction|disburse|collect|outstanding|principal|interest|amount|balance|portfolio|branch|product|scheme|macro|regulat|competitor|agent|customer|account)\w*\b/i;
+  const bareWords = bare.split(/\s+/);
+  const looksLikeName = bareWords.length === 1
+    || bareWords.every((word) => /^[A-Z][\w.'-]*$/.test(word));
   if (
     bare.length >= 2 && bare.length <= 60
     && /^[a-z][\w.'-]*(?:\s+[a-z][\w.'-]*){0,3}$/i.test(bare)
     && !reserved.test(bare)
+    && looksLikeName
   ) {
     const start = input.indexOf(bare);
     return { term: bare, start, end: start + bare.length, kind: 'all' };
