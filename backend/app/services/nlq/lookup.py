@@ -180,6 +180,13 @@ _BRANCH_DIRECTORY_CUE = re.compile(
     r"\bavailable\s+branches\b",
     re.I,
 )
+_BRANCH_CUSTOMERS = re.compile(
+    r"^(?:(?:list|lists|show|give|get)\s+(?:me\s+)?)?"
+    r"(?:all\s+|the\s+)?(?:customers?|borrowers?|clients?)\s+"
+    r"(?:in|at|from)\s+(?:the\s+)?"
+    r"(?P<value>[a-z][\w .'-]{1,100}?)(?:\s+branch)?\s*[?!.]*$",
+    re.I,
+)
 _AGENT_CODE = re.compile(r"\b(?P<value>(?:agnt|agent)[-_ ]?\d+)\b", re.I)
 _AGENT_NAME_REF = re.compile(
     r"\b(?:under|for|of|with|handled\s+by|linked\s+to)\s+(?:the\s+)?agent\s+"
@@ -496,6 +503,14 @@ def _requested_agent_fields(text: str) -> list[str]:
 def detect(question: str) -> LookupPlan | None:
     """Recognise selector + requested record family without matching whole questions."""
     text = normalize_apostrophes(" ".join(str(question or "").split()))
+
+    branch_customers = _BRANCH_CUSTOMERS.fullmatch(text)
+    if branch_customers:
+        return LookupPlan(
+            selector="branch", value=_clean_name(branch_customers.group("value")),
+            detail="branch_customers",
+            reasoning="distinct governed borrowers linked to the requested branch",
+        )
 
     branch_code = _BRANCH_CODE_REF.search(text)
     if branch_code and _CUSTOMER_DETAIL_CUE.search(text):
@@ -1247,6 +1262,35 @@ def _branch_directory(plan: LookupPlan, catalog: Catalog) -> SqlAttempt:
     )
 
 
+def _branch_customers(plan: LookupPlan, catalog: Catalog) -> SqlAttempt:
+    """Return each sanctioned borrower once for the named reporting branch."""
+    value = _literal(plan.value.lower())
+    display_name = "TRIM(REGEXP_REPLACE(reporting.customer_name, '\\s+', ' ', 'g'))"
+    sql = (
+        "SELECT reporting.customer_id::text AS customer_id, MIN(" + display_name + ") "
+        "AS borrower_name, COUNT(DISTINCT reporting.loan_account_number) "
+        "AS linked_loan_count, COUNT(reporting.customer_id) OVER () "
+        "AS total_linked_customer_count "
+        "FROM gold.semantic_loan_account AS reporting "
+        "JOIN gold.semantic_branch AS branch "
+        "ON branch.entity_num = reporting.entity_num "
+        "AND branch.branch_code = reporting.application_branch_code "
+        "WHERE LOWER(TRIM(branch.branch_name)) = " + value + " "
+        "AND reporting.sanction_date <= CURRENT_DATE "
+        "GROUP BY reporting.customer_id "
+        "ORDER BY borrower_name, customer_id LIMIT 500"
+    )
+    return _validated_attempt(
+        sql, catalog=catalog,
+        explanation="Distinct governed borrowers linked to the requested reporting branch.",
+        units={
+            "customer_id": "text", "borrower_name": "text",
+            "linked_loan_count": "count", "total_linked_customer_count": "count",
+        },
+        pii_columns={"customer_name"},
+    )
+
+
 def _product_details(plan: LookupPlan, catalog: Catalog) -> SqlAttempt:
     value = _literal(_plain_identifier(plan.value).lower())
     sql = (
@@ -1339,6 +1383,8 @@ def run(plan: LookupPlan, *, role: str | None, catalog: Catalog | None = None) -
         attempt = _agent_customers(effective, cat)
     elif effective.detail == "branch_directory":
         attempt = _branch_directory(effective, cat)
+    elif effective.detail == "branch_customers":
+        attempt = _branch_customers(effective, cat)
     elif effective.detail == "product_details":
         attempt = _product_details(effective, cat)
     else:
@@ -1418,7 +1464,7 @@ def run(plan: LookupPlan, *, role: str | None, catalog: Catalog | None = None) -
         chart.summary = (
             f"Showing {len(chart.rows):,} of {total:,} linked loan account(s){suffix}."
         )
-    elif effective.detail == "agent_customers":
+    elif effective.detail in {"agent_customers", "branch_customers"}:
         total = int(chart.rows[0].get("total_linked_customer_count") or len(chart.rows))
         for row in chart.rows:
             row.pop("total_linked_customer_count", None)
@@ -1435,7 +1481,11 @@ def run(plan: LookupPlan, *, role: str | None, catalog: Catalog | None = None) -
         chart.chart_type = "table"
         chart.x = None
         chart.series_by = None
-        chart.title = f"Customers linked to {effective.value}"
+        chart.title = (
+            f"Customers linked to {effective.value} branch"
+            if effective.detail == "branch_customers"
+            else f"Customers linked to {effective.value}"
+        )
         chart.summary = f"Showing {len(chart.rows):,} of {total:,} linked customer(s)."
     elif effective.detail == "repayment_history":
         first = chart.rows[0]

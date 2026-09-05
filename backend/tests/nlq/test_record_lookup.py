@@ -14,6 +14,7 @@ from app.services.nlq.lookup import (
     _agent_details,
     _shape_agent_details,
     _branch_directory,
+    _branch_customers,
     _customer_summary,
     _gender_sample,
     completions,
@@ -649,6 +650,22 @@ def test_branch_directory_uses_the_governed_branch_master():
     assert "branch_code" in attempt.sql
     assert "branch_name" in attempt.sql
     assert "branch_status" in attempt.sql
+
+
+def test_named_branch_customer_list_uses_governed_branch_and_loan_relations():
+    plan_result = detect("lists customers in ujire")
+
+    assert plan_result is not None
+    assert plan_result.selector == "branch"
+    assert plan_result.value == "ujire"
+    assert plan_result.detail == "branch_customers"
+
+    attempt = _branch_customers(plan_result, get_catalog())
+    assert "FROM gold.semantic_loan_account AS reporting" in attempt.sql
+    assert "JOIN gold.semantic_branch AS branch" in attempt.sql
+    assert "branch.branch_code = reporting.application_branch_code" in attempt.sql
+    assert "LOWER(TRIM(branch.branch_name)) = 'ujire'" in attempt.sql
+    assert "GROUP BY" in attempt.sql and "reporting.customer_id" in attempt.sql
 
 
 def test_product_code_name_uses_the_governed_product_master():

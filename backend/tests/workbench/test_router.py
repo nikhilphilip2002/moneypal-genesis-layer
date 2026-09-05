@@ -226,6 +226,17 @@ class TestDispatch:
         assert fake.calls == []
 
     @pytest.mark.anyio
+    async def test_named_branch_customer_list_bypasses_router_model(self, monkeypatch):
+        fake = FakeLLM('{"route":"dispatch","sources":["web"],"intent":"wrong"}')
+        _use(monkeypatch, fake)
+
+        decision = await router.route("lists customers in ujire", role="admin")
+
+        assert decision.sources == ["db"]
+        assert decision.intent == "lists customers in ujire"
+        assert fake.calls == []
+
+    @pytest.mark.anyio
     async def test_structural_followup_ignores_checkpoint_system_messages(self, monkeypatch):
         fake = FakeLLM('{"route":"dispatch","sources":["db"],"intent":"x"}')
         _use(monkeypatch, fake)
