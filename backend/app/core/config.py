@@ -236,6 +236,26 @@ class Settings:
         self.workbench_personalize_suggestions = (
             get("WORKBENCH_PERSONALIZE_SUGGESTIONS", "false") or "false"
         ).lower() in ("1", "true", "yes", "on")
+        self.workbench_agent_mode = (
+            get("WORKBENCH_AGENT_MODE", "off") or "off"
+        ).lower()
+        if self.workbench_agent_mode not in {"off", "shadow", "canary", "on"}:
+            self.workbench_agent_mode = "off"
+        self.workbench_agent_canary_percent = max(
+            0, min(100, int(get("WORKBENCH_AGENT_CANARY_PERCENT", "0") or "0"))
+        )
+        self.workbench_agent_max_rounds = max(
+            2, min(6, int(get("WORKBENCH_AGENT_MAX_ROUNDS", "3") or "3"))
+        )
+        self.workbench_agent_max_tool_calls = max(
+            1, min(12, int(get("WORKBENCH_AGENT_MAX_TOOL_CALLS", "6") or "6"))
+        )
+        self.workbench_agent_argument_repairs = max(
+            0, min(1, int(get("WORKBENCH_AGENT_ARGUMENT_REPAIRS", "1") or "1"))
+        )
+        self.workbench_agent_synthesis_repairs = max(
+            0, min(1, int(get("WORKBENCH_AGENT_SYNTHESIS_REPAIRS", "1") or "1"))
+        )
         # Deployment availability is independent of per-conversation consent.  True keeps
         # the legacy path compatible; Phase 1 additionally requires explicit user consent.
         self.workbench_external_connectors_enabled = (

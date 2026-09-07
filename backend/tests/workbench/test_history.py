@@ -175,3 +175,103 @@ def test_a_briefing_turn_survives_into_model_context():
     assert "2 things need attention" in context
     assert "PAR 30 for Aluva is 14.0%" in context
     assert "Portfolio health" in context
+
+
+def test_native_transcript_replays_only_complete_call_result_groups():
+    turn_id = history.begin_turn("native", "alice", "Show PAR 30")
+    assistant = {
+        "role": "assistant",
+        "content": None,
+        "tool_calls": [{
+            "id": "call_1", "type": "function",
+            "function": {"name": "query_metrics", "arguments": '{"metrics":["par_30"]}'},
+        }],
+    }
+    tool = {
+        "role": "tool", "tool_call_id": "call_1",
+        "content": '{"status":"ok","summary":"PAR 30 is 4.2%."}',
+    }
+    history.add_agent_exchange(
+        "native", "alice", turn_id,
+        assistant_message=assistant,
+        calls=[{"id": "call_1", "name": "query_metrics", "arguments": {"metrics": ["par_30"]}}],
+        tool_messages=[tool],
+    )
+    history.set_answer("native", "alice", turn_id, {"text": "PAR 30 is 4.2%."})
+    history.complete_turn("native", "alice", turn_id)
+
+    messages = history.build_native_transcript("native", user="alice")
+    assert [message["role"] for message in messages] == [
+        "system", "user", "assistant", "tool", "assistant",
+    ]
+    assert messages[2]["tool_calls"][0]["id"] == "call_1"
+    assert messages[3]["tool_call_id"] == "call_1"
+    assert "<governed-plans>" in messages[0]["content"]
+
+
+def test_public_search_arguments_are_redacted_in_durable_native_history():
+    turn_id = history.begin_turn("web-native", "alice", "Search the web")
+    assistant = {
+        "role": "assistant",
+        "content": None,
+        "tool_calls": [{
+            "id": "web_1", "type": "function",
+            "function": {
+                "name": "search_public_web",
+                "arguments": '{"search_query":"customer ID secret-42"}',
+            },
+        }],
+    }
+    history.add_agent_exchange(
+        "web-native", "alice", turn_id,
+        assistant_message=assistant,
+        calls=[{
+            "id": "web_1", "name": "search_public_web",
+            "arguments": {"search_query": "customer ID secret-42"},
+        }],
+        tool_messages=[{
+            "role": "tool", "tool_call_id": "web_1",
+            "content": '{"status":"error","code":"PII_POLICY_VIOLATION"}',
+        }],
+    )
+    record = history.get("web-native", user="alice")
+    encoded = str(record.turns[0]["agent_exchanges"])
+    assert "secret-42" not in encoded
+    assert "redacted after policy evaluation" in encoded
+
+
+def test_lookup_values_feed_session_private_entity_screening():
+    turn_id = history.begin_turn("lookup-native", "alice", "Find Asha Rao")
+    history.add_agent_exchange(
+        "lookup-native", "alice", turn_id,
+        assistant_message={
+            "role": "assistant", "content": None,
+            "tool_calls": [{
+                "id": "lookup_1", "type": "function",
+                "function": {"name": "lookup_records", "arguments": "{}"},
+            }],
+        },
+        calls=[{
+            "id": "lookup_1", "name": "lookup_records",
+            "arguments": {"selector": "borrower_name", "value": "Asha Rao"},
+        }],
+        tool_messages=[{
+            "role": "tool", "tool_call_id": "lookup_1",
+            "content": '{"status":"ok"}',
+        }],
+    )
+    history.complete_turn("lookup-native", "alice", turn_id)
+
+    assert history.private_entities("lookup-native", user="alice") == ("Asha Rao",)
+    assert history.private_entities("lookup-native", user="bob") == ()
+
+
+def test_native_exchange_rejects_unmatched_tool_results():
+    turn_id = history.begin_turn("native", "alice", "Show PAR 30")
+    with pytest.raises(ValueError, match="every persisted native call"):
+        history.add_agent_exchange(
+            "native", "alice", turn_id,
+            assistant_message={"role": "assistant", "content": None, "tool_calls": []},
+            calls=[{"id": "call_1", "name": "query_metrics", "arguments": {}}],
+            tool_messages=[],
+        )

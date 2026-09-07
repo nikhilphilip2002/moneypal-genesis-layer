@@ -14,6 +14,7 @@ import pytest
 from app.services.nlq.llm.client import (
     GROQ_BASE_URL,
     LLMError,
+    LLMProtocolError,
     LLMResult,
     LLMTimeout,
     LLMUnavailable,
@@ -24,14 +25,50 @@ from app.services.nlq.llm.client import (
 from app.services.nlq.llm.telemetry import collect_calls
 
 SCHEMA = {"title": "PlanResult", "type": "object", "properties": {"route": {"type": "string"}}}
+TOOLS = [
+    {
+        "type": "function",
+        "function": {
+            "name": "query_metrics",
+            "description": "Query governed portfolio metrics.",
+            "parameters": {
+                "type": "object",
+                "properties": {"metric": {"type": "string"}},
+                "required": ["metric"],
+                "additionalProperties": False,
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "lookup_records",
+            "description": "Look up governed loan-book records.",
+            "parameters": {
+                "type": "object",
+                "properties": {"customer_name": {"type": "string"}},
+                "required": ["customer_name"],
+                "additionalProperties": False,
+            },
+        },
+    },
+]
 
 
-def _client(handler, *, supports_json_schema=True, name="llamacpp", max_retries=1):
+def _client(
+    handler,
+    *,
+    supports_json_schema=True,
+    supports_native_tools=True,
+    name="llamacpp",
+    max_retries=1,
+):
     profile = _ProviderProfile(
         name=name,
         base_url="http://stub/v1",
         api_key="k",
         supports_json_schema=supports_json_schema,
+        supports_native_tools=supports_native_tools,
         health_path="/health",
     )
     client = OpenAICompatibleClient(profile=profile, model="m", max_retries=max_retries)
@@ -50,6 +87,34 @@ def _ok(content="{}"):
             "usage": {"prompt_tokens": 10, "completion_tokens": 3},
         },
     )
+
+
+def _tool_ok(*calls, content=None):
+    return httpx.Response(
+        200,
+        json={
+            "model": "m",
+            "choices": [
+                {
+                    "message": {
+                        "role": "assistant",
+                        "content": content,
+                        "tool_calls": list(calls),
+                    },
+                    "finish_reason": "tool_calls",
+                }
+            ],
+            "usage": {"prompt_tokens": 12, "completion_tokens": 5},
+        },
+    )
+
+
+def _raw_tool_call(call_id="call_1", name="query_metrics", arguments='{"metric":"par_30"}'):
+    return {
+        "id": call_id,
+        "type": "function",
+        "function": {"name": name, "arguments": arguments},
+    }
 
 
 class TestJsonSalvage:
@@ -334,6 +399,215 @@ class TestResponseFormat:
         assert seen["stream"] is False
 
 
+class TestNativeTools:
+    @pytest.mark.anyio
+    async def test_native_tool_fields_are_passed_exactly(self):
+        seen = {}
+        choice = {"type": "function", "function": {"name": "query_metrics"}}
+
+        def handler(request):
+            seen.update(json.loads(request.content))
+            return _tool_ok(_raw_tool_call())
+
+        result = await _client(handler).complete(
+            messages=[{"role": "user", "content": "Show PAR 30"}],
+            tools=TOOLS,
+            tool_choice=choice,
+            parallel_tool_calls=False,
+        )
+
+        assert seen["tools"] == TOOLS
+        assert seen["tool_choice"] == choice
+        assert seen["parallel_tool_calls"] is False
+        assert "response_format" not in seen
+        assert result.tool_calls[0].name == "query_metrics"
+
+    @pytest.mark.anyio
+    async def test_tools_and_json_schema_are_rejected_before_network_io(self):
+        calls = 0
+
+        def handler(_request):
+            nonlocal calls
+            calls += 1
+            return _ok()
+
+        with pytest.raises(LLMError, match="mutually exclusive"):
+            await _client(handler).complete(
+                messages=[{"role": "user", "content": "hi"}],
+                tools=TOOLS,
+                json_schema=SCHEMA,
+            )
+        assert calls == 0
+
+    @pytest.mark.anyio
+    async def test_tool_options_without_tools_are_rejected(self):
+        with pytest.raises(LLMError, match="require tools"):
+            await _client(lambda _request: _ok()).complete(
+                messages=[{"role": "user", "content": "hi"}],
+                tool_choice="required",
+            )
+
+    @pytest.mark.anyio
+    async def test_provider_without_native_support_is_rejected(self):
+        with pytest.raises(LLMError, match="does not support native tools"):
+            await _client(
+                lambda _request: _ok(), supports_native_tools=False,
+            ).complete(
+                messages=[{"role": "user", "content": "hi"}],
+                tools=TOOLS,
+            )
+
+    @pytest.mark.anyio
+    async def test_one_and_multiple_calls_are_parsed_in_order(self):
+        result = await _client(
+            lambda _request: _tool_ok(
+                _raw_tool_call(),
+                _raw_tool_call(
+                    call_id="call_2",
+                    name="lookup_records",
+                    arguments='{"customer_name":"Asha"}',
+                ),
+            )
+        ).complete(
+            messages=[{"role": "user", "content": "Compare and find Asha"}],
+            tools=TOOLS,
+        )
+
+        assert [(call.id, call.name, call.arguments) for call in result.tool_calls] == [
+            ("call_1", "query_metrics", {"metric": "par_30"}),
+            ("call_2", "lookup_records", {"customer_name": "Asha"}),
+        ]
+        assert result.text == ""
+        assert result.assistant_message == {
+            "role": "assistant",
+            "content": None,
+            "tool_calls": [
+                _raw_tool_call(),
+                _raw_tool_call(
+                    call_id="call_2",
+                    name="lookup_records",
+                    arguments='{"customer_name":"Asha"}',
+                ),
+            ],
+        }
+
+    @pytest.mark.anyio
+    async def test_native_assistant_and_tool_result_replay_without_coalescing(self):
+        requests = []
+
+        def handler(request):
+            requests.append(json.loads(request.content))
+            if len(requests) == 1:
+                return _tool_ok(_raw_tool_call())
+            return _ok("PAR 30 is available.")
+
+        client = _client(handler)
+        first = await client.complete(
+            messages=[{"role": "user", "content": "Show PAR 30"}], tools=TOOLS,
+        )
+        await client.complete(
+            messages=[
+                {"role": "system", "content": "Use governed results."},
+                {"role": "user", "content": "Show PAR 30"},
+                first.assistant_message,
+                {"role": "tool", "tool_call_id": "call_1", "content": '{"value":4.2}'},
+            ],
+        )
+
+        replay = requests[1]["messages"]
+        assert [message["role"] for message in replay] == [
+            "system", "user", "assistant", "tool",
+        ]
+        assert replay[2]["tool_calls"] == [_raw_tool_call()]
+        assert replay[3]["tool_call_id"] == "call_1"
+
+    @pytest.mark.anyio
+    async def test_native_replay_drops_provider_reasoning_fields(self):
+        def response(_request):
+            body = _tool_ok(_raw_tool_call()).json()
+            body["choices"][0]["message"]["reasoning_content"] = "hidden reasoning"
+            return httpx.Response(200, json=body)
+
+        result = await _client(response).complete(
+            messages=[{"role": "user", "content": "Show PAR 30"}], tools=TOOLS,
+        )
+
+        assert "reasoning_content" not in result.assistant_message
+
+    @pytest.mark.anyio
+    async def test_content_only_json_is_never_reconstructed_as_a_tool_call(self):
+        result = await _client(
+            lambda _request: _ok(
+                '{"name":"query_metrics","arguments":{"metric":"par_30"}}'
+            )
+        ).complete(
+            messages=[{"role": "user", "content": "Show PAR 30"}], tools=TOOLS,
+        )
+
+        assert result.tool_calls == []
+        assert result.text.startswith('{"name"')
+
+    @pytest.mark.anyio
+    @pytest.mark.parametrize(
+        ("raw_calls", "error"),
+        [
+            ({"not": "an array"}, "must be an array"),
+            ([{"type": "function", "function": {"name": "query_metrics", "arguments": "{}"}}], "no call ID"),
+            ([_raw_tool_call(call_id="same"), _raw_tool_call(call_id="same")], "duplicate tool call ID"),
+            ([_raw_tool_call() | {"type": "custom"}], "not type 'function'"),
+            ([_raw_tool_call(name="not_registered")], "unknown function"),
+            ([_raw_tool_call(arguments="not-json")], "not valid JSON"),
+            ([_raw_tool_call(arguments="[]")], "decode to an object"),
+            ([{"id": "call_1", "type": "function", "function": {"name": "query_metrics", "arguments": {}}}], "JSON-encoded string"),
+        ],
+    )
+    async def test_malformed_native_calls_are_protocol_errors(self, raw_calls, error):
+        def handler(_request):
+            if isinstance(raw_calls, list):
+                return _tool_ok(*raw_calls)
+            response = _tool_ok()
+            body = json.loads(response.content)
+            body["choices"][0]["message"]["tool_calls"] = raw_calls
+            return httpx.Response(200, json=body)
+
+        with pytest.raises(LLMProtocolError, match=error):
+            await _client(handler).complete(
+                messages=[{"role": "user", "content": "hi"}], tools=TOOLS,
+            )
+
+    @pytest.mark.anyio
+    async def test_tool_telemetry_records_names_without_arguments(self):
+        with collect_calls() as calls:
+            await _client(
+                lambda _request: _tool_ok(_raw_tool_call())
+            ).complete(
+                messages=[{"role": "user", "content": "Show PAR 30"}],
+                tools=TOOLS,
+                call_purpose="agent_select",
+            )
+
+        assert calls[0].tool_call_count == 1
+        assert calls[0].tool_names == ("query_metrics",)
+        assert "par_30" not in str(calls[0].to_dict())
+
+    @pytest.mark.anyio
+    async def test_protocol_failure_is_recorded_without_raw_arguments(self):
+        with collect_calls() as calls:
+            with pytest.raises(LLMProtocolError):
+                await _client(
+                    lambda _request: _tool_ok(_raw_tool_call(arguments="not-json"))
+                ).complete(
+                    messages=[{"role": "user", "content": "Show PAR 30"}],
+                    tools=TOOLS,
+                    call_purpose="agent_select",
+                )
+
+        assert len(calls) == 1
+        assert calls[0].finish_reason == "protocol_error"
+        assert calls[0].tool_call_count == 0
+        assert "not-json" not in str(calls[0].to_dict())
+
+
 class TestFailureHandling:
     @pytest.mark.anyio
     async def test_retries_on_503_then_succeeds(self):
@@ -433,6 +707,7 @@ class TestProviderSelection:
         client = get_llm_client("groq")
         assert client.profile.base_url == GROQ_BASE_URL
         assert client.profile.supports_json_schema is False
+        assert client.profile.supports_native_tools is True
 
     def test_unknown_provider_is_rejected(self):
         with pytest.raises(LLMUnavailable):

@@ -10,12 +10,26 @@ import asyncio
 import pytest
 
 from app.services.nlq.llm import LLMError
-from app.services.workbench import models, router
+from app.services.workbench import access, models, router
 from tests.workbench.conftest import FakeLLM
 
 
 def _use(monkeypatch, client):
     monkeypatch.setattr(models, "for_step", lambda *a, **k: client)
+
+
+def test_native_rollout_preflight_retains_exact_and_policy_paths():
+    enabled = access.build_policy(role="admin", external_sources_enabled=True)
+    disabled = access.build_policy(role="admin", external_sources_enabled=False)
+    assert router.requires_mandatory_preflight(
+        "Show our PAR 30 by branch", pinned=None, history_messages=[], policy=enabled,
+    )
+    assert router.requires_mandatory_preflight(
+        "latest RBI announcement", pinned=None, history_messages=[], policy=disabled,
+    )
+    assert router.requires_mandatory_preflight(
+        "anything", pinned="macro", history_messages=[], policy=enabled,
+    )
 
 
 class TestDispatch:

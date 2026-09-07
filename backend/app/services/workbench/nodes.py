@@ -228,16 +228,24 @@ async def run_macro(
 
 
 async def run_web(
-    intent: str, *, user: str, policy: "SourceAccessPolicy | None" = None,
+    intent: str, *, user: str, policy: "SourceAccessPolicy",
+    raise_policy_denials: bool = False,
+    private_entities: tuple[str, ...] = (),
 ) -> SourceResult:
     """Retrieve fresh public evidence through Exa without exposing private bank context."""
     _require_external(policy, "web")
     from app.mcp import exa_client
-    from app.services.workbench import web
+    from app.services.workbench import outbound_policy, web
 
     try:
-        query, web_evidence, _raw_text = await web.retrieve(intent, user=user)
-    except web.UnsafeWebQuery as exc:
+        query, web_evidence, _raw_text = await outbound_policy.retrieve_public(
+            intent, user=user, policy=policy, private_entities=private_entities,
+        )
+    except (web.UnsafeWebQuery, outbound_policy.OutboundPolicyDenied) as exc:
+        if raise_policy_denials:
+            if isinstance(exc, outbound_policy.OutboundPolicyDenied):
+                raise
+            raise outbound_policy.OutboundPolicyDenied(str(exc)) from exc
         return SourceResult(
             source="web", card_type="refusal",
             payload={"message": str(exc), "reason": "private_external_query", "examples": []},

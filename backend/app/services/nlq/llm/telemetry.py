@@ -19,8 +19,12 @@ from contextlib import contextmanager
 from dataclasses import asdict, dataclass
 from typing import Any, Iterator, Literal, Sequence
 
+from app.services.nlq.llm.messages import ChatMessage
+
 
 CallPurpose = Literal[
+    "agent_select",
+    "agent_synthesize",
     "route",
     "db_plan",
     "sql_generate",
@@ -34,6 +38,8 @@ CallPurpose = Literal[
 CallKind = Literal["planned", "repair", "warmup"]
 
 CALL_PURPOSES: tuple[str, ...] = (
+    "agent_select",
+    "agent_synthesize",
     "route",
     "db_plan",
     "sql_generate",
@@ -51,14 +57,14 @@ def stable_hash(value: str | bytes) -> str:
     return hashlib.sha256(raw).hexdigest()
 
 
-def serialize_messages(messages: Sequence[dict[str, str]]) -> bytes:
+def serialize_messages(messages: Sequence[ChatMessage]) -> bytes:
     """Serialize messages deterministically for byte-stability tests and fingerprints."""
     return json.dumps(
         list(messages), ensure_ascii=False, separators=(",", ":"), sort_keys=True,
     ).encode("utf-8")
 
 
-def prefix_hash(messages: Sequence[dict[str, str]]) -> str:
+def prefix_hash(messages: Sequence[ChatMessage]) -> str:
     return stable_hash(serialize_messages(messages))
 
 
@@ -80,6 +86,8 @@ class CallRecord:
     attempts: int
     retries: int
     finish_reason: str
+    tool_call_count: int = 0
+    tool_names: tuple[str, ...] = ()
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -130,6 +138,12 @@ def summarize_calls(records: Sequence[CallRecord]) -> dict[str, Any]:
         "completion_tokens": sum(item.completion_tokens for item in records),
         "model_duration_ms": sum(item.duration_ms for item in records),
         "retry_count": sum(item.retries for item in records),
+        "tool_call_count": sum(item.tool_call_count for item in records),
+        "tool_names": [
+            name
+            for item in records
+            for name in item.tool_names
+        ],
         # Provider-neutral token-equivalent work. Currency reporting can multiply these
         # categories by the deployed provider's current price without losing detail.
         "weighted_input_units": round(weighted_input_units, 2),

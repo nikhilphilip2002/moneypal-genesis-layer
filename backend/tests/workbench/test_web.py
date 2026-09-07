@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 
 from app.mcp.exa_client import ExaToolResult
-from app.services.workbench import models, nodes, web
+from app.services.workbench import access, models, nodes, web
 from tests.workbench.conftest import FakeLLM
 
 
@@ -101,7 +101,10 @@ class TestNode:
         monkeypatch.setattr(web, "retrieve", fake_retrieve)
         monkeypatch.setattr(models, "for_step", lambda *a, **k: FakeLLM("Grounded answer."))
 
-        result = await nodes.run_web("latest repo rate", user="alice")
+        monkeypatch.setattr(access.settings, "workbench_external_connectors_enabled", True)
+        monkeypatch.setattr(access.settings, "exa_mcp_enabled", True)
+        policy = access.build_policy(role="admin", external_sources_enabled=True)
+        result = await nodes.run_web("latest repo rate", user="alice", policy=policy)
 
         assert result.source == "web"
         assert result.card_type == "brief"

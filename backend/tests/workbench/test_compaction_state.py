@@ -169,6 +169,38 @@ class TestRouteAndRefusals:
 
         assert {"product", "par_30"} <= state.metrics_seen
 
+    def test_native_plan_entity_rank_and_fact_anchors_are_mechanical(self):
+        turn = _chart_turn("t1", "Top branch?", "Aluva leads at 4.2%.")
+        turn["agent_exchanges"] = [{
+            "calls": [{
+                "id": "c1", "name": "query_metrics",
+                "arguments": {
+                    "metrics": ["par_30"], "dimensions": ["branch"],
+                    "period": {"relative": "today"},
+                },
+            }, {
+                "id": "c2", "name": "lookup_records",
+                "arguments": {"selector": "branch", "value": "Aluva"},
+            }],
+        }]
+        turn["cards"][0]["payload"].update({
+            "chart_type": "ranking",
+            "columns": [
+                {"name": "branch", "unit": "text"},
+                {"name": "par_30", "unit": "percent"},
+            ],
+            "rows": [{"branch": "Aluva", "par_30": 4.2}],
+            "next_steps": [{"id": "by_agent", "question": "Show Aluva by agent"}],
+        })
+
+        state = session_state.extract_turn(turn, _text_of(turn))
+
+        assert state.active_plans and "par_30" in state.active_plans[0]
+        assert state.selected_entities == ["branch=Aluva"]
+        assert state.ranked_rows == ["1:branch=Aluva"]
+        assert state.fact_references == ["t1:0:par_30=4.2"]
+        assert state.drill_actions == ["by_agent:Show Aluva by agent"]
+
 
 class TestMergeAndRender:
     def test_merge_deduplicates_repeated_figures(self):

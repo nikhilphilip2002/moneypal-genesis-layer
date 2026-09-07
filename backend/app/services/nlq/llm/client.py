@@ -1,8 +1,8 @@
 """Provider-agnostic LLM access for the NLQ pipeline.
 
 Both targets speak the OpenAI chat-completions shape, so there is one HTTP implementation
-and the providers differ only in base URL, auth, and how much of `response_format` they
-honour. That difference is declared in `_ProviderProfile`, never branched on inside the
+and the providers differ only in base URL, auth, and their supported protocol features.
+Those differences are declared in `_ProviderProfile`, never branched on inside the
 pipeline: no model-specific quirk is allowed to leak past this module.
 
 - `llamacpp` — self-hosted `llama-server`. Supports `response_format: json_schema`, so the
@@ -26,7 +26,7 @@ from typing import Any, Protocol, runtime_checkable
 import httpx
 
 from app.core.config import settings
-from app.services.nlq.llm.messages import coalesce_system_messages
+from app.services.nlq.llm.messages import ChatMessage, coalesce_system_messages
 from app.services.nlq.llm.telemetry import (
     CallKind,
     CallPurpose,
@@ -86,6 +86,17 @@ class LLMUnavailable(LLMError):
     """Provider unreachable, unauthenticated, or not configured."""
 
 
+class LLMProtocolError(LLMError):
+    """A successful provider response violated the native chat/tool protocol."""
+
+
+@dataclass(frozen=True, slots=True)
+class NativeToolCall:
+    id: str
+    name: str
+    arguments: dict[str, Any]
+
+
 @dataclass(slots=True)
 class LLMResult:
     text: str
@@ -108,12 +119,18 @@ class LLMResult:
     reasoning: str = ""
     """Whatever the server split out as chain of thought. Never parsed — kept only so an
     empty `text` can be diagnosed as "it thought instead of answering"."""
+    tool_calls: list[NativeToolCall] = field(default_factory=list)
+    assistant_message: ChatMessage | None = None
 
     def json(self) -> Any:
         """Parse the completion as JSON, tolerating the wrappers small models add.
 
-        Under `json_schema` decoding this is a plain `json.loads`. The salvage path only
-        matters for providers without grammar support.
+        This method belongs only to legacy structured-output workflows. Native tools are
+        parsed exclusively from ``message.tool_calls`` by ``complete()``; callers must never
+        use this method to reconstruct a tool call from assistant content.
+
+        Under `json_schema` decoding this is a plain `json.loads`. The salvage path matters
+        only for separately supported providers without grammar support.
         """
         if not self.text.strip():
             # A thinking model that runs out of budget mid-trace answers 200 OK with an
@@ -151,12 +168,16 @@ class LLMResult:
 class LLMClient(Protocol):
     provider: str
     model: str
+    supports_native_tools: bool
 
     async def complete(
         self,
         *,
-        messages: list[dict[str, str]],
+        messages: list[ChatMessage],
         json_schema: dict[str, Any] | None = None,
+        tools: list[dict[str, Any]] | None = None,
+        tool_choice: str | dict[str, Any] | None = None,
+        parallel_tool_calls: bool | None = None,
         timeout_s: float | None = None,
         call_purpose: CallPurpose | str = "unspecified",
         call_kind: CallKind | str = "planned",
@@ -175,8 +196,77 @@ class _ProviderProfile:
     base_url: str
     api_key: str | None
     supports_json_schema: bool
+    supports_native_tools: bool
     health_path: str
     health_method: str = "GET"
+
+
+def _native_tool_names(tools: list[dict[str, Any]]) -> set[str]:
+    """Validate the outbound native tool envelope and return its function names."""
+    if not tools:
+        raise LLMError("native tool mode requires at least one tool")
+
+    names: set[str] = set()
+    for index, tool in enumerate(tools):
+        if not isinstance(tool, dict):
+            raise LLMError(f"invalid native tool definition at index {index}")
+        function = tool.get("function")
+        name = function.get("name") if isinstance(function, dict) else None
+        if tool.get("type") != "function" or not isinstance(name, str) or not name.strip():
+            raise LLMError(f"invalid native tool definition at index {index}")
+        if name in names:
+            raise LLMError(f"duplicate native tool definition {name!r}")
+        names.add(name)
+    return names
+
+
+def _parse_native_tool_calls(
+    message: dict[str, Any], *, allowed_names: set[str],
+) -> list[NativeToolCall]:
+    raw_calls = message.get("tool_calls")
+    if raw_calls is None:
+        return []
+    if not isinstance(raw_calls, list):
+        raise LLMProtocolError("message.tool_calls must be an array")
+
+    parsed: list[NativeToolCall] = []
+    seen_ids: set[str] = set()
+    for index, raw_call in enumerate(raw_calls):
+        if not isinstance(raw_call, dict):
+            raise LLMProtocolError(f"tool call at index {index} must be an object")
+        call_id = raw_call.get("id")
+        if not isinstance(call_id, str) or not call_id.strip():
+            raise LLMProtocolError(f"tool call at index {index} has no call ID")
+        if call_id in seen_ids:
+            raise LLMProtocolError(f"duplicate tool call ID {call_id!r}")
+        seen_ids.add(call_id)
+        if raw_call.get("type") != "function":
+            raise LLMProtocolError(f"tool call {call_id!r} is not type 'function'")
+
+        function = raw_call.get("function")
+        if not isinstance(function, dict):
+            raise LLMProtocolError(f"tool call {call_id!r} has no function object")
+        name = function.get("name")
+        if not isinstance(name, str) or not name.strip():
+            raise LLMProtocolError(f"tool call {call_id!r} has no function name")
+        if name not in allowed_names:
+            raise LLMProtocolError(f"tool call {call_id!r} names unknown function {name!r}")
+
+        raw_arguments = function.get("arguments")
+        if not isinstance(raw_arguments, str):
+            raise LLMProtocolError(
+                f"tool call {call_id!r} arguments must be a JSON-encoded string"
+            )
+        try:
+            arguments = json.loads(raw_arguments)
+        except json.JSONDecodeError as exc:
+            raise LLMProtocolError(
+                f"tool call {call_id!r} arguments are not valid JSON"
+            ) from exc
+        if not isinstance(arguments, dict):
+            raise LLMProtocolError(f"tool call {call_id!r} arguments must decode to an object")
+        parsed.append(NativeToolCall(id=call_id, name=name, arguments=arguments))
+    return parsed
 
 
 @dataclass
@@ -192,6 +282,10 @@ class OpenAICompatibleClient:
     @property
     def provider(self) -> str:
         return self.profile.name
+
+    @property
+    def supports_native_tools(self) -> bool:
+        return self.profile.supports_native_tools
 
     def _http(self) -> httpx.AsyncClient:
         if self._client is None or self._client.is_closed:
@@ -226,8 +320,8 @@ class OpenAICompatibleClient:
         return {"type": "json_object"}
 
     def _prepare_messages(
-        self, messages: list[dict[str, str]], json_schema: dict[str, Any] | None
-    ) -> list[dict[str, str]]:
+        self, messages: list[ChatMessage], json_schema: dict[str, Any] | None
+    ) -> list[ChatMessage]:
         """Normalize system context and carry schemas for JSON-mode-only providers.
 
         Groq additionally *rejects* a json_object request whose messages never mention
@@ -253,8 +347,11 @@ class OpenAICompatibleClient:
     async def complete(
         self,
         *,
-        messages: list[dict[str, str]],
+        messages: list[ChatMessage],
         json_schema: dict[str, Any] | None = None,
+        tools: list[dict[str, Any]] | None = None,
+        tool_choice: str | dict[str, Any] | None = None,
+        parallel_tool_calls: bool | None = None,
         timeout_s: float | None = None,
         call_purpose: CallPurpose | str = "unspecified",
         call_kind: CallKind | str = "planned",
@@ -263,6 +360,16 @@ class OpenAICompatibleClient:
         prefix_hash: str = "",
         max_output_tokens: int | None = None,
     ) -> LLMResult:
+        if tools is not None and json_schema is not None:
+            raise LLMError("tools and json_schema are mutually exclusive request modes")
+        if tools is None and (tool_choice is not None or parallel_tool_calls is not None):
+            raise LLMError("tool_choice and parallel_tool_calls require tools")
+        allowed_tool_names: set[str] = set()
+        if tools is not None:
+            if not self.profile.supports_native_tools:
+                raise LLMError(f"{self.provider} does not support native tools")
+            allowed_tool_names = _native_tool_names(tools)
+
         request_started = asyncio.get_event_loop().time()
         prepared_messages = self._prepare_messages(messages, json_schema)
         effective_prefix_hash = prefix_hash or compute_prefix_hash(prepared_messages[:1])
@@ -284,6 +391,12 @@ class OpenAICompatibleClient:
         response_format = self._response_format(json_schema)
         if response_format:
             payload["response_format"] = response_format
+        if tools is not None:
+            payload["tools"] = tools
+            if tool_choice is not None:
+                payload["tool_choice"] = tool_choice
+            if parallel_tool_calls is not None:
+                payload["parallel_tool_calls"] = parallel_tool_calls
 
         last_exc: Exception | None = None
         attempts_run = 0
@@ -340,9 +453,73 @@ class OpenAICompatibleClient:
             prompt_tokens = int(usage.get("prompt_tokens", 0) or 0)
             cached_prompt_tokens = int(prompt_details.get("cached_tokens", 0) or 0)
             message = choice.get("message") or {}
+            try:
+                if not isinstance(message, dict):
+                    raise LLMProtocolError("choice.message must be an object")
+                tool_calls = _parse_native_tool_calls(
+                    message, allowed_names=allowed_tool_names,
+                )
+                content = message.get("content")
+                if content is not None and not isinstance(content, str):
+                    raise LLMProtocolError("message.content must be a string or null")
+            except LLMProtocolError as exc:
+                duration_ms = int(
+                    (asyncio.get_event_loop().time() - request_started) * 1000
+                )
+                record_call(CallRecord(
+                    purpose=str(call_purpose),
+                    call_kind=str(call_kind),
+                    provider=self.provider,
+                    model=str(body.get("model", self.model)),
+                    prompt_version=prompt_version,
+                    catalog_version=catalog_version,
+                    prefix_hash=effective_prefix_hash,
+                    prompt_tokens=prompt_tokens,
+                    cached_prompt_tokens=cached_prompt_tokens,
+                    cache_write_prompt_tokens=cache_write_tokens,
+                    uncached_prompt_tokens=(
+                        prompt_tokens - cached_prompt_tokens
+                        if cached_prompt_tokens <= prompt_tokens
+                        else prompt_tokens
+                    ),
+                    completion_tokens=int(usage.get("completion_tokens", 0) or 0),
+                    duration_ms=duration_ms,
+                    attempts=successful_attempt + 1,
+                    retries=successful_attempt,
+                    finish_reason="protocol_error",
+                ))
+                logger.warning(
+                    "LLM native protocol error purpose=%s provider=%s model=%s: %s",
+                    call_purpose, self.provider, body.get("model", self.model), exc,
+                )
+                from app.core.logging import log_raw_trace
+
+                log_raw_trace(
+                    f"LLM native protocol error: {exc}",
+                    event="llm_protocol_error",
+                    provider=self.provider,
+                    model=body.get("model", self.model),
+                    raw_payload=payload,
+                    raw_response=body,
+                    duration_ms=duration_ms,
+                    status_code=resp.status_code,
+                    call_purpose=str(call_purpose),
+                    call_kind=str(call_kind),
+                    error=str(exc),
+                    level=logging.WARNING,
+                )
+                raise
+            assistant_message: ChatMessage = {
+                "role": "assistant",
+                "content": content,
+            }
+            if message.get("tool_calls") is not None:
+                assistant_message["tool_calls"] = list(message["tool_calls"])
             result = LLMResult(
-                text=message.get("content") or "",
+                text=content or "",
                 reasoning=message.get("reasoning_content") or "",
+                tool_calls=tool_calls,
+                assistant_message=assistant_message,
                 model=body.get("model", self.model),
                 provider=self.provider,
                 prompt_tokens=prompt_tokens,
@@ -370,11 +547,13 @@ class OpenAICompatibleClient:
             logger.info(
                 "LLM completion purpose=%s kind=%s provider=%s model=%s prompt_tokens=%s "
                 "cached_prompt_tokens=%s cache_write_prompt_tokens=%s uncached_prompt_tokens=%s "
-                "completion_tokens=%s finish_reason=%s duration_ms=%s retries=%s prefix=%s",
+                "completion_tokens=%s finish_reason=%s tool_calls=%s tool_names=%s "
+                "duration_ms=%s retries=%s prefix=%s",
                 result.call_purpose, result.call_kind,
                 result.provider, result.model, result.prompt_tokens,
                 result.cached_prompt_tokens, result.cache_write_prompt_tokens,
                 result.uncached_prompt_tokens, result.completion_tokens, result.finish_reason,
+                len(result.tool_calls), [call.name for call in result.tool_calls],
                 result.duration_ms, result.retries, result.prefix_hash,
             )
             from app.core.logging import log_raw_trace
@@ -391,6 +570,8 @@ class OpenAICompatibleClient:
                 duration_ms=result.duration_ms,
                 status_code=resp.status_code,
                 finish_reason=result.finish_reason,
+                tool_call_count=len(result.tool_calls),
+                tool_names=tuple(call.name for call in result.tool_calls),
                 call_purpose=result.call_purpose,
                 call_kind=result.call_kind,
                 prompt_version=result.prompt_version,
@@ -424,6 +605,8 @@ class OpenAICompatibleClient:
                 attempts=result.attempts,
                 retries=result.retries,
                 finish_reason=result.finish_reason,
+                tool_call_count=len(result.tool_calls),
+                tool_names=tuple(call.name for call in result.tool_calls),
             ))
             if result.finish_reason == "length":
                 logger.warning(
@@ -532,6 +715,7 @@ def _profile(provider: str) -> _ProviderProfile:
             base_url=settings.nlq_llm_base_url,
             api_key=settings.nlq_llm_api_key,
             supports_json_schema=True,
+            supports_native_tools=True,
             # llama-server exposes /health at the server root, one level above /v1.
             health_path=settings.nlq_llm_base_url.rstrip("/").removesuffix("/v1") + "/health",
         )
@@ -541,6 +725,7 @@ def _profile(provider: str) -> _ProviderProfile:
             base_url=GROQ_BASE_URL,
             api_key=settings.groq_api_key,
             supports_json_schema=False,
+            supports_native_tools=True,
             health_path="/models",
         )
     raise LLMUnavailable(

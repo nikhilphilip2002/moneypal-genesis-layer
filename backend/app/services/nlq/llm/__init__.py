@@ -3,9 +3,11 @@
 from app.services.nlq.llm.client import (
     LLMClient,
     LLMError,
+    LLMProtocolError,
     LLMResult,
     LLMTimeout,
     LLMUnavailable,
+    NativeToolCall,
     get_llm_client,
     warm_catalog_prompt_cache,
 )
@@ -13,9 +15,11 @@ from app.services.nlq.llm.client import (
 __all__ = [
     "LLMClient",
     "LLMError",
+    "LLMProtocolError",
     "LLMResult",
     "LLMTimeout",
     "LLMUnavailable",
+    "NativeToolCall",
     "get_llm_client",
     "warm_catalog_prompt_cache",
 ]

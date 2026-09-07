@@ -12,6 +12,7 @@ used as assistant messages.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import time
@@ -19,6 +20,8 @@ import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Callable
+
+from app.services.nlq.llm.messages import ChatMessage
 
 logger = logging.getLogger(__name__)
 
@@ -39,9 +42,8 @@ MIGRATIONS = (
 )
 
 TITLE_MAX = 80
-# v4 adds the conversation's latest explicit external-source consent and a frozen policy
-# snapshot per turn. Older records load with consent off.
-RECORD_VERSION = 4
+# v5 adds bounded provider-native tool exchanges. Older records remain ordinary text turns.
+RECORD_VERSION = 5
 OLDER_TURN_MAX_CHARS = 900
 CARD_ROWS_IN_CONTEXT = 20
 _table_ready = False
@@ -276,6 +278,7 @@ def begin_turn(
         "route": None,
         "sources": [],  # compatibility with version-1 clients
         "cards": [],
+        "agent_exchanges": [],
         "answer": None,
         "synthesis": None,
         "refusal": None,
@@ -318,6 +321,74 @@ def add_card(conversation_id: str, user: str, turn_id: str, card: dict[str, Any]
     _mutate(conversation_id, user, turn_id, lambda turn: turn.setdefault("cards", []).append(card))
 
 
+def add_agent_exchange(
+    conversation_id: str,
+    user: str,
+    turn_id: str,
+    *,
+    assistant_message: ChatMessage,
+    calls: list[dict[str, Any]],
+    tool_messages: list[ChatMessage],
+) -> None:
+    """Persist one complete native exchange; never leave calls without tool results."""
+    if len(calls) != len(tool_messages):
+        raise ValueError("every persisted native call needs one tool result")
+    call_ids = [str(call.get("id", "")) for call in calls]
+    result_ids = [str(message.get("tool_call_id", "")) for message in tool_messages]
+    assistant_ids = [
+        str(call.get("id", ""))
+        for call in assistant_message.get("tool_calls", [])
+        if isinstance(call, dict)
+    ]
+    if not all(call_ids) or call_ids != result_ids or call_ids != assistant_ids:
+        raise ValueError("native call IDs must match assistant and tool-result messages")
+    safe_calls = [_sanitize_agent_call(call) for call in calls]
+    safe_assistant = _sanitize_assistant_tool_calls(assistant_message)
+    payload = {
+        "assistant": safe_assistant,
+        "calls": safe_calls,
+        "tools": [dict(message) for message in tool_messages],
+    }
+    _mutate(
+        conversation_id, user, turn_id,
+        lambda turn: turn.setdefault("agent_exchanges", []).append(payload),
+    )
+
+
+def _sanitize_agent_call(call: dict[str, Any]) -> dict[str, Any]:
+    safe = dict(call)
+    if safe.get("name") == "search_public_web":
+        arguments = safe.get("arguments") if isinstance(safe.get("arguments"), dict) else {}
+        query = str(arguments.get("search_query", ""))
+        safe["arguments"] = {
+            "search_query": "[redacted after policy evaluation]",
+            "query_hash": hashlib.sha256(query.encode()).hexdigest() if query else "",
+        }
+    return safe
+
+
+def _sanitize_assistant_tool_calls(message: ChatMessage) -> ChatMessage:
+    safe: ChatMessage = {
+        "role": "assistant",
+        "content": message.get("content"),
+    }
+    sanitized = []
+    for raw in message.get("tool_calls", []) or []:
+        if not isinstance(raw, dict):
+            continue
+        call = dict(raw)
+        function = dict(call.get("function") or {})
+        if function.get("name") == "search_public_web":
+            function["arguments"] = json.dumps({
+                "search_query": "[redacted after policy evaluation]",
+            }, separators=(",", ":"))
+        call["function"] = function
+        sanitized.append(call)
+    if sanitized:
+        safe["tool_calls"] = sanitized
+    return safe
+
+
 def set_synthesis(conversation_id: str, user: str, turn_id: str, text: str) -> None:
     _mutate(conversation_id, user, turn_id, lambda turn: turn.update(synthesis=text))
 
@@ -348,6 +419,8 @@ def set_usage(
     model_call_count: int = 0,
     retry_count: int = 0,
     weighted_input_units: float = 0.0,
+    tool_call_count: int = 0,
+    tool_names: list[str] | tuple[str, ...] | None = None,
     calls: list[dict[str, Any]] | None = None,
 ) -> None:
     """Record what the provider actually charged for this turn.
@@ -373,6 +446,8 @@ def set_usage(
             "model_call_count": int(model_call_count),
             "retry_count": int(retry_count),
             "weighted_input_units": float(weighted_input_units),
+            "tool_call_count": int(tool_call_count),
+            "tool_names": list(tool_names or []),
             "calls": list(calls or []),
         }
 
@@ -459,6 +534,26 @@ def list_recent(limit: int = 50, *, user: str = "anonymous") -> list[Conversatio
 
 def get(conversation_id: str, *, user: str = "anonymous") -> ConversationRecord | None:
     return _load(conversation_id, user)
+
+
+def private_entities(conversation_id: str, *, user: str) -> tuple[str, ...]:
+    """Return exact previously selected private entity values for outbound screening."""
+    record = _load(conversation_id, user)
+    if record is None:
+        return ()
+    values: list[str] = []
+    for turn in record.turns:
+        for exchange in turn.get("agent_exchanges") or []:
+            if not isinstance(exchange, dict):
+                continue
+            for call in exchange.get("calls") or []:
+                if not isinstance(call, dict) or call.get("name") != "lookup_records":
+                    continue
+                arguments = call.get("arguments")
+                value = arguments.get("value") if isinstance(arguments, dict) else None
+                if isinstance(value, str) and value.strip():
+                    values.append(value.strip())
+    return tuple(dict.fromkeys(values[-20:]))
 
 
 @dataclass(slots=True)
@@ -569,6 +664,73 @@ def transcript(
 ) -> list[dict[str, str]]:
     """Messages only. See `build_transcript` for the budget and overflow detail."""
     return build_transcript(conversation_id, user=user, token_budget=token_budget).messages
+
+
+def build_native_transcript(
+    conversation_id: str,
+    *,
+    user: str,
+    token_budget: int | None = None,
+) -> list[ChatMessage]:
+    """Replay exact anchors and complete native exchanges within one context budget."""
+    from app.services.workbench.compaction import budget, state as session_state
+
+    limit = budget.budget_tokens() if token_budget is None else token_budget
+    record = _load(conversation_id, user)
+    if record is None:
+        return []
+    complete = [turn for turn in record.turns if turn.get("status") != "running"]
+    messages: list[ChatMessage] = []
+    spent = 0
+    compaction = record.compaction if isinstance(record.compaction, dict) else None
+    first_kept = str(compaction.get("first_kept_turn_id", "")) if compaction else ""
+    summary = str(compaction.get("summary", "")).strip() if compaction else ""
+    if summary:
+        summary = budget.clip_to_tokens(summary, int(limit * budget.SUMMARY_SHARE))
+        messages.append({"role": "system", "content": "Conversation checkpoint:\n\n" + summary})
+        spent += budget.estimate_tokens(summary)
+
+    state = session_state.from_turns(complete, _assistant_text)
+    state = session_state.trim_to_fit(
+        state,
+        max(0, int(limit * budget.COMPRESSED_SHARE) - spent),
+        budget.estimate_tokens,
+    )
+    rendered = session_state.render(state)
+    if rendered:
+        messages.append({"role": "system", "content": rendered})
+        spent += budget.estimate_tokens(rendered)
+
+    _, live = _split_at_turn(complete, first_kept)
+    groups: list[list[ChatMessage]] = []
+    for turn in live:
+        question = str(turn.get("question", "")).strip()
+        if not question:
+            continue
+        group: list[ChatMessage] = [{"role": "user", "content": question}]
+        exchanges = turn.get("agent_exchanges") or []
+        for exchange in exchanges:
+            assistant = exchange.get("assistant") if isinstance(exchange, dict) else None
+            tools = exchange.get("tools") if isinstance(exchange, dict) else None
+            if isinstance(assistant, dict) and isinstance(tools, list):
+                group.append(dict(assistant))
+                group.extend(dict(item) for item in tools if isinstance(item, dict))
+        answer = _assistant_text(turn)
+        if answer:
+            group.append({"role": "assistant", "content": answer})
+        groups.append(group)
+
+    kept: list[list[ChatMessage]] = []
+    for group in reversed(groups):
+        cost = budget.estimate_tokens(json.dumps(group, default=str, ensure_ascii=False))
+        if kept and spent + cost > limit:
+            break
+        if spent + cost > limit:
+            continue
+        kept.append(group)
+        spent += cost
+    messages.extend(message for group in reversed(kept) for message in group)
+    return messages
 
 
 def _split_at_turn(

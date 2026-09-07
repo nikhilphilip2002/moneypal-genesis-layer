@@ -697,3 +697,37 @@ async def route(
         ambiguity_class="lexical_ambiguity",
         effective_sources=tuple(allowed_source_ids),
     )
+
+
+def requires_mandatory_preflight(
+    question: str,
+    *,
+    pinned: str | None,
+    history_messages: list[dict[str, str]],
+    policy: "SourceAccessPolicy",
+) -> bool:
+    """Whether existing deterministic policy must run before native agent selection."""
+    from app.services.nlq import lookup
+    from app.services.workbench.access import is_external
+
+    db_followup = _resolve_db_structural_followup(question, history_messages)
+    resolved = db_followup or lookup.resolve_followup(question, history_messages)
+    normalized = normalize_lending_question(resolved)
+    if pinned or _DESTRUCTIVE_CUES.search(normalized) or _is_record_lookup(normalized):
+        return True
+    requested = ["web"] if _requires_web(normalized, ["web"]) else [
+        source_id for source_id, cue in _HYBRID_SOURCE_CUES.items() if cue.search(normalized)
+    ]
+    if any(is_external(source_id) and not policy.allows(source_id) for source_id in requested):
+        return True
+    if settings.workbench_deterministic_routing:
+        deterministic = _deterministic_route(
+            normalized,
+            visible_ids=[
+                source.id for source in visible_sources(policy.role, policy.effective_sources)
+            ],
+            policy_version=policy.version,
+        )
+        if deterministic is not None:
+            return True
+    return False

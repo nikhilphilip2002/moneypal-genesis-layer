@@ -17,7 +17,7 @@ from datetime import date
 from typing import Any, AsyncIterator
 
 from app.core.config import settings
-from app.services.nlq import audit, conversation, lookup, pii, planner, text_to_sql
+from app.services.nlq import audit, conversation, governed_execution, pii, planner, text_to_sql
 from app.services.nlq.catalog import Catalog, get_catalog
 from app.services.nlq.compiler import CompileError
 from app.services.nlq.contracts import (
@@ -33,7 +33,7 @@ from app.services.nlq.contracts import (
 )
 from app.services.nlq.executor import ExecutionError
 from app.services.nlq.llm import LLMError
-from app.services.nlq.pipeline import run_spec, run_sql
+from app.services.nlq.pipeline import run_sql
 
 logger = logging.getLogger(__name__)
 
@@ -265,7 +265,7 @@ async def _lookup_path(
     yield sse("stage", {"stage": "querying", "lookup": plan.detail})
     try:
         result = await asyncio.wait_for(
-            asyncio.to_thread(lookup.run, plan, role=ctx.role, catalog=cat),
+            asyncio.to_thread(governed_execution.records, plan, role=ctx.role, catalog=cat),
             timeout=_remaining_seconds(started),
         )
     except TimeoutError:
@@ -340,12 +340,15 @@ async def _analysis_path(
 
     yield sse("stage", {"stage": "querying", "analysis": plan.analysis_id})
     try:
-        spec = analysis_service.build(
-            plan.analysis_id, catalog=cat, period=plan.period, filters=plan.filters
-        )
         result = await asyncio.wait_for(
             asyncio.to_thread(
-                analysis_service.run, spec, catalog=cat, today=ctx.today, role=ctx.role
+                governed_execution.reviewed_analysis,
+                plan.analysis_id,
+                catalog=cat,
+                period=plan.period,
+                filters=list(plan.filters),
+                today=ctx.today,
+                role=ctx.role,
             ),
             timeout=_remaining_seconds(started),
         )
@@ -438,7 +441,7 @@ async def _worklist_path(
     try:
         result = await asyncio.wait_for(
             asyncio.to_thread(
-                worklist_service.build,
+                governed_execution.reviewed_worklist,
                 plan.worklist_id,
                 catalog=cat,
                 as_of=ctx.today,
@@ -528,7 +531,7 @@ async def _briefing_path(
     try:
         result = await asyncio.wait_for(
             asyncio.to_thread(
-                signal_service.briefing,
+                governed_execution.reviewed_briefing,
                 plan.persona_id,
                 catalog=cat,
                 today=ctx.today,
@@ -739,7 +742,11 @@ async def _execute_and_emit(
     try:
         chart = await asyncio.wait_for(
             asyncio.to_thread(
-                run_spec, spec, catalog=cat, today=ctx.today, role=ctx.role
+                governed_execution.metrics,
+                spec,
+                catalog=cat,
+                today=ctx.today,
+                role=ctx.role,
             ),
             timeout=_remaining_seconds(started),
         )

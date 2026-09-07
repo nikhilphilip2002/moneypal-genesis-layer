@@ -12,7 +12,7 @@ from typing import Any, AsyncIterator, NotRequired, TypedDict
 
 from app.core.config import settings
 from app.services.nlq.llm.telemetry import collect_calls, summarize_calls
-from app.services.workbench import access, compaction, composer, history, models, nodes, prompts, router
+from app.services.workbench import access, compaction, composer, facts, history, models, nodes, prompts, router
 from app.services.workbench.results import SourceResult
 
 logger = logging.getLogger(__name__)
@@ -58,6 +58,8 @@ class WorkbenchState(TypedDict):
     role: str
     turn_id: str
     history_messages: list[dict[str, str]]
+    agent_history_messages: NotRequired[list[dict[str, Any]]]
+    agent_private_entities: NotRequired[tuple[str, ...]]
     emit: "asyncio.Queue[str | None]"
     pinned: NotRequired[str | None]
     data_access: NotRequired[str | None]
@@ -65,6 +67,9 @@ class WorkbenchState(TypedDict):
     decision: NotRequired[router.RouteDecision]
     results: NotRequired[list[SourceResult]]
     timing: dict[str, Any]
+    agent_native: NotRequired[bool]
+    agent_synthesis_messages: NotRequired[list[dict[str, Any]]]
+    agent_prompt_prefix_hash: NotRequired[str]
 
 
 async def select_sources(state: WorkbenchState) -> dict[str, Any]:
@@ -318,34 +323,146 @@ async def answer_results(state: WorkbenchState) -> dict[str, Any]:
         return {}
 
     findings = composer.evidence_text(results)
+    fact_ledger = facts.from_results(results, max_per_result=100)
     text = results[0].summary.strip()
     result = None
     composition_limitation: dict[str, str] | None = None
-    needs_composition = len(results) > 1 or any(
+    needs_composition = bool(state.get("agent_native")) or len(results) > 1 or any(
         r.evidence and r.source in {"macro", "competitive", "regulatory", "web"}
         for r in results
     )
     try:
         if needs_composition:
             client = models.for_step(
-                "synthesize", sensitive=any(r.sensitive or r.source == "db" for r in results)
+                "synthesize",
+                sensitive=bool(state.get("agent_native"))
+                or any(r.sensitive or r.source == "db" for r in results),
             )
             prompt = prompts.build_composer_prompt(
                 question=state["question"], findings=findings,
                 history_messages=composer.relevant_history(state.get("history_messages", [])),
             )
-            async with asyncio.timeout(settings.workbench_composer_timeout_s):
-                result = await client.complete(
-                    messages=prompt.messages,
-                    timeout_s=settings.workbench_composer_timeout_s,
-                    call_purpose="final_compose",
-                    prompt_version=prompt.version,
-                    prefix_hash=prompt.prefix_hash,
-                    max_output_tokens=settings.workbench_composer_max_tokens,
-                )
+            remaining = settings.nlq_request_budget_s - (
+                time.perf_counter() - state["timing"]["started_at"]
+            )
+            async with asyncio.timeout(max(0.001, min(
+                settings.workbench_composer_timeout_s, remaining,
+            ))):
+                if state.get("agent_native"):
+                    from app.services.workbench.agent_tools import native_tool_definitions
+
+                    rounds = int(state.get("_agent_rounds", 0))
+                    if rounds >= settings.workbench_agent_max_rounds:
+                        raise RuntimeError("native agent exhausted its rounds before synthesis")
+                    state["_agent_rounds"] = rounds + 1
+                    result = await client.complete(
+                        messages=state.get("agent_synthesis_messages", prompt.messages),
+                        tools=native_tool_definitions(
+                            state["source_policy"], catalog=state.get("_agent_catalog"),
+                        ),
+                        tool_choice="none",
+                        parallel_tool_calls=False,
+                        timeout_s=settings.workbench_composer_timeout_s,
+                        call_purpose="agent_synthesize",
+                        prompt_version=prompts.AGENT_PROMPT_VERSION,
+                        prefix_hash=state.get("agent_prompt_prefix_hash", ""),
+                        max_output_tokens=settings.workbench_composer_max_tokens,
+                    )
+                    if result.tool_calls:
+                        raise RuntimeError("tool call returned during final synthesis phase")
+                else:
+                    result = await client.complete(
+                        messages=prompt.messages,
+                        timeout_s=settings.workbench_composer_timeout_s,
+                        call_purpose="final_compose",
+                        prompt_version=prompt.version,
+                        prefix_hash=prompt.prefix_hash,
+                        max_output_tokens=settings.workbench_composer_max_tokens,
+                    )
             candidate = result.text.strip()
-            if candidate and composer.numbers_are_grounded(candidate, findings):
+            unsupported = composer.unsupported_numbers(candidate, findings, fact_ledger)
+            if candidate and not unsupported:
                 text = candidate
+            elif (
+                candidate
+                and unsupported
+                and state.get("agent_native")
+                and settings.workbench_agent_synthesis_repairs
+                and int(state.get("_agent_rounds", 0))
+                < settings.workbench_agent_max_rounds
+            ):
+                repair_base = (
+                    state.get("agent_synthesis_messages", prompt.messages)
+                    if state.get("agent_native") else prompt.messages
+                )
+                repair_messages = [
+                    *repair_base,
+                    {"role": "assistant", "content": candidate},
+                    {
+                        "role": "user",
+                        "content": (
+                            "Rewrite the answer once. Remove or correct these unsupported "
+                            f"numeric claims: {', '.join(unsupported)}. Use only the supplied "
+                            "evidence; do not introduce new figures."
+                        ),
+                    },
+                ]
+                repair_kwargs = {}
+                if state.get("agent_native"):
+                    from app.services.workbench.agent_tools import native_tool_definitions
+
+                    state["_agent_rounds"] = int(state.get("_agent_rounds", 0)) + 1
+                    repair_kwargs = {
+                        "tools": native_tool_definitions(
+                            state["source_policy"], catalog=state.get("_agent_catalog"),
+                        ),
+                        "tool_choice": "none",
+                        "parallel_tool_calls": False,
+                    }
+                repaired = await client.complete(
+                    messages=repair_messages,
+                    timeout_s=max(0.001, min(
+                        settings.workbench_composer_timeout_s,
+                        settings.nlq_request_budget_s
+                        - (time.perf_counter() - state["timing"]["started_at"]),
+                    )),
+                    call_purpose="agent_synthesize",
+                    call_kind="repair",
+                    prompt_version=(
+                        prompts.AGENT_PROMPT_VERSION
+                        if state.get("agent_native") else prompt.version
+                    ),
+                    prefix_hash=(
+                        state.get("agent_prompt_prefix_hash", "")
+                        if state.get("agent_native") else prompt.prefix_hash
+                    ),
+                    max_output_tokens=settings.workbench_composer_max_tokens,
+                    **repair_kwargs,
+                )
+                if repaired.tool_calls:
+                    raise RuntimeError("tool call returned during synthesis repair phase")
+                repaired_candidate = repaired.text.strip()
+                if repaired_candidate and composer.numbers_are_grounded(
+                    repaired_candidate, findings, fact_ledger,
+                ):
+                    text = repaired_candidate
+                else:
+                    remaining_unsupported = composer.unsupported_numbers(
+                        repaired_candidate, findings, fact_ledger,
+                    )
+                    cleaned = composer.remove_unsupported_numeric_sentences(
+                        repaired_candidate, remaining_unsupported,
+                    )
+                    text = cleaned or composer.extractive_fallback(results)
+                    composition_limitation = {
+                        "source": "composer",
+                        "reason": (
+                            "Unsupported numeric claims were removed after the bounded "
+                            "synthesis repair."
+                            if cleaned
+                            else "The repaired synthesis remained ungrounded; showing retrieved evidence instead."
+                        ),
+                    }
             else:
                 text = composer.extractive_fallback(results)
                 composition_limitation = {
@@ -423,6 +540,15 @@ async def run_workbench(
         logger.warning("workbench transcript load failed; continuing without history", exc_info=True)
         built = history.Transcript()
     history_messages = built.messages
+    try:
+        agent_history_messages = history.build_native_transcript(
+            conversation_id, user=user,
+        )
+        agent_private_entities = history.private_entities(conversation_id, user=user)
+    except Exception:  # noqa: BLE001
+        logger.warning("workbench native transcript load failed", exc_info=True)
+        agent_history_messages = history_messages
+        agent_private_entities = ()
     source_policy = access.build_policy(
         role=role, external_sources_enabled=external_sources_enabled,
     )
@@ -477,6 +603,8 @@ async def run_workbench(
         "question": question, "conversation_id": conversation_id,
         "user": user, "role": role, "turn_id": turn_id,
         "history_messages": history_messages,
+        "agent_history_messages": agent_history_messages,
+        "agent_private_entities": agent_private_entities,
         "emit": emit, "pinned": pinned,
         "data_access": data_access,
         "source_policy": source_policy,
@@ -541,7 +669,8 @@ async def run_workbench(
             # Checkpoint after the turn, never before it: the summarization call would
             # otherwise sit between the user's question and their first streamed token.
             # Detached and failure-tolerant — the transcript works without it.
-            _spawn_background(compaction.maybe_compact(conversation_id, user))
+            if settings.workbench_compaction_enabled:
+                _spawn_background(compaction.maybe_compact(conversation_id, user))
             await emit.put(None)  # sentinel: the graph is done producing frames
 
     task = asyncio.create_task(drive())

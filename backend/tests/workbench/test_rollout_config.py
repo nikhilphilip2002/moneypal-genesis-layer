@@ -22,3 +22,15 @@ def test_external_connector_kill_switch_is_independent(monkeypatch):
     config = Settings()
     assert config.workbench_external_connectors_enabled is False
     assert config.workbench_common_composer is True
+
+
+def test_native_agent_rollout_defaults_off_and_bounds_values(monkeypatch):
+    monkeypatch.setenv("WORKBENCH_AGENT_MODE", "canary")
+    monkeypatch.setenv("WORKBENCH_AGENT_CANARY_PERCENT", "150")
+    monkeypatch.setenv("WORKBENCH_AGENT_MAX_ROUNDS", "99")
+    monkeypatch.setenv("WORKBENCH_AGENT_MAX_TOOL_CALLS", "0")
+    config = Settings()
+    assert config.workbench_agent_mode == "canary"
+    assert config.workbench_agent_canary_percent == 100
+    assert config.workbench_agent_max_rounds == 6
+    assert config.workbench_agent_max_tool_calls == 1
