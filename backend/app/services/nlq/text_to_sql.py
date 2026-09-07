@@ -121,6 +121,11 @@ async def generate(
         logger.info("NLQ selected deterministic interest-rate distribution")
         return exact
 
+    exact = _ranked_agent_borrower_collections_attempt(question, cat, allow_pii=allow_pii)
+    if exact is not None:
+        logger.info("NLQ selected reviewed agent-borrower collections query")
+        return exact
+
     exact = _agent_directory_attempt(question, cat, allow_pii=allow_pii)
     if exact is not None:
         logger.info("NLQ selected deterministic agent-directory query")
@@ -325,6 +330,106 @@ _AGENT_DIRECTORY_RE = re.compile(
     r"mobiles?|phones?|emails?|role(?:s|\s+codes?)?|joined|linked\s+(?:loan|customer|borrower))\b",
     re.IGNORECASE,
 )
+_AGENT_DIRECTORY_LOAN_FACT_RE = re.compile(
+    r"\b(?:customer|borrower|client)\s+names?\b|"
+    r"\b(?:principal|interest|amount)\s+(?:collected|paid|repaid|recovered)\b|"
+    r"\b(?:disburs(?:ed|ement)|sanction(?:ed)?|outstanding)\s+amount\b",
+    re.IGNORECASE,
+)
+
+
+def _ranked_agent_borrower_collections_attempt(
+    question: str,
+    catalog: Catalog,
+    *,
+    allow_pii: bool,
+) -> SqlAttempt | None:
+    """Reviewed cross-grain query for agent ranking plus borrower collection detail."""
+    normalized = normalize_lending_question(question)
+    asks_ranking = bool(
+        re.search(r"\b(?:top|rank(?:ed|ing)?|highest|most|largest|maximum)\b", normalized, re.I)
+    )
+    asks_agents = bool(re.search(r"\bagents?\b", normalized, re.I))
+    asks_borrowers = bool(re.search(r"\b(?:borrowers?|customers?|clients?)\b", normalized, re.I))
+    asks_names = bool(
+        re.search(r"\b(?:borrower|customer|client)\s+names?\b", normalized, re.I)
+    )
+    asks_principal = bool(
+        re.search(
+            r"\b(?:principal|principle)\b[^?]{0,35}\b(?:collected|paid|repaid|recovered)\b|"
+            r"\b(?:collected|paid|repaid|recovered)\b[^?]{0,35}\b(?:principal|principle)\b",
+            normalized,
+            re.I,
+        )
+    )
+    if not (
+        allow_pii and asks_ranking and asks_agents and asks_borrowers and asks_names
+        and asks_principal
+    ):
+        return None
+
+    limit_match = re.search(r"\btop\s+(?P<limit>\d{1,2})\b", normalized, re.I)
+    agent_limit = max(1, min(int(limit_match.group("limit")), 50)) if limit_match else 10
+    sql = f"""\
+SELECT lam.agent_code,
+       agent.agent_name,
+       lam.customer_name,
+       COUNT(lam.customer_id) OVER (PARTITION BY lam.agent_code) AS borrower_count,
+       COALESCE(SUM(repay.principal_paid), 0) AS principal_collected
+FROM gold.semantic_loan_account AS lam
+LEFT JOIN gold.semantic_repayment_event AS repay
+  ON repay.entity_num::text = lam.entity_num::text
+ AND repay.loan_account_number::text = lam.loan_account_number::text
+ AND repay.repayment_date <= CURRENT_DATE
+LEFT JOIN gold.semantic_agent AS agent
+  ON agent.agent_code::text = lam.agent_code::text
+WHERE lam.agent_code IS NOT NULL
+  AND lam.sanction_date <= CURRENT_DATE
+  AND lam.agent_code IN (
+      SELECT ranked.agent_code
+      FROM gold.semantic_loan_account AS ranked
+      WHERE ranked.agent_code IS NOT NULL
+        AND ranked.sanction_date <= CURRENT_DATE
+      GROUP BY ranked.agent_code
+      ORDER BY COUNT(DISTINCT ranked.customer_id) DESC
+      LIMIT {agent_limit}
+  )
+GROUP BY lam.agent_code, agent.agent_name, lam.customer_id, lam.customer_name
+ORDER BY borrower_count DESC,
+         lam.agent_code ASC,
+         principal_collected DESC,
+         lam.customer_name ASC
+LIMIT 5000"""
+    checked = validate(
+        sql,
+        catalog=catalog,
+        allow_pii=True,
+        allowed_pii_columns={"agent_name", "customer_name"},
+    )
+    return SqlAttempt(
+        sql=checked.sql,
+        tables=checked.tables,
+        explanation=(
+            f"Top {agent_limit} agents ranked by distinct linked borrowers, with each "
+            "borrower's cumulative principal collected through today."
+        ),
+        validated=True,
+        attempts=0,
+        model="deterministic",
+        provider="catalog",
+        warnings=[
+            "Principal collected is summed from governed repayment events through today."
+        ],
+        pii_columns=checked.pii_columns,
+        column_units={
+            "agent_code": "text",
+            "agent_name": "text",
+            "customer_name": "text",
+            "borrower_count": "count",
+            "principal_collected": "inr",
+        },
+        reviewed=True,
+    )
 
 
 def _agent_directory_attempt(
@@ -335,7 +440,11 @@ def _agent_directory_attempt(
 ) -> SqlAttempt | None:
     """Select only explicitly requested fields from the governed agent directory."""
     normalized = normalize_lending_question(question)
-    if not allow_pii or _AGENT_DIRECTORY_RE.search(normalized) is None:
+    if (
+        not allow_pii
+        or _AGENT_DIRECTORY_RE.search(normalized) is None
+        or _AGENT_DIRECTORY_LOAN_FACT_RE.search(normalized) is not None
+    ):
         return None
 
     generic = bool(re.search(r"\bagent\s+(?:details?|directory|profiles?)\b", normalized, re.I))

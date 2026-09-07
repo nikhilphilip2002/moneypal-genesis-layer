@@ -40,7 +40,19 @@ AGENT_SYSTEM_PROMPT = (
     "January 1 through December 31 bounds, and month-wise or monthly means include the month "
     "dimension. When a request combines a ranking at one grain with detail rows at another "
     "grain—for example agents ranked by borrower count plus each customer name and principal "
-    "collected—use run_validated_query and preserve the complete intent."
+    "collected—use run_validated_query and preserve the complete intent. Never invent a "
+    "filter or grouping that the user did not request. Loan disbursed, disbursement, or "
+    "disbursed amount means disbursement_total; it does not mean loan_count. Example: for "
+    "'month wise loan disbursed till today', call query_metrics with metrics "
+    "['disbursement_total'], dimensions ['month'], filters [], having [], period.relative "
+    "'all_time', order_by month ascending, and no comparison, share, or explanation. For "
+    "'loan disbursed month wise in 2026', use the same call with explicit period.start "
+    "2026-01-01, period.end 2026-12-31, and period.relative null. A relative period and "
+    "explicit bounds are mutually exclusive. For 'list the agents with highest borrowers "
+    "include the customer name and principal amount collected', call run_validated_query, "
+    "preserve that full ranking-and-detail intent, and use only "
+    "gold.semantic_loan_account plus gold.semantic_repayment_event; principal collected is "
+    "SUM(principal_paid), never a loan-ledger field."
 )
 
 

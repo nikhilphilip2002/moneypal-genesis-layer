@@ -83,6 +83,44 @@ async def test_invalid_arguments_receive_one_native_repair(monkeypatch):
 
 
 @pytest.mark.anyio
+async def test_explicit_calendar_year_canonicalizes_duplicate_relative_period(monkeypatch):
+    call = NativeToolCall(
+        id="year",
+        name="query_metrics",
+        arguments={
+            "metrics": ["disbursement_total"],
+            "dimensions": ["month"],
+            "filters": [],
+            "having": [],
+            "period": {
+                "grain": "month", "start": "2026-01-01", "end": "2026-12-31",
+                "relative": "all_time",
+            },
+            "compare_to": None,
+            "order_by": {"field": "month", "direction": "asc"},
+            "limit": 100,
+            "as_share": False,
+            "explain": False,
+        },
+    )
+    response = _result(call)
+
+    async def select(*_args, **_kwargs):
+        return response
+
+    monkeypatch.setattr(agent, "_select", select)
+    state = _state()
+    state["question"] = "loan disbursed month wise in 2026"
+    result = await agent.select_calls(state)
+
+    assert result.tool_calls[0].arguments["period"]["relative"] is None
+    raw_arguments = json.loads(
+        result.assistant_message["tool_calls"][0]["function"]["arguments"]
+    )
+    assert raw_arguments["period"]["relative"] is None
+
+
+@pytest.mark.anyio
 async def test_unauthorized_domain_fails_without_a_repair_round(monkeypatch):
     state = _state()
     state["source_policy"] = access.build_policy(
@@ -115,7 +153,7 @@ def test_canary_assignment_is_stable(monkeypatch):
 
 
 @pytest.mark.anyio
-async def test_native_path_streams_and_finalizes_with_tool_choice_none(monkeypatch):
+async def test_single_native_db_card_uses_its_grounded_summary_without_resynthesis(monkeypatch):
     calls = []
     native_call = NativeToolCall(
         id="call_1",
@@ -182,8 +220,7 @@ async def test_native_path_streams_and_finalizes_with_tool_choice_none(monkeypat
     assert any("event: source_start" in frame for frame in frames)
     assert any("event: source_card" in frame for frame in frames)
     assert any("event: answer" in frame and "4.2%" in frame for frame in frames)
-    assert calls[0]["tool_choice"] == "required"
-    assert calls[-1]["tool_choice"] == "none"
+    assert [call["tool_choice"] for call in calls] == ["required"]
     assert all("json_schema" not in call for call in calls)
 
 

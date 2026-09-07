@@ -135,7 +135,8 @@ def compile_spec(
     from_parts = [source_sql]
     for join, right_table in joins:
         right_alias = _alias(right_table)
-        left_alias = base_alias if join.left == base_table else _alias(join.left)
+        traversal_left = join.left if join.right == right_table else join.right
+        left_alias = base_alias if traversal_left == base_table else _alias(traversal_left)
         conditions = []
         for left_col, right_col in join.on:
             # Column order in joins.yaml follows (left table, right table); flip when the
@@ -436,10 +437,16 @@ def _join_plan(
                 f"no declared join between {base_table.split('.')[-1]} and "
                 f"{table.split('.')[-1]}, so this combination cannot be answered"
             )
-        if join.fans_out and _has_additive_metric(plan):
+        traverses_forward = join.left == base_table
+        traversal_fans_out = (
+            join.cardinality in {"one_to_many", "many_to_many"}
+            if traverses_forward
+            else join.cardinality in {"many_to_one", "many_to_many"}
+        )
+        if traversal_fans_out:
             raise CompileError(
                 f"joining {table.split('.')[-1]} would produce multiple rows per account "
-                f"and multiply the totals. {join.description.strip().splitlines()[0]}"
+                f"and can multiply the result. {join.description.strip().splitlines()[0]}"
             )
         out.append((join, table))
     return out

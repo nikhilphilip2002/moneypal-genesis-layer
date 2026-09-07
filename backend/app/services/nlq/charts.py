@@ -564,7 +564,9 @@ def build_from_rows(
         ],
         rows=rows,
         summary=_generated_summary(
-            rows, columns, numeric, labels, unit_hints, description=description
+            rows, columns, numeric, labels, unit_hints,
+            description=description,
+            unverified=lineage.unverified,
         ),
         drilldown=None,
         lineage=lineage,
@@ -653,9 +655,10 @@ def _generated_summary(
     unit_hints: dict[str, str],
     *,
     description: str,
+    unverified: bool,
 ) -> str:
     if not rows:
-        base = "The generated query returned no matching rows."
+        base = "The query returned no matching rows."
     elif len(rows) == 1 and numeric and not labels:
         values = [
             f"{column.replace('_', ' ').title()} was "
@@ -663,6 +666,18 @@ def _generated_summary(
             for column in numeric
         ]
         base = "; ".join(values) + "."
+    elif {
+        "agent_code", "customer_name", "borrower_count", "principal_collected",
+    }.issubset(columns):
+        top = max(rows, key=lambda row: row.get("borrower_count") or 0)
+        agent = top.get("agent_name") or top.get("agent_code") or "The leading agent"
+        agent_count = len({row.get("agent_code") for row in rows if row.get("agent_code")})
+        base = (
+            f"{agent} has the highest borrower count at "
+            f"{format_value(top.get('borrower_count'), 'count')}. Returned {len(rows):,} "
+            f"borrower row(s) across {agent_count:,} ranked agent(s), with principal "
+            "collected for each borrower."
+        )
     elif labels and numeric:
         label, metric = labels[0], numeric[0]
         ranked = [row for row in rows if isinstance(row.get(metric), (int, float))]
@@ -688,6 +703,8 @@ def _generated_summary(
     verification = (
         "This uses a validated read-only generated query rather than a reviewed metric; "
         "check Source details before relying on it."
+        if unverified
+        else "This uses a reviewed governed read-only query."
     )
     return " ".join(part for part in (base, detail, verification) if part)
 

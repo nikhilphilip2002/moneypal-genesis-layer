@@ -71,6 +71,24 @@ class TestPeriod:
         with pytest.raises(ValidationError):
             Period(grain="day", start=date(2026, 3, 1), end=date(2026, 1, 1))
 
+    def test_rejects_relative_period_mixed_with_explicit_bounds(self):
+        with pytest.raises(ValidationError, match="cannot combine"):
+            Period(
+                grain="month", relative="all_time",
+                start=date(2026, 1, 1), end=date(2026, 12, 31),
+            )
+
+    @pytest.mark.parametrize(
+        "kwargs",
+        [
+            {"start": date(2026, 1, 1)},
+            {"end": date(2026, 12, 31)},
+        ],
+    )
+    def test_explicit_period_requires_both_bounds(self, kwargs):
+        with pytest.raises(ValidationError, match="both `start` and `end`"):
+            Period(grain="month", **kwargs)
+
     def test_is_resolved_only_with_concrete_dates(self):
         assert not Period(relative="last_quarter").is_resolved
         assert Period(start=date(2026, 1, 1), end=date(2026, 3, 31)).is_resolved

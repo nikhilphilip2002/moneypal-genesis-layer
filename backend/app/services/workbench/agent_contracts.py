@@ -59,7 +59,14 @@ class GenerateBriefingArguments(AgentArguments):
 
 class RunValidatedQueryArguments(AgentArguments):
     intent: str = Field(min_length=1, max_length=1000)
-    tables: list[str] = Field(default_factory=list)
+    tables: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Only catalog tables needed by the intent. Principal collected comes from "
+            "gold.semantic_repayment_event; borrower and agent attribution come from "
+            "gold.semantic_loan_account."
+        ),
+    )
 
 
 class SearchCuratedKnowledgeArguments(AgentArguments):

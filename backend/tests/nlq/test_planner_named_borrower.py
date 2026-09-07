@@ -245,3 +245,14 @@ async def test_agent_directory_fields_route_without_calling_an_llm():
     assert outcome.model == "deterministic"
     assert outcome.attempts == 0
     assert outcome.plan.tables == ["gold.semantic_agent"]
+
+
+@pytest.mark.anyio
+async def test_agent_borrower_fact_request_is_not_reduced_to_agent_directory():
+    outcome = await plan(
+        "list the agents with highest borrowers include the customer name and principal amount collected",
+        client=SqlClient(),
+    )
+
+    assert isinstance(outcome.plan, SqlPlan)
+    assert outcome.model == "test"

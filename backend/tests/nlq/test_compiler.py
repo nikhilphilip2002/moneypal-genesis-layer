@@ -84,6 +84,15 @@ class TestGeneratedSql:
         assert "JOIN gold.semantic_application" not in out
         assert 'application."observable_outcome_status"' in out
 
+    def test_reverse_many_to_one_application_join_is_rejected(self):
+        """Loan -> applications can multiply each loan and must never reach execution."""
+        with pytest.raises(CompileError, match="can multiply the result"):
+            sql_for(
+                metrics=["loan_count"],
+                dimensions=["month", "loan_agent"],
+                filters=[Filter(field="application_outcome", op="eq", value="disbursed")],
+            )
+
     def test_receipts_can_use_governed_loan_product(self):
         out = sql_for(metrics=["receipt_total"], dimensions=["product"])
         assert "FROM gold.semantic_receipt_adjustment_event AS receipt_adjustment" in out

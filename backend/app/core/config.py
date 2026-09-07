@@ -141,7 +141,7 @@ class Settings:
             get("WORKBENCH_COMPOSER_TIMEOUT_S", "20") or "20"
         )
         self.workbench_composer_max_tokens = int(
-            get("WORKBENCH_COMPOSER_MAX_TOKENS", "160") or "160"
+            get("WORKBENCH_COMPOSER_MAX_TOKENS", "512") or "512"
         )
         # Qwen3 and its relatives think by default, and llama-server returns that trace in
         # `reasoning_content` with `content` left empty — the planner then sees no JSON at

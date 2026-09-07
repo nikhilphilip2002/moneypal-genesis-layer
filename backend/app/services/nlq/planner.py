@@ -134,6 +134,12 @@ _AGENT_DIRECTORY_RE = re.compile(
     r"mobiles?|phones?|emails?|role(?:s|\s+codes?)?|joined|linked\s+(?:loan|customer|borrower))\b",
     re.IGNORECASE,
 )
+_AGENT_DIRECTORY_LOAN_FACT_RE = re.compile(
+    r"\b(?:customer|borrower|client)\s+names?\b|"
+    r"\b(?:principal|interest|amount)\s+(?:collected|paid|repaid|recovered)\b|"
+    r"\b(?:disburs(?:ed|ement)|sanction(?:ed)?|outstanding)\s+amount\b",
+    re.IGNORECASE,
+)
 _BY_PRODUCT_RE = re.compile(r"\bby\s+(?:loan\s+)?product\b", re.IGNORECASE)
 _OPEN_CLOSED_RE = re.compile(
     r"\b(?:open\s+(?:and|or|vs\.?|versus)\s+closed|"
@@ -784,6 +790,13 @@ def _generic_governed_metric_plan(question: str, catalog: Catalog) -> QuerySpecP
     """
     if re.search(r"\bbelonging(?:\s+to)?\b", question, re.I):
         return None
+    # This is a parent ranking plus child-level detail, not a single-metric aggregate.
+    # Let the validated SQL path preserve both grains instead of silently dropping the
+    # requested agent ranking and borrower columns.
+    if re.search(r"\bagents?\b", question, re.I) and _AGENT_DIRECTORY_LOAN_FACT_RE.search(
+        question
+    ):
+        return None
     if _COMPARE_RE.search(question) or re.search(
         r"\b(?:growth|grew|declin(?:e|ed|ing)|changed?|difference|gap|relative\s+to|"
         r"combine|percentage)\b",
@@ -1085,7 +1098,10 @@ def _top_agents_plan(question: str) -> QuerySpecPlan | None:
 
 def _agent_directory_plan(question: str) -> SqlPlan | None:
     """Route requested agent profile fields to reviewed deterministic SQL generation."""
-    if _AGENT_DIRECTORY_RE.search(question) is None:
+    if (
+        _AGENT_DIRECTORY_RE.search(question) is None
+        or _AGENT_DIRECTORY_LOAN_FACT_RE.search(question) is not None
+    ):
         return None
     return SqlPlan(
         intent=question,

@@ -6,6 +6,7 @@ import asyncio
 import hashlib
 import json
 import logging
+import re
 import time
 from typing import Any
 
@@ -27,6 +28,50 @@ from app.services.workbench.agent_tools import (
 from app.services.workbench.results import SourceResult
 
 logger = logging.getLogger(__name__)
+
+
+def _canonicalize_native_arguments(result, state: dict[str, Any]) -> None:
+    """Canonicalize an unambiguous duplicate period representation from local models.
+
+    Some strict-schema models populate both nullable period representations even when the
+    user gave a calendar year. When both concrete bounds are present and their years are
+    explicitly named in the current question, concrete bounds unambiguously win. Other
+    conflicts remain invalid and use the normal native repair path.
+    """
+    mentioned_years = {
+        int(value) for value in re.findall(r"\b(20\d{2})\b", state.get("question", ""))
+    }
+    if not mentioned_years:
+        return
+    changed: dict[str, dict[str, Any]] = {}
+    for call in result.tool_calls:
+        if call.name != "query_metrics":
+            continue
+        period = call.arguments.get("period")
+        if not isinstance(period, dict):
+            continue
+        start, end, relative = period.get("start"), period.get("end"), period.get("relative")
+        if not (start and end and relative):
+            continue
+        try:
+            bound_years = {int(str(start)[:4]), int(str(end)[:4])}
+        except (TypeError, ValueError):
+            continue
+        if not bound_years.issubset(mentioned_years):
+            continue
+        period["relative"] = None
+        changed[call.id] = call.arguments
+
+    if not changed or result.assistant_message is None:
+        return
+    for raw_call in result.assistant_message.get("tool_calls", []) or []:
+        if not isinstance(raw_call, dict) or raw_call.get("id") not in changed:
+            continue
+        function = raw_call.get("function")
+        if isinstance(function, dict):
+            function["arguments"] = json.dumps(
+                changed[str(raw_call["id"])], separators=(",", ":"), default=str,
+            )
 
 
 def _remaining_timeout(state: dict[str, Any], cap: float) -> float:
@@ -101,6 +146,7 @@ def _preflight(result, state: dict[str, Any]) -> list[tuple[str, str]]:
         raise LLMProtocolError(
             "native selection returned no tool_calls; assistant content is not executable"
         )
+    _canonicalize_native_arguments(result, state)
     if len(result.tool_calls) > settings.workbench_agent_max_tool_calls:
         raise LLMProtocolError("native selection exceeded the per-turn tool-call limit")
     terminals = [call for call in result.tool_calls if call.name == "finish_without_data"]
@@ -423,7 +469,9 @@ async def run(state: dict[str, Any]) -> None:
             "role": "user",
             "content": (
                 "Answer the original question now using only the tool results above. "
-                "Do not call another tool. Do not introduce unsupported numbers."
+                "Do not call another tool. Do not introduce unsupported numbers. For a "
+                "large result table, summarize the leading result and tell the user the "
+                "full rows are in the table; do not enumerate the table in prose."
             ),
         },
     ]

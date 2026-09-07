@@ -327,8 +327,12 @@ async def answer_results(state: WorkbenchState) -> dict[str, Any]:
     text = results[0].summary.strip()
     result = None
     composition_limitation: dict[str, str] | None = None
-    needs_composition = bool(state.get("agent_native")) or len(results) > 1 or any(
-        r.evidence and r.source in {"macro", "competitive", "regulatory", "web"}
+    # One governed DB card already has a deterministic, chart-aware summary and complete
+    # rows. Re-synthesizing it made the model omit endpoint months, mis-rank values, and
+    # waste a second local-model call. Composition remains necessary when evidence must be
+    # combined or interpreted across document/external sources.
+    needs_composition = len(results) > 1 or any(
+        r.source in {"knowledge", "schema", "macro", "competitive", "regulatory", "web"}
         for r in results
     )
     try:

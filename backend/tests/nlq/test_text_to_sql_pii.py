@@ -12,6 +12,7 @@ from app.services.nlq.text_to_sql import (
     _infer_column_units,
     _named_borrower_disbursed_attempt,
     _named_borrower_principal_attempt,
+    _ranked_agent_borrower_collections_attempt,
     _system_prompt,
     named_borrower_disbursed_name,
     named_borrower_principal_name,
@@ -153,6 +154,77 @@ def test_agent_directory_stays_blocked_when_pii_is_disabled():
         get_catalog(),
         allow_pii=False,
     ) is None
+
+
+def test_agent_directory_does_not_steal_agent_rankings_with_borrower_facts():
+    assert _agent_directory_attempt(
+        "list the agents with highest borrowers include the customer name and principal amount collected",
+        get_catalog(),
+        allow_pii=True,
+    ) is None
+
+
+def test_ranked_agent_borrower_collections_uses_reviewed_repayment_sql():
+    attempt = _ranked_agent_borrower_collections_attempt(
+        "list the agents with highest borrowers include the customer name and principle amount collected",
+        get_catalog(),
+        allow_pii=True,
+    )
+
+    assert attempt is not None and attempt.validated and attempt.reviewed
+    assert attempt.model == "deterministic"
+    assert attempt.tables == [
+        "gold.semantic_agent",
+        "gold.semantic_loan_account",
+        "gold.semantic_repayment_event",
+    ]
+    assert "SUM(repay.principal_paid)" in attempt.sql
+    assert "COUNT(DISTINCT ranked.customer_id) DESC" in attempt.sql
+    assert "LIMIT 10" in attempt.sql
+    assert "customer_name" in attempt.pii_columns
+    assert attempt.column_units["principal_collected"] == "inr"
+
+
+def test_ranked_agent_borrower_collections_honors_bounded_top_limit():
+    attempt = _ranked_agent_borrower_collections_attempt(
+        "top 7 agents with borrowers include customer names and principal collected",
+        get_catalog(),
+        allow_pii=True,
+    )
+
+    assert attempt is not None
+    assert "LIMIT 7" in attempt.sql
+
+
+def test_reviewed_agent_borrower_result_reports_agents_and_real_measure():
+    chart = build_from_rows(
+        question="top agents with borrower names and principal collected",
+        result=QueryResult(
+            rows=[{
+                "agent_code": "AGNT45",
+                "agent_name": "VANITHA",
+                "customer_name": "CUSTOMER ONE",
+                "borrower_count": 338,
+                "principal_collected": 77447.99,
+            }],
+            columns=[
+                "agent_code", "agent_name", "customer_name", "borrower_count",
+                "principal_collected",
+            ],
+            status="ok", duration_ms=1, sql="SELECT 1", row_count=1,
+        ),
+        lineage=Lineage(path="text_to_sql", sql="SELECT 1", unverified=False),
+        unit_hints={
+            "agent_code": "text", "agent_name": "text", "customer_name": "text",
+            "borrower_count": "count", "principal_collected": "inr",
+        },
+        description="Top agents ranked by distinct borrowers.",
+    )
+
+    assert "VANITHA has the highest borrower count at 338" in chart.summary
+    assert "principal collected for each borrower" in chart.summary
+    assert "reviewed governed read-only query" in chart.summary
+    assert "generated query" not in chart.summary
 
 
 def test_named_borrower_literal_is_safely_quoted():

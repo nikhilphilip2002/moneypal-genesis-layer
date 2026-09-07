@@ -126,14 +126,27 @@ class Filter(_Model):
 
 class Period(_Model):
     grain: Grain = "month"
-    start: date | None = None
-    end: date | None = None
-    relative: RelativePeriod | None = None
+    start: date | None = Field(
+        default=None,
+        description="Explicit inclusive start date; null whenever relative is non-null.",
+    )
+    end: date | None = Field(
+        default=None,
+        description="Explicit inclusive end date; null whenever relative is non-null.",
+    )
+    relative: RelativePeriod | None = Field(
+        default=None,
+        description="Named relative period; must be null whenever start or end is non-null.",
+    )
 
     @model_validator(mode="after")
     def _check_bounds(self) -> "Period":
         if self.relative is None and self.start is None and self.end is None:
             raise ValueError("period needs either `relative` or an explicit start/end")
+        if self.relative is not None and (self.start is not None or self.end is not None):
+            raise ValueError("period cannot combine `relative` with explicit start/end")
+        if self.relative is None and (self.start is None or self.end is None):
+            raise ValueError("an explicit period needs both `start` and `end`")
         if self.start and self.end and self.start > self.end:
             raise ValueError("period start is after its end")
         return self
