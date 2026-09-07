@@ -30,26 +30,51 @@ from app.services.workbench.results import SourceResult
 logger = logging.getLogger(__name__)
 
 
-def _canonicalize_native_arguments(result, state: dict[str, Any]) -> None:
-    """Canonicalize an unambiguous duplicate period representation from local models.
+_MONTH_GRAIN_RE = re.compile(
+    r"\b(?:month\s*-?\s*wise|monthly|by\s*-?\s*month|each\s*-?\s*month)\b",
+    re.IGNORECASE,
+)
+_RANKING_RE = re.compile(
+    r"\b(?:highest|lowest|top|bottom|most|least|rank(?:ed|ing)?)\b",
+    re.IGNORECASE,
+)
 
-    Some strict-schema models populate both nullable period representations even when the
-    user gave a calendar year. When both concrete bounds are present and their years are
-    explicitly named in the current question, concrete bounds unambiguously win. Other
-    conflicts remain invalid and use the normal native repair path.
+
+def _canonicalize_native_arguments(result, state: dict[str, Any]) -> None:
+    """Preserve explicit time grain and resolve unambiguous duplicate periods.
+
+    Tool selection is probabilistic even with a strict schema: local models can omit an
+    explicitly requested month dimension or populate both nullable period representations.
+    These corrections are grounded entirely in the current user text. Ambiguous conflicts
+    still use the normal native repair path.
     """
+    question = state.get("question", "")
     mentioned_years = {
-        int(value) for value in re.findall(r"\b(20\d{2})\b", state.get("question", ""))
+        int(value) for value in re.findall(r"\b(20\d{2})\b", question)
     }
-    if not mentioned_years:
-        return
+    month_grain_requested = bool(_MONTH_GRAIN_RE.search(question))
+    ranking_requested = bool(_RANKING_RE.search(question))
     changed: dict[str, dict[str, Any]] = {}
     for call in result.tool_calls:
         if call.name != "query_metrics":
             continue
+
+        if month_grain_requested:
+            dimensions = call.arguments.get("dimensions")
+            if isinstance(dimensions, list) and "month" not in dimensions:
+                dimensions.append("month")
+                if not ranking_requested and not call.arguments.get("order_by"):
+                    call.arguments["order_by"] = {
+                        "field": "month", "direction": "asc",
+                    }
+                changed[call.id] = call.arguments
+
         period = call.arguments.get("period")
         if not isinstance(period, dict):
             continue
+        if month_grain_requested and period.get("grain") != "month":
+            period["grain"] = "month"
+            changed[call.id] = call.arguments
         start, end, relative = period.get("start"), period.get("end"), period.get("relative")
         if not (start and end and relative):
             continue
@@ -57,7 +82,7 @@ def _canonicalize_native_arguments(result, state: dict[str, Any]) -> None:
             bound_years = {int(str(start)[:4]), int(str(end)[:4])}
         except (TypeError, ValueError):
             continue
-        if not bound_years.issubset(mentioned_years):
+        if not mentioned_years or not bound_years.issubset(mentioned_years):
             continue
         period["relative"] = None
         changed[call.id] = call.arguments

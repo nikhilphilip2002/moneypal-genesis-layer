@@ -121,6 +121,54 @@ async def test_explicit_calendar_year_canonicalizes_duplicate_relative_period(mo
 
 
 @pytest.mark.anyio
+@pytest.mark.parametrize(
+    "question",
+    [
+        "interest collected monthwise till today",
+        "i mean month wise",
+        "show interest collected by-month",
+    ],
+)
+async def test_explicit_month_grain_is_preserved(monkeypatch, question):
+    call = NativeToolCall(
+        id="monthly",
+        name="query_metrics",
+        arguments={
+            "metrics": ["interest_collected"],
+            "dimensions": [],
+            "filters": [],
+            "having": [],
+            "period": {
+                "grain": None, "start": None, "end": None, "relative": "all_time",
+            },
+            "compare_to": None,
+            "order_by": None,
+            "limit": 100,
+            "as_share": False,
+            "explain": False,
+        },
+    )
+    response = _result(call)
+
+    async def select(*_args, **_kwargs):
+        return response
+
+    monkeypatch.setattr(agent, "_select", select)
+    state = _state()
+    state["question"] = question
+    result = await agent.select_calls(state)
+
+    arguments = result.tool_calls[0].arguments
+    assert arguments["dimensions"] == ["month"]
+    assert arguments["order_by"] == {"field": "month", "direction": "asc"}
+    raw_arguments = json.loads(
+        result.assistant_message["tool_calls"][0]["function"]["arguments"]
+    )
+    assert raw_arguments["dimensions"] == ["month"]
+    assert raw_arguments["order_by"] == {"field": "month", "direction": "asc"}
+
+
+@pytest.mark.anyio
 async def test_unauthorized_domain_fails_without_a_repair_round(monkeypatch):
     state = _state()
     state["source_policy"] = access.build_policy(
