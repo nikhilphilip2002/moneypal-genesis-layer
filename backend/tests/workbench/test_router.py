@@ -21,7 +21,7 @@ def _use(monkeypatch, client):
 def test_native_rollout_preflight_retains_exact_and_policy_paths():
     enabled = access.build_policy(role="admin", external_sources_enabled=True)
     disabled = access.build_policy(role="admin", external_sources_enabled=False)
-    assert router.requires_mandatory_preflight(
+    assert not router.requires_mandatory_preflight(
         "Show our PAR 30 by branch", pinned=None, history_messages=[], policy=enabled,
     )
     assert router.requires_mandatory_preflight(
@@ -30,6 +30,19 @@ def test_native_rollout_preflight_retains_exact_and_policy_paths():
     assert router.requires_mandatory_preflight(
         "anything", pinned="macro", history_messages=[], policy=enabled,
     )
+
+
+def test_native_rollout_preflight_does_not_capture_ordinary_loan_book_questions():
+    enabled = access.build_policy(role="admin", external_sources_enabled=True)
+
+    for question in (
+        "list the agents with highest borrowers include the customer name and principal amount collected",
+        "list the agents with highest borrowers",
+        "give me the loan disbursed month wise in 2026",
+    ):
+        assert not router.requires_mandatory_preflight(
+            question, pinned=None, history_messages=[], policy=enabled,
+        )
 
 
 class TestDispatch:

@@ -34,7 +34,13 @@ AGENT_SYSTEM_PROMPT = (
     "search_public_web only for fresh public facts. Never send customer, account, repayment, "
     "or private bank information to search_public_web. Use finish_without_data when the "
     "request needs clarification or must be refused. Preserve exact names, identifiers, "
-    "filters, and periods from the user."
+    "filters, and periods from the user. Do not ask for a period when the user says all "
+    "time, till today, to date, or through today; represent a lifetime flow as all_time and "
+    "a current point-in-time measure as today. A request for a calendar year uses explicit "
+    "January 1 through December 31 bounds, and month-wise or monthly means include the month "
+    "dimension. When a request combines a ranking at one grain with detail rows at another "
+    "grain—for example agents ranked by borrower count plus each customer name and principal "
+    "collected—use run_validated_query and preserve the complete intent."
 )
 
 

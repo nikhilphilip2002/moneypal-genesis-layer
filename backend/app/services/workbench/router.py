@@ -720,14 +720,9 @@ def requires_mandatory_preflight(
     ]
     if any(is_external(source_id) and not policy.allows(source_id) for source_id in requested):
         return True
-    if settings.workbench_deterministic_routing:
-        deterministic = _deterministic_route(
-            normalized,
-            visible_ids=[
-                source.id for source in visible_sources(policy.role, policy.effective_sources)
-            ],
-            policy_version=policy.version,
-        )
-        if deterministic is not None:
-            return True
+    # Do not run the broad legacy source router here.  Its ordinary DB/catalog match is
+    # intentionally expansive (almost every loan-book value question matches it), so using
+    # it as a native-agent preflight would quietly send the agent's core workload back to
+    # the legacy planner.  The checks above are the true mandatory paths: explicit pins,
+    # unsafe mutations, application-owned record lookups, and denied external access.
     return False

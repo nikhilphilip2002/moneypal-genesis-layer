@@ -135,7 +135,9 @@ AGENT_TOOLS: dict[str, AgentTool] = {
         name="run_validated_query",
         description=(
             "Use the governed read-only catalog-miss query path when no reviewed metric or "
-            "preset can answer the loan-book question."
+            "preset can answer the loan-book question, including requests that combine a "
+            "ranking or aggregate at one grain with detail rows at another grain. Preserve "
+            "every requested output field and ranking rule in intent."
         ),
         arguments_model=RunValidatedQueryArguments,
         handler_key="run_validated_query",
