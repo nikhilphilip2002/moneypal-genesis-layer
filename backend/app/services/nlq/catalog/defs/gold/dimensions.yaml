@@ -24,7 +24,7 @@
   column: scheme_code
   type: categorical
   decode: scheme
-  synonyms: [scheme, sub-product, product scheme, loan scheme, purpose]
+  synonyms: [scheme, scheme wise, schemewise, by scheme, sub-product, product scheme, loan scheme, purpose]
   description: Scheme is currently the meaningful product-level reporting breakdown.
   cardinality: 13
 

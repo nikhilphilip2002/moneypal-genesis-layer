@@ -39,6 +39,7 @@ def test_native_rollout_preflight_does_not_capture_ordinary_loan_book_questions(
         "list the agents with highest borrowers include the customer name and principal amount collected",
         "list the agents with highest borrowers",
         "give me the loan disbursed month wise in 2026",
+        "customers under vanitha",
     ):
         assert not router.requires_mandatory_preflight(
             question, pinned=None, history_messages=[], policy=enabled,

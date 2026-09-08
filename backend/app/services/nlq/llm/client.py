@@ -513,6 +513,10 @@ class OpenAICompatibleClient:
                 "role": "assistant",
                 "content": content,
             }
+            if message.get("reasoning_content") is not None:
+                assistant_message["reasoning_content"] = str(
+                    message.get("reasoning_content") or ""
+                )
             if message.get("tool_calls") is not None:
                 assistant_message["tool_calls"] = list(message["tool_calls"])
             result = LLMResult(

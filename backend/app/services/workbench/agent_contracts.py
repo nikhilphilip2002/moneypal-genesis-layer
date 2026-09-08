@@ -69,6 +69,19 @@ class RunValidatedQueryArguments(AgentArguments):
     )
 
 
+class InspectLoanCatalogArguments(AgentArguments):
+    topic: str = Field(
+        min_length=1,
+        max_length=500,
+        description="Business concept, requested field, metric, or relationship to inspect.",
+    )
+    tables: list[str] = Field(
+        default_factory=list,
+        max_length=8,
+        description="Optional governed table names whose columns and joins should be returned.",
+    )
+
+
 class SearchCuratedKnowledgeArguments(AgentArguments):
     domain: Literal["concepts", "schema", "macro", "competitive", "regulatory"]
     query: str = Field(min_length=1, max_length=1000)
@@ -103,6 +116,7 @@ __all__ = [
     "CreateWorklistArguments",
     "FinishWithoutDataArguments",
     "GenerateBriefingArguments",
+    "InspectLoanCatalogArguments",
     "LookupRecordsArguments",
     "QueryMetricsArguments",
     "RunAnalysisArguments",

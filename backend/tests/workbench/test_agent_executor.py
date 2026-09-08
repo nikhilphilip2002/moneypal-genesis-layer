@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import asyncio
+from types import SimpleNamespace
 
 import pytest
 
 from app.services.nlq.catalog import get_catalog
 from app.services.nlq.llm import NativeToolCall
+from app.services.nlq.text_to_sql import SqlAttempt
 from app.services.workbench import access, agent_executor
 from app.services.workbench.agent_executor import AgentExecutionContext, AgentToolTimeout
 from app.services.workbench.results import SourceResult
@@ -32,7 +34,7 @@ def _context(*, external=True):
 
 
 @pytest.mark.anyio
-async def test_validated_call_dispatches_and_replay_is_bounded(monkeypatch):
+async def test_validated_call_dispatches_and_replay_is_lossless(monkeypatch):
     async def fake_handler(args, _ctx):
         assert args.metrics == ["par_30"]
         return SourceResult(
@@ -60,8 +62,8 @@ async def test_validated_call_dispatches_and_replay_is_bounded(monkeypatch):
     replay = executed.replay_payload()
     assert replay["status"] == "ok"
     assert replay["summary"] == "PAR 30 is 4.2%."
-    assert "rows" not in replay
-    assert "sql" not in replay
+    assert replay["payload"]["rows"] == [{"private": "never replay this"}]
+    assert replay["lineage"] == {"sql": "never replay this"}
     assert executed.replay_message()["tool_call_id"] == "call_1"
 
 
@@ -82,6 +84,76 @@ async def test_terminal_call_executes_no_data_handler():
     )
     assert executed.card is None
     assert executed.terminal["outcome"] == "clarify"
+
+
+@pytest.mark.anyio
+async def test_catalog_inspection_returns_governed_columns_and_declared_metadata():
+    executed = await agent_executor.execute_agent_call(
+        NativeToolCall(
+            id="catalog_1",
+            name="inspect_loan_catalog",
+            arguments={
+                "topic": "sanction amount and number of EMIs",
+                "tables": ["gold.semantic_loan_account"],
+            },
+        ),
+        _context(),
+    )
+
+    payload = executed.card.payload
+    loan_table = next(
+        table for table in payload["tables"]
+        if table["name"] == "gold.semantic_loan_account"
+    )
+    column_names = {column["name"] for column in loan_table["columns"]}
+    assert "sanction_amount" in column_names
+    assert "number_of_emis" in column_names
+    assert payload["catalog_version"] == get_catalog().version
+    assert executed.replay_payload()["payload"] == payload
+
+
+@pytest.mark.anyio
+async def test_validated_query_exposes_nested_llm_trace_and_disables_regex_shortcuts(
+    monkeypatch,
+):
+    generation_kwargs = {}
+    trace = [{
+        "round": 1,
+        "request_messages": [{"role": "user", "content": "show details"}],
+        "assistant_message": {"role": "assistant", "content": '{"sql":"SELECT 1"}'},
+        "candidate_sql": "SELECT 1",
+        "validated_sql": "SELECT 1",
+        "validation": {"status": "accepted", "tables": []},
+    }]
+
+    async def generate(_intent, **kwargs):
+        generation_kwargs.update(kwargs)
+        return SqlAttempt(
+            sql="SELECT 1", validated=True, attempts=1,
+            model="local-model", provider="llamacpp", trace=trace,
+        )
+
+    chart = SimpleNamespace(
+        lineage=SimpleNamespace(model_dump=lambda mode: {"sql": "SELECT 1"}),
+        model_dump=lambda mode: {"rows": [{"value": 1}]},
+        summary="One row.",
+    )
+    monkeypatch.setattr(agent_executor.text_to_sql, "generate", generate)
+    monkeypatch.setattr(agent_executor, "run_sql", lambda *_args, **_kwargs: chart)
+
+    executed = await agent_executor.execute_agent_call(
+        NativeToolCall(
+            id="sql_1",
+            name="run_validated_query",
+            arguments={"intent": "show details", "tables": []},
+        ),
+        _context(),
+    )
+
+    assert generation_kwargs["allow_reviewed_shortcuts"] is False
+    nested = executed.replay_payload()["lineage"]["text_to_sql"]
+    assert nested["trace"] == trace
+    assert nested["model"] == "local-model"
 
 
 @pytest.mark.anyio
@@ -154,6 +226,11 @@ async def test_web_call_is_reauthorized_before_handler(monkeypatch):
         ("create_worklist", {"worklist_id": "collections_today"}, "db"),
         ("generate_briefing", {"persona_id": "ceo"}, "db"),
         ("run_validated_query", {"intent": "catalog miss", "tables": []}, "db"),
+        (
+            "inspect_loan_catalog",
+            {"topic": "sanction amount and tenure", "tables": []},
+            "schema",
+        ),
         (
             "search_curated_knowledge",
             {"domain": "concepts", "query": "PAR 30"},

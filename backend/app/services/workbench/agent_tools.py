@@ -20,6 +20,7 @@ from app.services.workbench.agent_contracts import (
     CreateWorklistArguments,
     FinishWithoutDataArguments,
     GenerateBriefingArguments,
+    InspectLoanCatalogArguments,
     LookupRecordsArguments,
     QueryMetricsArguments,
     RunAnalysisArguments,
@@ -148,6 +149,20 @@ AGENT_TOOLS: dict[str, AgentTool] = {
         timeout_s=30.0,
         max_result_chars=12_000,
         parallel_safe=False,
+    ),
+    "inspect_loan_catalog": AgentTool(
+        name="inspect_loan_catalog",
+        description=(
+            "Inspect governed loan-book metadata when you need the exact metric, dimension, "
+            "column, table, vocabulary, or declared join before making a data call. This "
+            "returns metadata only, never customer or loan rows."
+        ),
+        arguments_model=InspectLoanCatalogArguments,
+        handler_key="inspect_loan_catalog",
+        source_id="schema",
+        sensitivity="internal",
+        timeout_s=10.0,
+        max_result_chars=16_000,
     ),
     "search_curated_knowledge": AgentTool(
         name="search_curated_knowledge",
@@ -316,6 +331,8 @@ def _parameters_for(
         properties["persona_id"]["enum"] = sorted(catalog.personas)
     elif tool.name == "run_validated_query":
         properties["tables"]["items"]["enum"] = sorted(catalog.allowed_tables())
+    elif tool.name == "inspect_loan_catalog":
+        properties["tables"]["items"]["enum"] = sorted(catalog.allowed_tables())
     elif tool.name == "search_curated_knowledge":
         properties["domain"]["enum"] = _allowed_curated_domains(policy)
     return schema
@@ -455,6 +472,12 @@ def validate_agent_arguments(
             if parsed.persona_id not in cat.personas:
                 raise AgentToolArgumentsInvalid(f"unknown persona {parsed.persona_id!r}")
         elif isinstance(parsed, RunValidatedQueryArguments):
+            unknown = set(parsed.tables) - set(cat.allowed_tables())
+            if unknown:
+                raise AgentToolArgumentsInvalid(
+                    f"unknown catalog tables: {', '.join(sorted(unknown))}"
+                )
+        elif isinstance(parsed, InspectLoanCatalogArguments):
             unknown = set(parsed.tables) - set(cat.allowed_tables())
             if unknown:
                 raise AgentToolArgumentsInvalid(

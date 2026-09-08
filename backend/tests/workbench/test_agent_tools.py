@@ -47,7 +47,7 @@ def _walk(value: Any):
             yield from _walk(child)
 
 
-def test_registry_exposes_nine_concrete_flat_tools():
+def test_registry_exposes_concrete_flat_tools():
     assert list(AGENT_TOOLS) == [
         "query_metrics",
         "lookup_records",
@@ -55,6 +55,7 @@ def test_registry_exposes_nine_concrete_flat_tools():
         "create_worklist",
         "generate_briefing",
         "run_validated_query",
+        "inspect_loan_catalog",
         "search_curated_knowledge",
         "search_public_web",
         "finish_without_data",
@@ -98,6 +99,9 @@ def test_catalog_enums_are_injected_into_the_matching_tools():
     ) == set(catalog.personas)
     assert set(
         definitions["run_validated_query"]["parameters"]["properties"]["tables"]["items"]["enum"]
+    ) == set(catalog.allowed_tables())
+    assert set(
+        definitions["inspect_loan_catalog"]["parameters"]["properties"]["tables"]["items"]["enum"]
     ) == set(catalog.allowed_tables())
 
 

@@ -20,8 +20,8 @@ def test_agent_question_set_covers_every_gold_view_with_multiple_phrasings():
     families = _families()
     prompts = [prompt for family in families for prompt in family["prompts"]]
 
-    assert len(families) == 36
-    assert len(prompts) == 108
+    assert len(families) == 40
+    assert len(prompts) == 120
     assert len(set(prompts)) == len(prompts)
     assert {family["view"] for family in families} == catalog.allowed_tables()
     assert all(len(family["prompts"]) == 3 for family in families)

@@ -1,14 +1,4 @@
-"""Durable, user-owned Workbench conversations.
-
-The saved record serves two different consumers without conflating them:
-
-* the UI receives the complete renderable turns, including cards;
-* the LLM receives a bounded text transcript derived from those turns.
-
-Raw chart JSON, SQL, lineage, and tool logs are never copied into the model transcript.
-They remain in the durable UI record while compact human-readable values and summaries are
-used as assistant messages.
-"""
+"""Durable, user-owned Workbench conversations and exact native-tool replay."""
 
 from __future__ import annotations
 
@@ -42,8 +32,8 @@ MIGRATIONS = (
 )
 
 TITLE_MAX = 80
-# v5 adds bounded provider-native tool exchanges. Older records remain ordinary text turns.
-RECORD_VERSION = 5
+# v6 adds an ordered execution event stream and lossless native tool-result replay.
+RECORD_VERSION = 6
 OLDER_TURN_MAX_CHARS = 900
 CARD_ROWS_IN_CONTEXT = 20
 _table_ready = False
@@ -72,6 +62,10 @@ class ConversationSummary:
     title: str
     updated_at: datetime
     turn_count: int
+
+
+class NativeTranscriptOverflow(RuntimeError):
+    """The exact native transcript cannot fit without silently dropping history."""
 
 
 _MEMORY: dict[tuple[str, str], ConversationRecord] = {}
@@ -247,6 +241,19 @@ def _mutate(
     _save(record)
 
 
+def _append_turn_event(
+    turn: dict[str, Any], event_type: str, payload: dict[str, Any],
+) -> None:
+    """Append one ordered, lossless conversation execution event."""
+    events = turn.setdefault("events", [])
+    events.append({
+        "sequence": len(events),
+        "type": event_type,
+        "timestamp": _now().isoformat(),
+        "payload": payload,
+    })
+
+
 def begin_turn(
     conversation_id: str, user: str, question: str, *, pinned: str | None = None,
     source_policy: dict[str, Any] | None = None,
@@ -270,6 +277,7 @@ def begin_turn(
         record.external_sources_enabled = bool(
             source_policy.get("external_sources_enabled", False)
         )
+    created_at = _now()
     record.turns.append({
         "id": turn_id,
         "question": question,
@@ -279,12 +287,18 @@ def begin_turn(
         "sources": [],  # compatibility with version-1 clients
         "cards": [],
         "agent_exchanges": [],
+        "events": [{
+            "sequence": 0,
+            "type": "user_message",
+            "timestamp": created_at.isoformat(),
+            "payload": {"role": "user", "content": question},
+        }],
         "answer": None,
         "synthesis": None,
         "refusal": None,
         "error": None,
         "status": "running",
-        "created_at": _now().isoformat(),
+        "created_at": created_at.isoformat(),
         "completed_at": None,
     })
     _save(record)
@@ -313,12 +327,20 @@ def set_route(
             "ambiguity_class": ambiguity_class,
             "effective_sources": list(effective_sources),
         }
+        _append_turn_event(turn, "route_decision", dict(turn["route"]))
 
     _mutate(conversation_id, user, turn_id, apply)
 
 
 def add_card(conversation_id: str, user: str, turn_id: str, card: dict[str, Any]) -> None:
-    _mutate(conversation_id, user, turn_id, lambda turn: turn.setdefault("cards", []).append(card))
+    def apply(turn: dict[str, Any]) -> None:
+        turn.setdefault("cards", []).append(card)
+        _append_turn_event(turn, "tool_result", {
+            "execution_path": "legacy_or_rendered",
+            "card": card,
+        })
+
+    _mutate(conversation_id, user, turn_id, apply)
 
 
 def add_agent_exchange(
@@ -349,9 +371,25 @@ def add_agent_exchange(
         "calls": safe_calls,
         "tools": [dict(message) for message in tool_messages],
     }
+    def apply(turn: dict[str, Any]) -> None:
+        turn.setdefault("agent_exchanges", []).append(payload)
+        _append_turn_event(turn, "llm_assistant_message", {
+            "execution_path": "native",
+            "message": safe_assistant,
+        })
+        for call in safe_calls:
+            _append_turn_event(turn, "tool_call", {
+                "execution_path": "native",
+                "call": call,
+            })
+        for message in tool_messages:
+            _append_turn_event(turn, "tool_result", {
+                "execution_path": "native",
+                "message": dict(message),
+            })
     _mutate(
         conversation_id, user, turn_id,
-        lambda turn: turn.setdefault("agent_exchanges", []).append(payload),
+        apply,
     )
 
 
@@ -372,6 +410,8 @@ def _sanitize_assistant_tool_calls(message: ChatMessage) -> ChatMessage:
         "role": "assistant",
         "content": message.get("content"),
     }
+    if "reasoning_content" in message:
+        safe["reasoning_content"] = message.get("reasoning_content") or ""
     sanitized = []
     for raw in message.get("tool_calls", []) or []:
         if not isinstance(raw, dict):
@@ -390,7 +430,14 @@ def _sanitize_assistant_tool_calls(message: ChatMessage) -> ChatMessage:
 
 
 def set_synthesis(conversation_id: str, user: str, turn_id: str, text: str) -> None:
-    _mutate(conversation_id, user, turn_id, lambda turn: turn.update(synthesis=text))
+    def apply(turn: dict[str, Any]) -> None:
+        turn["synthesis"] = text
+        _append_turn_event(turn, "llm_assistant_message", {
+            "execution_path": "synthesis",
+            "message": {"role": "assistant", "content": text},
+        })
+
+    _mutate(conversation_id, user, turn_id, apply)
 
 
 def set_answer(
@@ -400,6 +447,7 @@ def set_answer(
     def apply(turn: dict[str, Any]) -> None:
         turn["answer"] = payload
         turn["synthesis"] = str(payload.get("text", "")) or None
+        _append_turn_event(turn, "final_answer", {"answer": payload})
 
     _mutate(conversation_id, user, turn_id, apply)
 
@@ -475,11 +523,19 @@ def set_timing(
 
 
 def set_refusal(conversation_id: str, user: str, turn_id: str, payload: dict[str, Any]) -> None:
-    _mutate(conversation_id, user, turn_id, lambda turn: turn.update(refusal=payload))
+    def apply(turn: dict[str, Any]) -> None:
+        turn["refusal"] = payload
+        _append_turn_event(turn, "final_answer", {"refusal": payload})
+
+    _mutate(conversation_id, user, turn_id, apply)
 
 
 def set_error(conversation_id: str, user: str, turn_id: str, message: str) -> None:
-    _mutate(conversation_id, user, turn_id, lambda turn: turn.update(error=message))
+    def apply(turn: dict[str, Any]) -> None:
+        turn["error"] = message
+        _append_turn_event(turn, "execution_error", {"message": message})
+
+    _mutate(conversation_id, user, turn_id, apply)
 
 
 def complete_turn(conversation_id: str, user: str, turn_id: str, *, partial: bool = False) -> None:
@@ -672,8 +728,8 @@ def build_native_transcript(
     user: str,
     token_budget: int | None = None,
 ) -> list[ChatMessage]:
-    """Replay exact anchors and complete native exchanges within one context budget."""
-    from app.services.workbench.compaction import budget, state as session_state
+    """Replay complete native exchanges or fail rather than silently clipping them."""
+    from app.services.workbench.compaction import budget
 
     limit = budget.budget_tokens() if token_budget is None else token_budget
     record = _load(conversation_id, user)
@@ -690,17 +746,6 @@ def build_native_transcript(
         messages.append({"role": "system", "content": "Conversation checkpoint:\n\n" + summary})
         spent += budget.estimate_tokens(summary)
 
-    state = session_state.from_turns(complete, _assistant_text)
-    state = session_state.trim_to_fit(
-        state,
-        max(0, int(limit * budget.COMPRESSED_SHARE) - spent),
-        budget.estimate_tokens,
-    )
-    rendered = session_state.render(state)
-    if rendered:
-        messages.append({"role": "system", "content": rendered})
-        spent += budget.estimate_tokens(rendered)
-
     _, live = _split_at_turn(complete, first_kept)
     groups: list[list[ChatMessage]] = []
     for turn in live:
@@ -708,13 +753,32 @@ def build_native_transcript(
         if not question:
             continue
         group: list[ChatMessage] = [{"role": "user", "content": question}]
-        exchanges = turn.get("agent_exchanges") or []
-        for exchange in exchanges:
-            assistant = exchange.get("assistant") if isinstance(exchange, dict) else None
-            tools = exchange.get("tools") if isinstance(exchange, dict) else None
-            if isinstance(assistant, dict) and isinstance(tools, list):
-                group.append(dict(assistant))
-                group.extend(dict(item) for item in tools if isinstance(item, dict))
+        native_events = [
+            event for event in (turn.get("events") or [])
+            if isinstance(event, dict)
+            and isinstance(event.get("payload"), dict)
+            and event["payload"].get("execution_path") == "native"
+        ]
+        if native_events:
+            for event in native_events:
+                payload = event["payload"]
+                if event.get("type") == "llm_assistant_message":
+                    message = payload.get("message")
+                    if isinstance(message, dict):
+                        group.append(dict(message))
+                elif event.get("type") == "tool_result":
+                    message = payload.get("message")
+                    if isinstance(message, dict):
+                        group.append(dict(message))
+        else:
+            # Read compatibility for records written before the ordered event stream.
+            exchanges = turn.get("agent_exchanges") or []
+            for exchange in exchanges:
+                assistant = exchange.get("assistant") if isinstance(exchange, dict) else None
+                tools = exchange.get("tools") if isinstance(exchange, dict) else None
+                if isinstance(assistant, dict) and isinstance(tools, list):
+                    group.append(dict(assistant))
+                    group.extend(dict(item) for item in tools if isinstance(item, dict))
         answer = _assistant_text(turn)
         if answer:
             group.append({"role": "assistant", "content": answer})
@@ -723,10 +787,11 @@ def build_native_transcript(
     kept: list[list[ChatMessage]] = []
     for group in reversed(groups):
         cost = budget.estimate_tokens(json.dumps(group, default=str, ensure_ascii=False))
-        if kept and spent + cost > limit:
-            break
         if spent + cost > limit:
-            continue
+            raise NativeTranscriptOverflow(
+                "complete native conversation exceeds the context window; "
+                "start a new conversation or enable explicit compaction"
+            )
         kept.append(group)
         spent += cost
     messages.extend(message for group in reversed(kept) for message in group)

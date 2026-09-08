@@ -83,7 +83,7 @@ async def test_invalid_arguments_receive_one_native_repair(monkeypatch):
 
 
 @pytest.mark.anyio
-async def test_explicit_calendar_year_canonicalizes_duplicate_relative_period(monkeypatch):
+async def test_invalid_duplicate_period_is_returned_for_native_repair_not_rewritten(monkeypatch):
     call = NativeToolCall(
         id="year",
         name="query_metrics",
@@ -111,13 +111,9 @@ async def test_explicit_calendar_year_canonicalizes_duplicate_relative_period(mo
     monkeypatch.setattr(agent, "_select", select)
     state = _state()
     state["question"] = "loan disbursed month wise in 2026"
-    result = await agent.select_calls(state)
-
-    assert result.tool_calls[0].arguments["period"]["relative"] is None
-    raw_arguments = json.loads(
-        result.assistant_message["tool_calls"][0]["function"]["arguments"]
-    )
-    assert raw_arguments["period"]["relative"] is None
+    with pytest.raises(Exception):
+        await agent.select_calls(state)
+    assert call.arguments["period"]["relative"] == "all_time"
 
 
 @pytest.mark.anyio
@@ -129,7 +125,7 @@ async def test_explicit_calendar_year_canonicalizes_duplicate_relative_period(mo
         "show interest collected by-month",
     ],
 )
-async def test_explicit_month_grain_is_preserved(monkeypatch, question):
+async def test_application_does_not_invent_a_missing_month_dimension(monkeypatch, question):
     call = NativeToolCall(
         id="monthly",
         name="query_metrics",
@@ -139,7 +135,7 @@ async def test_explicit_month_grain_is_preserved(monkeypatch, question):
             "filters": [],
             "having": [],
             "period": {
-                "grain": None, "start": None, "end": None, "relative": "all_time",
+                "grain": "month", "start": None, "end": None, "relative": "all_time",
             },
             "compare_to": None,
             "order_by": None,
@@ -159,17 +155,16 @@ async def test_explicit_month_grain_is_preserved(monkeypatch, question):
     result = await agent.select_calls(state)
 
     arguments = result.tool_calls[0].arguments
-    assert arguments["dimensions"] == ["month"]
-    assert arguments["order_by"] == {"field": "month", "direction": "asc"}
+    assert arguments["dimensions"] == []
+    assert arguments["order_by"] is None
     raw_arguments = json.loads(
         result.assistant_message["tool_calls"][0]["function"]["arguments"]
     )
-    assert raw_arguments["dimensions"] == ["month"]
-    assert raw_arguments["order_by"] == {"field": "month", "direction": "asc"}
+    assert raw_arguments == {}
 
 
 @pytest.mark.anyio
-async def test_lifetime_flow_phrase_canonicalizes_conflicting_period(monkeypatch):
+async def test_application_does_not_rewrite_a_conflicting_lifetime_period(monkeypatch):
     call = NativeToolCall(
         id="lifetime",
         name="query_metrics",
@@ -199,16 +194,14 @@ async def test_lifetime_flow_phrase_canonicalizes_conflicting_period(monkeypatch
     monkeypatch.setattr(agent, "_select", select)
     state = _state()
     state["question"] = "show disbursement monthwise till today"
-    result = await agent.select_calls(state)
-
-    period = result.tool_calls[0].arguments["period"]
-    assert period == {
-        "grain": "month", "start": None, "end": None, "relative": "all_time",
+    with pytest.raises(Exception):
+        await agent.select_calls(state)
+    assert call.arguments["period"] == {
+        "grain": "month",
+        "start": "2025-10-15",
+        "end": "2026-09-07",
+        "relative": "all_time",
     }
-    raw_arguments = json.loads(
-        result.assistant_message["tool_calls"][0]["function"]["arguments"]
-    )
-    assert raw_arguments["period"] == period
 
 
 @pytest.mark.anyio
@@ -244,7 +237,7 @@ def test_canary_assignment_is_stable(monkeypatch):
 
 
 @pytest.mark.anyio
-async def test_single_native_db_card_uses_its_grounded_summary_without_resynthesis(monkeypatch):
+async def test_single_native_db_card_returns_to_the_model_for_final_answer(monkeypatch):
     calls = []
     native_call = NativeToolCall(
         id="call_1",
@@ -311,9 +304,320 @@ async def test_single_native_db_card_uses_its_grounded_summary_without_resynthes
     assert any("event: source_start" in frame for frame in frames)
     assert any("event: source_card" in frame for frame in frames)
     assert any("event: answer" in frame and "4.2%" in frame for frame in frames)
-    assert [call["tool_choice"] for call in calls] == ["required", "required"]
-    assert [call["call_purpose"] for call in calls] == ["agent_route", "agent_select"]
+    assert [call["tool_choice"] for call in calls] == ["required", "required", "auto"]
+    assert [call["call_purpose"] for call in calls] == [
+        "agent_route", "agent_select", "agent_continue",
+    ]
     assert all("json_schema" not in call for call in calls)
+
+
+@pytest.mark.anyio
+async def test_execution_error_is_returned_to_llm_for_a_cross_tool_repair(monkeypatch):
+    requests = []
+
+    class FakeClient:
+        async def complete(self, **kwargs):
+            requests.append(kwargs)
+            purpose = kwargs.get("call_purpose")
+            if purpose == "agent_continue":
+                return LLMResult(
+                    text="One governed loan.", model="m", provider="llamacpp",
+                    assistant_message={
+                        "role": "assistant", "content": "One governed loan.",
+                    },
+                )
+            if purpose == "agent_route":
+                name = "query_metrics" if len(requests) == 1 else "run_validated_query"
+                call = NativeToolCall(id=f"route_{len(requests)}", name=name, arguments={})
+            elif len(requests) == 2:
+                call = NativeToolCall(
+                    id="failed_metric",
+                    name="query_metrics",
+                    arguments={
+                        "metrics": ["par_30"],
+                        "dimensions": [],
+                        "period": {"relative": "today"},
+                    },
+                )
+            else:
+                call = NativeToolCall(
+                    id="repaired_detail",
+                    name="run_validated_query",
+                    arguments={
+                        "intent": "Show governed loan details",
+                        "tables": ["gold.semantic_loan_account"],
+                    },
+                )
+            return LLMResult(
+                text="", model="m", provider="llamacpp", tool_calls=[call],
+                assistant_message={
+                    "role": "assistant", "content": None,
+                    "tool_calls": [{
+                        "id": call.id, "type": "function",
+                        "function": {
+                            "name": call.name,
+                            "arguments": json.dumps(call.arguments),
+                        },
+                    }],
+                },
+            )
+
+    async def execute(call, _ctx):
+        if call.id == "failed_metric":
+            raise RuntimeError("metric execution failed")
+        return ExecutedAgentCall(
+            call=call,
+            card=SourceResult(
+                source="db", card_type="chart",
+                payload={"rows": [{"loan_account_number": "L1"}]},
+                summary="One governed loan.",
+                lineage={"sql": "SELECT loan_account_number FROM gold.semantic_loan_account"},
+            ),
+        )
+
+    monkeypatch.setattr(models, "for_step", lambda *_args, **_kwargs: FakeClient())
+    monkeypatch.setattr(agent, "execute_agent_call", execute)
+    monkeypatch.setattr(history, "_ensure_table", lambda: False)
+    monkeypatch.setattr(agent.settings, "workbench_agent_max_rounds", 3)
+    history._MEMORY.clear()
+    turn_id = history.begin_turn("execution-repair", "alice", "Show the loan details")
+    state = {
+        "question": "Show the loan details",
+        "conversation_id": "execution-repair",
+        "user": "alice",
+        "role": "admin",
+        "turn_id": turn_id,
+        "history_messages": [],
+        "agent_history_messages": [],
+        "emit": asyncio.Queue(),
+        "source_policy": access.build_policy(role="admin", external_sources_enabled=True),
+        "timing": {
+            "started_at": time.perf_counter(),
+            "source_attempts": [],
+            "source_completions": [],
+        },
+    }
+
+    await agent.run(state)
+
+    assert [request["call_purpose"] for request in requests] == [
+        "agent_route", "agent_select", "agent_route", "agent_select", "agent_continue",
+    ]
+    reroute_messages = requests[2]["messages"]
+    assert any(
+        message.get("role") == "tool" and "metric execution failed" in message.get("content", "")
+        for message in reroute_messages
+    )
+    record = history.get("execution-repair", user="alice")
+    assert len(record.turns[0]["agent_exchanges"]) == 2
+    replayed = str(record.turns[0]["agent_exchanges"])
+    assert "metric execution failed" in replayed
+    assert "repaired_detail" in replayed
+
+
+@pytest.mark.anyio
+async def test_model_can_call_multiple_resource_tools_before_answering(monkeypatch):
+    requests = []
+    continuation_count = 0
+
+    class FakeClient:
+        async def complete(self, **kwargs):
+            nonlocal continuation_count
+            requests.append(kwargs)
+            purpose = kwargs.get("call_purpose")
+            if purpose == "agent_route":
+                call = NativeToolCall(id="route", name="query_metrics", arguments={})
+            elif purpose == "agent_select":
+                call = NativeToolCall(
+                    id="metric",
+                    name="query_metrics",
+                    arguments={
+                        "metrics": ["par_30"],
+                        "dimensions": [],
+                        "period": {"relative": "today"},
+                    },
+                )
+            else:
+                continuation_count += 1
+                if continuation_count == 1:
+                    call = NativeToolCall(
+                        id="concept",
+                        name="search_curated_knowledge",
+                        arguments={"domain": "concepts", "query": "PAR 30 definition"},
+                    )
+                else:
+                    return LLMResult(
+                        text="The portfolio result and definition are shown together.",
+                        model="m",
+                        provider="llamacpp",
+                        assistant_message={
+                            "role": "assistant",
+                            "content": "The portfolio result and definition are shown together.",
+                        },
+                    )
+            return LLMResult(
+                text="", model="m", provider="llamacpp", tool_calls=[call],
+                assistant_message={
+                    "role": "assistant", "content": None,
+                    "tool_calls": [{
+                        "id": call.id,
+                        "type": "function",
+                        "function": {
+                            "name": call.name,
+                            "arguments": json.dumps(call.arguments),
+                        },
+                    }],
+                },
+            )
+
+    async def execute(call, _ctx):
+        if call.name == "query_metrics":
+            result = SourceResult(
+                source="db",
+                card_type="chart",
+                payload={"rows": [{"par_30": 4.2}]},
+                summary="PAR 30 is 4.2%.",
+            )
+        else:
+            result = SourceResult(
+                source="knowledge",
+                card_type="brief",
+                payload={"summary": "PAR 30 means principal overdue by more than 30 days."},
+                summary="PAR 30 definition.",
+            )
+        return ExecutedAgentCall(call=call, card=result)
+
+    monkeypatch.setattr(models, "for_step", lambda *_args, **_kwargs: FakeClient())
+    monkeypatch.setattr(agent, "execute_agent_call", execute)
+    monkeypatch.setattr(history, "_ensure_table", lambda: False)
+    monkeypatch.setattr(agent.settings, "workbench_agent_max_rounds", 3)
+    history._MEMORY.clear()
+    turn_id = history.begin_turn(
+        "multi-tool", "alice", "Show PAR 30 and explain what it means",
+    )
+    queue = asyncio.Queue()
+    state = {
+        "question": "Show PAR 30 and explain what it means",
+        "conversation_id": "multi-tool",
+        "user": "alice",
+        "role": "admin",
+        "turn_id": turn_id,
+        "history_messages": [],
+        "agent_history_messages": [],
+        "emit": queue,
+        "source_policy": access.build_policy(role="admin", external_sources_enabled=True),
+        "timing": {
+            "started_at": time.perf_counter(),
+            "source_attempts": [],
+            "source_completions": [],
+        },
+    }
+
+    await agent.run(state)
+
+    assert [request["call_purpose"] for request in requests] == [
+        "agent_route", "agent_select", "agent_continue", "agent_continue",
+    ]
+    record = history.get("multi-tool", user="alice")
+    assert len(record.turns[0]["agent_exchanges"]) == 2
+    assert [
+        exchange["calls"][0]["name"]
+        for exchange in record.turns[0]["agent_exchanges"]
+    ] == ["query_metrics", "search_curated_knowledge"]
+    assert state["agent_final_result"].text.startswith("The portfolio result")
+
+
+@pytest.mark.anyio
+async def test_invalid_continuation_call_is_persisted_and_returned_to_model(monkeypatch):
+    requests = []
+
+    class FakeClient:
+        async def complete(self, **kwargs):
+            requests.append(kwargs)
+            purpose = kwargs.get("call_purpose")
+            if purpose == "agent_route":
+                call = NativeToolCall(id="route", name="query_metrics", arguments={})
+            elif purpose == "agent_select":
+                call = NativeToolCall(
+                    id="valid",
+                    name="query_metrics",
+                    arguments={
+                        "metrics": ["par_30"],
+                        "dimensions": [],
+                        "period": {"relative": "today"},
+                    },
+                )
+            elif len([item for item in requests if item.get("call_purpose") == "agent_continue"]) == 1:
+                call = NativeToolCall(
+                    id="invalid_next", name="query_metrics", arguments={},
+                )
+            else:
+                return LLMResult(
+                    text="PAR 30 is 4.2%.", model="m", provider="llamacpp",
+                    assistant_message={"role": "assistant", "content": "PAR 30 is 4.2%."},
+                )
+            return LLMResult(
+                text="", model="m", provider="llamacpp", tool_calls=[call],
+                assistant_message={
+                    "role": "assistant", "content": None,
+                    "tool_calls": [{
+                        "id": call.id, "type": "function",
+                        "function": {
+                            "name": call.name,
+                            "arguments": json.dumps(call.arguments),
+                        },
+                    }],
+                },
+            )
+
+    async def execute(call, _ctx):
+        return ExecutedAgentCall(
+            call=call,
+            card=SourceResult(
+                source="db", card_type="chart",
+                payload={"rows": [{"par_30": 4.2}]}, summary="PAR 30 is 4.2%.",
+            ),
+        )
+
+    monkeypatch.setattr(models, "for_step", lambda *_args, **_kwargs: FakeClient())
+    monkeypatch.setattr(agent, "execute_agent_call", execute)
+    monkeypatch.setattr(history, "_ensure_table", lambda: False)
+    monkeypatch.setattr(agent.settings, "workbench_agent_max_rounds", 4)
+    history._MEMORY.clear()
+    turn_id = history.begin_turn("invalid-continuation", "alice", "Show PAR 30")
+    state = {
+        "question": "Show PAR 30",
+        "conversation_id": "invalid-continuation",
+        "user": "alice",
+        "role": "admin",
+        "turn_id": turn_id,
+        "history_messages": [],
+        "agent_history_messages": [],
+        "emit": asyncio.Queue(),
+        "source_policy": access.build_policy(role="admin", external_sources_enabled=True),
+        "timing": {
+            "started_at": time.perf_counter(),
+            "source_attempts": [],
+            "source_completions": [],
+        },
+    }
+
+    await agent.run(state)
+
+    continuation_requests = [
+        request for request in requests if request.get("call_purpose") == "agent_continue"
+    ]
+    assert len(continuation_requests) == 2
+    assert any(
+        message.get("role") == "tool"
+        and message.get("tool_call_id") == "invalid_next"
+        and "INVALID_TOOL_ARGUMENTS" in message.get("content", "")
+        for message in continuation_requests[1]["messages"]
+    )
+    record = history.get("invalid-continuation", user="alice")
+    assert [
+        exchange["calls"][0]["id"] for exchange in record.turns[0]["agent_exchanges"]
+    ] == ["valid", "invalid_next"]
 
 
 @pytest.mark.anyio
@@ -392,7 +696,7 @@ async def test_outbound_policy_denial_gets_one_native_repair(monkeypatch):
     await agent.run(state)
 
     assert [request["tool_choice"] for request in requests] == [
-        "required", "required", "required", "none",
+        "required", "required", "required", "auto",
     ]
     record = history.get("web-repair", user="alice")
     assert len(record.turns[0]["agent_exchanges"]) == 2

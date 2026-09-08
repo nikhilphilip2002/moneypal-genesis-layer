@@ -18,7 +18,9 @@ from __future__ import annotations
 
 import logging
 import re
+from copy import deepcopy
 from dataclasses import dataclass, field
+from typing import Any
 
 import sqlglot
 from sqlglot import exp
@@ -102,6 +104,7 @@ class SqlAttempt:
     pii_columns: list[str] = field(default_factory=list)
     column_units: dict[str, str] = field(default_factory=dict)
     reviewed: bool = False
+    trace: list[dict[str, Any]] = field(default_factory=list)
 
 
 async def generate(
@@ -110,36 +113,38 @@ async def generate(
     catalog: Catalog | None = None,
     allow_pii: bool = False,
     preferred_tables: list[str] | None = None,
+    allow_reviewed_shortcuts: bool = True,
     client=None,
 ) -> SqlAttempt:
     """Generate and validate SQL. Returns an attempt whose `validated` flag is the gate."""
     cat = catalog or get_catalog()
     llm = client or get_llm_client()
 
-    exact = _interest_rate_distribution_attempt(question, cat)
-    if exact is not None:
-        logger.info("NLQ selected deterministic interest-rate distribution")
-        return exact
+    if allow_reviewed_shortcuts:
+        exact = _interest_rate_distribution_attempt(question, cat)
+        if exact is not None:
+            logger.info("NLQ selected deterministic interest-rate distribution")
+            return exact
 
-    exact = _ranked_agent_borrower_collections_attempt(question, cat, allow_pii=allow_pii)
-    if exact is not None:
-        logger.info("NLQ selected reviewed agent-borrower collections query")
-        return exact
+        exact = _ranked_agent_borrower_collections_attempt(question, cat, allow_pii=allow_pii)
+        if exact is not None:
+            logger.info("NLQ selected reviewed agent-borrower collections query")
+            return exact
 
-    exact = _agent_directory_attempt(question, cat, allow_pii=allow_pii)
-    if exact is not None:
-        logger.info("NLQ selected deterministic agent-directory query")
-        return exact
+        exact = _agent_directory_attempt(question, cat, allow_pii=allow_pii)
+        if exact is not None:
+            logger.info("NLQ selected deterministic agent-directory query")
+            return exact
 
-    exact = _named_borrower_disbursed_attempt(question, cat, allow_pii=allow_pii)
-    if exact is not None:
-        logger.info("NLQ selected deterministic named-borrower disbursement lookup")
-        return exact
+        exact = _named_borrower_disbursed_attempt(question, cat, allow_pii=allow_pii)
+        if exact is not None:
+            logger.info("NLQ selected deterministic named-borrower disbursement lookup")
+            return exact
 
-    exact = _named_borrower_principal_attempt(question, cat, allow_pii=allow_pii)
-    if exact is not None:
-        logger.info("NLQ selected deterministic named-borrower principal lookup")
-        return exact
+        exact = _named_borrower_principal_attempt(question, cat, allow_pii=allow_pii)
+        if exact is not None:
+            logger.info("NLQ selected deterministic named-borrower principal lookup")
+            return exact
 
     hits = retrieve(question, catalog=cat, use_vectors=settings.nlq_catalog_vectors)
     selected_tables = [
@@ -172,6 +177,7 @@ async def generate(
 
     for round_number in range(2):  # initial + one repair
         attempt.attempts += 1
+        request_messages = deepcopy(messages)
         try:
             result = await llm.complete(
                 messages=messages,
@@ -189,15 +195,32 @@ async def generate(
             )
         except LLMError as exc:
             attempt.error = str(exc)
+            attempt.trace.append({
+                "round": round_number + 1,
+                "request_messages": request_messages,
+                "error": str(exc),
+            })
             return attempt
 
         attempt.duration_ms += result.duration_ms
         attempt.model, attempt.provider = result.model, result.provider
+        trace_item: dict[str, Any] = {
+            "round": round_number + 1,
+            "call_purpose": "sql_repair" if round_number else "sql_generate",
+            "request_messages": request_messages,
+            "assistant_message": deepcopy(result.assistant_message) if result.assistant_message else {
+                "role": "assistant", "content": result.text,
+            },
+            "model": result.model,
+            "provider": result.provider,
+        }
+        attempt.trace.append(trace_item)
 
         try:
             payload = result.json()
         except LLMError as exc:
             attempt.error = str(exc)
+            trace_item["validation"] = {"status": "protocol_error", "error": str(exc)}
             continue
 
         candidate = str(payload.get("sql", "")).strip()
@@ -227,6 +250,8 @@ async def generate(
             )
         except ValidationError as exc:
             attempt.error = str(exc)
+            trace_item["candidate_sql"] = candidate
+            trace_item["validation"] = {"status": "rejected", "error": str(exc)}
             logger.info("NLQ text-to-SQL rejected on round %d: %s", round_number + 1, exc)
             from app.core.logging import log_parsed_output
 
@@ -260,6 +285,9 @@ async def generate(
         attempt.pii_columns = checked.pii_columns
         attempt.column_units = _infer_column_units(checked.sql, checked.tables, cat)
         attempt.validated = True
+        trace_item["candidate_sql"] = candidate
+        trace_item["validated_sql"] = checked.sql
+        trace_item["validation"] = {"status": "accepted", "tables": checked.tables}
         attempt.error = ""
         if checked.limit_injected:
             attempt.warnings.append("A row limit was applied to bound the result.")

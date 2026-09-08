@@ -22,6 +22,7 @@ from app.services.workbench.agent_contracts import (
     CreateWorklistArguments,
     FinishWithoutDataArguments,
     GenerateBriefingArguments,
+    InspectLoanCatalogArguments,
     LookupRecordsArguments,
     QueryMetricsArguments,
     RunAnalysisArguments,
@@ -74,16 +75,18 @@ class ExecutedAgentCall:
         if self.terminal is not None:
             return {"status": "terminal", **self.terminal}
         assert self.card is not None
-        payload = {
+        return {
             "status": "ok",
             "source": self.card.source,
             "card_type": self.card.card_type,
             "card_reference": self.call.id,
-            "summary": self.card.summary[:2_000],
+            "payload": self.card.payload,
+            "summary": self.card.summary,
             "complete": self.card.complete,
-            "limitation": self.card.limitation[:500],
-            "citations": self.card.sources[:10],
-            "evidence": self.card.evidence_dicts()[:10],
+            "limitation": self.card.limitation,
+            "citations": self.card.sources,
+            "evidence": self.card.evidence_dicts(),
+            "lineage": self.card.lineage,
             "facts": [
                 {
                     "id": fact.id,
@@ -97,20 +100,6 @@ class ExecutedAgentCall:
                 for fact in facts.from_results([self.card], max_per_result=100)
             ],
         }
-        maximum = get_agent_tool(self.call.name).max_result_chars
-        while len(json.dumps(payload, default=str, separators=(",", ":"))) > maximum:
-            if payload["evidence"]:
-                payload["evidence"].pop()
-            elif payload["citations"]:
-                payload["citations"].pop()
-            elif payload["facts"]:
-                payload["facts"].pop()
-            elif len(payload["summary"]) > 200:
-                payload["summary"] = payload["summary"][: len(payload["summary"]) // 2]
-            else:
-                payload["limitation"] = "Tool result was clipped to the model replay limit."
-                break
-        return payload
 
     def replay_message(self) -> dict[str, str]:
         return {
@@ -220,13 +209,118 @@ async def _run_validated_query(
         catalog=ctx.catalog,
         allow_pii=pii.may_see_pii(ctx.role),
         preferred_tables=args.tables,
+        allow_reviewed_shortcuts=False,
     )
     if not attempt.validated:
         raise AgentCompileRejected("validated query was rejected by the SQL safety gate")
     chart = await asyncio.to_thread(
         run_sql, attempt, question=args.intent, role=ctx.role, catalog=ctx.catalog,
     )
-    return _chart_result(chart)
+    result = _chart_result(chart)
+    result.lineage = {
+        **(result.lineage or {}),
+        "text_to_sql": {
+            "model": attempt.model,
+            "provider": attempt.provider,
+            "attempts": attempt.attempts,
+            "trace": attempt.trace,
+        },
+    }
+    return result
+
+
+async def _inspect_loan_catalog(
+    args: InspectLoanCatalogArguments, ctx: AgentExecutionContext,
+) -> SourceResult:
+    from app.services.nlq.catalog.retrieval import retrieve
+
+    catalog = ctx.catalog or get_catalog()
+    # Lexical catalog inspection is a small in-memory scan. Keeping it local also avoids
+    # consuming a worker-thread slot needed by warehouse calls.
+    found = retrieve(args.topic, catalog=catalog, use_vectors=False)
+    selected_tables = list(dict.fromkeys([*args.tables, *found.tables]))[:8]
+    selected_table_set = set(selected_tables)
+    metrics = [
+        {
+            "id": metric.id,
+            "label": metric.label,
+            "unit": metric.unit,
+            "grain": metric.grain,
+            "base_table": metric.base_table,
+            "synonyms": list(metric.synonyms),
+            "description": metric.description,
+            "caveat": metric.caveat,
+        }
+        for metric_id in found.metrics
+        if (metric := catalog.metrics.get(metric_id)) is not None
+    ]
+    dimensions = [
+        {
+            "id": dimension.id,
+            "label": dimension.label,
+            "type": dimension.type,
+            "table": dimension.table,
+            "column": dimension.column,
+            "synonyms": list(dimension.synonyms),
+            "description": dimension.description,
+        }
+        for dimension_id in found.dimensions
+        if (dimension := catalog.dimensions.get(dimension_id)) is not None
+    ]
+    tables = [
+        {
+            "name": table_name,
+            "label": table.label,
+            "grain": table.grain,
+            "description": table.description,
+            "coverage_warning": table.coverage_warning,
+            "columns": [
+                {
+                    "id": column.id,
+                    "name": column.column,
+                    "label": column.label,
+                    "unit": column.unit,
+                    "synonyms": list(column.synonyms),
+                    "sensitivity": column.sensitivity,
+                }
+                for column in catalog.columns_for(table_name)
+            ],
+        }
+        for table_name in selected_tables
+        if (table := catalog.table_by_name(table_name)) is not None
+    ]
+    joins = [
+        {
+            "id": join.id,
+            "left": join.left,
+            "right": join.right,
+            "on": [list(pair) for pair in join.on],
+            "cardinality": join.cardinality,
+            "description": join.description,
+        }
+        for join in catalog.joins
+        if join.left in selected_table_set and join.right in selected_table_set
+    ]
+    payload = {
+        "topic": args.topic,
+        "catalog_version": catalog.version,
+        "retrieval_mode": found.mode,
+        "metrics": metrics,
+        "dimensions": dimensions,
+        "tables": tables,
+        "joins": joins,
+        "enum_values": found.enum_values,
+    }
+    return SourceResult(
+        source="schema",
+        card_type="catalog",
+        payload=payload,
+        summary=(
+            f"Catalog metadata: {len(metrics)} metrics, {len(dimensions)} dimensions, "
+            f"{len(tables)} tables, and {len(joins)} declared joins."
+        ),
+        lineage={"catalog_version": catalog.version},
+    )
 
 
 async def _search_curated(
@@ -264,6 +358,7 @@ _HANDLERS: dict[str, Handler] = {
     "create_worklist": _create_worklist,
     "generate_briefing": _generate_briefing,
     "run_validated_query": _run_validated_query,
+    "inspect_loan_catalog": _inspect_loan_catalog,
     "search_curated_knowledge": _search_curated,
     "search_public_web": _search_public_web,
 }

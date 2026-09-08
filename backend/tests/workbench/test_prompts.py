@@ -61,3 +61,11 @@ def test_agent_prompt_keeps_catalog_hints_out_of_stable_prefix():
     assert receipts.prefix_hash == leads.prefix_hash
     assert receipts.messages[0] == leads.messages[0]
     assert receipts.messages[-1] != leads.messages[-1]
+
+
+def test_scheme_wise_metric_prompt_exposes_the_governed_scheme_dimension():
+    context = prompts.build_agent_catalog_context("interest collected schemewise")
+
+    assert context.metrics == ("interest_collected",)
+    assert context.dimensions == ("scheme",)
+    assert "- scheme | Scheme | categorical" in context.text

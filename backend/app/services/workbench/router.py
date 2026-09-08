@@ -713,7 +713,7 @@ def requires_mandatory_preflight(
     db_followup = _resolve_db_structural_followup(question, history_messages)
     resolved = db_followup or lookup.resolve_followup(question, history_messages)
     normalized = normalize_lending_question(resolved)
-    if pinned or _DESTRUCTIVE_CUES.search(normalized) or _is_record_lookup(normalized):
+    if pinned or _DESTRUCTIVE_CUES.search(normalized):
         return True
     requested = ["web"] if _requires_web(normalized, ["web"]) else [
         source_id for source_id, cue in _HYBRID_SOURCE_CUES.items() if cue.search(normalized)
@@ -724,5 +724,6 @@ def requires_mandatory_preflight(
     # intentionally expansive (almost every loan-book value question matches it), so using
     # it as a native-agent preflight would quietly send the agent's core workload back to
     # the legacy planner.  The checks above are the true mandatory paths: explicit pins,
-    # unsafe mutations, application-owned record lookups, and denied external access.
+    # unsafe mutations and denied external access. Record lookups remain native tool calls so
+    # their exact arguments and results stay in the LLM-visible conversation history.
     return False

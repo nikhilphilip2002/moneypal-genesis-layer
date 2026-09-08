@@ -141,6 +141,29 @@ class TestSchemaIsolation:
         with pytest.raises(ValidationError, match="column"):
             validate(sql, allow_pii=True)
 
+    def test_real_column_from_a_different_gold_view_is_rejected(self):
+        sql = (
+            "SELECT customer_name, disbursement_amount "
+            "FROM gold.semantic_loan_account LIMIT 8"
+        )
+        with pytest.raises(
+            ValidationError,
+            match="disbursement_amount.*does not exist on any referenced table",
+        ):
+            validate(sql, allow_pii=True)
+
+    def test_unqualified_column_shared_by_joined_tables_is_rejected_as_ambiguous(self):
+        sql = """
+        SELECT loan_account_number
+        FROM gold.semantic_loan_account AS loan
+        JOIN gold.semantic_disbursement_event AS disb
+          ON disb.loan_account_number = loan.loan_account_number
+         AND disb.entity_num = loan.entity_num
+        LIMIT 8
+        """
+        with pytest.raises(ValidationError, match="ambiguous"):
+            validate(sql, allow_pii=True)
+
     def test_a_union_arm_cannot_smuggle_a_forbidden_table(self):
         sql = (
             "SELECT gnlnac_acnt_num FROM silver.loan_account_master "

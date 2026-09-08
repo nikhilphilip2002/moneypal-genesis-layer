@@ -325,16 +325,22 @@ async def answer_results(state: WorkbenchState) -> dict[str, Any]:
     findings = composer.evidence_text(results)
     fact_ledger = facts.from_results(results, max_per_result=100)
     text = results[0].summary.strip()
-    result = None
+    result = state.get("agent_final_result")
     composition_limitation: dict[str, str] | None = None
     # One governed DB card already has a deterministic, chart-aware summary and complete
     # rows. Re-synthesizing it made the model omit endpoint months, mis-rank values, and
     # waste a second local-model call. Composition remains necessary when evidence must be
     # combined or interpreted across document/external sources.
-    needs_composition = len(results) > 1 or any(
+    needs_composition = result is None and (len(results) > 1 or any(
         r.source in {"knowledge", "schema", "macro", "competitive", "regulatory", "web"}
         for r in results
-    )
+    ))
+    if result is not None:
+        candidate = result.text.strip()
+        if candidate and composer.numbers_are_grounded(candidate, findings, fact_ledger):
+            text = candidate
+        else:
+            text = composer.extractive_fallback(results)
     try:
         if needs_composition:
             client = models.for_step(
@@ -549,6 +555,8 @@ async def run_workbench(
             conversation_id, user=user,
         )
         agent_private_entities = history.private_entities(conversation_id, user=user)
+    except history.NativeTranscriptOverflow:
+        raise
     except Exception:  # noqa: BLE001
         logger.warning("workbench native transcript load failed", exc_info=True)
         agent_history_messages = history_messages

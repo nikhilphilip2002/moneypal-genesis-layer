@@ -6,7 +6,6 @@ import asyncio
 import hashlib
 import json
 import logging
-import re
 import time
 from typing import Any
 
@@ -30,129 +29,6 @@ from app.services.workbench.results import SourceResult
 logger = logging.getLogger(__name__)
 
 
-_MONTH_GRAIN_RE = re.compile(
-    r"\b(?:month\s*-?\s*wise|monthly|by\s*-?\s*month|each\s*-?\s*month)\b",
-    re.IGNORECASE,
-)
-_RANKING_RE = re.compile(
-    r"\b(?:highest|lowest|top|bottom|most|least|rank(?:ed|ing)?)\b",
-    re.IGNORECASE,
-)
-_LIFETIME_FLOW_RE = re.compile(
-    r"\b(?:all\s+time|till\s+today|to\s+date|through\s+today|available\s+history|in\s+total)\b",
-    re.IGNORECASE,
-)
-_BOUNDED_PERIOD_RE = re.compile(
-    r"\b(?:since|from|between|last|past|previous|this)\b|\b20\d{2}\b",
-    re.IGNORECASE,
-)
-
-
-def _canonicalize_native_arguments(result, state: dict[str, Any]) -> None:
-    """Preserve explicit time grain and resolve unambiguous duplicate periods.
-
-    Tool selection is probabilistic even with a strict schema: local models can omit an
-    explicitly requested month dimension or populate both nullable period representations.
-    These corrections are grounded entirely in the current user text. Ambiguous conflicts
-    still use the normal native repair path.
-    """
-    question = state.get("question", "")
-    mentioned_years = {
-        int(value) for value in re.findall(r"\b(20\d{2})\b", question)
-    }
-    month_grain_requested = bool(_MONTH_GRAIN_RE.search(question))
-    ranking_requested = bool(_RANKING_RE.search(question))
-    lifetime_flow_requested = bool(
-        _LIFETIME_FLOW_RE.search(question) and not _BOUNDED_PERIOD_RE.search(question)
-    )
-    catalog = state.get("_agent_catalog") or get_catalog()
-    changed: dict[str, dict[str, Any]] = {}
-    for call in result.tool_calls:
-        if call.name != "query_metrics":
-            continue
-
-        if month_grain_requested:
-            dimensions = call.arguments.get("dimensions")
-            if isinstance(dimensions, list) and "month" not in dimensions:
-                dimensions.append("month")
-                if not ranking_requested and not call.arguments.get("order_by"):
-                    call.arguments["order_by"] = {
-                        "field": "month", "direction": "asc",
-                    }
-                changed[call.id] = call.arguments
-
-        period = call.arguments.get("period")
-        if not isinstance(period, dict):
-            continue
-        selected_metrics = [
-            catalog.metrics.get(metric_id)
-            for metric_id in call.arguments.get("metrics", [])
-        ]
-        selected_are_flows = bool(selected_metrics) and all(
-            metric is not None
-            and metric.grain != "point_in_time"
-            and not metric.point_in_time
-            and not metric.no_time_travel
-            for metric in selected_metrics
-        )
-        selected_have_no_history = bool(selected_metrics) and any(
-            metric is not None and metric.no_time_travel
-            for metric in selected_metrics
-        )
-        if selected_have_no_history:
-            canonical_period = {
-                "grain": "day",
-                "start": None,
-                "end": None,
-                "relative": "today",
-            }
-            if period != canonical_period:
-                period.clear()
-                period.update(canonical_period)
-                changed[call.id] = call.arguments
-        if lifetime_flow_requested and selected_are_flows:
-            canonical_period = {
-                "grain": "month" if month_grain_requested else period.get("grain", "month"),
-                "start": None,
-                "end": None,
-                "relative": "all_time",
-            }
-            if period != canonical_period:
-                period.clear()
-                period.update(canonical_period)
-                changed[call.id] = call.arguments
-        if month_grain_requested and period.get("grain") != "month":
-            period["grain"] = "month"
-            changed[call.id] = call.arguments
-        start, end, relative = period.get("start"), period.get("end"), period.get("relative")
-        if not (start and end and relative):
-            continue
-        if not mentioned_years:
-            period["start"] = None
-            period["end"] = None
-            changed[call.id] = call.arguments
-            continue
-        try:
-            bound_years = {int(str(start)[:4]), int(str(end)[:4])}
-        except (TypeError, ValueError):
-            continue
-        if not mentioned_years or not bound_years.issubset(mentioned_years):
-            continue
-        period["relative"] = None
-        changed[call.id] = call.arguments
-
-    if not changed or result.assistant_message is None:
-        return
-    for raw_call in result.assistant_message.get("tool_calls", []) or []:
-        if not isinstance(raw_call, dict) or raw_call.get("id") not in changed:
-            continue
-        function = raw_call.get("function")
-        if isinstance(function, dict):
-            function["arguments"] = json.dumps(
-                changed[str(raw_call["id"])], separators=(",", ":"), default=str,
-            )
-
-
 def _remaining_timeout(state: dict[str, Any], cap: float) -> float:
     started_at = state.get("timing", {}).get("started_at")
     if not isinstance(started_at, (int, float)):
@@ -169,6 +45,8 @@ def _source_for_call(call) -> str | None:
         "generate_briefing", "run_validated_query",
     }:
         return "db"
+    if call.name == "inspect_loan_catalog":
+        return "schema"
     if call.name == "search_public_web":
         return "web"
     if call.name == "search_curated_knowledge":
@@ -188,7 +66,9 @@ def assigned_mode(conversation_id: str, user: str) -> str:
     return "on" if bucket < settings.workbench_agent_canary_percent else "off"
 
 
-async def _select(state: dict[str, Any], *, repair_messages=None):
+async def _select(
+    state: dict[str, Any], *, repair_messages=None, reroute: bool = False,
+):
     rounds = int(state.get("_agent_rounds", 0))
     if rounds >= settings.workbench_agent_max_rounds:
         raise LLMProtocolError("native agent exceeded its model-round limit")
@@ -197,7 +77,7 @@ async def _select(state: dict[str, Any], *, repair_messages=None):
     catalog_context = prompts.build_agent_catalog_context(state["question"], catalog)
     client = models.for_step("route", sensitive=True)
 
-    selected_tool = state.get("_agent_selected_tool")
+    selected_tool = None if reroute else state.get("_agent_selected_tool")
     if not repair_messages or not selected_tool:
         route_tool_names = None
         if catalog_context.requires_validated_query:
@@ -219,8 +99,19 @@ async def _select(state: dict[str, Any], *, repair_messages=None):
             catalog=catalog,
             catalog_context=catalog_context,
         )
+        route_messages = list(route_prompt.messages)
+        if repair_messages:
+            route_messages.extend(repair_messages)
+            route_messages.append({
+                "role": "user",
+                "content": (
+                    "Inspect the complete tool results above. Choose the next authorized "
+                    "capability needed to answer the original question or recover from the "
+                    "reported error. Do not repeat a failed call unchanged."
+                ),
+            })
         routed = await client.complete(
-            messages=route_prompt.messages,
+            messages=route_messages,
             tools=route_definitions,
             tool_choice="required",
             parallel_tool_calls=False,
@@ -256,6 +147,7 @@ async def _select(state: dict[str, Any], *, repair_messages=None):
     )
     messages = [
         *prompt.messages,
+        *(repair_messages or []),
         {
             "role": "user",
             "content": (
@@ -264,8 +156,6 @@ async def _select(state: dict[str, Any], *, repair_messages=None):
             ),
         },
     ]
-    if repair_messages:
-        messages.extend(repair_messages)
     return await client.complete(
         messages=messages,
         tools=definitions,
@@ -285,7 +175,6 @@ def _preflight(result, state: dict[str, Any]) -> list[tuple[str, str]]:
         raise LLMProtocolError(
             "native selection returned no tool_calls; assistant content is not executable"
         )
-    _canonicalize_native_arguments(result, state)
     if len(result.tool_calls) > settings.workbench_agent_max_tool_calls:
         raise LLMProtocolError("native selection exceeded the per-turn tool-call limit")
     terminals = [call for call in result.tool_calls if call.name == "finish_without_data"]
@@ -333,7 +222,19 @@ async def select_calls(state: dict[str, Any]):
         and settings.workbench_agent_argument_repairs
         and settings.workbench_agent_max_rounds >= 3
     ):
-        result = await _select(state, repair_messages=_repair_messages(result, failures))
+        repair_messages = _repair_messages(result, failures)
+        if all(state.get(key) for key in ("conversation_id", "user", "turn_id")):
+            history.add_agent_exchange(
+                state["conversation_id"], state["user"], state["turn_id"],
+                assistant_message=result.assistant_message,
+                calls=[{
+                    "id": call.id,
+                    "name": call.name,
+                    "arguments": call.arguments,
+                } for call in result.tool_calls],
+                tool_messages=repair_messages[1:],
+            )
+        result = await _select(state, repair_messages=repair_messages)
         attempted_calls += len(result.tool_calls)
         if attempted_calls > settings.workbench_agent_max_tool_calls:
             raise LLMProtocolError("native repairs exceeded the per-turn tool-call limit")
@@ -364,6 +265,7 @@ async def run(state: dict[str, Any]) -> None:
     await emit.put(sse("stage", {"stage": "routing", "agent": "native"}))
     selected = await select_calls(state)
     calls = selected.tool_calls
+    tool_call_count = len(calls)
     sources = [source for call in calls if (source := _source_for_call(call))]
     sources = list(dict.fromkeys(sources))
     decision = router.RouteDecision(
@@ -528,6 +430,44 @@ async def run(state: dict[str, Any]) -> None:
         *(item.replay_message() for item in executed),
     ]
 
+    failed = [
+        item for item in executed
+        if item.error is not None and item.error.get("code") != "PII_POLICY_VIOLATION"
+    ]
+    if (
+        failed
+        and settings.workbench_agent_argument_repairs
+        and int(state.get("_agent_rounds", 0)) < settings.workbench_agent_max_rounds
+        and len(calls) < settings.workbench_agent_max_tool_calls
+    ):
+        repaired_selection = await _select(
+            state, repair_messages=exchange_messages, reroute=True,
+        )
+        failures = _preflight(repaired_selection, state)
+        if failures:
+            raise AgentToolArgumentsInvalid(failures[0][1])
+        if len(calls) + len(repaired_selection.tool_calls) > settings.workbench_agent_max_tool_calls:
+            raise LLMProtocolError("native repairs exceeded the per-turn tool-call limit")
+        for call in repaired_selection.tool_calls:
+            source = _source_for_call(call)
+            if source is not None:
+                state["timing"]["source_attempts"].append(source)
+                await emit.put(sse(
+                    "source_start",
+                    {"source": source, "tool": call.name, "repair": True},
+                ))
+        repaired = await execute_batch(repaired_selection.tool_calls)
+        tool_call_count += len(repaired_selection.tool_calls)
+        persist_exchange(repaired_selection, repaired)
+        exchange_messages.extend([
+            *(
+                [repaired_selection.assistant_message]
+                if repaired_selection.assistant_message is not None else []
+            ),
+            *(item.replay_message() for item in repaired),
+        ])
+        executed = [item for item in executed if item not in failed] + repaired
+
     denied = [
         item for item in executed
         if item.error is not None and item.error.get("code") == "PII_POLICY_VIOLATION"
@@ -567,6 +507,7 @@ async def run(state: dict[str, Any]) -> None:
                     {"source": source, "tool": call.name, "repair": True},
                 ))
         repaired = await execute_batch(repaired_selection.tool_calls)
+        tool_call_count += len(repaired_selection.tool_calls)
         persist_exchange(repaired_selection, repaired)
         exchange_messages.extend([
             *(
@@ -595,6 +536,105 @@ async def run(state: dict[str, Any]) -> None:
                 "reason_code": "PII_POLICY_VIOLATION",
             }
         executed = [item for item in executed if item not in denied] + repaired
+
+    while (
+        not any(item.terminal is not None for item in executed)
+        and int(state.get("_agent_rounds", 0)) < settings.workbench_agent_max_rounds
+        and tool_call_count < settings.workbench_agent_max_tool_calls
+    ):
+        catalog_context = prompts.build_agent_catalog_context(
+            state["question"], state.get("_agent_catalog"),
+        )
+        definitions = native_tool_definitions(
+            state["source_policy"],
+            catalog=state.get("_agent_catalog"),
+            metric_ids=catalog_context.metrics,
+            dimension_ids=catalog_context.dimensions,
+            filter_dimension_ids=catalog_context.filter_dimensions,
+            table_names=catalog_context.tables,
+        )
+        continuation_prompt = prompts.build_agent_prompt(
+            question=state["question"],
+            history_messages=state.get("agent_history_messages", []),
+            tool_names=[definition["function"]["name"] for definition in definitions],
+            catalog=state.get("_agent_catalog"),
+            catalog_context=catalog_context,
+        )
+        continuation_messages = [
+            *continuation_prompt.messages,
+            *exchange_messages,
+            {
+                "role": "user",
+                "content": (
+                    "Review the original question and every complete tool result above. "
+                    "If more evidence or a corrected query is needed, call the appropriate "
+                    "authorized function with complete arguments. Otherwise answer the "
+                    "original question now using only those tool results."
+                ),
+            },
+        ]
+        state["_agent_rounds"] = int(state.get("_agent_rounds", 0)) + 1
+        client = models.for_step("synthesize", sensitive=True)
+        continuation = await client.complete(
+            messages=continuation_messages,
+            tools=definitions,
+            tool_choice="auto",
+            parallel_tool_calls=False,
+            timeout_s=_remaining_timeout(state, settings.workbench_composer_timeout_s),
+            call_purpose="agent_continue",
+            prompt_version=continuation_prompt.version,
+            prefix_hash=continuation_prompt.prefix_hash,
+            catalog_version=getattr(state.get("_agent_catalog"), "version", ""),
+            max_output_tokens=settings.workbench_composer_max_tokens,
+        )
+        if not continuation.tool_calls:
+            if not continuation.text.strip():
+                raise LLMProtocolError(
+                    "native continuation returned neither tool calls nor an answer"
+                )
+            state["agent_final_result"] = continuation
+            history.set_synthesis(
+                state["conversation_id"], state["user"], state["turn_id"],
+                continuation.text.strip(),
+            )
+            break
+
+        continuation_failures = _preflight(continuation, state)
+        if continuation_failures:
+            invalid_messages = _repair_messages(continuation, continuation_failures)
+            history.add_agent_exchange(
+                state["conversation_id"], state["user"], state["turn_id"],
+                assistant_message=continuation.assistant_message,
+                calls=[{
+                    "id": call.id,
+                    "name": call.name,
+                    "arguments": call.arguments,
+                } for call in continuation.tool_calls],
+                tool_messages=invalid_messages[1:],
+            )
+            exchange_messages.extend(invalid_messages)
+            tool_call_count += len(continuation.tool_calls)
+            continue
+        if tool_call_count + len(continuation.tool_calls) > settings.workbench_agent_max_tool_calls:
+            raise LLMProtocolError("native agent exceeded the per-turn tool-call limit")
+        for call in continuation.tool_calls:
+            source = _source_for_call(call)
+            if source is not None:
+                state["timing"]["source_attempts"].append(source)
+                await emit.put(sse(
+                    "source_start", {"source": source, "tool": call.name},
+                ))
+        continued = await execute_batch(continuation.tool_calls)
+        persist_exchange(continuation, continued)
+        exchange_messages.extend([
+            *(
+                [continuation.assistant_message]
+                if continuation.assistant_message is not None else []
+            ),
+            *(item.replay_message() for item in continued),
+        ])
+        tool_call_count += len(continuation.tool_calls)
+        executed.extend(continued)
 
     synthesis_prompt = prompts.build_agent_prompt(
         question=state["question"],

@@ -161,6 +161,46 @@
     - How much principal and interest did borrowers pay each month?
     - Give monthly principal recovery and interest recovery for all available history
 
+- id: interest_collected_month
+  view: gold.semantic_repayment_event
+  tool: query_metrics
+  metrics: [interest_collected]
+  dimensions: [month]
+  prompts:
+    - Interest collected monthwise till today
+    - Show monthly interest recovery for all available history
+    - How much interest was collected each month?
+
+- id: interest_collected_scheme
+  view: gold.semantic_repayment_event
+  tool: query_metrics
+  metrics: [interest_collected]
+  dimensions: [scheme]
+  prompts:
+    - Interest collected schemewise
+    - Break down all-time interest recovery by scheme
+    - How much interest was paid for each loan scheme?
+
+- id: interest_collected_branch
+  view: gold.semantic_repayment_event
+  tool: query_metrics
+  metrics: [interest_collected]
+  dimensions: [branch]
+  prompts:
+    - Interest collected branch wise
+    - Break down all-time interest recovery by branch
+    - How much interest was paid for each origination office?
+
+- id: interest_collected_product
+  view: gold.semantic_repayment_event
+  tool: query_metrics
+  metrics: [interest_collected]
+  dimensions: [product]
+  prompts:
+    - Interest collected product wise
+    - Break down all-time interest recovery by product
+    - How much interest was paid for each core product?
+
 - id: repayment_shortfall
   view: gold.semantic_repayment_event
   tool: run_validated_query

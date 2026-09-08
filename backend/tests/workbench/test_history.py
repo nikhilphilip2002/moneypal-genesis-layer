@@ -5,6 +5,8 @@ the title comes from the first question, turns accumulate, and recency ordering 
 
 from __future__ import annotations
 
+import json
+
 import pytest
 
 from app.services.workbench import history
@@ -202,11 +204,148 @@ def test_native_transcript_replays_only_complete_call_result_groups():
 
     messages = history.build_native_transcript("native", user="alice")
     assert [message["role"] for message in messages] == [
-        "system", "user", "assistant", "tool", "assistant",
+        "user", "assistant", "tool", "assistant",
     ]
-    assert messages[2]["tool_calls"][0]["id"] == "call_1"
-    assert messages[3]["tool_call_id"] == "call_1"
-    assert "<governed-plans>" in messages[0]["content"]
+    assert messages[1]["tool_calls"][0]["id"] == "call_1"
+    assert messages[2]["tool_call_id"] == "call_1"
+    record = history.get("native", user="alice")
+    assert record is not None
+    events = record.turns[0]["events"]
+    assert [event["type"] for event in events] == [
+        "user_message",
+        "llm_assistant_message",
+        "tool_call",
+        "tool_result",
+        "final_answer",
+    ]
+    assert events[2]["payload"]["call"]["arguments"] == {"metrics": ["par_30"]}
+    assert events[3]["payload"]["message"] == tool
+
+
+def test_legacy_card_is_retained_as_a_complete_tool_result_event():
+    turn_id = history.begin_turn("legacy-event", "alice", "Show all customers")
+    card = {
+        "source": "db",
+        "card_type": "chart",
+        "payload": {
+            "rows": [{"customer_id": str(index)} for index in range(30)],
+            "lineage": {"sql": "SELECT customer_id FROM governed_view"},
+        },
+    }
+    history.add_card("legacy-event", "alice", turn_id, card)
+    history.complete_turn("legacy-event", "alice", turn_id)
+
+    record = history.get("legacy-event", user="alice")
+    event = record.turns[0]["events"][1]
+    assert event["type"] == "tool_result"
+    assert event["payload"]["card"] == card
+
+
+def test_native_transcript_fails_instead_of_silently_dropping_a_complete_exchange():
+    turn_id = history.begin_turn("native-overflow", "alice", "Show all rows")
+    assistant = {
+        "role": "assistant",
+        "content": None,
+        "tool_calls": [{
+            "id": "large_1", "type": "function",
+            "function": {"name": "lookup_records", "arguments": "{}"},
+        }],
+    }
+    history.add_agent_exchange(
+        "native-overflow", "alice", turn_id,
+        assistant_message=assistant,
+        calls=[{"id": "large_1", "name": "lookup_records", "arguments": {}}],
+        tool_messages=[{
+            "role": "tool",
+            "tool_call_id": "large_1",
+            "content": "x" * 20_000,
+        }],
+    )
+    history.complete_turn("native-overflow", "alice", turn_id)
+
+    with pytest.raises(history.NativeTranscriptOverflow, match="context window"):
+        history.build_native_transcript(
+            "native-overflow", user="alice", token_budget=100,
+        )
+
+
+def test_named_agent_lookup_call_rows_and_lineage_replay_to_the_followup():
+    turn_id = history.begin_turn(
+        "vanitha-followup", "alice", "customers under vanitha",
+    )
+    arguments = {
+        "selector": "agent_name",
+        "value": "vanitha",
+        "detail": "agent_customers",
+        "requested_fields": ["borrower_name"],
+    }
+    assistant = {
+        "role": "assistant",
+        "content": None,
+        "tool_calls": [{
+            "id": "lookup_vanitha",
+            "type": "function",
+            "function": {
+                "name": "lookup_records",
+                "arguments": json.dumps(arguments),
+            },
+        }],
+    }
+    rows = [
+        {"customer_id": str(index), "borrower_name": f"Customer {index}"}
+        for index in range(30)
+    ]
+    tool_payload = {
+        "status": "ok",
+        "source": "db",
+        "card_type": "chart",
+        "payload": {
+            "columns": ["customer_id", "borrower_name"],
+            "rows": rows,
+        },
+        "lineage": {
+            "sql": (
+                "SELECT customer_id, customer_name FROM gold.semantic_loan_account "
+                "WHERE agent_name = :agent_name LIMIT 5000"
+            ),
+            "params": {"agent_name": "vanitha"},
+        },
+    }
+    tool = {
+        "role": "tool",
+        "tool_call_id": "lookup_vanitha",
+        "content": json.dumps(tool_payload),
+    }
+    history.add_agent_exchange(
+        "vanitha-followup", "alice", turn_id,
+        assistant_message=assistant,
+        calls=[{
+            "id": "lookup_vanitha",
+            "name": "lookup_records",
+            "arguments": arguments,
+        }],
+        tool_messages=[tool],
+    )
+    history.set_answer(
+        "vanitha-followup", "alice", turn_id,
+        {"text": "Showing 30 linked customers.", "status": "answered"},
+    )
+    history.complete_turn("vanitha-followup", "alice", turn_id)
+
+    messages = history.build_native_transcript(
+        "vanitha-followup", user="alice", token_budget=20_000,
+    )
+
+    assert messages[0] == {
+        "role": "user", "content": "customers under vanitha",
+    }
+    replayed_arguments = json.loads(
+        messages[1]["tool_calls"][0]["function"]["arguments"]
+    )
+    assert replayed_arguments == arguments
+    replayed_result = json.loads(messages[2]["content"])
+    assert replayed_result["payload"]["rows"] == rows
+    assert replayed_result["lineage"]["params"] == {"agent_name": "vanitha"}
 
 
 def test_public_search_arguments_are_redacted_in_durable_native_history():

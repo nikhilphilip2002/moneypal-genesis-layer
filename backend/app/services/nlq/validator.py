@@ -258,7 +258,7 @@ def _check_columns(tree: exp.Expression, catalog: Catalog) -> None:
     output_aliases = {
         (alias.alias or "").lower() for alias in tree.find_all(exp.Alias) if alias.alias
     }
-    all_physical = set().union(*allowed.values()) if allowed else set()
+    referenced_tables = set(aliases.values())
 
     for column in tree.find_all(exp.Column):
         name = (column.name or "").lower()
@@ -273,8 +273,19 @@ def _check_columns(tree: exp.Expression, catalog: Catalog) -> None:
                 raise ValidationError(f"column qualifier {qualifier!r} is not a known table alias")
             if name not in allowed[table_name]:
                 raise ValidationError(f"column {name!r} does not exist on {table_name}")
-        elif name not in all_physical:
-            raise ValidationError(f"column {name!r} is not in the catalog allowlist")
+        else:
+            matching_tables = {
+                table_name for table_name in referenced_tables
+                if name in allowed[table_name]
+            }
+            if not matching_tables:
+                raise ValidationError(
+                    f"column {name!r} does not exist on any referenced table"
+                )
+            if len(matching_tables) > 1:
+                raise ValidationError(
+                    f"column {name!r} is ambiguous across referenced tables; qualify it"
+                )
 
 
 def _check_no_set_operations_on_forbidden_tables(tree: exp.Expression, catalog: Catalog) -> None:
