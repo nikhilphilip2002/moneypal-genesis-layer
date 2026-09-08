@@ -1,0 +1,2392 @@
+[
+  {
+    "id": 1,
+    "role": "Branch Manager",
+    "category": "Agent Portfolio",
+    "title": "Agent Vanitha Sourcing & Follow-up",
+    "view": "gold.semantic_loan_account",
+    "questions": [
+      "customers under vanitha",
+      "include tenure and santioned amount with the above details",
+      "filter to active loans only",
+      "which branch are they from?",
+      "show the monthly trend of these sanctions"
+    ]
+  },
+  {
+    "id": 2,
+    "role": "CFO",
+    "category": "Disbursement Flow",
+    "title": "Disbursement Trajectory & Schemewise Grouping",
+    "view": "gold.semantic_disbursement_event",
+    "questions": [
+      "total disbursements this financial year",
+      "break that down schemewise",
+      "now show it monthwise",
+      "break it down by application branch",
+      "compare with the previous financial year"
+    ]
+  },
+  {
+    "id": 3,
+    "role": "CRO",
+    "category": "Credit Risk",
+    "title": "NPA Profile and Large Exposure Arrears",
+    "view": "gold.semantic_portfolio_snapshot",
+    "questions": [
+      "what is our current NPA ratio?",
+      "break it down by scheme",
+      "show overdue principal by branch",
+      "list top 10 overdue accounts",
+      "include borrower name and days past due with the above details"
+    ]
+  },
+  {
+    "id": 4,
+    "role": "Collection Head",
+    "category": "Recovery Operations",
+    "title": "Deep Recovery Investigation & Compaction",
+    "view": "gold.semantic_collection_activity",
+    "questions": [
+      "what is our collection efficiency this month?",
+      "break it down branchwise",
+      "how much was collected in Aluva?",
+      "which agent collected the most there?",
+      "list the accounts handled by that agent",
+      "include tenure and sanction amount",
+      "filter to standard accounts only",
+      "what is the total outstanding for these accounts?",
+      "show the scheduled repayments for next month",
+      "summarize our total exposure for this group"
+    ]
+  },
+  {
+    "id": 5,
+    "role": "Compliance Officer",
+    "category": "Customer Master",
+    "title": "Customer Demographics and KYC Verification",
+    "view": "gold.semantic_customer_profile",
+    "questions": [
+      "how many customer profiles are in our database?",
+      "break down customer count by gender",
+      "show the occupation distribution for female borrowers",
+      "which customers have missing or expired KYC documents?",
+      "list the top 10 oldest customer relationships"
+    ]
+  },
+  {
+    "id": 6,
+    "role": "Operations Manager",
+    "category": "Document Management",
+    "title": "Customer Document Expiry Funnel",
+    "view": "gold.semantic_customer_document",
+    "questions": [
+      "list customer documents expiring in the next 90 days",
+      "filter to Aadhaar and PAN documents only",
+      "group the expiring count by document type",
+      "break this down by customer branch",
+      "show customer name and mobile number for expiring documents"
+    ]
+  },
+  {
+    "id": 7,
+    "role": "COO",
+    "category": "Branch Operations",
+    "title": "Branch Network & Performance Hierarchy",
+    "view": "gold.semantic_branch",
+    "questions": [
+      "show all operating branches and their branch codes",
+      "which branches have the highest active loan count?",
+      "what is the total sanctioned amount for Aluva branch?",
+      "break down Aluva loans by scheme",
+      "show average ticket size across all branches"
+    ]
+  },
+  {
+    "id": 8,
+    "role": "Head of Lending Products",
+    "category": "Product Governance",
+    "title": "Product Schemes, ROI & Tenor Matrix",
+    "view": "gold.semantic_product",
+    "questions": [
+      "list all loan product schemes with minimum and maximum interest rates",
+      "which scheme offers the lowest interest rate?",
+      "show the maximum loan tenor in months for each scheme",
+      "what is the total disbursed amount productwise?",
+      "which product scheme has the highest average ticket size?"
+    ]
+  },
+  {
+    "id": 9,
+    "role": "Chief Growth Officer",
+    "category": "Sales Distribution",
+    "title": "Field Agent Productivity & Portfolio",
+    "view": "gold.semantic_agent",
+    "questions": [
+      "rank agents by total sanctioned loan volume",
+      "who are the top 5 agents by customer count?",
+      "show loans sourced by agent 1001",
+      "break down agent 1001 volume by scheme",
+      "what is the collection efficiency for loans sourced by agent 1001?"
+    ]
+  },
+  {
+    "id": 10,
+    "role": "HR Head",
+    "category": "Sales Organization",
+    "title": "Sales Reporting Structure & Managers",
+    "view": "gold.semantic_sales_hierarchy",
+    "questions": [
+      "show current sales reporting lines with actor user ID and manager ID",
+      "which managers oversee more than 10 agents?",
+      "list all active sales agents under regional manager R01",
+      "show the total portfolio size managed under R01",
+      "break down R01 portfolio by branch"
+    ]
+  },
+  {
+    "id": 11,
+    "role": "Treasurer",
+    "category": "Cash Management",
+    "title": "Principal vs Interest Inflow",
+    "view": "gold.semantic_repayment_event",
+    "questions": [
+      "show total repayments collected this financial year",
+      "split repayments between principal collected and interest collected",
+      "show the monthly trend of interest collected",
+      "break down interest collected schemewise",
+      "which branch collected the highest interest this month?"
+    ]
+  },
+  {
+    "id": 12,
+    "role": "ALM Desk",
+    "category": "Asset Liability Management",
+    "title": "Scheduled Cash Inflows & Future EMIs",
+    "view": "gold.semantic_repayment_schedule",
+    "questions": [
+      "what is the total scheduled instalment amount for next month?",
+      "show scheduled EMI inflow monthwise for the next 6 months",
+      "break down next month scheduled dues by scheme",
+      "which branches have the highest scheduled dues next month?",
+      "how many accounts are scheduled to pay an EMI next month?"
+    ]
+  },
+  {
+    "id": 13,
+    "role": "Risk Analytics",
+    "category": "Vintage Cohorts",
+    "title": "Origination Vintage PAR & Delinquency Timing",
+    "view": "gold.semantic_vintage_par",
+    "questions": [
+      "show PAR 30 by origination vintage and months on book",
+      "which vintage year has the highest PAR 30 at month 6?",
+      "show the vintage delinquency trend for 2025 originations",
+      "break down 2025 vintage PAR by scheme",
+      "compare 2024 and 2025 origination performance at month 12"
+    ]
+  },
+  {
+    "id": 14,
+    "role": "Credit Ops",
+    "category": "Application Processing",
+    "title": "Loan Application Inflow & Rejection Funnel",
+    "view": "gold.semantic_application",
+    "questions": [
+      "how many loan applications were received this month?",
+      "break down loan applications monthwise for the past 12 months",
+      "show applications by application branch",
+      "what is the application rejection rate by scheme?",
+      "which branch has the highest approval rate?"
+    ]
+  },
+  {
+    "id": 15,
+    "role": "Operations Controller",
+    "category": "Payment Receipts",
+    "title": "Payment Receipts & Payment Modes",
+    "view": "gold.semantic_payment_receipt",
+    "questions": [
+      "show total payment receipts collected this month",
+      "break down payment receipts by payment mode",
+      "what is the cash payment percentage versus digital modes?",
+      "show the daily receipt volume for the past 30 days",
+      "which branch processed the most cash receipts?"
+    ]
+  },
+  {
+    "id": 16,
+    "role": "Internal Auditor",
+    "category": "Ledger Accounting",
+    "title": "Loan Ledger Movements & Audit Trail",
+    "view": "gold.semantic_loan_ledger_event",
+    "questions": [
+      "show the count of loan ledger transactions this month",
+      "show the monthly trend of loan ledger movements",
+      "list debit transactions exceeding 10 lakhs in the last 30 days",
+      "which accounts had the highest number of ledger movements?",
+      "show ledger movements for account 10001"
+    ]
+  },
+  {
+    "id": 17,
+    "role": "Recovery Head",
+    "category": "Collection Activity",
+    "title": "Collection Visits & Delinquency Follow-up",
+    "view": "gold.semantic_collection_activity",
+    "questions": [
+      "how many collection activities were logged this month?",
+      "break down collection actions by activity type",
+      "rank collection agents by number of borrower visits",
+      "which branches logged the most collection activities?",
+      "what percentage of visited accounts made a repayment within 7 days?"
+    ]
+  },
+  {
+    "id": 18,
+    "role": "Financial Controller",
+    "category": "Financial Reporting",
+    "title": "GL Account Balances & Accounting Reconciliation",
+    "view": "gold.semantic_gl_balance",
+    "questions": [
+      "show current GL balances by ledger account",
+      "what is the total balance on loan asset accounts?",
+      "break down GL balances by branch",
+      "compare current GL loan assets with the previous quarter",
+      "show daily GL balance movements for the gold loan asset account"
+    ]
+  },
+  {
+    "id": 19,
+    "role": "MSME Business Head",
+    "category": "Lead Generation",
+    "title": "MSME Sourcing & Lead Funnel",
+    "view": "gold.semantic_msme_lead",
+    "questions": [
+      "how many MSME leads are currently in the pipeline?",
+      "break down MSME leads by lead status",
+      "show MSME leads by vendor ID",
+      "which vendor has the highest lead conversion rate?",
+      "what is the average ticket size of converted MSME loans?"
+    ]
+  },
+  {
+    "id": 20,
+    "role": "CEO",
+    "category": "Executive Review",
+    "title": "Comprehensive Portfolio & Sourcing Audit",
+    "view": "gold.semantic_loan_account",
+    "questions": [
+      "what is the total principal outstanding across the loan book?",
+      "break it down schemewise",
+      "now show it by application branch",
+      "which branch has the largest exposure?",
+      "list the top 10 largest accounts in that branch",
+      "include borrower name and interest rate",
+      "also add tenure and sanction amount",
+      "filter to loans sanctioned in the last 12 months",
+      "who are the sourcing agents for these accounts?",
+      "what is the overdue status on these loans?"
+    ]
+  },
+  {
+    "id": 21,
+    "role": "CFO",
+    "category": "Loan Account Details & Terms",
+    "title": "Loan Account Details & Terms Workflow 21",
+    "view": "gold.semantic_loan_account",
+    "questions": [
+      "show active loan accounts with interest rate above 15%",
+      "include sanction amount and tenure",
+      "filter by gold loan scheme",
+      "which branch has the most such accounts?",
+      "what is the total outstanding for these accounts?"
+    ]
+  },
+  {
+    "id": 22,
+    "role": "CRO",
+    "category": "Customer Demographics & Profiles",
+    "title": "Customer Demographics & Profiles Workflow 22",
+    "view": "gold.semantic_customer_profile",
+    "questions": [
+      "how many borrowers are located in district 3?",
+      "break down by occupation",
+      "show customer count by gender",
+      "which customers have more than 2 active loans?",
+      "include customer name and total sanctioned amount"
+    ]
+  },
+  {
+    "id": 23,
+    "role": "COO",
+    "category": "Document Tracking & Verification",
+    "title": "Document Tracking & Verification Workflow 23",
+    "view": "gold.semantic_customer_document",
+    "questions": [
+      "how many customer documents were uploaded in month 12?",
+      "break down by document type",
+      "show documents pending verification",
+      "which branch has the highest pending document count?",
+      "list the oldest 5 pending verification documents"
+    ]
+  },
+  {
+    "id": 24,
+    "role": "Branch Head",
+    "category": "Branch Metrics & Origination",
+    "title": "Branch Metrics & Origination Workflow 24",
+    "view": "gold.semantic_branch",
+    "questions": [
+      "compare loan sanction volume between branch 1001 and branch 1002",
+      "break down sanctions by scheme for branch 1001",
+      "show total disbursed amount for branch 1002",
+      "what is the PAR 30 ratio for branch 1001?",
+      "rank all branches by collection efficiency"
+    ]
+  },
+  {
+    "id": 25,
+    "role": "Product Head",
+    "category": "Product Performance & Pricing",
+    "title": "Product Performance & Pricing Workflow 25",
+    "view": "gold.semantic_product",
+    "questions": [
+      "show total outstanding productwise",
+      "break down by scheme",
+      "which scheme has the highest number of active loans?",
+      "what is the average loan size for that scheme?",
+      "show the monthly disbursement trend for that scheme"
+    ]
+  },
+  {
+    "id": 26,
+    "role": "Sales Head",
+    "category": "Agent Portfolios & Quality",
+    "title": "Agent Portfolios & Quality Workflow 26",
+    "view": "gold.semantic_agent",
+    "questions": [
+      "show total loans sourced by agent A07",
+      "include customer names and sanction amount",
+      "also add loan tenure and interest rate",
+      "what is the total overdue on these loans?",
+      "show repayment status for these accounts"
+    ]
+  },
+  {
+    "id": 27,
+    "role": "COO",
+    "category": "Sales Supervision & Coverage",
+    "title": "Sales Supervision & Coverage Workflow 27",
+    "view": "gold.semantic_sales_hierarchy",
+    "questions": [
+      "show all reporting lines for sales manager M08",
+      "how many field agents report to this manager?",
+      "what is the total disbursement under this hierarchy this month?",
+      "break it down schemewise",
+      "which agent under this manager disbursed the most?"
+    ]
+  },
+  {
+    "id": 28,
+    "role": "Treasurer",
+    "category": "Disbursement Trends & Velocities",
+    "title": "Disbursement Trends & Velocities Workflow 28",
+    "view": "gold.semantic_disbursement_event",
+    "questions": [
+      "what was the disbursement amount in quarter 1?",
+      "break that down productwise",
+      "now show it schemewise",
+      "show monthly trend for that quarter",
+      "which branch contributed the highest disbursement?"
+    ]
+  },
+  {
+    "id": 29,
+    "role": "CFO",
+    "category": "Collections Inflow & Performance",
+    "title": "Collections Inflow & Performance Workflow 29",
+    "view": "gold.semantic_repayment_event",
+    "questions": [
+      "how much principal was repaid in month 6?",
+      "how much interest was collected in the same month?",
+      "break down the interest collected schemewise",
+      "show collections by application branch",
+      "compare total collections with the prior month"
+    ]
+  },
+  {
+    "id": 30,
+    "role": "ALM Desk",
+    "category": "Repayment Due Projections",
+    "title": "Repayment Due Projections Workflow 30",
+    "view": "gold.semantic_repayment_schedule",
+    "questions": [
+      "show scheduled instalments due in Q3",
+      "break down scheduled amount by branch",
+      "how many accounts have scheduled payments in this period?",
+      "what is the total principal scheduled versus interest scheduled?",
+      "which scheme has the largest scheduled dues?"
+    ]
+  },
+  {
+    "id": 31,
+    "role": "CRO",
+    "category": "Portfolio Risk & Asset Quality",
+    "title": "Portfolio Risk & Asset Quality Workflow 31",
+    "view": "gold.semantic_portfolio_snapshot",
+    "questions": [
+      "show total overdue principal across the loan book",
+      "break down overdue principal by dpd bucket",
+      "show accounts in SMA1 and SMA2",
+      "which branch has the highest overdue amount?",
+      "list top 10 borrowers in arrears"
+    ]
+  },
+  {
+    "id": 32,
+    "role": "Credit Head",
+    "category": "Application Conversion Funnel",
+    "title": "Application Conversion Funnel Workflow 32",
+    "view": "gold.semantic_application",
+    "questions": [
+      "how many loan applications were approved in month 9?",
+      "what was the total approved sanction value?",
+      "break down approved applications by scheme",
+      "show the average processing turnaround time by branch",
+      "how many applications were rejected in that month?"
+    ]
+  },
+  {
+    "id": 33,
+    "role": "Ops Controller",
+    "category": "Receipt Reconciliation & Modes",
+    "title": "Receipt Reconciliation & Modes Workflow 33",
+    "view": "gold.semantic_payment_receipt",
+    "questions": [
+      "show payment receipts collected on weekend dates",
+      "break down receipts by payment channel",
+      "what is the average receipt ticket size?",
+      "show receipt amount by branch",
+      "list receipts exceeding 5 lakhs"
+    ]
+  },
+  {
+    "id": 34,
+    "role": "Auditor",
+    "category": "Ledger Accounting & Reconciliation",
+    "title": "Ledger Accounting & Reconciliation Workflow 34",
+    "view": "gold.semantic_loan_ledger_event",
+    "questions": [
+      "show total debit ledger entries in month 11",
+      "show total credit ledger entries in the same month",
+      "what is the net ledger balance change?",
+      "break down ledger volume by branch",
+      "list high value credit transactions above 10 lakhs"
+    ]
+  },
+  {
+    "id": 35,
+    "role": "Collection Head",
+    "category": "Field Recoveries & Action Log",
+    "title": "Field Recoveries & Action Log Workflow 35",
+    "view": "gold.semantic_collection_activity",
+    "questions": [
+      "how many customer contact attempts were recorded this week?",
+      "break down by outcome code",
+      "which agents conducted more than 50 visits?",
+      "show promised-to-pay conversion rate",
+      "break down collection visits by branch"
+    ]
+  },
+  {
+    "id": 36,
+    "role": "Chief Risk Officer",
+    "category": "Vintage Risk & MOB Performance",
+    "title": "Vintage Risk & MOB Performance Workflow 36",
+    "view": "gold.semantic_vintage_par",
+    "questions": [
+      "show 30+ DPD vintage curve for Q1 disbursements",
+      "compare vintage performance across schemes",
+      "which vintage cohort shows the steepest delinquency increase?",
+      "show MOB 12 PAR 90 by branch",
+      "compare vintage performance against portfolio average"
+    ]
+  },
+  {
+    "id": 37,
+    "role": "Financial Controller",
+    "category": "General Ledger Accounting",
+    "title": "General Ledger Accounting Workflow 37",
+    "view": "gold.semantic_gl_balance",
+    "questions": [
+      "show general ledger balances for interest income accounts",
+      "break down interest income by branch",
+      "compare this financial year interest income with last FY",
+      "show GL balance for cash in transit accounts",
+      "show daily ledger balance movements for the head office branch"
+    ]
+  },
+  {
+    "id": 38,
+    "role": "MSME Head",
+    "category": "MSME Pipeline & Partner Channels",
+    "title": "MSME Pipeline & Partner Channels Workflow 38",
+    "view": "gold.semantic_msme_lead",
+    "questions": [
+      "how many MSME leads were sourced from digital channels?",
+      "break down digital leads by status",
+      "what is the conversion rate of digital leads?",
+      "show average sanctioned amount for converted digital leads",
+      "which branches processed the most digital MSME leads?"
+    ]
+  },
+  {
+    "id": 39,
+    "role": "CFO",
+    "category": "Loan Account Details & Terms",
+    "title": "Loan Account Details & Terms Workflow 39",
+    "view": "gold.semantic_loan_account",
+    "questions": [
+      "show active loan accounts with interest rate above 15%",
+      "include sanction amount and tenure",
+      "filter by gold loan scheme",
+      "which branch has the most such accounts?",
+      "what is the total outstanding for these accounts?"
+    ]
+  },
+  {
+    "id": 40,
+    "role": "CRO",
+    "category": "Customer Demographics & Profiles",
+    "title": "Customer Demographics & Profiles Workflow 40",
+    "view": "gold.semantic_customer_profile",
+    "questions": [
+      "how many borrowers are located in district 1?",
+      "break down by occupation",
+      "show customer count by gender",
+      "which customers have more than 2 active loans?",
+      "include customer name and total sanctioned amount"
+    ]
+  },
+  {
+    "id": 41,
+    "role": "COO",
+    "category": "Document Tracking & Verification",
+    "title": "Document Tracking & Verification Workflow 41",
+    "view": "gold.semantic_customer_document",
+    "questions": [
+      "how many customer documents were uploaded in month 6?",
+      "break down by document type",
+      "show documents pending verification",
+      "which branch has the highest pending document count?",
+      "list the oldest 5 pending verification documents"
+    ]
+  },
+  {
+    "id": 42,
+    "role": "Branch Head",
+    "category": "Branch Metrics & Origination",
+    "title": "Branch Metrics & Origination Workflow 42",
+    "view": "gold.semantic_branch",
+    "questions": [
+      "compare loan sanction volume between branch 1001 and branch 1002",
+      "break down sanctions by scheme for branch 1001",
+      "show total disbursed amount for branch 1002",
+      "what is the PAR 30 ratio for branch 1001?",
+      "rank all branches by collection efficiency"
+    ]
+  },
+  {
+    "id": 43,
+    "role": "Product Head",
+    "category": "Product Performance & Pricing",
+    "title": "Product Performance & Pricing Workflow 43",
+    "view": "gold.semantic_product",
+    "questions": [
+      "show total outstanding productwise",
+      "break down by scheme",
+      "which scheme has the highest number of active loans?",
+      "what is the average loan size for that scheme?",
+      "show the monthly disbursement trend for that scheme"
+    ]
+  },
+  {
+    "id": 44,
+    "role": "Sales Head",
+    "category": "Agent Portfolios & Quality",
+    "title": "Agent Portfolios & Quality Workflow 44",
+    "view": "gold.semantic_agent",
+    "questions": [
+      "show total loans sourced by agent A05",
+      "include customer names and sanction amount",
+      "also add loan tenure and interest rate",
+      "what is the total overdue on these loans?",
+      "show repayment status for these accounts"
+    ]
+  },
+  {
+    "id": 45,
+    "role": "COO",
+    "category": "Sales Supervision & Coverage",
+    "title": "Sales Supervision & Coverage Workflow 45",
+    "view": "gold.semantic_sales_hierarchy",
+    "questions": [
+      "show all reporting lines for sales manager M06",
+      "how many field agents report to this manager?",
+      "what is the total disbursement under this hierarchy this month?",
+      "break it down schemewise",
+      "which agent under this manager disbursed the most?"
+    ]
+  },
+  {
+    "id": 46,
+    "role": "Treasurer",
+    "category": "Disbursement Trends & Velocities",
+    "title": "Disbursement Trends & Velocities Workflow 46",
+    "view": "gold.semantic_disbursement_event",
+    "questions": [
+      "what was the disbursement amount in quarter 3?",
+      "break that down productwise",
+      "now show it schemewise",
+      "show monthly trend for that quarter",
+      "which branch contributed the highest disbursement?"
+    ]
+  },
+  {
+    "id": 47,
+    "role": "CFO",
+    "category": "Collections Inflow & Performance",
+    "title": "Collections Inflow & Performance Workflow 47",
+    "view": "gold.semantic_repayment_event",
+    "questions": [
+      "how much principal was repaid in month 12?",
+      "how much interest was collected in the same month?",
+      "break down the interest collected schemewise",
+      "show collections by application branch",
+      "compare total collections with the prior month"
+    ]
+  },
+  {
+    "id": 48,
+    "role": "ALM Desk",
+    "category": "Repayment Due Projections",
+    "title": "Repayment Due Projections Workflow 48",
+    "view": "gold.semantic_repayment_schedule",
+    "questions": [
+      "show scheduled instalments due in Q1",
+      "break down scheduled amount by branch",
+      "how many accounts have scheduled payments in this period?",
+      "what is the total principal scheduled versus interest scheduled?",
+      "which scheme has the largest scheduled dues?"
+    ]
+  },
+  {
+    "id": 49,
+    "role": "CRO",
+    "category": "Portfolio Risk & Asset Quality",
+    "title": "Portfolio Risk & Asset Quality Workflow 49",
+    "view": "gold.semantic_portfolio_snapshot",
+    "questions": [
+      "show total overdue principal across the loan book",
+      "break down overdue principal by dpd bucket",
+      "show accounts in SMA1 and SMA2",
+      "which branch has the highest overdue amount?",
+      "list top 10 borrowers in arrears"
+    ]
+  },
+  {
+    "id": 50,
+    "role": "Credit Head",
+    "category": "Application Conversion Funnel",
+    "title": "Application Conversion Funnel Workflow 50",
+    "view": "gold.semantic_application",
+    "questions": [
+      "how many loan applications were approved in month 3?",
+      "what was the total approved sanction value?",
+      "break down approved applications by scheme",
+      "show the average processing turnaround time by branch",
+      "how many applications were rejected in that month?"
+    ]
+  },
+  {
+    "id": 51,
+    "role": "Ops Controller",
+    "category": "Receipt Reconciliation & Modes",
+    "title": "Receipt Reconciliation & Modes Workflow 51",
+    "view": "gold.semantic_payment_receipt",
+    "questions": [
+      "show payment receipts collected on weekend dates",
+      "break down receipts by payment channel",
+      "what is the average receipt ticket size?",
+      "show receipt amount by branch",
+      "list receipts exceeding 5 lakhs"
+    ]
+  },
+  {
+    "id": 52,
+    "role": "Auditor",
+    "category": "Ledger Accounting & Reconciliation",
+    "title": "Ledger Accounting & Reconciliation Workflow 52",
+    "view": "gold.semantic_loan_ledger_event",
+    "questions": [
+      "show total debit ledger entries in month 5",
+      "show total credit ledger entries in the same month",
+      "what is the net ledger balance change?",
+      "break down ledger volume by branch",
+      "list high value credit transactions above 10 lakhs"
+    ]
+  },
+  {
+    "id": 53,
+    "role": "Collection Head",
+    "category": "Field Recoveries & Action Log",
+    "title": "Field Recoveries & Action Log Workflow 53",
+    "view": "gold.semantic_collection_activity",
+    "questions": [
+      "how many customer contact attempts were recorded this week?",
+      "break down by outcome code",
+      "which agents conducted more than 50 visits?",
+      "show promised-to-pay conversion rate",
+      "break down collection visits by branch"
+    ]
+  },
+  {
+    "id": 54,
+    "role": "Chief Risk Officer",
+    "category": "Vintage Risk & MOB Performance",
+    "title": "Vintage Risk & MOB Performance Workflow 54",
+    "view": "gold.semantic_vintage_par",
+    "questions": [
+      "show 30+ DPD vintage curve for Q3 disbursements",
+      "compare vintage performance across schemes",
+      "which vintage cohort shows the steepest delinquency increase?",
+      "show MOB 12 PAR 90 by branch",
+      "compare vintage performance against portfolio average"
+    ]
+  },
+  {
+    "id": 55,
+    "role": "Financial Controller",
+    "category": "General Ledger Accounting",
+    "title": "General Ledger Accounting Workflow 55",
+    "view": "gold.semantic_gl_balance",
+    "questions": [
+      "show general ledger balances for interest income accounts",
+      "break down interest income by branch",
+      "compare this financial year interest income with last FY",
+      "show GL balance for cash in transit accounts",
+      "show daily ledger balance movements for the head office branch"
+    ]
+  },
+  {
+    "id": 56,
+    "role": "MSME Head",
+    "category": "MSME Pipeline & Partner Channels",
+    "title": "MSME Pipeline & Partner Channels Workflow 56",
+    "view": "gold.semantic_msme_lead",
+    "questions": [
+      "how many MSME leads were sourced from digital channels?",
+      "break down digital leads by status",
+      "what is the conversion rate of digital leads?",
+      "show average sanctioned amount for converted digital leads",
+      "which branches processed the most digital MSME leads?"
+    ]
+  },
+  {
+    "id": 57,
+    "role": "CFO",
+    "category": "Loan Account Details & Terms",
+    "title": "Loan Account Details & Terms Workflow 57",
+    "view": "gold.semantic_loan_account",
+    "questions": [
+      "show active loan accounts with interest rate above 15%",
+      "include sanction amount and tenure",
+      "filter by gold loan scheme",
+      "which branch has the most such accounts?",
+      "what is the total outstanding for these accounts?"
+    ]
+  },
+  {
+    "id": 58,
+    "role": "CRO",
+    "category": "Customer Demographics & Profiles",
+    "title": "Customer Demographics & Profiles Workflow 58",
+    "view": "gold.semantic_customer_profile",
+    "questions": [
+      "how many borrowers are located in district 4?",
+      "break down by occupation",
+      "show customer count by gender",
+      "which customers have more than 2 active loans?",
+      "include customer name and total sanctioned amount"
+    ]
+  },
+  {
+    "id": 59,
+    "role": "COO",
+    "category": "Document Tracking & Verification",
+    "title": "Document Tracking & Verification Workflow 59",
+    "view": "gold.semantic_customer_document",
+    "questions": [
+      "how many customer documents were uploaded in month 12?",
+      "break down by document type",
+      "show documents pending verification",
+      "which branch has the highest pending document count?",
+      "list the oldest 5 pending verification documents"
+    ]
+  },
+  {
+    "id": 60,
+    "role": "Branch Head",
+    "category": "Branch Metrics & Origination",
+    "title": "Branch Metrics & Origination Workflow 60",
+    "view": "gold.semantic_branch",
+    "questions": [
+      "compare loan sanction volume between branch 1001 and branch 1002",
+      "break down sanctions by scheme for branch 1001",
+      "show total disbursed amount for branch 1002",
+      "what is the PAR 30 ratio for branch 1001?",
+      "rank all branches by collection efficiency"
+    ]
+  },
+  {
+    "id": 61,
+    "role": "Product Head",
+    "category": "Product Performance & Pricing",
+    "title": "Product Performance & Pricing Workflow 61",
+    "view": "gold.semantic_product",
+    "questions": [
+      "show total outstanding productwise",
+      "break down by scheme",
+      "which scheme has the highest number of active loans?",
+      "what is the average loan size for that scheme?",
+      "show the monthly disbursement trend for that scheme"
+    ]
+  },
+  {
+    "id": 62,
+    "role": "Sales Head",
+    "category": "Agent Portfolios & Quality",
+    "title": "Agent Portfolios & Quality Workflow 62",
+    "view": "gold.semantic_agent",
+    "questions": [
+      "show total loans sourced by agent A03",
+      "include customer names and sanction amount",
+      "also add loan tenure and interest rate",
+      "what is the total overdue on these loans?",
+      "show repayment status for these accounts"
+    ]
+  },
+  {
+    "id": 63,
+    "role": "COO",
+    "category": "Sales Supervision & Coverage",
+    "title": "Sales Supervision & Coverage Workflow 63",
+    "view": "gold.semantic_sales_hierarchy",
+    "questions": [
+      "show all reporting lines for sales manager M04",
+      "how many field agents report to this manager?",
+      "what is the total disbursement under this hierarchy this month?",
+      "break it down schemewise",
+      "which agent under this manager disbursed the most?"
+    ]
+  },
+  {
+    "id": 64,
+    "role": "Treasurer",
+    "category": "Disbursement Trends & Velocities",
+    "title": "Disbursement Trends & Velocities Workflow 64",
+    "view": "gold.semantic_disbursement_event",
+    "questions": [
+      "what was the disbursement amount in quarter 1?",
+      "break that down productwise",
+      "now show it schemewise",
+      "show monthly trend for that quarter",
+      "which branch contributed the highest disbursement?"
+    ]
+  },
+  {
+    "id": 65,
+    "role": "CFO",
+    "category": "Collections Inflow & Performance",
+    "title": "Collections Inflow & Performance Workflow 65",
+    "view": "gold.semantic_repayment_event",
+    "questions": [
+      "how much principal was repaid in month 6?",
+      "how much interest was collected in the same month?",
+      "break down the interest collected schemewise",
+      "show collections by application branch",
+      "compare total collections with the prior month"
+    ]
+  },
+  {
+    "id": 66,
+    "role": "ALM Desk",
+    "category": "Repayment Due Projections",
+    "title": "Repayment Due Projections Workflow 66",
+    "view": "gold.semantic_repayment_schedule",
+    "questions": [
+      "show scheduled instalments due in Q3",
+      "break down scheduled amount by branch",
+      "how many accounts have scheduled payments in this period?",
+      "what is the total principal scheduled versus interest scheduled?",
+      "which scheme has the largest scheduled dues?"
+    ]
+  },
+  {
+    "id": 67,
+    "role": "CRO",
+    "category": "Portfolio Risk & Asset Quality",
+    "title": "Portfolio Risk & Asset Quality Workflow 67",
+    "view": "gold.semantic_portfolio_snapshot",
+    "questions": [
+      "show total overdue principal across the loan book",
+      "break down overdue principal by dpd bucket",
+      "show accounts in SMA1 and SMA2",
+      "which branch has the highest overdue amount?",
+      "list top 10 borrowers in arrears"
+    ]
+  },
+  {
+    "id": 68,
+    "role": "Credit Head",
+    "category": "Application Conversion Funnel",
+    "title": "Application Conversion Funnel Workflow 68",
+    "view": "gold.semantic_application",
+    "questions": [
+      "how many loan applications were approved in month 9?",
+      "what was the total approved sanction value?",
+      "break down approved applications by scheme",
+      "show the average processing turnaround time by branch",
+      "how many applications were rejected in that month?"
+    ]
+  },
+  {
+    "id": 69,
+    "role": "Ops Controller",
+    "category": "Receipt Reconciliation & Modes",
+    "title": "Receipt Reconciliation & Modes Workflow 69",
+    "view": "gold.semantic_payment_receipt",
+    "questions": [
+      "show payment receipts collected on weekend dates",
+      "break down receipts by payment channel",
+      "what is the average receipt ticket size?",
+      "show receipt amount by branch",
+      "list receipts exceeding 5 lakhs"
+    ]
+  },
+  {
+    "id": 70,
+    "role": "Auditor",
+    "category": "Ledger Accounting & Reconciliation",
+    "title": "Ledger Accounting & Reconciliation Workflow 70",
+    "view": "gold.semantic_loan_ledger_event",
+    "questions": [
+      "show total debit ledger entries in month 11",
+      "show total credit ledger entries in the same month",
+      "what is the net ledger balance change?",
+      "break down ledger volume by branch",
+      "list high value credit transactions above 10 lakhs"
+    ]
+  },
+  {
+    "id": 71,
+    "role": "Executive",
+    "category": "Single Turn Analysis",
+    "title": "Single Query - Semantic Loan Account",
+    "view": "gold.semantic_loan_account",
+    "questions": [
+      "What is the total sanctioned loan amount across the loan book?"
+    ]
+  },
+  {
+    "id": 72,
+    "role": "Executive",
+    "category": "Single Turn Analysis",
+    "title": "Single Query - Semantic Loan Account",
+    "view": "gold.semantic_loan_account",
+    "questions": [
+      "How many active loan accounts are currently open?"
+    ]
+  },
+  {
+    "id": 73,
+    "role": "Executive",
+    "category": "Single Turn Analysis",
+    "title": "Single Query - Semantic Loan Account",
+    "view": "gold.semantic_loan_account",
+    "questions": [
+      "What is the average contractual interest rate on the loan book?"
+    ]
+  },
+  {
+    "id": 74,
+    "role": "Executive",
+    "category": "Single Turn Analysis",
+    "title": "Single Query - Semantic Loan Account",
+    "view": "gold.semantic_loan_account",
+    "questions": [
+      "Show total sanctioned loan count by account status."
+    ]
+  },
+  {
+    "id": 75,
+    "role": "Executive",
+    "category": "Single Turn Analysis",
+    "title": "Single Query - Semantic Loan Account",
+    "view": "gold.semantic_loan_account",
+    "questions": [
+      "List all accounts sanctioned in the last 30 days."
+    ]
+  },
+  {
+    "id": 76,
+    "role": "Executive",
+    "category": "Single Turn Analysis",
+    "title": "Single Query - Semantic Loan Account",
+    "view": "gold.semantic_loan_account",
+    "questions": [
+      "Which borrowers have sanctioned amount greater than 25 lakhs?"
+    ]
+  },
+  {
+    "id": 77,
+    "role": "Executive",
+    "category": "Single Turn Analysis",
+    "title": "Single Query - Semantic Loan Account",
+    "view": "gold.semantic_loan_account",
+    "questions": [
+      "Show distribution of loans by EMI amount bucket."
+    ]
+  },
+  {
+    "id": 78,
+    "role": "Executive",
+    "category": "Single Turn Analysis",
+    "title": "Single Query - Semantic Loan Account",
+    "view": "gold.semantic_loan_account",
+    "questions": [
+      "What is the total cumulative disbursed amount across all loans?"
+    ]
+  },
+  {
+    "id": 79,
+    "role": "Executive",
+    "category": "Single Turn Analysis",
+    "title": "Single Query - Semantic Customer Profile",
+    "view": "gold.semantic_customer_profile",
+    "questions": [
+      "How many distinct borrowers are in our customer master?"
+    ]
+  },
+  {
+    "id": 80,
+    "role": "Executive",
+    "category": "Single Turn Analysis",
+    "title": "Single Query - Semantic Customer Profile",
+    "view": "gold.semantic_customer_profile",
+    "questions": [
+      "Show customer count grouped by home branch."
+    ]
+  },
+  {
+    "id": 81,
+    "role": "Executive",
+    "category": "Single Turn Analysis",
+    "title": "Single Query - Semantic Customer Profile",
+    "view": "gold.semantic_customer_profile",
+    "questions": [
+      "What is the male versus female borrower percentage?"
+    ]
+  },
+  {
+    "id": 82,
+    "role": "Executive",
+    "category": "Single Turn Analysis",
+    "title": "Single Query - Semantic Customer Profile",
+    "view": "gold.semantic_customer_profile",
+    "questions": [
+      "List all customers with staff status."
+    ]
+  },
+  {
+    "id": 83,
+    "role": "Executive",
+    "category": "Single Turn Analysis",
+    "title": "Single Query - Semantic Customer Profile",
+    "view": "gold.semantic_customer_profile",
+    "questions": [
+      "Show customer count by occupation category."
+    ]
+  },
+  {
+    "id": 84,
+    "role": "Executive",
+    "category": "Single Turn Analysis",
+    "title": "Single Query - Semantic Customer Profile",
+    "view": "gold.semantic_customer_profile",
+    "questions": [
+      "Which branch has the highest number of new customer onboardings this year?"
+    ]
+  },
+  {
+    "id": 85,
+    "role": "Executive",
+    "category": "Single Turn Analysis",
+    "title": "Single Query - Semantic Customer Profile",
+    "view": "gold.semantic_customer_profile",
+    "questions": [
+      "How many customer profiles have completed full KYC verification?"
+    ]
+  },
+  {
+    "id": 86,
+    "role": "Executive",
+    "category": "Single Turn Analysis",
+    "title": "Single Query - Semantic Customer Profile",
+    "view": "gold.semantic_customer_profile",
+    "questions": [
+      "Show average customer age across the portfolio."
+    ]
+  },
+  {
+    "id": 87,
+    "role": "Executive",
+    "category": "Single Turn Analysis",
+    "title": "Single Query - Semantic Customer Document",
+    "view": "gold.semantic_customer_document",
+    "questions": [
+      "How many customer documents are currently recorded?"
+    ]
+  },
+  {
+    "id": 88,
+    "role": "Executive",
+    "category": "Single Turn Analysis",
+    "title": "Single Query - Semantic Customer Document",
+    "view": "gold.semantic_customer_document",
+    "questions": [
+      "Show document count grouped by document type."
+    ]
+  },
+  {
+    "id": 89,
+    "role": "Executive",
+    "category": "Single Turn Analysis",
+    "title": "Single Query - Semantic Customer Document",
+    "view": "gold.semantic_customer_document",
+    "questions": [
+      "List documents with expiry date in the current calendar year."
+    ]
+  },
+  {
+    "id": 90,
+    "role": "Executive",
+    "category": "Single Turn Analysis",
+    "title": "Single Query - Semantic Customer Document",
+    "view": "gold.semantic_customer_document",
+    "questions": [
+      "Which branch has the most expired customer documents?"
+    ]
+  },
+  {
+    "id": 91,
+    "role": "Executive",
+    "category": "Single Turn Analysis",
+    "title": "Single Query - Semantic Customer Document",
+    "view": "gold.semantic_customer_document",
+    "questions": [
+      "Show count of verified versus unverified customer documents."
+    ]
+  },
+  {
+    "id": 92,
+    "role": "Executive",
+    "category": "Single Turn Analysis",
+    "title": "Single Query - Semantic Customer Document",
+    "view": "gold.semantic_customer_document",
+    "questions": [
+      "How many passport documents are recorded in the system?"
+    ]
+  },
+  {
+    "id": 93,
+    "role": "Executive",
+    "category": "Single Turn Analysis",
+    "title": "Single Query - Semantic Customer Document",
+    "view": "gold.semantic_customer_document",
+    "questions": [
+      "Show document verification completion percentage by branch."
+    ]
+  },
+  {
+    "id": 94,
+    "role": "Executive",
+    "category": "Single Turn Analysis",
+    "title": "Single Query - Semantic Customer Document",
+    "view": "gold.semantic_customer_document",
+    "questions": [
+      "List documents uploaded in the last 7 days."
+    ]
+  },
+  {
+    "id": 95,
+    "role": "Executive",
+    "category": "Single Turn Analysis",
+    "title": "Single Query - Semantic Branch",
+    "view": "gold.semantic_branch",
+    "questions": [
+      "How many active operating branches do we have?"
+    ]
+  },
+  {
+    "id": 96,
+    "role": "Executive",
+    "category": "Single Turn Analysis",
+    "title": "Single Query - Semantic Branch",
+    "view": "gold.semantic_branch",
+    "questions": [
+      "List all branches sorted by branch code."
+    ]
+  },
+  {
+    "id": 97,
+    "role": "Executive",
+    "category": "Single Turn Analysis",
+    "title": "Single Query - Semantic Branch",
+    "view": "gold.semantic_branch",
+    "questions": [
+      "Which branch has the highest total principal outstanding?"
+    ]
+  },
+  {
+    "id": 98,
+    "role": "Executive",
+    "category": "Single Turn Analysis",
+    "title": "Single Query - Semantic Branch",
+    "view": "gold.semantic_branch",
+    "questions": [
+      "Show total sanctioned loan volume by branch."
+    ]
+  },
+  {
+    "id": 99,
+    "role": "Executive",
+    "category": "Single Turn Analysis",
+    "title": "Single Query - Semantic Branch",
+    "view": "gold.semantic_branch",
+    "questions": [
+      "What is the total overdue amount in Aluva branch?"
+    ]
+  },
+  {
+    "id": 100,
+    "role": "Executive",
+    "category": "Single Turn Analysis",
+    "title": "Single Query - Semantic Branch",
+    "view": "gold.semantic_branch",
+    "questions": [
+      "Which branch has the lowest PAR 30 ratio?"
+    ]
+  },
+  {
+    "id": 101,
+    "role": "Executive",
+    "category": "Single Turn Analysis",
+    "title": "Single Query - Semantic Branch",
+    "view": "gold.semantic_branch",
+    "questions": [
+      "Show branch-wise borrower count across all operating branches."
+    ]
+  },
+  {
+    "id": 102,
+    "role": "Executive",
+    "category": "Single Turn Analysis",
+    "title": "Single Query - Semantic Branch",
+    "view": "gold.semantic_branch",
+    "questions": [
+      "What is the average loan ticket size in Ernakulam branch?"
+    ]
+  },
+  {
+    "id": 103,
+    "role": "Executive",
+    "category": "Single Turn Analysis",
+    "title": "Single Query - Semantic Product",
+    "view": "gold.semantic_product",
+    "questions": [
+      "List all loan products and sub-products currently offered."
+    ]
+  },
+  {
+    "id": 104,
+    "role": "Executive",
+    "category": "Single Turn Analysis",
+    "title": "Single Query - Semantic Product",
+    "view": "gold.semantic_product",
+    "questions": [
+      "What is the minimum interest rate across all product schemes?"
+    ]
+  },
+  {
+    "id": 105,
+    "role": "Executive",
+    "category": "Single Turn Analysis",
+    "title": "Single Query - Semantic Product",
+    "view": "gold.semantic_product",
+    "questions": [
+      "What is the maximum tenor allowed on agricultural loans?"
+    ]
+  },
+  {
+    "id": 106,
+    "role": "Executive",
+    "category": "Single Turn Analysis",
+    "title": "Single Query - Semantic Product",
+    "view": "gold.semantic_product",
+    "questions": [
+      "Show total active loan count by product code."
+    ]
+  },
+  {
+    "id": 107,
+    "role": "Executive",
+    "category": "Single Turn Analysis",
+    "title": "Single Query - Semantic Product",
+    "view": "gold.semantic_product",
+    "questions": [
+      "Which product scheme has the lowest default rate?"
+    ]
+  },
+  {
+    "id": 108,
+    "role": "Executive",
+    "category": "Single Turn Analysis",
+    "title": "Single Query - Semantic Product",
+    "view": "gold.semantic_product",
+    "questions": [
+      "Compare ticket sizes across personal loans and gold loans."
+    ]
+  },
+  {
+    "id": 109,
+    "role": "Executive",
+    "category": "Single Turn Analysis",
+    "title": "Single Query - Semantic Product",
+    "view": "gold.semantic_product",
+    "questions": [
+      "Show the sanctioned amount distribution by scheme."
+    ]
+  },
+  {
+    "id": 110,
+    "role": "Executive",
+    "category": "Single Turn Analysis",
+    "title": "Single Query - Semantic Product",
+    "view": "gold.semantic_product",
+    "questions": [
+      "Which product line generated the highest interest income this year?"
+    ]
+  },
+  {
+    "id": 111,
+    "role": "Executive",
+    "category": "Single Turn Analysis",
+    "title": "Single Query - Semantic Agent",
+    "view": "gold.semantic_agent",
+    "questions": [
+      "How many active sourcing agents are linked to loans?"
+    ]
+  },
+  {
+    "id": 112,
+    "role": "Executive",
+    "category": "Single Turn Analysis",
+    "title": "Single Query - Semantic Agent",
+    "view": "gold.semantic_agent",
+    "questions": [
+      "Rank top 10 field agents by loan count sanctioned."
+    ]
+  },
+  {
+    "id": 113,
+    "role": "Executive",
+    "category": "Single Turn Analysis",
+    "title": "Single Query - Semantic Agent",
+    "view": "gold.semantic_agent",
+    "questions": [
+      "Which agent has the lowest delinquency rate on their portfolio?"
+    ]
+  },
+  {
+    "id": 114,
+    "role": "Executive",
+    "category": "Single Turn Analysis",
+    "title": "Single Query - Semantic Agent",
+    "view": "gold.semantic_agent",
+    "questions": [
+      "Show the agent-wise distribution of sanctioned amount."
+    ]
+  },
+  {
+    "id": 115,
+    "role": "Executive",
+    "category": "Single Turn Analysis",
+    "title": "Single Query - Semantic Agent",
+    "view": "gold.semantic_agent",
+    "questions": [
+      "How many agents sourced loans in Aluva branch?"
+    ]
+  },
+  {
+    "id": 116,
+    "role": "Executive",
+    "category": "Single Turn Analysis",
+    "title": "Single Query - Semantic Agent",
+    "view": "gold.semantic_agent",
+    "questions": [
+      "List all agents who joined in the current financial year."
+    ]
+  },
+  {
+    "id": 117,
+    "role": "Executive",
+    "category": "Single Turn Analysis",
+    "title": "Single Query - Semantic Agent",
+    "view": "gold.semantic_agent",
+    "questions": [
+      "What is the average customer count per agent?"
+    ]
+  },
+  {
+    "id": 118,
+    "role": "Executive",
+    "category": "Single Turn Analysis",
+    "title": "Single Query - Semantic Agent",
+    "view": "gold.semantic_agent",
+    "questions": [
+      "Which agents have zero delinquent accounts in their book?"
+    ]
+  },
+  {
+    "id": 119,
+    "role": "Executive",
+    "category": "Single Turn Analysis",
+    "title": "Single Query - Semantic Sales Hierarchy",
+    "view": "gold.semantic_sales_hierarchy",
+    "questions": [
+      "Show the complete executive sales reporting structure."
+    ]
+  },
+  {
+    "id": 120,
+    "role": "Executive",
+    "category": "Single Turn Analysis",
+    "title": "Single Query - Semantic Sales Hierarchy",
+    "view": "gold.semantic_sales_hierarchy",
+    "questions": [
+      "How many regional sales managers are currently active?"
+    ]
+  },
+  {
+    "id": 121,
+    "role": "Executive",
+    "category": "Single Turn Analysis",
+    "title": "Single Query - Semantic Sales Hierarchy",
+    "view": "gold.semantic_sales_hierarchy",
+    "questions": [
+      "Which sales manager controls the highest aggregate loan volume?"
+    ]
+  },
+  {
+    "id": 122,
+    "role": "Executive",
+    "category": "Single Turn Analysis",
+    "title": "Single Query - Semantic Sales Hierarchy",
+    "view": "gold.semantic_sales_hierarchy",
+    "questions": [
+      "List all sales supervisors and their reporting branch codes."
+    ]
+  },
+  {
+    "id": 123,
+    "role": "Executive",
+    "category": "Single Turn Analysis",
+    "title": "Single Query - Semantic Sales Hierarchy",
+    "view": "gold.semantic_sales_hierarchy",
+    "questions": [
+      "Show the ratio of field agents to team leaders."
+    ]
+  },
+  {
+    "id": 124,
+    "role": "Executive",
+    "category": "Single Turn Analysis",
+    "title": "Single Query - Semantic Sales Hierarchy",
+    "view": "gold.semantic_sales_hierarchy",
+    "questions": [
+      "Which sales team achieved the highest disbursement target this quarter?"
+    ]
+  },
+  {
+    "id": 125,
+    "role": "Executive",
+    "category": "Single Turn Analysis",
+    "title": "Single Query - Semantic Sales Hierarchy",
+    "view": "gold.semantic_sales_hierarchy",
+    "questions": [
+      "Show sales hierarchy coverage for northern branches."
+    ]
+  },
+  {
+    "id": 126,
+    "role": "Executive",
+    "category": "Single Turn Analysis",
+    "title": "Single Query - Semantic Sales Hierarchy",
+    "view": "gold.semantic_sales_hierarchy",
+    "questions": [
+      "List managers with vacancies in their reporting structure."
+    ]
+  },
+  {
+    "id": 127,
+    "role": "Executive",
+    "category": "Single Turn Analysis",
+    "title": "Single Query - Semantic Disbursement Event",
+    "view": "gold.semantic_disbursement_event",
+    "questions": [
+      "What is our total disbursed amount all time?"
+    ]
+  },
+  {
+    "id": 128,
+    "role": "Executive",
+    "category": "Single Turn Analysis",
+    "title": "Single Query - Semantic Disbursement Event",
+    "view": "gold.semantic_disbursement_event",
+    "questions": [
+      "Show monthly disbursement amount for the last 12 months."
+    ]
+  },
+  {
+    "id": 129,
+    "role": "Executive",
+    "category": "Single Turn Analysis",
+    "title": "Single Query - Semantic Disbursement Event",
+    "view": "gold.semantic_disbursement_event",
+    "questions": [
+      "Show monthly disbursement count trend."
+    ]
+  },
+  {
+    "id": 130,
+    "role": "Executive",
+    "category": "Single Turn Analysis",
+    "title": "Single Query - Semantic Disbursement Event",
+    "view": "gold.semantic_disbursement_event",
+    "questions": [
+      "Which scheme had the highest disbursement volume last month?"
+    ]
+  },
+  {
+    "id": 131,
+    "role": "Executive",
+    "category": "Single Turn Analysis",
+    "title": "Single Query - Semantic Disbursement Event",
+    "view": "gold.semantic_disbursement_event",
+    "questions": [
+      "Break down disbursements this quarter by application branch."
+    ]
+  },
+  {
+    "id": 132,
+    "role": "Executive",
+    "category": "Single Turn Analysis",
+    "title": "Single Query - Semantic Disbursement Event",
+    "view": "gold.semantic_disbursement_event",
+    "questions": [
+      "What is the average daily disbursement run rate this month?"
+    ]
+  },
+  {
+    "id": 133,
+    "role": "Executive",
+    "category": "Single Turn Analysis",
+    "title": "Single Query - Semantic Disbursement Event",
+    "view": "gold.semantic_disbursement_event",
+    "questions": [
+      "Compare disbursement volume between Q1 and Q2."
+    ]
+  },
+  {
+    "id": 134,
+    "role": "Executive",
+    "category": "Single Turn Analysis",
+    "title": "Single Query - Semantic Disbursement Event",
+    "view": "gold.semantic_disbursement_event",
+    "questions": [
+      "Which payment mode accounted for the highest disbursement volume?"
+    ]
+  },
+  {
+    "id": 135,
+    "role": "Executive",
+    "category": "Single Turn Analysis",
+    "title": "Single Query - Semantic Repayment Event",
+    "view": "gold.semantic_repayment_event",
+    "questions": [
+      "What is the total repayment amount collected all time?"
+    ]
+  },
+  {
+    "id": 136,
+    "role": "Executive",
+    "category": "Single Turn Analysis",
+    "title": "Single Query - Semantic Repayment Event",
+    "view": "gold.semantic_repayment_event",
+    "questions": [
+      "Show principal collected monthwise for the current financial year."
+    ]
+  },
+  {
+    "id": 137,
+    "role": "Executive",
+    "category": "Single Turn Analysis",
+    "title": "Single Query - Semantic Repayment Event",
+    "view": "gold.semantic_repayment_event",
+    "questions": [
+      "Show interest collected monthwise for the current financial year."
+    ]
+  },
+  {
+    "id": 138,
+    "role": "Executive",
+    "category": "Single Turn Analysis",
+    "title": "Single Query - Semantic Repayment Event",
+    "view": "gold.semantic_repayment_event",
+    "questions": [
+      "Which branch had the highest repayment collections this month?"
+    ]
+  },
+  {
+    "id": 139,
+    "role": "Executive",
+    "category": "Single Turn Analysis",
+    "title": "Single Query - Semantic Repayment Event",
+    "view": "gold.semantic_repayment_event",
+    "questions": [
+      "Show daily collection trend for the last 14 days."
+    ]
+  },
+  {
+    "id": 140,
+    "role": "Executive",
+    "category": "Single Turn Analysis",
+    "title": "Single Query - Semantic Repayment Event",
+    "view": "gold.semantic_repayment_event",
+    "questions": [
+      "What is the total prepayment amount received this month?"
+    ]
+  },
+  {
+    "id": 141,
+    "role": "Executive",
+    "category": "Single Turn Analysis",
+    "title": "Single Query - Semantic Repayment Event",
+    "view": "gold.semantic_repayment_event",
+    "questions": [
+      "Compare repayment collections between this month and last month."
+    ]
+  },
+  {
+    "id": 142,
+    "role": "Executive",
+    "category": "Single Turn Analysis",
+    "title": "Single Query - Semantic Repayment Event",
+    "view": "gold.semantic_repayment_event",
+    "questions": [
+      "Show collections breakdown by loan scheme."
+    ]
+  },
+  {
+    "id": 143,
+    "role": "Executive",
+    "category": "Single Turn Analysis",
+    "title": "Single Query - Semantic Repayment Schedule",
+    "view": "gold.semantic_repayment_schedule",
+    "questions": [
+      "What is the total instalment amount scheduled for the next 30 days?"
+    ]
+  },
+  {
+    "id": 144,
+    "role": "Executive",
+    "category": "Single Turn Analysis",
+    "title": "Single Query - Semantic Repayment Schedule",
+    "view": "gold.semantic_repayment_schedule",
+    "questions": [
+      "Show the 12-month future repayment schedule projection."
+    ]
+  },
+  {
+    "id": 145,
+    "role": "Executive",
+    "category": "Single Turn Analysis",
+    "title": "Single Query - Semantic Repayment Schedule",
+    "view": "gold.semantic_repayment_schedule",
+    "questions": [
+      "How many accounts have scheduled repayments falling due this week?"
+    ]
+  },
+  {
+    "id": 146,
+    "role": "Executive",
+    "category": "Single Turn Analysis",
+    "title": "Single Query - Semantic Repayment Schedule",
+    "view": "gold.semantic_repayment_schedule",
+    "questions": [
+      "Break down next quarter scheduled principal dues by scheme."
+    ]
+  },
+  {
+    "id": 147,
+    "role": "Executive",
+    "category": "Single Turn Analysis",
+    "title": "Single Query - Semantic Repayment Schedule",
+    "view": "gold.semantic_repayment_schedule",
+    "questions": [
+      "Which branch has the highest scheduled collections in the upcoming month?"
+    ]
+  },
+  {
+    "id": 148,
+    "role": "Executive",
+    "category": "Single Turn Analysis",
+    "title": "Single Query - Semantic Repayment Schedule",
+    "view": "gold.semantic_repayment_schedule",
+    "questions": [
+      "Show scheduled interest inflow for the next financial year."
+    ]
+  },
+  {
+    "id": 149,
+    "role": "Executive",
+    "category": "Single Turn Analysis",
+    "title": "Single Query - Semantic Repayment Schedule",
+    "view": "gold.semantic_repayment_schedule",
+    "questions": [
+      "What percentage of total portfolio is scheduled to mature in 2027?"
+    ]
+  },
+  {
+    "id": 150,
+    "role": "Executive",
+    "category": "Single Turn Analysis",
+    "title": "Single Query - Semantic Repayment Schedule",
+    "view": "gold.semantic_repayment_schedule",
+    "questions": [
+      "List accounts with monthly EMI exceeding 50,000 rupees."
+    ]
+  },
+  {
+    "id": 151,
+    "role": "Executive",
+    "category": "Single Turn Analysis",
+    "title": "Single Query - Semantic Portfolio Snapshot",
+    "view": "gold.semantic_portfolio_snapshot",
+    "questions": [
+      "What is the portfolio at risk 30 days ratio today?"
+    ]
+  },
+  {
+    "id": 152,
+    "role": "Executive",
+    "category": "Single Turn Analysis",
+    "title": "Single Query - Semantic Portfolio Snapshot",
+    "view": "gold.semantic_portfolio_snapshot",
+    "questions": [
+      "What is the current gross NPA ratio across the book?"
+    ]
+  },
+  {
+    "id": 153,
+    "role": "Executive",
+    "category": "Single Turn Analysis",
+    "title": "Single Query - Semantic Portfolio Snapshot",
+    "view": "gold.semantic_portfolio_snapshot",
+    "questions": [
+      "Show total overdue amount broken down by branch."
+    ]
+  },
+  {
+    "id": 154,
+    "role": "Executive",
+    "category": "Single Turn Analysis",
+    "title": "Single Query - Semantic Portfolio Snapshot",
+    "view": "gold.semantic_portfolio_snapshot",
+    "questions": [
+      "How many accounts are in SMA0 status?"
+    ]
+  },
+  {
+    "id": 155,
+    "role": "Executive",
+    "category": "Single Turn Analysis",
+    "title": "Single Query - Semantic Portfolio Snapshot",
+    "view": "gold.semantic_portfolio_snapshot",
+    "questions": [
+      "Show the asset classification breakdown across STD, SMA and NPA."
+    ]
+  },
+  {
+    "id": 156,
+    "role": "Executive",
+    "category": "Single Turn Analysis",
+    "title": "Single Query - Semantic Portfolio Snapshot",
+    "view": "gold.semantic_portfolio_snapshot",
+    "questions": [
+      "What is the total principal outstanding in NPA accounts?"
+    ]
+  },
+  {
+    "id": 157,
+    "role": "Executive",
+    "category": "Single Turn Analysis",
+    "title": "Single Query - Semantic Portfolio Snapshot",
+    "view": "gold.semantic_portfolio_snapshot",
+    "questions": [
+      "Which scheme has the highest concentration of delinquent loans?"
+    ]
+  },
+  {
+    "id": 158,
+    "role": "Executive",
+    "category": "Single Turn Analysis",
+    "title": "Single Query - Semantic Portfolio Snapshot",
+    "view": "gold.semantic_portfolio_snapshot",
+    "questions": [
+      "List top 20 accounts by total overdue amount."
+    ]
+  },
+  {
+    "id": 159,
+    "role": "Executive",
+    "category": "Single Turn Analysis",
+    "title": "Single Query - Semantic Application",
+    "view": "gold.semantic_application",
+    "questions": [
+      "How many total loan applications have been submitted to date?"
+    ]
+  },
+  {
+    "id": 160,
+    "role": "Executive",
+    "category": "Single Turn Analysis",
+    "title": "Single Query - Semantic Application",
+    "view": "gold.semantic_application",
+    "questions": [
+      "Show application approval rate by product scheme."
+    ]
+  },
+  {
+    "id": 161,
+    "role": "Executive",
+    "category": "Single Turn Analysis",
+    "title": "Single Query - Semantic Application",
+    "view": "gold.semantic_application",
+    "questions": [
+      "What is the average loan amount requested in applications?"
+    ]
+  },
+  {
+    "id": 162,
+    "role": "Executive",
+    "category": "Single Turn Analysis",
+    "title": "Single Query - Semantic Application",
+    "view": "gold.semantic_application",
+    "questions": [
+      "Show the monthly application trend by application branch."
+    ]
+  },
+  {
+    "id": 163,
+    "role": "Executive",
+    "category": "Single Turn Analysis",
+    "title": "Single Query - Semantic Application",
+    "view": "gold.semantic_application",
+    "questions": [
+      "How many applications were rejected due to credit policy?"
+    ]
+  },
+  {
+    "id": 164,
+    "role": "Executive",
+    "category": "Single Turn Analysis",
+    "title": "Single Query - Semantic Application",
+    "view": "gold.semantic_application",
+    "questions": [
+      "Which branch received the highest number of applications last month?"
+    ]
+  },
+  {
+    "id": 165,
+    "role": "Executive",
+    "category": "Single Turn Analysis",
+    "title": "Single Query - Semantic Application",
+    "view": "gold.semantic_application",
+    "questions": [
+      "Show the loan application conversion funnel from submission to sanction."
+    ]
+  },
+  {
+    "id": 166,
+    "role": "Executive",
+    "category": "Single Turn Analysis",
+    "title": "Single Query - Semantic Application",
+    "view": "gold.semantic_application",
+    "questions": [
+      "What is the median turnaround time from application to sanction?"
+    ]
+  },
+  {
+    "id": 167,
+    "role": "Executive",
+    "category": "Single Turn Analysis",
+    "title": "Single Query - Semantic Payment Receipt",
+    "view": "gold.semantic_payment_receipt",
+    "questions": [
+      "What is the total value of payment receipts logged this financial year?"
+    ]
+  },
+  {
+    "id": 168,
+    "role": "Executive",
+    "category": "Single Turn Analysis",
+    "title": "Single Query - Semantic Payment Receipt",
+    "view": "gold.semantic_payment_receipt",
+    "questions": [
+      "Show count of payment receipts by payment mode."
+    ]
+  },
+  {
+    "id": 169,
+    "role": "Executive",
+    "category": "Single Turn Analysis",
+    "title": "Single Query - Semantic Payment Receipt",
+    "view": "gold.semantic_payment_receipt",
+    "questions": [
+      "What is the total cash collected across branch counters?"
+    ]
+  },
+  {
+    "id": 170,
+    "role": "Executive",
+    "category": "Single Turn Analysis",
+    "title": "Single Query - Semantic Payment Receipt",
+    "view": "gold.semantic_payment_receipt",
+    "questions": [
+      "Show receipt volume trend month by month."
+    ]
+  },
+  {
+    "id": 171,
+    "role": "Executive",
+    "category": "Single Turn Analysis",
+    "title": "Single Query - Semantic Payment Receipt",
+    "view": "gold.semantic_payment_receipt",
+    "questions": [
+      "Which branch logged the highest number of payment receipts?"
+    ]
+  },
+  {
+    "id": 172,
+    "role": "Executive",
+    "category": "Single Turn Analysis",
+    "title": "Single Query - Semantic Payment Receipt",
+    "view": "gold.semantic_payment_receipt",
+    "questions": [
+      "What is the average payment receipt amount?"
+    ]
+  },
+  {
+    "id": 173,
+    "role": "Executive",
+    "category": "Single Turn Analysis",
+    "title": "Single Query - Semantic Payment Receipt",
+    "view": "gold.semantic_payment_receipt",
+    "questions": [
+      "List receipts processed with reversal or cancellation status."
+    ]
+  },
+  {
+    "id": 174,
+    "role": "Executive",
+    "category": "Single Turn Analysis",
+    "title": "Single Query - Semantic Payment Receipt",
+    "view": "gold.semantic_payment_receipt",
+    "questions": [
+      "Compare online receipt collections with counter cash receipts."
+    ]
+  },
+  {
+    "id": 175,
+    "role": "Executive",
+    "category": "Single Turn Analysis",
+    "title": "Single Query - Semantic Loan Ledger Event",
+    "view": "gold.semantic_loan_ledger_event",
+    "questions": [
+      "How many loan ledger events were recorded in the last 30 days?"
+    ]
+  },
+  {
+    "id": 176,
+    "role": "Executive",
+    "category": "Single Turn Analysis",
+    "title": "Single Query - Semantic Loan Ledger Event",
+    "view": "gold.semantic_loan_ledger_event",
+    "questions": [
+      "Show the daily debit versus credit ledger totals for the past week."
+    ]
+  },
+  {
+    "id": 177,
+    "role": "Executive",
+    "category": "Single Turn Analysis",
+    "title": "Single Query - Semantic Loan Ledger Event",
+    "view": "gold.semantic_loan_ledger_event",
+    "questions": [
+      "What is the total value of interest charged to accounts this month?"
+    ]
+  },
+  {
+    "id": 178,
+    "role": "Executive",
+    "category": "Single Turn Analysis",
+    "title": "Single Query - Semantic Loan Ledger Event",
+    "view": "gold.semantic_loan_ledger_event",
+    "questions": [
+      "Which accounts had penalty charges debited in the current period?"
+    ]
+  },
+  {
+    "id": 179,
+    "role": "Executive",
+    "category": "Single Turn Analysis",
+    "title": "Single Query - Semantic Loan Ledger Event",
+    "view": "gold.semantic_loan_ledger_event",
+    "questions": [
+      "Show ledger movement count by transaction type."
+    ]
+  },
+  {
+    "id": 180,
+    "role": "Executive",
+    "category": "Single Turn Analysis",
+    "title": "Single Query - Semantic Loan Ledger Event",
+    "view": "gold.semantic_loan_ledger_event",
+    "questions": [
+      "List all loan accounts with credit adjustments exceeding 1 lakh."
+    ]
+  },
+  {
+    "id": 181,
+    "role": "Executive",
+    "category": "Single Turn Analysis",
+    "title": "Single Query - Semantic Loan Ledger Event",
+    "view": "gold.semantic_loan_ledger_event",
+    "questions": [
+      "What is the total principal recovery credited through ledger entries?"
+    ]
+  },
+  {
+    "id": 182,
+    "role": "Executive",
+    "category": "Single Turn Analysis",
+    "title": "Single Query - Semantic Loan Ledger Event",
+    "view": "gold.semantic_loan_ledger_event",
+    "questions": [
+      "Show loan ledger event count grouped by branch."
+    ]
+  },
+  {
+    "id": 183,
+    "role": "Executive",
+    "category": "Single Turn Analysis",
+    "title": "Single Query - Semantic Collection Activity",
+    "view": "gold.semantic_collection_activity",
+    "questions": [
+      "How many total borrower visits were recorded this month?"
+    ]
+  },
+  {
+    "id": 184,
+    "role": "Executive",
+    "category": "Single Turn Analysis",
+    "title": "Single Query - Semantic Collection Activity",
+    "view": "gold.semantic_collection_activity",
+    "questions": [
+      "Show collection activity breakdown by action code."
+    ]
+  },
+  {
+    "id": 185,
+    "role": "Executive",
+    "category": "Single Turn Analysis",
+    "title": "Single Query - Semantic Collection Activity",
+    "view": "gold.semantic_collection_activity",
+    "questions": [
+      "What is the success rate of collection calls resulting in repayment?"
+    ]
+  },
+  {
+    "id": 186,
+    "role": "Executive",
+    "category": "Single Turn Analysis",
+    "title": "Single Query - Semantic Collection Activity",
+    "view": "gold.semantic_collection_activity",
+    "questions": [
+      "Which collection agency logged the most field visits?"
+    ]
+  },
+  {
+    "id": 187,
+    "role": "Executive",
+    "category": "Single Turn Analysis",
+    "title": "Single Query - Semantic Collection Activity",
+    "view": "gold.semantic_collection_activity",
+    "questions": [
+      "Show the number of accounts contacted per recovery agent."
+    ]
+  },
+  {
+    "id": 188,
+    "role": "Executive",
+    "category": "Single Turn Analysis",
+    "title": "Single Query - Semantic Collection Activity",
+    "view": "gold.semantic_collection_activity",
+    "questions": [
+      "What is the average number of visits required before an NPA account cures?"
+    ]
+  },
+  {
+    "id": 189,
+    "role": "Executive",
+    "category": "Single Turn Analysis",
+    "title": "Single Query - Semantic Collection Activity",
+    "view": "gold.semantic_collection_activity",
+    "questions": [
+      "Show collection activity count month by month."
+    ]
+  },
+  {
+    "id": 190,
+    "role": "Executive",
+    "category": "Single Turn Analysis",
+    "title": "Single Query - Semantic Collection Activity",
+    "view": "gold.semantic_collection_activity",
+    "questions": [
+      "List accounts with more than 5 collection visits in the last 60 days."
+    ]
+  },
+  {
+    "id": 191,
+    "role": "Executive",
+    "category": "Single Turn Analysis",
+    "title": "Single Query - Semantic Vintage Par",
+    "view": "gold.semantic_vintage_par",
+    "questions": [
+      "What is the 30+ DPD rate at month 6 for the 2025 vintage?"
+    ]
+  },
+  {
+    "id": 192,
+    "role": "Executive",
+    "category": "Single Turn Analysis",
+    "title": "Single Query - Semantic Vintage Par",
+    "view": "gold.semantic_vintage_par",
+    "questions": [
+      "Show the vintage delinquency matrix across all origination years."
+    ]
+  },
+  {
+    "id": 193,
+    "role": "Executive",
+    "category": "Single Turn Analysis",
+    "title": "Single Query - Semantic Vintage Par",
+    "view": "gold.semantic_vintage_par",
+    "questions": [
+      "Compare vintage loss curves between gold loans and business loans."
+    ]
+  },
+  {
+    "id": 194,
+    "role": "Executive",
+    "category": "Single Turn Analysis",
+    "title": "Single Query - Semantic Vintage Par",
+    "view": "gold.semantic_vintage_par",
+    "questions": [
+      "Which origination quarter shows the best repayment track record?"
+    ]
+  },
+  {
+    "id": 195,
+    "role": "Executive",
+    "category": "Single Turn Analysis",
+    "title": "Single Query - Semantic Vintage Par",
+    "view": "gold.semantic_vintage_par",
+    "questions": [
+      "What is the cumulative default rate by months on book?"
+    ]
+  },
+  {
+    "id": 196,
+    "role": "Executive",
+    "category": "Single Turn Analysis",
+    "title": "Single Query - Semantic Vintage Par",
+    "view": "gold.semantic_vintage_par",
+    "questions": [
+      "Show the 90+ DPD vintage performance by branch."
+    ]
+  },
+  {
+    "id": 197,
+    "role": "Executive",
+    "category": "Single Turn Analysis",
+    "title": "Single Query - Semantic Vintage Par",
+    "view": "gold.semantic_vintage_par",
+    "questions": [
+      "Which scheme has the most stable vintage performance?"
+    ]
+  },
+  {
+    "id": 198,
+    "role": "Executive",
+    "category": "Single Turn Analysis",
+    "title": "Single Query - Semantic Vintage Par",
+    "view": "gold.semantic_vintage_par",
+    "questions": [
+      "Show vintage recovery rates for accounts written off after 24 months."
+    ]
+  },
+  {
+    "id": 199,
+    "role": "Executive",
+    "category": "Single Turn Analysis",
+    "title": "Single Query - Semantic Gl Balance",
+    "view": "gold.semantic_gl_balance",
+    "questions": [
+      "What is the total cash balance in branch vault accounts today?"
+    ]
+  },
+  {
+    "id": 200,
+    "role": "Executive",
+    "category": "Single Turn Analysis",
+    "title": "Single Query - Semantic Gl Balance",
+    "view": "gold.semantic_gl_balance",
+    "questions": [
+      "Show general ledger balance for loan provision accounts."
+    ]
+  },
+  {
+    "id": 201,
+    "role": "Executive",
+    "category": "Single Turn Analysis",
+    "title": "Single Query - Semantic Gl Balance",
+    "view": "gold.semantic_gl_balance",
+    "questions": [
+      "What is the total equity and share capital in the general ledger?"
+    ]
+  },
+  {
+    "id": 202,
+    "role": "Executive",
+    "category": "Single Turn Analysis",
+    "title": "Single Query - Semantic Gl Balance",
+    "view": "gold.semantic_gl_balance",
+    "questions": [
+      "Show branch-wise trial balance summary for loan assets."
+    ]
+  },
+  {
+    "id": 203,
+    "role": "Executive",
+    "category": "Single Turn Analysis",
+    "title": "Single Query - Semantic Gl Balance",
+    "view": "gold.semantic_gl_balance",
+    "questions": [
+      "What is the current balance in accrued interest receivable?"
+    ]
+  },
+  {
+    "id": 204,
+    "role": "Executive",
+    "category": "Single Turn Analysis",
+    "title": "Single Query - Semantic Gl Balance",
+    "view": "gold.semantic_gl_balance",
+    "questions": [
+      "Compare GL liability balances between this quarter and last quarter."
+    ]
+  },
+  {
+    "id": 205,
+    "role": "Executive",
+    "category": "Single Turn Analysis",
+    "title": "Single Query - Semantic Gl Balance",
+    "view": "gold.semantic_gl_balance",
+    "questions": [
+      "Show GL balance trend for operational expenditure accounts."
+    ]
+  },
+  {
+    "id": 206,
+    "role": "Executive",
+    "category": "Single Turn Analysis",
+    "title": "Single Query - Semantic Gl Balance",
+    "view": "gold.semantic_gl_balance",
+    "questions": [
+      "What is the reconciliation difference between loan sub-ledger and GL balance?"
+    ]
+  },
+  {
+    "id": 207,
+    "role": "Executive",
+    "category": "Single Turn Analysis",
+    "title": "Single Query - Semantic Msme Lead",
+    "view": "gold.semantic_msme_lead",
+    "questions": [
+      "How many active MSME business leads are currently unassigned?"
+    ]
+  },
+  {
+    "id": 208,
+    "role": "Executive",
+    "category": "Single Turn Analysis",
+    "title": "Single Query - Semantic Msme Lead",
+    "view": "gold.semantic_msme_lead",
+    "questions": [
+      "Show MSME lead conversion rate by sourcing partner."
+    ]
+  },
+  {
+    "id": 209,
+    "role": "Executive",
+    "category": "Single Turn Analysis",
+    "title": "Single Query - Semantic Msme Lead",
+    "view": "gold.semantic_msme_lead",
+    "questions": [
+      "What is the total expected loan demand in the MSME pipeline?"
+    ]
+  },
+  {
+    "id": 210,
+    "role": "Executive",
+    "category": "Single Turn Analysis",
+    "title": "Single Query - Semantic Msme Lead",
+    "view": "gold.semantic_msme_lead",
+    "questions": [
+      "Which industry sector represents the largest share of MSME leads?"
+    ]
+  }
+]
