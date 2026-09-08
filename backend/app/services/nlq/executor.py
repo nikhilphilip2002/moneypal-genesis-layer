@@ -26,7 +26,7 @@ logger = logging.getLogger(__name__)
 # Rejected before execution: EXPLAIN's estimate is in arbitrary planner units, but on a
 # schema whose largest table is 260k rows a plan costing more than this is a fan-out bug,
 # not honest work.
-MAX_PLAN_COST = 5_000_000.0
+MAX_PLAN_COST = 50_000_000.0
 
 
 class ExecutionError(RuntimeError):
