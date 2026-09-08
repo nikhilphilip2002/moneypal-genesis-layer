@@ -35,7 +35,7 @@ needs the same live evaluation after the endpoint is configured to serve it.
 - The 23 failures in that baseline were grouped into raw-row routing, unnecessary secondary
   tables, invented dimensions, conflicting period shapes, and one isolated 45-second model
   timeout.
-- Subsequent uncommitted fixes now make all 108 prompt contexts mechanically satisfy their
+- Subsequent fixes in commit `499bea6c` make all 108 prompt contexts mechanically satisfy their
   expected tool-specific catalog surface: exact governed metrics/dimensions for metric
   questions and exact required table sets for validated row questions.
 - Those post-baseline fixes still require a final full 108-prompt live rerun; 85/108 must not
@@ -43,23 +43,104 @@ needs the same live evaluation after the endpoint is configured to serve it.
 - The endpoint still advertises only Ling. Qwen live validation cannot be completed until a
   Qwen model is served. The evaluator is ready via `--model` and uses the identical corpus.
 
-## 2. Repository state and ownership boundaries
+### 2026-09-08 production regressions discovered after deployment
 
-The latest pushed commit at the start of this work is:
+Do not treat the 18/18 evaluator smoke result as production completion. Two real Workbench
+conversations exposed coverage missing from the corpus and evaluator.
+
+#### A. Explicit non-time grouping was silently omitted
+
+Observed question:
 
 ```text
-ef4c6159 fix(workbench): preserve explicit monthly grouping
+interest collected schemewise
+```
+
+Observed result: one all-time `interest_collected` total with no scheme breakdown. The metric
+was correct, but the explicit grouping was lost. This is the same semantic class as the
+earlier month-wise bug; current canonicalization protects month only and does not enforce
+other catalog-recognized grouping dimensions. The governed `scheme` dimension also does not
+currently list `schemewise`/`scheme wise` as vocabulary.
+
+Required general fix:
+
+1. Extend genuine dimension vocabulary in Gold YAML (for example `scheme wise`,
+   `schemewise`, and `by scheme` for the existing governed `scheme` dimension).
+2. Separate **explicitly requested dimensions** from merely retrieved candidate dimensions in
+   `AgentCatalogContext`.
+3. After the native `query_metrics` call, reconcile its arguments with those explicitly
+   requested dimensions. Add a missing dimension only after `_can_group_from` has established
+   a governed direct column or safe non-fan-out join from the selected metric base table.
+4. Keep this catalog-driven. Do not add sentence-specific regexes or force every retrieved
+   candidate dimension into the query.
+5. Add live and unit coverage for `schemewise`, `branchwise`, `productwise`, and `monthwise`,
+   including spelling/spacing variants. Assert returned tool arguments and compiled
+   `GROUP BY`, not only that a dimension appeared in the prompt/schema.
+
+#### B. Elliptical detail follow-up lost prior lookup bindings and hallucinated a column
+
+Observed conversation:
+
+```text
+User: customers under vanitha
+Assistant: returned 338 linked customers
+User: include tenure and santioned amount with the above details
+```
+
+The second turn selected native `run_validated_query`, but generated SQL referenced
+`disbursement_amount` on `gold.semantic_loan_account`. That column does not exist there; the
+correct governed account column is `sanction_amount`. The requested tenure also needed to be
+carried alongside the prior customer fields and the `vanitha` agent constraint.
+
+This is not primarily a PostgreSQL problem. The native tool receives conversation history,
+but `run_validated_query` passes only its generated `intent` string and preferred tables into
+the downstream text-to-SQL call. An elliptical phrase such as “with the above details” can
+therefore lose the previous lookup's selected entity, filter, and output-column bindings.
+
+Required general fix:
+
+1. Persist a compact structured data-query binding after every successful DB tool call:
+   selected table(s), governed output fields, filters/entity values, metrics, dimensions, and
+   period. Do not depend on rendered assistant prose or hundreds of returned rows.
+2. Resolve a structural follow-up into a standalone governed intent by merging the prior
+   binding with the current additions/removals. In this example it must retain the agent
+   constraint and customer identity fields, then add governed tenure and sanction amount.
+3. Feed text-to-SQL a table-scoped allowlist of physical column identifiers. When the
+   preferred table is `gold.semantic_loan_account`, `disbursement_amount` must be impossible
+   to emit; `sanction_amount` is allowed. Reject unknown or wrong-table columns before
+   database execution.
+4. Add one bounded repair for a rejected validated query using structured validator feedback,
+   not raw PostgreSQL traces and not assistant-content JSON fallback.
+5. Add multi-turn tests with paraphrases such as “include”, “also add”, “with the above
+   details”, and misspelled business terms. Verify retained filters, retained fields, newly
+   requested fields, selected table, generated identifiers, and final execution.
+
+#### C. Log interpretation
+
+- `NLQ ask turn started` with `route=lookup` can be the governed legacy lookup used for an
+  explicit entity lookup; it does not alone prove that `WORKBENCH_AGENT_MODE` is off.
+- `native tool run_validated_query failed` proves the native path was active for the failing
+  follow-up.
+- The database password problem is resolved and unrelated to these two semantic failures.
+
+## 2. Repository state and ownership boundaries
+
+The latest pushed implementation commit is:
+
+```text
+499bea6c feat(workbench): harden local LLM query routing
 ```
 
 Earlier related commits already pushed on the branch are:
 
 ```text
+ef4c6159 fix(workbench): preserve explicit monthly grouping
 7ca05c11 fix(workbench): harden native loan query execution
 b67dbeed fix(workbench): route loan queries through native agent
 f7bb1b07 feat(workbench): add governed native tool agent
 ```
 
-All work described in this document after `ef4c6159` is currently uncommitted.
+Only this new production-regression handoff update is currently uncommitted.
 
 The following pre-existing/user-owned files must not be staged or overwritten as part of
 this task:
@@ -72,7 +153,7 @@ this task:
 never be staged, committed, printed, or copied into this document. The local ignored file
 has the deployment model and timeout corrections needed for testing.
 
-Current task-owned changed or new files are:
+Files included in implementation commit `499bea6c` are:
 
 ```text
 .env.example
