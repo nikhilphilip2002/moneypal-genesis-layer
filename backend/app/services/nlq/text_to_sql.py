@@ -769,6 +769,11 @@ def _context_block(
         for value in hits.enum_values:
             lines.append(f"  {value['dimension']} {value['code']} = {value['label']}")
 
+    lines.append(
+        "\nCOLUMN ALLOWLIST RULE: Only use physical columns listed above under each specific table. "
+        "Do not invent column names or assume a column exists across tables."
+    )
+
     return "\n".join(lines)
 
 

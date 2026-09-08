@@ -804,6 +804,12 @@ def _generic_governed_metric_plan(question: str, catalog: Catalog) -> QuerySpecP
         re.I,
     ):
         return None
+    if re.search(
+        r"\b(?:priority\s+list|worklist|briefing|worry(?:\s+about)?|\blist\b)\b",
+        question,
+        re.I,
+    ):
+        return None
 
     metrics = [metric for metric, pattern in _GENERIC_METRIC_PATTERNS if pattern.search(question)]
     metrics = list(dict.fromkeys(metrics))

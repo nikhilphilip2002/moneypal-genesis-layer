@@ -80,6 +80,7 @@ class AgentCatalogContext:
     dimensions: tuple[str, ...]
     filter_dimensions: tuple[str, ...]
     requires_validated_query: bool
+    requested_dimensions: tuple[str, ...] = ()
 
 
 def _can_group_from(cat: Catalog, base_tables: set[str], dimension_id: str) -> bool:
@@ -128,7 +129,9 @@ def _table_phrase_matches(question: str, phrase: str) -> bool:
 
 
 def build_agent_catalog_context(
-    question: str, catalog: Catalog | None = None,
+    question: str,
+    catalog: Catalog | None = None,
+    preferred_tables: tuple[str, ...] | list[str] | None = None,
 ) -> AgentCatalogContext:
     """Build a compact projection plus the allowlists derived from that projection."""
     cat = catalog or get_catalog()
@@ -312,6 +315,11 @@ def build_agent_catalog_context(
         selected_tables = list(dict.fromkeys([
             strongest_raw_table, *selected_tables,
         ]))[:2]
+
+    if preferred_tables:
+        valid_preferred = [t for t in preferred_tables if t in cat.allowed_tables()]
+        if valid_preferred:
+            selected_tables = list(dict.fromkeys([*valid_preferred, *selected_tables]))[:2]
 
     lines = [
         "RELEVANT GOVERNED GOLD CATALOG HINTS",
@@ -555,6 +563,7 @@ def build_agent_catalog_context(
         dimensions=tuple(dimension_ids),
         filter_dimensions=filter_dimensions,
         requires_validated_query=requires_validated_query,
+        requested_dimensions=tuple(dict.fromkeys(direct_dimension_ids)),
     )
 
 

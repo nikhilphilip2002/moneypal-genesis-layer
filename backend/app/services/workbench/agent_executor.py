@@ -67,6 +67,7 @@ class ExecutedAgentCall:
     card: SourceResult | None = None
     terminal: dict[str, Any] | None = None
     error: dict[str, Any] | None = None
+    binding: dict[str, Any] | None = None
 
     def replay_payload(self) -> dict[str, Any]:
         if self.error is not None:
@@ -310,7 +311,41 @@ async def execute_agent_call(
                 "message": str(card.payload.get("message") or "No matching rows.")[:500],
             },
         )
-    return ExecutedAgentCall(call=call, card=card)
+    binding: dict[str, Any] | None = None
+    if call.name == "lookup_records" and isinstance(parsed, LookupRecordsArguments):
+        output_fields = ["customer_id", "customer_name"] if parsed.detail == "agent_customers" else []
+        output_fields.extend(f for f in parsed.requested_fields if f not in output_fields)
+        binding = {
+            "tool": "lookup_records",
+            "tables": ["gold.semantic_loan_account"],
+            "output_fields": output_fields,
+            "filters": [{"field": parsed.selector, "operator": "eq", "value": parsed.value}],
+            "entity": {"selector": parsed.selector, "value": parsed.value, "detail": parsed.detail},
+            "intent": f"{parsed.detail} for {parsed.selector} {parsed.value}",
+        }
+    elif call.name == "query_metrics" and isinstance(parsed, QueryMetricsArguments):
+        metric_bases = [
+            catalog.metrics[m].base_table for m in parsed.metrics if m in catalog.metrics
+        ]
+        binding = {
+            "tool": "query_metrics",
+            "tables": list(dict.fromkeys(metric_bases)),
+            "metrics": list(parsed.metrics),
+            "dimensions": list(parsed.dimensions),
+            "filters": [f.model_dump() for f in parsed.filters],
+            "period": parsed.period.model_dump() if parsed.period else None,
+            "output_fields": list(parsed.dimensions) + list(parsed.metrics),
+            "intent": f"Query {', '.join(parsed.metrics)}",
+        }
+    elif call.name == "run_validated_query" and isinstance(parsed, RunValidatedQueryArguments):
+        binding = {
+            "tool": "run_validated_query",
+            "tables": list(parsed.tables),
+            "intent": parsed.intent,
+            "output_fields": [],
+            "filters": [],
+        }
+    return ExecutedAgentCall(call=call, card=card, binding=binding)
 
 
 __all__ = [

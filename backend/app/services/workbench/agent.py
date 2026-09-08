@@ -49,45 +49,72 @@ _BOUNDED_PERIOD_RE = re.compile(
 
 
 def _canonicalize_native_arguments(result, state: dict[str, Any]) -> None:
-    """Preserve explicit time grain and resolve unambiguous duplicate periods.
+    """Preserve explicit time grain, non-time groupings, and resolve unambiguous periods.
 
     Tool selection is probabilistic even with a strict schema: local models can omit an
-    explicitly requested month dimension or populate both nullable period representations.
-    These corrections are grounded entirely in the current user text. Ambiguous conflicts
-    still use the normal native repair path.
+    explicitly requested dimension or populate both nullable period representations.
+    These corrections are grounded entirely in the catalog and question text. Ambiguous
+    conflicts still use the normal native repair path.
     """
     question = state.get("question", "")
     mentioned_years = {
         int(value) for value in re.findall(r"\b(20\d{2})\b", question)
     }
-    month_grain_requested = bool(_MONTH_GRAIN_RE.search(question))
     ranking_requested = bool(_RANKING_RE.search(question))
     lifetime_flow_requested = bool(
         _LIFETIME_FLOW_RE.search(question) and not _BOUNDED_PERIOD_RE.search(question)
     )
     catalog = state.get("_agent_catalog") or get_catalog()
+    catalog_context = state.get("_agent_catalog_context") or prompts.build_agent_catalog_context(question, catalog)
+    month_grain_requested = "month" in catalog_context.requested_dimensions or bool(_MONTH_GRAIN_RE.search(question))
     changed: dict[str, dict[str, Any]] = {}
     for call in result.tool_calls:
+        if call.name == "run_validated_query":
+            resolved_followup = state.get("_agent_resolved_followup")
+            if resolved_followup is not None:
+                if call.arguments.get("intent") != resolved_followup.standalone_intent:
+                    call.arguments["intent"] = resolved_followup.standalone_intent
+                    changed[call.id] = call.arguments
+                if list(call.arguments.get("tables", [])) != list(resolved_followup.tables):
+                    call.arguments["tables"] = list(resolved_followup.tables)
+                    changed[call.id] = call.arguments
+            continue
+
         if call.name != "query_metrics":
             continue
 
-        if month_grain_requested:
-            dimensions = call.arguments.get("dimensions")
-            if isinstance(dimensions, list) and "month" not in dimensions:
-                dimensions.append("month")
-                if not ranking_requested and not call.arguments.get("order_by"):
-                    call.arguments["order_by"] = {
-                        "field": "month", "direction": "asc",
-                    }
-                changed[call.id] = call.arguments
+        dimensions = call.arguments.get("dimensions")
+        if not isinstance(dimensions, list):
+            dimensions = []
+            call.arguments["dimensions"] = dimensions
 
-        period = call.arguments.get("period")
-        if not isinstance(period, dict):
-            continue
         selected_metrics = [
             catalog.metrics.get(metric_id)
             for metric_id in call.arguments.get("metrics", [])
         ]
+        base_tables = {m.base_table for m in selected_metrics if m and m.base_table}
+        filter_fields = {
+            f.get("field") for f in call.arguments.get("filters", [])
+            if isinstance(f, dict) and f.get("field")
+        }
+
+        for dim_id in catalog_context.requested_dimensions:
+            if dim_id in dimensions or dim_id in filter_fields:
+                continue
+            if base_tables and not prompts._can_group_from(catalog, base_tables, dim_id):
+                continue
+            dimensions.append(dim_id)
+            dim = catalog.dimensions.get(dim_id)
+            if dim and dim.is_time:
+                if not ranking_requested and not call.arguments.get("order_by"):
+                    call.arguments["order_by"] = {
+                        "field": dim_id, "direction": "asc",
+                    }
+            changed[call.id] = call.arguments
+
+        period = call.arguments.get("period")
+        if not isinstance(period, dict):
+            continue
         selected_are_flows = bool(selected_metrics) and all(
             metric is not None
             and metric.grain != "point_in_time"
@@ -194,13 +221,31 @@ async def _select(state: dict[str, Any], *, repair_messages=None):
         raise LLMProtocolError("native agent exceeded its model-round limit")
     state["_agent_rounds"] = rounds + 1
     catalog = state.setdefault("_agent_catalog", get_catalog())
-    catalog_context = prompts.build_agent_catalog_context(state["question"], catalog)
+    if "_agent_resolved_followup" not in state and state.get("conversation_id") and state.get("user"):
+        from app.services.workbench import followup
+        last_binding = history.get_last_data_binding(
+            state["conversation_id"], user=state["user"], exclude_turn_id=state.get("turn_id"),
+        )
+        if last_binding:
+            resolved = followup.resolve_followup(state["question"], last_binding, catalog)
+            if resolved:
+                state["_agent_resolved_followup"] = resolved
+
+    resolved_followup = state.get("_agent_resolved_followup")
+    context_question = resolved_followup.standalone_intent if resolved_followup else state["question"]
+    preferred_tables = resolved_followup.tables if resolved_followup else None
+    catalog_context = prompts.build_agent_catalog_context(
+        context_question, catalog, preferred_tables=preferred_tables,
+    )
+    state["_agent_catalog_context"] = catalog_context
     client = models.for_step("route", sensitive=True)
 
     selected_tool = state.get("_agent_selected_tool")
     if not repair_messages or not selected_tool:
         route_tool_names = None
-        if catalog_context.requires_validated_query:
+        if catalog_context.requires_validated_query or (
+            resolved_followup and resolved_followup.tool == "run_validated_query"
+        ):
             route_tool_names = (
                 "run_validated_query", "lookup_records", "finish_without_data",
             )
@@ -520,6 +565,12 @@ async def run(state: dict[str, Any]) -> None:
             ],
             tool_messages=[item.replay_message() for item in items],
         )
+        for item in items:
+            if getattr(item, "binding", None):
+                history.set_data_binding(
+                    state["conversation_id"], state["user"], state["turn_id"], item.binding,
+                )
+                break
 
     executed = await execute_batch(calls)
     persist_exchange(selected, executed)

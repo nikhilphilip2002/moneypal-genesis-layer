@@ -123,6 +123,24 @@ Required general fix:
   follow-up.
 - The database password problem is resolved and unrelated to these two semantic failures.
 
+### 2026-09-08 Resolution of production regressions A & B
+
+Both post-deployment production regressions have been fully resolved with catalog-driven, model-neutral mechanisms and verified by the test suite:
+
+1. **Regression A (Explicit non-time grouping):**
+   - **Gold Catalog Synonyms:** Extended genuine grouping vocabulary in `dimensions.yaml` for `scheme` (`schemewise`, `scheme wise`, `by scheme`), `branch` (`branchwise`, `branch wise`, `by branch`), `product` (`productwise`, `product wise`, `by product`), `agent` (`agentwise`, `agent wise`, `by agent`), `quarter` (`quarterwise`, `quarter wise`), and `year` (`yearwise`, `year wise`, `by year`).
+   - **Catalog Context Separation:** Added `requested_dimensions` to `AgentCatalogContext` in `prompts.py` to separate explicitly requested grouping dimensions from merely retrieved candidate dimensions using `_catalog_phrase_matches`.
+   - **Native Tool Argument Canonicalization:** In `agent._canonicalize_native_arguments`, explicitly requested dimensions are reconciled with `query_metrics` arguments only after verifying compatibility via `_can_group_from` (guaranteeing direct columns or safe non-fan-out joins from the metric base table without modifying filter dimensions).
+   - **Coverage:** Added 16 parametrized cases in `test_agent.py::test_explicit_non_time_grouping_preserved_and_compiled` asserting both returned tool arguments and compiled SQL `GROUP BY` across `schemewise`, `branchwise`, `productwise`, and `monthwise` (and their spacing/hyphenation variants).
+
+2. **Regression B (Elliptical follow-up bindings & column hallucination):**
+   - **Structured Query Binding Persistence:** Added `set_data_binding`, `get_last_data_binding`, and turn reconstruction in `history.py` to persist compact structured DB query bindings (`tables`, `output_fields`, `filters`, `entity`, `metrics`, `dimensions`, `intent`) upon successful execution of `lookup_records`, `query_metrics`, and `run_validated_query`.
+   - **Structured Follow-up Resolution:** Added `followup.py` (`is_followup_question` and `resolve_followup`) to merge prior bindings with new additions, retaining prior entity filters (e.g. agent `vanitha`) and output columns while extracting newly requested governed fields.
+   - **Gold Catalog Synonyms for Colloquial Attributes:** Added genuine synonyms in `columns.yaml` for `loan.sanction_amount` (`sanctioned amount`, `santioned amount`, `sanction value`, `sanctioned value`) and `loan.number_of_emis` (`tenure`, `tenor`, `loan tenure`, `loan tenor`, `EMI count`, `term in months`, `tenure months`, `tenor months`, `number of instalments`).
+   - **Table-Scoped Column AST Validator:** Updated `_check_columns` in `validator.py` so that unqualified and qualified column references are strictly validated against the query's referenced tables, rejecting wrong-table columns (e.g. `disbursement_amount` on `gold.semantic_loan_account`) before PostgreSQL execution with structured feedback.
+   - **Table-Scoped Context Allowlist Rules:** Updated `text_to_sql.py` prompt instructions with explicit table-scoped column allowlist rules.
+   - **Coverage:** Added `test_agent.py::test_multiturn_elliptical_followup_preserves_bindings` testing multi-turn follow-ups (`"customers under vanitha"` -> `"include tenure and santioned amount with the above details"` and `"also add tenure and sanction amount"`), asserting retained filters, new fields (`sanction_amount`, `number_of_emis`), table allowlist, and AST rejection of wrong-table columns.
+
 ## 2. Repository state and ownership boundaries
 
 The latest pushed implementation commit is:

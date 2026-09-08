@@ -556,6 +556,85 @@ def private_entities(conversation_id: str, *, user: str) -> tuple[str, ...]:
     return tuple(dict.fromkeys(values[-20:]))
 
 
+def set_data_binding(
+    conversation_id: str,
+    user: str,
+    turn_id: str,
+    binding: dict[str, Any],
+) -> None:
+    """Persist compact structured data query binding for follow-up resolution."""
+    _mutate(conversation_id, user, turn_id, lambda turn: turn.update(data_binding=binding))
+
+
+def get_last_data_binding(
+    conversation_id: str,
+    *,
+    user: str,
+    exclude_turn_id: str | None = None,
+) -> dict[str, Any] | None:
+    """Return the structured data query binding from the most recent completed DB turn."""
+    record = _load(conversation_id, user)
+    if record is None:
+        return None
+    for turn in reversed(record.turns):
+        if exclude_turn_id and turn.get("id") == exclude_turn_id:
+            continue
+        if turn.get("status") == "running":
+            continue
+        binding = turn.get("data_binding")
+        if isinstance(binding, dict) and binding:
+            return binding
+        reconstructed = _reconstruct_binding_from_turn(turn)
+        if reconstructed:
+            return reconstructed
+    return None
+
+
+def _reconstruct_binding_from_turn(turn: dict[str, Any]) -> dict[str, Any] | None:
+    """Best-effort reconstruction of data binding from turn agent_exchanges or cards."""
+    for exchange in reversed(turn.get("agent_exchanges") or []):
+        if not isinstance(exchange, dict):
+            continue
+        for call in exchange.get("calls") or []:
+            if not isinstance(call, dict):
+                continue
+            name = call.get("name")
+            args = call.get("arguments") or {}
+            if name == "lookup_records" and isinstance(args, dict):
+                selector = args.get("selector")
+                value = args.get("value")
+                detail = args.get("detail", "")
+                requested_fields = args.get("requested_fields", [])
+                output_fields = ["customer_id", "customer_name"] if detail == "agent_customers" else []
+                output_fields.extend(f for f in requested_fields if f not in output_fields)
+                return {
+                    "tool": "lookup_records",
+                    "tables": ["gold.semantic_loan_account"],
+                    "output_fields": output_fields,
+                    "filters": [{"field": selector, "operator": "eq", "value": value}],
+                    "entity": {"selector": selector, "value": value, "detail": detail},
+                    "intent": f"{detail} for {selector} {value}",
+                }
+            if name == "run_validated_query" and isinstance(args, dict):
+                return {
+                    "tool": "run_validated_query",
+                    "tables": args.get("tables", []),
+                    "intent": args.get("intent", ""),
+                    "output_fields": [],
+                    "filters": [],
+                }
+            if name == "query_metrics" and isinstance(args, dict):
+                return {
+                    "tool": "query_metrics",
+                    "metrics": args.get("metrics", []),
+                    "dimensions": args.get("dimensions", []),
+                    "filters": args.get("filters", []),
+                    "period": args.get("period"),
+                    "output_fields": list(args.get("dimensions", [])) + list(args.get("metrics", [])),
+                }
+    return None
+
+
 @dataclass(slots=True)
 class Transcript:
     """The model-facing view of a conversation, plus how tight the fit was."""

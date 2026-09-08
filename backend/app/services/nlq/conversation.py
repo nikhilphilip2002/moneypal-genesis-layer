@@ -19,7 +19,6 @@ import logging
 import re
 import threading
 from datetime import datetime, timedelta, timezone
-from typing import Any
 
 from app.services.nlq.catalog import Catalog, get_catalog
 from app.services.nlq.contracts import ConversationState, QuerySpec, Turn
@@ -409,11 +408,11 @@ def _match_dimension(
     needle = text.strip().lower().rstrip("?").strip()
     # People drill in the plural — "which branches?", "which accounts?" — while the catalog
     # names dimensions in the singular.
-    candidates = [needle]
+    candidates = [needle, f"which {needle}"]
     if needle.endswith("es") and len(needle) > 4:
-        candidates.append(needle[:-2])
+        candidates.extend([needle[:-2], f"which {needle[:-2]}"])
     if needle.endswith("s") and len(needle) > 3:
-        candidates.append(needle[:-1])
+        candidates.extend([needle[:-1], f"which {needle[:-1]}"])
 
     scored: list[tuple[int, str]] = []
     for candidate in candidates:

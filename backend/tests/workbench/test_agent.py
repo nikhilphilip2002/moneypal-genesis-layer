@@ -458,3 +458,180 @@ async def test_second_outbound_policy_denial_becomes_refusal(monkeypatch):
 
     assert counter == 2
     assert any("event: refusal" in frame and "private customer" in frame for frame in frames)
+
+
+@pytest.mark.parametrize(
+    ("question", "expected_dimension", "expected_group_col"),
+    [
+        ("interest collected schemewise", "scheme", "scheme_code"),
+        ("interest collected scheme wise", "scheme", "scheme_code"),
+        ("interest collected scheme-wise", "scheme", "scheme_code"),
+        ("interest collected by scheme", "scheme", "scheme_code"),
+        ("disbursements branchwise", "branch", "application_branch_code"),
+        ("disbursements branch wise", "branch", "application_branch_code"),
+        ("disbursements branch-wise", "branch", "application_branch_code"),
+        ("disbursements by branch", "branch", "application_branch_code"),
+        ("disbursements productwise", "product", "product_code"),
+        ("disbursements product wise", "product", "product_code"),
+        ("disbursements product-wise", "product", "product_code"),
+        ("disbursements by product", "product", "product_code"),
+        ("disbursements monthwise", "month", "disbursement_date"),
+        ("disbursements month wise", "month", "disbursement_date"),
+        ("disbursements month-wise", "month", "disbursement_date"),
+        ("disbursements by month", "month", "disbursement_date"),
+    ],
+)
+def test_explicit_non_time_grouping_preserved_and_compiled(
+    question: str, expected_dimension: str, expected_group_col: str,
+):
+    from app.services.nlq.catalog import get_catalog
+    from app.services.nlq.compiler import compile_spec
+    from app.services.nlq.contracts import Period, QuerySpec
+
+    cat = get_catalog()
+    metric = "interest_collected" if "interest" in question else "disbursement_total"
+    call = NativeToolCall(
+        id="c1",
+        name="query_metrics",
+        arguments={
+            "metrics": [metric],
+            "dimensions": [],
+            "period": {"relative": "all_time"},
+        },
+    )
+    result = _result(call)
+    state = {"question": question, "_agent_catalog": cat}
+    agent._canonicalize_native_arguments(result, state)
+
+    # 1. Assert returned tool arguments contain the explicit dimension
+    assert expected_dimension in call.arguments["dimensions"]
+
+    # 2. Assert compiling QuerySpec produces valid SQL with GROUP BY
+    spec = QuerySpec(
+        metrics=[metric],
+        dimensions=call.arguments["dimensions"],
+        period=Period(relative="all_time"),
+    )
+    compiled = compile_spec(spec, cat)
+    assert "GROUP BY" in compiled.sql
+    assert expected_group_col in compiled.sql
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    "followup_question",
+    [
+        "include tenure and santioned amount with the above details",
+        "also add tenure and sanction amount",
+        "with the above details, include tenure and sanction amount",
+        "add tenure and sanctioned amount to the above",
+    ],
+)
+async def test_multiturn_elliptical_followup_preserves_bindings(
+    monkeypatch, followup_question: str,
+):
+    from app.services.nlq.catalog import get_catalog
+    from app.services.nlq.validator import ValidationError, validate
+    from app.services.workbench.agent_contracts import RunValidatedQueryArguments
+
+    history._MEMORY.clear()
+    monkeypatch.setattr(history, "_ensure_table", lambda: False)
+
+    conv_id = "test-multiturn-conv"
+    user = "analyst"
+
+    # Turn 1: Lookup customers under vanitha
+    turn_1 = history.begin_turn(conv_id, user, "customers under vanitha")
+    history.set_data_binding(
+        conv_id, user, turn_1,
+        {
+            "tool": "lookup_records",
+            "tables": ["gold.semantic_loan_account"],
+            "output_fields": ["customer_id", "customer_name"],
+            "filters": [{"field": "agent_name", "operator": "eq", "value": "vanitha"}],
+            "entity": {"selector": "agent_name", "value": "vanitha", "detail": "agent_customers"},
+            "intent": "customers under agent vanitha",
+        },
+    )
+    history.complete_turn(conv_id, user, turn_1)
+
+    # Verify data query binding was persisted
+    last_binding = history.get_last_data_binding(conv_id, user=user)
+    assert last_binding is not None
+    assert last_binding["entity"]["value"] == "vanitha"
+
+    # Turn 2: Follow-up requesting tenure and sanctioned amount
+    turn_2 = history.begin_turn(conv_id, user, followup_question)
+    state = {
+        "question": followup_question,
+        "conversation_id": conv_id,
+        "user": user,
+        "role": "admin",
+        "turn_id": turn_2,
+        "history_messages": [],
+        "agent_history_messages": [],
+        "source_policy": access.build_policy(role="admin", external_sources_enabled=True),
+        "_agent_catalog": get_catalog(),
+    }
+
+    # Test follow-up resolution and canonicalization
+    class RouteClient:
+        async def complete(self, **kwargs):
+            purpose = kwargs.get("call_purpose")
+            if purpose == "agent_route":
+                return LLMResult(
+                    text="", model="m", provider="llamacpp",
+                    tool_calls=[NativeToolCall(id="r1", name="run_validated_query", arguments={})],
+                    assistant_message={"role": "assistant", "content": None},
+                )
+            # Argument fill stage
+            call = NativeToolCall(
+                id="f1",
+                name="run_validated_query",
+                arguments={
+                    "intent": followup_question,
+                    "tables": ["gold.semantic_loan_account"],
+                },
+            )
+            return LLMResult(
+                text="", model="m", provider="llamacpp",
+                tool_calls=[call],
+                assistant_message={"role": "assistant", "content": None, "tool_calls": [{
+                    "id": "f1", "type": "function",
+                    "function": {"name": "run_validated_query", "arguments": json.dumps(call.arguments)},
+                }]},
+            )
+
+    monkeypatch.setattr(models, "for_step", lambda *_args, **_kwargs: RouteClient())
+    selection = await agent.select_calls(state)
+
+    assert len(selection.tool_calls) == 1
+    selected_call = selection.tool_calls[0]
+    assert selected_call.name == "run_validated_query"
+    args = RunValidatedQueryArguments.model_validate(selected_call.arguments)
+
+    # Assert retained table
+    assert args.tables == ["gold.semantic_loan_account"]
+
+    # Assert retained entity constraint (vanitha) and retained/added fields in resolved intent
+    assert "vanitha" in args.intent
+    assert "customer ID" in args.intent
+    assert "customer name" in args.intent
+    assert "sanction amount" in args.intent
+    assert "tenure" in args.intent
+
+    # Assert table-scoped validation rejects wrong-table column disbursement_amount
+    invalid_sql = (
+        "SELECT lam.customer_id, lam.customer_name, lam.disbursement_amount, lam.number_of_emis "
+        "FROM gold.semantic_loan_account AS lam WHERE LOWER(lam.agent_name) LIKE '%vanitha%' LIMIT 100"
+    )
+    with pytest.raises(ValidationError, match="column 'disbursement_amount' does not exist on gold.semantic_loan_account"):
+        validate(invalid_sql, allow_pii=True, allowed_pii_columns={"customer_name", "agent_name"})
+
+    # Assert table-scoped validation accepts real governed columns
+    valid_sql = (
+        "SELECT lam.customer_id, lam.customer_name, lam.sanction_amount, lam.number_of_emis "
+        "FROM gold.semantic_loan_account AS lam WHERE LOWER(lam.agent_name) LIKE '%vanitha%' LIMIT 100"
+    )
+    validated = validate(valid_sql, allow_pii=True, allowed_pii_columns={"customer_name", "agent_name"})
+    assert validated.sql

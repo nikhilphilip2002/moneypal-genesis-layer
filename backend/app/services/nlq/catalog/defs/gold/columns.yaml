@@ -270,13 +270,13 @@
 - {id: loan.loan_purpose_code, table: gold.semantic_loan_account, column: loan_purpose_code, label: Loan purpose code}
 - {id: loan.loan_purpose_desc, table: gold.semantic_loan_account, column: loan_purpose_desc, label: Loan purpose desc}
 - {id: loan.sanction_date, table: gold.semantic_loan_account, column: sanction_date, label: Sanction date, unit: date}
-- {id: loan.sanction_amount, table: gold.semantic_loan_account, column: sanction_amount, label: Sanction amount, unit: inr, agg: [sum, avg, max]}
+- {id: loan.sanction_amount, table: gold.semantic_loan_account, column: sanction_amount, label: Sanction amount, synonyms: [sanctioned amount, santioned amount, sanction value, sanctioned value], unit: inr, agg: [sum, avg, max]}
 - {id: loan.disbursed_amount, table: gold.semantic_loan_account, column: disbursed_amount, label: Cumulative disbursed amount, unit: inr, agg: [sum, avg, max]}
 - {id: loan.first_disbursement_date, table: gold.semantic_loan_account, column: first_disbursement_date, label: First disbursement date, unit: date}
 - {id: loan.disbursement_count, table: gold.semantic_loan_account, column: disbursement_count, label: Disbursement count, unit: count, agg: [sum, avg, max]}
 - {id: loan.interest_rate, table: gold.semantic_loan_account, column: interest_rate, label: Interest rate, unit: percent, agg: [avg, max, min]}
 - {id: loan.emi_amount, table: gold.semantic_loan_account, column: emi_amount, label: EMI amount, unit: inr, agg: [sum, avg, max]}
-- {id: loan.number_of_emis, table: gold.semantic_loan_account, column: number_of_emis, label: Number of EMIs, unit: count, agg: [avg, max, min]}
+- {id: loan.number_of_emis, table: gold.semantic_loan_account, column: number_of_emis, label: Number of EMIs, synonyms: [tenure, tenor, loan tenure, loan tenor, EMI count, term in months, tenure months, tenor months, number of instalments], unit: count, agg: [avg, max, min]}
 - {id: loan.application_emi_date, table: gold.semantic_loan_account, column: application_emi_date, label: Application EMI date, unit: date}
 - {id: loan.coapplicant_count, table: gold.semantic_loan_account, column: coapplicant_count, label: Coapplicant count, unit: count, agg: [sum, avg, max]}
 - {id: loan.repayment_start_date, table: gold.semantic_loan_account, column: repayment_start_date, label: Repayment start date, unit: date}

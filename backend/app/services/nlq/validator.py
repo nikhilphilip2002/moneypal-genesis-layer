@@ -260,6 +260,8 @@ def _check_columns(tree: exp.Expression, catalog: Catalog) -> None:
     }
     all_physical = set().union(*allowed.values()) if allowed else set()
 
+    referenced_tables = set(aliases.values())
+
     for column in tree.find_all(exp.Column):
         name = (column.name or "").lower()
         qualifier = (column.table or "").lower()
@@ -272,9 +274,23 @@ def _check_columns(tree: exp.Expression, catalog: Catalog) -> None:
             if table_name is None:
                 raise ValidationError(f"column qualifier {qualifier!r} is not a known table alias")
             if name not in allowed[table_name]:
-                raise ValidationError(f"column {name!r} does not exist on {table_name}")
-        elif name not in all_physical:
-            raise ValidationError(f"column {name!r} is not in the catalog allowlist")
+                valid_cols = sorted(allowed[table_name])
+                raise ValidationError(
+                    f"column {name!r} does not exist on {table_name}. "
+                    f"Valid columns on {table_name}: {', '.join(valid_cols[:20])}"
+                )
+        else:
+            matching_tables = [t for t in referenced_tables if name in allowed[t]]
+            if not matching_tables:
+                if referenced_tables:
+                    t_desc = ", ".join(sorted(referenced_tables))
+                    all_valid = sorted(set().union(*(allowed[t] for t in referenced_tables)))
+                    raise ValidationError(
+                        f"column {name!r} does not exist on referenced table(s) {t_desc}. "
+                        f"Valid columns: {', '.join(all_valid[:20])}"
+                    )
+                elif name not in all_physical:
+                    raise ValidationError(f"column {name!r} is not in the catalog allowlist")
 
 
 def _check_no_set_operations_on_forbidden_tables(tree: exp.Expression, catalog: Catalog) -> None:

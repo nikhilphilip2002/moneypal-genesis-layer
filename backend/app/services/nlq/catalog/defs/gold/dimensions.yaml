@@ -4,7 +4,7 @@
   column: application_branch_code
   type: categorical
   decode: branch
-  synonyms: [branch, branches, location, office, centre, region, by branch]
+  synonyms: [branch, branches, location, office, centre, region, by branch, branchwise, branch wise]
   description: Application/origination branch. Reporting branch remains unavailable.
   cardinality: 2
 
@@ -14,7 +14,7 @@
   column: product_code
   type: categorical
   decode: product
-  synonyms: [product, product line, loan type, business line, segment]
+  synonyms: [product, product line, loan type, business line, segment, by product, productwise, product wise]
   description: Core product code; approved reporting-product mappings are still pending.
   cardinality: 1
 
@@ -24,7 +24,7 @@
   column: scheme_code
   type: categorical
   decode: scheme
-  synonyms: [scheme, sub-product, product scheme, loan scheme, purpose]
+  synonyms: [scheme, sub-product, product scheme, loan scheme, purpose, by scheme, schemewise, scheme wise]
   description: Scheme is currently the meaningful product-level reporting breakdown.
   cardinality: 13
 
@@ -92,7 +92,7 @@
   column: agent_code
   type: categorical
   decode: agent_identity
-  synonyms: [agent, agent code, field agent, assigned agent, sourced by, handled by, under agent]
+  synonyms: [agent, agent code, field agent, assigned agent, sourced by, handled by, under agent, by agent, agentwise, agent wise]
   description: Populated agent code from the governed per-loan reporting attributes view.
 
 - id: loan_agent
@@ -311,9 +311,9 @@
   synonyms: [vintage by scheme, cohort scheme]
 
 - {id: month, label: Month, type: time, grain: month, synonyms: [month, monthly, monthwise, month wise, by month, month on month, MoM]}
-- {id: quarter, label: Quarter, type: time, grain: quarter, synonyms: [quarter, quarterly, by quarter, QoQ]}
+- {id: quarter, label: Quarter, type: time, grain: quarter, synonyms: [quarter, quarterly, by quarter, quarterwise, quarter wise, QoQ]}
 - {id: fy_quarter, label: Fiscal quarter, type: time, grain: fy_quarter, synonyms: [fiscal quarter, FY quarter, financial quarter]}
 - {id: fy, label: Financial year, type: time, grain: fy, synonyms: [financial year, fiscal year, FY, year]}
-- {id: year, label: Calendar year, type: time, grain: year, synonyms: [calendar year, CY, per year]}
+- {id: year, label: Calendar year, type: time, grain: year, synonyms: [calendar year, CY, per year, yearwise, year wise, by year]}
 - {id: week, label: Week, type: time, grain: week, synonyms: [week, weekly, by week]}
 - {id: day, label: Day, type: time, grain: day, synonyms: [day, daily, by day, per day]}
