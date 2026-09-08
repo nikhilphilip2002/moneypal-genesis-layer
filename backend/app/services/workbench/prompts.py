@@ -7,6 +7,7 @@ measure cache reuse without logging private prompt text.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 
 from app.services.nlq.catalog import Catalog, get_catalog
@@ -452,6 +453,12 @@ def build_agent_catalog_context(
         and not any(
             table == column.table and column.column in expression
             for table, expression in metric_expressions
+        )
+        and not any(
+            column.table == cat.metrics[m_id].base_table
+            and column.column == m_id
+            for m_id in metric_ids
+            if m_id in cat.metrics
         )
     ]
     primary_table_is_named = primary_table in direct_table_names

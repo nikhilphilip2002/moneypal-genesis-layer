@@ -224,10 +224,10 @@ _AGENT_COUNT_CUE = re.compile(
 )
 _AGENT_ACCOUNT_CUE = re.compile(
     r"\b(?:loan\s+)?accounts?\s*(?:numbers?|nos?\.?)\b|"
-    r"\b(?:show|list|give|get)\b[^?]{0,80}\b(?:loan\s+)?accounts?\b|"
-    r"\b(?:loan\s+)?accounts?\s+(?:linked|associated|mapped|tagged|handled|"
-    r"under|of|for|with)\b|"
-    r"\b(?:linked|associated|mapped|tagged)\s+(?:loan\s+)?accounts?\b",
+    r"\b(?:show|list|give|get)\b[^?]{0,80}\b(?:loans?|(?:loan\s+)?accounts?)\b|"
+    r"\b(?:loans?|(?:loan\s+)?accounts?)\s+(?:linked|associated|mapped|tagged|handled|"
+    r"sourced|under|of|for|with)\b|"
+    r"\b(?:linked|associated|mapped|tagged|sourced)\s+(?:loans?|(?:loan\s+)?accounts?)\b",
     re.I,
 )
 _PRODUCT_CODE = re.compile(
@@ -276,7 +276,10 @@ _NON_NAME_WORDS = frozenset({
     "portfolio", "gold", "microfinance", "msme", "retail", "male", "female", "gender",
     "many", "much", "which", "where", "when", "why", "year", "month", "quarter",
     "week", "day", "today", "yesterday", "current", "latest", "period", "fiscal",
-    "financial", "time", "scheme", "schemes",
+    "financial", "time", "scheme", "schemes", "branch", "branches", "office", "vendor",
+    "vendors", "channel", "channels", "division", "divisions", "unit", "units",
+    "department", "departments", "vintage", "vintages", "cohort", "cohorts",
+    "state", "city", "region", "lead", "leads",
 })
 """One of these anywhere in a captured name means the phrase is a question about the book.
 "Show the loan-count split between open and closed accounts" ends in the word the account

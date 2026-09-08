@@ -58,6 +58,7 @@ class AgentExecutionContext:
     today: date | None = None
     data_access: str | None = None
     private_entities: tuple[str, ...] = ()
+    resolved_followup: Any = None
     deadline_started_at: float = field(default_factory=time.monotonic)
 
 
@@ -156,11 +157,14 @@ async def _lookup_records(args: LookupRecordsArguments, ctx: AgentExecutionConte
         )
     if result.no_match or result.chart is None:
         return SourceResult(
-            source="db", card_type="refusal",
+            source="db", card_type="chart",
             payload={
-                "reason": "not_in_data",
-                "message": "No customer or loan records matched that lookup.",
+                "title": "Lookup results",
+                "rows": [],
+                "columns": [],
+                "summary": "No customer or loan records matched that lookup.",
             },
+            summary="No customer or loan records matched that lookup.",
         )
     return _chart_result(result.chart)
 
@@ -223,7 +227,8 @@ async def _run_validated_query(
         preferred_tables=args.tables,
     )
     if not attempt.validated:
-        raise AgentCompileRejected("validated query was rejected by the SQL safety gate")
+        detail = f": {attempt.error}" if attempt.error else ""
+        raise AgentCompileRejected(f"validated query was rejected by the SQL safety gate{detail}")
     chart = await asyncio.to_thread(
         run_sql, attempt, question=args.intent, role=ctx.role, catalog=ctx.catalog,
     )
@@ -338,12 +343,17 @@ async def execute_agent_call(
             "intent": f"Query {', '.join(parsed.metrics)}",
         }
     elif call.name == "run_validated_query" and isinstance(parsed, RunValidatedQueryArguments):
+        resolved = ctx.resolved_followup
+        output_fields = list(resolved.output_fields) if resolved else []
+        filters = list(resolved.filters) if resolved else []
+        entity = resolved.entity if resolved else None
         binding = {
             "tool": "run_validated_query",
             "tables": list(parsed.tables),
             "intent": parsed.intent,
-            "output_fields": [],
-            "filters": [],
+            "output_fields": output_fields,
+            "filters": filters,
+            "entity": entity,
         }
     return ExecutedAgentCall(call=call, card=card, binding=binding)
 

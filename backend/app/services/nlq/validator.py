@@ -12,6 +12,7 @@ other side of it is an LLM following instructions that may have come from data.
 
 from __future__ import annotations
 
+import difflib
 import logging
 from dataclasses import dataclass, field
 
@@ -151,9 +152,13 @@ def _check_no_write_ctes(tree: exp.Expression) -> None:
 def _check_no_star(tree: exp.Expression) -> None:
     """`SELECT *` is uncontrolled PII egress — a customer table has 56 columns."""
     for node in tree.find_all(exp.Star):
+        if node.find_ancestor(exp.Count) is not None:
+            continue
         raise ValidationError("SELECT * is not allowed; name the columns explicitly")
     for node in tree.find_all(exp.Column):
         if isinstance(node.this, exp.Star):
+            if node.find_ancestor(exp.Count) is not None:
+                continue
             raise ValidationError("table.* is not allowed; name the columns explicitly")
 
 
@@ -231,6 +236,26 @@ def _physical_columns(catalog: Catalog) -> dict[str, set[str]]:
     return {table: {column.lower() for column in columns} for table, columns in allowed.items()}
 
 
+def _find_column_synonym(catalog: Catalog, table: str, name: str) -> str | None:
+    """Resolve genuine column synonyms and labels into valid physical column names."""
+    norm = name.lower().replace("_", "")
+    for col in catalog.columns_for(table):
+        col_norm = col.column.lower().replace("_", "")
+        if norm == col_norm:
+            return col.column
+        label_norm = col.label.lower().replace("_", "").replace(" ", "")
+        if norm == label_norm:
+            return col.column
+        for syn in col.synonyms:
+            syn_norm = syn.lower().replace("_", "").replace(" ", "")
+            if norm == syn_norm or (len(norm) >= 3 and norm in syn_norm):
+                return col.column
+            if len(norm) >= 4 and len(syn_norm) >= 4:
+                if difflib.SequenceMatcher(None, norm, syn_norm).ratio() >= 0.82:
+                    return col.column
+    return None
+
+
 def _check_columns(tree: exp.Expression, catalog: Catalog) -> None:
     """Reject hallucinated physical column names before the database sees the query."""
     allowed = _physical_columns(catalog)
@@ -274,15 +299,29 @@ def _check_columns(tree: exp.Expression, catalog: Catalog) -> None:
             if table_name is None:
                 raise ValidationError(f"column qualifier {qualifier!r} is not a known table alias")
             if name not in allowed[table_name]:
-                valid_cols = sorted(allowed[table_name])
-                raise ValidationError(
-                    f"column {name!r} does not exist on {table_name}. "
-                    f"Valid columns on {table_name}: {', '.join(valid_cols[:20])}"
-                )
+                rewritten = _find_column_synonym(catalog, table_name, name)
+                if rewritten and rewritten in allowed[table_name]:
+                    column.set("this", exp.to_identifier(rewritten))
+                    name = rewritten
+                else:
+                    valid_cols = sorted(allowed[table_name])
+                    raise ValidationError(
+                        f"column {name!r} does not exist on {table_name}. "
+                        f"Valid columns on {table_name}: {', '.join(valid_cols[:20])}"
+                    )
         else:
             matching_tables = [t for t in referenced_tables if name in allowed[t]]
             if not matching_tables:
-                if referenced_tables:
+                rewritten = None
+                for t in referenced_tables:
+                    cand = _find_column_synonym(catalog, t, name)
+                    if cand and cand in allowed[t]:
+                        rewritten = cand
+                        break
+                if rewritten:
+                    column.set("this", exp.to_identifier(rewritten))
+                    name = rewritten
+                elif referenced_tables:
                     t_desc = ", ".join(sorted(referenced_tables))
                     all_valid = sorted(set().union(*(allowed[t] for t in referenced_tables)))
                     raise ValidationError(

@@ -284,3 +284,14 @@ class TestReturnedSql:
         result = validate(original)
         assert "LIMIT" in result.sql.upper()
         assert result.sql != original
+
+    def test_count_star_is_allowed(self):
+        sql = "SELECT COUNT(*) FROM gold.semantic_customer_profile LIMIT 10"
+        result = validate(sql)
+        assert "COUNT(*)" in result.sql
+
+    def test_column_synonym_is_rewritten(self):
+        sql = "SELECT actor_user_id, manager_id FROM gold.semantic_organization_hierarchy LIMIT 10"
+        result = validate(sql, allow_pii=True)
+        assert "manager_user_id" in result.sql
+

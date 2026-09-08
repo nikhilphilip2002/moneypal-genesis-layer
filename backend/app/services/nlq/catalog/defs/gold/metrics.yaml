@@ -58,7 +58,7 @@
   date_column: sanction_date
   expression: COUNT(DISTINCT {t}.customer_id)
   formula: Distinct borrowers with an account sanctioned in the period
-  synonyms: [customers, borrowers, unique customers, how many borrowers, clients]
+  synonyms: [customers, borrowers, unique customers, how many borrowers, clients, customer count, customer volume, number of customers, how many customers, total customers]
 
 - id: avg_ticket_size
   label: Average ticket size
@@ -533,3 +533,4 @@
      non-performing cohort rate, non-performing rate, NPA performance]
   requires_signoff: true
   signoff_note: This is an account-count rate over the nine-month source window.
+

@@ -83,10 +83,25 @@ def _canonicalize_native_arguments(result, state: dict[str, Any]) -> None:
         if call.name != "query_metrics":
             continue
 
+        resolved_followup = state.get("_agent_resolved_followup")
+        if resolved_followup and resolved_followup.tool == "query_metrics":
+            if resolved_followup.metrics and not call.arguments.get("metrics"):
+                call.arguments["metrics"] = list(resolved_followup.metrics)
+                changed[call.id] = call.arguments
+            if resolved_followup.period and not call.arguments.get("period"):
+                call.arguments["period"] = dict(resolved_followup.period)
+                changed[call.id] = call.arguments
+
         dimensions = call.arguments.get("dimensions")
         if not isinstance(dimensions, list):
             dimensions = []
             call.arguments["dimensions"] = dimensions
+
+        if resolved_followup and resolved_followup.tool == "query_metrics":
+            for dim_id in resolved_followup.added_dimensions:
+                if dim_id not in dimensions:
+                    dimensions.append(dim_id)
+                    changed[call.id] = call.arguments
 
         selected_metrics = [
             catalog.metrics.get(metric_id)
@@ -248,6 +263,10 @@ async def _select(state: dict[str, Any], *, repair_messages=None):
         ):
             route_tool_names = (
                 "run_validated_query", "lookup_records", "finish_without_data",
+            )
+        elif resolved_followup and resolved_followup.tool == "query_metrics":
+            route_tool_names = (
+                "query_metrics", "finish_without_data",
             )
         route_definitions = native_tool_definitions(
             state["source_policy"], catalog=catalog, tool_names=route_tool_names,
@@ -452,6 +471,7 @@ async def run(state: dict[str, Any]) -> None:
         catalog_version=getattr(state.get("_agent_catalog"), "version", ""),
         data_access=state.get("data_access"),
         private_entities=tuple(state.get("agent_private_entities", ())),
+        resolved_followup=state.get("_agent_resolved_followup"),
     )
     for call in calls:
         source = _source_for_call(call)
