@@ -41,3 +41,23 @@ def test_router_fallback_prompt_is_compact():
     # A conservative characters/4 estimate leaves room for the constrained schema under
     # the 900-token p95 fallback budget.
     assert len(bundle.messages[0]["content"]) / 4 < 400
+
+
+def test_agent_prompt_retrieves_only_relevant_gold_metadata():
+    bundle = prompts.build_agent_prompt(
+        question="monthly cash receipts by payment mode",
+        tool_names=["query_metrics", "run_validated_query"],
+    )
+    content = bundle.messages[-1]["content"]
+    assert "gold.semantic_receipt_adjustment_event" in content
+    assert "receipt_total" in content
+    assert "receipt_mode" in content
+    assert "gold.semantic_msme_lead" not in content
+
+
+def test_agent_prompt_keeps_catalog_hints_out_of_stable_prefix():
+    receipts = prompts.build_agent_prompt(question="cash receipts")
+    leads = prompts.build_agent_prompt(question="MSME lead security value")
+    assert receipts.prefix_hash == leads.prefix_hash
+    assert receipts.messages[0] == leads.messages[0]
+    assert receipts.messages[-1] != leads.messages[-1]

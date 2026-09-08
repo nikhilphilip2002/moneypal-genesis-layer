@@ -135,7 +135,7 @@ class Settings:
         # Bound the *whole* call (including provider retries) so a loading or wedged
         # llama-server cannot turn a retrieved source card into a minute-long spinner.
         self.workbench_router_timeout_s = float(
-            get("WORKBENCH_ROUTER_TIMEOUT_S", "10") or "10"
+            get("WORKBENCH_ROUTER_TIMEOUT_S", "45") or "45"
         )
         self.workbench_composer_timeout_s = float(
             get("WORKBENCH_COMPOSER_TIMEOUT_S", "20") or "20"

@@ -38,6 +38,14 @@ _RANKING_RE = re.compile(
     r"\b(?:highest|lowest|top|bottom|most|least|rank(?:ed|ing)?)\b",
     re.IGNORECASE,
 )
+_LIFETIME_FLOW_RE = re.compile(
+    r"\b(?:all\s+time|till\s+today|to\s+date|through\s+today|available\s+history|in\s+total)\b",
+    re.IGNORECASE,
+)
+_BOUNDED_PERIOD_RE = re.compile(
+    r"\b(?:since|from|between|last|past|previous|this)\b|\b20\d{2}\b",
+    re.IGNORECASE,
+)
 
 
 def _canonicalize_native_arguments(result, state: dict[str, Any]) -> None:
@@ -54,6 +62,10 @@ def _canonicalize_native_arguments(result, state: dict[str, Any]) -> None:
     }
     month_grain_requested = bool(_MONTH_GRAIN_RE.search(question))
     ranking_requested = bool(_RANKING_RE.search(question))
+    lifetime_flow_requested = bool(
+        _LIFETIME_FLOW_RE.search(question) and not _BOUNDED_PERIOD_RE.search(question)
+    )
+    catalog = state.get("_agent_catalog") or get_catalog()
     changed: dict[str, dict[str, Any]] = {}
     for call in result.tool_calls:
         if call.name != "query_metrics":
@@ -72,11 +84,53 @@ def _canonicalize_native_arguments(result, state: dict[str, Any]) -> None:
         period = call.arguments.get("period")
         if not isinstance(period, dict):
             continue
+        selected_metrics = [
+            catalog.metrics.get(metric_id)
+            for metric_id in call.arguments.get("metrics", [])
+        ]
+        selected_are_flows = bool(selected_metrics) and all(
+            metric is not None
+            and metric.grain != "point_in_time"
+            and not metric.point_in_time
+            and not metric.no_time_travel
+            for metric in selected_metrics
+        )
+        selected_have_no_history = bool(selected_metrics) and any(
+            metric is not None and metric.no_time_travel
+            for metric in selected_metrics
+        )
+        if selected_have_no_history:
+            canonical_period = {
+                "grain": "day",
+                "start": None,
+                "end": None,
+                "relative": "today",
+            }
+            if period != canonical_period:
+                period.clear()
+                period.update(canonical_period)
+                changed[call.id] = call.arguments
+        if lifetime_flow_requested and selected_are_flows:
+            canonical_period = {
+                "grain": "month" if month_grain_requested else period.get("grain", "month"),
+                "start": None,
+                "end": None,
+                "relative": "all_time",
+            }
+            if period != canonical_period:
+                period.clear()
+                period.update(canonical_period)
+                changed[call.id] = call.arguments
         if month_grain_requested and period.get("grain") != "month":
             period["grain"] = "month"
             changed[call.id] = call.arguments
         start, end, relative = period.get("start"), period.get("end"), period.get("relative")
         if not (start and end and relative):
+            continue
+        if not mentioned_years:
+            period["start"] = None
+            period["end"] = None
+            changed[call.id] = call.arguments
             continue
         try:
             bound_years = {int(str(start)[:4]), int(str(end)[:4])}
@@ -140,23 +194,83 @@ async def _select(state: dict[str, Any], *, repair_messages=None):
         raise LLMProtocolError("native agent exceeded its model-round limit")
     state["_agent_rounds"] = rounds + 1
     catalog = state.setdefault("_agent_catalog", get_catalog())
-    definitions = native_tool_definitions(state["source_policy"], catalog=catalog)
+    catalog_context = prompts.build_agent_catalog_context(state["question"], catalog)
+    client = models.for_step("route", sensitive=True)
+
+    selected_tool = state.get("_agent_selected_tool")
+    if not repair_messages or not selected_tool:
+        route_tool_names = None
+        if catalog_context.requires_validated_query:
+            route_tool_names = (
+                "run_validated_query", "lookup_records", "finish_without_data",
+            )
+        route_definitions = native_tool_definitions(
+            state["source_policy"], catalog=catalog, tool_names=route_tool_names,
+            route_only=True,
+        )
+        if not route_definitions:
+            raise LLMError("no native tools are authorized for this request")
+        route_prompt = prompts.build_agent_prompt(
+            question=state["question"],
+            history_messages=state.get(
+                "agent_history_messages", state.get("history_messages", []),
+            ),
+            tool_names=[definition["function"]["name"] for definition in route_definitions],
+            catalog=catalog,
+            catalog_context=catalog_context,
+        )
+        routed = await client.complete(
+            messages=route_prompt.messages,
+            tools=route_definitions,
+            tool_choice="required",
+            parallel_tool_calls=False,
+            timeout_s=_remaining_timeout(state, settings.workbench_router_timeout_s),
+            call_purpose="agent_route",
+            call_kind="planned",
+            prompt_version=route_prompt.version,
+            prefix_hash=route_prompt.prefix_hash,
+            catalog_version=catalog.version,
+        )
+        if len(routed.tool_calls) != 1:
+            raise LLMProtocolError("native route selection must choose exactly one tool")
+        selected_tool = routed.tool_calls[0].name
+        state["_agent_selected_tool"] = selected_tool
+
+    definitions = native_tool_definitions(
+        state["source_policy"],
+        catalog=catalog,
+        metric_ids=catalog_context.metrics,
+        dimension_ids=catalog_context.dimensions,
+        filter_dimension_ids=catalog_context.filter_dimensions,
+        table_names=catalog_context.tables,
+        tool_names=[selected_tool],
+    )
     if not definitions:
-        raise LLMError("no native tools are authorized for this request")
+        raise LLMError(f"native tool {selected_tool!r} is not authorized for this request")
     prompt = prompts.build_agent_prompt(
         question=state["question"],
         history_messages=state.get("agent_history_messages", state.get("history_messages", [])),
         tool_names=[definition["function"]["name"] for definition in definitions],
+        catalog=catalog,
+        catalog_context=catalog_context,
     )
-    messages = list(prompt.messages)
+    messages = [
+        *prompt.messages,
+        {
+            "role": "user",
+            "content": (
+                f"The capability-selection stage chose {selected_tool}. Call that function "
+                "now with the complete arguments for the original question."
+            ),
+        },
+    ]
     if repair_messages:
         messages.extend(repair_messages)
-    client = models.for_step("route", sensitive=True)
     return await client.complete(
         messages=messages,
         tools=definitions,
         tool_choice="required",
-        parallel_tool_calls=True,
+        parallel_tool_calls=False,
         timeout_s=_remaining_timeout(state, settings.workbench_router_timeout_s),
         call_purpose="agent_select",
         call_kind="repair" if repair_messages else "planned",
@@ -486,6 +600,7 @@ async def run(state: dict[str, Any]) -> None:
         question=state["question"],
         history_messages=state.get("agent_history_messages", []),
         tool_names=[call.name for call in calls],
+        catalog=state.get("_agent_catalog"),
     )
     state["agent_synthesis_messages"] = [
         *synthesis_prompt.messages,

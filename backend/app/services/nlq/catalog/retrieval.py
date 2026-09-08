@@ -7,10 +7,10 @@ different half of the questions.
 
 Two things worth stating plainly:
 
-1. **The planner does not use retrieval for metrics and dimensions.** Its compact semantic
-   surface is roughly 5,000 tokens and is sent whole so retrieval cannot drop the one metric
-   the user meant. `retrieve()` exists for the text-to-SQL path, where the hundreds of
-   columns genuinely do not fit economically, and for resolving enum values.
+1. **Retrieval narrows context; it does not authorize SQL.** The native agent and text-to-SQL
+   paths use a compact retrieved projection so hundreds of columns are not sent together.
+   The catalog compiler and validators still enforce the complete metric, dimension, join,
+   and table allowlists at the execution boundary.
 
 2. **Degradation is deliberate.** If Qdrant is unreachable or the embedding model cannot
    load, retrieval falls back to lexical-only and says so in `RetrievalResult.mode`. A
@@ -35,6 +35,35 @@ from app.services.nlq.catalog.loader import Catalog, get_catalog
 logger = logging.getLogger(__name__)
 
 _WORD_RE = re.compile(r"[a-z0-9]+")
+_TOKEN_CANONICAL = {
+    "borrowers": "borrower",
+    "customers": "customer",
+    "payments": "payment",
+    "paid": "pay",
+    "pays": "pay",
+    "repayments": "repayment",
+    "receipts": "receipt",
+    "rates": "rate",
+    "minimum": "min",
+    "maximum": "max",
+    "ids": "id",
+    "names": "name",
+    "months": "month",
+    "accounts": "account",
+    "agents": "agent",
+    "amounts": "amount",
+    "balances": "balance",
+    "branches": "branch",
+    "codes": "code",
+    "documents": "document",
+    "dates": "date",
+    "events": "event",
+    "instalments": "instalment",
+    "loans": "loan",
+    "profiles": "profile",
+    "schemes": "scheme",
+    "terms": "term",
+}
 
 # Weight on the lexical half of the hybrid score. Set high on purpose: an exact synonym hit
 # ("PAR 30") is far stronger evidence than cosine proximity in this vocabulary.
@@ -67,8 +96,30 @@ class RetrievalResult:
     hits: list[Hit] = field(default_factory=list)
 
 
+def token_sequence(text: str) -> tuple[str, ...]:
+    """Normalized meaningful tokens in source order."""
+    return tuple(
+        _TOKEN_CANONICAL.get(token, token)
+        for token in _WORD_RE.findall(text.lower())
+        if token not in STOPWORDS and (len(token) > 2 or token == "id")
+    )
+
+
 def tokenize(text: str) -> set[str]:
-    return {t for t in _WORD_RE.findall(text.lower()) if t not in STOPWORDS and len(t) > 2}
+    return set(token_sequence(text))
+
+
+def phrase_in_text(text: str, phrase: str) -> bool:
+    """Match a catalog phrase on token boundaries, never inside an unrelated word."""
+    cleaned = phrase.strip().lower()
+    if not cleaned:
+        return False
+    return bool(
+        re.search(
+            rf"(?<![a-z0-9]){re.escape(cleaned)}(?![a-z0-9])",
+            text.lower(),
+        )
+    )
 
 
 def lexical_score(question: str, doc: CatalogDoc, catalog: Catalog) -> float:
@@ -106,7 +157,7 @@ def lexical_score(question: str, doc: CatalogDoc, catalog: Catalog) -> float:
     for phrase in (*synonyms, label):
         if not phrase:
             continue
-        if phrase.lower() in q_lower:
+        if phrase_in_text(q_lower, phrase):
             # Multi-word phrase hits are much stronger evidence than a single token.
             score += 1.0 + 0.5 * (len(phrase.split()) - 1)
 

@@ -9,7 +9,9 @@
   date_column: disbursement_date
   expression: SUM({t}.disbursement_amount)
   formula: Sum of disbursement event amounts in the period
-  synonyms: [disbursement, disbursed, released, paid out, payouts, drawdown]
+  synonyms:
+    [disbursement, disbursed, disbursement amount and count, loan releases,
+     released, paid out, payouts, drawdown]
   verified: 2266908902.00 across 5696 events through 2026-07-31
 
 - id: disbursement_count
@@ -20,7 +22,10 @@
   date_column: disbursement_date
   expression: COUNT(*)
   formula: Count of disbursement events in the period
-  synonyms: [disbursement count, number of disbursements, how many disbursements]
+  synonyms:
+    [disbursement count, disbursement amount and count, number of disbursements,
+     how many disbursements, how many disbursement events, number of payouts,
+     payout count]
   verified: 5696
 
 - id: sanctioned_amount
@@ -31,7 +36,7 @@
   date_column: sanction_date
   expression: SUM({t}.sanction_amount)
   formula: Sum of sanctioned amounts for accounts sanctioned in the period
-  synonyms: [sanctioned, sanction, approved amount, credit approved]
+  synonyms: [sanctioned, sanction, loan sanctions, approved amount, credit approved]
   verified: 2290958902.00 across 5753 accounts
 
 - id: loan_count
@@ -106,7 +111,7 @@
   formula: Sum of loan accounts linked to each governed agent
   synonyms:
     [top agents, agent ranking, loans by agent, agent performance, linked loans,
-     most loan accounts, more loan accounts, agent loan account count]
+     linked loan count, most loan accounts, more loan accounts, agent loan account count]
   no_time_travel: true
 
 - id: principal_outstanding
@@ -280,7 +285,11 @@
   date_column: repayment_date
   expression: SUM({t}.principal_paid)
   formula: Principal paid in the period
-  synonyms: [principal collected, principal repaid, principal recovery, principle paid]
+  synonyms:
+    [principal collected, principal and interest collected,
+     principal and interest did borrowers pay, principal repaid,
+     principal recovery, principle paid,
+     principal payments, principal paid by borrowers]
 
 - id: interest_collected
   label: Interest collected
@@ -290,7 +299,11 @@
   date_column: repayment_date
   expression: SUM({t}.interest_paid)
   formula: Interest paid in the period
-  synonyms: [interest collected, interest paid, interest recovery]
+  synonyms:
+    [interest collected, principal and interest collected,
+     principal and interest did borrowers pay, interest paid,
+     interest recovery, interest payments,
+     borrower interest payments, interest paid by borrowers]
 
 - id: amount_due
   label: Amount due
@@ -321,7 +334,9 @@
   date_column: scheduled_date
   expression: SUM({t}.scheduled_total)
   formula: Contractual principal plus interest scheduled in the period
-  synonyms: [scheduled, falling due, upcoming dues, expected inflow, amortisation]
+  synonyms:
+    [scheduled, scheduled amount, repayment schedule total, future repayment schedule,
+     contractually due each month, falling due, upcoming dues, expected inflow, amortisation]
 
 - id: gl_balance
   label: GL balance
@@ -332,7 +347,7 @@
   as_of_key: [entity_num, branch_code, gl_number, currency_code]
   expression: SUM({t}.base_currency_balance)
   formula: Base-currency GL closing balance at the requested date
-  synonyms: [GL balance, ledger balance, trial balance, account balance, financials]
+  synonyms: [GL balance, ledger balance, trial balance, account balance, base-currency balance, financials]
   restrictions: Cannot be grouped by loan product, scheme or loan branch.
   requires_signoff: true
 
@@ -361,8 +376,8 @@
     SUM(CASE WHEN LEFT(COALESCE({t}.external_access_code, ''), 4) = '1033'
              THEN COALESCE({t}.base_currency_balance, 0) ELSE 0 END)
   formula: Current base-currency balance of governed GL accounts in access-code group 1033
-  synonyms: [capital reserve, capital reserves, reserves and surplus, reserve shares,
-             reserve capital, total reserves]
+  synonyms: [capital reserve, capital reserves, reserves balances, reserves and surplus,
+             reserve shares, reserve capital, total reserves]
   as_of_column: balance_date
   as_of_key: [entity_num, branch_code, gl_number, currency_code]
   restrictions: Standalone current GL measure; cannot be grouped by lending dimensions.
@@ -378,7 +393,7 @@
   date_column: application_date
   expression: COUNT(*)
   formula: Count of application master records entered in the period
-  synonyms: [applications, applications received, application volume, leads received]
+  synonyms: [applications, applications received, application count, application volume, leads received]
   verified: 9021 applications in the available source history
 
 - id: observable_disbursed_application_count
@@ -419,7 +434,9 @@
   date_column: event_date
   expression: SUM({t}.receipt_amount) FILTER (WHERE {t}.event_type = 'receipt')
   formula: Sum of governed loan receipt amounts in the period
-  synonyms: [receipts, cash collected, payments received, recovery receipts]
+  synonyms:
+    [receipts, collection receipts, receipt amount and count, cash collected,
+     payments received, recovery receipts]
   verified: 464832760.700 across 46144 receipts through 2026-07-31
 
 - id: receipt_count
@@ -430,7 +447,9 @@
   date_column: event_date
   expression: COUNT(*) FILTER (WHERE {t}.event_type = 'receipt')
   formula: Count of governed loan receipt events in the period
-  synonyms: [receipt count, payment count, number of receipts]
+  synonyms:
+    [receipt count, receipt amount and count, payment count, number of receipts,
+     how many receipts, collection receipts]
   verified: 46144 receipts
 
 - id: loan_ledger_transaction_count
@@ -441,7 +460,9 @@
   date_column: event_date
   expression: COUNT(*) FILTER (WHERE {t}.record_type = 'ledger')
   formula: Count of loan account ledger transactions in the period
-  synonyms: [ledger transactions, loan transactions, account movements]
+  synonyms:
+    [ledger transactions, loan transactions, loan transaction events,
+     account ledger movements, account movements]
   verified: 94124 unique transaction keys
 
 - id: collection_activity_total
@@ -452,7 +473,21 @@
   date_column: operation_date
   expression: SUM({t}.final_collection_amount) FILTER (WHERE {t}.operation_type = 'activity')
   formula: Sum of final collection amounts recorded in collector activity summaries
-  synonyms: [collector amount, team collections, field collections, collection activity amount]
+  synonyms:
+    [collector amount, team collections, field collections, recovery operations amount,
+     collection activity amount]
+
+- id: collection_activity_count
+  label: Collection activities
+  unit: count
+  grain: flow
+  base_table: gold.semantic_collection_operation_event
+  date_column: operation_date
+  expression: COUNT(*) FILTER (WHERE {t}.operation_type = 'activity')
+  formula: Count of deduplicated collector activity operations in the period
+  synonyms:
+    [collection activity count, activity count, collection activities, recovery operations volume,
+     field collector activities, number of collection activities]
 
 - id: collection_handover_count
   label: Collection handovers
@@ -475,7 +510,11 @@
   denominator: SUM({t}.account_count)
   scale: 100
   formula: PAR-30 account count divided by cohort account count at each report month
-  synonyms: [vintage PAR 30, cohort PAR 30, vintage delinquency]
+  synonyms:
+    [vintage PAR 30, vintage matrix, PAR30 across origination month,
+     PAR 30 by vintage, PAR 30 by origination vintage,
+     cohort PAR 30, PAR30 cohort, 30-plus cohort rate, 30-plus rate,
+     vintage delinquency, loan cohort delinquency]
   requires_signoff: true
   signoff_note: This is an account-count rate, not an outstanding-balance PAR ratio.
 
@@ -489,6 +528,8 @@
   denominator: SUM({t}.account_count)
   scale: 100
   formula: NPA account count divided by cohort account count at each report month
-  synonyms: [vintage NPA, cohort NPA, NPA by vintage]
+  synonyms:
+    [vintage NPA, cohort NPA, NPA by vintage, vintage NPA rate,
+     non-performing cohort rate, non-performing rate, NPA performance]
   requires_signoff: true
   signoff_note: This is an account-count rate over the nine-month source window.

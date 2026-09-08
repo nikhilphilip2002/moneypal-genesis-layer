@@ -169,6 +169,49 @@ async def test_explicit_month_grain_is_preserved(monkeypatch, question):
 
 
 @pytest.mark.anyio
+async def test_lifetime_flow_phrase_canonicalizes_conflicting_period(monkeypatch):
+    call = NativeToolCall(
+        id="lifetime",
+        name="query_metrics",
+        arguments={
+            "metrics": ["disbursement_total"],
+            "dimensions": ["month"],
+            "filters": [],
+            "having": [],
+            "period": {
+                "grain": "month",
+                "start": "2025-10-15",
+                "end": "2026-09-07",
+                "relative": "all_time",
+            },
+            "compare_to": None,
+            "order_by": {"field": "month", "direction": "asc"},
+            "limit": 5000,
+            "as_share": False,
+            "explain": False,
+        },
+    )
+    response = _result(call)
+
+    async def select(*_args, **_kwargs):
+        return response
+
+    monkeypatch.setattr(agent, "_select", select)
+    state = _state()
+    state["question"] = "show disbursement monthwise till today"
+    result = await agent.select_calls(state)
+
+    period = result.tool_calls[0].arguments["period"]
+    assert period == {
+        "grain": "month", "start": None, "end": None, "relative": "all_time",
+    }
+    raw_arguments = json.loads(
+        result.assistant_message["tool_calls"][0]["function"]["arguments"]
+    )
+    assert raw_arguments["period"] == period
+
+
+@pytest.mark.anyio
 async def test_unauthorized_domain_fails_without_a_repair_round(monkeypatch):
     state = _state()
     state["source_policy"] = access.build_policy(
@@ -268,7 +311,8 @@ async def test_single_native_db_card_uses_its_grounded_summary_without_resynthes
     assert any("event: source_start" in frame for frame in frames)
     assert any("event: source_card" in frame for frame in frames)
     assert any("event: answer" in frame and "4.2%" in frame for frame in frames)
-    assert [call["tool_choice"] for call in calls] == ["required"]
+    assert [call["tool_choice"] for call in calls] == ["required", "required"]
+    assert [call["call_purpose"] for call in calls] == ["agent_route", "agent_select"]
     assert all("json_schema" not in call for call in calls)
 
 
@@ -291,7 +335,13 @@ async def test_outbound_policy_denial_gets_one_native_repair(monkeypatch):
         async def complete(self, **kwargs):
             requests.append(kwargs)
             if kwargs.get("tool_choice") == "required":
-                call = selections.pop(0)
+                call = (
+                    NativeToolCall(
+                        id="route", name="search_public_web", arguments={},
+                    )
+                    if kwargs.get("call_purpose") == "agent_route"
+                    else selections.pop(0)
+                )
                 return LLMResult(
                     text="", model="m", provider="llamacpp", tool_calls=[call],
                     assistant_message={
@@ -341,7 +391,9 @@ async def test_outbound_policy_denial_gets_one_native_repair(monkeypatch):
     }
     await agent.run(state)
 
-    assert [request["tool_choice"] for request in requests] == ["required", "required", "none"]
+    assert [request["tool_choice"] for request in requests] == [
+        "required", "required", "required", "none",
+    ]
     record = history.get("web-repair", user="alice")
     assert len(record.turns[0]["agent_exchanges"]) == 2
     assert "secret-42" not in str(record.turns[0]["agent_exchanges"])
@@ -355,6 +407,14 @@ async def test_second_outbound_policy_denial_becomes_refusal(monkeypatch):
     class FakeClient:
         async def complete(self, **kwargs):
             nonlocal counter
+            if kwargs.get("call_purpose") == "agent_route":
+                call = NativeToolCall(
+                    id="route", name="search_public_web", arguments={},
+                )
+                return LLMResult(
+                    text="", model="m", provider="llamacpp", tool_calls=[call],
+                    assistant_message={"role": "assistant", "content": None},
+                )
             counter += 1
             call = NativeToolCall(
                 id=f"bad_{counter}", name="search_public_web",

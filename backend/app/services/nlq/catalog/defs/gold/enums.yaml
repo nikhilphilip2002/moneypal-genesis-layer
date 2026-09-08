@@ -14,7 +14,7 @@
   column: asset_code
   source: governed RBI asset-classification taxonomy
   values:
-    STD: {label: Standard, synonyms: [standard, performing, current, good book]}
+    STD: {label: Standard, synonyms: [standard, performing asset, current asset class, good book]}
     SMA0: {label: SMA-0, synonyms: [SMA0, SMA 0, special mention 0, early stress]}
     SMA1: {label: SMA-1, synonyms: [SMA1, SMA 1, special mention 1]}
     SMA2: {label: SMA-2, synonyms: [SMA2, SMA 2, special mention 2]}

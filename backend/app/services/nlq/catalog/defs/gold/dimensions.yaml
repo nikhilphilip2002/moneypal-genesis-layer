@@ -14,7 +14,7 @@
   column: product_code
   type: categorical
   decode: product
-  synonyms: [product, product line, loan type, business line, portfolio, segment]
+  synonyms: [product, product line, loan type, business line, segment]
   description: Core product code; approved reporting-product mappings are still pending.
   cardinality: 1
 
@@ -70,7 +70,7 @@
   table: gold.semantic_loan_account
   column: loan_status
   type: categorical
-  synonyms: [status, detailed account status, active, NPA, sanctioned]
+  synonyms: [status, detailed account status, active, NPA]
 
 - id: open_closed_status
   label: Account state
@@ -138,7 +138,7 @@
   table: gold.semantic_loan_account
   column: loan_account_number
   type: categorical
-  synonyms: [account, loan account, account number, accounts, which accounts, account level]
+  synonyms: [loan account, account number, loan account number, which accounts, account level]
   description: >
     The individual loan account. This is the finest grain the book has, and the terminal
     rung of every drill path — a question that reaches here is asking for a worklist, not
@@ -151,16 +151,18 @@
   column: agent_code
   type: categorical
   decode: agent_identity
-  synonyms: [agent, agent name, field agent, sales staff, top agents]
+  synonyms:
+    [agent, agent name, field agent, field agents, sales staff, top agents,
+     agents by linked loan count]
   description: Agent directory identity, grouped by code and displayed by governed name.
-  cardinality: 1014
+  cardinality: 154
 
 - id: gl_account
   label: GL account
   table: gold.semantic_gl_balance
   column: gl_number
   type: categorical
-  synonyms: [GL code, ledger account, account head, GL account]
+  synonyms: [GL code, GL number, general-ledger account, ledger account, account head, GL account]
   cardinality: 621
 
 - id: gl_branch
@@ -168,7 +170,9 @@
   table: gold.semantic_gl_balance
   column: branch_code
   type: categorical
-  synonyms: [GL branch, ledger branch]
+  synonyms:
+    [GL branch, ledger branch, general-ledger office, GL office,
+     trial balance branch, branch, office]
   cardinality: 5
 
 - id: application_branch
@@ -177,7 +181,10 @@
   column: branch_code
   type: categorical
   decode: branch
-  synonyms: [application branch, sourcing branch, applications by branch]
+  synonyms:
+    [application branch, sourcing branch, originating branch, originating office,
+     applications by branch, application count by branch, application split by branch,
+     application count split by branch]
   description: Branch recorded on the application, not a reporting or servicing branch.
 
 - id: application_product
@@ -250,7 +257,9 @@
   column: agent_code
   type: categorical
   decode: agent_identity
-  synonyms: [collection agent, recovery agent, field collection agent]
+  synonyms:
+    [collection agent, collection agents, recovery agent, field collection agent,
+     field collector, field collectors]
 
 - id: handover_status
   label: Collection handover status
@@ -264,14 +273,16 @@
   table: gold.semantic_origination_vintage
   column: origination_month
   type: categorical
-  synonyms: [origination month, vintage month, cohort month]
+  synonyms:
+    [origination month, origination vintage, vintage month, cohort month, loan cohort,
+     loan cohorts, product cohort, product cohorts]
 
 - id: months_on_book
   label: Months on book
   table: gold.semantic_origination_vintage
   column: months_on_book
   type: categorical
-  synonyms: [MOB, months on book, cohort age]
+  synonyms: [MOB, months on book, cohort age, loan age]
 
 - id: vintage_branch
   label: Vintage branch
@@ -287,7 +298,9 @@
   column: product_code
   type: categorical
   decode: product
-  synonyms: [vintage by product, cohort product]
+  synonyms:
+    [vintage by product, cohort product, product, products, product cohorts,
+     products by vintage]
 
 - id: vintage_scheme
   label: Vintage scheme
@@ -297,10 +310,10 @@
   decode: scheme
   synonyms: [vintage by scheme, cohort scheme]
 
-- {id: month, label: Month, type: time, grain: month, synonyms: [month, monthly, by month, month on month, MoM]}
+- {id: month, label: Month, type: time, grain: month, synonyms: [month, monthly, monthwise, month wise, by month, month on month, MoM]}
 - {id: quarter, label: Quarter, type: time, grain: quarter, synonyms: [quarter, quarterly, by quarter, QoQ]}
 - {id: fy_quarter, label: Fiscal quarter, type: time, grain: fy_quarter, synonyms: [fiscal quarter, FY quarter, financial quarter]}
 - {id: fy, label: Financial year, type: time, grain: fy, synonyms: [financial year, fiscal year, FY, year]}
 - {id: year, label: Calendar year, type: time, grain: year, synonyms: [calendar year, CY, per year]}
 - {id: week, label: Week, type: time, grain: week, synonyms: [week, weekly, by week]}
-- {id: day, label: Day, type: time, grain: day, synonyms: [day, daily, by day, date, per day]}
+- {id: day, label: Day, type: time, grain: day, synonyms: [day, daily, by day, per day]}

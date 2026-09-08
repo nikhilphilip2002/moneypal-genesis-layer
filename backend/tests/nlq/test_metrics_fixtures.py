@@ -83,6 +83,21 @@ class TestFlowMetrics:
         )
         assert close(actual, expected)
 
+    def test_collection_activity_count(self, warehouse_cursor):
+        expected = hand_scalar(
+            warehouse_cursor,
+            "SELECT COUNT(*) FILTER (WHERE operation_type = 'activity') "
+            "FROM gold.semantic_collection_operation_event",
+        )
+        actual = scalar(
+            warehouse_cursor,
+            QuerySpec(
+                metrics=["collection_activity_count"],
+                period=Period(relative="all_time"),
+            ),
+        )
+        assert actual == expected
+
 
 class TestRatioMetrics:
     def test_collection_efficiency(self, warehouse_cursor):

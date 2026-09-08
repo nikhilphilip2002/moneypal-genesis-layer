@@ -78,8 +78,9 @@ AGENT_TOOLS: dict[str, AgentTool] = {
     "query_metrics": AgentTool(
         name="query_metrics",
         description=(
-            "Query governed loan-book metrics, dimensions, periods, comparisons, shares, "
-            "rankings, or driver decompositions."
+            "Choose this whenever the request asks for an aggregate amount, count, rate, "
+            "trend, breakdown, or ranking that is directly named in the relevant METRICS "
+            "hints. It handles dimensions, periods, comparisons, and ordering."
         ),
         arguments_model=QueryMetricsArguments,
         handler_key="query_metrics",
@@ -91,8 +92,9 @@ AGENT_TOOLS: dict[str, AgentTool] = {
     "lookup_records": AgentTool(
         name="lookup_records",
         description=(
-            "Look up governed borrowers, customer IDs, loan accounts, agents, products, or "
-            "branches and return the requested reviewed detail."
+            "Choose this only for a named borrower, customer ID, loan account, agent, product, "
+            "or branch, or a directory whose requested fields exist in this tool's schema. "
+            "It is not a general row-query tool."
         ),
         arguments_model=LookupRecordsArguments,
         handler_key="lookup_records",
@@ -134,10 +136,10 @@ AGENT_TOOLS: dict[str, AgentTool] = {
     "run_validated_query": AgentTool(
         name="run_validated_query",
         description=(
-            "Use the governed read-only catalog-miss query path when no reviewed metric or "
-            "preset can answer the loan-book question, including requests that combine a "
-            "ranking or aggregate at one grain with detail rows at another grain. Preserve "
-            "every requested output field and ranking rule in intent."
+            "Choose this for raw row lists, requested catalog columns, cross-view detail, or "
+            "an aggregate with no directly matching governed METRIC hint. Do not choose it "
+            "when query_metrics already expresses every requested measure. Preserve every "
+            "requested output field and ranking rule in intent."
         ),
         arguments_model=RunValidatedQueryArguments,
         handler_key="run_validated_query",
@@ -150,8 +152,9 @@ AGENT_TOOLS: dict[str, AgentTool] = {
     "search_curated_knowledge": AgentTool(
         name="search_curated_knowledge",
         description=(
-            "Search an authorized curated collection for banking concepts, schema, macro, "
-            "competitive, or regulatory evidence."
+            "Search policy documents, definitions, catalog documentation, macro, competitive, "
+            "or regulatory evidence. Never use this to query customer, KYC, loan, agent, or "
+            "other database rows named in Gold TABLE hints."
         ),
         arguments_model=SearchCuratedKnowledgeArguments,
         handler_key="search_curated_knowledge",
@@ -330,10 +333,19 @@ def visible_agent_tools(policy: SourceAccessPolicy) -> list[AgentTool]:
 
 
 def native_tool_definitions(
-    policy: SourceAccessPolicy, *, catalog: Catalog | None = None,
+    policy: SourceAccessPolicy,
+    *,
+    catalog: Catalog | None = None,
+    metric_ids: tuple[str, ...] | list[str] | None = None,
+    dimension_ids: tuple[str, ...] | list[str] | None = None,
+    filter_dimension_ids: tuple[str, ...] | list[str] | None = None,
+    table_names: tuple[str, ...] | list[str] | None = None,
+    tool_names: tuple[str, ...] | list[str] | None = None,
+    route_only: bool = False,
 ) -> list[dict[str, Any]]:
     cat = catalog or get_catalog()
-    return [
+    allowed_names = set(tool_names or AGENT_TOOLS)
+    definitions = [
         {
             "type": "function",
             "function": {
@@ -344,7 +356,53 @@ def native_tool_definitions(
             },
         }
         for tool in visible_agent_tools(policy)
+        if tool.name in allowed_names
     ]
+    if route_only:
+        for definition in definitions:
+            definition["function"]["parameters"] = {
+                "type": "object",
+                "properties": {},
+                "required": [],
+                "additionalProperties": False,
+            }
+        return definitions
+    for definition in definitions:
+        function = definition["function"]
+        properties = function["parameters"]["properties"]
+        if function["name"] == "query_metrics":
+            if metric_ids:
+                properties["metrics"]["items"]["enum"] = list(metric_ids)
+            if dimension_ids is not None:
+                if dimension_ids:
+                    properties["dimensions"]["items"]["enum"] = list(dimension_ids)
+                else:
+                    properties["dimensions"]["maxItems"] = 0
+            if filter_dimension_ids:
+                narrowed_filters = [
+                    dimension_id
+                    for dimension_id in filter_dimension_ids
+                    if dimension_id in cat.dimensions
+                    and not cat.dimensions[dimension_id].is_time
+                ]
+                if narrowed_filters:
+                    properties["filters"]["items"]["properties"]["field"]["enum"] = (
+                        narrowed_filters
+                    )
+            else:
+                properties["filters"]["maxItems"] = 0
+            if metric_ids:
+                properties["having"]["items"]["properties"]["field"]["enum"] = list(
+                    metric_ids
+                )
+            allowed_order_fields = [*(metric_ids or ()), *(dimension_ids or ())]
+            if allowed_order_fields:
+                properties["order_by"]["properties"]["field"]["enum"] = list(
+                    dict.fromkeys(allowed_order_fields)
+                )
+        elif function["name"] == "run_validated_query" and table_names:
+            properties["tables"]["items"]["enum"] = list(table_names)
+    return definitions
 
 
 def get_agent_tool(name: str) -> AgentTool:

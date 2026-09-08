@@ -1,0 +1,343 @@
+# Native-agent capability evaluation.
+#
+# Each family describes one answerable business intent in three natural phrasings. The
+# evaluator expands 36 families into 108 prompts spanning every governed Gold view. These
+# are tests, not prompt examples: none of this text is sent to the model at runtime.
+
+- id: loan_account_sanctions
+  view: gold.semantic_loan_account
+  tool: query_metrics
+  metrics: [sanctioned_amount]
+  dimensions: [month, branch]
+  prompts:
+    - Show sanctioned amount month by month for each branch till today
+    - Break down all-time loan sanctions by month and branch
+    - What value did every branch sanction each month to date?
+
+- id: loan_account_open_details
+  view: gold.semantic_loan_account
+  tool: run_validated_query
+  tables: [gold.semantic_loan_account]
+  prompts:
+    - List open loan accounts with borrower name, sanction amount and interest rate
+    - Which active loans have the highest interest rates? Include customer and sanctioned value
+    - Show current account numbers, customer names, sanctioned amounts and ROI
+
+- id: customer_profile_demographics
+  view: gold.semantic_customer_profile
+  tool: run_validated_query
+  tables: [gold.semantic_customer_profile]
+  prompts:
+    - Count customer profiles by gender and occupation
+    - Show the borrower profile distribution across gender and occupation type
+    - How many customer profiles are in each occupation and gender group?
+
+- id: customer_profile_kyc
+  view: gold.semantic_customer_profile
+  tool: run_validated_query
+  tables: [gold.semantic_customer_profile]
+  prompts:
+    - List customers whose KYC is not verified with name and home branch
+    - Show unverified customer profiles and their branch names
+    - Which borrower profiles have a false KYC verified flag? Include customer name and home branch
+
+- id: customer_document_expiry
+  view: gold.semantic_customer_document
+  tool: run_validated_query
+  tables: [gold.semantic_customer_document]
+  prompts:
+    - List customer documents expiring in the next 90 days with customer ID and document type
+    - Which KYC documents expire soon? Show borrower identifier, type and expiry date
+    - Give me identity documents with expiry dates between today and 90 days from now
+
+- id: customer_document_proofs
+  view: gold.semantic_customer_document
+  tool: run_validated_query
+  tables: [gold.semantic_customer_document]
+  prompts:
+    - Count KYC documents by document type and address-proof flag
+    - Show document inventory totals split by PID type and identity proof status
+    - How many customer documents of each type qualify as address or identity proof?
+
+- id: branch_directory
+  view: gold.semantic_branch
+  tool: run_validated_query
+  tables: [gold.semantic_branch]
+  prompts:
+    - List every branch code, branch name and IFSC code
+    - Show the branch directory with office name, code and IFSC
+    - Give me all branches and their identifiers including IFSC
+
+- id: branch_status
+  view: gold.semantic_branch
+  tool: run_validated_query
+  tables: [gold.semantic_branch]
+  prompts:
+    - Show currently open branches with opening date, district and state
+    - Which offices are active? Include opened-on date and validated geography
+    - List non-closed branch locations and their district and state matches
+
+- id: product_scheme_terms
+  view: gold.semantic_product_scheme
+  tool: run_validated_query
+  tables: [gold.semantic_product_scheme]
+  prompts:
+    - List product schemes with minimum and maximum interest rates and tenor months
+    - Show every lending scheme, its product, rate bounds, and minimum and maximum tenor
+    - Show product scheme code and name with min and max interest rate and min and max tenor months
+
+- id: product_scheme_mapping
+  view: gold.semantic_product_scheme
+  tool: run_validated_query
+  tables: [gold.semantic_product_scheme]
+  prompts:
+    - Show schemes whose reporting-product mapping is still provisional
+    - List product and scheme mappings with mapping status and reporting product name
+    - Which lending schemes have unapproved reporting mappings?
+
+- id: agent_rank
+  view: gold.semantic_agent
+  tool: query_metrics
+  metrics: [agent_linked_loans]
+  dimensions: [agent_profile]
+  prompts:
+    - Rank agents by linked loan count
+    - Which field agents have the most loan accounts?
+    - Show top agents based on number of governed linked loans
+
+- id: agent_directory
+  view: gold.semantic_agent
+  tool: run_validated_query
+  tables: [gold.semantic_agent]
+  prompts:
+    - List agent code, name, designation and joined date
+    - Show the staff agent directory with role, branch and contact details
+    - Give me all agents with their names, types, designations and linked customer counts
+
+- id: sales_hierarchy
+  view: gold.semantic_organization_hierarchy
+  tool: run_validated_query
+  tables: [gold.semantic_organization_hierarchy]
+  prompts:
+    - Show current sales reporting lines with actor user ID, role code and manager user ID
+    - Which actor user IDs report to which manager user IDs in the latest sales hierarchy?
+    - List active sales team relationships including actor ID, role and manager ID
+
+- id: collection_hierarchy
+  view: gold.semantic_organization_hierarchy
+  tool: run_validated_query
+  tables: [gold.semantic_organization_hierarchy]
+  prompts:
+    - List current collection manager user IDs and the actor user IDs reporting to them
+    - Show the latest collections organization hierarchy with actor user IDs and manager user IDs
+    - Which actor user IDs sit under each collections manager user ID?
+
+- id: disbursement_trend
+  view: gold.semantic_disbursement_event
+  tool: query_metrics
+  metrics: [disbursement_total, disbursement_count]
+  dimensions: [month]
+  prompts:
+    - Show disbursement amount and count monthwise till today
+    - What was paid out each month, and how many disbursement events were there?
+    - Chart monthly loan releases by total value and number of payouts to date
+
+- id: disbursement_details
+  view: gold.semantic_disbursement_event
+  tool: run_validated_query
+  tables: [gold.semantic_disbursement_event]
+  prompts:
+    - List the largest disbursement events with account number, date and net paid amount
+    - Show top loan payouts including customer ID, disbursement amount and charges
+    - Which individual drawdowns were largest? Include loan account, event date and amount
+
+- id: repayment_collections
+  view: gold.semantic_repayment_event
+  tool: query_metrics
+  metrics: [principal_collected, interest_collected]
+  dimensions: [month]
+  prompts:
+    - Show principal and interest collected month by month till today
+    - How much principal and interest did borrowers pay each month?
+    - Give monthly principal recovery and interest recovery for all available history
+
+- id: repayment_shortfall
+  view: gold.semantic_repayment_event
+  tool: run_validated_query
+  tables: [gold.semantic_repayment_event]
+  prompts:
+    - List repayment events with a collection shortfall, showing loan account number, repayment date, due and paid amounts
+    - Which contractual repayments were underpaid? Include loan account number, repayment date, demand and collection
+    - Show due-versus-paid events where total paid was below total due
+
+- id: schedule_amount
+  view: gold.semantic_schedule_event
+  tool: query_metrics
+  metrics: [scheduled_amount]
+  dimensions: [month]
+  prompts:
+    - Show scheduled instalment amount by month from September through December 2026
+    - How much is contractually due each month between 2026-09-01 and 2026-12-31?
+    - Give the monthly future repayment schedule total for the last four months of 2026
+
+- id: schedule_details
+  view: gold.semantic_schedule_event
+  tool: run_validated_query
+  tables: [gold.semantic_schedule_event]
+  prompts:
+    - List scheduled instalments due between 2026-09-01 and 2026-09-30 with loan account number and scheduled total
+    - Show September 2026 repayment schedule rows including loan, due date, principal and interest
+    - Which contractual instalments fall due this month? Include account number and scheduled total
+
+- id: portfolio_quality
+  view: gold.semantic_portfolio_snapshot
+  tool: query_metrics
+  metrics: [principal_outstanding, par_30]
+  dimensions: [branch]
+  prompts:
+    - Show current principal outstanding and PAR 30 by branch
+    - Compare branches by today's classified exposure and 30-plus portfolio at risk
+    - What are book outstanding and PAR30 for each branch right now?
+
+- id: portfolio_delinquent_details
+  view: gold.semantic_portfolio_snapshot
+  tool: run_validated_query
+  tables: [gold.semantic_portfolio_snapshot, gold.semantic_loan_account]
+  prompts:
+    - List delinquent accounts with loan account number, borrower name, DPD and total overdue
+    - Show customer names currently past due with loan number, days overdue and principal outstanding
+    - Which classified loans are late? Include customer name, loan account number, asset class and arrears
+
+- id: application_trend
+  view: gold.semantic_application
+  tool: query_metrics
+  metrics: [application_count]
+  dimensions: [month, application_branch]
+  prompts:
+    - Show loan applications monthwise by application branch till today
+    - How many applications arrived each month at every originating office?
+    - Give the monthly application count split by branch for all available history
+
+- id: application_linkage
+  view: gold.semantic_application
+  tool: run_validated_query
+  tables: [gold.semantic_application]
+  prompts:
+    - List applications that are not linked to a loan account
+    - Show application numbers with missing account linkage and their observable outcome status
+    - Which origination records have no linked loan? Include application date and customer ID
+
+- id: receipt_trend
+  view: gold.semantic_receipt_adjustment_event
+  tool: query_metrics
+  metrics: [receipt_total, receipt_count]
+  dimensions: [month, receipt_mode]
+  prompts:
+    - Show cash receipt amount and count monthwise by payment mode
+    - How much was received each month through every receipt mode, and how many receipts?
+    - Give monthly collection receipts split by cash, cheque and online payment method
+
+- id: waiver_details
+  view: gold.semantic_receipt_adjustment_event
+  tool: run_validated_query
+  tables: [gold.semantic_receipt_adjustment_event]
+  prompts:
+    - List waiver events with loan account, date and waived components
+    - Show receipt-adjustment rows where event type is waiver
+    - Which accounts had interest, charge or penal waivers? Include posting date and amounts
+
+- id: loan_ledger_trend
+  view: gold.semantic_loan_ledger_event
+  tool: query_metrics
+  metrics: [loan_ledger_transaction_count]
+  dimensions: [month]
+  prompts:
+    - Count loan ledger transactions month by month till today
+    - Show the monthly number of account ledger movements
+    - How many loan transaction events occurred in each month of available history?
+
+- id: loan_balance_history
+  view: gold.semantic_loan_ledger_event
+  tool: run_validated_query
+  tables: [gold.semantic_loan_ledger_event]
+  prompts:
+    - Show historical balance events for a loan with principal, interest and total balance
+    - List post-transaction loan balances by account and event date
+    - Give account balance history rows including principal outstanding and interest outstanding
+
+- id: collection_activity
+  view: gold.semantic_collection_operation_event
+  tool: query_metrics
+  metrics: [collection_activity_count]
+  dimensions: [collection_agent]
+  prompts:
+    - Rank collection agents by activity count
+    - How many collection activities did each field collector complete?
+    - Show recovery operations volume by collection agent
+
+- id: collection_handovers
+  view: gold.semantic_collection_operation_event
+  tool: run_validated_query
+  tables: [gold.semantic_collection_operation_event]
+  prompts:
+    - List pending collection handovers with collector and assigned date
+    - Show handover operations that are not completed, grouped by collector user
+    - Which recovery assignments are awaiting handover completion?
+
+- id: vintage_par
+  view: gold.semantic_origination_vintage
+  tool: query_metrics
+  metrics: [vintage_par30_rate]
+  dimensions: [vintage_origination_month, months_on_book]
+  prompts:
+    - Show PAR 30 by origination vintage and months on book
+    - Compare loan cohorts by 30-plus rate at each MOB
+    - Give the vintage matrix for PAR30 across origination month and loan age
+
+- id: vintage_npa
+  view: gold.semantic_origination_vintage
+  tool: query_metrics
+  metrics: [vintage_npa_rate]
+  dimensions: [vintage_origination_month, vintage_product]
+  prompts:
+    - Show vintage NPA rate by origination month and product
+    - Which product cohorts have the highest non-performing rate?
+    - Compare NPA performance across products for each origination vintage
+
+- id: gl_balance
+  view: gold.semantic_gl_balance
+  tool: query_metrics
+  metrics: [gl_balance]
+  dimensions: [gl_account, gl_branch]
+  prompts:
+    - Show current GL balance by ledger account and GL branch
+    - What is today's base-currency balance for each general-ledger account and office?
+    - Break down the latest trial balance by GL number and branch
+
+- id: gl_capital
+  view: gold.semantic_gl_balance
+  tool: query_metrics
+  metrics: [share_capital, capital_reserves]
+  dimensions: []
+  prompts:
+    - Show current share capital and capital reserves
+    - What are today's governed equity share capital and reserves balances?
+    - Give the latest paid-up share capital plus reserves and surplus
+
+- id: msme_lead_pipeline
+  view: gold.semantic_msme_lead
+  tool: run_validated_query
+  tables: [gold.semantic_msme_lead]
+  prompts:
+    - Count MSME leads by vendor ID and lead status
+    - Show the business-loan lead pipeline split by vendor identifier and current stage
+    - How many MSME prospects came from each vendor ID at every status?
+
+- id: msme_lead_security
+  view: gold.semantic_msme_lead
+  tool: run_validated_query
+  tables: [gold.semantic_msme_lead]
+  prompts:
+    - List MSME leads with the highest security value including firm and customer name
+    - Show top business borrower prospects by collateral value with vendor details
+    - Which MSME lead applications offer the most security? Include lead number and firm
