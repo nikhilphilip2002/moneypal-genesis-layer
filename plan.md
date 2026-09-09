@@ -248,6 +248,9 @@ reading older history records.
   health status and never on configured or served model names.
 - Apply the same readiness gate in the frontend before rendering/sending the first user message,
   with three retries and a retained draft on failure.
+- Treat every recoverable native-call protocol, argument, authorization, validation, and
+  execution failure as model-visible feedback; let the LLM choose the correction within the
+  shared turn deadline and resource budget instead of terminating on the first failure.
 - If model continuation or synthesis times out after a tool has returned usable evidence, serve
   the verified result with a limitation; continue to fail normally when no evidence exists.
 - Keep deterministic lookup construction aligned with the current `SqlAttempt` contract.

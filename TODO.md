@@ -147,6 +147,8 @@ testing is out of scope.
 - [x] Consolidate generic, selection, and composition LLM deadlines into `LLM_TIMEOUT`.
 - [x] Check provider `/health` status—without model-name matching—before the Workbench submits
       its first completion request.
+- [x] Return malformed native responses and unexpected tool preflight failures to the model as
+      structured repair feedback instead of ending the turn immediately.
 - [x] Gate frontend sends on `/nlq/health`, retry three times, and preserve unsent composer text
       when readiness cannot be established.
 - [x] Remove the obsolete `reviewed` argument that broke deterministic record lookups and

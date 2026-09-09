@@ -279,6 +279,9 @@ def _preflight(result, state: dict[str, Any]) -> list[tuple[str, str, str]]:
             failures.append((call.id, str(exc), "TOOL_NOT_FOUND"))
         except AgentToolArgumentsInvalid as exc:
             failures.append((call.id, str(exc), "INVALID_TOOL_ARGUMENTS"))
+        except Exception as exc:  # noqa: BLE001 - every call failure is model-repairable
+            logger.exception("native tool preflight failed for %s", call.name)
+            failures.append((call.id, str(exc)[:500], "TOOL_VALIDATION_ERROR"))
     return failures
 
 
@@ -402,6 +405,54 @@ def _persist_nudge(state, tool_choice: str) -> None:
         logger.warning("native nudge persistence failed", exc_info=True)
 
 
+def _protocol_repair_message(exc: BaseException, tool_choice: str) -> dict[str, str]:
+    instruction = (
+        "Return one valid native tool call with a unique call ID, an authorized function "
+        "name, and JSON-object arguments."
+        if tool_choice == "required"
+        else "Return either a valid authorized native tool call or a non-empty final answer."
+    )
+    if tool_choice == "none":
+        instruction = "Return a non-empty final answer and do not call a tool."
+    return {
+        "role": "user",
+        "content": json.dumps({
+            "status": "error",
+            "code": "MODEL_PROTOCOL_ERROR",
+            "message": str(exc)[:500],
+            "instruction": instruction,
+        }, separators=(",", ":")),
+    }
+
+
+def _persist_protocol_repair(
+    state: dict[str, Any], message: dict[str, str], tool_choice: str,
+) -> None:
+    if not _persistable(state):
+        return
+    budget = state.get("_agent_budget")
+    try:
+        history.add_system_message(
+            state["conversation_id"], state["user"], state["turn_id"],
+            content=message["content"], kind="protocol_repair",
+            stage=_STAGES[tool_choice],
+            round_number=budget.rounds_used if budget is not None else 0,
+        )
+    except Exception:  # noqa: BLE001 - persistence is best effort
+        logger.warning("native protocol repair persistence failed", exc_info=True)
+
+
+def _queue_protocol_repair(
+    state: dict[str, Any], exchange: list[dict[str, Any]], exc: BaseException,
+    tool_choice: str, *, assistant_message: dict[str, Any] | None = None,
+) -> None:
+    if assistant_message is not None:
+        exchange.append(assistant_message)
+    feedback = _protocol_repair_message(exc, tool_choice)
+    exchange.append(feedback)
+    _persist_protocol_repair(state, feedback, tool_choice)
+
+
 def _denial(failures, executed) -> dict[str, Any] | None:
     """The latest policy denial of a round, or None."""
     latest = None
@@ -437,11 +488,24 @@ async def select_calls(state: dict[str, Any]):
     exchange: list[dict[str, Any]] = []
     while True:
         budget.charge_round("agent_select")
-        result = await _select(state, repair_messages=exchange or None)
+        try:
+            result = await _select(state, repair_messages=exchange or None)
+        except LLMProtocolError as exc:
+            if not budget.rounds_remaining:
+                raise
+            _queue_protocol_repair(state, exchange, exc, "required")
+            continue
         if not result.tool_calls:
-            raise LLMProtocolError(
+            exc = LLMProtocolError(
                 "native selection returned no tool_calls; assistant content is not executable"
             )
+            if not budget.rounds_remaining:
+                raise exc
+            _persist_exchange(state, result, (), ())
+            _queue_protocol_repair(
+                state, exchange, exc, "required", assistant_message=result.assistant_message,
+            )
+            continue
         budget.charge_call(len(result.tool_calls))
         failures = _preflight(result, state)
         if not failures:
@@ -637,19 +701,54 @@ async def run(state: dict[str, Any]) -> None:
             if not has_data:
                 raise
             break
+        except LLMProtocolError as exc:
+            if not budget.rounds_remaining:
+                if has_data:
+                    break
+                raise
+            last_error = str(exc)
+            _queue_protocol_repair(state, exchange, exc, tool_choice)
+            continue
         if not result.tool_calls:
             if tool_choice == "required":
-                raise LLMProtocolError(
+                exc = LLMProtocolError(
                     "native selection returned no tool_calls; assistant content is not executable"
                 )
+                if not budget.rounds_remaining:
+                    raise exc
+                _persist_exchange(state, result, (), (), stage=_STAGES[tool_choice])
+                _queue_protocol_repair(
+                    state, exchange, exc, tool_choice,
+                    assistant_message=result.assistant_message,
+                )
+                last_error = str(exc)
+                continue
             if not result.text.strip():
-                raise LLMProtocolError(
+                exc = LLMProtocolError(
                     "native continuation returned neither tool calls nor an answer"
                 )
+                if not budget.rounds_remaining:
+                    break
+                _persist_exchange(state, result, (), (), stage=_STAGES[tool_choice])
+                _queue_protocol_repair(
+                    state, exchange, exc, tool_choice,
+                    assistant_message=result.assistant_message,
+                )
+                last_error = str(exc)
+                continue
             final = result
             break
         if tool_choice == "none":
-            raise LLMProtocolError("tool call returned during final synthesis phase")
+            exc = LLMProtocolError("tool call returned during final synthesis phase")
+            if not budget.rounds_remaining:
+                break
+            _persist_exchange(state, result, (), (), stage=_STAGES[tool_choice])
+            _queue_protocol_repair(
+                state, exchange, exc, tool_choice,
+                assistant_message=result.assistant_message,
+            )
+            last_error = str(exc)
+            continue
         try:
             budget.charge_call(len(result.tool_calls))
         except BudgetExhausted:
