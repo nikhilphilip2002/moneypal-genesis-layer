@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import {
   auth,
+  nlq,
   workbench,
   type DemoUser,
   type WorkbenchConversation,
@@ -51,6 +52,39 @@ const EXTERNAL_WORKSPACES = new Set<WorkspaceView>([
   'policy-workspace',
 ]);
 
+const LLM_HEALTH_RETRY_DELAYS_MS = [0, 500, 1000, 1500] as const;
+
+function retryDelay(milliseconds: number, signal: AbortSignal): Promise<void> {
+  if (!milliseconds) return Promise.resolve();
+  return new Promise((resolve, reject) => {
+    const onAbort = () => {
+      window.clearTimeout(timer);
+      reject(new DOMException('Request cancelled.', 'AbortError'));
+    };
+    const timer = window.setTimeout(() => {
+      signal.removeEventListener('abort', onAbort);
+      resolve();
+    }, milliseconds);
+    signal.addEventListener('abort', onAbort, { once: true });
+  });
+}
+
+async function ensureLlmReady(signal: AbortSignal): Promise<string | null> {
+  let detail = 'The language model API is unavailable.';
+  for (const delay of LLM_HEALTH_RETRY_DELAYS_MS) {
+    await retryDelay(delay, signal);
+    try {
+      const health = await nlq.health(signal);
+      if (health.llm.status === 'ok') return null;
+      detail = health.llm.detail || `The language model is ${health.llm.status}.`;
+    } catch (error: any) {
+      if (error?.name === 'AbortError') throw error;
+      detail = error?.message || detail;
+    }
+  }
+  return `Language model readiness check failed after 3 retries. ${detail}`;
+}
+
 export default function WorkbenchPage() {
   const router = useRouter();
   const [authorized, setAuthorized] = useState(false);
@@ -65,6 +99,7 @@ export default function WorkbenchPage() {
   const [historyOpen, setHistoryOpen] = useState(false);
   const [workspaceView, setWorkspaceView] = useState<WorkspaceView | null>(null);
   const [completionsHeight, setCompletionsHeight] = useState(0);
+  const [readinessError, setReadinessError] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
 
@@ -89,6 +124,7 @@ export default function WorkbenchPage() {
     setBusy(false);
     setPinned(null);
     setExternalSourcesEnabled(false);
+    setReadinessError(null);
   }, []);
 
   const openConversation = useCallback(async (id: string) => {
@@ -129,27 +165,47 @@ export default function WorkbenchPage() {
     }
   }, [externalSourcesEnabled, workspaceView]);
 
-  const ask = useCallback(async (question: string) => {
+  const ask = useCallback(async (question: string): Promise<boolean> => {
+    setBusy(true);
+    setReadinessError(null);
+
+    const controller = new AbortController();
+    abortRef.current = controller;
+
+    try {
+      const readinessFailure = await ensureLlmReady(controller.signal);
+      if (readinessFailure) {
+        setReadinessError(readinessFailure);
+        setBusy(false);
+        abortRef.current = null;
+        return false;
+      }
+    } catch (error: any) {
+      setReadinessError(error?.name === 'AbortError'
+        ? 'Message cancelled before it was sent.'
+        : error?.message ?? 'Unable to verify language model readiness.');
+      setBusy(false);
+      abortRef.current = null;
+      return false;
+    }
+
     const id = `t-${Date.now()}`;
     setTurns((previous) => [
       ...previous,
       { id, question, stage: 'understanding', pending: [], cards: [], done: false },
     ]);
-    setBusy(true);
-
-    const controller = new AbortController();
-    abortRef.current = controller;
 
     const patch = (changes: Partial<WorkbenchTurnData>) =>
       setTurns((previous) => previous.map((turn) => turn.id === id ? { ...turn, ...changes } : turn));
     const patchWith = (update: (turn: WorkbenchTurnData) => WorkbenchTurnData) =>
       setTurns((previous) => previous.map((turn) => turn.id === id ? update(turn) : turn));
 
-    try {
-      for await (const event of workbench.ask(
-        question, conversationId, pinned, dataAccess, externalSourcesEnabled, controller.signal,
-      )) {
-        switch (event.type) {
+    void (async () => {
+      try {
+        for await (const event of workbench.ask(
+          question, conversationId, pinned, dataAccess, externalSourcesEnabled, controller.signal,
+        )) {
+          switch (event.type) {
           case 'conversation':
             setConversationId(event.conversation_id);
             break;
@@ -183,22 +239,24 @@ export default function WorkbenchPage() {
           case 'done':
             patch({ done: true, stage: undefined });
             break;
+          }
         }
+      } catch (error: any) {
+        patch({
+          error: {
+            message: error?.name === 'AbortError'
+              ? 'Response stopped.'
+              : error?.message ?? 'Something went wrong.',
+          },
+          done: true,
+        });
+      } finally {
+        setBusy(false);
+        abortRef.current = null;
+        refreshHistory();
       }
-    } catch (error: any) {
-      patch({
-        error: {
-          message: error?.name === 'AbortError'
-            ? 'Response stopped.'
-            : error?.message ?? 'Something went wrong.',
-        },
-        done: true,
-      });
-    } finally {
-      setBusy(false);
-      abortRef.current = null;
-      refreshHistory();
-    }
+    })();
+    return true;
   }, [conversationId, pinned, dataAccess, externalSourcesEnabled, refreshHistory]);
 
   const runTool = useCallback(async (tool: WorkbenchTool) => {
@@ -270,6 +328,7 @@ export default function WorkbenchPage() {
     <Composer
       onAsk={ask}
       busy={busy}
+      readinessError={readinessError}
       onCancel={() => abortRef.current?.abort()}
       pinned={pinned}
       onPin={setPinned}

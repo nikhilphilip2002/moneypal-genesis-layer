@@ -241,6 +241,15 @@ reading older history records.
 ### H3. Compatibility and validation
 
 - Load version-7 and older records whose route and error fields lack the new optional metadata.
+- Use one `LLM_TIMEOUT` setting for every individual model request; retain the separate overall
+  turn budget and tool/connector deadlines because they govern different execution boundaries.
+- Check llama.cpp readiness through `/health` before the first Workbench model request so an
+  unavailable API fails fast rather than consuming the model timeout.
+- Apply the same readiness gate in the frontend before rendering/sending the first user message,
+  with three retries and a retained draft on failure.
+- If model continuation or synthesis times out after a tool has returned usable evidence, serve
+  the verified result with a limitation; continue to fail normally when no evidence exists.
+- Keep deterministic lookup construction aligned with the current `SqlAttempt` contract.
 - Add contract tests for live parsing expectations, history round trips, refusal text,
   suggestions, facts, catalog cards, errors, and route tools.
 - Run focused backend tests, Ruff, TypeScript, the production frontend build, and live SSE/history

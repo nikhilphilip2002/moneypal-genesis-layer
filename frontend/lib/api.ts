@@ -941,7 +941,7 @@ export type NlqStreamEvent =
   | { type: 'done' };
 
 export const nlq = {
-  health: (): Promise<NlqHealth> => apiRequest('/nlq/health'),
+  health: (signal?: AbortSignal): Promise<NlqHealth> => apiRequest('/nlq/health', { signal }),
   catalog: (): Promise<NlqCatalog> => apiRequest('/nlq/catalog'),
 
   // No LLM: drill-downs, saved questions and dashboards all run through this, which is why

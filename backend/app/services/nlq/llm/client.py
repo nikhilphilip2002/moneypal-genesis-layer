@@ -791,7 +791,7 @@ def get_llm_client(provider: str | None = None) -> OpenAICompatibleClient:
         _cached[name] = OpenAICompatibleClient(
             profile=profile,
             model=model,
-            timeout_s=settings.nlq_llm_timeout_s,
+            timeout_s=settings.llm_timeout_s,
             max_retries=settings.nlq_llm_max_retries,
         )
     return _cached[name]

@@ -112,7 +112,7 @@ _ANSWERABLE_CARD_TYPES = frozenset(
 
 def _synthesis_timeout(state: WorkbenchState) -> float:
     return max(0.001, min(
-        settings.workbench_composer_timeout_s,
+        settings.llm_timeout_s,
         settings.nlq_request_budget_s - (time.perf_counter() - state["timing"]["started_at"]),
     ))
 
@@ -357,7 +357,7 @@ async def answer_results(state: WorkbenchState) -> dict[str, Any]:
                         ),
                         tool_choice="none",
                         parallel_tool_calls=False,
-                        timeout_s=settings.workbench_composer_timeout_s,
+                        timeout_s=_synthesis_timeout(state),
                         call_purpose="agent_synthesize",
                         prompt_version=prompts.AGENT_PROMPT_VERSION,
                         prefix_hash=state.get("agent_prompt_prefix_hash", ""),
@@ -370,7 +370,7 @@ async def answer_results(state: WorkbenchState) -> dict[str, Any]:
                     repair_version, repair_prefix = prompt.version, prompt.prefix_hash
                     result = await client.complete(
                         messages=prompt.messages,
-                        timeout_s=settings.workbench_composer_timeout_s,
+                        timeout_s=_synthesis_timeout(state),
                         call_purpose="final_compose",
                         prompt_version=prompt.version,
                         prefix_hash=prompt.prefix_hash,

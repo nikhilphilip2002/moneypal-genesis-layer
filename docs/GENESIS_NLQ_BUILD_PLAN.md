@@ -340,7 +340,7 @@ Two implementations — `LlamaCppClient` (OpenAI-compatible `/v1/chat/completion
 NLQ_LLM_PROVIDER=llamacpp|groq
 NLQ_LLM_BASE_URL=http://<gpu-private-ip>:8080/v1
 NLQ_LLM_MODEL=qwen3.6-32b-instruct-q4_K_M
-NLQ_LLM_TIMEOUT_S=30
+LLM_TIMEOUT=300
 NLQ_LLM_MAX_RETRIES=1
 ```
 

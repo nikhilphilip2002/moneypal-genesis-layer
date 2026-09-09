@@ -38,8 +38,9 @@ import {
 } from '@/components/workbench/WorkbenchWorkspace';
 
 type Props = {
-  onAsk: (question: string) => void;
+  onAsk: (question: string) => Promise<boolean>;
   busy?: boolean;
+  readinessError?: string | null;
   onCancel?: () => void;
   pinned: string | null;
   onPin: (source: string | null) => void;
@@ -55,6 +56,7 @@ type Props = {
 export default function Composer({
   onAsk,
   busy,
+  readinessError,
   onCancel,
   pinned,
   onPin,
@@ -150,10 +152,11 @@ export default function Composer({
     textarea.style.height = `${Math.min(Math.max(textarea.scrollHeight, 72), 200)}px`;
   };
 
-  const submit = () => {
+  const submit = async () => {
     const question = value.trim();
     if (!question || busy) return;
-    onAsk(question);
+    const accepted = await onAsk(question);
+    if (!accepted) return;
     setValue('');
     setCompletions([]);
     if (textareaRef.current) textareaRef.current.style.height = '72px';
@@ -270,6 +273,12 @@ export default function Composer({
         }
         className="composer-field block min-h-[72px] max-h-[200px] w-full resize-none bg-transparent px-4 pb-2 pt-4 text-[15px] leading-6 outline-none placeholder:text-muted-foreground/70"
       />
+
+      {readinessError && (
+        <p role="alert" className="px-4 pb-2 text-xs text-destructive">
+          {readinessError}
+        </p>
+      )}
 
       <div className="flex items-center justify-between gap-3 px-2.5 pb-2.5 pt-1">
         <div className="flex min-w-0 items-center gap-1.5">

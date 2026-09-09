@@ -113,7 +113,7 @@ class Settings:
         self.nlq_llm_base_url = get("NLQ_LLM_BASE_URL", "http://localhost:8080/v1") or "http://localhost:8080/v1"
         self.nlq_llm_model = get("NLQ_LLM_MODEL", "qwen3.6-32b-instruct-q4_K_M") or "qwen3.6-32b-instruct-q4_K_M"
         self.nlq_llm_api_key = get("NLQ_LLM_API_KEY")          # llama.cpp ignores it; kept for gateways
-        self.nlq_llm_timeout_s = float(get("NLQ_LLM_TIMEOUT_S", "30") or "30")
+        self.llm_timeout_s = float(get("LLM_TIMEOUT", "300") or "300")
         self.nlq_llm_max_retries = int(get("NLQ_LLM_MAX_RETRIES", "1") or "1")
         # Every local request is serialized across the API and PostgreSQL MCP containers.
         # Qwen3.5/3.6 use recurrent state and llama-server can invalidate their reusable
@@ -130,14 +130,8 @@ class Settings:
         self.nlq_request_budget_s = float(
             get("NLQ_REQUEST_BUDGET_S", "60") or "60"
         )
-        # Bound each native selection call (including provider retries) so a loading or
-        # wedged llama-server cannot consume the whole turn deadline.
-        self.workbench_agent_select_timeout_s = float(
-            get("WORKBENCH_AGENT_SELECT_TIMEOUT_S", "45") or "45"
-        )
-        self.workbench_composer_timeout_s = float(
-            get("WORKBENCH_COMPOSER_TIMEOUT_S", "20") or "20"
-        )
+        # Bound every individual LLM request (including provider retries) uniformly so a
+        # loading or wedged model server cannot consume the whole turn deadline.
         self.workbench_composer_max_tokens = int(
             get("WORKBENCH_COMPOSER_MAX_TOKENS", "512") or "512"
         )

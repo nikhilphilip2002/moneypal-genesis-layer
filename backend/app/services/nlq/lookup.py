@@ -827,7 +827,6 @@ def _validated_attempt(
         provider="catalog",
         pii_columns=checked.pii_columns,
         column_units=units,
-        reviewed=True,
     )
 
 

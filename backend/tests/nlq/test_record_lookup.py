@@ -217,7 +217,7 @@ def test_customer_details_query_returns_both_sanction_and_disbursement_fields():
         get_catalog(),
     )
 
-    assert attempt.validated and attempt.reviewed
+    assert attempt.validated and attempt.provider == "catalog"
     assert "sanction_amount" in attempt.sql
     assert "sanction_date" in attempt.sql
     assert "disbursed_amount" in attempt.sql
@@ -277,7 +277,7 @@ def test_customer_summary_returns_only_the_requested_profile_fields():
         get_catalog(),
     )
 
-    assert attempt.validated and attempt.reviewed
+    assert attempt.validated and attempt.provider == "catalog"
     assert "FROM gold.semantic_customer_profile AS customer" in attempt.sql
     assert "LEFT JOIN gold.semantic_loan_account AS loan" in attempt.sql
     assert "customer.full_name AS customer_name" in attempt.sql
@@ -302,7 +302,7 @@ def test_repayment_history_is_newest_first_and_totals_before_limiting():
         get_catalog(),
     )
 
-    assert attempt.validated and attempt.reviewed
+    assert attempt.validated and attempt.provider == "catalog"
     assert "SUM(total_due) OVER ()" in attempt.sql
     assert "SUM(total_paid) OVER ()" in attempt.sql
     assert "ORDER BY\n  repayment_date DESC" in attempt.sql
@@ -312,7 +312,7 @@ def test_repayment_history_is_newest_first_and_totals_before_limiting():
 def test_gender_sample_uses_compound_join_and_stable_one_per_gender():
     attempt = _gender_sample(get_catalog())
 
-    assert attempt.validated and attempt.reviewed
+    assert attempt.validated and attempt.provider == "catalog"
     assert "customer.entity_num = loan.entity_num" in attempt.sql
     assert "customer.customer_id = loan.customer_id" in attempt.sql
     assert "ROW_NUMBER() OVER" in attempt.sql
@@ -328,7 +328,7 @@ def test_agent_details_use_the_governed_directory_and_exact_code():
         get_catalog(),
     )
 
-    assert attempt.validated and attempt.reviewed
+    assert attempt.validated and attempt.provider == "catalog"
     assert "FROM gold.semantic_agent" in attempt.sql
     assert "LOWER(agent_code) = 'agnt45'" in attempt.sql
     assert "agent_name" in attempt.sql
@@ -374,7 +374,7 @@ def test_missing_agent_phone_is_reported_as_unavailable_not_as_an_unrelated_metr
 def test_agent_count_uses_the_governed_agent_directory():
     attempt = _agent_count(get_catalog())
 
-    assert attempt.validated and attempt.reviewed
+    assert attempt.validated and attempt.provider == "catalog"
     assert "COUNT(agent_code) AS agent_count" in attempt.sql
     assert "FROM gold.semantic_agent" in attempt.sql
 
@@ -388,7 +388,7 @@ def test_agent_accounts_use_exact_code_and_return_only_linked_account_numbers():
         get_catalog(),
     )
 
-    assert attempt.validated and attempt.reviewed
+    assert attempt.validated and attempt.provider == "catalog"
     assert "FROM gold.semantic_loan_account AS reporting" in attempt.sql
     assert "LOWER(reporting.agent_code) = 'agnt45'" in attempt.sql
     assert "loan_account_number" in attempt.sql
@@ -405,7 +405,7 @@ def test_agent_customers_are_distinct_and_use_the_governed_loan_relation():
         get_catalog(),
     )
 
-    assert attempt.validated and attempt.reviewed
+    assert attempt.validated and attempt.provider == "catalog"
     assert "FROM gold.semantic_loan_account AS reporting" in attempt.sql
     assert "LOWER(reporting.agent_code) = 'agnt45'" in attempt.sql
     assert "GROUP BY" in attempt.sql and "reporting.customer_id" in attempt.sql
@@ -645,7 +645,7 @@ def test_branch_directory_uses_the_governed_branch_master():
         get_catalog(),
     )
 
-    assert attempt.validated and attempt.reviewed
+    assert attempt.validated and attempt.provider == "catalog"
     assert "FROM gold.semantic_branch" in attempt.sql
     assert "branch_code" in attempt.sql
     assert "branch_name" in attempt.sql
@@ -677,7 +677,7 @@ def test_product_code_name_uses_the_governed_product_master():
         get_catalog(),
     )
 
-    assert attempt.validated and attempt.reviewed
+    assert attempt.validated and attempt.provider == "catalog"
     assert "FROM gold.semantic_product_scheme" in attempt.sql
     assert "LOWER(CAST(product_code AS TEXT)) = '16'" in attempt.sql
     assert "product_name" in attempt.sql

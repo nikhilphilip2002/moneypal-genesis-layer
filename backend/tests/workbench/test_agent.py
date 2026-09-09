@@ -370,6 +370,9 @@ class _ScriptedClient:
         step = self.script[len(self.requests) - 1]
         return step(kwargs) if callable(step) else step
 
+    async def health(self):
+        return {"status": "ok"}
+
 
 _PAR_30 = NativeToolCall(
     id="call_1", name="query_metrics",

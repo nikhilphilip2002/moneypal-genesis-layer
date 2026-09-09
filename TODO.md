@@ -143,6 +143,13 @@ testing is out of scope.
 
 - [x] Add live/parser, history-compatibility, and rendering contract regressions for every field.
 - [x] Run focused backend tests, Ruff, TypeScript, production frontend build, and `git diff --check`.
+- [x] Preserve verified tool results when provider-specific LLM synthesis times out.
+- [x] Consolidate generic, selection, and composition LLM deadlines into `LLM_TIMEOUT`.
+- [x] Check llama.cpp `/health` before the Workbench submits its first completion request.
+- [x] Gate frontend sends on `/nlq/health`, retry three times, and preserve unsent composer text
+      when readiness cannot be established.
+- [x] Remove the obsolete `reviewed` argument that broke deterministic record lookups and
+      completions after the `SqlAttempt` contract changed.
 - [ ] Deploy, then verify representative answer, clarification, refusal, error, catalog, and
       history-reload flows against the live Workbench.
 

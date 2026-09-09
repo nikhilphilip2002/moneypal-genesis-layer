@@ -18,7 +18,7 @@ from typing import Any
 
 from app.core.config import settings
 from app.services.nlq.catalog import get_catalog
-from app.services.nlq.llm import LLMError, LLMProtocolError
+from app.services.nlq.llm import LLMError, LLMProtocolError, LLMTimeout, LLMUnavailable
 from app.services.workbench import history, models, prompts
 from app.services.workbench.agent_executor import (
     AgentExecutionContext,
@@ -230,10 +230,7 @@ async def _select(
         tools=definitions,
         tool_choice=tool_choice,
         parallel_tool_calls=False,
-        timeout_s=budget.remaining_s(
-            settings.workbench_agent_select_timeout_s if selecting
-            else settings.workbench_composer_timeout_s
-        ),
+        timeout_s=budget.remaining_s(settings.llm_timeout_s),
         call_purpose=_PURPOSES[tool_choice],
         call_kind="repair" if repair_messages and selecting else "planned",
         prompt_version=prompt.version,
@@ -596,6 +593,11 @@ async def run(state: dict[str, Any]) -> None:
     emit = state["emit"]
     state["agent_native"] = True
     budget = _budget(state)
+    client = models.for_step("agent", sensitive=True)
+    readiness = await client.health()
+    if readiness.get("status") != "ok":
+        detail = readiness.get("detail") or "model endpoint is not ready"
+        raise LLMUnavailable(f"llamacpp agent unavailable: {detail}")
     catalog = state.setdefault("_agent_catalog", get_catalog())
     context = AgentExecutionContext(
         user=state["user"], role=state["role"],
@@ -631,7 +633,7 @@ async def run(state: dict[str, Any]) -> None:
                 state, repair_messages=exchange or None, tool_choice=tool_choice,
                 supplement=last_error,
             )
-        except TimeoutError:
+        except (TimeoutError, LLMTimeout):
             if not has_data:
                 raise
             break
