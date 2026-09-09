@@ -101,7 +101,9 @@
   column: agent_code
   type: categorical
   decode: agent_identity
-  synonyms: [agent name, loan agent, borrowers by agent, customers by agent]
+  synonyms:
+    [agent name, loan agent, borrowers by agent, customers by agent,
+     agents with highest customer count]
   description: Populated per-loan agent, displayed using the governed agent directory name.
 
 - id: borrower

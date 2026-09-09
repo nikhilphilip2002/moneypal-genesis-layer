@@ -94,3 +94,10 @@ def test_each_question_builds_the_expected_tool_specific_catalog_surface():
             ):
                 failures.append((family["id"], prompt, context))
     assert not failures
+
+
+def test_agent_customer_ranking_retrieves_customer_metric_and_agent_dimension():
+    context = build_agent_catalog_context("list the agents with highest customer count")
+
+    assert context.metrics == ("customer_count",)
+    assert context.dimensions == ("loan_agent",)

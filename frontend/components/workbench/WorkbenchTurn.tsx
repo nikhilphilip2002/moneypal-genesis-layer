@@ -311,6 +311,40 @@ function CardBody({ card, onAsk }: { card: CardData; onAsk: (q: string) => void 
     );
   }
 
+  if (card.card_type === 'catalog') {
+    const { topic, metrics, dimensions, tables, joins } = card.payload as {
+      topic?: string;
+      metrics?: { id: string; label: string }[];
+      dimensions?: { id: string; label: string }[];
+      tables?: { name: string; label: string }[];
+      joins?: unknown[];
+    };
+    return (
+      <WorkbenchCard
+        source={card.source}
+        title="Catalog inspection"
+        subtitle={topic || 'Governed loan-book metadata'}
+      >
+        <div className="flex flex-wrap gap-1.5">
+          {(metrics ?? []).map((metric) => (
+            <Badge key={`metric-${metric.id}`} variant="secondary" className={`${SOURCE_BADGE} normal-case tracking-normal`}>
+              {metric.label || metric.id}
+            </Badge>
+          ))}
+          {(dimensions ?? []).map((dimension) => (
+            <Badge key={`dimension-${dimension.id}`} variant="outline" className={`${SOURCE_BADGE} normal-case tracking-normal`}>
+              {dimension.label || dimension.id}
+            </Badge>
+          ))}
+        </div>
+        <p className={`${BLOCK_GAP} text-xs leading-5 text-muted-foreground`}>
+          {(tables ?? []).length} governed table{(tables ?? []).length === 1 ? '' : 's'}
+          {' · '}{(joins ?? []).length} declared relationship{(joins ?? []).length === 1 ? '' : 's'}
+        </p>
+      </WorkbenchCard>
+    );
+  }
+
   if (card.card_type === 'clarify') {
     const { question, suggestions } = card.payload as { question: string; suggestions?: string[] };
     return (

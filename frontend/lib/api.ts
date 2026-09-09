@@ -1117,7 +1117,7 @@ export type WorkbenchCompletion = {
 export type WorkbenchCard = {
   source: string;
   card_type:
-    | 'chart' | 'analysis' | 'worklist' | 'briefing' | 'brief' | 'schema'
+    | 'chart' | 'analysis' | 'worklist' | 'briefing' | 'brief' | 'schema' | 'catalog'
     | 'clarify' | 'refusal' | 'error';
   payload: any;
 };

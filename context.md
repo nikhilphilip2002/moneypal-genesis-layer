@@ -2,7 +2,7 @@
 
 Updated: 2026-09-09
 Branch: `fix/regex-removal`
-Base commit: `da98a64 refactor(workbench): remove regex-based agent corrections`
+Current commit: `bdbf533 refactor(workbench): use native tool calling only`
 Authority: `plan.md`; live checklist: `TODO.md`
 
 Phases A through E are complete. Phase F implementation is complete in the working tree and
@@ -47,6 +47,66 @@ event reports sources and tool names derived from the first validated native res
   results are retained while model observations are bounded.
 - SQL prompt version is `sql-v3-qualified-columns`; agent prompt version is
   `workbench-native-agent-v3-full-schema`.
+
+## Active incident: agent ranking by customer count
+
+Reported Workbench query at `http://100.70.118.31:4321/workbench`:
+`list the agents with highest customer count`.
+
+The failure was reproduced against the live API with the `moneypal_admin` demo role. The native
+agent selected `inspect_loan_catalog` first. Catalog retrieval incorrectly surfaced
+`agent_linked_loans` for a customer-count question and returned no agent dimension. The
+inspection consumed enough of the 50-second request budget that no data query ran, and the
+stream ended with `NO_USABLE_RESULT`. The valid `catalog` source card was also unsupported by
+`WorkbenchTurn.tsx`, so the frontend displayed `Schema / Error / Something went wrong.`
+
+The live legacy NLQ endpoint confirmed a second wording gap: the exact wording returned only
+the portfolio-wide total of 5,719 borrowers. The supported equivalent, `Which agents have most
+borrowers?`, returned this top-10 ranking:
+
+1. Vanitha — 338
+2. Manjula — 192
+3. Harish Gowda — 187
+4. Raghuchandra Shetty — 159
+5. D R Suresh — 151
+6. Anil Kumar C S — 149
+7. Roopa — 145
+8. Nagasundara T K — 128
+9. Mamatha K — 119
+10. Anusooya Bhayi — 107
+
+Uncommitted fixes now in the working tree:
+
+- Added narrowly scoped customer-ranking synonyms to the governed `customer_count` metric and
+  `loan_agent` dimension.
+- Extended the legacy deterministic top-agent matcher for `highest/largest/maximum customer
+  count`, preserving its existing distinct-borrower semantics.
+- Added exact-query regression tests for Workbench catalog retrieval and legacy planning, plus
+  a catalog registration assertion.
+- Added a proper `catalog` card renderer so metadata inspection is not shown as an error.
+
+With the changes loaded locally, the exact query's catalog context resolves only
+`customer_count` and `loan_agent`, matching the established governed interpretation: distinct
+borrowers grouped by agent and ordered descending.
+
+Incident verification status:
+
+- All 72 directly affected deterministic backend tests pass, covering the exact regression,
+  adjacent agent-customer ranking wording, catalog loading/retrieval, compilation, catalog tool
+  execution, and the frontend event contract.
+- Focused Ruff and `git diff --check` pass.
+- Frontend dependencies were restored from `package-lock.json`. `tsc --noEmit` passes, and the
+  Next.js 16 production build passes (compilation, TypeScript, page collection, and all 14 static
+  routes).
+- The repository's `npm run lint` command is stale: Next.js 16 treats `next lint` as a project
+  path, while direct ESLint 9 requires an `eslint.config.*` file that this repository does not
+  have. This is a pre-existing tooling configuration issue, not a lint finding.
+- A wider, non-blocking backend run exposed the pre-existing failure
+  `test_named_borrower_principal_routes_without_calling_an_llm` and the model-dependent
+  `test_validated_query_exposes_nested_llm_trace` exceeded the bounded local run. Neither test
+  exercises this change; the affected deterministic coverage above is green.
+- The linked app runs outside this workspace's Docker context (`docker compose ps` is empty), so
+  these changes are not deployed to `100.70.118.31` and the live Workbench is not yet re-tested.
 
 ## Safety boundaries retained
 

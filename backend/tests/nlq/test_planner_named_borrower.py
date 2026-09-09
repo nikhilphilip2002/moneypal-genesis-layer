@@ -235,6 +235,20 @@ async def test_agents_with_most_borrowers_uses_linked_customer_metric():
 
 
 @pytest.mark.anyio
+async def test_agents_with_highest_customer_count_uses_linked_customer_metric():
+    outcome = await plan(
+        "list the agents with highest customer count", client=RefusingClient(),
+    )
+
+    assert isinstance(outcome.plan, QuerySpecPlan)
+    assert outcome.model == "deterministic"
+    assert outcome.plan.spec.metrics == ["customer_count"]
+    assert outcome.plan.spec.dimensions == ["loan_agent"]
+    assert outcome.plan.spec.order_by.field == "customer_count"
+    assert outcome.plan.spec.order_by.direction == "desc"
+
+
+@pytest.mark.anyio
 async def test_agent_directory_fields_route_without_calling_an_llm():
     outcome = await plan(
         "Show agent names, designations, branch codes and linked loan counts",

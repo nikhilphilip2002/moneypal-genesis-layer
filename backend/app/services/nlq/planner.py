@@ -89,6 +89,8 @@ _TOP_AGENTS_RE = re.compile(
     r"(?:linked\s+)?(?:borrowers?|customers?|loans?)\b|"
     r"\bagents?\s+(?:with|having)\s+(?:the\s+)?most\s+"
     r"(?:linked\s+)?(?:borrowers?|customers?|loans?)\b|"
+    r"\bagents?\s+(?:with|having)\s+(?:the\s+)?(?:highest|largest|maximum)\s+"
+    r"(?:linked\s+)?(?:borrower|customer)\s+counts?\b|"
     r"\bwhich\s+agents?\b[^?]{0,80}\b(?:more|most|highest|largest|maximum)\b"
     r"[^?]{0,40}\b(?:loan\s+)?accounts?\b|"
     r"\bagents?\s+under\s+(?:the\s+)?(?:more|most)\s+(?:loan\s+)?accounts?\b",
