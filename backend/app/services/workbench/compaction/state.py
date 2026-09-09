@@ -17,6 +17,7 @@ import json
 from dataclasses import dataclass, field
 from typing import Any, Iterable
 
+from app.core.config import settings
 from app.services import figures as figure_parser
 
 MAX_FIGURES = 40
@@ -149,6 +150,10 @@ def extract_turn(turn: dict[str, Any], assistant_text: str) -> SessionState:
         }:
             rendered = json.dumps(arguments, sort_keys=True, default=str, separators=(",", ":"))
             state.active_plans.append(f"{name}:{rendered[:600]}")
+        if name in settings.postgres_mcp_model_tools:
+            sql = str(arguments.get("sql", ""))
+            if sql:
+                state.active_plans.append(f"postgres_mcp:{sql[:600]}")
         if name == "lookup_records":
             selector = str(arguments.get("selector", ""))
             value = str(arguments.get("value", ""))

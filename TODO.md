@@ -2,12 +2,13 @@
 
 Updated: 2026-09-09
 Branch: `fix/regex-removal`
-Authority: `plan.md`
+Authority: `PLAN.md`
 
-The Workbench will support one execution path: provider-native tool calling. Phases A to E are
-complete. Remaining work removes rollout modes, legacy orchestration, behavioral routing, and
-hidden text-to-SQL shortcuts. Run the full validation suite after implementation; cross-model
-testing is out of scope.
+The Workbench uses one provider-native agent path. Phases A to H record the completed foundation
+and remaining handoff checks. Phase I migrates all Workbench loan-book access to one PostgreSQL
+MCP tool and places the complete compact Gold schema in the first model request. Focused static
+checks and live smoke validation remain in scope; the regression suite is deferred until the
+user re-enables it.
 
 ## Completed foundation — Phases A to E
 
@@ -119,7 +120,7 @@ testing is out of scope.
 - [ ] Record whether the version-7 production history migration has run.
 - [ ] After its rollback window, disable and remove legacy `agent_exchanges` compatibility
       writes.
-- [x] Confirm `plan.md`, `TODO.md`, and final `context.md` describe the same architecture and
+- [x] Confirm the previous native-only plan, `TODO.md`, and final `context.md` described the same
       completion state.
 
 ## Phase H — Workbench contract fidelity
@@ -149,6 +150,8 @@ testing is out of scope.
       its first completion request.
 - [x] Return malformed native responses and unexpected tool preflight failures to the model as
       structured repair feedback instead of ending the turn immediately.
+- [x] Make `agent_customers` honor advertised loan fields, including per-customer sanctioned
+      totals and all distinct tenure values, while rejecting unsupported field/detail pairs.
 - [x] Gate frontend sends on `/nlq/health`, retry three times, and preserve unsent composer text
       when readiness cannot be established.
 - [x] Remove the obsolete `reviewed` argument that broke deterministic record lookups and
@@ -165,4 +168,136 @@ testing is out of scope.
 - Never execute generated SQL before catalog and AST validation.
 - Never add question-specific behavioral routing or SQL shortcuts to fix an evaluation case.
 - Keep complete durable audit events and explicitly bounded model observations.
-- Run all final tests after the implementation changes are complete.
+- Run focused validation as implementation changes land; keep the regression suite deferred
+  until the user re-enables it.
+
+## Phase I — PostgreSQL MCP-native database access
+
+Canonical design: `PLAN.md`
+
+### I0. Analysis and contract decision
+
+- [x] Audit the model-visible tools, executor handlers, PostgreSQL MCP server/client, Gold
+      catalog prompt, source policy, API request, and frontend connection selector.
+- [x] Confirm the Workbench model does not currently receive PostgreSQL MCP tools directly.
+- [x] Confirm native database handlers currently bypass MCP even when `data_access=mcp`.
+- [x] Decide that only tools discovered from the configured PostgreSQL MCP server will be exposed
+      for loan-book database access; no local database wrapper tool will be introduced.
+- [x] Decide that the complete compact Gold schema will be present from the first model request.
+
+### I1. PostgreSQL MCP boundary
+
+- [x] Configure the PostgreSQL MCP implementation with native read-only `query(sql)` capability;
+      complete Gold metadata is supplied in the startup-cached model prompt.
+- [x] Call MCP `list_tools` and record the actual native tool names, descriptions, and schemas;
+      do not invent or rename a `query_gold` wrapper.
+- [x] Reuse the existing Gold catalog, SQL AST, function, join, PII, cost, row-limit,
+      statement-timeout, and read-only-role enforcement inside the MCP server.
+- [x] Derive user, role, and frozen policy from trusted backend context; never accept model-chosen
+      authorization attributes.
+- [x] Return native structured metadata/query results and safe structured errors from the MCP
+      tools.
+- [x] Keep `postgres_health` backend-only.
+- [x] Remove the nested-planner `ask_loan_book` tool from the PostgreSQL MCP server.
+- [x] Remove `curiosity_graph` from PostgreSQL MCP while keeping its standalone API intact.
+
+### I2. Startup initialization and Gold schema prefix
+
+- [x] Build a compact complete schema projection covering all Gold tables, columns, joins,
+      metrics, dimensions, enums, restrictions, units, grains, PII classifications, and catalog
+      version.
+- [ ] Measure the schema prefix with the deployed tokenizer and keep adequate 32K context headroom
+      for tools, history, observations, and output.
+- [x] Load and validate the catalog during backend application startup.
+- [x] Cache the exact schema prefix by catalog version and include it in every agent system prompt.
+- [x] Retain question-specific catalog retrieval only as optional ranking guidance, never as an
+      allowlist or substitute for complete schema context.
+- [x] Initialize PostgreSQL MCP at startup, validate the discovered read-only tool contracts, and
+      expose cached readiness plus the Gold schema version in backend `/health` diagnostics.
+- [ ] Decide from measured startup/runtime behavior whether a non-authoritative llama.cpp prompt
+      warm-up is beneficial.
+
+### I3. MCP client and model tool exposure
+
+- [x] Add generic discovered-tool dispatch and structured MCP error mapping without a semantic
+      database wrapper.
+- [ ] Reuse a managed MCP session when supported, with bounded reconnect as fallback.
+- [x] Discover and validate MCP tool schemas at startup and translate the authorized definitions
+      into provider-native function definitions without renaming or semantic rewriting.
+- [x] Combine authorized PostgreSQL MCP tools only with authorized non-database tools for each
+      request.
+- [x] Dispatch every discovered PostgreSQL tool by its original name and arguments exclusively
+      through MCP.
+- [x] Return all retryable MCP validation, transport, timeout, and execution failures to the same
+      model within the existing turn budget.
+- [x] Remove the argument-repair kill switch so malformed/denied tool calls always return a typed
+      observation to the same model while the hard turn budget remains.
+
+### I4. Remove model-facing database tools
+
+- [x] Remove `query_metrics` from the Workbench model registry and executor.
+- [x] Remove `lookup_records` from the Workbench model registry and executor.
+- [x] Remove `run_analysis` from the Workbench model registry and executor.
+- [x] Remove `create_worklist` from the Workbench model registry and executor.
+- [x] Remove `generate_briefing` from the Workbench model registry and executor.
+- [x] Remove `run_validated_query` and its nested SQL-generation path from the Workbench agent.
+- [x] Remove `inspect_loan_catalog` from the model registry after the complete startup schema is
+      available.
+- [x] Preserve underlying domain services still used by dedicated APIs or UI features.
+- [x] Remove obsolete model-only argument contracts after confirming their remaining references
+      were confined to the deferred Workbench regression tests.
+
+### I5. Keep non-database sources separate
+
+- [x] Keep `search_curated_knowledge` for concepts, macro, competitive, and regulatory sources.
+- [x] Remove the `schema` domain from `search_curated_knowledge`.
+- [x] Keep `search_public_web` subject to deployment availability, explicit consent, and outbound
+      private-data protection.
+- [x] Keep `finish_without_data` for clarification and governed refusal.
+- [x] Remove the obsolete Workbench schema source pin and schema quick action; the complete Gold
+      schema is now agent context, while the standalone Curiosity Graph API remains intact.
+- [x] Verify structurally that source pins and policy filtering narrow the effective source set;
+      MCP definitions are added only when the frozen policy contains `db`.
+
+### I6. Remove selectable direct database access
+
+- [x] Remove `data_access` from the Workbench API request and backend state.
+- [x] Remove `data_access` from `AgentExecutionContext` and all active Workbench handlers.
+- [x] Remove frontend `dataAccess` state and API serialization.
+- [x] Remove the Direct adapter/MCP selector from the Composer.
+- [x] Show a non-editable PostgreSQL MCP connection/status label.
+- [x] Update environment and Compose comments so PostgreSQL MCP is the sole Workbench database
+      boundary and the MCP container executes only through the read-only adapter.
+
+### I7. Cleanup and documentation
+
+- [x] Remove the legacy Workbench `nodes.run_db()` and `nodes.run_schema()` comparison paths after
+      confirming they had no active callers.
+- [x] Remove obsolete Workbench wrappers, imports, model-only schemas, and direct/MCP selection
+      configuration.
+- [x] Keep standalone `/nlq`, Curiosity Graph, worklist, analysis, and briefing consumers intact
+      until their dependencies are explicitly audited.
+- [x] Update `context.md` to describe the resulting MCP-native architecture and distinguish
+      local verification from deployment-machine checks.
+- [x] Update the rollout runbook for MCP discovery, status-only model health, and deployment-host
+      smoke validation.
+- [x] Keep `PLAN.md` and this checklist synchronized whenever scope or contracts change.
+
+### I8. Focused verification and exit gate
+
+- [x] Run focused Python compilation, frontend TypeScript, prompt completeness, in-process MCP
+      contract, retired-symbol, and `git diff --check` validation; Ruff is unavailable in this
+      environment and the deferred regression suite remains intentionally unrun.
+- [ ] Smoke-test a simple aggregate, multi-column record list, join, filtered ranking, and
+      multi-turn follow-up against the deployed model.
+- [ ] Smoke-test unknown column, invalid join, unsafe SQL, timeout, MCP disconnect, authorization
+      denial, and result truncation; verify retryable failures return to the model.
+- [ ] Verify on the deployment machine that the first recorded model request contains the complete
+      catalog-versioned Gold schema; local prompt construction has been statically verified.
+- [x] Verify every model-visible loan-book database tool comes from PostgreSQL MCP discovery and no
+      locally defined model-facing database tool remains.
+- [x] Verify no model-initiated Workbench database execution occurs in the API process or invokes a
+      nested planner. Dedicated APIs and composer completion lookup are outside this model-tool
+      migration and still use their existing governed services.
+- [ ] Record catalog/prompt versions, deployed model, commands, smoke results, latency, and known
+      limitations in the final handoff.

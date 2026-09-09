@@ -14,17 +14,9 @@ from typing import Any
 from pydantic import BaseModel, ValidationError
 
 from app.services.nlq.catalog import Catalog, get_catalog
-from app.services.nlq.compiler import CompileError, compile_spec
 from app.services.workbench.access import SourceAccessDenied, SourceAccessPolicy, source_group
 from app.services.workbench.agent_contracts import (
-    CreateWorklistArguments,
     FinishWithoutDataArguments,
-    GenerateBriefingArguments,
-    InspectLoanCatalogArguments,
-    LookupRecordsArguments,
-    QueryMetricsArguments,
-    RunAnalysisArguments,
-    RunValidatedQueryArguments,
     SearchCuratedKnowledgeArguments,
     SearchPublicWebArguments,
 )
@@ -48,7 +40,6 @@ class AgentToolAccessDenied(AgentToolArgumentsInvalid):
 
 CURATED_DOMAIN_SOURCES: dict[str, str] = {
     "concepts": "knowledge",
-    "schema": "schema",
     "macro": "macro",
     "competitive": "competitive",
     "regulatory": "regulatory",
@@ -76,90 +67,6 @@ class AgentTool:
 
 
 AGENT_TOOLS: dict[str, AgentTool] = {
-    "query_metrics": AgentTool(
-        name="query_metrics",
-        description=(
-            "Query governed aggregate amounts, counts, rates, trends, breakdowns, and "
-            "rankings using catalog metrics, dimensions, periods, comparisons, and ordering."
-        ),
-        arguments_model=QueryMetricsArguments,
-        handler_key="query_metrics",
-        source_id="db",
-        sensitivity="internal",
-        timeout_s=20.0,
-        max_result_chars=12_000,
-    ),
-    "lookup_records": AgentTool(
-        name="lookup_records",
-        description=(
-            "Look up a named borrower, customer ID, loan account, agent, product, branch, "
-            "or supported directory and return requested fields declared by this schema."
-        ),
-        arguments_model=LookupRecordsArguments,
-        handler_key="lookup_records",
-        source_id="db",
-        sensitivity="pii",
-        timeout_s=20.0,
-        max_result_chars=12_000,
-    ),
-    "run_analysis": AgentTool(
-        name="run_analysis",
-        description="Run a reviewed multi-chart loan-book analysis preset.",
-        arguments_model=RunAnalysisArguments,
-        handler_key="run_analysis",
-        source_id="db",
-        sensitivity="internal",
-        timeout_s=30.0,
-        max_result_chars=16_000,
-    ),
-    "create_worklist": AgentTool(
-        name="create_worklist",
-        description="Generate a reviewed, bounded collection worklist from the loan book.",
-        arguments_model=CreateWorklistArguments,
-        handler_key="create_worklist",
-        source_id="db",
-        sensitivity="pii",
-        timeout_s=30.0,
-        max_result_chars=16_000,
-    ),
-    "generate_briefing": AgentTool(
-        name="generate_briefing",
-        description="Generate the reviewed loan-book briefing for a catalog persona.",
-        arguments_model=GenerateBriefingArguments,
-        handler_key="generate_briefing",
-        source_id="db",
-        sensitivity="internal",
-        timeout_s=30.0,
-        max_result_chars=16_000,
-    ),
-    "run_validated_query": AgentTool(
-        name="run_validated_query",
-        description=(
-            "Generate and safely execute a read-only SQL query for an intent over selected "
-            "governed Gold tables, including row lists, catalog columns, and cross-view detail."
-        ),
-        arguments_model=RunValidatedQueryArguments,
-        handler_key="run_validated_query",
-        source_id="db",
-        sensitivity="internal",
-        timeout_s=30.0,
-        max_result_chars=12_000,
-        parallel_safe=False,
-    ),
-    "inspect_loan_catalog": AgentTool(
-        name="inspect_loan_catalog",
-        description=(
-            "Inspect governed loan-book metadata when you need the exact metric, dimension, "
-            "column, table, vocabulary, or declared join before making a data call. This "
-            "returns metadata only, never customer or loan rows."
-        ),
-        arguments_model=InspectLoanCatalogArguments,
-        handler_key="inspect_loan_catalog",
-        source_id="schema",
-        sensitivity="internal",
-        timeout_s=10.0,
-        max_result_chars=16_000,
-    ),
     "search_curated_knowledge": AgentTool(
         name="search_curated_knowledge",
         description=(
@@ -299,37 +206,7 @@ def _parameters_for(
 ) -> dict[str, Any]:
     schema = _portable_schema(tool.arguments_model)
     properties = schema["properties"]
-    filterable = sorted(
-        dimension_id
-        for dimension_id, dimension in catalog.dimensions.items()
-        if not dimension.is_time
-    )
-
-    if tool.name == "query_metrics":
-        properties["metrics"]["items"]["enum"] = sorted(catalog.metrics)
-        properties["dimensions"]["items"]["enum"] = sorted(catalog.dimensions)
-        properties["filters"]["items"]["properties"]["field"]["enum"] = filterable
-        properties["having"]["items"]["properties"]["field"]["enum"] = sorted(catalog.metrics)
-        properties["order_by"]["properties"]["field"]["enum"] = sorted(
-            {*catalog.metrics, *catalog.dimensions}
-        )
-    elif tool.name == "run_analysis":
-        properties["analysis_id"]["enum"] = sorted(catalog.analyses)
-        properties["filters"]["items"]["properties"]["field"]["enum"] = filterable
-    elif tool.name == "create_worklist":
-        from app.services.worklists.rules import FILTERABLE
-
-        properties["worklist_id"]["enum"] = sorted(catalog.worklists.presets)
-        filter_properties = properties["filters"]["items"]["properties"]
-        filter_properties["field"]["enum"] = sorted(FILTERABLE)
-        filter_properties["op"]["enum"] = ["eq", "in"]
-    elif tool.name == "generate_briefing":
-        properties["persona_id"]["enum"] = sorted(catalog.personas)
-    elif tool.name == "run_validated_query":
-        properties["tables"]["items"]["enum"] = sorted(catalog.allowed_tables())
-    elif tool.name == "inspect_loan_catalog":
-        properties["tables"]["items"]["enum"] = sorted(catalog.allowed_tables())
-    elif tool.name == "search_curated_knowledge":
+    if tool.name == "search_curated_knowledge":
         properties["domain"]["enum"] = _allowed_curated_domains(policy)
     return schema
 
@@ -398,45 +275,11 @@ def validate_agent_arguments(
         location = ".".join(str(part) for part in first.get("loc", ())) or "arguments"
         raise AgentToolArgumentsInvalid(f"{location}: {first['msg']}") from exc
 
-    cat = catalog or get_catalog()
-    try:
-        if isinstance(parsed, QueryMetricsArguments):
-            compile_spec(parsed, cat)
-        elif isinstance(parsed, RunAnalysisArguments):
-            if parsed.analysis_id not in cat.analyses:
-                raise AgentToolArgumentsInvalid(f"unknown analysis {parsed.analysis_id!r}")
-        elif isinstance(parsed, CreateWorklistArguments):
-            if parsed.worklist_id not in cat.worklists.presets:
-                raise AgentToolArgumentsInvalid(f"unknown worklist {parsed.worklist_id!r}")
-            from app.services.worklists.rules import FILTERABLE
-
-            for item in parsed.filters:
-                if item.field not in FILTERABLE or item.op not in {"eq", "in"}:
-                    raise AgentToolArgumentsInvalid(
-                        f"worklist filter {item.field!r}/{item.op!r} is not supported"
-                    )
-        elif isinstance(parsed, GenerateBriefingArguments):
-            if parsed.persona_id not in cat.personas:
-                raise AgentToolArgumentsInvalid(f"unknown persona {parsed.persona_id!r}")
-        elif isinstance(parsed, RunValidatedQueryArguments):
-            unknown = set(parsed.tables) - set(cat.allowed_tables())
-            if unknown:
-                raise AgentToolArgumentsInvalid(
-                    f"unknown catalog tables: {', '.join(sorted(unknown))}"
-                )
-        elif isinstance(parsed, InspectLoanCatalogArguments):
-            unknown = set(parsed.tables) - set(cat.allowed_tables())
-            if unknown:
-                raise AgentToolArgumentsInvalid(
-                    f"unknown catalog tables: {', '.join(sorted(unknown))}"
-                )
-        elif isinstance(parsed, SearchCuratedKnowledgeArguments):
-            try:
-                policy.require(CURATED_DOMAIN_SOURCES[parsed.domain])
-            except SourceAccessDenied as exc:
-                raise AgentToolAccessDenied(str(exc)) from exc
-    except CompileError as exc:
-        raise AgentToolArgumentsInvalid(str(exc)) from exc
+    if isinstance(parsed, SearchCuratedKnowledgeArguments):
+        try:
+            policy.require(CURATED_DOMAIN_SOURCES[parsed.domain])
+        except SourceAccessDenied as exc:
+            raise AgentToolAccessDenied(str(exc)) from exc
     return parsed
 
 

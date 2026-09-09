@@ -13,8 +13,7 @@ services:
     env_file: .env
     environment:
       # Override any host paths from .env with in-container paths.
-      # Workbench reaches PostgreSQL through the governed MCP boundary by default.
-      POSTGRES_ACCESS_MODE: mcp
+      # Workbench reaches PostgreSQL only through the governed MCP boundary.
       POSTGRES_MCP_URL: http://postgres-mcp:8001/mcp
       LOG_DIR: /srv/backend/data/logs
       REGULATIONS_DIR: /srv/Regulations
@@ -30,9 +29,7 @@ services:
     image: moneypal-backend:local
     env_file: .env
     environment:
-      # The MCP server is the boundary. Its implementation uses the existing hardened
-      # direct adapter and must never recursively call itself.
-      POSTGRES_ACCESS_MODE: direct
+      # The MCP server is the boundary and executes through the hardened read-only adapter.
       # Do not download/load the 2GB-class embedding stack in the middle of an MCP call.
       # The governed catalog's curated lexical synonyms remain available for SQL fallback.
       NLQ_CATALOG_VECTORS: "false"

@@ -14,13 +14,10 @@ from typing import TYPE_CHECKING, Any
 
 from genesis_core import rag
 
-from app.core.config import MACRO_COLLECTION, settings
-from app.services.nlq.ask import AskContext, ask_once
+from app.core.config import MACRO_COLLECTION
 from app.services.nlq.catalog import get_catalog
 from app.services.nlq.catalog.retrieval import retrieve
-from app.services.nlq.contracts import AskResponse
 from app.services.nlq.normalization import normalize_lending_question
-from app.services.workbench import models
 from app.services.workbench.results import Evidence, SourceResult
 
 logger = logging.getLogger(__name__)
@@ -60,128 +57,6 @@ def _strip_unsupported_page_citations(answer: str, sources: list[dict]) -> str:
     if any(source.get("page") not in (None, "") for source in sources):
         return answer
     return re.sub(r",\s*p\.?\s*\d+(?:\s*[-–]\s*\d+)?", "", answer, flags=re.IGNORECASE)
-
-
-async def run_db(
-    intent: str,
-    *,
-    conversation_id: str,
-    user: str,
-    role: str,
-    access_mode: str | None = None,
-    history_messages: list[dict[str, str]] | None = None,
-) -> SourceResult:
-    """Answer from the loan book via the existing NLQ pipeline.
-
-    `ask_once` runs the full plan -> compile -> execute path and returns a rendered chart,
-    a clarification, or a refusal — all of which are valid cards. We reuse it wholesale so
-    the workbench and the legacy /nlq route can never diverge on the same question.
-    """
-    try:
-        effective_mode = access_mode if access_mode in ("direct", "mcp") else settings.postgres_access_mode
-        if effective_mode == "mcp":
-            from app.mcp import postgres_client
-
-            payload = await postgres_client.ask_loan_book(
-                question=intent,
-                conversation_id=conversation_id,
-                user=user,
-                role=role,
-                history_messages=history_messages or [],
-            )
-            response = AskResponse.model_validate(payload)
-        else:
-            ctx = AskContext(
-                question=intent, conversation_id=conversation_id, user=user, role=role,
-                history_messages=history_messages or [],
-            )
-            response = await ask_once(ctx)
-    except Exception as exc:  # noqa: BLE001 - a source failure degrades to a card, not a 500
-        logger.warning("workbench db node failed: %s", exc)
-        return SourceResult(
-            source="db",
-            card_type="error",
-            payload={"message": "The loan book could not answer that.", "retryable": True},
-        )
-
-    if response.status == "clarify" and response.clarification is not None:
-        return SourceResult(source="db", card_type="clarify",
-                            payload=response.clarification.model_dump(mode="json"))
-    if response.status == "refused" and response.refusal is not None:
-        return SourceResult(source="db", card_type="refusal",
-                            payload=response.refusal.model_dump(mode="json"))
-    if response.analysis is not None:
-        # A multi-query answer. Its headline is already deterministic and templated from the
-        # findings, so it is the right thing to hand the cross-source synthesis — passing the
-        # whole briefing would invite the synthesiser to re-rank what the thresholds ranked.
-        return SourceResult(
-            source="db",
-            card_type="analysis",
-            payload=response.analysis.model_dump(mode="json"),
-            summary=response.analysis.headline or response.plan_summary or "",
-            sensitive=True,
-        )
-    if response.briefing is not None:
-        # The headline is already deterministic and templated from the signals, so it is the
-        # right thing to hand the cross-source synthesis — passing the whole briefing would
-        # invite the synthesiser to re-rank what the detectors ranked.
-        return SourceResult(
-            source="db",
-            card_type="briefing",
-            payload=response.briefing.model_dump(mode="json"),
-            summary=response.briefing.headline or response.plan_summary or "",
-            sensitive=True,
-        )
-    if response.worklist is not None:
-        # A list of accounts to act on. The summary names the count and the severity mix
-        # rather than the accounts themselves — a cross-source synthesis has no business
-        # restating borrower names, and the card already shows them to whoever may see them.
-        alerts = sum(1 for item in response.worklist.items if item.severity == "alert")
-        return SourceResult(
-            source="db",
-            card_type="worklist",
-            payload=response.worklist.model_dump(mode="json"),
-            summary=(
-                f"{response.worklist.title}: {len(response.worklist.items)} accounts, "
-                f"{alerts} needing immediate action."
-            ),
-            sensitive=True,
-        )
-    if response.chart is not None:
-        # The model ranks and phrases only compiler-checked drill actions. Keep this short
-        # and failure-tolerant: chart delivery must never depend on suggestion generation.
-        try:
-            from app.services.workbench import suggestions
-
-            if settings.workbench_personalize_suggestions:
-                client = models.for_step("agent", sensitive=True)
-                response.chart.next_steps = await asyncio.wait_for(
-                    suggestions.personalize(
-                        question=intent,
-                        summary=response.chart.summary,
-                        steps=response.chart.next_steps,
-                        client=client,
-                    ),
-                    timeout=4.0,
-                )
-        except Exception as exc:  # noqa: BLE001 - catalog steps remain the safe fallback
-            logger.debug("contextual next-step generation unavailable: %s", exc)
-        chart_lineage = getattr(response.chart, "lineage", None)
-        lineage = (
-            chart_lineage.model_dump(mode="json")
-            if chart_lineage is not None and hasattr(chart_lineage, "model_dump")
-            else {}
-        )
-        return SourceResult(
-            source="db",
-            card_type="chart",
-            payload=response.chart.model_dump(mode="json"),
-            summary=response.chart.summary or response.plan_summary or "",
-            sensitive=True,
-            lineage=lineage,
-        )
-    return SourceResult(source="db", card_type="error",
-                        payload={"message": "No answer was produced.", "retryable": True})
 
 
 async def run_macro(
@@ -480,46 +355,6 @@ async def run_regulatory(
         source="regulatory", card_type="brief",
         payload={"summary": summary, "sources": sources},
         summary=summary, sources=sources, evidence=evidence,
-    )
-
-
-async def run_schema(intent: str, *, access_mode: str | None = None) -> SourceResult:
-    """Answer 'how is the data organised' from the live schema graph. The card carries a
-    trimmed node/edge list — the chat shows the shape; the full interactive graph opens on
-    demand — which keeps the answer inside one viewport."""
-    from app.services import curiosity_graph
-
-    try:
-        effective_mode = access_mode if access_mode in ("direct", "mcp") else settings.postgres_access_mode
-        if effective_mode == "mcp":
-            from app.mcp import postgres_client
-
-            graph = await postgres_client.curiosity_graph(search=intent or "")
-        else:
-            graph = curiosity_graph.get_curiosity_graph()
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("workbench schema node failed: %s", exc)
-        return SourceResult(source="schema", card_type="error",
-                            payload={"message": "The schema graph is unavailable."})
-
-    raw_nodes = graph.get("nodes", []) or []
-    raw_edges = graph.get("edges", []) or []
-    trimmed_nodes = [{"id": n.get("id"), "label": n.get("label") or n.get("name") or n.get("id")}
-                     for n in raw_nodes]
-    trimmed_edges = [{"source": e.get("source"), "target": e.get("target"),
-                      "label": e.get("label", "")} for e in raw_edges]
-    summary = f"{len(trimmed_nodes)} portfolio nodes, {len(trimmed_edges)} relationships."
-    return SourceResult(
-        source="schema",
-        card_type="schema",
-        payload={
-            "nodes": trimmed_nodes,
-            "edges": trimmed_edges,
-            "node_count": len(trimmed_nodes),
-            "edge_count": len(trimmed_edges),
-            "search_term": intent,
-        },
-        summary=summary,
     )
 
 

@@ -119,24 +119,6 @@ SOURCES: dict[str, Source] = {
             "how is PAR 30 calculated",
         ),
     ),
-    "schema": Source(
-        id="schema",
-        label="Schema",
-        sensitive=True,
-        # The schema describes the loan-book warehouse, so it follows the loan book's
-        # access, not the public sources'.
-        roles=frozenset({"admin", "gicc_admin", "gicc_director"}),
-        describes=(
-            "The structure and ER diagrams of the loan-book database itself: table definitions, "
-            "relationships, and join keys. Answers 'how is the data organised' or 'show table structures', "
-            "never individual transaction records or figures."
-        ),
-        example_intents=(
-            "show the schema for loan accounts and repayments",
-            "how do customers link to loan accounts",
-            "what tables hold disbursement data",
-        ),
-    ),
     "web": Source(
         id="web",
         label="Live web",

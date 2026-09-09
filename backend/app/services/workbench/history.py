@@ -900,12 +900,30 @@ def private_entities(conversation_id: str, *, user: str) -> tuple[str, ...]:
     values: list[str] = []
     for turn in record.turns:
         for call in native_tool_calls(turn):
-            if call.get("name") != "lookup_records":
-                continue
             arguments = call.get("arguments")
-            value = arguments.get("value") if isinstance(arguments, dict) else None
-            if isinstance(value, str) and value.strip():
-                values.append(value.strip())
+            if not isinstance(arguments, dict):
+                continue
+            if call.get("name") == "lookup_records":  # version-7 history compatibility
+                value = arguments.get("value")
+                if isinstance(value, str) and value.strip():
+                    values.append(value.strip())
+                continue
+            if call.get("name") not in settings.postgres_mcp_model_tools:
+                continue
+            sql = arguments.get("sql")
+            if not isinstance(sql, str) or not sql.strip():
+                continue
+            try:
+                from sqlglot import exp, parse_one
+
+                tree = parse_one(sql, read="postgres")
+                values.extend(
+                    str(literal.this).strip()
+                    for literal in tree.find_all(exp.Literal)
+                    if literal.is_string and len(str(literal.this).strip()) >= 2
+                )
+            except Exception:  # noqa: BLE001 - malformed historical SQL contributes no entities
+                logger.debug("could not extract private literals from historical MCP SQL")
     return tuple(dict.fromkeys(values[-20:]))
 
 

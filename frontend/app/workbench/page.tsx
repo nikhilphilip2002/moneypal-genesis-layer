@@ -93,7 +93,6 @@ export default function WorkbenchPage() {
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [pinned, setPinned] = useState<string | null>(null);
-  const [dataAccess, setDataAccess] = useState<'direct' | 'mcp'>('direct');
   const [externalSourcesEnabled, setExternalSourcesEnabled] = useState(false);
   const [conversations, setConversations] = useState<WorkbenchConversation[]>([]);
   const [historyOpen, setHistoryOpen] = useState(false);
@@ -203,7 +202,7 @@ export default function WorkbenchPage() {
     void (async () => {
       try {
         for await (const event of workbench.ask(
-          question, conversationId, pinned, dataAccess, externalSourcesEnabled, controller.signal,
+          question, conversationId, pinned, externalSourcesEnabled, controller.signal,
         )) {
           switch (event.type) {
           case 'conversation':
@@ -257,7 +256,7 @@ export default function WorkbenchPage() {
       }
     })();
     return true;
-  }, [conversationId, pinned, dataAccess, externalSourcesEnabled, refreshHistory]);
+  }, [conversationId, pinned, externalSourcesEnabled, refreshHistory]);
 
   const runTool = useCallback(async (tool: WorkbenchTool) => {
     const id = `t-${Date.now()}`;
@@ -334,8 +333,6 @@ export default function WorkbenchPage() {
       onPin={setPinned}
       onRunTool={runTool}
       onOpenWorkspace={openWorkspace}
-      dataAccess={dataAccess}
-      onDataAccess={setDataAccess}
       externalSourcesEnabled={externalSourcesEnabled}
       onExternalSourcesEnabled={setExternalSourcesEnabled}
       onCompletionHeightChange={setCompletionsHeight}

@@ -20,6 +20,29 @@ from app.core.logging import bind_trace, start_logging, stop_logging
 @asynccontextmanager
 async def _lifespan(_app: FastAPI):
     start_logging()
+    from app.services.workbench.prompts import warm_agent_gold_schema
+
+    catalog_version, schema_chars = warm_agent_gold_schema()
+    _app.state.agent_gold_schema_version = catalog_version
+    _app.state.agent_gold_schema_chars = schema_chars
+    logging.getLogger(__name__).info(
+        "workbench Gold schema prefix initialized version=%s chars=%d",
+        catalog_version, schema_chars,
+    )
+
+    from app.mcp import postgres_client
+
+    try:
+        # Container dependency ordering does not guarantee service readiness. Bound startup
+        # discovery so unrelated APIs can still start; a later Workbench request retries it.
+        mcp_status = await asyncio.wait_for(postgres_client.initialize(), timeout=10.0)
+        logging.getLogger(__name__).info(
+            "PostgreSQL MCP initialized tools=%s", mcp_status["tools"],
+        )
+    except Exception as exc:  # noqa: BLE001 - readiness remains visible and retryable
+        logging.getLogger(__name__).warning(
+            "PostgreSQL MCP startup initialization unavailable: %s", exc,
+        )
     # Workbench execution is intentionally not a rollout switch: every request uses the
     # provider-native tool loop.
     logging.getLogger(__name__).info(
@@ -90,7 +113,24 @@ def create_app() -> FastAPI:
 
     @app.get("/health")
     def health():
-        return {"status": "ok", "service": "genesis-intelligence"}
+        """Process health plus cached startup state; never performs network I/O."""
+        from app.mcp import postgres_client
+
+        return {
+            "status": "ok",
+            "service": "genesis-intelligence",
+            "workbench": {
+                "postgres_mcp": postgres_client.readiness(),
+                "gold_schema": {
+                    "status": (
+                        "ok" if getattr(app.state, "agent_gold_schema_version", "")
+                        else "unavailable"
+                    ),
+                    "version": getattr(app.state, "agent_gold_schema_version", ""),
+                    "characters": getattr(app.state, "agent_gold_schema_chars", 0),
+                },
+            },
+        }
 
     return app
 

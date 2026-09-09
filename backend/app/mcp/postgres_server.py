@@ -1,27 +1,29 @@
 """Read-only PostgreSQL MCP server for Moneypal Workbench.
 
-The server deliberately exposes domain tools instead of unrestricted SQL. The NLQ tool
-still plans against the governed semantic catalog, validates generated SQL, applies row and
-statement limits, and connects as `nlq_readonly`. MCP changes the integration boundary; it
-does not weaken the database boundary.
+The model calls the server's native ``query`` tool directly. The server validates SQL against
+the governed Gold catalog, applies cost, row, and statement limits, and connects as
+``nlq_readonly``. MCP changes the integration boundary; it does not weaken the database boundary.
 """
 
 from __future__ import annotations
 
 from typing import Any
 
-from mcp.server.fastmcp import FastMCP
+from mcp.server.fastmcp import Context, FastMCP
 
-from app.services.curiosity_graph import get_curiosity_graph
-from app.services.nlq import db as nlq_db
-from app.services.nlq.ask import AskContext, ask_once
+from app.services.nlq import db as nlq_db, pii
+from app.services.nlq.catalog import get_catalog
+from app.services.nlq.executor import ExecutionError, execute_raw
+from app.services.nlq.text_to_sql import _infer_column_units
+from app.services.nlq.validator import ValidationError as SqlValidationError
+from app.services.nlq.validator import validate
 
 
 mcp = FastMCP(
     "Moneypal PostgreSQL",
     instructions=(
-        "Read-only tools for governed loan-book analytics and the Enterprise Curiosity "
-        "Graph. Never invent SQL or bypass the semantic catalog."
+        "Read-only PostgreSQL access to the governed Gold loan-book schema. Every statement "
+        "is catalog-validated and executed as nlq_readonly."
     ),
     host="0.0.0.0",
     port=8001,
@@ -37,60 +39,75 @@ def postgres_health() -> dict[str, Any]:
     return nlq_db.health()
 
 
-@mcp.tool()
-async def ask_loan_book(
-    question: str,
-    conversation_id: str,
-    user: str = "anonymous",
-    role: str = "gicc_policy",
-    history_messages: list[dict[str, str]] | None = None,
-) -> dict[str, Any]:
-    """Answer a governed loan-book question and return its chart, lineage, or refusal."""
-    response = await ask_once(AskContext(
-        question=question,
-        conversation_id=conversation_id,
-        user=user,
-        role=role,
-        history_messages=history_messages or [],
-    ))
-    return response.model_dump(mode="json")
+def _trusted_meta(ctx: Context) -> dict[str, Any]:
+    """MCP request metadata is attached by the backend and is not a model argument."""
+    meta = ctx.request_context.meta
+    return meta.model_dump(exclude_none=True) if meta is not None else {}
 
 
 @mcp.tool()
-def curiosity_graph(
-    search: str = "",
-    entity_type: str = "all",
-    view_level: str = "executive",
-    zonal_id: str = "",
-    manager_id: str = "",
-    agent_id: str = "",
-    customer_id: str = "",
-    month: str = "",
-    limit: int = 40,
-    level: str = "",
-    product_code: str = "",
-    branch_code: str = "",
-    scheme_code: str = "",
-    agent_code: str = "",
-    weight_by: str = "borrowers",
-    offset: int = 0,
-) -> dict[str, Any]:
-    """Retrieve a read-only slice of the Enterprise Information Graph."""
-    effective_level = level or {"executive": "portfolio", "zonal": "product", "manager": "branch"}.get(
-        view_level or "executive", view_level or "portfolio"
-    )
-    return get_curiosity_graph(
-        level=effective_level,
-        product_code=product_code or (zonal_id or "").removeprefix("product:") or None,
-        branch_code=branch_code or (manager_id or "").removeprefix("branch:") or None,
-        scheme_code=scheme_code or None,
-        agent_code=agent_code or (agent_id or "").removeprefix("agent:") or None,
-        customer_id=customer_id or None,
-        month=month or None,
-        weight_by=weight_by,
-        limit=max(1, min(limit, 100)),
-        offset=max(0, offset),
-    )
+def query(sql: str, ctx: Context) -> dict[str, Any]:
+    """Execute one read-only PostgreSQL SELECT against governed gold.* views.
+
+    Schema-qualify every table, name every selected column, use only columns and joins from
+    the supplied Gold schema, include an appropriate date condition when the question names a
+    period, and include LIMIT 5000 or less. Validation errors are returned for correction.
+    """
+    catalog = get_catalog()
+    meta = _trusted_meta(ctx)
+    role = str(meta.get("workbench_role") or "")
+    effective_sources = meta.get("workbench_effective_sources")
+    if not isinstance(effective_sources, list) or "db" not in effective_sources:
+        return {
+            "status": "error",
+            "code": "POLICY_DENIED",
+            "message": "This request is not authorized to access the loan-book source.",
+            "retryable": False,
+            "catalog_version": catalog.version,
+        }
+    try:
+        checked = validate(
+            sql,
+            catalog=catalog,
+            allow_pii=pii.may_see_pii(role),
+        )
+    except SqlValidationError as exc:
+        return {
+            "status": "error",
+            "code": "SQL_VALIDATION_ERROR",
+            "message": str(exc)[:1000],
+            "retryable": True,
+            "catalog_version": catalog.version,
+        }
+
+    try:
+        result = execute_raw(checked.sql)
+    except ExecutionError as exc:
+        return {
+            "status": "error",
+            "code": "SQL_EXECUTION_ERROR",
+            "message": str(exc)[:500],
+            "detail": exc.detail[:1000],
+            "retryable": True,
+            "catalog_version": catalog.version,
+        }
+
+    return {
+        "status": result.status,
+        "columns": result.columns,
+        "rows": result.rows,
+        "row_count": result.row_count,
+        "truncated": result.truncated,
+        "duration_ms": result.duration_ms,
+        "plan_cost": result.plan_cost,
+        "validated_sql": result.sql,
+        "tables": checked.tables,
+        "pii_columns": checked.pii_columns,
+        "limit_injected": checked.limit_injected,
+        "warnings": [*checked.warnings, *result.warnings],
+        "column_units": _infer_column_units(checked.sql, checked.tables, catalog),
+        "catalog_version": catalog.version,
+    }
 
 
 if __name__ == "__main__":

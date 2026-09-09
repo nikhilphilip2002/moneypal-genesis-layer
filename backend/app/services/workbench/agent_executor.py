@@ -13,22 +13,15 @@ from typing import Any, Awaitable, Callable
 from pydantic import BaseModel
 
 from app.core.config import settings
-from app.services.nlq import governed_execution, pii, text_to_sql
+from app.services.nlq import charts
 from app.services.nlq.catalog import Catalog, get_catalog
-from app.services.nlq.contracts import LookupPlan
+from app.services.nlq.contracts import Lineage
+from app.services.nlq.executor import QueryResult
 from app.services.nlq.llm import NativeToolCall
-from app.services.nlq.pipeline import run_sql
 from app.services.workbench import facts
 from app.services.workbench.access import SourceAccessPolicy
 from app.services.workbench.agent_contracts import (
-    CreateWorklistArguments,
     FinishWithoutDataArguments,
-    GenerateBriefingArguments,
-    InspectLoanCatalogArguments,
-    LookupRecordsArguments,
-    QueryMetricsArguments,
-    RunAnalysisArguments,
-    RunValidatedQueryArguments,
     SearchCuratedKnowledgeArguments,
     SearchPublicWebArguments,
 )
@@ -40,14 +33,11 @@ logger = logging.getLogger(__name__)
 
 class AgentExecutionError(RuntimeError):
     code = "SOURCE_UNAVAILABLE"
+    retryable = True
 
 
 class AgentToolTimeout(AgentExecutionError):
     code = "TOOL_TIMEOUT"
-
-
-class AgentCompileRejected(AgentExecutionError):
-    code = "COMPILE_REJECTED"
 
 
 @dataclass(frozen=True, slots=True)
@@ -58,10 +48,10 @@ class AgentExecutionContext:
     turn_id: str
     source_policy: SourceAccessPolicy
     deadline_s: float
+    question: str = ""
     catalog: Catalog | None = None
     catalog_version: str = ""
     today: date | None = None
-    data_access: str | None = None
     private_entities: tuple[str, ...] = ()
     deadline_started_at: float = field(default_factory=time.monotonic)
 
@@ -255,216 +245,76 @@ def shape_observation_text(content: str, *, tool_name: str | None = None) -> str
     return json.dumps(shaped, default=str, separators=(",", ":"))
 
 
-def _chart_result(chart) -> SourceResult:
-    lineage = chart.lineage.model_dump(mode="json")
+async def _execute_postgres_mcp(
+    call: NativeToolCall, ctx: AgentExecutionContext,
+) -> SourceResult:
+    from app.mcp import postgres_client
+
+    payload = await postgres_client.call_tool(
+        call.name,
+        call.arguments,
+        meta={
+            "workbench_user": ctx.user,
+            "workbench_role": ctx.role,
+            "workbench_conversation_id": ctx.conversation_id,
+            "workbench_turn_id": ctx.turn_id,
+            "source_policy_version": ctx.source_policy.version,
+            "workbench_effective_sources": list(ctx.source_policy.effective_sources),
+        },
+    )
+    if payload.get("status") == "error":
+        message = str(payload.get("message") or "PostgreSQL MCP failed")
+        detail = str(payload.get("detail") or "").strip()
+        if detail:
+            message = f"{message} Detail: {detail}"
+        error = AgentExecutionError(message[:1500])
+        error.code = str(payload.get("code") or "SOURCE_UNAVAILABLE")
+        error.retryable = bool(payload.get("retryable", True))
+        raise error
+
+    rows = payload.get("rows")
+    columns = payload.get("columns")
+    if not isinstance(rows, list) or not isinstance(columns, list):
+        raise AgentExecutionError("PostgreSQL MCP returned no tabular query result")
+    result = QueryResult(
+        rows=[dict(row) for row in rows if isinstance(row, dict)],
+        columns=[str(column) for column in columns],
+        status=str(payload.get("status") or ("ok" if rows else "empty")),
+        duration_ms=int(payload.get("duration_ms") or 0),
+        sql=str(payload.get("validated_sql") or ""),
+        row_count=int(payload.get("row_count") or len(rows)),
+        truncated=bool(payload.get("truncated")),
+        plan_cost=payload.get("plan_cost"),
+        warnings=[str(item) for item in payload.get("warnings", [])],
+    )
+    lineage = Lineage(
+        path="text_to_sql",
+        sql=result.sql,
+        display_sql=result.sql,
+        source_tables=[str(item) for item in payload.get("tables", [])],
+        row_count=result.row_count,
+        duration_ms=result.duration_ms,
+        warnings=result.warnings,
+        unverified=True,
+    )
+    chart = charts.build_from_rows(
+        question=ctx.question or "PostgreSQL query",
+        result=result,
+        lineage=lineage,
+        catalog=ctx.catalog,
+        unit_hints={
+            str(key): str(value)
+            for key, value in (payload.get("column_units") or {}).items()
+        },
+        description="Executed through the read-only PostgreSQL MCP server.",
+    )
     return SourceResult(
         source="db",
         card_type="chart",
         payload=chart.model_dump(mode="json"),
         summary=chart.summary,
-        sensitive=True,
-        lineage=lineage,
-    )
-
-
-async def _query_metrics(args: QueryMetricsArguments, ctx: AgentExecutionContext) -> SourceResult:
-    chart = await asyncio.to_thread(
-        governed_execution.metrics,
-        args,
-        catalog=ctx.catalog,
-        today=ctx.today,
-        role=ctx.role,
-    )
-    return _chart_result(chart)
-
-
-async def _lookup_records(args: LookupRecordsArguments, ctx: AgentExecutionContext) -> SourceResult:
-    plan = LookupPlan(route="lookup", confidence=1.0, **args.model_dump())
-    result = await asyncio.to_thread(
-        governed_execution.records, plan, role=ctx.role, catalog=ctx.catalog,
-    )
-    if result.clarification is not None:
-        return SourceResult(
-            source="db", card_type="clarify",
-            payload=result.clarification.model_dump(mode="json"),
-        )
-    if result.no_match or result.chart is None:
-        return SourceResult(
-            source="db", card_type="refusal",
-            payload={
-                "reason": "not_in_data",
-                "message": "No customer or loan records matched that lookup.",
-            },
-        )
-    return _chart_result(result.chart)
-
-
-async def _run_analysis(args: RunAnalysisArguments, ctx: AgentExecutionContext) -> SourceResult:
-    result = await asyncio.to_thread(
-        governed_execution.reviewed_analysis,
-        args.analysis_id,
-        catalog=ctx.catalog,
-        period=args.period,
-        filters=args.filters,
-        today=ctx.today,
-        role=ctx.role,
-    )
-    return SourceResult(
-        source="db", card_type="analysis", payload=result.model_dump(mode="json"),
-        summary=result.headline, sensitive=True,
-    )
-
-
-async def _create_worklist(args: CreateWorklistArguments, ctx: AgentExecutionContext) -> SourceResult:
-    result = await asyncio.to_thread(
-        governed_execution.reviewed_worklist,
-        args.worklist_id,
-        catalog=ctx.catalog,
-        as_of=ctx.today,
-        filters=args.filters,
-        limit=args.limit,
-        role=ctx.role,
-    )
-    alerts = sum(1 for item in result.items if item.severity == "alert")
-    return SourceResult(
-        source="db", card_type="worklist", payload=result.model_dump(mode="json"),
-        summary=f"{result.title}: {len(result.items)} accounts, {alerts} needing immediate action.",
-        sensitive=True,
-    )
-
-
-async def _generate_briefing(args: GenerateBriefingArguments, ctx: AgentExecutionContext) -> SourceResult:
-    result = await asyncio.to_thread(
-        governed_execution.reviewed_briefing,
-        args.persona_id,
-        catalog=ctx.catalog,
-        today=ctx.today,
-        role=ctx.role,
-    )
-    return SourceResult(
-        source="db", card_type="briefing", payload=result.model_dump(mode="json"),
-        summary=result.headline, sensitive=True,
-    )
-
-
-async def _run_validated_query(
-    args: RunValidatedQueryArguments, ctx: AgentExecutionContext,
-) -> SourceResult:
-    attempt = await text_to_sql.generate(
-        args.intent,
-        catalog=ctx.catalog,
-        allow_pii=pii.may_see_pii(ctx.role),
-        preferred_tables=args.tables,
-    )
-    if not attempt.validated:
-        raise AgentCompileRejected("validated query was rejected by the SQL safety gate")
-    chart = await asyncio.to_thread(
-        run_sql, attempt, question=args.intent, role=ctx.role, catalog=ctx.catalog,
-    )
-    result = _chart_result(chart)
-    result.lineage = {
-        **(result.lineage or {}),
-        "text_to_sql": {
-            "model": attempt.model,
-            "provider": attempt.provider,
-            "attempts": attempt.attempts,
-            "trace": attempt.trace,
-        },
-    }
-    return result
-
-
-async def _inspect_loan_catalog(
-    args: InspectLoanCatalogArguments, ctx: AgentExecutionContext,
-) -> SourceResult:
-    from app.services.nlq.catalog.retrieval import retrieve
-
-    catalog = ctx.catalog or get_catalog()
-    # Lexical catalog inspection is a small in-memory scan. Keeping it local also avoids
-    # consuming a worker-thread slot needed by warehouse calls.
-    found = retrieve(args.topic, catalog=catalog, use_vectors=False)
-    selected_tables = list(dict.fromkeys([*args.tables, *found.tables]))[:8]
-    selected_table_set = set(selected_tables)
-    metrics = [
-        {
-            "id": metric.id,
-            "label": metric.label,
-            "unit": metric.unit,
-            "grain": metric.grain,
-            "base_table": metric.base_table,
-            "synonyms": list(metric.synonyms),
-            "description": metric.description,
-            "caveat": metric.caveat,
-        }
-        for metric_id in found.metrics
-        if (metric := catalog.metrics.get(metric_id)) is not None
-    ]
-    dimensions = [
-        {
-            "id": dimension.id,
-            "label": dimension.label,
-            "type": dimension.type,
-            "table": dimension.table,
-            "column": dimension.column,
-            "synonyms": list(dimension.synonyms),
-            "description": dimension.description,
-        }
-        for dimension_id in found.dimensions
-        if (dimension := catalog.dimensions.get(dimension_id)) is not None
-    ]
-    tables = [
-        {
-            "name": table_name,
-            "label": table.label,
-            "grain": table.grain,
-            "description": table.description,
-            "coverage_warning": table.coverage_warning,
-            "columns": [
-                {
-                    "id": column.id,
-                    "name": column.column,
-                    "label": column.label,
-                    "unit": column.unit,
-                    "synonyms": list(column.synonyms),
-                    "sensitivity": column.sensitivity,
-                }
-                for column in catalog.columns_for(table_name)
-            ],
-        }
-        for table_name in selected_tables
-        if (table := catalog.table_by_name(table_name)) is not None
-    ]
-    joins = [
-        {
-            "id": join.id,
-            "left": join.left,
-            "right": join.right,
-            "on": [list(pair) for pair in join.on],
-            "cardinality": join.cardinality,
-            "description": join.description,
-        }
-        for join in catalog.joins
-        if join.left in selected_table_set and join.right in selected_table_set
-    ]
-    payload = {
-        "topic": args.topic,
-        "catalog_version": catalog.version,
-        "retrieval_mode": found.mode,
-        "metrics": metrics,
-        "dimensions": dimensions,
-        "tables": tables,
-        "joins": joins,
-        "enum_values": found.enum_values,
-    }
-    return SourceResult(
-        source="schema",
-        card_type="catalog",
-        payload=payload,
-        summary=(
-            f"Catalog metadata: {len(metrics)} metrics, {len(dimensions)} dimensions, "
-            f"{len(tables)} tables, and {len(joins)} declared joins."
-        ),
-        lineage={"catalog_version": catalog.version},
+        sensitive=bool(payload.get("pii_columns")),
+        lineage=chart.lineage.model_dump(mode="json"),
     )
 
 
@@ -475,7 +325,6 @@ async def _search_curated(
 
     handlers: dict[str, Callable[[], Awaitable[SourceResult]]] = {
         "concepts": lambda: nodes.run_knowledge(args.query),
-        "schema": lambda: nodes.run_schema(args.query, access_mode=ctx.data_access),
         "macro": lambda: nodes.run_macro(args.query, policy=ctx.source_policy),
         "competitive": lambda: nodes.run_competitive(args.query, policy=ctx.source_policy),
         "regulatory": lambda: nodes.run_regulatory(args.query, policy=ctx.source_policy),
@@ -497,13 +346,6 @@ async def _search_public_web(
 
 Handler = Callable[[Any, AgentExecutionContext], Awaitable[SourceResult]]
 _HANDLERS: dict[str, Handler] = {
-    "query_metrics": _query_metrics,
-    "lookup_records": _lookup_records,
-    "run_analysis": _run_analysis,
-    "create_worklist": _create_worklist,
-    "generate_briefing": _generate_briefing,
-    "run_validated_query": _run_validated_query,
-    "inspect_loan_catalog": _inspect_loan_catalog,
     "search_curated_knowledge": _search_curated,
     "search_public_web": _search_public_web,
 }
@@ -513,6 +355,18 @@ async def execute_agent_call(
     call: NativeToolCall, ctx: AgentExecutionContext,
 ) -> ExecutedAgentCall:
     """Validate, reauthorize, bound, and execute exactly one native call."""
+    from app.mcp import postgres_client
+
+    if postgres_client.is_model_tool(call.name):
+        ctx.source_policy.require("db")
+        remaining = ctx.deadline_s - (time.monotonic() - ctx.deadline_started_at)
+        try:
+            async with asyncio.timeout(max(0.001, remaining)):
+                card = await _execute_postgres_mcp(call, ctx)
+        except TimeoutError as exc:
+            raise AgentToolTimeout(f"{call.name} exceeded its execution deadline") from exc
+        return ExecutedAgentCall(call=call, card=card)
+
     catalog = ctx.catalog or get_catalog()
     parsed: BaseModel = validate_agent_arguments(
         call.name, call.arguments, policy=ctx.source_policy, catalog=catalog,
@@ -556,7 +410,6 @@ async def execute_agent_call(
 __all__ = [
     "AgentExecutionContext",
     "AgentExecutionError",
-    "AgentCompileRejected",
     "AgentToolTimeout",
     "ExecutedAgentCall",
     "execute_agent_call",

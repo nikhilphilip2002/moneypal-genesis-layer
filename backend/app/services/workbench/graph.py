@@ -96,7 +96,6 @@ class WorkbenchState(TypedDict):
     agent_private_entities: NotRequired[tuple[str, ...]]
     emit: "asyncio.Queue[str | None]"
     pinned: NotRequired[str | None]
-    data_access: NotRequired[str | None]
     source_policy: access.SourceAccessPolicy
     decision: NotRequired[ExecutionDecision]
     results: NotRequired[list[SourceResult]]
@@ -458,7 +457,7 @@ def _spawn_background(coro) -> None:
 
 async def run_workbench(
     *, question: str, conversation_id: str, user: str, role: str, pinned: str | None = None,
-    data_access: str | None = None, external_sources_enabled: bool = False,
+    external_sources_enabled: bool = False,
 ) -> AsyncIterator[str]:
     """Run one turn, yielding SSE frames as the graph produces them."""
     started_at = time.perf_counter()
@@ -599,7 +598,6 @@ async def run_workbench(
         "agent_history_messages": agent_history_messages,
         "agent_private_entities": agent_private_entities,
         "emit": emit, "pinned": pinned,
-        "data_access": data_access,
         "source_policy": source_policy,
         "timing": {
             "started_at": started_at,

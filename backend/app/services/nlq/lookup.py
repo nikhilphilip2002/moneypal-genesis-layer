@@ -1208,12 +1208,42 @@ def _agent_customers(plan: LookupPlan, catalog: Catalog) -> SqlAttempt:
     """Return each borrower once for the selected agent, regardless of loan count."""
     value = _literal(plan.value.lower())
     display_name = "TRIM(REGEXP_REPLACE(reporting.customer_name, '\\s+', ' ', 'g'))"
+    requested = list(dict.fromkeys(plan.requested_fields))
+    available = {
+        "sanction_amount": (
+            "SUM(reporting.sanction_amount) AS sanction_amount", "inr",
+        ),
+        "sanction_date": (
+            "STRING_AGG(DISTINCT reporting.sanction_date::text, ', ' "
+            "ORDER BY reporting.sanction_date::text) AS sanction_date", "text",
+        ),
+        "disbursed_amount": (
+            "SUM(reporting.disbursed_amount) AS disbursed_amount", "inr",
+        ),
+        "first_disbursement_date": (
+            "STRING_AGG(DISTINCT reporting.first_disbursement_date::text, ', ' "
+            "ORDER BY reporting.first_disbursement_date::text) AS first_disbursement_date",
+            "text",
+        ),
+        "scheme_name": (
+            "STRING_AGG(DISTINCT reporting.scheme_name, ', ' "
+            "ORDER BY reporting.scheme_name) AS scheme_name", "text",
+        ),
+        "number_of_emis": (
+            "STRING_AGG(DISTINCT reporting.number_of_emis::text, ', ' "
+            "ORDER BY reporting.number_of_emis::text) AS number_of_emis", "text",
+        ),
+    }
+    projections = [available[field][0] for field in requested if field in available]
+    selected = ", " + ", ".join(projections) if projections else ""
     sql = (
         "SELECT reporting.customer_id::text AS customer_id, "
         + "MIN("
         + display_name
         + ") AS borrower_name, "
-        "COUNT(DISTINCT reporting.loan_account_number) AS linked_loan_count, "
+        "COUNT(DISTINCT reporting.loan_account_number) AS linked_loan_count"
+        + selected
+        + ", "
         "COUNT(reporting.customer_id) OVER () AS total_linked_customer_count "
         "FROM gold.semantic_loan_account AS reporting "
         "WHERE LOWER(reporting.agent_code) = "
@@ -1231,6 +1261,7 @@ def _agent_customers(plan: LookupPlan, catalog: Catalog) -> SqlAttempt:
             "borrower_name": "text",
             "linked_loan_count": "count",
             "total_linked_customer_count": "count",
+            **{field: available[field][1] for field in requested if field in available},
         },
         pii_columns={"customer_name"},
     )
@@ -1498,7 +1529,28 @@ def run(plan: LookupPlan, *, role: str | None, catalog: Catalog | None = None) -
             if effective.detail == "branch_customers"
             else f"Customers linked to {effective.value}"
         )
-        chart.summary = f"Showing {len(chart.rows):,} of {total:,} linked customer(s)."
+        for column in chart.columns:
+            if column.name == "sanction_amount":
+                column.label = "Total sanctioned amount"
+            elif column.name == "disbursed_amount":
+                column.label = "Total disbursed amount"
+            elif column.name == "number_of_emis":
+                column.label = "Tenure (EMIs)"
+            elif column.name == "scheme_name":
+                column.label = "Scheme name(s)"
+        labels = {
+            "sanction_amount": "total sanctioned amount",
+            "sanction_date": "sanction dates",
+            "disbursed_amount": "total disbursed amount",
+            "first_disbursement_date": "first disbursement dates",
+            "scheme_name": "scheme names",
+            "number_of_emis": "tenure (EMIs)",
+        }
+        named = [labels[field] for field in effective.requested_fields if field in labels]
+        suffix = f" with {', '.join(named)}" if named else ""
+        chart.summary = (
+            f"Showing {len(chart.rows):,} of {total:,} linked customer(s){suffix}."
+        )
     elif effective.detail == "repayment_history":
         first = chart.rows[0]
         totals = {

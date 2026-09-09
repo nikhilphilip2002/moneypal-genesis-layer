@@ -51,12 +51,6 @@ class Tool:
 # Thin wrappers over the source nodes, so a tool and the equivalent typed question can never
 # drift. Referencing `nodes.run_*` at call time keeps them monkeypatchable in tests.
 
-async def _show_schema(params: dict, _policy: "SourceAccessPolicy") -> SourceResult:
-    from app.services.workbench import nodes
-
-    return await nodes.run_schema(params.get("search", "") or "")
-
-
 async def _competitor_landscape(params: dict, policy: "SourceAccessPolicy") -> SourceResult:
     from app.services.workbench import nodes
 
@@ -82,16 +76,6 @@ async def _regulatory_alerts(params: dict, policy: "SourceAccessPolicy") -> Sour
 
 
 TOOLS: dict[str, Tool] = {
-    "show_schema": Tool(
-        id="show_schema",
-        label="Show data schema",
-        description="Render the loan-book schema: tables and how they relate.",
-        kind="card",
-        handler=_show_schema,
-        source_id="schema",
-        roles=frozenset({"admin", "gicc_admin", "gicc_director"}),
-        params={"search": {"type": "string", "label": "Focus (optional)", "required": False}},
-    ),
     "competitor_landscape": Tool(
         id="competitor_landscape",
         label="Competitor landscape",

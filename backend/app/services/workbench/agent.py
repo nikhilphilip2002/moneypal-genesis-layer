@@ -112,21 +112,17 @@ def _budget(state: dict[str, Any]) -> TurnBudget:
     return budget
 
 
-_DB_TOOLS = frozenset({
-    "query_metrics", "lookup_records", "run_analysis", "create_worklist",
-    "generate_briefing", "run_validated_query",
-})
 _CURATED_SOURCES = {
-    "concepts": "knowledge", "schema": "schema", "macro": "macro",
+    "concepts": "knowledge", "macro": "macro",
     "competitive": "competitive", "regulatory": "regulatory",
 }
 
 
 def _source_for_call(call) -> str | None:
-    if call.name in _DB_TOOLS:
+    from app.mcp import postgres_client
+
+    if postgres_client.is_model_tool(call.name):
         return "db"
-    if call.name == "inspect_loan_catalog":
-        return "schema"
     if call.name == "search_public_web":
         return "web"
     if call.name == "search_curated_knowledge":
@@ -202,6 +198,12 @@ async def _select(
         state["question"], catalog, supplement=supplement,
     )
     definitions = native_tool_definitions(state["source_policy"], catalog=catalog)
+    if state["source_policy"].allows("db"):
+        from app.mcp import postgres_client
+
+        if not postgres_client.model_tool_definitions():
+            await postgres_client.discover_model_tools()
+        definitions = [*postgres_client.model_tool_definitions(), *definitions]
     if not definitions:
         raise LLMError("no native tools are authorized for this request")
     prompt = prompts.build_agent_prompt(
@@ -253,6 +255,13 @@ def _preflight(result, state: dict[str, Any]) -> list[tuple[str, str, str]]:
         if terminals and len(result.tool_calls) != 1 and call in terminals:
             continue
         try:
+            from app.mcp import postgres_client
+
+            if postgres_client.is_model_tool(call.name):
+                state["source_policy"].require("db")
+                if not isinstance(call.arguments, dict):
+                    raise AgentToolArgumentsInvalid("MCP tool arguments must be a JSON object")
+                continue
             parsed = validate_agent_arguments(
                 call.name, call.arguments,
                 policy=state["source_policy"], catalog=state.get("_agent_catalog"),
@@ -286,7 +295,12 @@ def _preflight(result, state: dict[str, Any]) -> list[tuple[str, str, str]]:
 
 
 def _authorized_tool_names(state: dict[str, Any]) -> list[str]:
-    return [tool.name for tool in visible_agent_tools(state["source_policy"])]
+    from app.mcp import postgres_client
+
+    names = [tool.name for tool in visible_agent_tools(state["source_policy"])]
+    if state["source_policy"].allows("db"):
+        names = [*postgres_client.readiness()["tools"], *names]
+    return names
 
 
 def _failure_observation(call, message: str, code: str, state: dict[str, Any] | None):
@@ -343,6 +357,10 @@ def _raise_first_failure(failures: list[tuple[str, str, str]]) -> None:
 
 def _stored_arguments(state: dict[str, Any], call, failed: bool) -> dict[str, Any]:
     if failed:
+        return call.arguments
+    from app.mcp import postgres_client
+
+    if postgres_client.is_model_tool(call.name):
         return call.arguments
     try:
         return validate_agent_arguments(
@@ -510,7 +528,7 @@ async def select_calls(state: dict[str, Any]):
         failures = _preflight(result, state)
         if not failures:
             return result
-        if not budget.rounds_remaining or not settings.workbench_agent_argument_repairs:
+        if not budget.rounds_remaining:
             _raise_first_failure(failures)
         _persist_exchange(state, result, failures, ())
         exchange.extend(_repair_messages(result, failures, state=state))
@@ -522,7 +540,11 @@ async def _execute_one(state, context: AgentExecutionContext, call) -> ExecutedA
     except Exception as exc:  # noqa: BLE001 - isolate independent calls
         logger.warning("native tool %s failed: %s", call.name, exc)
         code = getattr(exc, "code", "SOURCE_UNAVAILABLE")
-        error: dict[str, Any] = {"code": code, "message": str(exc)[:500]}
+        error: dict[str, Any] = {
+            "code": code,
+            "message": str(exc)[:500],
+            "retryable": bool(getattr(exc, "retryable", True)),
+        }
         if code == "PII_POLICY_VIOLATION":
             # The outbound privacy gate is a policy denial like any other: the model is
             # told what was denied and what it may still call, then decides.
@@ -550,7 +572,8 @@ async def _stream_item(state: dict[str, Any], item: ExecutedAgentCall) -> None:
                 source=source, card_type="error",
                 payload={
                     "message": _user_error_message(code, state["turn_id"]),
-                    "code": code, "retryable": code == "TOOL_TIMEOUT",
+                    "code": code,
+                    "retryable": bool(item.error.get("retryable", True)),
                 },
             )
     if item.card is None:
@@ -577,8 +600,16 @@ async def _execute_batch(state, context: AgentExecutionContext, calls) -> list[E
             await state["emit"].put(sse("source_start", {"source": source, "tool": call.name}))
 
     output: list[ExecutedAgentCall | None] = [None] * len(calls)
-    parallel = [(i, call) for i, call in enumerate(calls) if get_agent_tool(call.name).parallel_safe]
-    serial = [(i, call) for i, call in enumerate(calls) if not get_agent_tool(call.name).parallel_safe]
+    from app.mcp import postgres_client
+
+    parallel = [
+        (i, call) for i, call in enumerate(calls)
+        if not postgres_client.is_model_tool(call.name) and get_agent_tool(call.name).parallel_safe
+    ]
+    serial = [
+        (i, call) for i, call in enumerate(calls)
+        if postgres_client.is_model_tool(call.name) or not get_agent_tool(call.name).parallel_safe
+    ]
     if parallel:
         async def indexed(index, call):
             return index, await _execute_one(state, context, call)
@@ -648,9 +679,10 @@ async def _end_without_data(state: dict[str, Any], payload: dict[str, Any], *, o
 async def run(state: dict[str, Any]) -> None:
     """One bounded loop: request, observe, execute, repeat; then answer.
 
-    Each iteration is one LLM request. ``required`` while nothing has been retrieved,
-    ``auto`` once there is evidence, and ``none`` on the final round when there is
-    evidence, so a result executed on the last tool round is still shown to the model.
+    Each iteration is one LLM request. The first round is ``auto`` so the agent can answer
+    schema and conceptual questions from supplied context, while its system contract requires
+    PostgreSQL MCP evidence for loan-book figures and records. The last evidence-backed round
+    is ``none`` so a result executed on the previous tool round is still synthesized.
     """
     from app.services.workbench.graph import answer_results, sse
 
@@ -668,8 +700,8 @@ async def run(state: dict[str, Any]) -> None:
         conversation_id=state["conversation_id"], turn_id=state["turn_id"],
         source_policy=state["source_policy"],
         deadline_s=max(0.001, budget.deadline - time.perf_counter()),
+        question=state["question"],
         catalog=catalog, catalog_version=getattr(catalog, "version", ""),
-        data_access=state.get("data_access"),
         private_entities=tuple(state.get("agent_private_entities", ())),
     )
     await emit.put(sse("stage", {"stage": "routing", "agent": "native"}))
@@ -686,7 +718,7 @@ async def run(state: dict[str, Any]) -> None:
         if not has_data:
             if not budget.calls_remaining:
                 break
-            tool_choice = "required"
+            tool_choice = "auto"
         elif budget.rounds_remaining == 1 or not budget.calls_remaining:
             tool_choice = "none"
         else:
@@ -767,8 +799,6 @@ async def run(state: dict[str, Any]) -> None:
         executed.extend(items)
         denial = _denial(failures, items) or denial
         last_error = _latest_error(failures, items)
-        if failures and not settings.workbench_agent_argument_repairs:
-            _raise_first_failure(failures)
     logger.info("native agent turn budget %s", budget.snapshot())
 
     terminal = next((item for item in executed if item.terminal is not None), None)

@@ -172,14 +172,13 @@ class Settings:
         if self.nlq_sql_function_mode not in ("denylist", "allowlist"):
             self.nlq_sql_function_mode = "denylist"
 
-        # PostgreSQL access can be switched between the in-process adapter and the MCP
-        # service. Direct remains the safe fallback; `mcp` makes the protocol boundary real
-        # so deployments can measure its latency and operational trade-offs.
-        self.postgres_access_mode = (get("POSTGRES_ACCESS_MODE", "direct") or "direct").lower()
-        if self.postgres_access_mode not in ("direct", "mcp"):
-            self.postgres_access_mode = "direct"
         self.postgres_mcp_url = get("POSTGRES_MCP_URL", "http://postgres-mcp:8001/mcp") or "http://postgres-mcp:8001/mcp"
         self.postgres_mcp_timeout_s = float(get("POSTGRES_MCP_TIMEOUT_S", "30") or "30")
+        self.postgres_mcp_model_tools = tuple(
+            name.strip()
+            for name in (get("POSTGRES_MCP_MODEL_TOOLS", "query") or "query").split(",")
+            if name.strip()
+        )
 
         # Exa is a public-web boundary. It is independently gated so deployments can keep
         # the private Workbench running when the external search quota or network is down.
@@ -231,9 +230,6 @@ class Settings:
         )
         self.workbench_agent_max_tool_calls = max(
             1, min(12, int(get("WORKBENCH_AGENT_MAX_TOOL_CALLS", "6") or "6"))
-        )
-        self.workbench_agent_argument_repairs = max(
-            0, min(1, int(get("WORKBENCH_AGENT_ARGUMENT_REPAIRS", "1") or "1"))
         )
         self.workbench_agent_synthesis_repairs = max(
             0, min(1, int(get("WORKBENCH_AGENT_SYNTHESIS_REPAIRS", "1") or "1"))

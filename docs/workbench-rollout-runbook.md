@@ -6,7 +6,7 @@
 2. Confirm `uv.lock` contains no LangGraph or LangChain packages.
 3. Verify new conversations omit or send `external_sources_enabled=false` by default.
 4. Verify connector-off requests record zero macro/competitive/regulatory/web attempts.
-5. Exercise direct PostgreSQL and PostgreSQL MCP in the target environment.
+5. Exercise PostgreSQL MCP discovery and read-only query execution in the target environment.
 
 Build, start, and run the automated smoke verifier on the deployment machine:
 
@@ -23,17 +23,20 @@ python backend/scripts/verify_workbench_rollout.py \
 
 Pass the FastAPI origin without `/api` when verifying a backend process directly. Pass the
 nginx origin with `/api`, as above, because nginx strips that prefix before proxying.
-`--require-llm` prevents deterministic database and retrieval fallbacks from producing a
-false-green rollout while the configured model endpoint is down, still loading, serving a
-different model, or unable to prove its model identity through `/v1/models`.
+`--require-llm` prevents a false-green rollout while the configured model endpoint is down or
+still loading. Runtime readiness checks use status only and do not inspect model names.
+
+The root health payload is non-blocking and reports cached startup state. Before traffic, verify
+`workbench.postgres_mcp.status=ok`, `workbench.postgres_mcp.tools=["query"]`, and
+`workbench.gold_schema.status=ok`. Run these checks on the deployment machine; they do not require
+or imply that a developer workstation can reach the remote containers or database.
 
 The LLM is intentionally hosted outside this Compose stack. Before deploying the app, start
-`llama-server` on the private GPU host using the command in `GENESIS_NLQ_RUNBOOK.md`, confirm
-its `/health` and `/v1/models` endpoints from the backend host, and set `NLQ_LLM_MODEL` to the
-exact id returned by `/v1/models`. Restart the backend after changing `.env`.
+`llama-server` on the private GPU host using the command in `GENESIS_NLQ_RUNBOOK.md` and confirm
+its `/health` endpoint from the backend host. Restart the backend after changing `.env`.
 
-Run it once with `POSTGRES_ACCESS_MODE=direct` and once with
-`POSTGRES_ACCESS_MODE=mcp`, using the deployment's normal non-demo token when applicable.
+Verify that startup discovers the authorized PostgreSQL MCP tools and that Workbench requests
+cannot select or fall back to a direct PostgreSQL adapter.
 
 The API, PostgreSQL MCP server, and macro pipeline reuse `moneypal-backend:local`. The
 Dockerfile installs CPU-only PyTorch before `genesis-core`, and `.dockerignore` excludes the

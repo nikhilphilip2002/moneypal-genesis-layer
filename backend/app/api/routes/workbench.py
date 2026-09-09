@@ -110,7 +110,6 @@ class AskRequest(BaseModel):
     conversation_id: str | None = None
     # "+" -> Pin a source. Policy narrows the native tool set to that authorized source.
     pinned_source: str | None = None
-    data_access: Literal["direct", "mcp"] | None = None
     external_sources_enabled: bool = False
 
 
@@ -120,7 +119,6 @@ async def sources(authorization: str | None = Header(default=None)):
     _, role = _identity(authorization)
     return {
         "mode": models.active_mode(),
-        "data_access": settings.postgres_access_mode,
         "sources": access.source_metadata(role),
     }
 
@@ -274,7 +272,6 @@ async def ask(req: AskRequest, authorization: str | None = Header(default=None))
             user=username,
             role=role,
             pinned=req.pinned_source,
-            data_access=req.data_access,
             external_sources_enabled=req.external_sources_enabled,
         ),
         media_type="text/event-stream",
