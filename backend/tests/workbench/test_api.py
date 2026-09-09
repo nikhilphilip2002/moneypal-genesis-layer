@@ -184,6 +184,32 @@ class TestConversationOwnership:
         assert body["record_version"] == history.RECORD_VERSION
         assert body["turns"][0]["cards"][0]["payload"]["summary"] == "Growth is stable."
 
+    @pytest.mark.anyio
+    async def test_route_tools_and_error_details_are_returned_for_ui_hydration(
+        self, client,
+    ):
+        from app.services.workbench import history
+
+        turn_id = history.begin_turn("diagnostic", "gicc_policy", "Show PAR 30")
+        history.set_route(
+            "diagnostic", "gicc_policy", turn_id,
+            sources=["db"], intent="Show PAR 30", tools=["query_metrics"],
+        )
+        history.set_error(
+            "diagnostic", "gicc_policy", turn_id, "Timed out.",
+            code="AGENT_TIMEOUT", retryable=True,
+        )
+
+        body = (await client.get(
+            "/workbench/conversations/diagnostic", headers=_auth("gicc_policy"),
+        )).json()
+        turn = body["turns"][0]
+        assert turn["route"]["tools"] == ["query_metrics"]
+        assert turn["error"] == "Timed out."
+        assert turn["error_details"] == {
+            "message": "Timed out.", "code": "AGENT_TIMEOUT", "retryable": True,
+        }
+
 
 class TestAskStreamOverflow:
     @pytest.mark.anyio

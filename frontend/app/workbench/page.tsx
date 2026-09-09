@@ -104,7 +104,9 @@ export default function WorkbenchPage() {
         answer: turn.answer ?? undefined,
         synthesis: turn.synthesis ?? undefined,
         refusal: turn.refusal ?? undefined,
-        error: turn.error ?? undefined,
+        error: turn.error_details ?? (
+          turn.error ? { message: turn.error } : undefined
+        ),
         done: turn.status !== 'running',
         route: turn.route,
         legacyAnswerUnavailable: turn.legacy_answer_unavailable,
@@ -155,7 +157,10 @@ export default function WorkbenchPage() {
             patch({ stage: event.stage });
             break;
           case 'route':
-            patch({ route: { sources: event.sources, intent: event.intent }, pending: event.sources });
+            {
+              const { type: _type, ...route } = event;
+              patch({ route, pending: event.sources });
+            }
             break;
           case 'source_start':
             patchWith((turn) => ({ ...turn, pending: [...new Set([...turn.pending, event.source])] }));
@@ -173,7 +178,7 @@ export default function WorkbenchPage() {
             patch({ refusal: event.refusal });
             break;
           case 'error':
-            patch({ error: event.message });
+            patch({ error: event });
             break;
           case 'done':
             patch({ done: true, stage: undefined });
@@ -182,7 +187,11 @@ export default function WorkbenchPage() {
       }
     } catch (error: any) {
       patch({
-        error: error?.name === 'AbortError' ? 'Response stopped.' : error?.message ?? 'Something went wrong.',
+        error: {
+          message: error?.name === 'AbortError'
+            ? 'Response stopped.'
+            : error?.message ?? 'Something went wrong.',
+        },
         done: true,
       });
     } finally {
@@ -214,7 +223,7 @@ export default function WorkbenchPage() {
       const card = await workbench.runTool(tool.id, {}, externalSourcesEnabled);
       patch({ cards: [card], done: true });
     } catch (error: any) {
-      patch({ error: error?.message ?? 'The tool failed.', done: true });
+      patch({ error: { message: error?.message ?? 'The tool failed.' }, done: true });
     } finally {
       setBusy(false);
     }

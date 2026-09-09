@@ -561,6 +561,7 @@ async def _announce_route(state: dict[str, Any], calls) -> None:
         sources=sources, intent=state["question"], model="native_agent",
         reason="native_tool_selection",
         effective_sources=decision.effective_sources,
+        tools=[call.name for call in calls],
     )
 
 

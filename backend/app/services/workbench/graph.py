@@ -283,11 +283,17 @@ async def answer_results(state: WorkbenchState) -> dict[str, Any]:
                 # second generic Workbench error underneath it.
                 message = str(first_error.payload.get("message") or "Source unavailable.")
                 _persist(history.set_error,
-                    state["conversation_id"], state["user"], state["turn_id"], message
+                    state["conversation_id"], state["user"], state["turn_id"], message,
+                    code=str(first_error.payload.get("code") or "SOURCE_UNAVAILABLE"),
+                    retryable=bool(first_error.payload.get("retryable")),
                 )
                 return {}
             message = "No intelligence source produced a usable answer."
-            _persist(history.set_error, state["conversation_id"], state["user"], state["turn_id"], message)
+            _persist(
+                history.set_error,
+                state["conversation_id"], state["user"], state["turn_id"], message,
+                code="NO_USABLE_RESULT", retryable=True,
+            )
             await emit.put(sse("error", {
                 "code": "NO_USABLE_RESULT", "message": message, "retryable": True,
             }))
@@ -520,7 +526,10 @@ async def run_workbench(
                 error=str(exc),
                 data={"code": CONTEXT_CAPACITY_CODE, "reason": exc.reason},
             )
-            _persist(history.set_error, conversation_id, user, turn_id, CONTEXT_FULL_MESSAGE)
+            _persist(
+                history.set_error, conversation_id, user, turn_id, CONTEXT_FULL_MESSAGE,
+                code=CONTEXT_CAPACITY_CODE, retryable=False, reason=exc.reason,
+            )
             _persist(history.complete_turn, conversation_id, user, turn_id, partial=True)
             # `reason` says whether compaction could have helped
             # (conversation_exceeds_budget) or the newest turn alone is too large
@@ -551,7 +560,10 @@ async def run_workbench(
                 error=str(exc),
                 data={"code": "HISTORY_UNAVAILABLE"},
             )
-            _persist(history.set_error, conversation_id, user, turn_id, message)
+            _persist(
+                history.set_error, conversation_id, user, turn_id, message,
+                code="HISTORY_UNAVAILABLE", retryable=True,
+            )
             _persist(history.complete_turn, conversation_id, user, turn_id, partial=True)
             yield sse("error", {
                 "message": message, "retryable": True, "code": "HISTORY_UNAVAILABLE",
@@ -566,7 +578,15 @@ async def run_workbench(
                 "workbench transcript overflow: conversation=%s tokens=%d budget=%d",
                 conversation_id, built.tokens, built.budget,
             )
-            yield sse("error", {"message": CONTEXT_FULL_MESSAGE, "retryable": False})
+            _persist(
+                history.set_error, conversation_id, user, turn_id, CONTEXT_FULL_MESSAGE,
+                code=CONTEXT_CAPACITY_CODE, retryable=False,
+            )
+            yield sse("error", {
+                "code": CONTEXT_CAPACITY_CODE,
+                "message": CONTEXT_FULL_MESSAGE,
+                "retryable": False,
+            })
         yield sse("stage", {"stage": "understanding"})
     except (GeneratorExit, asyncio.CancelledError):
         _persist(history.complete_turn, conversation_id, user, turn_id, partial=True)
@@ -618,7 +638,10 @@ async def run_workbench(
                 outcome="error",
                 error=str(exc), data={"code": code},
             )
-            _persist(history.set_error, conversation_id, user, turn_id, message)
+            _persist(
+                history.set_error, conversation_id, user, turn_id, message,
+                code=code, retryable=retryable,
+            )
             await emit.put(sse("error", {
                 "code": code, "message": message, "retryable": retryable,
             }))

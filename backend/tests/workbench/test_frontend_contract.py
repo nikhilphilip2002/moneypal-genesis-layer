@@ -22,3 +22,23 @@ def test_external_workspace_actions_are_consent_gated():
         assert f"'{workspace}'" in source
     assert "EXTERNAL_WORKSPACES.has(view) && !externalSourcesEnabled" in source
     assert "disabled={EXTERNAL_WORKSPACES.has(module.id) && !externalSourcesEnabled}" in source
+
+
+def test_workbench_stream_preserves_native_contract_fields():
+    api = (ROOT / "frontend/lib/api.ts").read_text()
+    assert "facts?: WorkbenchVerifiedFact[]" in api
+    assert "suggestions?: string[]" in api
+    assert "tools?: string[]" in api
+    assert "code?: string" in api
+    assert "message: payload.text ?? payload.message ?? ''" in api
+    assert "policy_version: payload.policy_version, tools: payload.tools || []" in api
+    assert "retryable: !!payload.retryable, reason: payload.reason" in api
+
+
+def test_workbench_turn_renders_preserved_answer_and_route_metadata():
+    source = (ROOT / "frontend/components/workbench/WorkbenchTurn.tsx").read_text()
+    assert "'schema', 'catalog'" in source
+    assert 'aria-label="Verified facts"' in source
+    assert 'aria-label="Suggested follow-up questions"' in source
+    assert "turn.error.code" in source
+    assert 'aria-label="Capabilities used"' in source

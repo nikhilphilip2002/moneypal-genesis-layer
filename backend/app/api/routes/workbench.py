@@ -174,6 +174,7 @@ def _turn_for_api(turn: dict) -> dict:
         "synthesis": turn.get("synthesis"),
         "refusal": turn.get("refusal"),
         "error": turn.get("error"),
+        "error_details": turn.get("error_details"),
         "status": turn.get("status", "complete"),
         "created_at": turn.get("created_at") or turn.get("at"),
         "completed_at": turn.get("completed_at"),

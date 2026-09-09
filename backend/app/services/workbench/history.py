@@ -440,9 +440,16 @@ def derive_turn_events(turn: dict[str, Any]) -> list[dict[str, Any]]:
     if isinstance(refusal, dict):
         _append_turn_event(shadow, "final_answer", {"refusal": refusal}, timestamp=completed or None, derived=True)
     if turn.get("error"):
-        _append_turn_event(shadow, "execution_error", {
-            "message": str(turn["error"]),
-        }, timestamp=completed or None, derived=True)
+        details = turn.get("error_details")
+        payload = (
+            dict(details)
+            if isinstance(details, dict)
+            else {"message": str(turn["error"])}
+        )
+        _append_turn_event(
+            shadow, "execution_error", payload,
+            timestamp=completed or None, derived=True,
+        )
     return shadow["events"]
 
 
@@ -526,6 +533,7 @@ def begin_turn(
         "synthesis": None,
         "refusal": None,
         "error": None,
+        "error_details": None,
         "status": "running",
         "created_at": created_at.isoformat(),
         "completed_at": None,
@@ -544,6 +552,7 @@ def set_route(
     model: str = "",
     reason: str = "",
     effective_sources: list[str] | tuple[str, ...] = (),
+    tools: list[str] | tuple[str, ...] = (),
 ) -> None:
     def apply(turn: dict[str, Any]) -> None:
         turn["sources"] = list(sources)
@@ -551,6 +560,7 @@ def set_route(
             "sources": list(sources), "intent": intent, "model": model,
             "reason": reason,
             "effective_sources": list(effective_sources),
+            "tools": list(tools),
         }
         _append_turn_event(turn, "route_decision", dict(turn["route"]))
 
@@ -804,10 +814,26 @@ def set_refusal(conversation_id: str, user: str, turn_id: str, payload: dict[str
     _mutate(conversation_id, user, turn_id, apply)
 
 
-def set_error(conversation_id: str, user: str, turn_id: str, message: str) -> None:
+def set_error(
+    conversation_id: str,
+    user: str,
+    turn_id: str,
+    message: str,
+    *,
+    code: str | None = None,
+    retryable: bool | None = None,
+    reason: str | None = None,
+) -> None:
     def apply(turn: dict[str, Any]) -> None:
         turn["error"] = message
-        _append_turn_event(turn, "execution_error", {"message": message})
+        details = {
+            "message": message,
+            **({"code": code} if code else {}),
+            **({"retryable": retryable} if retryable is not None else {}),
+            **({"reason": reason} if reason else {}),
+        }
+        turn["error_details"] = details
+        _append_turn_event(turn, "execution_error", details)
 
     _mutate(conversation_id, user, turn_id, apply)
 

@@ -122,6 +122,30 @@ testing is out of scope.
 - [x] Confirm `plan.md`, `TODO.md`, and final `context.md` describe the same architecture and
       completion state.
 
+## Phase H — Workbench contract fidelity
+
+### H1. Stream and history contracts
+
+- [x] Add answer suggestions, refusal metadata, route tools, and structured errors to the
+      frontend API/event contracts.
+- [x] Parse refusal `text`, route `tools`, and complete structured errors from live SSE.
+- [x] Preserve the same route and error metadata in persisted history and reopened turns.
+
+### H2. Rendering
+
+- [x] Render verified facts separately from answer prose.
+- [x] Include `catalog` in final-answer supporting cards.
+- [x] Render direct-answer suggestions as accessible `onAsk` chips.
+- [x] Render error codes/references without obscuring the error message.
+- [x] Show model-selected native tools separately from source badges.
+
+### H3. Tests and rollout
+
+- [x] Add live/parser, history-compatibility, and rendering contract regressions for every field.
+- [x] Run focused backend tests, Ruff, TypeScript, production frontend build, and `git diff --check`.
+- [ ] Deploy, then verify representative answer, clarification, refusal, error, catalog, and
+      history-reload flows against the live Workbench.
+
 ## Standing rules
 
 - The LLM selects behavior; application code enforces permissions and safety.

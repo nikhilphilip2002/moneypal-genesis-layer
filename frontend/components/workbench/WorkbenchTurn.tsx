@@ -2,7 +2,8 @@
 
 import { Loader2, AlertTriangle, Ban, HelpCircle, Sparkles } from 'lucide-react';
 import { nlq, type AnalysisResult, type ChartSpec, type QuerySpec, type Briefing, type Worklist,
-  type WorkbenchAnswer, type WorkbenchCard as CardData } from '@/lib/api';
+  type WorkbenchAnswer, type WorkbenchCard as CardData, type WorkbenchError,
+  type WorkbenchRoute } from '@/lib/api';
 import AnalysisCard from '@/components/nlq/AnalysisCard';
 import ChartRenderer from '@/components/nlq/ChartRenderer';
 import NextQuestions from '@/components/nlq/NextQuestions';
@@ -27,13 +28,13 @@ export type WorkbenchTurnData = {
   id: string;
   question: string;
   stage?: string;
-  route?: { sources: string[]; intent: string };
+  route?: WorkbenchRoute;
   pending: string[]; // source ids dispatched but not yet returned
   cards: CardData[];
   answer?: WorkbenchAnswer;
   synthesis?: string;
-  refusal?: { reason: string; message: string };
-  error?: string;
+  refusal?: { reason?: string; message: string; origin?: string };
+  error?: WorkbenchError;
   legacyAnswerUnavailable?: boolean;
   partial?: boolean;
   done: boolean;
@@ -47,7 +48,7 @@ const BRIEF_TITLES: Record<string, string> = {
 export default function WorkbenchTurn({ turn, onAsk }: { turn: WorkbenchTurnData; onAsk: (q: string) => void }) {
   const hasFinalAnswer = Boolean(turn.answer || turn.synthesis);
   const supportingCards = hasFinalAnswer
-    ? turn.cards.filter((card) => ['chart', 'analysis', 'worklist', 'briefing', 'schema'].includes(card.card_type))
+    ? turn.cards.filter((card) => ['chart', 'analysis', 'worklist', 'briefing', 'schema', 'catalog'].includes(card.card_type))
     : (turn.done ? turn.cards : []);
   const answerText = turn.answer?.text || turn.synthesis;
   return (
@@ -69,6 +70,47 @@ export default function WorkbenchTurn({ turn, onAsk }: { turn: WorkbenchTurnData
           {answerText && (
             <div className="text-sm leading-7 text-foreground">
               <BriefRenderer content={answerText} />
+            </div>
+          )}
+
+          {turn.answer?.facts && turn.answer.facts.length > 0 && (
+            <div className="rounded-xl border border-border/60 bg-muted/25 px-3 py-2.5" aria-label="Verified facts">
+              <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                Verified facts
+              </p>
+              <dl className="mt-2 grid gap-2 sm:grid-cols-2">
+                {turn.answer.facts.map((fact, index) => {
+                  const context = [
+                    fact.period,
+                    ...Object.entries(fact.dimensions ?? {}).map(([key, value]) => `${key}: ${value}`),
+                  ].filter(Boolean).join(' · ');
+                  return (
+                    <div key={`${fact.id}-${index}`} className="min-w-0">
+                      <dt className="truncate text-xs text-muted-foreground">{fact.label}</dt>
+                      <dd className="text-sm font-medium text-foreground">
+                        {fact.display_value || fact.value}
+                      </dd>
+                      {context && <dd className="truncate text-[10px] text-muted-foreground">{context}</dd>}
+                    </div>
+                  );
+                })}
+              </dl>
+            </div>
+          )}
+
+          {turn.answer?.suggestions && turn.answer.suggestions.length > 0 && (
+            <div className="flex flex-wrap gap-1.5" aria-label="Suggested follow-up questions">
+              {turn.answer.suggestions.map((suggestion) => (
+                <Button
+                  key={suggestion}
+                  size="sm"
+                  variant="outline"
+                  className={SUGGESTION_CHIP}
+                  onClick={() => onAsk(suggestion)}
+                >
+                  {suggestion}
+                </Button>
+              ))}
             </div>
           )}
 
@@ -128,7 +170,12 @@ export default function WorkbenchTurn({ turn, onAsk }: { turn: WorkbenchTurnData
 
           {turn.error && (
             <StatusRow icon={AlertTriangle} tone="danger" surface>
-              {turn.error}
+              <span>{turn.error.message}</span>
+              {turn.error.code && (
+                <span className="ml-1 font-mono text-[10px] text-muted-foreground">
+                  ({turn.error.code})
+                </span>
+              )}
             </StatusRow>
           )}
 
@@ -150,6 +197,17 @@ export default function WorkbenchTurn({ turn, onAsk }: { turn: WorkbenchTurnData
               {(turn.answer?.sources.length ? turn.answer.sources : turn.route.sources).map((source) => (
                 <Badge key={source} variant="outline" className={`${SOURCE_BADGE} text-muted-foreground`}>
                   {sourceLabel(source)}
+                </Badge>
+              ))}
+            </div>
+          )}
+
+          {turn.done && turn.route?.tools && turn.route.tools.length > 0 && (
+            <div className="flex flex-wrap items-center gap-1.5 pt-0.5" aria-label="Capabilities used">
+              <span className="text-[11px] leading-5 text-muted-foreground">Capabilities used</span>
+              {turn.route.tools.map((tool) => (
+                <Badge key={tool} variant="secondary" className={`${SOURCE_BADGE} font-mono normal-case tracking-normal text-muted-foreground`}>
+                  {tool}
                 </Badge>
               ))}
             </div>

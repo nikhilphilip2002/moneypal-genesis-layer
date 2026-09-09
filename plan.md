@@ -216,7 +216,37 @@ The work is complete when:
 - the full suite and native corpus pass against the deployed model; and
 - the final handoff accurately records the deployed native-only system.
 
-## 8. Non-goals
+## 8. Phase H — Workbench contract fidelity
+
+The live SSE stream, persisted conversation history, frontend types, and rendered turn must
+preserve the same user-visible and diagnostic information. New fields remain optional when
+reading older history records.
+
+### H1. Align shared stream and history contracts
+
+- Preserve route tool names, structured error code/retryability/reason, answer suggestions,
+  refusal reason/origin, and verified facts in frontend types and state.
+- Parse native refusal text from the backend's canonical `text` field.
+- Persist route tool names and structured error metadata so a reopened conversation matches the
+  live turn.
+
+### H2. Complete Workbench rendering
+
+- Render verified facts separately from qualitative answer prose.
+- Keep catalog-inspection cards visible as supporting evidence when a final answer exists.
+- Render direct-answer suggestions as accessible follow-up actions.
+- Show structured error references without replacing the human-readable message.
+- Show native capabilities used separately from source badges.
+
+### H3. Compatibility and validation
+
+- Load version-7 and older records whose route and error fields lack the new optional metadata.
+- Add contract tests for live parsing expectations, history round trips, refusal text,
+  suggestions, facts, catalog cards, errors, and route tools.
+- Run focused backend tests, Ruff, TypeScript, the production frontend build, and live SSE/history
+  smoke tests after deployment.
+
+## 9. Non-goals
 
 - Cross-model Ling/Qwen benchmarking.
 - Shadow or percentage-canary execution.

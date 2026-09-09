@@ -1158,6 +1158,28 @@ export type WorkbenchAnswer = {
   }[];
   unavailable_sources: { source: string; type: string; reason: string }[];
   limitations: { source: string; reason: string }[];
+  suggestions?: string[];
+  reason?: string | null;
+  origin?: string;
+};
+
+export type WorkbenchRoute = {
+  sources: string[];
+  intent: string;
+  model?: string;
+  reason?: string;
+  confidence?: number;
+  fallback_used?: boolean;
+  policy_version?: string;
+  effective_sources?: string[];
+  tools?: string[];
+};
+
+export type WorkbenchError = {
+  message: string;
+  code?: string;
+  retryable?: boolean;
+  reason?: string;
 };
 
 export type WorkbenchConversation = {
@@ -1170,13 +1192,13 @@ export type WorkbenchConversation = {
 export type WorkbenchStreamEvent =
   | { type: 'conversation'; conversation_id: string }
   | { type: 'stage'; stage: string }
-  | { type: 'route'; sources: string[]; intent: string; model: string; reason?: string; confidence?: number; fallback_used?: boolean; policy_version?: string }
+  | ({ type: 'route' } & WorkbenchRoute)
   | { type: 'source_start'; source: string }
   | { type: 'source_card'; card: WorkbenchCard }
   | { type: 'answer'; answer: WorkbenchAnswer }
   | { type: 'synthesis'; text: string }
-  | { type: 'refusal'; refusal: { reason: string; message: string } }
-  | { type: 'error'; message: string; retryable: boolean }
+  | { type: 'refusal'; refusal: { reason?: string; message: string; origin?: string } }
+  | ({ type: 'error' } & WorkbenchError)
   | { type: 'done' };
 
 export type WorkbenchTool = {
@@ -1212,13 +1234,14 @@ export const workbench = {
     turns: {
       id: string;
       question: string;
-      route: { sources: string[]; intent: string; model?: string };
+      route: WorkbenchRoute;
       sources: string[];
       cards: WorkbenchCard[];
       answer: WorkbenchAnswer | null;
       synthesis: string | null;
       refusal: { reason: string; message: string } | null;
       error: string | null;
+      error_details?: WorkbenchError | null;
       status: 'running' | 'complete' | 'partial';
       created_at: string | null;
       completed_at: string | null;
@@ -1301,7 +1324,8 @@ export const workbench = {
               type: 'route', sources: payload.sources || [], intent: payload.intent || '',
               model: payload.model || '', reason: payload.reason,
               confidence: payload.confidence, fallback_used: payload.fallback_used,
-              policy_version: payload.policy_version,
+              policy_version: payload.policy_version, tools: payload.tools || [],
+              effective_sources: payload.effective_sources,
             };
             break;
           case 'source_start': yield { type: 'source_start', source: payload.source }; break;
@@ -1312,8 +1336,22 @@ export const workbench = {
           }
           case 'answer': yield { type: 'answer', answer: payload as WorkbenchAnswer }; break;
           case 'synthesis': yield { type: 'synthesis', text: payload.text }; break;
-          case 'refusal': yield { type: 'refusal', refusal: { reason: payload.reason, message: payload.message } }; break;
-          case 'error': yield { type: 'error', message: payload.message, retryable: !!payload.retryable }; break;
+          case 'refusal':
+            yield {
+              type: 'refusal',
+              refusal: {
+                reason: payload.reason,
+                message: payload.text ?? payload.message ?? '',
+                origin: payload.origin,
+              },
+            };
+            break;
+          case 'error':
+            yield {
+              type: 'error', message: payload.message, code: payload.code,
+              retryable: !!payload.retryable, reason: payload.reason,
+            };
+            break;
           case 'done': yield { type: 'done' }; return;
         }
       }

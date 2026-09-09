@@ -99,6 +99,42 @@ def test_new_conversation_starts_with_empty_context():
     assert history.transcript("new", user="alice") == []
 
 
+def test_route_tools_and_structured_error_round_trip():
+    turn_id = history.begin_turn("diagnostic", "alice", "Show PAR 30")
+    history.set_route(
+        "diagnostic", "alice", turn_id,
+        sources=["db"], intent="Show PAR 30", model="native_agent",
+        tools=["query_metrics"],
+    )
+    history.set_error(
+        "diagnostic", "alice", turn_id, "The model timed out.",
+        code="AGENT_TIMEOUT", retryable=True, reason="deadline",
+    )
+
+    turn = history.get("diagnostic", user="alice").turns[0]
+    assert turn["route"]["tools"] == ["query_metrics"]
+    assert turn["error"] == "The model timed out."
+    assert turn["error_details"] == {
+        "message": "The model timed out.",
+        "code": "AGENT_TIMEOUT",
+        "retryable": True,
+        "reason": "deadline",
+    }
+    assert turn["events"][1]["payload"]["tools"] == ["query_metrics"]
+    assert turn["events"][2]["payload"]["code"] == "AGENT_TIMEOUT"
+
+
+def test_legacy_string_error_derives_backward_compatible_event():
+    events = history.derive_turn_events({
+        "question": "Old question",
+        "error": "Old error",
+        "created_at": "2026-01-01T00:00:00+00:00",
+    })
+
+    error = next(event for event in events if event["type"] == "execution_error")
+    assert error["payload"] == {"message": "Old error"}
+
+
 def test_transcript_respects_the_token_budget():
     for index in range(12):
         turn_id = history.begin_turn("long", "alice", f"Question {index} " + "q" * 100)
