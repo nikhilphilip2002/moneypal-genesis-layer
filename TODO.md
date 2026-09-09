@@ -1,91 +1,134 @@
-# LLM-Controlled Workbench TODO
+# Native Tool-Calling Workbench TODO
 
-Updated: 2026-09-08
+Updated: 2026-09-09
+Branch: `fix/regex-removal`
+Authority: `plan.md`
 
-## Implementation progress in the current worktree
+The Workbench will support one execution path: provider-native tool calling. Phases A to E are
+complete. Remaining work removes rollout modes, legacy orchestration, behavioral routing, and
+hidden text-to-SQL shortcuts. Run the full validation suite after implementation; cross-model
+testing is out of scope.
 
-- [x] Native tool replay now retains the complete card payload, rows, evidence, and SQL lineage.
-- [x] New turns persist an ordered event stream for user messages, native LLM messages, tool
-      calls, tool results, legacy cards, errors, and final answers.
-- [x] Native record lookups no longer detour through mandatory legacy preflight.
-- [x] Failed tools are returned to the LLM, which may select a different authorized tool.
-- [x] Successful tool results return to an `auto` native-tool continuation round; the LLM may
-      call additional resource tools or write the final answer.
-- [x] A multi-tool test covers metric → knowledge → final LLM summary.
-- [x] Scheme-wise vocabulary and catalog-context coverage were added without behavioral regex.
-- [x] Live Ling probe selected `query_metrics`, `interest_collected`, and `scheme` for
-      `interest collected schemewise` without application-side argument mutation.
-- [x] SQL AST validation now rejects an unqualified column that exists only on a different Gold
-      view and rejects ambiguous unqualified columns across joined views.
-- [x] Current focused result: 159 tests passed; Ruff and `git diff --check` passed.
+## Completed foundation — Phases A to E
 
-Items below remain the completion checklist. Checked progress above does not mean the unified
-history migration, nested LLM event capture, or live Ling/Qwen evaluation is complete.
+- [x] Bound model observations while retaining complete durable tool results.
+- [x] Persist context overflow and return a user-visible SSE error.
+- [x] Use one bounded agent loop and one round/tool-call budget.
+- [x] Return recoverable failures to the model as typed tool observations.
+- [x] Keep full authorized native tool schemas available without lexical narrowing.
+- [x] Store ordered version-7 execution events and replay native history from them.
+- [x] Measure compaction against native replay without deleting durable events.
+- [x] Validate SQL columns per scope, including CTEs, aliases, subqueries, and UNION branches.
+- [x] Ground numeric answer claims against source and deterministic derived facts.
 
-## 0. Regression tests first
+## Phase F — Native-only simplification
 
-- [ ] Add `interest collected schemewise` expecting the LLM's native `query_metrics` call to
-      contain `metrics=[interest_collected]` and `dimensions=[scheme]`.
-- [ ] Add month-wise, branch-wise, product-wise, and scheme-wise variants.
-- [ ] Add the full Vanitha lookup and `include tenure and sanctioned amount` conversation.
-- [ ] Assert the exact history delivered to the LLM contains the prior lookup call and result.
-- [ ] Assert the LLM's follow-up call retains the agent filter and previous fields.
-- [ ] Assert wrong-table `disbursement_amount` fails before PostgreSQL execution.
+### F1. Native agent is the only entry point
 
-## 1. Lossless unified history
+- [x] Call `agent.run(state)` directly for every Workbench request.
+- [x] Remove `assigned_mode`, mode hashing, shadow selection, and canary assignment.
+- [x] Remove `WORKBENCH_AGENT_MODE` and `WORKBENCH_AGENT_CANARY_PERCENT` from configuration and
+      `.env.example`.
+- [x] Log the execution architecture as `native_only` at startup.
 
-- [ ] Replace split legacy/native history with one ordered event stream.
-- [ ] Persist every user and LLM message.
-- [ ] Persist every native tool call with exact arguments.
-- [ ] Persist every complete tool result and error.
-- [ ] Persist nested LLM plans, generated/validated SQL, parameters, lineage, and results.
-- [ ] Cover mandatory preflight and legacy lookup with the same event format.
-- [ ] Replay the complete preceding exchange to the LLM.
-- [ ] Remove silent 20-row/tool-payload clipping from required immediate history.
-- [ ] Return an explicit context-capacity error if lossless history cannot fit.
+### F2. Remove legacy orchestration and fallback
 
-## 2. Model-controlled agent loop
+- [x] Delete `_run_legacy` and the legacy branch from `workbench/orchestrator.py`; remove the
+      wrapper if it is no longer useful.
+- [x] Remove native-to-legacy fallback, counters, route events, and history metadata.
+- [x] Remove `select_sources` and `dispatch_sources` after all callers use native tools.
+- [x] Remove frontend `legacy_fallback` handling and fallback-only API types.
+- [x] Ensure native failures produce exactly one typed observation, refusal, or error outcome.
 
-- [ ] Continue LLM execution after each tool result.
-- [ ] Let the LLM choose another tool, repair, clarify, refuse, or finish.
-- [ ] Keep hard limits on rounds, tool calls, time, rows, and permissions.
-- [ ] Remove application-side intent merging and semantic argument rewriting.
-- [ ] Remove the month-only mutation after general grouping tests pass.
+### F3. Remove behavioral routing
 
-## 3. Resource tools and catalog access
+- [x] Delete `workbench/router.py` and its routing prompt/evaluator dependencies.
+- [x] Remove database, schema, knowledge, macro, competitive, regulatory, web, freshness,
+      descriptive, structural-follow-up, and ambiguity-routing cues.
+- [x] Remove `_db_subquestion`, catalog routing overrides, and question rewriting.
+- [x] Replace `router.RouteDecision` with a neutral execution-result contract.
+- [x] Derive sources, tool names, limitations, and effective sources from validated native calls.
+- [x] Keep the `route` SSE event only as a compatibility report of model-selected calls.
 
-- [ ] Keep concrete flat provider-native tool schemas.
-- [ ] Add `inspect_loan_catalog` as a read-only tool if prompt retrieval is insufficient.
-- [ ] Return governed tables, columns, metrics, dimensions, joins, and vocabulary.
-- [ ] Add genuine scheme-wise vocabulary to Gold YAML.
-- [ ] Ensure tool results re-enter the same model conversation.
-- [ ] Keep assistant-content JSON fallback prohibited.
+### F4. Preserve policy and safety boundaries
 
-## 4. Validated SQL boundary
+- [x] Compute visible tools solely from role, deployment availability, consent, and pins.
+- [x] Reauthorize every model-returned tool call immediately before execution.
+- [x] Keep PII/outbound checks, strict argument validation, catalog governance, SQL AST
+      validation, parameter binding, and read-only execution.
+- [x] Keep round, call, row, observation, context, and deadline limits.
+- [x] Prevent destructive operations through capability absence and SQL validation, without a
+      question-routing regex.
+- [x] Verify direct-tool and pinned-source entry points cannot broaden authorization.
 
-- [ ] Restrict generated SQL to selected governed tables and catalog columns.
-- [ ] Validate identifiers, joins, predicates, grouping, ordering, and limits through the AST.
-- [ ] Return structured validation failures as tool results.
-- [ ] Let the LLM decide how to correct a failed call.
-- [ ] Never execute nonexistent, unauthorized, or wrong-table identifiers.
+### F5. Remove hidden text-to-SQL shortcuts
 
-## 5. Evaluation without behavioral regex
+- [x] Remove `allow_reviewed_shortcuts` from `text_to_sql.generate` and its callers.
+- [x] Delete automatic question-pattern selection for interest-rate distributions,
+      agent/borrower collections, agent directory queries, named-borrower disbursement, and
+      named-borrower principal collection.
+- [x] Delete shortcut-only regexes, helper functions, lineage labels, and tests.
+- [x] Send every free-form validated-query request through model SQL generation and governed
+      validation.
+- [x] Retain explicit native preset tools; they execute only when the model selects them.
 
-- [ ] Assert exact LLM-native tool calls and arguments.
-- [ ] Assert parsed SQL AST, bound parameters, and result shape.
-- [ ] Assert the final answer agrees with the tool result.
-- [ ] Run complete multi-turn transcripts and inspect what history the LLM received.
-- [ ] Do not use question-specific regexes to score or repair answers.
-- [ ] Expand the corpus with production failures and paraphrases.
-- [ ] Run the full corpus against Ling.
-- [ ] Serve Qwen and run the identical corpus.
+### F6. Cleanup
 
-## 6. Final verification and deployment
+- [x] Remove unreachable legacy adapters, router prompts/schemas, evaluation modules,
+      configuration, imports, fixtures, and fallback-only history fields.
+- [x] Retain source handlers used by native tool executors.
+- [x] Do not remove unrelated FastAPI route modules or domain APIs.
+- [x] Update architecture and environment comments for the native-only path.
+- [x] Confirm `rg` finds no remaining Workbench references to `workbench.router`,
+      `select_sources`, `dispatch_sources`, `_run_legacy`, `assigned_mode`, shadow, canary,
+      legacy fallback, or `allow_reviewed_shortcuts`.
 
-- [ ] Run Ruff and formatting checks.
-- [ ] Run focused, catalog, SQL safety, database, and multi-turn tests.
-- [ ] Review logs for complete LLM/tool replay and bounded model-driven repairs.
-- [ ] Confirm `.env` and `.env.prod` remain ignored.
-- [ ] Commit and push only task-owned files.
-- [ ] Rebuild `backend` and `postgres-mcp`.
-- [ ] Repeat the scheme-wise and Vanitha production conversations.
+### F7. Final validation
+
+- [x] Run focused Ruff, Python compilation, retired-symbol scans, and `git diff --check` after
+      F1–F6.
+- [ ] Run the complete backend suite and frontend type/build checks.
+- [ ] Run the single-turn and multi-turn native corpus against the deployed model.
+- [x] Run the offline multi-turn corpus (24 passed) and verify the current nudge expectations.
+- [x] Assert exact native tool names and structured arguments; do not score behavior with
+      question-specific regexes.
+- [x] Cover follow-up filter/period changes, aggregate-to-record drills, spelling errors,
+      invalid arguments, unknown tools, rejected SQL repair, exhausted budgets, and large
+      bounded observations.
+- [ ] Verify every Workbench request enters the native agent exactly once and no legacy or
+      shortcut path can execute.
+- [ ] Record model id, prompt/catalog versions, commit, commands, pass counts, latency, and
+      failure categories.
+
+### Phase F exit gate
+
+- [x] Native tool calling is the sole Workbench execution path.
+- [x] Sources in SSE/history come only from validated model tool calls.
+- [x] No application code rewrites user questions or model semantic arguments.
+- [x] No behavioral router, legacy fallback, rollout mode, or hidden SQL shortcut remains.
+- [x] Authorization, consent, PII, SQL safety, and bounded execution remain enforced.
+- [ ] The final suite and native conversation corpus pass against the deployed model.
+
+## Phase G — Documentation and handoff
+
+- [x] Rewrite `context.md` after Phase F for the resulting native-only code.
+- [x] Remove obsolete shadow, canary, legacy fallback, router-retirement, shortcut-retirement,
+      and cross-model evaluation claims from active documentation.
+- [ ] Record final branch, commit, deployed model id, prompt/catalog versions, commands, pass
+      counts, and interrupted commands.
+- [ ] Record whether the version-7 production history migration has run.
+- [ ] After its rollback window, disable and remove legacy `agent_exchanges` compatibility
+      writes.
+- [x] Confirm `plan.md`, `TODO.md`, and final `context.md` describe the same architecture and
+      completion state.
+
+## Standing rules
+
+- The LLM selects behavior; application code enforces permissions and safety.
+- Never parse assistant prose as an executable tool call.
+- Never mutate model-generated semantic arguments.
+- Never expose a tool the role, deployment, consent state, or pin does not authorize.
+- Never execute generated SQL before catalog and AST validation.
+- Never add question-specific behavioral routing or SQL shortcuts to fix an evaluation case.
+- Keep complete durable audit events and explicitly bounded model observations.
+- Run all final tests after the implementation changes are complete.

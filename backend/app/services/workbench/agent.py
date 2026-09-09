@@ -1,18 +1,25 @@
-"""Bounded provider-native agent selection and governed execution loop."""
+"""Bounded provider-native agent: one loop, one budget, one repair mechanism.
+
+Every LLM request is one round of the :class:`TurnBudget`, every attempted tool call is one
+call of it, and every failure the model can recover from (invalid arguments, an unknown
+tool, a policy denial, an execution error) is returned to the model as a typed ``tool``
+observation on the next round. Nothing here narrows the tool schema on lexical grounds and
+nothing fabricates a tool call the model did not emit.
+"""
 
 from __future__ import annotations
 
 import asyncio
-import hashlib
 import json
 import logging
 import time
+from dataclasses import dataclass
 from typing import Any
 
 from app.core.config import settings
 from app.services.nlq.catalog import get_catalog
 from app.services.nlq.llm import LLMError, LLMProtocolError
-from app.services.workbench import history, models, prompts, router
+from app.services.workbench import history, models, prompts
 from app.services.workbench.agent_executor import (
     AgentExecutionContext,
     ExecutedAgentCall,
@@ -21,123 +28,182 @@ from app.services.workbench.agent_executor import (
 from app.services.workbench.agent_tools import (
     AgentToolAccessDenied,
     AgentToolArgumentsInvalid,
+    AgentToolError,
+    AgentToolNotFound,
+    get_agent_tool,
     native_tool_definitions,
     validate_agent_arguments,
+    visible_agent_tools,
 )
-from app.services.workbench.results import SourceResult
+from app.services.workbench.results import ExecutionDecision, SourceResult
 
 logger = logging.getLogger(__name__)
 
 
-def _remaining_timeout(state: dict[str, Any], cap: float) -> float:
+class BudgetExhausted(LLMProtocolError):
+    """The turn spent its rounds or tool calls before the model finished."""
+
+
+@dataclass
+class TurnBudget:
+    """The only gate on the agent loop: rounds, calls, and the shared request deadline.
+
+    A round is exactly one LLM request, whichever purpose it serves (selection,
+    continuation, final synthesis, synthesis repair). A call is one tool call the model
+    attempted, valid or not.
+    """
+
+    max_rounds: int
+    max_calls: int
+    deadline: float
+    rounds_used: int = 0
+    calls_used: int = 0
+
+    @property
+    def rounds_remaining(self) -> int:
+        return max(0, self.max_rounds - self.rounds_used)
+
+    @property
+    def calls_remaining(self) -> int:
+        return max(0, self.max_calls - self.calls_used)
+
+    @property
+    def expired(self) -> bool:
+        return time.perf_counter() >= self.deadline
+
+    def remaining_s(self, cap: float) -> float:
+        remaining = self.deadline - time.perf_counter()
+        if remaining <= 0:
+            raise TimeoutError("Workbench request deadline exhausted")
+        return min(cap, remaining)
+
+    def charge_round(self, purpose: str = "") -> None:
+        if self.rounds_used >= self.max_rounds:
+            raise BudgetExhausted(
+                f"native agent exceeded its model-round limit ({self.max_rounds}) "
+                f"before {purpose or 'the next request'}"
+            )
+        self.rounds_used += 1
+
+    def charge_call(self, count: int = 1) -> None:
+        self.calls_used += count
+        if self.calls_used > self.max_calls:
+            raise BudgetExhausted(
+                f"native agent exceeded the per-turn tool-call limit ({self.max_calls})"
+            )
+
+    def snapshot(self) -> dict[str, int]:
+        return {
+            "rounds_used": self.rounds_used, "max_rounds": self.max_rounds,
+            "calls_used": self.calls_used, "max_calls": self.max_calls,
+        }
+
+
+def _budget(state: dict[str, Any]) -> TurnBudget:
     started_at = state.get("timing", {}).get("started_at")
     if not isinstance(started_at, (int, float)):
-        return cap
-    remaining = settings.nlq_request_budget_s - (time.perf_counter() - started_at)
-    if remaining <= 0:
-        raise TimeoutError("Workbench request deadline exhausted")
-    return min(cap, remaining)
+        started_at = time.perf_counter()
+    budget = TurnBudget(
+        max_rounds=settings.workbench_agent_max_rounds,
+        max_calls=settings.workbench_agent_max_tool_calls,
+        deadline=started_at + settings.nlq_request_budget_s,
+    )
+    state["_agent_budget"] = budget
+    return budget
+
+
+_DB_TOOLS = frozenset({
+    "query_metrics", "lookup_records", "run_analysis", "create_worklist",
+    "generate_briefing", "run_validated_query",
+})
+_CURATED_SOURCES = {
+    "concepts": "knowledge", "schema": "schema", "macro": "macro",
+    "competitive": "competitive", "regulatory": "regulatory",
+}
 
 
 def _source_for_call(call) -> str | None:
-    if call.name in {
-        "query_metrics", "lookup_records", "run_analysis", "create_worklist",
-        "generate_briefing", "run_validated_query",
-    }:
+    if call.name in _DB_TOOLS:
         return "db"
     if call.name == "inspect_loan_catalog":
         return "schema"
     if call.name == "search_public_web":
         return "web"
     if call.name == "search_curated_knowledge":
-        return {
-            "concepts": "knowledge", "schema": "schema", "macro": "macro",
-            "competitive": "competitive", "regulatory": "regulatory",
-        }.get(str(call.arguments.get("domain", "")))
+        return _CURATED_SOURCES.get(str(call.arguments.get("domain", "")))
     return None
 
 
-def assigned_mode(conversation_id: str, user: str) -> str:
-    mode = settings.workbench_agent_mode
-    if mode != "canary":
-        return mode
-    digest = hashlib.sha256(f"{user}\0{conversation_id}".encode()).digest()
-    bucket = int.from_bytes(digest[:4], "big") % 100
-    return "on" if bucket < settings.workbench_agent_canary_percent else "off"
+_USER_ERROR_MESSAGES = {
+    "TOOL_TIMEOUT": "This source took too long to answer.",
+    "COMPILE_REJECTED": "The generated query did not pass the safety checks.",
+    "NO_MATCHING_ROWS": "No matching records were found.",
+    "SOURCE_UNAVAILABLE": "This source is unavailable right now.",
+}
+
+
+def _user_error_message(code: str, turn_id: str) -> str:
+    base = _USER_ERROR_MESSAGES.get(code, _USER_ERROR_MESSAGES["SOURCE_UNAVAILABLE"])
+    return f"{base} (reference {turn_id})"
+
+
+_PII_REFUSAL_TEXT = (
+    "I can’t send private customer, account, or repayment details to public web search."
+)
+_SOURCE_REFUSAL_TEXT = "That source is not enabled for this request."
+_BUDGET_LIMITATION = {
+    "source": "agent",
+    "reason": (
+        "The model's turn budget ran out before it could write the answer; the retrieved "
+        "result is shown as returned."
+    ),
+}
+
+# One nudge per request kind, appended only when the transcript already holds this turn's
+# tool exchange. ``required`` re-selects after a failure, ``auto`` lets the model choose
+# between more evidence and an answer, ``none`` is the reserved final synthesis round.
+_NUDGES = {
+    "required": (
+        "Inspect the complete tool results above. Choose the next authorized capability "
+        "needed to answer the original question or recover from the reported error. Do "
+        "not repeat a failed call unchanged."
+    ),
+    "auto": (
+        "Review the original question and every complete tool result above. If more "
+        "evidence or a corrected query is needed, call the appropriate authorized function "
+        "with complete arguments. Otherwise answer the original question now using only "
+        "those tool results."
+    ),
+    "none": (
+        "Answer the original question now using only the tool results above. Do not call "
+        "another tool. Do not introduce unsupported numbers. For a large result table, "
+        "summarize the leading result and tell the user the full rows are in the table; "
+        "do not enumerate the table in prose."
+    ),
+}
+_PURPOSES = {"required": "agent_select", "auto": "agent_continue", "none": "agent_synthesize"}
+# The stage each request kind is recorded under in the turn's event stream.
+_STAGES = {"required": "route", "auto": "continue", "none": "synthesize"}
 
 
 async def _select(
-    state: dict[str, Any], *, repair_messages=None, reroute: bool = False,
+    state: dict[str, Any], *, repair_messages=None, tool_choice: str = "required",
+    supplement: str = "",
 ):
-    rounds = int(state.get("_agent_rounds", 0))
-    if rounds >= settings.workbench_agent_max_rounds:
-        raise LLMProtocolError("native agent exceeded its model-round limit")
-    state["_agent_rounds"] = rounds + 1
+    """Make exactly one provider request with every authorized tool.
+
+    The catalog context is recomputed from the question plus the latest tool error so a
+    dimension or table named in an error can surface as a candidate. Rounds are charged by
+    the caller so selection-only callers and the full loop share one accounting.
+    """
+    budget: TurnBudget = state["_agent_budget"]
     catalog = state.setdefault("_agent_catalog", get_catalog())
-    catalog_context = prompts.build_agent_catalog_context(state["question"], catalog)
-    client = models.for_step("route", sensitive=True)
-
-    selected_tool = None if reroute else state.get("_agent_selected_tool")
-    if not repair_messages or not selected_tool:
-        route_tool_names = None
-        if catalog_context.requires_validated_query:
-            route_tool_names = (
-                "run_validated_query", "lookup_records", "finish_without_data",
-            )
-        route_definitions = native_tool_definitions(
-            state["source_policy"], catalog=catalog, tool_names=route_tool_names,
-            route_only=True,
-        )
-        if not route_definitions:
-            raise LLMError("no native tools are authorized for this request")
-        route_prompt = prompts.build_agent_prompt(
-            question=state["question"],
-            history_messages=state.get(
-                "agent_history_messages", state.get("history_messages", []),
-            ),
-            tool_names=[definition["function"]["name"] for definition in route_definitions],
-            catalog=catalog,
-            catalog_context=catalog_context,
-        )
-        route_messages = list(route_prompt.messages)
-        if repair_messages:
-            route_messages.extend(repair_messages)
-            route_messages.append({
-                "role": "user",
-                "content": (
-                    "Inspect the complete tool results above. Choose the next authorized "
-                    "capability needed to answer the original question or recover from the "
-                    "reported error. Do not repeat a failed call unchanged."
-                ),
-            })
-        routed = await client.complete(
-            messages=route_messages,
-            tools=route_definitions,
-            tool_choice="required",
-            parallel_tool_calls=False,
-            timeout_s=_remaining_timeout(state, settings.workbench_router_timeout_s),
-            call_purpose="agent_route",
-            call_kind="planned",
-            prompt_version=route_prompt.version,
-            prefix_hash=route_prompt.prefix_hash,
-            catalog_version=catalog.version,
-        )
-        if len(routed.tool_calls) != 1:
-            raise LLMProtocolError("native route selection must choose exactly one tool")
-        selected_tool = routed.tool_calls[0].name
-        state["_agent_selected_tool"] = selected_tool
-
-    definitions = native_tool_definitions(
-        state["source_policy"],
-        catalog=catalog,
-        metric_ids=catalog_context.metrics,
-        dimension_ids=catalog_context.dimensions,
-        filter_dimension_ids=catalog_context.filter_dimensions,
-        table_names=catalog_context.tables,
-        tool_names=[selected_tool],
+    catalog_context = prompts.build_agent_catalog_context(
+        state["question"], catalog, supplement=supplement,
     )
+    definitions = native_tool_definitions(state["source_policy"], catalog=catalog)
     if not definitions:
-        raise LLMError(f"native tool {selected_tool!r} is not authorized for this request")
+        raise LLMError("no native tools are authorized for this request")
     prompt = prompts.build_agent_prompt(
         question=state["question"],
         history_messages=state.get("agent_history_messages", state.get("history_messages", [])),
@@ -145,541 +211,485 @@ async def _select(
         catalog=catalog,
         catalog_context=catalog_context,
     )
-    messages = [
-        *prompt.messages,
-        *(repair_messages or []),
-        {
-            "role": "user",
-            "content": (
-                f"The capability-selection stage chose {selected_tool}. Call that function "
-                "now with the complete arguments for the original question."
-            ),
-        },
-    ]
+    messages = [*prompt.messages, *(repair_messages or [])]
+    if repair_messages:
+        messages.append({"role": "user", "content": _NUDGES[tool_choice]})
+        _persist_nudge(state, tool_choice)
+    selecting = tool_choice == "required"
+    if not selecting:
+        # The exact context of the answering request, so a synthesis repair in
+        # graph.answer_results replays what the model actually saw.
+        state["agent_synthesis_messages"] = messages
+        state["agent_prompt_prefix_hash"] = prompt.prefix_hash
+    client = models.for_step("agent" if selecting else "synthesize", sensitive=True)
+    extra: dict[str, Any] = {}
+    if not selecting:
+        extra["max_output_tokens"] = settings.workbench_composer_max_tokens
     return await client.complete(
         messages=messages,
         tools=definitions,
-        tool_choice="required",
+        tool_choice=tool_choice,
         parallel_tool_calls=False,
-        timeout_s=_remaining_timeout(state, settings.workbench_router_timeout_s),
-        call_purpose="agent_select",
-        call_kind="repair" if repair_messages else "planned",
+        timeout_s=budget.remaining_s(
+            settings.workbench_agent_select_timeout_s if selecting
+            else settings.workbench_composer_timeout_s
+        ),
+        call_purpose=_PURPOSES[tool_choice],
+        call_kind="repair" if repair_messages and selecting else "planned",
         prompt_version=prompt.version,
         prefix_hash=prompt.prefix_hash,
         catalog_version=catalog.version,
+        **extra,
     )
 
 
-def _preflight(result, state: dict[str, Any]) -> list[tuple[str, str]]:
-    if not result.tool_calls:
-        raise LLMProtocolError(
-            "native selection returned no tool_calls; assistant content is not executable"
-        )
-    if len(result.tool_calls) > settings.workbench_agent_max_tool_calls:
-        raise LLMProtocolError("native selection exceeded the per-turn tool-call limit")
+def _preflight(result, state: dict[str, Any]) -> list[tuple[str, str, str]]:
+    """Validate and reauthorize every call; one ``(call_id, message, code)`` per failure."""
+    failures: list[tuple[str, str, str]] = []
     terminals = [call for call in result.tool_calls if call.name == "finish_without_data"]
     if terminals and len(result.tool_calls) != 1:
-        return [(call.id, "finish_without_data must be the only call") for call in terminals]
-
-    failures: list[tuple[str, str]] = []
+        failures.extend(
+            (call.id, "finish_without_data must be the only call", "INVALID_TOOL_ARGUMENTS")
+            for call in terminals
+        )
     for call in result.tool_calls:
+        if terminals and len(result.tool_calls) != 1 and call in terminals:
+            continue
         try:
             validate_agent_arguments(
-                call.name,
-                call.arguments,
-                policy=state["source_policy"],
-                catalog=state.get("_agent_catalog"),
+                call.name, call.arguments,
+                policy=state["source_policy"], catalog=state.get("_agent_catalog"),
             )
-        except AgentToolAccessDenied:
-            raise
+        except AgentToolAccessDenied as exc:
+            failures.append((call.id, str(exc), "POLICY_DENIED"))
+        except AgentToolNotFound as exc:
+            failures.append((call.id, str(exc), "TOOL_NOT_FOUND"))
         except AgentToolArgumentsInvalid as exc:
-            failures.append((call.id, str(exc)))
+            failures.append((call.id, str(exc), "INVALID_TOOL_ARGUMENTS"))
     return failures
 
 
-def _repair_messages(result, failures: list[tuple[str, str]]):
+def _authorized_tool_names(state: dict[str, Any]) -> list[str]:
+    return [tool.name for tool in visible_agent_tools(state["source_policy"])]
+
+
+def _failure_observation(call, message: str, code: str, state: dict[str, Any] | None):
+    payload: dict[str, Any] = {"status": "error", "code": code, "message": message[:500]}
+    if code == "POLICY_DENIED":
+        payload["denied"] = {
+            "tool": call.name, "source": _source_for_call(call), "policy": "source_access",
+        }
+        if state is not None:
+            payload["authorized_tools"] = _authorized_tool_names(state)
+    return {
+        "role": "tool", "tool_call_id": call.id,
+        "content": json.dumps(payload, separators=(",", ":")),
+    }
+
+
+def _repair_messages(
+    result, failures: list[tuple[str, str, str]], *,
+    executed: list[ExecutedAgentCall] | tuple[ExecutedAgentCall, ...] = (),
+    state: dict[str, Any] | None = None, durable: bool = False,
+):
+    """The assistant message plus exactly one tool message per call it contains.
+
+    Failed calls carry their typed error; executed calls carry their real observation
+    (bounded for the model, complete when ``durable``), so replay parity always holds.
+    """
     if result.assistant_message is None:
         raise LLMProtocolError("native tool response cannot be replayed for repair")
+    failed = {call_id: (message, code) for call_id, message, code in failures}
+    items = {item.call.id: item for item in executed}
     messages = [result.assistant_message]
-    messages.extend({
-        "role": "tool",
-        "tool_call_id": call_id,
-        "content": json.dumps({
-            "status": "error",
-            "code": "INVALID_TOOL_ARGUMENTS",
-            "message": message[:500],
-        }, separators=(",", ":")),
-    } for call_id, message in failures)
+    for call in result.tool_calls:
+        if call.id in failed:
+            message, code = failed[call.id]
+            messages.append(_failure_observation(call, message, code, state))
+        elif call.id in items:
+            item = items[call.id]
+            messages.append(item.replay_message() if durable else item.observation_message())
+        else:
+            messages.append(_failure_observation(
+                call, "the call was not executed", "SOURCE_UNAVAILABLE", state,
+            ))
     return messages
 
 
-async def select_calls(state: dict[str, Any]):
-    result = await _select(state)
-    attempted_calls = len(result.tool_calls)
-    failures = _preflight(result, state)
-    if (
-        failures
-        and settings.workbench_agent_argument_repairs
-        and settings.workbench_agent_max_rounds >= 3
-    ):
-        repair_messages = _repair_messages(result, failures)
-        if all(state.get(key) for key in ("conversation_id", "user", "turn_id")):
-            history.add_agent_exchange(
-                state["conversation_id"], state["user"], state["turn_id"],
-                assistant_message=result.assistant_message,
-                calls=[{
-                    "id": call.id,
-                    "name": call.name,
-                    "arguments": call.arguments,
-                } for call in result.tool_calls],
-                tool_messages=repair_messages[1:],
-            )
-        result = await _select(state, repair_messages=repair_messages)
-        attempted_calls += len(result.tool_calls)
-        if attempted_calls > settings.workbench_agent_max_tool_calls:
-            raise LLMProtocolError("native repairs exceeded the per-turn tool-call limit")
-        failures = _preflight(result, state)
-    if failures:
-        raise AgentToolArgumentsInvalid(failures[0][1])
-    return result
+def _raise_first_failure(failures: list[tuple[str, str, str]]) -> None:
+    _call_id, message, code = failures[0]
+    if code == "POLICY_DENIED":
+        raise AgentToolAccessDenied(message)
+    if code == "TOOL_NOT_FOUND":
+        raise AgentToolNotFound(message)
+    raise AgentToolArgumentsInvalid(message)
 
 
-async def shadow(state: dict[str, Any]) -> None:
-    """Record protocol/telemetry behavior without execution or visible output changes."""
+def _stored_arguments(state: dict[str, Any], call, failed: bool) -> dict[str, Any]:
+    if failed:
+        return call.arguments
     try:
-        result = await select_calls(state)
-        logger.info(
-            "native agent shadow selection tools=%s",
-            [call.name for call in result.tool_calls],
-        )
-    except Exception as exc:  # noqa: BLE001 - shadow can never affect the live path
-        logger.warning("native agent shadow selection failed: %s", exc)
+        return validate_agent_arguments(
+            call.name, call.arguments,
+            policy=state["source_policy"], catalog=state.get("_agent_catalog"),
+        ).model_dump(mode="json", exclude_none=True)
+    except AgentToolError:
+        return call.arguments
 
 
-async def run(state: dict[str, Any]) -> None:
-    """Select, execute, stream cards, and reuse the common answer composer."""
-    from app.services.workbench.graph import answer_results, sse
+def _persistable(state) -> bool:
+    return all(state.get(key) for key in ("conversation_id", "user", "turn_id"))
 
-    emit = state["emit"]
-    state["agent_native"] = True
-    await emit.put(sse("stage", {"stage": "routing", "agent": "native"}))
-    selected = await select_calls(state)
-    calls = selected.tool_calls
-    tool_call_count = len(calls)
-    sources = [source for call in calls if (source := _source_for_call(call))]
-    sources = list(dict.fromkeys(sources))
-    decision = router.RouteDecision(
-        route="dispatch",
-        sources=sources,
-        intent=state["question"],
-        model="native_agent",
-        reason="native_tool_selection",
-        confidence=1.0,
-        policy_version=state["source_policy"].version,
-        effective_sources=state["source_policy"].effective_sources,
-    )
-    state["decision"] = decision
-    await emit.put(sse("route", {
-        "sources": sources,
-        "intent": state["question"],
-        "model": "native_agent",
-        "reason": "native_tool_selection",
-        "confidence": 1.0,
-        "fallback_used": False,
-        "policy_version": decision.policy_version,
-        "tools": [call.name for call in calls],
-    }))
-    history.set_route(
+
+def _persist_exchange(state, result, failures, executed, *, stage: str = "route") -> None:
+    """One write per round: the assistant message, its calls, their complete results,
+    and the rendered cards the client was streamed. The ``tool_result`` events carry
+    the cards' content, so the cards get no event of their own."""
+    if result.assistant_message is None:
+        return
+    if not _persistable(state):
+        return
+    failed_ids = {call_id for call_id, _message, _code in failures}
+    history.add_agent_exchange(
         state["conversation_id"], state["user"], state["turn_id"],
-        sources=sources, intent=state["question"], model="native_agent",
-        reason="native_tool_selection", confidence=1.0,
-        effective_sources=decision.effective_sources,
+        assistant_message=result.assistant_message,
+        calls=[
+            {
+                "id": call.id, "name": call.name,
+                "arguments": _stored_arguments(state, call, call.id in failed_ids),
+            }
+            for call in result.tool_calls
+        ],
+        tool_messages=_repair_messages(
+            result, failures, executed=executed, state=state, durable=True,
+        )[1:],
+        stage=stage,
+        cards=[
+            {
+                "source": item.card.source, "card_type": item.card.card_type,
+                "payload": item.card.payload, "call_id": item.call.id,
+            }
+            for item in executed if item.card is not None
+        ],
     )
 
-    deadline = max(
-        0.001,
-        settings.nlq_request_budget_s
-        - (time.perf_counter() - state["timing"]["started_at"]),
+
+def _persist_nudge(state, tool_choice: str) -> None:
+    """The nudge is part of the transcript the model saw; the record says so."""
+    if not _persistable(state):
+        return
+    budget = state.get("_agent_budget")
+    try:
+        history.add_system_message(
+            state["conversation_id"], state["user"], state["turn_id"],
+            content=_NUDGES[tool_choice], kind="nudge", stage=_STAGES[tool_choice],
+            round_number=budget.rounds_used if budget is not None else 0,
+        )
+    except Exception:  # noqa: BLE001 - persistence is best effort
+        logger.warning("native nudge persistence failed", exc_info=True)
+
+
+def _denial(failures, executed) -> dict[str, Any] | None:
+    """The latest policy denial of a round, or None."""
+    latest = None
+    for _call_id, message, code in failures:
+        if code == "POLICY_DENIED":
+            latest = {"policy": "source_access", "message": message}
+    for item in executed:
+        if item.error is not None and item.error.get("code") == "POLICY_DENIED":
+            latest = {
+                "policy": item.error.get("denied", {}).get("policy", "source_access"),
+                "message": item.error.get("message", ""),
+            }
+    return latest
+
+
+def _latest_error(failures, executed) -> str:
+    text = ""
+    for _call_id, message, _code in failures:
+        text = message
+    for item in executed:
+        if item.error is not None:
+            text = str(item.error.get("message", ""))
+    return text
+
+
+async def select_calls(state: dict[str, Any]):
+    """Select without executing for the offline native-call evaluator.
+
+    Preflight failures are returned to the model as observations while the budget lasts;
+    when it runs out the first failure is raised so the caller can classify it.
+    """
+    budget = _budget(state)
+    exchange: list[dict[str, Any]] = []
+    while True:
+        budget.charge_round("agent_select")
+        result = await _select(state, repair_messages=exchange or None)
+        if not result.tool_calls:
+            raise LLMProtocolError(
+                "native selection returned no tool_calls; assistant content is not executable"
+            )
+        budget.charge_call(len(result.tool_calls))
+        failures = _preflight(result, state)
+        if not failures:
+            return result
+        if not budget.rounds_remaining or not settings.workbench_agent_argument_repairs:
+            _raise_first_failure(failures)
+        _persist_exchange(state, result, failures, ())
+        exchange.extend(_repair_messages(result, failures, state=state))
+
+
+async def _execute_one(state, context: AgentExecutionContext, call) -> ExecutedAgentCall:
+    try:
+        return await execute_agent_call(call, context)
+    except Exception as exc:  # noqa: BLE001 - isolate independent calls
+        logger.warning("native tool %s failed: %s", call.name, exc)
+        code = getattr(exc, "code", "SOURCE_UNAVAILABLE")
+        error: dict[str, Any] = {"code": code, "message": str(exc)[:500]}
+        if code == "PII_POLICY_VIOLATION":
+            # The outbound privacy gate is a policy denial like any other: the model is
+            # told what was denied and what it may still call, then decides.
+            error = {
+                "code": "POLICY_DENIED", "message": str(exc)[:500],
+                "denied": {
+                    "tool": call.name, "source": _source_for_call(call),
+                    "policy": "outbound_privacy",
+                },
+                "authorized_tools": _authorized_tool_names(state),
+            }
+        return ExecutedAgentCall(call=call, error=error)
+
+
+async def _stream_item(state: dict[str, Any], item: ExecutedAgentCall) -> None:
+    from app.services.workbench.graph import sse
+
+    if item.card is None and item.error is not None and item.error.get("code") != "POLICY_DENIED":
+        source = _source_for_call(item.call)
+        if source is not None:
+            # The exact failure text goes back to the model; the user sees a stable
+            # message plus the turn id so the incident can be found in the logs.
+            code = item.error.get("code", "SOURCE_UNAVAILABLE")
+            item.card = SourceResult(
+                source=source, card_type="error",
+                payload={
+                    "message": _user_error_message(code, state["turn_id"]),
+                    "code": code, "retryable": code == "TOOL_TIMEOUT",
+                },
+            )
+    if item.card is None:
+        return
+    source = item.card.source
+    state["timing"]["source_completions"].append(source)
+    await state["emit"].put(sse("source_card", {
+        "source": source, "card_type": item.card.card_type, **item.card.payload,
+    }))
+    state["timing"].setdefault(
+        "first_card_ms", int((time.perf_counter() - state["timing"]["started_at"]) * 1000),
     )
-    context = AgentExecutionContext(
-        user=state["user"], role=state["role"],
-        conversation_id=state["conversation_id"], turn_id=state["turn_id"],
-        source_policy=state["source_policy"], deadline_s=deadline,
-        catalog=state.get("_agent_catalog"),
-        catalog_version=getattr(state.get("_agent_catalog"), "version", ""),
-        data_access=state.get("data_access"),
-        private_entities=tuple(state.get("agent_private_entities", ())),
-    )
+    # Not persisted here: the round's ``tool_result`` event already carries this card,
+    # and `_persist_exchange` records the rendered view in the same write.
+
+
+async def _execute_batch(state, context: AgentExecutionContext, calls) -> list[ExecutedAgentCall]:
+    from app.services.workbench.graph import sse
+
     for call in calls:
         source = _source_for_call(call)
         if source is not None:
             state["timing"]["source_attempts"].append(source)
-            await emit.put(sse("source_start", {"source": source, "tool": call.name}))
+            await state["emit"].put(sse("source_start", {"source": source, "tool": call.name}))
 
-    async def execute(call):
+    output: list[ExecutedAgentCall | None] = [None] * len(calls)
+    parallel = [(i, call) for i, call in enumerate(calls) if get_agent_tool(call.name).parallel_safe]
+    serial = [(i, call) for i, call in enumerate(calls) if not get_agent_tool(call.name).parallel_safe]
+    if parallel:
+        async def indexed(index, call):
+            return index, await _execute_one(state, context, call)
+
+        tasks = [asyncio.create_task(indexed(index, call)) for index, call in parallel]
         try:
-            return await execute_agent_call(call, context)
-        except Exception as exc:  # noqa: BLE001 - isolate independent calls
-            logger.warning("native tool %s failed: %s", call.name, exc)
-            return ExecutedAgentCall(
-                call=call,
-                error={
-                    "code": getattr(exc, "code", "SOURCE_UNAVAILABLE"),
-                    "message": str(exc)[:500],
-                },
-            )
+            for task in asyncio.as_completed(tasks):
+                index, item = await task
+                output[index] = item
+                await _stream_item(state, item)
+        finally:
+            for task in tasks:
+                if not task.done():
+                    task.cancel()
+            await asyncio.gather(*tasks, return_exceptions=True)
+    for index, call in serial:
+        output[index] = await _execute_one(state, context, call)
+        await _stream_item(state, output[index])
+    return [item for item in output if item is not None]
 
-    async def stream_item(item: ExecutedAgentCall) -> None:
-        if (
-            item.card is None
-            and item.error is not None
-            and item.error.get("code") != "PII_POLICY_VIOLATION"
-        ):
-            source = _source_for_call(item.call)
-            if source is not None:
-                item.card = SourceResult(
-                    source=source,
-                    card_type="error",
-                    payload={
-                        "message": item.error.get("message", "Source unavailable."),
-                        "code": item.error.get("code", "SOURCE_UNAVAILABLE"),
-                        "retryable": item.error.get("code") == "TOOL_TIMEOUT",
-                    },
+
+async def _announce_route(state: dict[str, Any], calls) -> None:
+    from app.services.workbench.graph import sse
+
+    sources = list(dict.fromkeys(
+        source for call in calls if (source := _source_for_call(call))
+    ))
+    decision = ExecutionDecision(
+        sources=sources, intent=state["question"],
+        policy_version=state["source_policy"].version,
+        effective_sources=state["source_policy"].effective_sources,
+    )
+    state["decision"] = decision
+    await state["emit"].put(sse("route", {
+        "sources": sources, "intent": state["question"], "model": "native_agent",
+        "reason": "native_tool_selection",
+        "policy_version": decision.policy_version, "tools": [call.name for call in calls],
+    }))
+    history.set_route(
+        state["conversation_id"], state["user"], state["turn_id"],
+        sources=sources, intent=state["question"], model="native_agent",
+        reason="native_tool_selection",
+        effective_sources=decision.effective_sources,
+    )
+
+
+async def _end_without_data(state: dict[str, Any], payload: dict[str, Any], *, origin: str) -> None:
+    """Emit a clarification or refusal. ``origin`` says who decided: the model's
+    ``finish_without_data`` call, or the application after a denial the model never
+    resolved within budget."""
+    from app.services.workbench.graph import sse
+
+    outcome = payload.get("outcome")
+    answer = {
+        "status": "clarify" if outcome == "clarify" else "refused",
+        "text": payload.get("message", ""),
+        "sources": [], "citations": [], "unavailable_sources": [], "limitations": [],
+        "suggestions": payload.get("suggestions", []),
+        "reason": payload.get("reason_code"),
+        "origin": origin,
+    }
+    await state["emit"].put(sse("refusal" if outcome == "refuse" else "answer", answer))
+    history.set_answer(state["conversation_id"], state["user"], state["turn_id"], answer)
+
+
+async def run(state: dict[str, Any]) -> None:
+    """One bounded loop: request, observe, execute, repeat; then answer.
+
+    Each iteration is one LLM request. ``required`` while nothing has been retrieved,
+    ``auto`` once there is evidence, and ``none`` on the final round when there is
+    evidence, so a result executed on the last tool round is still shown to the model.
+    """
+    from app.services.workbench.graph import answer_results, sse
+
+    emit = state["emit"]
+    state["agent_native"] = True
+    budget = _budget(state)
+    catalog = state.setdefault("_agent_catalog", get_catalog())
+    context = AgentExecutionContext(
+        user=state["user"], role=state["role"],
+        conversation_id=state["conversation_id"], turn_id=state["turn_id"],
+        source_policy=state["source_policy"],
+        deadline_s=max(0.001, budget.deadline - time.perf_counter()),
+        catalog=catalog, catalog_version=getattr(catalog, "version", ""),
+        data_access=state.get("data_access"),
+        private_entities=tuple(state.get("agent_private_entities", ())),
+    )
+    await emit.put(sse("stage", {"stage": "routing", "agent": "native"}))
+
+    exchange: list[dict[str, Any]] = []  # this turn's assistant and tool messages
+    executed: list[ExecutedAgentCall] = []
+    final = None
+    denial: dict[str, Any] | None = None
+    last_error = ""
+    while budget.rounds_remaining and not budget.expired:
+        if any(item.terminal is not None for item in executed):
+            break
+        has_data = any(item.card is not None and item.error is None for item in executed)
+        if not has_data:
+            if not budget.calls_remaining:
+                break
+            tool_choice = "required"
+        elif budget.rounds_remaining == 1 or not budget.calls_remaining:
+            tool_choice = "none"
+        else:
+            tool_choice = "auto"
+        budget.charge_round(_PURPOSES[tool_choice])
+        try:
+            result = await _select(
+                state, repair_messages=exchange or None, tool_choice=tool_choice,
+                supplement=last_error,
+            )
+        except TimeoutError:
+            if not has_data:
+                raise
+            break
+        if not result.tool_calls:
+            if tool_choice == "required":
+                raise LLMProtocolError(
+                    "native selection returned no tool_calls; assistant content is not executable"
                 )
-        if item.card is None:
-            return
-        source = item.card.source
-        state["timing"]["source_completions"].append(source)
-        await emit.put(sse("source_card", {
-            "source": source, "card_type": item.card.card_type, **item.card.payload,
-        }))
-        state["timing"].setdefault(
-            "first_card_ms",
-            int((time.perf_counter() - state["timing"]["started_at"]) * 1000),
-        )
-        try:
-            history.add_card(
-                state["conversation_id"], state["user"], state["turn_id"],
-                {
-                    "source": source,
-                    "card_type": item.card.card_type,
-                    "payload": item.card.payload,
-                },
-            )
-        except Exception:  # noqa: BLE001 - persistence is best effort
-            logger.warning("native source card persistence failed", exc_info=True)
-
-    async def execute_batch(batch):
-        from app.services.workbench.agent_tools import get_agent_tool
-
-        output: list[ExecutedAgentCall | None] = [None] * len(batch)
-        parallel = [
-            (index, call) for index, call in enumerate(batch)
-            if get_agent_tool(call.name).parallel_safe
-        ]
-        serial = [
-            (index, call) for index, call in enumerate(batch)
-            if not get_agent_tool(call.name).parallel_safe
-        ]
-        if parallel:
-            async def indexed(index, call):
-                return index, await execute(call)
-
-            tasks = [asyncio.create_task(indexed(index, call)) for index, call in parallel]
-            try:
-                for task in asyncio.as_completed(tasks):
-                    index, item = await task
-                    output[index] = item
-                    await stream_item(item)
-            finally:
-                for task in tasks:
-                    if not task.done():
-                        task.cancel()
-                await asyncio.gather(*tasks, return_exceptions=True)
-        for index, call in serial:
-            output[index] = await execute(call)
-            await stream_item(output[index])
-        return [item for item in output if item is not None]
-
-    def persist_exchange(selection, items) -> None:
-        if selection.assistant_message is None:
-            return
-        history.add_agent_exchange(
-            state["conversation_id"], state["user"], state["turn_id"],
-            assistant_message=selection.assistant_message,
-            calls=[
-                {
-                    "id": call.id,
-                    "name": call.name,
-                    "arguments": validate_agent_arguments(
-                        call.name,
-                        call.arguments,
-                        policy=state["source_policy"],
-                        catalog=state.get("_agent_catalog"),
-                    ).model_dump(mode="json", exclude_none=True),
-                }
-                for call in selection.tool_calls
-            ],
-            tool_messages=[item.replay_message() for item in items],
-        )
-
-    executed = await execute_batch(calls)
-    persist_exchange(selected, executed)
-    exchange_messages = [
-        *([selected.assistant_message] if selected.assistant_message is not None else []),
-        *(item.replay_message() for item in executed),
-    ]
-
-    failed = [
-        item for item in executed
-        if item.error is not None and item.error.get("code") != "PII_POLICY_VIOLATION"
-    ]
-    if (
-        failed
-        and settings.workbench_agent_argument_repairs
-        and int(state.get("_agent_rounds", 0)) < settings.workbench_agent_max_rounds
-        and len(calls) < settings.workbench_agent_max_tool_calls
-    ):
-        repaired_selection = await _select(
-            state, repair_messages=exchange_messages, reroute=True,
-        )
-        failures = _preflight(repaired_selection, state)
-        if failures:
-            raise AgentToolArgumentsInvalid(failures[0][1])
-        if len(calls) + len(repaired_selection.tool_calls) > settings.workbench_agent_max_tool_calls:
-            raise LLMProtocolError("native repairs exceeded the per-turn tool-call limit")
-        for call in repaired_selection.tool_calls:
-            source = _source_for_call(call)
-            if source is not None:
-                state["timing"]["source_attempts"].append(source)
-                await emit.put(sse(
-                    "source_start",
-                    {"source": source, "tool": call.name, "repair": True},
-                ))
-        repaired = await execute_batch(repaired_selection.tool_calls)
-        tool_call_count += len(repaired_selection.tool_calls)
-        persist_exchange(repaired_selection, repaired)
-        exchange_messages.extend([
-            *(
-                [repaired_selection.assistant_message]
-                if repaired_selection.assistant_message is not None else []
-            ),
-            *(item.replay_message() for item in repaired),
-        ])
-        executed = [item for item in executed if item not in failed] + repaired
-
-    denied = [
-        item for item in executed
-        if item.error is not None and item.error.get("code") == "PII_POLICY_VIOLATION"
-    ]
-    if (
-        denied
-        and settings.workbench_agent_argument_repairs
-        and settings.workbench_agent_max_rounds >= 3
-    ):
-        repaired_selection = await _select(state, repair_messages=[
-            *exchange_messages,
-            {
-                "role": "user",
-                "content": (
-                    "The external-search call was denied by outbound privacy policy. "
-                    "Make exactly one replacement search_public_web call containing only "
-                    "a complete public query, or use finish_without_data to refuse."
-                ),
-            },
-        ])
-        failures = _preflight(repaired_selection, state)
-        allowed_repair_names = {"search_public_web", "finish_without_data"}
-        if failures or any(
-            call.name not in allowed_repair_names for call in repaired_selection.tool_calls
-        ):
-            raise AgentToolArgumentsInvalid(
-                failures[0][1] if failures else "outbound repair selected an unrelated tool"
-            )
-        if len(calls) + len(repaired_selection.tool_calls) > settings.workbench_agent_max_tool_calls:
-            raise LLMProtocolError("native repairs exceeded the per-turn tool-call limit")
-        for call in repaired_selection.tool_calls:
-            source = _source_for_call(call)
-            if source is not None:
-                state["timing"]["source_attempts"].append(source)
-                await emit.put(sse(
-                    "source_start",
-                    {"source": source, "tool": call.name, "repair": True},
-                ))
-        repaired = await execute_batch(repaired_selection.tool_calls)
-        tool_call_count += len(repaired_selection.tool_calls)
-        persist_exchange(repaired_selection, repaired)
-        exchange_messages.extend([
-            *(
-                [repaired_selection.assistant_message]
-                if repaired_selection.assistant_message is not None else []
-            ),
-            *(item.replay_message() for item in repaired),
-        ])
-        second_denial = next(
-            (
-                item for item in repaired
-                if item.error is not None
-                and item.error.get("code") == "PII_POLICY_VIOLATION"
-            ),
-            None,
-        )
-        if second_denial is not None:
-            second_denial.error = None
-            second_denial.terminal = {
-                "outcome": "refuse",
-                "message": (
-                    "I can’t send private customer, account, or repayment details to "
-                    "public web search."
-                ),
-                "suggestions": [],
-                "reason_code": "PII_POLICY_VIOLATION",
-            }
-        executed = [item for item in executed if item not in denied] + repaired
-
-    while (
-        not any(item.terminal is not None for item in executed)
-        and int(state.get("_agent_rounds", 0)) < settings.workbench_agent_max_rounds
-        and tool_call_count < settings.workbench_agent_max_tool_calls
-    ):
-        catalog_context = prompts.build_agent_catalog_context(
-            state["question"], state.get("_agent_catalog"),
-        )
-        definitions = native_tool_definitions(
-            state["source_policy"],
-            catalog=state.get("_agent_catalog"),
-            metric_ids=catalog_context.metrics,
-            dimension_ids=catalog_context.dimensions,
-            filter_dimension_ids=catalog_context.filter_dimensions,
-            table_names=catalog_context.tables,
-        )
-        continuation_prompt = prompts.build_agent_prompt(
-            question=state["question"],
-            history_messages=state.get("agent_history_messages", []),
-            tool_names=[definition["function"]["name"] for definition in definitions],
-            catalog=state.get("_agent_catalog"),
-            catalog_context=catalog_context,
-        )
-        continuation_messages = [
-            *continuation_prompt.messages,
-            *exchange_messages,
-            {
-                "role": "user",
-                "content": (
-                    "Review the original question and every complete tool result above. "
-                    "If more evidence or a corrected query is needed, call the appropriate "
-                    "authorized function with complete arguments. Otherwise answer the "
-                    "original question now using only those tool results."
-                ),
-            },
-        ]
-        state["_agent_rounds"] = int(state.get("_agent_rounds", 0)) + 1
-        client = models.for_step("synthesize", sensitive=True)
-        continuation = await client.complete(
-            messages=continuation_messages,
-            tools=definitions,
-            tool_choice="auto",
-            parallel_tool_calls=False,
-            timeout_s=_remaining_timeout(state, settings.workbench_composer_timeout_s),
-            call_purpose="agent_continue",
-            prompt_version=continuation_prompt.version,
-            prefix_hash=continuation_prompt.prefix_hash,
-            catalog_version=getattr(state.get("_agent_catalog"), "version", ""),
-            max_output_tokens=settings.workbench_composer_max_tokens,
-        )
-        if not continuation.tool_calls:
-            if not continuation.text.strip():
+            if not result.text.strip():
                 raise LLMProtocolError(
                     "native continuation returned neither tool calls nor an answer"
                 )
-            state["agent_final_result"] = continuation
-            history.set_synthesis(
-                state["conversation_id"], state["user"], state["turn_id"],
-                continuation.text.strip(),
-            )
+            final = result
             break
+        if tool_choice == "none":
+            raise LLMProtocolError("tool call returned during final synthesis phase")
+        try:
+            budget.charge_call(len(result.tool_calls))
+        except BudgetExhausted:
+            if not has_data:
+                raise
+            break
+        if state.get("decision") is None:
+            await _announce_route(state, result.tool_calls)
+        failures = _preflight(result, state)
+        failed_ids = {call_id for call_id, _message, _code in failures}
+        items = await _execute_batch(
+            state, context, [call for call in result.tool_calls if call.id not in failed_ids],
+        )
+        _persist_exchange(state, result, failures, items, stage=_STAGES[tool_choice])
+        exchange.extend(_repair_messages(result, failures, executed=items, state=state))
+        executed.extend(items)
+        denial = _denial(failures, items) or denial
+        last_error = _latest_error(failures, items)
+        if failures and not settings.workbench_agent_argument_repairs:
+            _raise_first_failure(failures)
+    logger.info("native agent turn budget %s", budget.snapshot())
 
-        continuation_failures = _preflight(continuation, state)
-        if continuation_failures:
-            invalid_messages = _repair_messages(continuation, continuation_failures)
-            history.add_agent_exchange(
-                state["conversation_id"], state["user"], state["turn_id"],
-                assistant_message=continuation.assistant_message,
-                calls=[{
-                    "id": call.id,
-                    "name": call.name,
-                    "arguments": call.arguments,
-                } for call in continuation.tool_calls],
-                tool_messages=invalid_messages[1:],
-            )
-            exchange_messages.extend(invalid_messages)
-            tool_call_count += len(continuation.tool_calls)
-            continue
-        if tool_call_count + len(continuation.tool_calls) > settings.workbench_agent_max_tool_calls:
-            raise LLMProtocolError("native agent exceeded the per-turn tool-call limit")
-        for call in continuation.tool_calls:
-            source = _source_for_call(call)
-            if source is not None:
-                state["timing"]["source_attempts"].append(source)
-                await emit.put(sse(
-                    "source_start", {"source": source, "tool": call.name},
-                ))
-        continued = await execute_batch(continuation.tool_calls)
-        persist_exchange(continuation, continued)
-        exchange_messages.extend([
-            *(
-                [continuation.assistant_message]
-                if continuation.assistant_message is not None else []
-            ),
-            *(item.replay_message() for item in continued),
-        ])
-        tool_call_count += len(continuation.tool_calls)
-        executed.extend(continued)
-
-    synthesis_prompt = prompts.build_agent_prompt(
-        question=state["question"],
-        history_messages=state.get("agent_history_messages", []),
-        tool_names=[call.name for call in calls],
-        catalog=state.get("_agent_catalog"),
-    )
-    state["agent_synthesis_messages"] = [
-        *synthesis_prompt.messages,
-        *exchange_messages,
-        {
-            "role": "user",
-            "content": (
-                "Answer the original question now using only the tool results above. "
-                "Do not call another tool. Do not introduce unsupported numbers. For a "
-                "large result table, summarize the leading result and tell the user the "
-                "full rows are in the table; do not enumerate the table in prose."
-            ),
-        },
-    ]
-    state["agent_prompt_prefix_hash"] = synthesis_prompt.prefix_hash
     terminal = next((item for item in executed if item.terminal is not None), None)
     if terminal is not None:
-        payload = terminal.terminal or {}
-        outcome = payload.get("outcome")
-        answer = {
-            "status": "clarify" if outcome == "clarify" else "refused",
-            "text": payload.get("message", ""),
-            "sources": [], "citations": [], "unavailable_sources": [], "limitations": [],
-            "suggestions": payload.get("suggestions", []),
-            "reason": payload.get("reason_code"),
-        }
-        await emit.put(sse("refusal" if outcome == "refuse" else "answer", answer))
-        history.set_answer(
-            state["conversation_id"], state["user"], state["turn_id"], answer,
-        )
+        await _end_without_data(state, terminal.terminal or {}, origin="model")
         return
-
-    results = []
-    for item in executed:
-        if item.card is None:
-            continue
-        results.append(item.card)
-    state["results"] = results
+    cards = [item.card for item in executed if item.card is not None]
+    if final is not None:
+        state["agent_final_result"] = final
+        # The candidate as the model wrote it; `answer_results` records the final text.
+        history.set_synthesis(
+            state["conversation_id"], state["user"], state["turn_id"], final.text.strip(),
+            message=final.assistant_message, stage="synthesize",
+        )
+    elif not cards:
+        if budget.expired:
+            raise TimeoutError("Workbench request deadline exhausted")
+        if denial is not None:
+            # The model never resolved the denial with a replacement call or a refusal
+            # of its own; the application ends the turn and says so.
+            await _end_without_data(state, {
+                "outcome": "refuse",
+                "message": (
+                    _PII_REFUSAL_TEXT if denial["policy"] == "outbound_privacy"
+                    else _SOURCE_REFUSAL_TEXT
+                ),
+                "suggestions": [], "reason_code": "POLICY_DENIED",
+            }, origin="application")
+            return
+        raise BudgetExhausted("native agent spent its budget without a usable result")
+    elif any(card.card_type != "error" for card in cards):
+        state["decision"].limitations.append(dict(_BUDGET_LIMITATION))
+    state["results"] = cards
     await answer_results(state)
 
 
-__all__ = ["assigned_mode", "run", "select_calls", "shadow"]
+__all__ = [
+    "BudgetExhausted",
+    "TurnBudget",
+    "run",
+    "select_calls",
+]

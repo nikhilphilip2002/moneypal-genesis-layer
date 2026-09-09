@@ -16,7 +16,7 @@ from app.services.nlq.contracts import ChartSpec, ClarifyPlan, LookupPlan
 from app.services.nlq.executor import execute_raw
 from app.services.nlq.normalization import normalize_apostrophes
 from app.services.nlq.pipeline import run_sql
-from app.services.nlq.text_to_sql import SqlAttempt, _normalized_borrower_sql
+from app.services.nlq.text_to_sql import SqlAttempt
 from app.services.nlq.validator import validate
 
 
@@ -839,6 +839,19 @@ def _borrower_candidate_sql(where: str, display_name: str) -> str:
         f"WHERE {where} AND sanction_date <= CURRENT_DATE "
         f"GROUP BY {display_name}, customer_id ORDER BY {display_name}, customer_id LIMIT 20"
     )
+
+
+def _normalized_borrower_sql(borrower: str) -> tuple[str, str, str]:
+    """Build the parameter literal and governed normalized-name expressions for lookup."""
+    normalized = re.sub(r"[^a-z0-9]", "", borrower.lower()).replace("th", "t")
+    normalized = re.sub(r"(.)\1+", r"\1", normalized)
+    literal = exp.Literal.string(normalized).sql(dialect="postgres")
+    stored_name = (
+        "REGEXP_REPLACE(REGEXP_REPLACE(REPLACE(LOWER(TRIM(customer_name)), "
+        "'th', 't'), '[^a-z0-9]', '', 'g'), '(.)\\1+', '\\1', 'g')"
+    )
+    display_name = "TRIM(REGEXP_REPLACE(customer_name, '\\s+', ' ', 'g'))"
+    return literal, stored_name, display_name
 
 
 def _candidate_customers(name: str, catalog: Catalog) -> list[dict]:

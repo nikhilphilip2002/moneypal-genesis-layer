@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from types import SimpleNamespace
 
 import pytest
@@ -113,7 +114,7 @@ async def test_catalog_inspection_returns_governed_columns_and_declared_metadata
 
 
 @pytest.mark.anyio
-async def test_validated_query_exposes_nested_llm_trace_and_disables_regex_shortcuts(
+async def test_validated_query_exposes_nested_llm_trace(
     monkeypatch,
 ):
     generation_kwargs = {}
@@ -150,7 +151,6 @@ async def test_validated_query_exposes_nested_llm_trace_and_disables_regex_short
         _context(),
     )
 
-    assert generation_kwargs["allow_reviewed_shortcuts"] is False
     nested = executed.replay_payload()["lineage"]["text_to_sql"]
     assert nested["trace"] == trace
     assert nested["model"] == "local-model"
@@ -255,3 +255,117 @@ async def test_each_nonterminal_tool_dispatches_to_its_registered_handler(
     )
     assert result.card.summary == "ok"
     assert seen
+
+
+# --- Observations are bounded; durable replay is not ---------------------------------
+
+
+def _large_lookup(rows: int = 5000) -> agent_executor.ExecutedAgentCall:
+    card = SourceResult(
+        source="db",
+        card_type="chart",
+        payload={
+            "columns": ["customer_id", "borrower_name", "sanction_amount"],
+            "rows": [
+                {
+                    "customer_id": f"C{index:05d}",
+                    "borrower_name": f"Customer {index}",
+                    "sanction_amount": 100000 + index,
+                }
+                for index in range(rows)
+            ],
+        },
+        summary=f"{rows} customers under Vanitha.",
+        sensitive=True,
+        lineage={"sql": "SELECT ... LIMIT 5000", "params": {"agent_name": "vanitha"}},
+    )
+    return agent_executor.ExecutedAgentCall(
+        call=NativeToolCall(id="call_big", name="lookup_records", arguments={}),
+        card=card,
+    )
+
+
+def test_observation_is_bounded_while_durable_replay_keeps_every_row(monkeypatch):
+    monkeypatch.setattr(
+        agent_executor.settings, "workbench_agent_observation_max_chars", 12_000,
+        raising=False,
+    )
+    executed = _large_lookup()
+
+    durable = json.loads(executed.replay_message()["content"])
+    observation = json.loads(executed.observation_message()["content"])
+
+    assert len(durable["payload"]["rows"]) == 5000
+    assert len(executed.observation_message()["content"]) <= 12_000
+    kept = observation["payload"]["rows"]
+    assert 0 < len(kept) < 5000
+    assert kept == durable["payload"]["rows"][: len(kept)]
+    assert observation["truncated"]["reason"] == "observation_limit"
+    assert observation["truncated"]["rows_total"] == 5000
+    assert observation["truncated"]["rows_omitted"] == 5000 - len(kept)
+    assert observation["summary"] == durable["summary"]
+    assert observation["lineage"]["params"] == {"agent_name": "vanitha"}
+    assert executed.observation_message()["tool_call_id"] == "call_big"
+
+
+def test_small_results_replay_unchanged_apart_from_the_sql_prompt_trace():
+    executed = _large_lookup(rows=30)
+    executed.card.lineage = {
+        **executed.card.lineage,
+        "text_to_sql": {
+            "model": "ling", "provider": "llamacpp", "attempts": 2,
+            "trace": [
+                {
+                    "round": 1, "call_purpose": "sql_generate", "model": "ling",
+                    "provider": "llamacpp",
+                    "request_messages": [{"role": "system", "content": "SECRET PROMPT DDL"}],
+                    "assistant_message": {"role": "assistant", "content": "{}",
+                                          "reasoning_content": "thinking"},
+                    "candidate_sql": "SELECT disbursement_amount FROM gold.semantic_loan_account",
+                    "validation": {"status": "rejected", "error": "column does not exist"},
+                },
+                {
+                    "round": 2, "call_purpose": "sql_repair", "model": "ling",
+                    "provider": "llamacpp",
+                    "request_messages": [{"role": "system", "content": "SECRET PROMPT DDL"}],
+                    "candidate_sql": "SELECT sanction_amount FROM gold.semantic_loan_account",
+                    "validated_sql": "SELECT sanction_amount FROM gold.semantic_loan_account LIMIT 5000",
+                    "validation": {"status": "accepted", "tables": ["gold.semantic_loan_account"]},
+                },
+            ],
+        },
+    }
+
+    durable = json.loads(executed.replay_message()["content"])
+    text = executed.observation_message()["content"]
+    observation = json.loads(text)
+
+    assert "SECRET PROMPT DDL" in json.dumps(durable)
+    assert "SECRET PROMPT DDL" not in text
+    assert "thinking" not in text
+    assert observation["payload"]["rows"] == durable["payload"]["rows"]
+    assert "truncated" not in observation
+    trace = observation["lineage"]["text_to_sql"]["trace"]
+    assert [item["round"] for item in trace] == [1, 2]
+    assert trace[0]["validation"]["status"] == "rejected"
+    assert trace[1]["validated_sql"].startswith("SELECT sanction_amount")
+    assert "request_messages" not in trace[0] and "assistant_message" not in trace[0]
+
+
+def test_shape_observation_caps_facts_and_drops_evidence_before_clipping_summary():
+    payload = {
+        "status": "ok", "source": "db", "card_type": "chart",
+        "payload": {"rows": []},
+        "summary": "s" * 400,
+        "evidence": [{"text": "e" * 300}],
+        "lineage": {"sql": "x" * 300},
+        "facts": [{"id": str(index)} for index in range(100)],
+    }
+    shaped = agent_executor.shape_observation(payload, limit_chars=450, max_facts=5)
+
+    assert len(shaped["facts"]) == 5
+    assert shaped["truncated"]["facts_omitted"] == 95
+    assert shaped["truncated"]["dropped"] == ["evidence", "lineage"]
+    assert len(json.dumps(shaped, separators=(",", ":"))) <= 450
+    assert shaped["truncated"]["summary_clipped"] is True
+    assert shaped["status"] == "ok"

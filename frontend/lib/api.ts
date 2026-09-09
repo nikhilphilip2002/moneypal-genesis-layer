@@ -1122,10 +1122,27 @@ export type WorkbenchCard = {
   payload: any;
 };
 
+export type WorkbenchVerifiedFact = {
+  id: string;
+  label: string;
+  value: string;
+  display_value?: string;
+  unit?: string;
+  period?: string | null;
+  dimensions?: Record<string, string>;
+  derived?: boolean;
+  operation?: string | null;
+  operands?: string[];
+  formula?: string | null;
+};
+
 export type WorkbenchAnswer = {
   status: 'answered' | 'partial' | 'clarify' | 'refused';
   text: string;
   sources: string[];
+  // Verified facts the answer's numeric claims were checked against; rendered separately
+  // from the prose so observations and recommendations stay visibly distinct from data.
+  facts?: WorkbenchVerifiedFact[];
   citations: {
     document: string;
     page?: string | number | null;

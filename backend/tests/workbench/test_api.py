@@ -183,3 +183,32 @@ class TestConversationOwnership:
 
         assert body["record_version"] == history.RECORD_VERSION
         assert body["turns"][0]["cards"][0]["payload"]["summary"] == "Growth is stable."
+
+
+class TestAskStreamOverflow:
+    @pytest.mark.anyio
+    async def test_native_transcript_overflow_streams_an_error_frame(self, client, monkeypatch):
+        """The route answers 200 with a terminal error frame, never a broken stream."""
+        from app.services.workbench import graph, history
+
+        monkeypatch.setattr(history, "_ensure_table", lambda: False)
+        history._MEMORY.clear()
+
+        def overflow(*_args, **_kwargs):
+            raise history.NativeTranscriptOverflow("complete native conversation exceeds")
+
+        monkeypatch.setattr(graph.history, "build_native_transcript", overflow)
+
+        response = await client.post(
+            "/workbench/ask",
+            json={"question": "and schemewise?", "conversation_id": "overflow1"},
+            headers=_auth("moneypal_admin"),
+        )
+
+        assert response.status_code == 200
+        body = response.text
+        assert "event: conversation" in body
+        assert "event: error" in body
+        assert graph.CONTEXT_CAPACITY_CODE in body
+        assert body.rstrip().endswith("event: done\ndata: {}")
+        history._MEMORY.clear()

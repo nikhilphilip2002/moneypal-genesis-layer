@@ -86,8 +86,22 @@ class ToolResult:
 SourceResult = ToolResult
 
 
+@dataclass(slots=True)
+class ExecutionDecision:
+    """Observed native execution metadata, never a pre-execution routing decision."""
+
+    sources: list[str] = field(default_factory=list)
+    intent: str = ""
+    limitations: list[dict[str, str]] = field(default_factory=list)
+    policy_version: str = ""
+    effective_sources: tuple[str, ...] = ()
+    model: str = "native_agent"
+    reason: str = "native_tool_selection"
+
+
 __all__ = [
     "Evidence",
+    "ExecutionDecision",
     "MAX_EVIDENCE_ITEMS",
     "MAX_EXCERPT_CHARS",
     "SourceResult",

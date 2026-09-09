@@ -43,8 +43,20 @@ async def maybe_compact(conversation_id: str, user: str) -> bool:
         record = history.get(conversation_id, user=user)
         if record is None:
             return False
-        complete = [turn for turn in record.turns if turn.get("status") != "running"]
-        if not budget.should_compact(complete, history.assistant_text):
+        # Measure the replay the agent will be sent: the live turns after any checkpoint,
+        # as `build_native_transcript` shapes them, plus the checkpoint itself.
+        measure = history.measure_native_replay(record)
+        limit = budget.budget_tokens()
+        if measure.newest_turn_tokens > limit:
+            # Summarizing older turns cannot shrink the newest one. Leave the record as
+            # it is; the next transcript load reports `single_turn_exceeds_budget`.
+            logger.warning(
+                "workbench compaction cannot help %s: newest turn replays at %d tokens "
+                "against a budget of %d (single_turn_exceeds_budget)",
+                conversation_id, measure.newest_turn_tokens, limit,
+            )
+            return False
+        if measure.tokens <= limit:
             return False
         return await compact_now(conversation_id, user)
     except Exception:  # noqa: BLE001 - compaction is an optimization, not a dependency
@@ -88,12 +100,14 @@ async def compact_now(conversation_id: str, user: str) -> bool:
     if not to_summarize:
         return False
 
-    tokens_before = budget.transcript_tokens(complete, history.assistant_text)
+    tokens_before = history.measure_native_replay(record).tokens
     summary = await summarize.write_checkpoint(
         to_summarize,
         assistant_text_of=history.assistant_text,
         previous_summary=previous_summary,
     )
+    # The pointer on the record is what replay consults; the summary is also appended
+    # as an event naming every turn it replaces. Nothing is deleted.
     history.set_compaction(
         conversation_id,
         user,
@@ -103,6 +117,7 @@ async def compact_now(conversation_id: str, user: str) -> bool:
             state=state.from_turns(complete, history.assistant_text),
             tokens_before=tokens_before,
         ),
+        replaced_turn_ids=[str(turn.get("id", "")) for turn in to_summarize],
     )
     logger.info(
         "workbench compaction: %s summarized %d turn(s), tokens_before=%d",

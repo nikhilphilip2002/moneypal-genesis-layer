@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import time
 from dataclasses import dataclass, field
 from datetime import date
@@ -11,6 +12,7 @@ from typing import Any, Awaitable, Callable
 
 from pydantic import BaseModel
 
+from app.core.config import settings
 from app.services.nlq import governed_execution, pii, text_to_sql
 from app.services.nlq.catalog import Catalog, get_catalog
 from app.services.nlq.contracts import LookupPlan
@@ -32,6 +34,8 @@ from app.services.workbench.agent_contracts import (
 )
 from app.services.workbench.agent_tools import get_agent_tool, validate_agent_arguments
 from app.services.workbench.results import SourceResult
+
+logger = logging.getLogger(__name__)
 
 
 class AgentExecutionError(RuntimeError):
@@ -102,11 +106,153 @@ class ExecutedAgentCall:
         }
 
     def replay_message(self) -> dict[str, str]:
+        """The complete, durable tool result. Never shaped."""
         return {
             "role": "tool",
             "tool_call_id": self.call.id,
             "content": json.dumps(self.replay_payload(), default=str, separators=(",", ":")),
         }
+
+    def observation_message(self) -> dict[str, str]:
+        """The bounded tool result the model sees in this and later turns."""
+        return {
+            "role": "tool",
+            "tool_call_id": self.call.id,
+            "content": shape_observation_text(
+                self.replay_message()["content"], tool_name=self.call.name,
+            ),
+        }
+
+
+_SQL_TRACE_KEYS = (
+    "round", "call_purpose", "model", "provider", "candidate_sql", "validated_sql",
+    "validation", "error",
+)
+
+
+def observation_limit_chars(tool_name: str | None) -> int:
+    """Per-tool observation bound, falling back to the deployment default."""
+    limit = settings.workbench_agent_observation_max_chars
+    if tool_name:
+        try:
+            limit = min(limit, get_agent_tool(tool_name).max_result_chars)
+        except Exception:  # noqa: BLE001 - unknown tool names keep the default bound
+            logger.debug("no observation bound registered for tool %r", tool_name)
+    return limit
+
+
+def _encoded_size(payload: dict[str, Any]) -> int:
+    return len(json.dumps(payload, default=str, separators=(",", ":")))
+
+
+def _strip_sql_trace(lineage: Any) -> Any:
+    """Keep the SQL decisions of every round, drop the prompts that produced them."""
+    if not isinstance(lineage, dict):
+        return lineage
+    nested = lineage.get("text_to_sql")
+    if not isinstance(nested, dict):
+        return lineage
+    trace = nested.get("trace")
+    if not isinstance(trace, list):
+        return lineage
+    return {
+        **lineage,
+        "text_to_sql": {
+            **nested,
+            "trace": [
+                {key: item[key] for key in _SQL_TRACE_KEYS if key in item}
+                if isinstance(item, dict) else item
+                for item in trace
+            ],
+        },
+    }
+
+
+def shape_observation(
+    payload: dict[str, Any], *, limit_chars: int, max_facts: int | None = None,
+) -> dict[str, Any]:
+    """Bound a replay payload for the model without touching the durable copy.
+
+    Reductions are applied in order and each one is recorded under ``truncated`` so the
+    model knows what it is not seeing: nested SQL prompts are always dropped, facts are
+    capped, then result rows are cut to the largest count that fits, then evidence and
+    lineage are dropped, and finally the summary is clipped.
+    """
+    if max_facts is None:
+        max_facts = settings.workbench_agent_observation_max_facts
+    shaped: dict[str, Any] = dict(payload)
+    truncated: dict[str, Any] = {}
+    if "lineage" in shaped:
+        shaped["lineage"] = _strip_sql_trace(shaped["lineage"])
+    facts = shaped.get("facts")
+    if isinstance(facts, list) and len(facts) > max_facts:
+        truncated["facts_omitted"] = len(facts) - max_facts
+        shaped["facts"] = facts[:max_facts]
+    if truncated:
+        shaped["truncated"] = truncated
+    if _encoded_size(shaped) <= limit_chars:
+        return shaped
+
+    truncated["reason"] = "observation_limit"
+    shaped["truncated"] = truncated
+    inner = shaped.get("payload")
+    if isinstance(inner, dict):
+        inner = dict(inner)
+        shaped["payload"] = inner
+        list_keys = sorted(
+            (key for key, value in inner.items() if isinstance(value, list) and value),
+            key=lambda key: -len(json.dumps(inner[key], default=str)),
+        )
+        for key in list_keys:
+            items = inner[key]
+            low, high = 0, len(items)
+            while low < high:
+                mid = (low + high + 1) // 2
+                inner[key] = items[:mid]
+                if _encoded_size(shaped) <= limit_chars:
+                    low = mid
+                else:
+                    high = mid - 1
+            inner[key] = items[:low]
+            truncated[f"{key}_total"] = len(items)
+            truncated[f"{key}_omitted"] = len(items) - low
+            if key == "rows":
+                truncated["rows_total"] = len(items)
+                truncated["rows_omitted"] = len(items) - low
+            if _encoded_size(shaped) <= limit_chars:
+                return shaped
+    dropped: list[str] = []
+    for key in ("evidence", "lineage"):
+        if key in shaped:
+            shaped.pop(key)
+            dropped.append(key)
+            truncated["dropped"] = list(dropped)
+            if _encoded_size(shaped) <= limit_chars:
+                return shaped
+    summary = shaped.get("summary")
+    if isinstance(summary, str) and summary:
+        suffix = " [clipped]"
+        truncated["summary_clipped"] = True
+        excess = _encoded_size(shaped) - limit_chars
+        if excess > 0:
+            keep = max(0, len(summary) - excess - len(suffix))
+            shaped["summary"] = summary[:keep] + suffix
+        else:
+            del truncated["summary_clipped"]
+    return shaped
+
+
+def shape_observation_text(content: str, *, tool_name: str | None = None) -> str:
+    """Shape a serialized tool message; non-JSON content is only cut to the bound."""
+    limit = observation_limit_chars(tool_name)
+    try:
+        parsed = json.loads(content)
+    except (TypeError, ValueError):
+        return content if len(content) <= limit else content[:limit]
+    if not isinstance(parsed, dict):
+        return content if len(content) <= limit else content[:limit]
+    shaped = shape_observation(parsed, limit_chars=limit)
+    return json.dumps(shaped, default=str, separators=(",", ":"))
 
 
 def _chart_result(chart) -> SourceResult:
@@ -209,7 +355,6 @@ async def _run_validated_query(
         catalog=ctx.catalog,
         allow_pii=pii.may_see_pii(ctx.role),
         preferred_tables=args.tables,
-        allow_reviewed_shortcuts=False,
     )
     if not attempt.validated:
         raise AgentCompileRejected("validated query was rejected by the SQL safety gate")

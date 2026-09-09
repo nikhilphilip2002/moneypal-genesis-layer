@@ -1,20 +1,13 @@
-"""The source catalog — what the orchestrator can route to, described declaratively.
+"""Declarative source metadata used for authorization and the Workbench UI.
 
-This is the workbench analogue of the NLQ metric catalog. The router never sees a list of
-questions; it sees a list of *sources* and a plain-language description of what each one
-holds. Adding a source, or refining its `describes` string, generalises routing to new
-phrasings automatically — the same reason the NLQ planner routes from metric descriptions
-rather than a lookup table.
-
-`example_intents` are illustrative only. They exist to anchor the router's sense of each
-source's scope, not to be matched literally, and the router is told exactly that.
+The native tool registry supplies model-facing capability descriptions. This catalog names
+the underlying evidence sources, role visibility, sensitivity, and display examples; it does
+not choose behavior from question text.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
-
 from app.core.config import settings
 
 
@@ -33,8 +26,7 @@ class Source:
         return self.roles is None or role in self.roles
 
 
-# Phase 1 ships db + macro. competitive, regulatory and schema land in Phase 2 by adding
-# entries here — no router or graph change required.
+# Source availability is entirely policy-driven; adding metadata here does not add a tool.
 SOURCES: dict[str, Source] = {
     "db": Source(
         id="db",
@@ -165,7 +157,6 @@ SOURCES: dict[str, Source] = {
     ),
 }
 
-ROUTE_VALUES = ("dispatch", "refuse")
 EXTERNAL_CONNECTOR_SOURCES = frozenset({"macro", "competitive", "regulatory", "web"})
 
 
@@ -183,140 +174,3 @@ def visible_sources(
         )
         and (s.id != "web" or settings.exa_mcp_enabled)
     ]
-
-
-def route_schema(
-    role: str, allowed_source_ids: tuple[str, ...] | list[str] | set[str] | None = None,
-) -> dict[str, Any]:
-    """Grammar-JSON schema for the router call.
-
-    `sources` is constrained to the ids this role may see, so — exactly like the NLQ
-    planner constrained to catalog metrics — the model physically cannot route to a source
-    that does not exist or that the user is not allowed to reach.
-    """
-    ids = [s.id for s in visible_sources(role, allowed_source_ids)]
-    return {
-        "type": "object",
-        "additionalProperties": False,
-        "properties": {
-            "route": {"type": "string", "enum": list(ROUTE_VALUES)},
-            "sources": {
-                "type": "array",
-                "items": {"type": "string", "enum": ids},
-                "minItems": 0,
-                "maxItems": len(ids),
-            },
-            "intent": {"type": "string"},
-            "source_intents": {
-                "type": "object",
-                "additionalProperties": False,
-                "properties": {source_id: {"type": "string"} for source_id in ids},
-            },
-            "reason": {"type": "string"},
-            "message": {"type": "string"},
-        },
-        "required": ["route"],
-    }
-
-
-def router_system_prompt(
-    role: str, allowed_source_ids: tuple[str, ...] | list[str] | set[str] | None = None,
-) -> str:
-    """Fixed, cacheable prefix describing every visible source."""
-    compact = {
-        "db": "governed bank loan book values, records, metrics and breakdowns",
-        "schema": "authorized abstracted loan-book views and relationships",
-        "knowledge": "stable governed banking definitions; no current facts",
-        "macro": "indexed public macroeconomic and sector evidence",
-        "competitive": "indexed peer lender, product and market evidence",
-        "regulatory": "indexed RBI and banking-regulation evidence",
-        "web": "fresh public internet evidence; never private bank data",
-    }
-    lines = [
-        "Select source ids for a bank intelligence question; do not answer it.",
-        "Allowed sources:",
-    ]
-    for source in visible_sources(role, allowed_source_ids):
-        lines.append(f"- {source.id}: {compact[source.id]}")
-    lines += [
-        "Pick every needed source; comparisons may need db plus one external source.",
-        "Use web only for explicit online search or material freshness.",
-        "Never send names, account/customer ids, repayment history, or private facts to web.",
-        "Use knowledge for definitions and db for our values/records.",
-        "Return dispatch with sources/intent (and focused source_intents for hybrids), or "
-        "refuse only when no allowed source can contribute. Preserve exact names and filters.",
-    ]
-    return "\n".join(lines)
-
-
-ROUTER_FEW_SHOTS: list[tuple[str, str]] = [
-    (
-        "Show repayment history for borrower Anitha K",
-        '{"route":"dispatch","sources":["db"],'
-        '"intent":"repayment history for borrower Anitha K"}',
-    ),
-    (
-        "What are the loan amount and date for customer ID 42?",
-        '{"route":"dispatch","sources":["db"],'
-        '"intent":"loan amount and date for customer ID 42"}',
-    ),
-    (
-        "Search the web for the latest RBI repo rate announcement",
-        '{"route":"dispatch","sources":["web"],'
-        '"intent":"latest RBI repo rate announcement"}',
-    ),
-    (
-        "Compare our loan growth with the latest RBI bank credit growth",
-        '{"route":"dispatch","sources":["db","web"],"intent":"compare loan growth",'
-        '"source_intents":{"db":"our loan growth",'
-        '"web":"latest published RBI bank credit growth"}}',
-    ),
-    (
-        "Give me details for agent AGNT12",
-        '{"route":"dispatch","sources":["db"],'
-        '"intent":"governed directory details for agent AGNT12"}',
-    ),
-    (
-        "What branches are there?",
-        '{"route":"dispatch","sources":["db"],'
-        '"intent":"list the current governed branch directory"}',
-    ),
-    (
-        "top 25 borrowers",
-        '{"route":"dispatch","sources":["db"],'
-        '"intent":"top 25 borrowers by current principal outstanding"}',
-    ),
-    (
-        "What was our disbursement by branch last quarter?",
-        '{"route":"dispatch","sources":["db"],"intent":"disbursement by branch last quarter"}',
-    ),
-    (
-        "How many loans did we sanction each month in FY26?",
-        '{"route":"dispatch","sources":["db"],"intent":"monthly sanctioned loan counts for FY26"}',
-    ),
-    (
-        "What is the RBI repo rate stance right now?",
-        '{"route":"dispatch","sources":["macro"],"intent":"current RBI policy rate stance"}',
-    ),
-    (
-        "What does an interest rate mean on a loan?",
-        '{"route":"dispatch","sources":["knowledge"],'
-        '"intent":"explain what a loan interest rate means"}',
-    ),
-    (
-        "What interest rates are present in our loan book?",
-        '{"route":"dispatch","sources":["db"],'
-        '"intent":"list distinct interest rates in the loan book"}',
-    ),
-    (
-        "How does our MSME book compare with the wider MSME credit market?",
-        '{"route":"dispatch","sources":["db","macro"],"intent":"our MSME portfolio versus '
-        'MSME sector credit trends","source_intents":{"db":"show the size and growth of our MSME '
-        'portfolio","macro":"what is the wider Indian MSME credit growth trend"}}',
-    ),
-    (
-        "Delete the loan records for branch 4",
-        '{"route":"refuse","reason":"unsafe","message":"I can read and analyse the book, '
-        'but I cannot modify or delete data."}',
-    ),
-]

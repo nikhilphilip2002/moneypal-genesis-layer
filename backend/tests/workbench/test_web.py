@@ -23,10 +23,9 @@ class TestPrivacy:
         with pytest.raises(web.UnsafeWebQuery):
             web.public_query(question)
 
-    def test_hybrid_question_keeps_only_the_public_half(self):
-        assert web.public_query(
-            "Compare our loan growth against the latest RBI bank credit growth"
-        ) == "the latest RBI bank credit growth"
+    def test_mixed_internal_public_query_is_rejected_not_rewritten(self):
+        with pytest.raises(web.UnsafeWebQuery):
+            web.public_query("Compare our loan growth against the latest RBI bank credit growth")
 
 
 class TestAuthority:

@@ -1,4 +1,4 @@
-"""Workbench API — one unified chat that routes to every intelligence source.
+"""Workbench API — one unified chat driven by provider-native tool calls.
 
 `/workbench/ask` streams SSE frames: understanding, routing, route, source_start,
 source_card, synthesis, refusal, error, done. The card frames carry a `card_type` the
@@ -108,8 +108,7 @@ def _identity(authorization: str | None) -> tuple[str, str]:
 class AskRequest(BaseModel):
     question: str = Field(min_length=1, max_length=2000)
     conversation_id: str | None = None
-    # "+" -> Pin a source. A deterministic override; the router validates it against the
-    # role's visible set, so it can never widen access.
+    # "+" -> Pin a source. Policy narrows the native tool set to that authorized source.
     pinned_source: str | None = None
     data_access: Literal["direct", "mcp"] | None = None
     external_sources_enabled: bool = False
@@ -256,7 +255,7 @@ async def run_tool(tool_id: str, req: ToolRequest | None = None,
 
 @router.post("/ask")
 async def ask(req: AskRequest, authorization: str | None = Header(default=None)):
-    """Ask anything. The orchestrator picks the source(s) and streams cards back."""
+    """Ask anything. The model selects authorized native tools and streams cards back."""
     username, role = _identity(authorization)
     if (
         req.conversation_id

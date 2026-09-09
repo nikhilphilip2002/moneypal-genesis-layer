@@ -5,6 +5,7 @@ One app, three domain routers (macro, competitive, regulatory) mounted together.
 Run (from backend/):  uvicorn app.main:app --port 8000 --reload
 """
 import asyncio
+import logging
 import contextlib
 from contextlib import asynccontextmanager
 
@@ -19,6 +20,15 @@ from app.core.logging import bind_trace, start_logging, stop_logging
 @asynccontextmanager
 async def _lifespan(_app: FastAPI):
     start_logging()
+    # Workbench execution is intentionally not a rollout switch: every request uses the
+    # provider-native tool loop.
+    logging.getLogger(__name__).info(
+        "workbench execution=native_only context_window=%d "
+        "compaction_enabled=%s observation_max_chars=%d llm_provider=%s llm_model=%s",
+        settings.workbench_context_window, settings.workbench_compaction_enabled,
+        settings.workbench_agent_observation_max_chars,
+        settings.nlq_llm_provider, settings.nlq_llm_model,
+    )
     warmup_task = None
     if settings.nlq_llm_provider == "llamacpp":
         from app.services.nlq.llm import warm_catalog_prompt_cache

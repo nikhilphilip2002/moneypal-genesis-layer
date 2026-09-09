@@ -130,12 +130,10 @@ class Settings:
         self.nlq_request_budget_s = float(
             get("NLQ_REQUEST_BUDGET_S", "60") or "60"
         )
-        # Workbench model calls are optional coordination steps: routing has a safe
-        # deterministic fallback and composition has a grounded extractive fallback.
-        # Bound the *whole* call (including provider retries) so a loading or wedged
-        # llama-server cannot turn a retrieved source card into a minute-long spinner.
-        self.workbench_router_timeout_s = float(
-            get("WORKBENCH_ROUTER_TIMEOUT_S", "45") or "45"
+        # Bound each native selection call (including provider retries) so a loading or
+        # wedged llama-server cannot consume the whole turn deadline.
+        self.workbench_agent_select_timeout_s = float(
+            get("WORKBENCH_AGENT_SELECT_TIMEOUT_S", "45") or "45"
         )
         self.workbench_composer_timeout_s = float(
             get("WORKBENCH_COMPOSER_TIMEOUT_S", "20") or "20"
@@ -171,6 +169,14 @@ class Settings:
         self.nlq_open_pii_access = (
             get("NLQ_OPEN_PII_ACCESS", "true") or "true"
         ).lower() in ("1", "true", "yes", "on")
+        # Text-to-SQL function policy. `denylist` (default) blocks the known exfiltration
+        # and DoS primitives and logs any function outside the validator's allowlist so the
+        # list can be completed from canary evidence; `allowlist` rejects everything not on it.
+        self.nlq_sql_function_mode = (
+            get("NLQ_SQL_FUNCTION_MODE", "denylist") or "denylist"
+        ).lower()
+        if self.nlq_sql_function_mode not in ("denylist", "allowlist"):
+            self.nlq_sql_function_mode = "denylist"
 
         # PostgreSQL access can be switched between the in-process adapter and the MCP
         # service. Direct remains the safe fallback; `mcp` makes the protocol boundary real
@@ -217,35 +223,17 @@ class Settings:
         self.workbench_groq_opt_in = (get("WORKBENCH_GROQ_OPT_IN", "false") or "false").lower() in (
             "1", "true", "yes", "on",
         )
-        # Router and synthesizer may point at two different local models later; today they
-        # default to the same NLQ local model, so one llama-server serves both.
-        self.workbench_router_model = get("WORKBENCH_ROUTER_MODEL") or self.nlq_llm_model
-        self.workbench_synth_model = get("WORKBENCH_SYNTH_MODEL") or self.nlq_llm_model
-
-        # Workbench simplification controls. The plain-async orchestrator is now the only
-        # implementation; its legacy flag remains readable for deployment compatibility.
-        self.workbench_orchestrator_v2 = (
-            get("WORKBENCH_ORCHESTRATOR_V2", "true") or "true"
-        ).lower() in ("1", "true", "yes", "on")
-        self.workbench_deterministic_routing = (
-            get("WORKBENCH_DETERMINISTIC_ROUTING", "true") or "true"
-        ).lower() in ("1", "true", "yes", "on")
-        self.workbench_common_composer = (
-            get("WORKBENCH_COMMON_COMPOSER", "true") or "true"
-        ).lower() in ("1", "true", "yes", "on")
+        # The Workbench has one execution architecture: provider-native tool calling.
+        # Model selection remains purpose-aware for privacy, but there is no behavioral
+        # router, legacy orchestrator, rollout mode, or percentage assignment.
         self.workbench_personalize_suggestions = (
             get("WORKBENCH_PERSONALIZE_SUGGESTIONS", "false") or "false"
         ).lower() in ("1", "true", "yes", "on")
-        self.workbench_agent_mode = (
-            get("WORKBENCH_AGENT_MODE", "off") or "off"
-        ).lower()
-        if self.workbench_agent_mode not in {"off", "shadow", "canary", "on"}:
-            self.workbench_agent_mode = "off"
-        self.workbench_agent_canary_percent = max(
-            0, min(100, int(get("WORKBENCH_AGENT_CANARY_PERCENT", "0") or "0"))
-        )
+        # A round is one LLM request of any kind: selection, continuation, final
+        # synthesis, or synthesis repair. The floor of 2 is one selection plus the
+        # synthesis round that shows the model what that selection returned.
         self.workbench_agent_max_rounds = max(
-            2, min(6, int(get("WORKBENCH_AGENT_MAX_ROUNDS", "3") or "3"))
+            2, min(8, int(get("WORKBENCH_AGENT_MAX_ROUNDS", "5") or "5"))
         )
         self.workbench_agent_max_tool_calls = max(
             1, min(12, int(get("WORKBENCH_AGENT_MAX_TOOL_CALLS", "6") or "6"))
@@ -256,8 +244,21 @@ class Settings:
         self.workbench_agent_synthesis_repairs = max(
             0, min(1, int(get("WORKBENCH_AGENT_SYNTHESIS_REPAIRS", "1") or "1"))
         )
-        # Deployment availability is independent of per-conversation consent.  True keeps
-        # the legacy path compatible; Phase 1 additionally requires explicit user consent.
+        # What goes back to the model after a tool call is bounded separately from what
+        # is stored: durable history keeps every row, the observation is shaped to fit.
+        self.workbench_agent_observation_max_chars = max(
+            2_000, int(get("WORKBENCH_AGENT_OBSERVATION_MAX_CHARS", "12000") or "12000")
+        )
+        self.workbench_agent_observation_max_facts = max(
+            0, int(get("WORKBENCH_AGENT_OBSERVATION_MAX_FACTS", "40") or "40")
+        )
+        # Provider reasoning fields are stored with the assistant message but only sent
+        # back to the provider when explicitly enabled for the served model.
+        self.nlq_llm_replay_reasoning = (
+            get("NLQ_LLM_REPLAY_REASONING", "false") or "false"
+        ).lower() in ("1", "true", "yes", "on")
+        # Deployment availability is independent of per-conversation consent. Native tool
+        # definitions require both availability and explicit user consent.
         self.workbench_external_connectors_enabled = (
             get("WORKBENCH_EXTERNAL_CONNECTORS_ENABLED", "true") or "true"
         ).lower() in ("1", "true", "yes", "on")
@@ -280,6 +281,12 @@ class Settings:
         self.workbench_compaction_max_tokens = int(
             get("WORKBENCH_COMPACTION_MAX_TOKENS", "1200") or "1200"
         )
+        # The ordered event stream is the record of a turn. The per-turn
+        # `agent_exchanges` copy is written only for the rollback window of the
+        # version-7 history migration; nothing reads it once records carry events.
+        self.workbench_history_write_legacy_exchanges = (
+            get("WORKBENCH_HISTORY_WRITE_LEGACY_EXCHANGES", "true") or "true"
+        ).lower() in ("1", "true", "yes", "on")
 
         # --- Rotating Logging Subsystem ---------------------------------------------
         self.log_dir = Path(get("LOG_DIR", str(DATA_DIR / "logs")) or DATA_DIR / "logs")

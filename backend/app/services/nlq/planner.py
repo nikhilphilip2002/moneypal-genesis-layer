@@ -43,10 +43,6 @@ from app.services.nlq.llm import LLMError, LLMUnavailable, get_llm_client
 from app.services.nlq.llm.prompts import PROMPT_VERSION, build_messages, stable_prefix_hash
 from app.services.nlq.llm.schemas import plan_schema
 from app.services.nlq.normalization import normalize_lending_question
-from app.services.nlq.text_to_sql import (
-    named_borrower_disbursed_name,
-    named_borrower_principal_name,
-)
 
 logger = logging.getLogger(__name__)
 
@@ -1323,26 +1319,6 @@ async def plan(
     if agent_count is not None:
         return PlanOutcome(
             plan=agent_count,
-            attempts=0,
-            prompt_version=PROMPT_VERSION,
-            model="deterministic",
-            provider="catalog",
-            duration_ms=0,
-        )
-
-    # A named-borrower filter is outside QuerySpec by design. Route this reviewed intent
-    # deterministically so the model cannot drop the name and answer with the whole book.
-    if (
-        named_borrower_principal_name(planning_question)
-        or named_borrower_disbursed_name(planning_question)
-    ):
-        return PlanOutcome(
-            plan=SqlPlan(
-                intent=planning_question,
-                tables=["gold.semantic_loan_account"],
-                confidence=1.0,
-                reasoning="named-borrower principal lookup uses governed SQL",
-            ),
             attempts=0,
             prompt_version=PROMPT_VERSION,
             model="deterministic",

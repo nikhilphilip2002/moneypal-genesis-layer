@@ -1,43 +1,9 @@
-"""Deterministic Workbench evaluation fixtures and telemetry aggregation.
-
-The fixture corpus is intentionally provider-independent. CI can route it with fake tools;
-staging can run the same corpus against deployed PostgreSQL, Qdrant, web, and model services.
-"""
+"""Workbench usage and latency telemetry aggregation."""
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from math import ceil
 from typing import Any, Iterable
-
-
-@dataclass(frozen=True, slots=True)
-class RouteFixture:
-    id: str
-    question: str
-    sources: tuple[str, ...]
-    external_modes: tuple[bool, ...] = (False, True)
-    pinned: str | None = None
-    history: tuple[tuple[str, str], ...] = ()
-
-
-ROUTE_FIXTURES = (
-    RouteFixture("db_metric", "Show our PAR 30 by branch", ("db",), (False, True)),
-    RouteFixture("db_lookup", "Loan details for customer ID 128", ("db",), (False, True)),
-    RouteFixture("db_followup", "and by branch?", ("db",), (False, True), history=(
-        ("user", "Show our PAR 30"), ("assistant", "PAR 30 was 4.2%."),
-    )),
-    RouteFixture("schema", "Show loan account table relationships", ("schema",), (False, True)),
-    RouteFixture("knowledge", "What does PAR 30 mean?", ("knowledge",), (False, True)),
-    RouteFixture("macro", "Explain Karnataka GDP growth trends", ("macro",), (True,)),
-    RouteFixture("competitive", "Who competes for MSME borrowers?", ("competitive",), (True,)),
-    RouteFixture("regulatory", "Explain RBI priority sector rules", ("regulatory",), (True,)),
-    RouteFixture("web", "Search the web for the latest RBI repo announcement", ("web",), (True,)),
-    RouteFixture(
-        "mixed", "Compare our loan growth with Karnataka GDP growth", ("db", "macro"), (True,),
-    ),
-    RouteFixture("pinned_macro", "outlook", ("macro",), (True,), pinned="macro"),
-)
 
 
 def percentile(values: Iterable[int | float], percent: int) -> float:
@@ -73,4 +39,4 @@ def usage_summary(turns: Iterable[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
-__all__ = ["ROUTE_FIXTURES", "RouteFixture", "percentile", "usage_summary"]
+__all__ = ["percentile", "usage_summary"]

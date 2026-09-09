@@ -13,11 +13,14 @@ other side of it is an LLM following instructions that may have come from data.
 from __future__ import annotations
 
 import logging
+import re
 from dataclasses import dataclass, field
 
 import sqlglot
 from sqlglot import exp
+from sqlglot.optimizer.scope import Scope, ScopeType, traverse_scope
 
+from app.core.config import settings
 from app.services.nlq.catalog import Catalog, get_catalog
 
 logger = logging.getLogger(__name__)
@@ -36,6 +39,37 @@ BANNED_FUNCTIONS = {
     "pg_read_server_files", "set_config", "current_setting",
     "pg_logical_emit_message", "pg_create_physical_replication_slot",
 }
+
+# Functions a reporting query legitimately needs, named as PostgreSQL spells them. In
+# `allowlist` mode (NLQ_SQL_FUNCTION_MODE) anything outside this set is rejected; in the
+# default `denylist` mode an unlisted function is logged at INFO so the list can be completed
+# from canary evidence before the switch is flipped. Seeded from what the QuerySpec compiler,
+# the lookup module and the validator's own tests already emit.
+ALLOWED_FUNCTIONS = {
+    # aggregates and window functions
+    "count", "sum", "avg", "min", "max", "string_agg", "array_agg", "bool_and", "bool_or",
+    "every", "stddev", "stddev_pop", "stddev_samp", "variance", "var_pop", "var_samp", "corr",
+    "percentile_cont", "percentile_disc", "row_number", "rank", "dense_rank", "percent_rank",
+    "ntile", "lag", "lead", "first_value", "last_value", "nth_value",
+    # null handling, conditionals, casts ("if" is how sqlglot models a CASE ... WHEN arm)
+    "coalesce", "nullif", "greatest", "least", "case", "if", "cast", "exists", "array",
+    # arithmetic
+    "round", "trunc", "abs", "floor", "ceil", "ceiling", "sign", "mod", "div", "power",
+    "sqrt", "ln", "log", "exp", "width_bucket",
+    # dates
+    "date_trunc", "date_part", "extract", "to_char", "to_date", "to_timestamp", "make_date",
+    "make_interval", "age", "now", "current_date", "current_timestamp", "current_time",
+    "localtimestamp", "date_bin", "justify_days", "justify_interval", "isfinite",
+    "generate_series",
+    # strings
+    "lower", "upper", "trim", "ltrim", "rtrim", "btrim", "initcap", "concat", "concat_ws",
+    "substring", "substr", "left", "right", "length", "char_length", "replace", "split_part",
+    "strpos", "position", "lpad", "rpad", "regexp_replace", "regexp_matches", "to_number",
+    # arrays
+    "unnest", "array_to_string", "array_length", "cardinality",
+}
+
+FUNCTION_MODES = ("denylist", "allowlist")
 
 # Schemas whose mere presence in a query is a probe.
 BANNED_SCHEMAS = {
@@ -65,9 +99,17 @@ def validate(
     allow_pii: bool = False,
     allowed_pii_columns: set[str] | None = None,
     max_limit: int = MAX_LIMIT,
+    function_mode: str | None = None,
 ) -> ValidationResult:
-    """Parse and check a generated statement. Returns the (possibly rewritten) SQL."""
+    """Parse and check a generated statement. Returns the (possibly rewritten) SQL.
+
+    `function_mode` is `denylist` or `allowlist`; when omitted it comes from
+    `settings.nlq_sql_function_mode`.
+    """
     cat = catalog or get_catalog()
+    mode = (function_mode or settings.nlq_sql_function_mode or "denylist").lower()
+    if mode not in FUNCTION_MODES:
+        raise ValueError(f"unknown function mode {mode!r}; expected one of {FUNCTION_MODES}")
 
     statements = _parse(sql)
     _check_single_statement(statements)
@@ -76,7 +118,7 @@ def validate(
     _check_is_select(tree)
     _check_no_write_ctes(tree)
     _check_no_star(tree)
-    _check_functions(tree)
+    _check_functions(tree, mode)
     _check_no_set_operations_on_forbidden_tables(tree, cat)
     tables = _check_tables(tree, cat)
     _check_columns(tree, cat)
@@ -157,13 +199,58 @@ def _check_no_star(tree: exp.Expression) -> None:
             raise ValidationError("table.* is not allowed; name the columns explicitly")
 
 
-def _check_functions(tree: exp.Expression) -> None:
-    for node in tree.find_all(exp.Anonymous):
-        name = str(node.this).lower() if node.this else ""
-        if name in BANNED_FUNCTIONS:
-            raise ValidationError(f"function {name}() is not permitted")
-    # Named function nodes sqlglot models explicitly rather than as Anonymous.
+_FUNCTION_CALL_NAME = re.compile(r"^\s*([A-Za-z_][A-Za-z0-9_.]*)\s*\(")
+_BARE_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+
+
+def _function_names(node: exp.Func) -> tuple[str, set[str]]:
+    """The names a function node answers to: how PostgreSQL spells it, plus sqlglot's own
+    canonical key (sqlglot parses `DATE_TRUNC` into `TimestampTrunc` and `TO_CHAR` into
+    `TimeToStr`; the rendered form is what the allowlist is written against).
+
+    Returns (display name, all lowercase candidates)."""
+    candidates: set[str] = set()
+    display = ""
+    if isinstance(node, exp.Anonymous):
+        display = (node.name or "").lower()
+        candidates.add(display)
+    else:
+        try:
+            rendered = node.sql(dialect=DIALECT)
+        except Exception:  # noqa: BLE001 - never let a rendering quirk skip the check
+            rendered = ""
+        match = _FUNCTION_CALL_NAME.match(rendered)
+        if match:
+            display = match.group(1).lower()
+        elif _BARE_NAME.match(rendered.strip()):
+            display = rendered.strip().lower()
+        if display:
+            candidates.add(display)
+        candidates.add(str(node.key).lower())
+        candidates.add(node.sql_name().lower())
+        display = display or str(node.key).lower()
+    return display, {name for name in candidates if name}
+
+
+def _check_functions(tree: exp.Expression, mode: str = "denylist") -> None:
+    """The denylist always applies. In `allowlist` mode any function outside
+    ALLOWED_FUNCTIONS is rejected; in `denylist` mode it is logged so the allowlist can be
+    completed from evidence before the mode is switched."""
     for node in tree.walk():
+        # sqlglot models AND/OR/NOT and the comparison operators as Func subclasses too;
+        # they are syntax, not callables, and only the callable form is policed here.
+        operator = isinstance(node, (exp.Binary, exp.Unary, exp.Predicate))
+        if isinstance(node, exp.Func) and not operator:
+            display, names = _function_names(node)
+            if names & BANNED_FUNCTIONS:
+                raise ValidationError(f"function {display}() is not permitted")
+            if names & ALLOWED_FUNCTIONS:
+                continue
+            if mode == "allowlist":
+                raise ValidationError(f"function {display}() is not on the allowlist")
+            logger.info("NLQ validator saw function %s() outside the allowlist", display)
+            continue
+        # Non-function nodes sqlglot models explicitly, e.g. COPY.
         key = getattr(node, "key", "")
         if isinstance(key, str) and key.lower() in BANNED_FUNCTIONS:
             raise ValidationError(f"function {key.lower()}() is not permitted")
@@ -232,60 +319,176 @@ def _physical_columns(catalog: Catalog) -> dict[str, set[str]]:
 
 
 def _check_columns(tree: exp.Expression, catalog: Catalog) -> None:
-    """Reject hallucinated physical column names before the database sees the query."""
+    """Reject hallucinated physical column names before the database sees the query.
+
+    Resolution is per scope, using sqlglot's scope tree (`traverse_scope`): an unqualified
+    column is looked up in the sources of the SELECT it appears in, then in enclosing
+    scopes (a correlated reference), and is ambiguous only when two sources of the *same*
+    scope carry it. A subquery or UNION arm reading another Gold view therefore does not
+    make the outer SELECT ambiguous. A qualifier naming a CTE, derived table or lateral
+    resolves to that scope's projected column list, so `WITH c AS (...) SELECT c.made_up
+    FROM c` is rejected rather than skipped.
+
+    sqlglot's own `Scope.columns` is not used because it assumes `qualify_columns` has run
+    and treats every unqualified column as external; ownership is decided here by walking
+    each Column up to the nearest scope expression.
+    """
     allowed = _physical_columns(catalog)
-    aliases: dict[str, str] = {}
-    derived_aliases: set[str] = set()
 
-    for table in tree.find_all(exp.Table):
-        qualified = f"{(table.db or '').lower()}.{(table.name or '').lower()}"
-        if qualified in allowed:
-            aliases[(table.alias_or_name or table.name or "").lower()] = qualified
+    root = tree
+    while isinstance(root, (exp.Subquery, exp.Paren)):
+        root = root.this
+    try:
+        scopes = traverse_scope(root)
+    except Exception as exc:  # noqa: BLE001 - sqlglot raises several types
+        raise ValidationError(f"could not resolve query scopes: {exc}") from exc
+    if not scopes:
+        raise ValidationError("no query scope found")
+    scope_by_expression = {id(scope.expression): scope for scope in scopes}
 
-    derived_aliases.update(
-        (cte.alias_or_name or "").lower() for cte in tree.find_all(exp.CTE)
-    )
-    derived_aliases.update(
-        (subquery.alias_or_name or "").lower()
-        for subquery in tree.find_all(exp.Subquery)
-        if subquery.alias_or_name
-    )
-    derived_aliases.update(
-        (lateral.alias_or_name or "").lower()
-        for lateral in tree.find_all(exp.Lateral)
-        if lateral.alias_or_name
-    )
-    output_aliases = {
-        (alias.alias or "").lower() for alias in tree.find_all(exp.Alias) if alias.alias
-    }
-    referenced_tables = set(aliases.values())
-
-    for column in tree.find_all(exp.Column):
+    for column in root.find_all(exp.Column):
         name = (column.name or "").lower()
+        if not name:
+            continue
+        scope = _owning_scope(column, scope_by_expression) or scopes[-1]
         qualifier = (column.table or "").lower()
-        if not name or name in output_aliases:
-            continue
-        if qualifier in derived_aliases:
-            continue
         if qualifier:
-            table_name = aliases.get(qualifier)
-            if table_name is None:
-                raise ValidationError(f"column qualifier {qualifier!r} is not a known table alias")
-            if name not in allowed[table_name]:
-                raise ValidationError(f"column {name!r} does not exist on {table_name}")
+            _resolve_qualified(name, qualifier, scope, allowed)
         else:
-            matching_tables = {
-                table_name for table_name in referenced_tables
-                if name in allowed[table_name]
-            }
-            if not matching_tables:
+            _resolve_unqualified(name, scope, allowed)
+
+
+def _owning_scope(column: exp.Column, scope_by_expression: dict[int, Scope]) -> Scope | None:
+    node = column.parent
+    while node is not None:
+        scope = scope_by_expression.get(id(node))
+        if scope is not None:
+            return scope
+        node = node.parent
+    return None
+
+
+def _scope_sources(scope: Scope) -> dict[str, exp.Table | Scope]:
+    return {
+        (alias or "").lower(): source
+        for alias, source in scope.sources.items()
+        if alias and isinstance(source, (exp.Table, Scope))
+    }
+
+
+def _projected_columns(
+    source: exp.Table | Scope, allowed: dict[str, set[str]]
+) -> set[str] | None:
+    """Columns a FROM-clause source exposes, or None when they cannot be determined."""
+    if isinstance(source, exp.Table):
+        alias = source.args.get("alias")
+        if alias is not None and alias.columns:
+            return {(c.name or "").lower() for c in alias.columns}
+        qualified = f"{(source.db or '').lower()}.{(source.name or '').lower()}"
+        return allowed.get(qualified)
+
+    expression = source.expression
+    alias = expression.args.get("alias")
+    if alias is not None and getattr(alias, "columns", None):
+        return {(c.name or "").lower() for c in alias.columns}
+    while isinstance(expression, (exp.Lateral, exp.Subquery, exp.Paren)):
+        expression = expression.this
+    if isinstance(expression, (exp.Select, exp.SetOperation)):
+        return {n.lower() for n in expression.named_selects if n}
+    return None
+
+
+def _source_label(alias: str, source: exp.Table | Scope) -> str:
+    if isinstance(source, exp.Table):
+        return f"{(source.db or '').lower()}.{(source.name or '').lower()}"
+    return alias
+
+
+def _describe_scope(scope: Scope) -> str:
+    kind = scope.scope_type
+    expression = scope.expression
+    if kind == ScopeType.ROOT:
+        return "the outer query"
+    if kind == ScopeType.CTE:
+        parent = expression.parent
+        alias = parent.alias_or_name if isinstance(parent, exp.CTE) else ""
+        return f"CTE {alias!r}" if alias else "a CTE"
+    if kind == ScopeType.DERIVED_TABLE:
+        parent = expression.parent
+        alias = parent.alias_or_name if isinstance(parent, exp.Subquery) else ""
+        return f"derived table {alias!r}" if alias else "a derived table"
+    if kind == ScopeType.UNION:
+        return "a UNION branch"
+    if kind == ScopeType.SUBQUERY:
+        return "a subquery"
+    if kind == ScopeType.UDTF:
+        return "a lateral"
+    return "a query scope"
+
+
+def _resolve_qualified(
+    name: str, qualifier: str, scope: Scope, allowed: dict[str, set[str]]
+) -> None:
+    current: Scope | None = scope
+    while current is not None:
+        source = _scope_sources(current).get(qualifier)
+        if source is not None:
+            projected = _projected_columns(source, allowed)
+            if projected is None:
                 raise ValidationError(
-                    f"column {name!r} does not exist on any referenced table"
+                    f"columns of {qualifier!r} cannot be determined; use a SELECT with "
+                    "named columns"
                 )
-            if len(matching_tables) > 1:
+            if name not in projected:
+                if isinstance(source, exp.Table):
+                    raise ValidationError(
+                        f"column {name!r} does not exist on {_source_label(qualifier, source)}"
+                    )
                 raise ValidationError(
-                    f"column {name!r} is ambiguous across referenced tables; qualify it"
+                    f"column {name!r} is not projected by {qualifier!r} "
+                    f"(available: {', '.join(sorted(projected))})"
                 )
+            return
+        current = current.parent
+    raise ValidationError(
+        f"column qualifier {qualifier!r} is not a known table alias in "
+        f"{_describe_scope(scope)}"
+    )
+
+
+def _resolve_unqualified(name: str, scope: Scope, allowed: dict[str, set[str]]) -> None:
+    expression = scope.expression
+    # A select-list alias may be referenced from GROUP BY / ORDER BY of the same SELECT,
+    # and a set operation's ORDER BY names the union's output columns.
+    if isinstance(expression, exp.Select):
+        output_aliases = {
+            (a.alias or "").lower() for a in expression.expressions if isinstance(a, exp.Alias)
+        }
+        if name in output_aliases:
+            return
+    elif isinstance(expression, exp.SetOperation):
+        if name in {n.lower() for n in expression.named_selects if n}:
+            return
+
+    current: Scope | None = scope
+    while current is not None:
+        matching = [
+            _source_label(alias, source)
+            for alias, source in _scope_sources(current).items()
+            if (projected := _projected_columns(source, allowed)) is not None
+            and name in projected
+        ]
+        if len(matching) > 1:
+            raise ValidationError(
+                f"column {name!r} is ambiguous across referenced tables in "
+                f"{_describe_scope(current)} ({', '.join(sorted(matching))}); qualify it"
+            )
+        if matching:
+            return
+        current = current.parent
+    raise ValidationError(
+        f"column {name!r} does not exist on any referenced table in {_describe_scope(scope)}"
+    )
 
 
 def _check_no_set_operations_on_forbidden_tables(tree: exp.Expression, catalog: Catalog) -> None:

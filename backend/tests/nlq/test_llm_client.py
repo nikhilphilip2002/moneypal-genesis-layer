@@ -522,17 +522,59 @@ class TestNativeTools:
         assert replay[3]["tool_call_id"] == "call_1"
 
     @pytest.mark.anyio
-    async def test_native_replay_drops_provider_reasoning_fields(self):
-        def response(_request):
-            body = _tool_ok(_raw_tool_call()).json()
-            body["choices"][0]["message"]["reasoning_content"] = "hidden reasoning"
-            return httpx.Response(200, json=body)
+    async def test_provider_reasoning_is_stored_but_not_replayed_by_default(self, monkeypatch):
+        from app.services.nlq.llm import client as client_module
 
-        result = await _client(response).complete(
+        monkeypatch.setattr(client_module.settings, "nlq_llm_replay_reasoning", False)
+        requests = []
+
+        def handler(request):
+            requests.append(json.loads(request.content))
+            if len(requests) == 1:
+                body = _tool_ok(_raw_tool_call()).json()
+                body["choices"][0]["message"]["reasoning_content"] = "hidden reasoning"
+                return httpx.Response(200, json=body)
+            return _ok("PAR 30 is available.")
+
+        client = _client(handler)
+        first = await client.complete(
             messages=[{"role": "user", "content": "Show PAR 30"}], tools=TOOLS,
         )
+        # The durable assistant message keeps what the provider returned.
+        assert first.assistant_message["reasoning_content"] == "hidden reasoning"
+        assert first.reasoning == "hidden reasoning"
 
-        assert "reasoning_content" not in result.assistant_message
+        await client.complete(
+            messages=[
+                {"role": "user", "content": "Show PAR 30"},
+                first.assistant_message,
+                {"role": "tool", "tool_call_id": "call_1", "content": '{"value":4.2}'},
+            ],
+        )
+        replayed = requests[1]["messages"][1]
+        assert replayed["tool_calls"] == [_raw_tool_call()]
+        assert "reasoning_content" not in replayed
+
+    @pytest.mark.anyio
+    async def test_provider_reasoning_is_replayed_when_enabled(self, monkeypatch):
+        from app.services.nlq.llm import client as client_module
+
+        monkeypatch.setattr(client_module.settings, "nlq_llm_replay_reasoning", True)
+        requests = []
+
+        def handler(request):
+            requests.append(json.loads(request.content))
+            return _ok("PAR 30 is available.")
+
+        await _client(handler).complete(
+            messages=[
+                {"role": "user", "content": "Show PAR 30"},
+                {"role": "assistant", "content": None, "reasoning_content": "kept",
+                 "tool_calls": [_raw_tool_call()]},
+                {"role": "tool", "tool_call_id": "call_1", "content": '{"value":4.2}'},
+            ],
+        )
+        assert requests[0]["messages"][1]["reasoning_content"] == "kept"
 
     @pytest.mark.anyio
     async def test_content_only_json_is_never_reconstructed_as_a_tool_call(self):

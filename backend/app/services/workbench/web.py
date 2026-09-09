@@ -37,22 +37,11 @@ _PRIVATE_PATTERNS = (
         re.I,
     ),
 )
-_COMPARISON_SPLIT = re.compile(
-    r"\b(?:compare(?:d)?\s+(?:with|against)|versus|vs\.?|against|benchmark(?:ed)?\s+against)\b",
-    re.I,
-)
 _INTERNAL_GENERIC = re.compile(
     r"\b(?:our|loan book|portfolio|borrowers?|customers?|accounts?|repayments?|"
     r"collections?|outstanding|disbursements?|sanctions?)\b",
     re.I,
 )
-_EXTERNAL_ANCHOR = re.compile(
-    r"\b(?:RBI|MoSPI|India|Karnataka|IMF|World Bank|OECD|UN|government|industry|"
-    r"market|economy|economic|inflation|GDP|GVA|CPI|IIP|repo|fiscal|trade|FDI|news)\b",
-    re.I,
-)
-
-
 def public_query(question: str) -> str:
     """Return a public-only query or reject content that must stay inside the bank."""
     text = " ".join(question.split()).strip()
@@ -62,18 +51,10 @@ def public_query(question: str) -> str:
         if pattern.search(text):
             raise UnsafeWebQuery("Private customer or account details cannot be sent to web search.")
 
-    # In a hybrid comparison, keep the explicitly external side and discard the internal
-    # side. The DB node receives its own separate intent from the router.
-    parts = _COMPARISON_SPLIT.split(text, maxsplit=1)
-    if len(parts) == 2:
-        external = next(
-            (part.strip(" ,.?-") for part in reversed(parts) if _EXTERNAL_ANCHOR.search(part)),
-            "",
+    if _INTERNAL_GENERIC.search(text):
+        raise UnsafeWebQuery(
+            "A public search query cannot include internal bank context; submit a public-only query."
         )
-        if external:
-            text = external
-    if _INTERNAL_GENERIC.search(text) and not _EXTERNAL_ANCHOR.search(text):
-        raise UnsafeWebQuery("Internal banking questions must use the governed loan-book source.")
     return text[:600]
 
 

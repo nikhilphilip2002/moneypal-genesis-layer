@@ -105,61 +105,30 @@ def test_catalog_enums_are_injected_into_the_matching_tools():
     ) == set(catalog.allowed_tables())
 
 
-def test_retrieved_catalog_entries_can_narrow_tool_enums():
+def test_schema_is_never_narrowed_by_question_context():
+    catalog = get_catalog()
     definitions = {
         item["function"]["name"]: item["function"]
         for item in native_tool_definitions(
-            _policy(),
-            metric_ids=("receipt_total", "receipt_count"),
-            dimension_ids=("month", "receipt_mode"),
-            filter_dimension_ids=("receipt_mode",),
-            table_names=("gold.semantic_receipt_adjustment_event",),
+            _policy(), tool_names=("query_metrics",),
         )
     }
-    metric_properties = definitions["query_metrics"]["parameters"]["properties"]
-    assert metric_properties["metrics"]["items"]["enum"] == [
-        "receipt_total", "receipt_count",
-    ]
-    assert metric_properties["dimensions"]["items"]["enum"] == [
-        "month", "receipt_mode",
-    ]
-    assert metric_properties["filters"]["items"]["properties"]["field"]["enum"] == [
-        "receipt_mode",
-    ]
-    assert metric_properties["having"]["items"]["properties"]["field"]["enum"] == [
-        "receipt_total", "receipt_count",
-    ]
-    assert definitions["run_validated_query"]["parameters"]["properties"]["tables"][
-        "items"
-    ]["enum"] == ["gold.semantic_receipt_adjustment_event"]
+    properties = definitions["query_metrics"]["parameters"]["properties"]
+    assert set(properties["metrics"]["items"]["enum"]) == set(catalog.metrics)
+    assert set(properties["dimensions"]["items"]["enum"]) == set(catalog.dimensions)
+    assert "maxItems" not in properties["filters"]
+    assert "maxItems" not in properties["dimensions"]
 
 
-def test_time_only_context_forbids_invented_filters():
-    definitions = {
-        item["function"]["name"]: item["function"]
-        for item in native_tool_definitions(
-            _policy(),
-            metric_ids=("disbursement_total",),
-            dimension_ids=("month",),
-            tool_names=("query_metrics",),
-        )
-    }
-    filters = definitions["query_metrics"]["parameters"]["properties"]["filters"]
-    assert filters["maxItems"] == 0
+def test_every_authorized_tool_is_offered_with_its_full_schema():
+    """The agent offers every tool in one selection call; there is no parameterless
+    route stage that could hide query_metrics behind a lexical flag."""
+    import inspect
 
-
-def test_empty_dimension_context_forbids_invented_groupings():
-    definitions = {
-        item["function"]["name"]: item["function"]
-        for item in native_tool_definitions(
-            _policy(),
-            metric_ids=("share_capital", "capital_reserves"),
-            dimension_ids=(),
-            tool_names=("query_metrics",),
-        )
-    }
-    dimensions = definitions["query_metrics"]["parameters"]["properties"]["dimensions"]
-    assert dimensions["maxItems"] == 0
+    assert "route_only" not in inspect.signature(native_tool_definitions).parameters
+    definitions = _definitions()
+    assert set(definitions) == set(AGENT_TOOLS)
+    assert all(definition["parameters"]["properties"] for definition in definitions.values())
 
 
 def test_policy_omits_live_web_and_filters_curated_domains_without_consent():

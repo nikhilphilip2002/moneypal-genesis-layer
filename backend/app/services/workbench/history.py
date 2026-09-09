@@ -11,6 +11,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Callable
 
+from app.core.config import settings
 from app.services.nlq.llm.messages import ChatMessage
 
 logger = logging.getLogger(__name__)
@@ -32,10 +33,18 @@ MIGRATIONS = (
 )
 
 TITLE_MAX = 80
-# v6 adds an ordered execution event stream and lossless native tool-result replay.
-RECORD_VERSION = 6
-OLDER_TURN_MAX_CHARS = 900
+# v6 added an ordered execution event stream and lossless native tool-result replay.
+# v7 makes that stream the only representation: every turn carries `events`, readers
+# derive everything from them, and older turns are migrated rather than read sideways.
+RECORD_VERSION = 7
+# Every version this module can read. A record stamped with anything else was written by
+# a newer backend and must not be overwritten by this one.
+KNOWN_RECORD_VERSIONS = frozenset(range(1, RECORD_VERSION + 1))
 CARD_ROWS_IN_CONTEXT = 20
+# Replay policy: which event kinds of a turn are sent back to the provider. Nudges and
+# other synthetic user messages are stored so the record is the exact transcript, but
+# they are not resent — the next turn's own nudge is appended live.
+REPLAYED_SYSTEM_MESSAGE_KINDS: frozenset[str] = frozenset()
 _table_ready = False
 HISTORY_DB_RETRY_S = 10.0
 _table_retry_after = 0.0
@@ -65,7 +74,20 @@ class ConversationSummary:
 
 
 class NativeTranscriptOverflow(RuntimeError):
-    """The exact native transcript cannot fit without silently dropping history."""
+    """The exact native transcript cannot fit without silently dropping history.
+
+    ``reason`` says which remedy can help: ``conversation_exceeds_budget`` means older
+    turns could be checkpointed; ``single_turn_exceeds_budget`` means the newest turn
+    alone is too large and only a fresh conversation helps.
+    """
+
+    def __init__(self, message: str, *, reason: str = "conversation_exceeds_budget") -> None:
+        super().__init__(f"{message} (reason: {reason})")
+        self.reason = reason
+
+
+class UnknownRecordVersion(ValueError):
+    """The record was written by a backend this module does not understand."""
 
 
 _MEMORY: dict[tuple[str, str], ConversationRecord] = {}
@@ -142,7 +164,7 @@ def _load(conversation_id: str, user: str) -> ConversationRecord | None:
             if row is None:
                 return None
             payload = row[1] if isinstance(row[1], dict) else json.loads(row[1])
-            return ConversationRecord(
+            record = ConversationRecord(
                 conversation_id=conversation_id,
                 title=row[0],
                 updated_at=row[2],
@@ -153,11 +175,16 @@ def _load(conversation_id: str, user: str) -> ConversationRecord | None:
                 compaction=payload.get("compaction"),
                 external_sources_enabled=bool(payload.get("external_sources_enabled", False)),
             )
+            # Older turns are given their event stream in memory so every reader sees one
+            # representation; the next write persists it and stamps the version.
+            migrate_record(record)
+            return record
         except Exception as exc:  # noqa: BLE001
             logger.warning("workbench history load failed, using memory: %s", exc)
     for owner in _visible_owners(user):
         record = _MEMORY.get((owner, conversation_id))
         if record is not None:
+            migrate_record(record)
             return record
     return None
 
@@ -179,10 +206,19 @@ def exists(conversation_id: str) -> bool:
 
 
 def _save(record: ConversationRecord) -> None:
+    if record.record_version not in KNOWN_RECORD_VERSIONS:
+        # Never downgrade a record a newer backend wrote: the payload shape it carries
+        # may hold fields this module would silently drop.
+        raise UnknownRecordVersion(
+            f"conversation {record.conversation_id} is record version "
+            f"{record.record_version!r}; this backend understands versions "
+            f"1..{RECORD_VERSION}"
+        )
     record.updated_at = _now()
-    # Upgrade on write: whatever version a record was read at, this module now writes the
-    # current payload shape, so the stored version should say so.
-    record.record_version = RECORD_VERSION
+    # The version is a schema signal, not a stamp: it says 7 only when every turn carries
+    # its event stream. `_load` migrates older turns in memory, so ordinarily it does.
+    if all(turn_has_events(turn) for turn in record.turns):
+        record.record_version = RECORD_VERSION
     _MEMORY[(record.owner_username, record.conversation_id)] = record
     if not _ensure_table():
         return
@@ -211,17 +247,37 @@ def _save(record: ConversationRecord) -> None:
         logger.warning("workbench history write failed, retained in memory: %s", exc)
 
 
-def set_compaction(conversation_id: str, user: str, payload: dict[str, Any] | None) -> None:
+def set_compaction(
+    conversation_id: str, user: str, payload: dict[str, Any] | None, *,
+    replaced_turn_ids: list[str] | tuple[str, ...] = (),
+) -> None:
     """Store (or clear) the conversation checkpoint.
 
-    Passing None discards it. That is the recovery path if a checkpoint ever proves
-    misleading: the turns are all still present, so the next transcript simply rebuilds
-    from them.
+    The checkpoint pointer on the record is what replay consults; the summary itself is
+    also appended as a ``compaction_summary`` event on the newest turn it replaces, naming
+    every turn it stands in for. No event is ever removed: compaction adds a view, it
+    never edits the durable record.
+
+    Passing None discards the pointer. That is the recovery path if a checkpoint ever
+    proves misleading: the turns are all still present, so the next transcript simply
+    rebuilds from them.
     """
     record = _load(conversation_id, user)
     if record is None:
         return
     record.compaction = payload
+    replaced = [str(turn_id) for turn_id in replaced_turn_ids if turn_id]
+    if payload and replaced:
+        anchor = next(
+            (turn for turn in reversed(record.turns) if turn.get("id") == replaced[-1]), None,
+        )
+        if anchor is not None:
+            _append_turn_event(anchor, "compaction_summary", {
+                "summary": str(payload.get("summary", "")),
+                "replaces_turn_ids": replaced,
+                "first_kept_turn_id": str(payload.get("first_kept_turn_id", "")),
+                "created_at": str(payload.get("created_at", "")),
+            })
     _save(record)
 
 
@@ -242,16 +298,189 @@ def _mutate(
 
 
 def _append_turn_event(
-    turn: dict[str, Any], event_type: str, payload: dict[str, Any],
-) -> None:
+    turn: dict[str, Any], event_type: str, payload: dict[str, Any], *,
+    timestamp: str | None = None, derived: bool = False,
+) -> dict[str, Any]:
     """Append one ordered, lossless conversation execution event."""
     events = turn.setdefault("events", [])
-    events.append({
+    event: dict[str, Any] = {
         "sequence": len(events),
         "type": event_type,
-        "timestamp": _now().isoformat(),
+        "timestamp": timestamp or _now().isoformat(),
         "payload": payload,
-    })
+    }
+    if derived:
+        # Reconstructed by the version-7 migration from the older per-field copies, not
+        # observed live; the timestamp is the turn's, not the event's.
+        event["derived"] = True
+    events.append(event)
+    return event
+
+
+def turn_has_events(turn: dict[str, Any]) -> bool:
+    events = turn.get("events")
+    return isinstance(events, list) and len(events) > 0
+
+
+def turn_events(turn: dict[str, Any]) -> list[dict[str, Any]]:
+    """The ordered event stream of a turn, derived on the fly for a pre-v7 turn dict."""
+    if turn_has_events(turn):
+        return [event for event in turn["events"] if isinstance(event, dict)]
+    return derive_turn_events(turn)
+
+
+def _parsed_tool_content(message: dict[str, Any]) -> dict[str, Any] | None:
+    content = message.get("content")
+    if not isinstance(content, str) or not content.startswith("{"):
+        return None
+    try:
+        parsed = json.loads(content)
+    except ValueError:
+        return None
+    return parsed if isinstance(parsed, dict) else None
+
+
+def _sql_trace_of(message: dict[str, Any]) -> list[dict[str, Any]]:
+    """The nested text-to-SQL rounds a governed call went through, oldest first."""
+    parsed = _parsed_tool_content(message)
+    if parsed is None:
+        return []
+    lineage = parsed.get("lineage")
+    nested = lineage.get("text_to_sql") if isinstance(lineage, dict) else None
+    trace = nested.get("trace") if isinstance(nested, dict) else None
+    if not isinstance(trace, list):
+        return []
+    return [item for item in trace if isinstance(item, dict)]
+
+
+def _append_native_exchange_events(
+    turn: dict[str, Any], *, assistant: ChatMessage, calls: list[dict[str, Any]],
+    tool_messages: list[dict[str, Any]], stage: str, timestamp: str | None = None,
+    derived: bool = False,
+) -> None:
+    """One assistant message, then per call its ``tool_call`` and the ordered child
+    ``text_to_sql_attempt`` events of any nested generation it ran, then the results."""
+    results_by_call = {
+        str(message.get("tool_call_id", "")): message for message in tool_messages
+    }
+    _append_turn_event(turn, "llm_assistant_message", {
+        "execution_path": "native",
+        "stage": stage,
+        "message": assistant,
+    }, timestamp=timestamp, derived=derived)
+    for call in calls:
+        parent = _append_turn_event(turn, "tool_call", {
+            "execution_path": "native",
+            "call": call,
+        }, timestamp=timestamp, derived=derived)
+        result = results_by_call.get(str(call.get("id", "")))
+        for index, item in enumerate(_sql_trace_of(result) if result else []):
+            _append_turn_event(turn, "text_to_sql_attempt", {
+                "execution_path": "native_child",
+                "parent_sequence": parent["sequence"],
+                "parent_call_id": str(call.get("id", "")),
+                "index": index,
+                "attempt": item,
+            }, timestamp=timestamp, derived=derived)
+    for message in tool_messages:
+        _append_turn_event(turn, "tool_result", {
+            "execution_path": "native",
+            "message": dict(message),
+        }, timestamp=timestamp, derived=derived)
+
+
+def derive_turn_events(turn: dict[str, Any]) -> list[dict[str, Any]]:
+    """Rebuild a turn's event stream from the per-field copies pre-v7 records kept.
+
+    Order follows execution: the question, the route, each native exchange, the rendered
+    cards, the synthesis candidate, the answer or refusal, then the error. The result is
+    what a v7 writer would have recorded, so replay over it equals the replay the old
+    sideways readers produced.
+    """
+    shadow: dict[str, Any] = {"events": []}
+    created = str(turn.get("created_at") or turn.get("at") or "")
+    completed = str(turn.get("completed_at") or created)
+    _append_turn_event(shadow, "user_message", {
+        "role": "user", "content": str(turn.get("question", "")),
+    }, timestamp=created or None, derived=True)
+    route = turn.get("route")
+    if isinstance(route, dict):
+        _append_turn_event(shadow, "route_decision", dict(route), timestamp=created or None, derived=True)
+    for exchange in turn.get("agent_exchanges") or []:
+        if not isinstance(exchange, dict):
+            continue
+        assistant = exchange.get("assistant")
+        tools = exchange.get("tools")
+        if not isinstance(assistant, dict) or not isinstance(tools, list):
+            continue
+        calls = [call for call in exchange.get("calls") or [] if isinstance(call, dict)]
+        _append_native_exchange_events(
+            shadow, assistant=dict(assistant), calls=calls,
+            tool_messages=[dict(item) for item in tools if isinstance(item, dict)],
+            stage="route", timestamp=completed or None, derived=True,
+        )
+    for card in turn.get("cards") or []:
+        if isinstance(card, dict):
+            _append_turn_event(shadow, "tool_result", {
+                "execution_path": "legacy_or_rendered",
+                "card": card,
+            }, timestamp=completed or None, derived=True)
+    answer = turn.get("answer") if isinstance(turn.get("answer"), dict) else None
+    synthesis = turn.get("synthesis")
+    if synthesis and (answer is None or str(answer.get("text", "")) != str(synthesis)):
+        _append_turn_event(shadow, "llm_assistant_message", {
+            "execution_path": "synthesis",
+            "stage": "synthesize",
+            "candidate": True,
+            "message": {"role": "assistant", "content": str(synthesis)},
+        }, timestamp=completed or None, derived=True)
+    if answer is not None:
+        _append_turn_event(shadow, "final_answer", {"answer": answer}, timestamp=completed or None, derived=True)
+    refusal = turn.get("refusal")
+    if isinstance(refusal, dict):
+        _append_turn_event(shadow, "final_answer", {"refusal": refusal}, timestamp=completed or None, derived=True)
+    if turn.get("error"):
+        _append_turn_event(shadow, "execution_error", {
+            "message": str(turn["error"]),
+        }, timestamp=completed or None, derived=True)
+    return shadow["events"]
+
+
+def migrate_turn(turn: dict[str, Any]) -> bool:
+    """Give a pre-v7 turn its event stream in place. Returns whether it changed."""
+    if turn_has_events(turn):
+        return False
+    turn["events"] = derive_turn_events(turn)
+    return True
+
+
+def migrate_record(record: ConversationRecord) -> bool:
+    """Derive events for every turn that lacks them. Returns whether anything changed.
+
+    Idempotent and version-agnostic: a v7 record passes through untouched, a v5 record
+    gains events on every turn. The version itself is stamped by ``_save`` once every
+    turn qualifies, so a migrated-in-memory record that is never written keeps saying
+    what is actually on disk.
+    """
+    changed = False
+    for turn in record.turns:
+        if isinstance(turn, dict) and migrate_turn(turn):
+            changed = True
+    return changed
+
+
+def migrate_payload(payload: dict[str, Any]) -> tuple[dict[str, Any], int]:
+    """Migrate a raw stored ``record_json`` payload; returns it and the turns changed.
+
+    Used by the one-off migration script, which works on rows rather than records so a
+    dry run can report without loading every conversation through the owner filter.
+    """
+    turns = [turn for turn in payload.get("turns", []) if isinstance(turn, dict)]
+    changed = sum(1 for turn in turns if migrate_turn(turn))
+    migrated = dict(payload)
+    migrated["turns"] = turns
+    migrated["version"] = RECORD_VERSION
+    return migrated, changed
 
 
 def begin_turn(
@@ -314,17 +543,13 @@ def set_route(
     intent: str,
     model: str = "",
     reason: str = "",
-    confidence: float = 0.0,
-    fallback_used: bool = False,
-    ambiguity_class: str = "",
     effective_sources: list[str] | tuple[str, ...] = (),
 ) -> None:
     def apply(turn: dict[str, Any]) -> None:
         turn["sources"] = list(sources)
         turn["route"] = {
             "sources": list(sources), "intent": intent, "model": model,
-            "reason": reason, "confidence": confidence, "fallback_used": fallback_used,
-            "ambiguity_class": ambiguity_class,
+            "reason": reason,
             "effective_sources": list(effective_sources),
         }
         _append_turn_event(turn, "route_decision", dict(turn["route"]))
@@ -333,6 +558,13 @@ def set_route(
 
 
 def add_card(conversation_id: str, user: str, turn_id: str, card: dict[str, Any]) -> None:
+    """Persist a card produced by the legacy source handlers.
+
+    Legacy sources have no native tool exchange, so the rendered card is the only record
+    of what they returned and gets its own ``tool_result`` event. Native results must not
+    come through here: their ``tool_result`` event already carries the card, and
+    `add_agent_exchange` fills the History rail's ``cards`` view from it.
+    """
     def apply(turn: dict[str, Any]) -> None:
         turn.setdefault("cards", []).append(card)
         _append_turn_event(turn, "tool_result", {
@@ -351,8 +583,17 @@ def add_agent_exchange(
     assistant_message: ChatMessage,
     calls: list[dict[str, Any]],
     tool_messages: list[ChatMessage],
+    stage: str = "route",
+    cards: list[dict[str, Any]] | tuple[dict[str, Any], ...] = (),
 ) -> None:
-    """Persist one complete native exchange; never leave calls without tool results."""
+    """Persist one complete native exchange; never leave calls without tool results.
+
+    ``stage`` names the request the assistant message answered (``route`` for the
+    selection request, ``continue`` for a later tool round). ``cards`` are the rendered
+    views the client was streamed for this round; they are kept on the turn for the
+    History rail in the same write as the events, and get no event of their own because
+    the ``tool_result`` events already carry the complete results.
+    """
     if len(calls) != len(tool_messages):
         raise ValueError("every persisted native call needs one tool result")
     call_ids = [str(call.get("id", "")) for call in calls]
@@ -366,31 +607,47 @@ def add_agent_exchange(
         raise ValueError("native call IDs must match assistant and tool-result messages")
     safe_calls = [_sanitize_agent_call(call) for call in calls]
     safe_assistant = _sanitize_assistant_tool_calls(assistant_message)
-    payload = {
-        "assistant": safe_assistant,
-        "calls": safe_calls,
-        "tools": [dict(message) for message in tool_messages],
-    }
+    safe_tools = [dict(message) for message in tool_messages]
+    rendered = [dict(card) for card in cards if isinstance(card, dict)]
+
     def apply(turn: dict[str, Any]) -> None:
-        turn.setdefault("agent_exchanges", []).append(payload)
-        _append_turn_event(turn, "llm_assistant_message", {
+        if settings.workbench_history_write_legacy_exchanges:
+            turn.setdefault("agent_exchanges", []).append({
+                "assistant": safe_assistant,
+                "calls": safe_calls,
+                "tools": safe_tools,
+            })
+        _append_native_exchange_events(
+            turn, assistant=safe_assistant, calls=safe_calls, tool_messages=safe_tools,
+            stage=stage,
+        )
+        if rendered:
+            turn.setdefault("cards", []).extend(rendered)
+
+    _mutate(conversation_id, user, turn_id, apply)
+
+
+def add_system_message(
+    conversation_id: str, user: str, turn_id: str, *, content: str, kind: str,
+    stage: str = "", round_number: int = 0,
+) -> None:
+    """Record a message the application injected into the model's context.
+
+    Nudges and similar synthetic user messages are stored so the event stream is the
+    exact transcript the model saw; whether they are ever resent is a replay decision
+    (`REPLAYED_SYSTEM_MESSAGE_KINDS`), not a storage one.
+    """
+    def apply(turn: dict[str, Any]) -> None:
+        _append_turn_event(turn, "system_message", {
             "execution_path": "native",
-            "message": safe_assistant,
+            "kind": kind,
+            "stage": stage,
+            "round": int(round_number),
+            "synthetic": True,
+            "message": {"role": "user", "content": content},
         })
-        for call in safe_calls:
-            _append_turn_event(turn, "tool_call", {
-                "execution_path": "native",
-                "call": call,
-            })
-        for message in tool_messages:
-            _append_turn_event(turn, "tool_result", {
-                "execution_path": "native",
-                "message": dict(message),
-            })
-    _mutate(
-        conversation_id, user, turn_id,
-        apply,
-    )
+
+    _mutate(conversation_id, user, turn_id, apply)
 
 
 def _sanitize_agent_call(call: dict[str, Any]) -> dict[str, Any]:
@@ -429,12 +686,29 @@ def _sanitize_assistant_tool_calls(message: ChatMessage) -> ChatMessage:
     return safe
 
 
-def set_synthesis(conversation_id: str, user: str, turn_id: str, text: str) -> None:
+def set_synthesis(
+    conversation_id: str, user: str, turn_id: str, text: str, *,
+    message: ChatMessage | None = None, stage: str = "synthesize",
+) -> None:
+    """Record what the model wrote before grounding and repair touched it.
+
+    This is the candidate, not the answer: `set_answer` records the text the user was
+    shown, which may be a repaired or extractive replacement. When the two are the same
+    text the record still holds one model output and one user-facing answer, not the
+    same event twice.
+    """
+    stored: ChatMessage = (
+        _sanitize_assistant_tool_calls(message) if isinstance(message, dict)
+        else {"role": "assistant", "content": text}
+    )
+
     def apply(turn: dict[str, Any]) -> None:
         turn["synthesis"] = text
         _append_turn_event(turn, "llm_assistant_message", {
             "execution_path": "synthesis",
-            "message": {"role": "assistant", "content": text},
+            "stage": stage,
+            "candidate": True,
+            "message": stored,
         })
 
     _mutate(conversation_id, user, turn_id, apply)
@@ -599,17 +873,27 @@ def private_entities(conversation_id: str, *, user: str) -> tuple[str, ...]:
         return ()
     values: list[str] = []
     for turn in record.turns:
-        for exchange in turn.get("agent_exchanges") or []:
-            if not isinstance(exchange, dict):
+        for call in native_tool_calls(turn):
+            if call.get("name") != "lookup_records":
                 continue
-            for call in exchange.get("calls") or []:
-                if not isinstance(call, dict) or call.get("name") != "lookup_records":
-                    continue
-                arguments = call.get("arguments")
-                value = arguments.get("value") if isinstance(arguments, dict) else None
-                if isinstance(value, str) and value.strip():
-                    values.append(value.strip())
+            arguments = call.get("arguments")
+            value = arguments.get("value") if isinstance(arguments, dict) else None
+            if isinstance(value, str) and value.strip():
+                values.append(value.strip())
     return tuple(dict.fromkeys(values[-20:]))
+
+
+def native_tool_calls(turn: dict[str, Any]) -> list[dict[str, Any]]:
+    """Every native tool call of a turn, in execution order, read from its events."""
+    calls: list[dict[str, Any]] = []
+    for event in turn_events(turn):
+        payload = event.get("payload")
+        if event.get("type") != "tool_call" or not isinstance(payload, dict):
+            continue
+        call = payload.get("call")
+        if isinstance(call, dict):
+            calls.append(call)
+    return calls
 
 
 @dataclass(slots=True)
@@ -722,6 +1006,163 @@ def transcript(
     return build_transcript(conversation_id, user=user, token_budget=token_budget).messages
 
 
+def _tool_names_in(assistant_message: dict[str, Any]) -> dict[str, str]:
+    names: dict[str, str] = {}
+    for call in assistant_message.get("tool_calls") or []:
+        if isinstance(call, dict):
+            function = call.get("function") if isinstance(call.get("function"), dict) else {}
+            names[str(call.get("id", ""))] = str(function.get("name", ""))
+    return names
+
+
+def _observation(tool_message: dict[str, Any], tool_names: dict[str, str]) -> ChatMessage:
+    """Replay a stored tool result bounded the same way a live observation is."""
+    from app.services.workbench.agent_executor import shape_observation_text
+
+    message = dict(tool_message)
+    content = message.get("content")
+    if isinstance(content, str):
+        message["content"] = shape_observation_text(
+            content, tool_name=tool_names.get(str(message.get("tool_call_id", ""))) or None,
+        )
+    return message
+
+
+def native_replay_group(turn: dict[str, Any]) -> list[ChatMessage]:
+    """What one turn contributes to the provider transcript, read from its events.
+
+    The question, every native assistant message with the bounded observation of each
+    of its tool results, any stored system message the replay policy admits, and the
+    final assistant text. Empty when the turn has no question. This is the one place the
+    replay shape is defined: `build_native_transcript` sends it and the compaction
+    trigger measures it.
+    """
+    question = str(turn.get("question", "")).strip()
+    if not question:
+        return []
+    group: list[ChatMessage] = [{"role": "user", "content": question}]
+    tool_names: dict[str, str] = {}
+    for event in turn_events(turn):
+        payload = event.get("payload")
+        if not isinstance(payload, dict) or payload.get("execution_path") != "native":
+            continue
+        kind = event.get("type")
+        message = payload.get("message")
+        if not isinstance(message, dict):
+            continue
+        if kind == "llm_assistant_message":
+            tool_names.update(_tool_names_in(message))
+            group.append(dict(message))
+        elif kind == "tool_result":
+            group.append(_observation(message, tool_names))
+        elif kind == "system_message" and payload.get("kind") in REPLAYED_SYSTEM_MESSAGE_KINDS:
+            group.append(dict(message))
+    answer = _assistant_text(turn)
+    if answer:
+        group.append({"role": "assistant", "content": answer})
+    return group
+
+
+def replay_group_tokens(group: list[ChatMessage]) -> int:
+    """The estimated cost of one replay group, as the transcript budget counts it."""
+    from app.services.workbench.compaction import budget
+
+    if not group:
+        return 0
+    return budget.estimate_tokens(json.dumps(group, default=str, ensure_ascii=False))
+
+
+@dataclass(slots=True)
+class NativeReplayMeasure:
+    """How large the native replay of a conversation would be, before any budget cut.
+
+    ``tokens`` follows the budget module's rule: trust the provider where it has spoken,
+    estimate only what came after. When a live turn carries a measured prompt size that
+    postdates the checkpoint, that measurement anchors the count and only that turn's
+    completion and the turns after it are estimated; otherwise every live turn's replay
+    group is estimated as `build_native_transcript` would send it.
+    """
+
+    tokens: int = 0
+    summary_tokens: int = 0
+    newest_turn_tokens: int = 0
+    measured_turn_id: str = ""
+    turn_ids: list[str] = field(default_factory=list)
+
+
+def live_turns(record: ConversationRecord) -> list[dict[str, Any]]:
+    """The completed turns replayed verbatim: everything after the checkpoint."""
+    complete = [turn for turn in record.turns if turn.get("status") != "running"]
+    compaction = record.compaction if isinstance(record.compaction, dict) else None
+    first_kept = str(compaction.get("first_kept_turn_id", "")) if compaction else ""
+    _, live = _split_at_turn(complete, first_kept)
+    return live
+
+
+def _measured_after(turn: dict[str, Any], checkpoint_created_at: str) -> bool:
+    """Whether a turn's measured prompt saw the current checkpoint rather than the
+    verbatim turns it later replaced. Timestamps are UTC ISO-8601, so they order
+    lexically; a turn without one is treated as older than any checkpoint."""
+    if not checkpoint_created_at:
+        return True
+    completed_at = str(turn.get("completed_at") or "")
+    return bool(completed_at) and completed_at >= checkpoint_created_at
+
+
+def measure_replay_turns(
+    turns: list[dict[str, Any]], *, checkpoint_created_at: str = "",
+) -> NativeReplayMeasure:
+    """Measure the native replay of these turns (running turns skipped)."""
+    from app.services.workbench.compaction import budget
+
+    measure = NativeReplayMeasure()
+    complete = [turn for turn in turns if turn.get("status") != "running"]
+    anchor = -1
+    for index in range(len(complete) - 1, -1, -1):
+        if (
+            budget.measured_prompt_tokens(complete[index]) is not None
+            and _measured_after(complete[index], checkpoint_created_at)
+        ):
+            anchor = index
+            break
+    for index, turn in enumerate(complete):
+        group = native_replay_group(turn)
+        if not group:
+            continue
+        cost = replay_group_tokens(group)
+        measure.newest_turn_tokens = cost
+        measure.turn_ids.append(str(turn.get("id", "")))
+        if index < anchor:
+            continue
+        if index == anchor:
+            # The measured prompt covers everything up to this turn's last request; its
+            # final text was the completion and is only in the *next* transcript.
+            measure.measured_turn_id = str(turn.get("id", ""))
+            measure.tokens += int(budget.measured_prompt_tokens(turn) or 0)
+            measure.tokens += budget.estimate_tokens(_assistant_text(turn))
+            continue
+        measure.tokens += cost
+    return measure
+
+
+def measure_native_replay(record: ConversationRecord) -> NativeReplayMeasure:
+    """Measure what `build_native_transcript` would send for this record."""
+    from app.services.workbench.compaction import budget
+
+    compaction = record.compaction if isinstance(record.compaction, dict) else None
+    created_at = str(compaction.get("created_at", "")) if compaction else ""
+    measure = measure_replay_turns(live_turns(record), checkpoint_created_at=created_at)
+    summary = str(compaction.get("summary", "")).strip() if compaction else ""
+    if summary:
+        limit = budget.budget_tokens()
+        summary = budget.clip_to_tokens(summary, int(limit * budget.SUMMARY_SHARE))
+        measure.summary_tokens = budget.estimate_tokens(summary)
+        if not measure.measured_turn_id:
+            # A measured prompt taken after the checkpoint already contained it.
+            measure.tokens += measure.summary_tokens
+    return measure
+
+
 def build_native_transcript(
     conversation_id: str,
     *,
@@ -735,62 +1176,32 @@ def build_native_transcript(
     record = _load(conversation_id, user)
     if record is None:
         return []
-    complete = [turn for turn in record.turns if turn.get("status") != "running"]
     messages: list[ChatMessage] = []
     spent = 0
     compaction = record.compaction if isinstance(record.compaction, dict) else None
-    first_kept = str(compaction.get("first_kept_turn_id", "")) if compaction else ""
     summary = str(compaction.get("summary", "")).strip() if compaction else ""
     if summary:
         summary = budget.clip_to_tokens(summary, int(limit * budget.SUMMARY_SHARE))
         messages.append({"role": "system", "content": "Conversation checkpoint:\n\n" + summary})
         spent += budget.estimate_tokens(summary)
 
-    _, live = _split_at_turn(complete, first_kept)
-    groups: list[list[ChatMessage]] = []
-    for turn in live:
-        question = str(turn.get("question", "")).strip()
-        if not question:
-            continue
-        group: list[ChatMessage] = [{"role": "user", "content": question}]
-        native_events = [
-            event for event in (turn.get("events") or [])
-            if isinstance(event, dict)
-            and isinstance(event.get("payload"), dict)
-            and event["payload"].get("execution_path") == "native"
-        ]
-        if native_events:
-            for event in native_events:
-                payload = event["payload"]
-                if event.get("type") == "llm_assistant_message":
-                    message = payload.get("message")
-                    if isinstance(message, dict):
-                        group.append(dict(message))
-                elif event.get("type") == "tool_result":
-                    message = payload.get("message")
-                    if isinstance(message, dict):
-                        group.append(dict(message))
-        else:
-            # Read compatibility for records written before the ordered event stream.
-            exchanges = turn.get("agent_exchanges") or []
-            for exchange in exchanges:
-                assistant = exchange.get("assistant") if isinstance(exchange, dict) else None
-                tools = exchange.get("tools") if isinstance(exchange, dict) else None
-                if isinstance(assistant, dict) and isinstance(tools, list):
-                    group.append(dict(assistant))
-                    group.extend(dict(item) for item in tools if isinstance(item, dict))
-        answer = _assistant_text(turn)
-        if answer:
-            group.append({"role": "assistant", "content": answer})
-        groups.append(group)
-
+    groups = [group for turn in live_turns(record) if (group := native_replay_group(turn))]
     kept: list[list[ChatMessage]] = []
     for group in reversed(groups):
-        cost = budget.estimate_tokens(json.dumps(group, default=str, ensure_ascii=False))
+        cost = replay_group_tokens(group)
         if spent + cost > limit:
+            if not kept:
+                # The newest turn does not fit even on its own. Compaction summarizes
+                # older turns and cannot shrink this one; only a new conversation helps.
+                raise NativeTranscriptOverflow(
+                    "the most recent turn alone exceeds the context window; "
+                    "start a new conversation",
+                    reason="single_turn_exceeds_budget",
+                )
             raise NativeTranscriptOverflow(
                 "complete native conversation exceeds the context window; "
-                "start a new conversation or enable explicit compaction"
+                "start a new conversation or enable explicit compaction",
+                reason="conversation_exceeds_budget",
             )
         kept.append(group)
         spent += cost

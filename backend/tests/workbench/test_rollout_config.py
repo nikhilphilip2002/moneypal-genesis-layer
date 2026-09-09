@@ -1,36 +1,21 @@
 from app.core.config import Settings
 
 
-def test_simplification_flags_can_be_disabled_independently(monkeypatch):
-    for name in (
-        "WORKBENCH_ORCHESTRATOR_V2",
-        "WORKBENCH_DETERMINISTIC_ROUTING",
-        "WORKBENCH_COMMON_COMPOSER",
-        "WORKBENCH_PERSONALIZE_SUGGESTIONS",
-    ):
-        monkeypatch.setenv(name, "false")
+def test_optional_personalization_can_be_disabled(monkeypatch):
+    monkeypatch.setenv("WORKBENCH_PERSONALIZE_SUGGESTIONS", "false")
     config = Settings()
-    assert config.workbench_orchestrator_v2 is False
-    assert config.workbench_deterministic_routing is False
-    assert config.workbench_common_composer is False
     assert config.workbench_personalize_suggestions is False
 
 
 def test_external_connector_kill_switch_is_independent(monkeypatch):
     monkeypatch.setenv("WORKBENCH_EXTERNAL_CONNECTORS_ENABLED", "false")
-    monkeypatch.setenv("WORKBENCH_COMMON_COMPOSER", "true")
     config = Settings()
     assert config.workbench_external_connectors_enabled is False
-    assert config.workbench_common_composer is True
 
 
-def test_native_agent_rollout_defaults_off_and_bounds_values(monkeypatch):
-    monkeypatch.setenv("WORKBENCH_AGENT_MODE", "canary")
-    monkeypatch.setenv("WORKBENCH_AGENT_CANARY_PERCENT", "150")
+def test_native_agent_budget_bounds_values(monkeypatch):
     monkeypatch.setenv("WORKBENCH_AGENT_MAX_ROUNDS", "99")
     monkeypatch.setenv("WORKBENCH_AGENT_MAX_TOOL_CALLS", "0")
     config = Settings()
-    assert config.workbench_agent_mode == "canary"
-    assert config.workbench_agent_canary_percent == 100
-    assert config.workbench_agent_max_rounds == 6
+    assert config.workbench_agent_max_rounds == 8  # every LLM request is one round since Phase B
     assert config.workbench_agent_max_tool_calls == 1

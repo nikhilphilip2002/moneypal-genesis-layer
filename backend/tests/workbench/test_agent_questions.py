@@ -86,12 +86,10 @@ def test_each_question_builds_the_expected_tool_specific_catalog_surface():
                 if (
                     set(context.metrics) != set(family["metrics"])
                     or set(context.dimensions) != set(family.get("dimensions", ()))
-                    or context.requires_validated_query
                 ):
                     failures.append((family["id"], prompt, context))
             elif (
-                not context.requires_validated_query
-                or not context.tables
+                not context.tables
                 or set(context.tables) != set(family["tables"])
             ):
                 failures.append((family["id"], prompt, context))

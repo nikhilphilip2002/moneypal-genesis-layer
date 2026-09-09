@@ -420,3 +420,94 @@ class TestSafety:
             await compaction.summarize.write_checkpoint(
                 turns, assistant_text_of=lambda t: t["synthesis"]
             )
+
+
+class TestCheckpointEvents:
+    """Compaction adds a view over the record; it never edits the durable events."""
+
+    @pytest.mark.anyio
+    async def test_checkpoint_is_an_event_naming_the_turns_it_replaces(self, enabled, monkeypatch):
+        async def fake_summary(turns, *, assistant_text_of, previous_summary=""):
+            return "## Line of Enquiry\nX."
+
+        monkeypatch.setattr(compaction.summarize, "write_checkpoint", fake_summary)
+        ids = [_add_turn("c1", "u", f"question {i}", f"answer {i}") for i in range(5)]
+        before = [
+            [dict(e) for e in turn["events"]] for turn in history.get("c1", user="u").turns
+        ]
+
+        assert await compaction.compact_now("c1", "u") is True
+
+        record = history.get("c1", user="u")
+        after = [[dict(e) for e in turn["events"]] for turn in record.turns]
+        # Every event that existed still exists, in place; exactly one was added.
+        assert all(a[: len(b)] == b for a, b in zip(after, before))
+        assert sum(map(len, after)) == sum(map(len, before)) + 1
+        summary = after[2][-1]
+        assert summary["type"] == "compaction_summary"
+        assert summary["payload"]["replaces_turn_ids"] == ids[:3]
+        assert summary["payload"]["first_kept_turn_id"] == ids[3]
+        assert summary["payload"]["summary"] == "## Line of Enquiry\nX."
+        assert record.compaction["first_kept_turn_id"] == ids[3]
+        # Replay skips the summarized turns but the record has lost nothing.
+        assert [t["question"] for t in history.live_turns(record)] == ["question 3", "question 4"]
+        assert len(record.turns) == 5
+
+    @pytest.mark.anyio
+    async def test_newest_turn_over_budget_is_not_compacted_and_overflows_precisely(
+        self, enabled, monkeypatch,
+    ):
+        called = False
+
+        async def fake_summary(*args, **kwargs):
+            nonlocal called
+            called = True
+            return "x"
+
+        monkeypatch.setattr(compaction.summarize, "write_checkpoint", fake_summary)
+        monkeypatch.setattr(settings, "workbench_context_window", 1000)
+        monkeypatch.setattr(settings, "workbench_reserve_tokens", 500)
+        for index in range(4):
+            _add_turn("c1", "u", f"q{index}", f"a{index}")
+        turn_id = history.begin_turn("c1", "u", "everything")
+        history.add_agent_exchange(
+            "c1", "u", turn_id,
+            assistant_message={"role": "assistant", "content": None, "tool_calls": [{
+                "id": "big", "type": "function",
+                "function": {"name": "lookup_records", "arguments": "{}"},
+            }]},
+            calls=[{"id": "big", "name": "lookup_records", "arguments": {}}],
+            tool_messages=[{"role": "tool", "tool_call_id": "big", "content": "x" * 4000}],
+        )
+        history.complete_turn("c1", "u", turn_id)
+
+        assert await compaction.maybe_compact("c1", "u") is False
+        assert called is False
+        with pytest.raises(history.NativeTranscriptOverflow) as raised:
+            history.build_native_transcript("c1", user="u")
+        assert raised.value.reason == "single_turn_exceeds_budget"
+
+    @pytest.mark.anyio
+    async def test_measurement_taken_before_the_checkpoint_is_not_trusted(self, enabled, monkeypatch):
+        async def fake_summary(*args, **kwargs):
+            return "## Line of Enquiry\nX."
+
+        monkeypatch.setattr(compaction.summarize, "write_checkpoint", fake_summary)
+        for index in range(4):
+            _add_turn("c1", "u", f"q{index}", f"a{index}")
+        measured = _add_turn("c1", "u", "measured", "answer", usage=9000)
+        assert history.measure_native_replay(history.get("c1", user="u")).measured_turn_id == measured
+
+        await compaction.compact_now("c1", "u")
+
+        # That prompt saw the verbatim turns the checkpoint now stands in for.
+        stale = history.measure_native_replay(history.get("c1", user="u"))
+        assert stale.measured_turn_id == ""
+        assert stale.tokens < 9000
+        fresh_id = _add_turn("c1", "u", "after", "answer", usage=700)
+        record = history.get("c1", user="u")
+        fresh = history.measure_native_replay(record)
+        assert fresh.measured_turn_id == fresh_id
+        # The prompt already held the checkpoint; only this turn's completion is added.
+        completion = compaction.budget.estimate_tokens(history.assistant_text(record.turns[-1]))
+        assert fresh.tokens == 700 + completion

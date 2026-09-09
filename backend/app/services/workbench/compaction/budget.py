@@ -99,8 +99,34 @@ def clip_to_tokens(text: str, max_tokens: int) -> str:
     return f"{text[:max_chars]}\n[... {removed} characters truncated to fit the context window]"
 
 
-def should_compact(turns: list[dict[str, Any]], assistant_text_of) -> bool:
-    """Whether this conversation has outgrown its share of the context window."""
+def native_replay_tokens(turns: list[dict[str, Any]]) -> int:
+    """Estimate what the native replay of these turns costs.
+
+    This is the transcript the agent is actually sent — each turn's question, its native
+    assistant messages with their bounded observations, and its final text — measured
+    exactly as `history.build_native_transcript` measures it, not the prose rendering
+    the legacy path used. Where a turn carries the provider's own prompt size that
+    measurement anchors the count and only later turns are estimated. Measuring anything
+    else would trigger compaction on a number the provider never sees.
+    """
+    from app.services.workbench import history
+
+    return history.measure_replay_turns(turns).tokens
+
+
+def newest_turn_replay_tokens(turns: list[dict[str, Any]]) -> int:
+    """The replay cost of the most recent completed turn on its own."""
+    from app.services.workbench import history
+
+    return history.measure_replay_turns(turns).newest_turn_tokens
+
+
+def should_compact(turns: list[dict[str, Any]], assistant_text_of=None) -> bool:
+    """Whether the native replay of these turns has outgrown the context window.
+
+    `assistant_text_of` is accepted for callers written against the prose measure and
+    ignored: the replay is read from each turn's events.
+    """
     if not settings.workbench_compaction_enabled:
         return False
-    return transcript_tokens(turns, assistant_text_of) > budget_tokens()
+    return native_replay_tokens(turns) > budget_tokens()

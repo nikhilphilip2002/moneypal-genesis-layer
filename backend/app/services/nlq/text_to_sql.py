@@ -17,7 +17,6 @@ the user has no way to tell the two apart.
 from __future__ import annotations
 
 import logging
-import re
 from copy import deepcopy
 from dataclasses import dataclass, field
 from typing import Any
@@ -33,12 +32,11 @@ from app.services.nlq.llm import LLMError, get_llm_client
 from app.services.nlq.llm.prompts import catalog_block
 from app.services.nlq.llm.schemas import sql_schema
 from app.services.nlq.llm.telemetry import stable_hash
-from app.services.nlq.normalization import normalize_lending_question
 from app.services.nlq.validator import ValidationError, validate
 
 logger = logging.getLogger(__name__)
 
-SQL_PROMPT_VERSION = "sql-v2-compact-catalog"
+SQL_PROMPT_VERSION = "sql-v3-qualified-columns"
 
 SYSTEM_PROMPT = """\
 You write a single PostgreSQL SELECT statement answering the user's question about a \
@@ -53,6 +51,8 @@ pg_catalog or information_schema.
 - Always include a LIMIT of at most 5000.
 - Always bound the query with a date filter when the table has a date column.
 - Never reference a column that is not listed in the schema below.
+- Qualify every column with its table alias when more than one table appears \
+anywhere in the statement, including in subqueries, CTEs and UNION branches.
 {pii_rule}
 
 DOMAIN
@@ -103,7 +103,6 @@ class SqlAttempt:
     warnings: list[str] = field(default_factory=list)
     pii_columns: list[str] = field(default_factory=list)
     column_units: dict[str, str] = field(default_factory=dict)
-    reviewed: bool = False
     trace: list[dict[str, Any]] = field(default_factory=list)
 
 
@@ -113,38 +112,11 @@ async def generate(
     catalog: Catalog | None = None,
     allow_pii: bool = False,
     preferred_tables: list[str] | None = None,
-    allow_reviewed_shortcuts: bool = True,
     client=None,
 ) -> SqlAttempt:
     """Generate and validate SQL. Returns an attempt whose `validated` flag is the gate."""
     cat = catalog or get_catalog()
     llm = client or get_llm_client()
-
-    if allow_reviewed_shortcuts:
-        exact = _interest_rate_distribution_attempt(question, cat)
-        if exact is not None:
-            logger.info("NLQ selected deterministic interest-rate distribution")
-            return exact
-
-        exact = _ranked_agent_borrower_collections_attempt(question, cat, allow_pii=allow_pii)
-        if exact is not None:
-            logger.info("NLQ selected reviewed agent-borrower collections query")
-            return exact
-
-        exact = _agent_directory_attempt(question, cat, allow_pii=allow_pii)
-        if exact is not None:
-            logger.info("NLQ selected deterministic agent-directory query")
-            return exact
-
-        exact = _named_borrower_disbursed_attempt(question, cat, allow_pii=allow_pii)
-        if exact is not None:
-            logger.info("NLQ selected deterministic named-borrower disbursement lookup")
-            return exact
-
-        exact = _named_borrower_principal_attempt(question, cat, allow_pii=allow_pii)
-        if exact is not None:
-            logger.info("NLQ selected deterministic named-borrower principal lookup")
-            return exact
 
     hits = retrieve(question, catalog=cat, use_vectors=settings.nlq_catalog_vectors)
     selected_tables = [
@@ -337,424 +309,6 @@ def _infer_column_units(sql: str, tables: list[str], catalog: Catalog) -> dict[s
     return inferred
 
 
-_INTEREST_RATE_LIST_RE = re.compile(
-    r"\b(?:various|different|distinct|available|list|range\s+of)\b[^?]{0,50}"
-    r"\binterest\s+rates?\b|"
-    r"\blist\s+the\s+distinct\s+account\s+interest\s+rates?\b|"
-    r"\bwhat\s+(?:are|is)\b[^?]{0,35}\binterest\s+rates?\b",
-    re.IGNORECASE,
-)
-_LOAN_NAME_WITH_RATE_RE = re.compile(
-    r"\b(?:different|various|available)\s+(?:types?|names?)\s+of\s+loans?\b|"
-    r"\bloan\s+(?:types?|names?)\b[^?]{0,60}\binterest\s+rates?\b|"
-    r"\b(?:products?|schemes?)\b[^?]{0,60}\binterest\s+rates?\b",
-    re.IGNORECASE,
-)
-
-_AGENT_DIRECTORY_RE = re.compile(
-    r"\b(?:agent\s+(?:details?|directory|profiles?|names?)|"
-    r"(?:list|show)\s+(?:all\s+)?agents?)\b|"
-    r"\bagents?\b[^?]{0,100}\b(?:names?|designations?|branch(?:es|\s+codes?)?|"
-    r"mobiles?|phones?|emails?|role(?:s|\s+codes?)?|joined|linked\s+(?:loan|customer|borrower))\b",
-    re.IGNORECASE,
-)
-_AGENT_DIRECTORY_LOAN_FACT_RE = re.compile(
-    r"\b(?:customer|borrower|client)\s+names?\b|"
-    r"\b(?:principal|interest|amount)\s+(?:collected|paid|repaid|recovered)\b|"
-    r"\b(?:disburs(?:ed|ement)|sanction(?:ed)?|outstanding)\s+amount\b",
-    re.IGNORECASE,
-)
-
-
-def _ranked_agent_borrower_collections_attempt(
-    question: str,
-    catalog: Catalog,
-    *,
-    allow_pii: bool,
-) -> SqlAttempt | None:
-    """Reviewed cross-grain query for agent ranking plus borrower collection detail."""
-    normalized = normalize_lending_question(question)
-    asks_ranking = bool(
-        re.search(r"\b(?:top|rank(?:ed|ing)?|highest|most|largest|maximum)\b", normalized, re.I)
-    )
-    asks_agents = bool(re.search(r"\bagents?\b", normalized, re.I))
-    asks_borrowers = bool(re.search(r"\b(?:borrowers?|customers?|clients?)\b", normalized, re.I))
-    asks_names = bool(
-        re.search(r"\b(?:borrower|customer|client)\s+names?\b", normalized, re.I)
-    )
-    asks_principal = bool(
-        re.search(
-            r"\b(?:principal|principle)\b[^?]{0,35}\b(?:collected|paid|repaid|recovered)\b|"
-            r"\b(?:collected|paid|repaid|recovered)\b[^?]{0,35}\b(?:principal|principle)\b",
-            normalized,
-            re.I,
-        )
-    )
-    if not (
-        allow_pii and asks_ranking and asks_agents and asks_borrowers and asks_names
-        and asks_principal
-    ):
-        return None
-
-    limit_match = re.search(r"\btop\s+(?P<limit>\d{1,2})\b", normalized, re.I)
-    agent_limit = max(1, min(int(limit_match.group("limit")), 50)) if limit_match else 10
-    sql = f"""\
-SELECT lam.agent_code,
-       agent.agent_name,
-       lam.customer_name,
-       COUNT(lam.customer_id) OVER (PARTITION BY lam.agent_code) AS borrower_count,
-       COALESCE(SUM(repay.principal_paid), 0) AS principal_collected
-FROM gold.semantic_loan_account AS lam
-LEFT JOIN gold.semantic_repayment_event AS repay
-  ON repay.entity_num::text = lam.entity_num::text
- AND repay.loan_account_number::text = lam.loan_account_number::text
- AND repay.repayment_date <= CURRENT_DATE
-LEFT JOIN gold.semantic_agent AS agent
-  ON agent.agent_code::text = lam.agent_code::text
-WHERE lam.agent_code IS NOT NULL
-  AND lam.sanction_date <= CURRENT_DATE
-  AND lam.agent_code IN (
-      SELECT ranked.agent_code
-      FROM gold.semantic_loan_account AS ranked
-      WHERE ranked.agent_code IS NOT NULL
-        AND ranked.sanction_date <= CURRENT_DATE
-      GROUP BY ranked.agent_code
-      ORDER BY COUNT(DISTINCT ranked.customer_id) DESC
-      LIMIT {agent_limit}
-  )
-GROUP BY lam.agent_code, agent.agent_name, lam.customer_id, lam.customer_name
-ORDER BY borrower_count DESC,
-         lam.agent_code ASC,
-         principal_collected DESC,
-         lam.customer_name ASC
-LIMIT 5000"""
-    checked = validate(
-        sql,
-        catalog=catalog,
-        allow_pii=True,
-        allowed_pii_columns={"agent_name", "customer_name"},
-    )
-    return SqlAttempt(
-        sql=checked.sql,
-        tables=checked.tables,
-        explanation=(
-            f"Top {agent_limit} agents ranked by distinct linked borrowers, with each "
-            "borrower's cumulative principal collected through today."
-        ),
-        validated=True,
-        attempts=0,
-        model="deterministic",
-        provider="catalog",
-        warnings=[
-            "Principal collected is summed from governed repayment events through today."
-        ],
-        pii_columns=checked.pii_columns,
-        column_units={
-            "agent_code": "text",
-            "agent_name": "text",
-            "customer_name": "text",
-            "borrower_count": "count",
-            "principal_collected": "inr",
-        },
-        reviewed=True,
-    )
-
-
-def _agent_directory_attempt(
-    question: str,
-    catalog: Catalog,
-    *,
-    allow_pii: bool,
-) -> SqlAttempt | None:
-    """Select only explicitly requested fields from the governed agent directory."""
-    normalized = normalize_lending_question(question)
-    if (
-        not allow_pii
-        or _AGENT_DIRECTORY_RE.search(normalized) is None
-        or _AGENT_DIRECTORY_LOAN_FACT_RE.search(normalized) is not None
-    ):
-        return None
-
-    generic = bool(re.search(r"\bagent\s+(?:details?|directory|profiles?)\b", normalized, re.I))
-    columns: list[tuple[str, str]] = [
-        ("agent_code", "text"),
-        ("agent_name", "text"),
-    ]
-    requested = (
-        (r"\bdesignation", "designation", "text"),
-        (r"\bbranch", "branch_code", "text"),
-        (r"\blinked\s+loans?\b|\bloan\s+counts?\b", "linked_loan_count", "count"),
-        (
-            r"\blinked\s+(?:customers?|borrowers?)\b|\b(?:customer|borrower)\s+counts?\b",
-            "linked_customer_count",
-            "count",
-        ),
-        (r"\b(?:mobile|phone)", "mobile", "text"),
-        (r"\bemail", "email", "text"),
-        (r"\bagent\s+types?\b", "agent_type", "text"),
-        (r"\brole(?:s|\s+codes?)?\b", "role_code", "text"),
-        (r"\bjoin(?:ed|ing)?\b", "joined_on", "date"),
-    )
-    for pattern, column, unit in requested:
-        if generic or re.search(pattern, normalized, re.I):
-            columns.append((column, unit))
-
-    # A generic directory is useful without exposing contact details the user did not ask
-    # for. Those fields remain available when mobile/email is explicit.
-    if generic:
-        for column, unit in (
-            ("designation", "text"),
-            ("branch_code", "text"),
-            ("linked_customer_count", "count"),
-            ("linked_loan_count", "count"),
-        ):
-            if (column, unit) not in columns:
-                columns.append((column, unit))
-
-    names = [column for column, _unit in columns]
-    order_column = (
-        "linked_customer_count" if "linked_customer_count" in names
-        else "linked_loan_count" if "linked_loan_count" in names
-        else "agent_name"
-    )
-    direction = "DESC" if order_column.startswith("linked_") else "ASC"
-    sql = (
-        "SELECT " + ", ".join(names) + " FROM gold.semantic_agent "
-        f"ORDER BY {order_column} {direction} NULLS LAST LIMIT 200"
-    )
-    checked = validate(
-        sql,
-        catalog=catalog,
-        allow_pii=True,
-        allowed_pii_columns={"agent_name", "mobile", "email"},
-    )
-    return SqlAttempt(
-        sql=checked.sql,
-        tables=checked.tables,
-        explanation=(
-            "Current governed agent-directory fields requested by the user, ordered by "
-            + order_column.replace("_", " ")
-            + "."
-        ),
-        validated=True,
-        attempts=0,
-        model="deterministic",
-        provider="catalog",
-        warnings=["Agent directory values reflect the latest available Gold view load."],
-        pii_columns=checked.pii_columns,
-        column_units={column: unit for column, unit in columns},
-    )
-
-
-def _interest_rate_distribution_attempt(
-    question: str, catalog: Catalog
-) -> SqlAttempt | None:
-    """List contractual account rates with counts, without asking the model to write SQL."""
-    normalized = normalize_lending_question(question)
-    if not _INTEREST_RATE_LIST_RE.search(normalized):
-        return None
-    include_loan_name = _LOAN_NAME_WITH_RATE_RE.search(normalized) is not None
-    loan_name = (
-        "COALESCE(NULLIF(TRIM(scheme_name), ''), NULLIF(TRIM(product_name), ''), "
-        "'Unmapped loan')"
-    )
-    if include_loan_name:
-        sql = (
-            f"SELECT {loan_name} AS loan_name, interest_rate AS interest_rate, "
-            "COUNT(interest_rate) AS loan_count FROM gold.semantic_loan_account "
-            "WHERE interest_rate IS NOT NULL AND sanction_date <= CURRENT_DATE "
-            f"GROUP BY {loan_name}, interest_rate ORDER BY loan_name, interest_rate "
-            "LIMIT 5000"
-        )
-    else:
-        sql = (
-            "SELECT interest_rate AS interest_rate, COUNT(interest_rate) AS loan_count "
-            "FROM gold.semantic_loan_account "
-            "WHERE interest_rate IS NOT NULL AND sanction_date <= CURRENT_DATE "
-            "GROUP BY interest_rate ORDER BY interest_rate ASC LIMIT 5000"
-        )
-    checked = validate(sql, catalog=catalog, allow_pii=False)
-    return SqlAttempt(
-        sql=checked.sql,
-        tables=checked.tables,
-        explanation=(
-            "Governed loan scheme names and distinct contractual account interest rates, "
-            "with the number of sanctioned loans in each combination."
-            if include_loan_name
-            else "Distinct contractual account interest rates, with the number of sanctioned "
-            "loans at each rate, across the full available loan book."
-        ),
-        validated=True,
-        attempts=0,
-        model="deterministic",
-        provider="catalog",
-        warnings=[
-            "Rates are contractual account percentages, not rupee amounts.",
-            "Loan count shows how many accounts carry each distinct rate.",
-        ],
-        column_units={
-            **({"loan_name": "text"} if include_loan_name else {}),
-            "interest_rate": "percent",
-            "loan_count": "count",
-        },
-    )
-
-
-_NAMED_PRINCIPAL_RE = re.compile(
-    r"\b(?:principal|principle)\b.*\b(?:paid|repaid|collected|recovered)\b\s+"
-    r"(?:by|for)\s+(?P<name>[\w .'-]{2,100})\s*[?!.]*$",
-    re.IGNORECASE,
-)
-_NAMED_DISBURSED_RE = re.compile(
-    r"\b(?:loan\s+amount\s+)?(?:disbur\w*|released|paid\s+out)\b\s+"
-    r"(?:to|for|by)\s+(?P<name>[\w .'-]{2,100})\s*[?!.]*$",
-    re.IGNORECASE,
-)
-
-
-def _has_period_words(question: str) -> bool:
-    return bool(re.search(
-        r"\b(?:today|yesterday|month|quarter|year|fy\d*|between|from|since|before|after)\b",
-        question,
-        re.IGNORECASE,
-    ))
-
-
-def named_borrower_principal_name(question: str) -> str | None:
-    """Return the explicit borrower name for the supported cumulative-principal intent."""
-    if _has_period_words(question):
-        return None
-    match = _NAMED_PRINCIPAL_RE.search(question.strip())
-    if match is None:
-        return None
-    return match.group("name").strip(" .?!") or None
-
-
-def named_borrower_disbursed_name(question: str) -> str | None:
-    """Return the borrower in a current cumulative-disbursement lookup."""
-    if _has_period_words(question):
-        return None
-    match = _NAMED_DISBURSED_RE.search(question.strip())
-    if match is None:
-        return None
-    return match.group("name").strip(" .?!") or None
-
-
-def _normalized_borrower_sql(borrower: str) -> tuple[str, str, str]:
-    normalized = re.sub(r"[^a-z0-9]", "", borrower.lower()).replace("th", "t")
-    # Repeated-letter spelling varies in operational names (Sheela/Shela, double-e versus
-    # double-l typos). Collapse runs on both sides while retaining the full remaining name,
-    # which is much safer than broad substring matching.
-    normalized = re.sub(r"(.)\1+", r"\1", normalized)
-    literal = exp.Literal.string(normalized).sql(dialect="postgres")
-    stored_name = (
-        "REGEXP_REPLACE(REGEXP_REPLACE(REPLACE(LOWER(TRIM(customer_name)), "
-        "'th', 't'), '[^a-z0-9]', '', 'g'), '(.)\\1+', '\\1', 'g')"
-    )
-    display_name = "TRIM(REGEXP_REPLACE(customer_name, '\\s+', ' ', 'g'))"
-    return literal, stored_name, display_name
-
-
-def _named_borrower_disbursed_attempt(
-    question: str,
-    catalog: Catalog,
-    *,
-    allow_pii: bool,
-) -> SqlAttempt | None:
-    """Deterministic cumulative amount disbursed to one named borrower."""
-    if not allow_pii:
-        return None
-    borrower = named_borrower_disbursed_name(question)
-    if not borrower:
-        return None
-    literal, stored_name, display_name = _normalized_borrower_sql(borrower)
-    sql = (
-        f"SELECT {display_name} AS borrower_name, "
-        "SUM(disbursed_amount) AS disbursed_amount "
-        "FROM gold.semantic_loan_account "
-        f"WHERE {stored_name} LIKE {literal} || '%' "
-        "AND sanction_date <= CURRENT_DATE "
-        f"GROUP BY {display_name} ORDER BY disbursed_amount DESC LIMIT 20"
-    )
-    checked = validate(
-        sql,
-        catalog=catalog,
-        allow_pii=True,
-        allowed_pii_columns={"customer_name"},
-    )
-    return SqlAttempt(
-        sql=checked.sql,
-        tables=checked.tables,
-        explanation="Cumulative amount disbursed across the borrower's loan accounts.",
-        validated=True,
-        attempts=0,
-        model="deterministic",
-        provider="catalog",
-        warnings=[
-            "Borrowers matched after normalizing spacing, punctuation, initials and th/t spelling.",
-            "Multiple possible borrowers are shown separately rather than combined.",
-            "The amount is cumulative as of the latest loan-account data load.",
-        ],
-        pii_columns=checked.pii_columns,
-        column_units={"disbursed_amount": "inr", "borrower_name": "text"},
-    )
-
-
-def _named_borrower_principal_attempt(
-    question: str,
-    catalog: Catalog,
-    *,
-    allow_pii: bool,
-) -> SqlAttempt | None:
-    """Deterministic current cumulative principal for one explicitly named borrower.
-
-    This common lookup should not depend on an LLM reproducing opaque Prosper column
-    names. More complex questions (especially those naming a period) continue through the
-    generated-SQL path.
-    """
-    if not allow_pii:
-        return None
-    borrower = named_borrower_principal_name(question)
-    if not borrower:
-        return None
-
-    # Match operational name formatting without merging ambiguous borrowers: whitespace,
-    # punctuation and the common Indian-name `th`/`t` transliteration are normalized, and
-    # omitted initials are accepted as a prefix. Every matching stored name remains its
-    # own result row so "Sheela" cannot silently combine several people.
-    literal, stored_name, display_name = _normalized_borrower_sql(borrower)
-    sql = (
-        f"SELECT {display_name} AS borrower_name, "
-        "SUM(principal_repaid) AS principal_repaid "
-        "FROM gold.semantic_loan_account "
-        f"WHERE {stored_name} LIKE {literal} || '%' "
-        "AND sanction_date <= CURRENT_DATE "
-        f"GROUP BY {display_name} ORDER BY principal_repaid DESC LIMIT 20"
-    )
-    checked = validate(
-        sql,
-        catalog=catalog,
-        allow_pii=True,
-        allowed_pii_columns={"customer_name"},
-    )
-    return SqlAttempt(
-        sql=checked.sql,
-        tables=checked.tables,
-        explanation="Cumulative principal repaid across the borrower's loan accounts.",
-        validated=True,
-        attempts=0,
-        model="deterministic",
-        provider="catalog",
-        warnings=[
-            "Borrowers matched after normalizing spacing, punctuation, initials and th/t spelling.",
-            "Multiple possible borrowers are shown separately rather than combined.",
-            "The amount is cumulative as of the latest loan-account data load.",
-        ],
-        pii_columns=checked.pii_columns,
-        column_units={"principal_repaid": "inr", "borrower_name": "text"},
-    )
-
-
 def _context_block(
     hits,
     catalog: Catalog,
@@ -836,7 +390,7 @@ def _few_shots() -> list[dict[str, str]]:
 
 
 def lineage_for(attempt: SqlAttempt, row_count: int, duration_ms: int) -> Lineage:
-    """Lineage for generated SQL or a reviewed deterministic record lookup."""
+    """Lineage for generated, validated SQL."""
     return Lineage(
         path="text_to_sql",
         sql=attempt.sql,
@@ -847,5 +401,5 @@ def lineage_for(attempt: SqlAttempt, row_count: int, duration_ms: int) -> Lineag
         row_count=row_count,
         duration_ms=duration_ms,
         warnings=list(attempt.warnings),
-        unverified=not attempt.reviewed,
+        unverified=True,
     )

@@ -1,8 +1,7 @@
 """Flat argument contracts for provider-native Workbench tools.
 
-These models intentionally contain no routing discriminator. The native function name is the
-route, leaving each tool with one ordinary object contract. Provider schemas are a constrained
-projection of these models; these Pydantic models remain the execution-boundary authority.
+Each tool has one ordinary object contract. Provider schemas are a constrained projection of
+these models; these Pydantic models remain the execution-boundary authority.
 """
 
 from __future__ import annotations
@@ -62,9 +61,9 @@ class RunValidatedQueryArguments(AgentArguments):
     tables: list[str] = Field(
         default_factory=list,
         description=(
-            "Only catalog tables needed by the intent. Principal collected comes from "
-            "gold.semantic_repayment_event; borrower and agent attribution come from "
-            "gold.semantic_loan_account."
+            "Only the catalog tables the intent needs. Each table's description, grain, "
+            "and restrictions are in the catalog; call inspect_loan_catalog when it is "
+            "unclear which table carries a measure or attribute."
         ),
     )
 

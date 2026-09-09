@@ -307,3 +307,206 @@ class TestReturnedSql:
         result = validate(original)
         assert "LIMIT" in result.sql.upper()
         assert result.sql != original
+
+
+class TestScopedColumnResolution:
+    """Phase D (plan.md F10): columns resolve per SQL scope, not against a statement-wide
+    union of every table mentioned anywhere. Both audit false positives below were rejected
+    as "ambiguous" by the scope-blind validator."""
+
+    def test_in_subquery_over_a_second_view_is_not_ambiguous(self):
+        sql = (
+            "SELECT loan_account_number FROM gold.semantic_loan_account "
+            "WHERE entity_num IN (SELECT entity_num FROM gold.semantic_disbursement_event)"
+        )
+        result = validate(sql)
+        assert result.tables == [
+            "gold.semantic_disbursement_event", "gold.semantic_loan_account",
+        ]
+
+    def test_union_branches_validate_independently(self):
+        sql = (
+            "SELECT loan_account_number FROM gold.semantic_loan_account "
+            "UNION ALL "
+            "SELECT loan_account_number FROM gold.semantic_disbursement_event"
+        )
+        assert is_safe(sql)
+
+    def test_union_order_by_may_name_an_output_column(self):
+        sql = (
+            "SELECT loan_account_number FROM gold.semantic_loan_account "
+            "UNION ALL "
+            "SELECT loan_account_number FROM gold.semantic_disbursement_event "
+            "ORDER BY loan_account_number LIMIT 5"
+        )
+        assert is_safe(sql)
+
+    def test_a_union_branch_with_an_invented_column_is_rejected(self):
+        sql = (
+            "SELECT loan_account_number FROM gold.semantic_loan_account "
+            "UNION ALL "
+            "SELECT invented_column FROM gold.semantic_disbursement_event"
+        )
+        with pytest.raises(ValidationError, match="invented_column.*UNION branch"):
+            validate(sql)
+
+    def test_correlated_subquery_may_reference_the_outer_alias(self):
+        sql = """
+        SELECT lam.loan_account_number
+        FROM gold.semantic_loan_account AS lam
+        WHERE EXISTS (
+            SELECT 1 FROM gold.semantic_disbursement_event AS d
+            WHERE d.loan_account_number = lam.loan_account_number
+              AND d.entity_num = lam.entity_num
+        )
+        LIMIT 10
+        """
+        assert is_safe(sql)
+
+    def test_cte_alias_cannot_bypass_column_validation(self):
+        """The scope-blind validator skipped any column qualified by a CTE alias."""
+        sql = (
+            "WITH c AS (SELECT loan_account_number FROM gold.semantic_loan_account) "
+            "SELECT c.made_up FROM c"
+        )
+        with pytest.raises(ValidationError, match="made_up.*not projected by 'c'"):
+            validate(sql)
+
+    def test_derived_table_alias_cannot_bypass_column_validation(self):
+        sql = (
+            "SELECT s.made_up FROM "
+            "(SELECT loan_account_number FROM gold.semantic_loan_account) AS s"
+        )
+        with pytest.raises(ValidationError, match="made_up.*not projected by 's'"):
+            validate(sql)
+
+    def test_cte_projection_is_resolved_through_its_select_list_aliases(self):
+        sql = (
+            "WITH c AS (SELECT loan_account_number AS lan FROM gold.semantic_loan_account) "
+            "SELECT c.lan, lan FROM c"
+        )
+        assert is_safe(sql)
+
+    def test_unqualified_column_missing_from_the_cte_projection_is_rejected(self):
+        sql = (
+            "WITH c AS (SELECT loan_account_number AS lan FROM gold.semantic_loan_account) "
+            "SELECT loan_account_number FROM c"
+        )
+        with pytest.raises(ValidationError, match="does not exist on any referenced table"):
+            validate(sql)
+
+    def test_cte_over_a_union_projects_the_first_branch(self):
+        sql = (
+            "WITH c AS ("
+            "SELECT loan_account_number FROM gold.semantic_loan_account "
+            "UNION ALL SELECT loan_account_number FROM gold.semantic_disbursement_event"
+            ") SELECT c.loan_account_number FROM c"
+        )
+        assert is_safe(sql)
+
+    def test_unknown_qualifier_names_the_scope(self):
+        sql = "SELECT zz.loan_account_number FROM gold.semantic_loan_account AS lam"
+        with pytest.raises(ValidationError, match="qualifier 'zz'.*outer query"):
+            validate(sql)
+
+    def test_ambiguity_error_names_the_candidate_tables(self):
+        sql = """
+        SELECT loan_account_number
+        FROM gold.semantic_loan_account AS loan
+        JOIN gold.semantic_disbursement_event AS disb
+          ON disb.loan_account_number = loan.loan_account_number
+        LIMIT 8
+        """
+        with pytest.raises(
+            ValidationError,
+            match="semantic_disbursement_event, gold.semantic_loan_account",
+        ):
+            validate(sql)
+
+
+class TestFunctionPolicy:
+    """The denylist is always on. `allowlist` mode (NLQ_SQL_FUNCTION_MODE) additionally
+    rejects anything not on ALLOWED_FUNCTIONS; `denylist` mode logs the unlisted call so
+    the allowlist can be completed from canary evidence."""
+
+    UNLISTED = "SELECT pg_typeof(loan_account_number) FROM gold.semantic_loan_account LIMIT 1"
+
+    def test_allowlist_mode_rejects_an_unlisted_function(self):
+        with pytest.raises(ValidationError, match="pg_typeof.*not on the allowlist"):
+            validate(self.UNLISTED, function_mode="allowlist")
+
+    def test_denylist_mode_accepts_and_logs_an_unlisted_function(self, caplog):
+        with caplog.at_level("INFO", logger="app.services.nlq.validator"):
+            assert is_safe(self.UNLISTED, function_mode="denylist")
+        assert any(
+            "pg_typeof()" in record.getMessage() and record.levelname == "INFO"
+            for record in caplog.records
+        )
+
+    def test_default_mode_comes_from_settings(self, monkeypatch):
+        from app.core.config import settings
+
+        monkeypatch.setattr(settings, "nlq_sql_function_mode", "allowlist")
+        with pytest.raises(ValidationError, match="not on the allowlist"):
+            validate(self.UNLISTED)
+        monkeypatch.setattr(settings, "nlq_sql_function_mode", "denylist")
+        assert is_safe(self.UNLISTED)
+
+    def test_unknown_mode_is_a_programming_error(self):
+        with pytest.raises(ValueError):
+            validate(self.UNLISTED, function_mode="blocklist")
+
+    @pytest.mark.parametrize("mode", ["denylist", "allowlist"])
+    def test_banned_functions_are_rejected_in_both_modes(self, mode):
+        sql = "SELECT PG_SLEEP(5) FROM gold.semantic_loan_account LIMIT 1"
+        with pytest.raises(ValidationError, match="not permitted"):
+            validate(sql, function_mode=mode)
+
+    @pytest.mark.parametrize(
+        "sql",
+        [
+            GOOD,
+            """
+            WITH asof AS (
+                SELECT loan_account_number, principal_outstanding
+                FROM gold.semantic_portfolio_snapshot
+                WHERE snapshot_date <= '2026-07-01'
+            )
+            SELECT SUM(principal_outstanding) AS total FROM asof LIMIT 10
+            """,
+            """
+            SELECT b.bucket, SUM(a.principal_outstanding) AS os
+            FROM (SELECT generate_series('2026-01-01'::date, '2026-06-30'::date,
+                                         INTERVAL '1 month')::date AS bucket) AS b
+            CROSS JOIN LATERAL (
+                SELECT principal_outstanding
+                FROM gold.semantic_portfolio_snapshot
+                WHERE snapshot_date <= b.bucket
+            ) AS a
+            GROUP BY b.bucket
+            LIMIT 100
+            """,
+            # The functions the compiler and lookup module emit, spelled as PostgreSQL
+            # spells them; sqlglot canonicalises several (DATE_TRUNC, TO_CHAR, STRING_AGG).
+            r"""
+            SELECT DATE_TRUNC('month', disbursement_date) AS month,
+                   TO_CHAR(disbursement_date, 'YYYY-MM') AS label,
+                   COUNT(loan_account_number) AS n,
+                   COALESCE(SUM(disbursement_amount), 0) AS amount,
+                   ROUND(AVG(disbursement_amount), 2) AS mean,
+                   NULLIF(MIN(disbursement_amount), 0) AS smallest,
+                   LOWER(TRIM(REGEXP_REPLACE(loan_account_number::text, '\s+', ' ', 'g'))) AS who,
+                   STRING_AGG(loan_account_number::text, ',') AS accounts,
+                   EXTRACT(year FROM disbursement_date) AS yr,
+                   CASE WHEN disbursement_amount > 0 THEN 1 ELSE 0 END AS flag,
+                   ROW_NUMBER() OVER (ORDER BY disbursement_date) AS rn
+            FROM gold.semantic_disbursement_event
+            WHERE disbursement_date >= CURRENT_DATE - INTERVAL '1 year'
+              AND disbursement_date <= NOW()
+            GROUP BY 1, 2, loan_account_number, disbursement_amount, disbursement_date
+            LIMIT 100
+            """,
+        ],
+    )
+    def test_legitimate_queries_pass_in_allowlist_mode(self, sql):
+        validate(sql, allow_pii=True, function_mode="allowlist")

@@ -1,6 +1,6 @@
-"""Model routing policy for the workbench.
+"""Privacy boundary for Workbench model selection.
 
-Completely local by default. Every step of the orchestrator asks this module which client
+Completely local by default. Every model step asks this module which client
 to use; `local_only` forces the llama.cpp provider everywhere, which is the whole point of
 the privacy posture — loan-book data never leaves the machine.
 
@@ -22,16 +22,16 @@ from app.core.config import settings
 from app.services.nlq.llm import get_llm_client
 from app.services.nlq.llm.client import OpenAICompatibleClient
 
-# The steps the orchestrator runs. "route" and "db_plan" must stay local because their
+# Native agent selection and DB planning must stay local because their
 # prompts can contain warehouse-derived context; "synthesize" over public sources may burst
 # to Groq when opted in.
-Step = Literal["route", "rewrite", "db_plan", "synthesize"]
+Step = Literal["agent", "rewrite", "db_plan", "synthesize"]
 
 _PUBLIC_SYNTHESIS_STEPS: frozenset[str] = frozenset({"synthesize"})
 
 
 def for_step(step: Step, *, sensitive: bool = True) -> OpenAICompatibleClient:
-    """Return the LLM client for an orchestrator step.
+    """Return the LLM client for a Workbench model step.
 
     `sensitive` marks whether the prompt for this call carries private (loan-book) data.
     A sensitive call is always local. A non-sensitive synthesis call may use Groq, but only

@@ -154,7 +154,7 @@ async def run_db(
             from app.services.workbench import suggestions
 
             if settings.workbench_personalize_suggestions:
-                client = models.for_step("route", sensitive=True)
+                client = models.for_step("agent", sensitive=True)
                 response.chart.next_steps = await asyncio.wait_for(
                     suggestions.personalize(
                         question=intent,

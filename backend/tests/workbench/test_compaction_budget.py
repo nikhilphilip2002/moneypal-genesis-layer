@@ -98,3 +98,30 @@ class TestThreshold:
         monkeypatch.setattr(settings, "workbench_reserve_tokens", 99999)
 
         assert budget.budget_tokens() == 0
+
+
+class TestNativeReplayMeasure:
+    def test_measured_prompt_anchors_and_later_turns_are_estimated_from_the_replay(self):
+        from app.services.workbench import history
+
+        measured = _turn("measured", "measured answer", prompt_tokens=5000)
+        later = _turn("later question", "later answer")
+        later_cost = history.replay_group_tokens(history.native_replay_group(later))
+
+        tokens = budget.native_replay_tokens([measured, later])
+
+        assert later_cost > 0
+        assert tokens == 5000 + budget.estimate_tokens("measured answer") + later_cost
+
+    def test_without_a_measurement_every_replay_group_is_estimated(self):
+        from app.services.workbench import history
+
+        turns = [_turn("q1", "a1"), _turn("q2", "a2")]
+        expected = sum(
+            history.replay_group_tokens(history.native_replay_group(turn)) for turn in turns
+        )
+
+        assert budget.native_replay_tokens(turns) == expected
+        assert budget.newest_turn_replay_tokens(turns) == history.replay_group_tokens(
+            history.native_replay_group(turns[-1])
+        )

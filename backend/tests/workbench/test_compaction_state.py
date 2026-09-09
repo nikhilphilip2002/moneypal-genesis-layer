@@ -171,18 +171,32 @@ class TestRouteAndRefusals:
 
     def test_native_plan_entity_rank_and_fact_anchors_are_mechanical(self):
         turn = _chart_turn("t1", "Top branch?", "Aluva leads at 4.2%.")
-        turn["agent_exchanges"] = [{
-            "calls": [{
-                "id": "c1", "name": "query_metrics",
-                "arguments": {
-                    "metrics": ["par_30"], "dimensions": ["branch"],
-                    "period": {"relative": "today"},
-                },
-            }, {
-                "id": "c2", "name": "lookup_records",
-                "arguments": {"selector": "branch", "value": "Aluva"},
-            }],
+        # Native calls are read from the turn's event stream, the one representation
+        # every reader shares; the `agent_exchanges` copy is never consulted.
+        calls = [{
+            "id": "c1", "name": "query_metrics",
+            "arguments": {
+                "metrics": ["par_30"], "dimensions": ["branch"],
+                "period": {"relative": "today"},
+            },
+        }, {
+            "id": "c2", "name": "lookup_records",
+            "arguments": {"selector": "branch", "value": "Aluva"},
         }]
+        turn["events"] = [
+            {"sequence": 0, "type": "user_message", "payload": {"role": "user", "content": "Top branch?"}},
+            *(
+                {
+                    "sequence": index + 1, "type": "tool_call",
+                    "payload": {"execution_path": "native", "call": call},
+                }
+                for index, call in enumerate(calls)
+            ),
+        ]
+        turn["agent_exchanges"] = [{"calls": [{
+            "id": "stale", "name": "lookup_records",
+            "arguments": {"selector": "x", "value": "ignored"},
+        }]}]
         turn["cards"][0]["payload"].update({
             "chart_type": "ranking",
             "columns": [

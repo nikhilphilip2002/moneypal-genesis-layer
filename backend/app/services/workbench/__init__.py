@@ -1,1 +1,1 @@
-"""Genesis Workbench — unified chat orchestrator over the intelligence sources."""
+"""Genesis Workbench — unified native-tool chat over governed intelligence sources."""

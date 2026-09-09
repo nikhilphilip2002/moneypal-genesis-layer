@@ -1,0 +1,1040 @@
+# Native-agent multi-turn regression conversations (plan.md section 8, F.1).
+#
+# Every conversation lists its turns; every turn lists the model requests the agent must
+# make, in order. For each request:
+#
+#   transcript   the exact shape of the message list the model receives, in order:
+#                system | question:<this turn's question> | user:<replayed question> |
+#                call:<id>=<tool>[,<id>=<tool>] | tool:<id>:<status>[:<code>][:truncated] |
+#                assistant:<replayed answer text> | nudge:<required|auto|none>
+#                Only the current round's nudge is sent; earlier nudges are recorded in
+#                the turn's events but never replayed.
+#   tool_choice  what the agent asks for on that request
+#   response     the structured call(s) the model must return (tool + exact arguments),
+#                or `text` for the final answer. `preflight` names the typed error the
+#                application must return for a call that may never execute.
+#   execute      the canned tool result, one per call by position: `card` or `raise`.
+#
+# `outcome` is the visible end of the turn read from the emit queue: an answer or refusal
+# event with its status/origin/reason, error cards streamed on the way, or the exception
+# the graph turns into an error frame. Scoring compares structure only; no regex is run
+# over model output. Every id below is a governed catalog id (see
+# test_expected_calls_use_only_governed_catalog_ids).
+
+- id: interest_collected_scheme_wise
+  description: interest collected broken down by scheme
+  turns:
+    - question: interest collected scheme wise
+      requests:
+        - transcript: [system, "question:interest collected scheme wise"]
+          tool_choice: required
+          response:
+            id: ic_scheme
+            tool: query_metrics
+            arguments:
+              metrics: [interest_collected]
+              dimensions: [scheme]
+              period: {relative: all_time}
+          execute:
+            card:
+              title: Interest collected by scheme
+              summary: Interest collected by scheme is listed in the table.
+              columns:
+                - {name: scheme, label: Scheme, unit: ""}
+                - {name: interest_collected, label: Interest collected, unit: INR}
+              rows:
+                - {scheme: "1001", interest_collected: 125000}
+                - {scheme: "1005", interest_collected: 98000}
+        - transcript:
+            - system
+            - "question:interest collected scheme wise"
+            - "call:ic_scheme=query_metrics"
+            - "tool:ic_scheme:ok"
+            - "nudge:auto"
+          tool_choice: auto
+          response:
+            text: Interest collected by scheme is shown in the table.
+      outcome:
+        event: answer
+        status: answered
+        text: Interest collected by scheme is shown in the table.
+        error_cards: []
+
+- id: interest_collected_branch_wise
+  description: interest collected broken down by branch
+  turns:
+    - question: interest collected branch wise
+      requests:
+        - transcript: [system, "question:interest collected branch wise"]
+          tool_choice: required
+          response:
+            id: ic_branch
+            tool: query_metrics
+            arguments:
+              metrics: [interest_collected]
+              dimensions: [branch]
+              period: {relative: all_time}
+          execute:
+            card:
+              title: Interest collected by branch
+              summary: Interest collected by branch is listed in the table.
+              columns:
+                - {name: branch, label: Branch, unit: ""}
+                - {name: interest_collected, label: Interest collected, unit: INR}
+              rows:
+                - {branch: "1002", interest_collected: 64000}
+                - {branch: "1007", interest_collected: 51000}
+        - transcript:
+            - system
+            - "question:interest collected branch wise"
+            - "call:ic_branch=query_metrics"
+            - "tool:ic_branch:ok"
+            - "nudge:auto"
+          tool_choice: auto
+          response:
+            text: Interest collected by branch is shown in the table.
+      outcome:
+        event: answer
+        status: answered
+        text: Interest collected by branch is shown in the table.
+        error_cards: []
+
+- id: interest_collected_product_wise
+  description: interest collected broken down by product
+  turns:
+    - question: interest collected product wise
+      requests:
+        - transcript: [system, "question:interest collected product wise"]
+          tool_choice: required
+          response:
+            id: ic_product
+            tool: query_metrics
+            arguments:
+              metrics: [interest_collected]
+              dimensions: [product]
+              period: {relative: all_time}
+          execute:
+            card:
+              title: Interest collected by product
+              summary: Interest collected by product is listed in the table.
+              columns:
+                - {name: product, label: Product, unit: ""}
+                - {name: interest_collected, label: Interest collected, unit: INR}
+              rows:
+                - {product: "1", interest_collected: 210000}
+                - {product: "13", interest_collected: 43000}
+        - transcript:
+            - system
+            - "question:interest collected product wise"
+            - "call:ic_product=query_metrics"
+            - "tool:ic_product:ok"
+            - "nudge:auto"
+          tool_choice: auto
+          response:
+            text: Interest collected by product is shown in the table.
+      outcome:
+        event: answer
+        status: answered
+        text: Interest collected by product is shown in the table.
+        error_cards: []
+
+- id: interest_collected_month_wise
+  description: interest collected broken down by month
+  turns:
+    - question: interest collected month wise
+      requests:
+        - transcript: [system, "question:interest collected month wise"]
+          tool_choice: required
+          response:
+            id: ic_month
+            tool: query_metrics
+            arguments:
+              metrics: [interest_collected]
+              dimensions: [month]
+              period: {grain: month, relative: all_time}
+          execute:
+            card:
+              title: Interest collected by month
+              summary: Interest collected by month is listed in the table.
+              columns:
+                - {name: month, label: Month, unit: ""}
+                - {name: interest_collected, label: Interest collected, unit: INR}
+              rows:
+                - {month: "2026-07", interest_collected: 31000}
+                - {month: "2026-08", interest_collected: 33000}
+        - transcript:
+            - system
+            - "question:interest collected month wise"
+            - "call:ic_month=query_metrics"
+            - "tool:ic_month:ok"
+            - "nudge:auto"
+          tool_choice: auto
+          response:
+            text: Interest collected by month is shown in the table.
+      outcome:
+        event: answer
+        status: answered
+        text: Interest collected by month is shown in the table.
+        error_cards: []
+
+- id: vanitha_customers_then_tenure_and_sanction
+  description: >
+    The named-agent lookup, then a refinement that must keep the agent constraint and the
+    identity fields and add tenure and sanctioned amount.
+  turns:
+    - question: customers under vanitha
+      requests:
+        - transcript: [system, "question:customers under vanitha"]
+          tool_choice: required
+          response:
+            id: lookup_vanitha
+            tool: lookup_records
+            arguments:
+              selector: agent_name
+              value: vanitha
+              detail: agent_customers
+              requested_fields: [borrower_name]
+          execute:
+            card:
+              title: Customers under agent Vanitha
+              summary: Customers linked to agent Vanitha are listed in the table.
+              columns:
+                - {name: customer_id, label: Customer ID, unit: ""}
+                - {name: borrower_name, label: Borrower, unit: ""}
+              rows:
+                - {customer_id: "C1001", borrower_name: Customer One}
+                - {customer_id: "C1002", borrower_name: Customer Two}
+        - transcript:
+            - system
+            - "question:customers under vanitha"
+            - "call:lookup_vanitha=lookup_records"
+            - "tool:lookup_vanitha:ok"
+            - "nudge:auto"
+          tool_choice: auto
+          response:
+            text: The customers linked to agent Vanitha are listed in the table.
+      outcome:
+        event: answer
+        status: answered
+        text: The customers linked to agent Vanitha are listed in the table.
+        error_cards: []
+    - question: include tenure and sanctioned amount with the above details
+      requests:
+        - transcript:
+            - system
+            - "user:customers under vanitha"
+            - "call:lookup_vanitha=lookup_records"
+            - "tool:lookup_vanitha:ok"
+            - "assistant:The customers linked to agent Vanitha are listed in the table."
+            - "question:include tenure and sanctioned amount with the above details"
+          tool_choice: required
+          response:
+            id: lookup_vanitha_detail
+            tool: lookup_records
+            arguments:
+              selector: agent_name
+              value: vanitha
+              detail: agent_customers
+              requested_fields: [borrower_name, number_of_emis, sanction_amount]
+          execute:
+            card:
+              title: Customers under agent Vanitha with tenure and sanctioned amount
+              summary: Customers linked to agent Vanitha with tenure and sanctioned amount are listed in the table.
+              columns:
+                - {name: customer_id, label: Customer ID, unit: ""}
+                - {name: borrower_name, label: Borrower, unit: ""}
+                - {name: number_of_emis, label: Tenure (EMIs), unit: count}
+                - {name: sanction_amount, label: Sanctioned amount, unit: INR}
+              rows:
+                - {customer_id: "C1001", borrower_name: Customer One, number_of_emis: 24, sanction_amount: 150000}
+                - {customer_id: "C1002", borrower_name: Customer Two, number_of_emis: 36, sanction_amount: 240000}
+        - transcript:
+            - system
+            - "user:customers under vanitha"
+            - "call:lookup_vanitha=lookup_records"
+            - "tool:lookup_vanitha:ok"
+            - "assistant:The customers linked to agent Vanitha are listed in the table."
+            - "question:include tenure and sanctioned amount with the above details"
+            - "call:lookup_vanitha_detail=lookup_records"
+            - "tool:lookup_vanitha_detail:ok"
+            - "nudge:auto"
+          tool_choice: auto
+          response:
+            text: The same customers are shown again with their tenure and sanctioned amount.
+      outcome:
+        event: answer
+        status: answered
+        text: The same customers are shown again with their tenure and sanctioned amount.
+        error_cards: []
+
+- id: change_then_remove_filter
+  description: a branch filter is changed on the second turn and removed on the third
+  turns:
+    - question: interest collected by scheme for Aluva this financial year
+      requests:
+        - transcript: [system, "question:interest collected by scheme for Aluva this financial year"]
+          tool_choice: required
+          response:
+            id: ic_aluva
+            tool: query_metrics
+            arguments:
+              metrics: [interest_collected]
+              dimensions: [scheme]
+              filters: [{field: branch, op: eq, value: "1002"}]
+              period: {relative: this_fy}
+          execute:
+            card:
+              title: Interest collected by scheme for Aluva
+              summary: Interest collected by scheme for Aluva is listed in the table.
+              columns:
+                - {name: scheme, label: Scheme, unit: ""}
+                - {name: interest_collected, label: Interest collected, unit: INR}
+              rows:
+                - {scheme: "1001", interest_collected: 21000}
+        - transcript:
+            - system
+            - "question:interest collected by scheme for Aluva this financial year"
+            - "call:ic_aluva=query_metrics"
+            - "tool:ic_aluva:ok"
+            - "nudge:auto"
+          tool_choice: auto
+          response:
+            text: Interest collected by scheme for Aluva this financial year is shown in the table.
+      outcome:
+        event: answer
+        status: answered
+        text: Interest collected by scheme for Aluva this financial year is shown in the table.
+        error_cards: []
+    - question: what about Kozhikode
+      requests:
+        - transcript:
+            - system
+            - "user:interest collected by scheme for Aluva this financial year"
+            - "call:ic_aluva=query_metrics"
+            - "tool:ic_aluva:ok"
+            - "assistant:Interest collected by scheme for Aluva this financial year is shown in the table."
+            - "question:what about Kozhikode"
+          tool_choice: required
+          response:
+            id: ic_kozhikode
+            tool: query_metrics
+            arguments:
+              metrics: [interest_collected]
+              dimensions: [scheme]
+              filters: [{field: branch, op: eq, value: "1007"}]
+              period: {relative: this_fy}
+          execute:
+            card:
+              title: Interest collected by scheme for Kozhikode
+              summary: Interest collected by scheme for Kozhikode is listed in the table.
+              columns:
+                - {name: scheme, label: Scheme, unit: ""}
+                - {name: interest_collected, label: Interest collected, unit: INR}
+              rows:
+                - {scheme: "1001", interest_collected: 18000}
+        - transcript:
+            - system
+            - "user:interest collected by scheme for Aluva this financial year"
+            - "call:ic_aluva=query_metrics"
+            - "tool:ic_aluva:ok"
+            - "assistant:Interest collected by scheme for Aluva this financial year is shown in the table."
+            - "question:what about Kozhikode"
+            - "call:ic_kozhikode=query_metrics"
+            - "tool:ic_kozhikode:ok"
+            - "nudge:auto"
+          tool_choice: auto
+          response:
+            text: Interest collected by scheme for Kozhikode this financial year is shown in the table.
+      outcome:
+        event: answer
+        status: answered
+        text: Interest collected by scheme for Kozhikode this financial year is shown in the table.
+        error_cards: []
+    - question: now without the branch filter
+      requests:
+        - transcript:
+            - system
+            - "user:interest collected by scheme for Aluva this financial year"
+            - "call:ic_aluva=query_metrics"
+            - "tool:ic_aluva:ok"
+            - "assistant:Interest collected by scheme for Aluva this financial year is shown in the table."
+            - "user:what about Kozhikode"
+            - "call:ic_kozhikode=query_metrics"
+            - "tool:ic_kozhikode:ok"
+            - "assistant:Interest collected by scheme for Kozhikode this financial year is shown in the table."
+            - "question:now without the branch filter"
+          tool_choice: required
+          response:
+            id: ic_all_branches
+            tool: query_metrics
+            arguments:
+              metrics: [interest_collected]
+              dimensions: [scheme]
+              filters: []
+              period: {relative: this_fy}
+          execute:
+            card:
+              title: Interest collected by scheme
+              summary: Interest collected by scheme across all branches is listed in the table.
+              columns:
+                - {name: scheme, label: Scheme, unit: ""}
+                - {name: interest_collected, label: Interest collected, unit: INR}
+              rows:
+                - {scheme: "1001", interest_collected: 125000}
+        - transcript:
+            - system
+            - "user:interest collected by scheme for Aluva this financial year"
+            - "call:ic_aluva=query_metrics"
+            - "tool:ic_aluva:ok"
+            - "assistant:Interest collected by scheme for Aluva this financial year is shown in the table."
+            - "user:what about Kozhikode"
+            - "call:ic_kozhikode=query_metrics"
+            - "tool:ic_kozhikode:ok"
+            - "assistant:Interest collected by scheme for Kozhikode this financial year is shown in the table."
+            - "question:now without the branch filter"
+            - "call:ic_all_branches=query_metrics"
+            - "tool:ic_all_branches:ok"
+            - "nudge:auto"
+          tool_choice: auto
+          response:
+            text: Interest collected by scheme across all branches this financial year is shown in the table.
+      outcome:
+        event: answer
+        status: answered
+        text: Interest collected by scheme across all branches this financial year is shown in the table.
+        error_cards: []
+
+- id: change_period_keep_constraints
+  description: the period changes while the metric, breakdown and branch filter are kept
+  turns:
+    - question: sanctioned amount by product for Aluva this fy
+      requests:
+        - transcript: [system, "question:sanctioned amount by product for Aluva this fy"]
+          tool_choice: required
+          response:
+            id: sa_this_fy
+            tool: query_metrics
+            arguments:
+              metrics: [sanctioned_amount]
+              dimensions: [product]
+              filters: [{field: branch, op: eq, value: "1002"}]
+              period: {relative: this_fy}
+          execute:
+            card:
+              title: Sanctioned amount by product for Aluva
+              summary: Sanctioned amount by product for Aluva this financial year is listed in the table.
+              columns:
+                - {name: product, label: Product, unit: ""}
+                - {name: sanctioned_amount, label: Sanctioned amount, unit: INR}
+              rows:
+                - {product: "1", sanctioned_amount: 4200000}
+        - transcript:
+            - system
+            - "question:sanctioned amount by product for Aluva this fy"
+            - "call:sa_this_fy=query_metrics"
+            - "tool:sa_this_fy:ok"
+            - "nudge:auto"
+          tool_choice: auto
+          response:
+            text: Sanctioned amount by product for Aluva this financial year is shown in the table.
+      outcome:
+        event: answer
+        status: answered
+        text: Sanctioned amount by product for Aluva this financial year is shown in the table.
+        error_cards: []
+    - question: same for last fy
+      requests:
+        - transcript:
+            - system
+            - "user:sanctioned amount by product for Aluva this fy"
+            - "call:sa_this_fy=query_metrics"
+            - "tool:sa_this_fy:ok"
+            - "assistant:Sanctioned amount by product for Aluva this financial year is shown in the table."
+            - "question:same for last fy"
+          tool_choice: required
+          response:
+            id: sa_last_fy
+            tool: query_metrics
+            arguments:
+              metrics: [sanctioned_amount]
+              dimensions: [product]
+              filters: [{field: branch, op: eq, value: "1002"}]
+              period: {relative: last_fy}
+          execute:
+            card:
+              title: Sanctioned amount by product for Aluva last financial year
+              summary: Sanctioned amount by product for Aluva last financial year is listed in the table.
+              columns:
+                - {name: product, label: Product, unit: ""}
+                - {name: sanctioned_amount, label: Sanctioned amount, unit: INR}
+              rows:
+                - {product: "1", sanctioned_amount: 3900000}
+        - transcript:
+            - system
+            - "user:sanctioned amount by product for Aluva this fy"
+            - "call:sa_this_fy=query_metrics"
+            - "tool:sa_this_fy:ok"
+            - "assistant:Sanctioned amount by product for Aluva this financial year is shown in the table."
+            - "question:same for last fy"
+            - "call:sa_last_fy=query_metrics"
+            - "tool:sa_last_fy:ok"
+            - "nudge:auto"
+          tool_choice: auto
+          response:
+            text: Sanctioned amount by product for Aluva last financial year is shown in the table.
+      outcome:
+        event: answer
+        status: answered
+        text: Sanctioned amount by product for Aluva last financial year is shown in the table.
+        error_cards: []
+
+- id: drill_from_aggregate_to_accounts
+  description: an aggregate by branch, then the accounts behind one branch
+  turns:
+    - question: principal outstanding by branch
+      requests:
+        - transcript: [system, "question:principal outstanding by branch"]
+          tool_choice: required
+          response:
+            id: po_branch
+            tool: query_metrics
+            arguments:
+              metrics: [principal_outstanding]
+              dimensions: [branch]
+              period: {relative: today}
+          execute:
+            card:
+              title: Principal outstanding by branch
+              summary: Principal outstanding by branch is listed in the table.
+              columns:
+                - {name: branch, label: Branch, unit: ""}
+                - {name: principal_outstanding, label: Principal outstanding, unit: INR}
+              rows:
+                - {branch: "1002", principal_outstanding: 8100000}
+                - {branch: "1007", principal_outstanding: 6400000}
+        - transcript:
+            - system
+            - "question:principal outstanding by branch"
+            - "call:po_branch=query_metrics"
+            - "tool:po_branch:ok"
+            - "nudge:auto"
+          tool_choice: auto
+          response:
+            text: Principal outstanding by branch is shown in the table.
+      outcome:
+        event: answer
+        status: answered
+        text: Principal outstanding by branch is shown in the table.
+        error_cards: []
+    - question: list the accounts behind Aluva
+      requests:
+        - transcript:
+            - system
+            - "user:principal outstanding by branch"
+            - "call:po_branch=query_metrics"
+            - "tool:po_branch:ok"
+            - "assistant:Principal outstanding by branch is shown in the table."
+            - "question:list the accounts behind Aluva"
+          tool_choice: required
+          response:
+            id: accounts_aluva
+            tool: run_validated_query
+            arguments:
+              intent: List open loan accounts with customer name and principal outstanding for application branch code 1002 (Aluva)
+              tables: [gold.semantic_loan_account]
+          execute:
+            card:
+              title: Loan accounts in Aluva
+              summary: Loan accounts in Aluva with principal outstanding are listed in the table.
+              columns:
+                - {name: loan_account_number, label: Loan account, unit: ""}
+                - {name: customer_name, label: Customer, unit: ""}
+                - {name: principal_outstanding_current, label: Principal outstanding, unit: INR}
+              rows:
+                - {loan_account_number: L1002001, customer_name: Customer One, principal_outstanding_current: 410000}
+                - {loan_account_number: L1002002, customer_name: Customer Two, principal_outstanding_current: 385000}
+        - transcript:
+            - system
+            - "user:principal outstanding by branch"
+            - "call:po_branch=query_metrics"
+            - "tool:po_branch:ok"
+            - "assistant:Principal outstanding by branch is shown in the table."
+            - "question:list the accounts behind Aluva"
+            - "call:accounts_aluva=run_validated_query"
+            - "tool:accounts_aluva:ok"
+            - "nudge:auto"
+          tool_choice: auto
+          response:
+            text: The loan accounts in Aluva are listed in the table.
+      outcome:
+        event: answer
+        status: answered
+        text: The loan accounts in Aluva are listed in the table.
+        error_cards: []
+
+- id: misspelled_santioned
+  description: the misspelling `santioned` still selects the governed sanctioned_amount metric
+  turns:
+    - question: santioned amount branch wise
+      requests:
+        - transcript: [system, "question:santioned amount branch wise"]
+          tool_choice: required
+          response:
+            id: sa_branch
+            tool: query_metrics
+            arguments:
+              metrics: [sanctioned_amount]
+              dimensions: [branch]
+              period: {relative: all_time}
+          execute:
+            card:
+              title: Sanctioned amount by branch
+              summary: Sanctioned amount by branch is listed in the table.
+              columns:
+                - {name: branch, label: Branch, unit: ""}
+                - {name: sanctioned_amount, label: Sanctioned amount, unit: INR}
+              rows:
+                - {branch: "1002", sanctioned_amount: 12000000}
+        - transcript:
+            - system
+            - "question:santioned amount branch wise"
+            - "call:sa_branch=query_metrics"
+            - "tool:sa_branch:ok"
+            - "nudge:auto"
+          tool_choice: auto
+          response:
+            text: Sanctioned amount by branch is shown in the table.
+      outcome:
+        event: answer
+        status: answered
+        text: Sanctioned amount by branch is shown in the table.
+        error_cards: []
+
+- id: forged_continuation_tool
+  description: >
+    After a real result the model calls a tool that does not exist; the application returns
+    TOOL_NOT_FOUND as an observation, never executes it, and the model answers.
+  turns:
+    - question: interest collected by branch
+      requests:
+        - transcript: [system, "question:interest collected by branch"]
+          tool_choice: required
+          response:
+            id: ic_branch
+            tool: query_metrics
+            arguments:
+              metrics: [interest_collected]
+              dimensions: [branch]
+              period: {relative: all_time}
+          execute:
+            card:
+              title: Interest collected by branch
+              summary: Interest collected by branch is listed in the table.
+              columns:
+                - {name: branch, label: Branch, unit: ""}
+                - {name: interest_collected, label: Interest collected, unit: INR}
+              rows:
+                - {branch: "1002", interest_collected: 64000}
+        - transcript:
+            - system
+            - "question:interest collected by branch"
+            - "call:ic_branch=query_metrics"
+            - "tool:ic_branch:ok"
+            - "nudge:auto"
+          tool_choice: auto
+          response:
+            id: forged
+            tool: export_customer_pii
+            arguments: {}
+            preflight: TOOL_NOT_FOUND
+        - transcript:
+            - system
+            - "question:interest collected by branch"
+            - "call:ic_branch=query_metrics"
+            - "tool:ic_branch:ok"
+            - "call:forged=export_customer_pii"
+            - "tool:forged:error:TOOL_NOT_FOUND"
+            - "nudge:auto"
+          tool_choice: auto
+          response:
+            text: Interest collected by branch is shown in the table.
+      outcome:
+        event: answer
+        status: answered
+        text: Interest collected by branch is shown in the table.
+        error_cards: []
+
+- id: rounds_budget_exhausted
+  description: >
+    With the minimum round budget the model sends an invalid call twice; the turn ends with
+    BudgetExhausted (the graph renders it as an error frame) and no fabricated call.
+  settings: {max_rounds: 2}
+  turns:
+    - question: interest collected scheme wise
+      requests:
+        - transcript: [system, "question:interest collected scheme wise"]
+          tool_choice: required
+          response:
+            id: bad_1
+            tool: query_metrics
+            arguments: {}
+            preflight: INVALID_TOOL_ARGUMENTS
+        - transcript:
+            - system
+            - "question:interest collected scheme wise"
+            - "call:bad_1=query_metrics"
+            - "tool:bad_1:error:INVALID_TOOL_ARGUMENTS"
+            - "nudge:required"
+          tool_choice: required
+          response:
+            id: bad_2
+            tool: query_metrics
+            arguments: {}
+            preflight: INVALID_TOOL_ARGUMENTS
+      outcome:
+        raises: BudgetExhausted
+        error_cards: []
+
+- id: calls_budget_exhausted_after_data
+  description: >
+    One result is retrieved, then the model asks for two more calls than the per-turn call
+    budget allows; the retrieved result is answered from with an agent limitation.
+  settings: {max_calls: 2}
+  turns:
+    - question: interest collected by branch
+      requests:
+        - transcript: [system, "question:interest collected by branch"]
+          tool_choice: required
+          response:
+            id: ic_branch
+            tool: query_metrics
+            arguments:
+              metrics: [interest_collected]
+              dimensions: [branch]
+              period: {relative: all_time}
+          execute:
+            card:
+              title: Interest collected by branch
+              summary: Interest collected by branch is listed in the table.
+              columns:
+                - {name: branch, label: Branch, unit: ""}
+                - {name: interest_collected, label: Interest collected, unit: INR}
+              rows:
+                - {branch: "1002", interest_collected: 64000}
+        - transcript:
+            - system
+            - "question:interest collected by branch"
+            - "call:ic_branch=query_metrics"
+            - "tool:ic_branch:ok"
+            - "nudge:auto"
+          tool_choice: auto
+          persisted: false
+          response:
+            calls:
+              - id: over_1
+                tool: query_metrics
+                arguments:
+                  metrics: [interest_collected]
+                  dimensions: [scheme]
+                  period: {relative: all_time}
+              - id: over_2
+                tool: query_metrics
+                arguments:
+                  metrics: [interest_collected]
+                  dimensions: [product]
+                  period: {relative: all_time}
+      outcome:
+        event: answer
+        status: partial
+        text: Interest collected by branch is listed in the table.
+        limitation_sources: [agent]
+        error_cards: []
+
+- id: deadline_exhausted
+  description: the request deadline is already spent; no model request is made and the turn times out
+  settings: {budget_s: 0}
+  turns:
+    - question: interest collected scheme wise
+      requests: []
+      outcome:
+        raises: TimeoutError
+        error_cards: []
+
+- id: multiple_invalid_calls_one_response
+  description: >
+    One response carries an unknown metric and a forged tool; both come back as typed
+    observations in one round and the model then selects the governed call.
+  turns:
+    - question: interest collected by scheme
+      requests:
+        - transcript: [system, "question:interest collected by scheme"]
+          tool_choice: required
+          response:
+            calls:
+              - id: bad_metric
+                tool: query_metrics
+                arguments:
+                  metrics: [interest_collect]
+                  dimensions: [scheme]
+                  period: {relative: all_time}
+                preflight: INVALID_TOOL_ARGUMENTS
+              - id: forged
+                tool: drop_all_tables
+                arguments: {}
+                preflight: TOOL_NOT_FOUND
+        - transcript:
+            - system
+            - "question:interest collected by scheme"
+            - "call:bad_metric=query_metrics,forged=drop_all_tables"
+            - "tool:bad_metric:error:INVALID_TOOL_ARGUMENTS"
+            - "tool:forged:error:TOOL_NOT_FOUND"
+            - "nudge:required"
+          tool_choice: required
+          response:
+            id: ic_scheme
+            tool: query_metrics
+            arguments:
+              metrics: [interest_collected]
+              dimensions: [scheme]
+              period: {relative: all_time}
+          execute:
+            card:
+              title: Interest collected by scheme
+              summary: Interest collected by scheme is listed in the table.
+              columns:
+                - {name: scheme, label: Scheme, unit: ""}
+                - {name: interest_collected, label: Interest collected, unit: INR}
+              rows:
+                - {scheme: "1001", interest_collected: 125000}
+        - transcript:
+            - system
+            - "question:interest collected by scheme"
+            - "call:bad_metric=query_metrics,forged=drop_all_tables"
+            - "tool:bad_metric:error:INVALID_TOOL_ARGUMENTS"
+            - "tool:forged:error:TOOL_NOT_FOUND"
+            - "call:ic_scheme=query_metrics"
+            - "tool:ic_scheme:ok"
+            - "nudge:auto"
+          tool_choice: auto
+          response:
+            text: Interest collected by scheme is shown in the table.
+      outcome:
+        event: answer
+        status: answered
+        text: Interest collected by scheme is shown in the table.
+        error_cards: []
+
+- id: invalid_sql_then_model_correction
+  description: >
+    The generated SQL is rejected by the validator; the model sees COMPILE_REJECTED and
+    corrects the intent in the next round. The user sees the error card, then the answer.
+  turns:
+    - question: list open loan accounts with borrower name and sanctioned amount
+      requests:
+        - transcript: [system, "question:list open loan accounts with borrower name and sanctioned amount"]
+          tool_choice: required
+          response:
+            id: sql_1
+            tool: run_validated_query
+            arguments:
+              intent: Open loan accounts with borrower name and sanctioned amount
+              tables: [gold.semantic_loan_account]
+          execute:
+            raise:
+              code: COMPILE_REJECTED
+              message: validated query was rejected by the SQL safety gate
+        - transcript:
+            - system
+            - "question:list open loan accounts with borrower name and sanctioned amount"
+            - "call:sql_1=run_validated_query"
+            - "tool:sql_1:error:COMPILE_REJECTED"
+            - "nudge:required"
+          tool_choice: required
+          response:
+            id: sql_2
+            tool: run_validated_query
+            arguments:
+              intent: Loan accounts where loan_status is open, returning loan_account_number, customer_name and sanction_amount
+              tables: [gold.semantic_loan_account]
+          execute:
+            card:
+              title: Open loan accounts
+              summary: Open loan accounts with borrower name and sanctioned amount are listed in the table.
+              columns:
+                - {name: loan_account_number, label: Loan account, unit: ""}
+                - {name: customer_name, label: Customer, unit: ""}
+                - {name: sanction_amount, label: Sanctioned amount, unit: INR}
+              rows:
+                - {loan_account_number: L1002001, customer_name: Customer One, sanction_amount: 500000}
+        - transcript:
+            - system
+            - "question:list open loan accounts with borrower name and sanctioned amount"
+            - "call:sql_1=run_validated_query"
+            - "tool:sql_1:error:COMPILE_REJECTED"
+            - "call:sql_2=run_validated_query"
+            - "tool:sql_2:ok"
+            - "nudge:auto"
+          tool_choice: auto
+          response:
+            text: Open loan accounts with borrower name and sanctioned amount are listed in the table.
+      outcome:
+        event: answer
+        status: partial
+        text: Open loan accounts with borrower name and sanctioned amount are listed in the table.
+        unavailable_types: [error]
+        error_cards: [COMPILE_REJECTED]
+
+- id: large_result_then_follow_up
+  description: >
+    A result larger than the observation limit is truncated for the model (never for the
+    record); the follow-up that needs the full ranking re-queries instead of guessing.
+  turns:
+    - question: interest collected by branch and month
+      requests:
+        - transcript: [system, "question:interest collected by branch and month"]
+          tool_choice: required
+          response:
+            id: ic_branch_month
+            tool: query_metrics
+            arguments:
+              metrics: [interest_collected]
+              dimensions: [branch, month]
+              period: {grain: month, relative: all_time}
+          execute:
+            card:
+              title: Interest collected by branch and month
+              summary: Interest collected by branch and month is listed in the table.
+              columns:
+                - {name: branch, label: Branch, unit: ""}
+                - {name: month, label: Month, unit: ""}
+                - {name: interest_collected, label: Interest collected, unit: INR}
+              generate_rows: {count: 600}
+        - transcript:
+            - system
+            - "question:interest collected by branch and month"
+            - "call:ic_branch_month=query_metrics"
+            - "tool:ic_branch_month:ok:truncated"
+            - "nudge:auto"
+          tool_choice: auto
+          response:
+            text: Interest collected by branch and month is shown in the table.
+      outcome:
+        event: answer
+        status: answered
+        text: Interest collected by branch and month is shown in the table.
+        error_cards: []
+    - question: which branch collected the most overall
+      requests:
+        - transcript:
+            - system
+            - "user:interest collected by branch and month"
+            - "call:ic_branch_month=query_metrics"
+            - "tool:ic_branch_month:ok:truncated"
+            - "assistant:Interest collected by branch and month is shown in the table."
+            - "question:which branch collected the most overall"
+          tool_choice: required
+          response:
+            id: ic_top_branch
+            tool: query_metrics
+            arguments:
+              metrics: [interest_collected]
+              dimensions: [branch]
+              period: {relative: all_time}
+              order_by: {field: interest_collected, direction: desc}
+              limit: 1
+          execute:
+            card:
+              title: Branch with the highest interest collected
+              summary: The branch with the highest interest collected is shown in the table.
+              columns:
+                - {name: branch, label: Branch, unit: ""}
+                - {name: interest_collected, label: Interest collected, unit: INR}
+              rows:
+                - {branch: "1002", interest_collected: 640000}
+        - transcript:
+            - system
+            - "user:interest collected by branch and month"
+            - "call:ic_branch_month=query_metrics"
+            - "tool:ic_branch_month:ok:truncated"
+            - "assistant:Interest collected by branch and month is shown in the table."
+            - "question:which branch collected the most overall"
+            - "call:ic_top_branch=query_metrics"
+            - "tool:ic_top_branch:ok"
+            - "nudge:auto"
+          tool_choice: auto
+          response:
+            text: The branch with the highest interest collected overall is shown in the table.
+      outcome:
+        event: answer
+        status: answered
+        text: The branch with the highest interest collected overall is shown in the table.
+        error_cards: []
+
+- id: model_refusal_then_follow_up
+  description: >
+    The model refuses in its own name through finish_without_data; the refusal keeps its
+    origin and replays as a terminal exchange in the next turn.
+  turns:
+    - question: give me the aadhaar number of customer C1001
+      requests:
+        - transcript: [system, "question:give me the aadhaar number of customer C1001"]
+          tool_choice: required
+          response:
+            id: refuse_1
+            tool: finish_without_data
+            arguments:
+              outcome: refuse
+              message: I cannot share Aadhaar numbers or other identity document details.
+              suggestions: []
+              reason_code: unsafe
+      outcome:
+        event: refusal
+        status: refused
+        origin: model
+        reason: unsafe
+        text: I cannot share Aadhaar numbers or other identity document details.
+        error_cards: []
+    - question: then show loan count by product
+      requests:
+        - transcript:
+            - system
+            - "user:give me the aadhaar number of customer C1001"
+            - "call:refuse_1=finish_without_data"
+            - "tool:refuse_1:terminal"
+            - "assistant:I cannot share Aadhaar numbers or other identity document details."
+            - "question:then show loan count by product"
+          tool_choice: required
+          response:
+            id: lc_product
+            tool: query_metrics
+            arguments:
+              metrics: [loan_count]
+              dimensions: [product]
+              period: {relative: this_fy}
+          execute:
+            card:
+              title: Loan count by product
+              summary: Loan count by product is listed in the table.
+              columns:
+                - {name: product, label: Product, unit: ""}
+                - {name: loan_count, label: Loans, unit: count}
+              rows:
+                - {product: "1", loan_count: 1200}
+        - transcript:
+            - system
+            - "user:give me the aadhaar number of customer C1001"
+            - "call:refuse_1=finish_without_data"
+            - "tool:refuse_1:terminal"
+            - "assistant:I cannot share Aadhaar numbers or other identity document details."
+            - "question:then show loan count by product"
+            - "call:lc_product=query_metrics"
+            - "tool:lc_product:ok"
+            - "nudge:auto"
+          tool_choice: auto
+          response:
+            text: Loan count by product this financial year is shown in the table.
+      outcome:
+        event: answer
+        status: answered
+        text: Loan count by product this financial year is shown in the table.
+        error_cards: []

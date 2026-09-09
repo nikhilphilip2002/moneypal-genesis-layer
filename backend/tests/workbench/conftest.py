@@ -1,8 +1,7 @@
 """Fixtures for the workbench suite.
 
-The workbench modules are pure-logic where they can be: sources and router parsing take no
-network, so most tests need only a fake LLM client. `FakeLLM` returns a canned completion so
-router and synthesis behaviour can be asserted deterministically without a live model.
+The Workbench modules are pure logic where possible, so most tests need only a fake native
+LLM client. `FakeLLM` returns a canned completion for deterministic agent and synthesis tests.
 """
 
 from __future__ import annotations

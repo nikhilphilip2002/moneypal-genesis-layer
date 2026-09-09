@@ -1,4 +1,4 @@
-"""Stable streaming entry point for the plain-async Workbench orchestrator."""
+"""Stable streaming entry point for the native-tool Workbench."""
 
 from __future__ import annotations
 
@@ -12,8 +12,10 @@ from typing import Any, AsyncIterator, NotRequired, TypedDict
 
 from app.core.config import settings
 from app.services.nlq.llm.telemetry import collect_calls, summarize_calls
-from app.services.workbench import access, compaction, composer, facts, history, models, nodes, prompts, router
-from app.services.workbench.results import SourceResult
+from app.services.workbench import (
+    access, calculations, compaction, composer, facts, history, models, prompts,
+)
+from app.services.workbench.results import ExecutionDecision, SourceResult
 
 logger = logging.getLogger(__name__)
 
@@ -30,6 +32,7 @@ def sse(event: str, data: Any) -> str:
     return f"event: {event}\ndata: {json.dumps(data, default=str)}\n\n"
 
 
+CONTEXT_CAPACITY_CODE = "CONTEXT_CAPACITY"
 CONTEXT_FULL_MESSAGE = (
     "This conversation has grown too long for the model's context window, so earlier "
     "detail has been dropped. Please start a new chat session to continue with full "
@@ -51,6 +54,37 @@ def _is_context_overflow(exc: BaseException) -> bool:
     return any(marker in text for marker in _CONTEXT_ERROR_MARKERS)
 
 
+def _native_error(exc: BaseException) -> tuple[str, str, bool]:
+    """Map every native-loop escape to one stable, user-facing error contract."""
+    from app.services.nlq.llm import LLMError, LLMProtocolError, LLMTimeout, LLMUnavailable
+    from app.services.workbench.agent import BudgetExhausted
+    from app.services.workbench.agent_tools import AgentToolAccessDenied
+
+    if _is_context_overflow(exc):
+        return CONTEXT_CAPACITY_CODE, CONTEXT_FULL_MESSAGE, False
+    if isinstance(exc, BudgetExhausted):
+        return (
+            "AGENT_BUDGET_EXHAUSTED",
+            "The agent reached its turn limit before it could produce an answer.",
+            False,
+        )
+    if isinstance(exc, (TimeoutError, LLMTimeout)):
+        return "AGENT_TIMEOUT", "The agent took too long to answer.", True
+    if isinstance(exc, LLMUnavailable):
+        return "MODEL_UNAVAILABLE", "The language model is unavailable right now.", True
+    if isinstance(exc, AgentToolAccessDenied):
+        return "POLICY_DENIED", "That capability is not authorized for this request.", False
+    if isinstance(exc, LLMProtocolError):
+        return (
+            "MODEL_PROTOCOL_ERROR",
+            "The language model did not return a valid native tool response.",
+            True,
+        )
+    if isinstance(exc, LLMError):
+        return "MODEL_ERROR", "The language model could not complete this request.", True
+    return "WORKBENCH_INTERNAL", "The workbench hit an internal error.", True
+
+
 class WorkbenchState(TypedDict):
     question: str
     conversation_id: str
@@ -64,7 +98,7 @@ class WorkbenchState(TypedDict):
     pinned: NotRequired[str | None]
     data_access: NotRequired[str | None]
     source_policy: access.SourceAccessPolicy
-    decision: NotRequired[router.RouteDecision]
+    decision: NotRequired[ExecutionDecision]
     results: NotRequired[list[SourceResult]]
     timing: dict[str, Any]
     agent_native: NotRequired[bool]
@@ -72,189 +106,124 @@ class WorkbenchState(TypedDict):
     agent_prompt_prefix_hash: NotRequired[str]
 
 
-async def select_sources(state: WorkbenchState) -> dict[str, Any]:
-    emit = state["emit"]
-    await emit.put(sse("stage", {"stage": "routing"}))
-    decision = await router.route(
-        state["question"], role=state["role"], pinned=state.get("pinned"),
-        history_messages=state.get("history_messages", []),
-        policy=state["source_policy"],
-    )
-    if decision.route == "dispatch":
-        await emit.put(sse("route", {"sources": decision.sources, "intent": decision.intent,
-                                     "model": decision.model, "reason": decision.reason,
-                                     "confidence": decision.confidence,
-                                     "fallback_used": decision.fallback_used,
-                                     "policy_version": decision.policy_version}))
-    from app.core.logging import log_app_event
-
-    log_app_event(
-        f"Workbench routed to: {decision.sources if decision.route == 'dispatch' else decision.route}",
-        event="workbench_routed",
-        stage="routing",
-        data={
-            "sources": decision.sources, "route": decision.route, "model": decision.model,
-            "reason": decision.reason, "confidence": decision.confidence,
-            "fallback_used": decision.fallback_used,
-            "ambiguity_class": decision.ambiguity_class,
-            "effective_sources": list(decision.effective_sources),
-        },
-    )
-    try:
-        chosen = decision.sources if decision.route == "dispatch" else []
-        history.set_route(
-            state["conversation_id"], state["user"], state["turn_id"],
-            sources=chosen, intent=decision.intent or state["question"], model=decision.model,
-            reason=decision.reason, confidence=decision.confidence,
-            fallback_used=decision.fallback_used, ambiguity_class=decision.ambiguity_class,
-            effective_sources=decision.effective_sources,
-        )
-        if decision.route == "refuse":
-            history.set_refusal(
-                state["conversation_id"], state["user"], state["turn_id"],
-                {"reason": decision.reason, "message": decision.message},
-            )
-    except Exception:  # noqa: BLE001
-        logger.warning("workbench history record failed", exc_info=True)
-    return {"decision": decision}
-
-
-async def _h_db(intent: str, state: WorkbenchState) -> SourceResult:
-    # The router may paraphrase `intent` while selecting sources. Never send that rewrite
-    # into governed NLQ: borrower names, account identifiers, periods, and distinctions
-    # such as principal vs interest must remain byte-for-byte as the user supplied them.
-    return await nodes.run_db(
-        intent,
-        conversation_id=state["conversation_id"], user=state["user"], role=state["role"],
-        access_mode=state.get("data_access"),
-        history_messages=state.get("history_messages", []),
-    )
-
-
-async def _h_macro(intent: str, _state: WorkbenchState) -> SourceResult:
-    return await nodes.run_macro(
-        intent, history_messages=_state.get("history_messages", []),
-        policy=_state["source_policy"],
-    )
-
-
-async def _h_competitive(intent: str, _state: WorkbenchState) -> SourceResult:
-    return await nodes.run_competitive(intent, policy=_state["source_policy"])
-
-
-async def _h_regulatory(intent: str, _state: WorkbenchState) -> SourceResult:
-    return await nodes.run_regulatory(intent, policy=_state["source_policy"])
-
-
-async def _h_knowledge(intent: str, _state: WorkbenchState) -> SourceResult:
-    return await nodes.run_knowledge(
-        intent, history_messages=_state.get("history_messages", []),
-    )
-
-
-async def _h_schema(intent: str, _state: WorkbenchState) -> SourceResult:
-    return await nodes.run_schema(intent, access_mode=_state.get("data_access"))
-
-
-async def _h_web(intent: str, _state: WorkbenchState) -> SourceResult:
-    return await nodes.run_web(
-        intent, user=_state["user"], policy=_state["source_policy"],
-    )
-
-
-# source id -> handler. Adding a source is a new entry here plus a catalog entry — the
-# dispatch node itself never changes.
-_HANDLERS = {
-    "db": _h_db,
-    "macro": _h_macro,
-    "competitive": _h_competitive,
-    "regulatory": _h_regulatory,
-    "knowledge": _h_knowledge,
-    "schema": _h_schema,
-    "web": _h_web,
-}
-
-
-async def dispatch_sources(state: WorkbenchState) -> dict[str, Any]:
-    emit = state["emit"]
-    decision = state.get("decision") or router.RouteDecision(route="refuse", reason="out_of_scope")
-
-    if decision.route == "refuse":
-        await emit.put(sse("refusal", {"route": "refuse", "reason": decision.reason,
-                                       "message": decision.message}))
-        return {"results": []}
-
-    async def run_one(source_id: str) -> SourceResult:
-        state["timing"]["source_attempts"].append(source_id)
-        await emit.put(sse("source_start", {"source": source_id}))
-        handler = _HANDLERS.get(source_id)
-        if not state["source_policy"].allows(source_id):
-            result = SourceResult(
-                source=source_id,
-                card_type="error",
-                payload={"message": "That source is not enabled for this request."},
-            )
-        elif handler is None:
-            result = SourceResult(source=source_id, card_type="error",
-                                  payload={"message": f"Unknown source {source_id}."})
-        else:
-            try:
-                source_intent = decision.source_intents.get(source_id)
-                if not source_intent:
-                    # Preserve the exact user text for a normal DB turn. Other sources may
-                    # safely use the router's normalized intent.
-                    source_intent = state["question"] if source_id == "db" else decision.intent
-                result = await handler(source_intent, state)
-            except Exception:  # noqa: BLE001 - isolate unavailable dependencies
-                logger.exception("workbench source %s failed", source_id)
-                result = SourceResult(
-                    source=source_id,
-                    card_type="error",
-                    payload={
-                        "message": f"{source_id.title()} intelligence is temporarily unavailable.",
-                        "retryable": True,
-                    },
-                )
-        await emit.put(sse("source_card", {
-            "source": result.source, "card_type": result.card_type, **result.payload,
-        }))
-        state["timing"].setdefault(
-            "first_card_ms", int((time.perf_counter() - state["timing"]["started_at"]) * 1000)
-        )
-        state["timing"]["source_completions"].append(source_id)
-        try:
-            history.add_card(
-                state["conversation_id"], state["user"], state["turn_id"],
-                {"source": result.source, "card_type": result.card_type, "payload": result.payload},
-            )
-        except Exception:  # noqa: BLE001
-            logger.warning("workbench card persistence failed", exc_info=True)
-        return result
-
-    # Fan out. Results stream as each finishes; the ordered list is kept for synthesis.
-    results = await asyncio.gather(*(run_one(s) for s in decision.sources))
-    return {"results": list(results)}
-
-
 _ANSWERABLE_CARD_TYPES = frozenset(
     {"chart", "analysis", "worklist", "briefing", "brief", "schema"}
 )
 
+def _synthesis_timeout(state: WorkbenchState) -> float:
+    return max(0.001, min(
+        settings.workbench_composer_timeout_s,
+        settings.nlq_request_budget_s - (time.perf_counter() - state["timing"]["started_at"]),
+    ))
+
+
+async def _repair_synthesis(
+    state: WorkbenchState,
+    client,
+    *,
+    base_messages: list[dict[str, Any]],
+    candidate: str,
+    validation: composer.ClaimValidation,
+    facts_block: str,
+    prompt_version: str,
+    prefix_hash: str,
+) -> str | None:
+    """One focused repair round naming the exact unsupported claims and the fact set.
+
+    Returns the repaired text, or ``None`` when a repair is disabled, unaffordable under
+    the agent's TurnBudget, or the model returned nothing. The caller decides what to do
+    with a repair that is still not fully grounded.
+    """
+    if not settings.workbench_agent_synthesis_repairs or not base_messages:
+        return None
+    budget = state.get("_agent_budget")
+    if budget is not None:
+        if budget.rounds_remaining <= 0:
+            return None
+        budget.charge_round("agent_synthesize_repair")
+    messages = [
+        *base_messages,
+        {"role": "assistant", "content": candidate},
+        {"role": "user", "content": composer.repair_message(validation.unsupported, facts_block)},
+    ]
+    kwargs: dict[str, Any] = {}
+    if state.get("agent_native"):
+        from app.services.workbench.agent_tools import native_tool_definitions
+
+        kwargs = {
+            "tools": native_tool_definitions(
+                state["source_policy"], catalog=state.get("_agent_catalog"),
+            ),
+            "tool_choice": "none",
+            "parallel_tool_calls": False,
+        }
+    repaired = await client.complete(
+        messages=messages,
+        timeout_s=_synthesis_timeout(state),
+        call_purpose="agent_synthesize" if state.get("agent_native") else "final_compose",
+        call_kind="repair",
+        prompt_version=prompt_version,
+        prefix_hash=prefix_hash,
+        max_output_tokens=settings.workbench_composer_max_tokens,
+        **kwargs,
+    )
+    if getattr(repaired, "tool_calls", None):
+        raise RuntimeError("tool call returned during synthesis repair phase")
+    return repaired.text.strip() or None
+
+
+async def _ground_answer(
+    state: WorkbenchState,
+    *,
+    candidate: str,
+    findings: str,
+    fact_set: list[facts.Fact],
+    facts_block: str,
+    results: list[SourceResult],
+    repair,
+) -> tuple[str, dict[str, str] | None, list[facts.Fact]]:
+    """Claim-level grounding: validate, repair once, then omit what is still unsupported.
+
+    The model's text is never replaced wholesale. ``repair`` is an awaitable taking the
+    failed validation and returning repaired text or ``None``.
+    """
+    validation = composer.validate_claims(candidate, findings, fact_set)
+    if validation.ok:
+        return candidate, None, validation.cited_facts
+    try:
+        repaired = await repair(validation)
+    except Exception as exc:  # noqa: BLE001 - the original text still has a grounded core
+        logger.warning("workbench synthesis repair failed; removing unsupported claims: %s", exc)
+        repaired = None
+    if repaired:
+        repaired_validation = composer.validate_claims(repaired, findings, fact_set)
+        if repaired_validation.ok:
+            return repaired, None, repaired_validation.cited_facts
+        candidate, validation = repaired, repaired_validation
+    cleaned, removed = composer.remove_unsupported_claims(candidate, validation.unsupported)
+    names = validation.unsupported_texts
+    shown = ", ".join(names[:8]) + (f" and {len(names) - 8} more" if len(names) > 8 else "")
+    if cleaned:
+        cited = composer.validate_claims(cleaned, findings, fact_set).cited_facts
+        reason = (
+            f"Removed {len(removed)} statement(s) whose figures the retrieved results "
+            f"could not verify: {shown}."
+        )
+        return cleaned, {"source": "composer", "reason": reason}, cited
+    # Every sentence carried an unverifiable figure, so nothing of the model's text
+    # remains to show; the governed evidence is the only text left.
+    return composer.extractive_fallback(results), {
+        "source": "composer",
+        "reason": (
+            "Every statement in the generated answer carried a figure the retrieved "
+            f"results could not verify ({shown}); showing retrieved evidence instead."
+        ),
+    }, []
+
+
 async def answer_results(state: WorkbenchState) -> dict[str, Any]:
     emit = state["emit"]
     decision = state.get("decision")
-    if decision is not None and decision.route == "refuse":
-        payload = {
-            "status": "refused",
-            "text": decision.message or "That request cannot be handled by this workbench.",
-            "sources": [], "citations": [], "unavailable_sources": [], "limitations": [],
-        }
-        await emit.put(sse("answer", payload))
-        state["timing"].setdefault(
-            "final_answer_ms", int((time.perf_counter() - state["timing"]["started_at"]) * 1000)
-        )
-        _persist(history.set_answer, state["conversation_id"], state["user"], state["turn_id"], payload)
-        return {}
     all_results = state.get("results", [])
     results = [
         r for r in all_results
@@ -311,7 +280,7 @@ async def answer_results(state: WorkbenchState) -> dict[str, Any]:
             first_error = next((r for r in all_results if r.card_type == "error"), None)
             if first_error is not None:
                 # The source card already streamed the actionable failure. Do not add a
-                # second generic orchestrator error underneath it.
+                # second generic Workbench error underneath it.
                 message = str(first_error.payload.get("message") or "Source unavailable.")
                 _persist(history.set_error,
                     state["conversation_id"], state["user"], state["turn_id"], message
@@ -319,14 +288,21 @@ async def answer_results(state: WorkbenchState) -> dict[str, Any]:
                 return {}
             message = "No intelligence source produced a usable answer."
             _persist(history.set_error, state["conversation_id"], state["user"], state["turn_id"], message)
-            await emit.put(sse("error", {"message": message, "retryable": True}))
+            await emit.put(sse("error", {
+                "code": "NO_USABLE_RESULT", "message": message, "retryable": True,
+            }))
         return {}
 
     findings = composer.evidence_text(results)
     fact_ledger = facts.from_results(results, max_per_result=100)
+    # Source facts plus their deterministic derivations (totals, shares, deltas, rates,
+    # rankings). The model may state any of them; the validator accepts nothing else.
+    fact_set = calculations.fact_set(fact_ledger)
+    facts_block = composer.facts_text(fact_set)
     text = results[0].summary.strip()
     result = state.get("agent_final_result")
     composition_limitation: dict[str, str] | None = None
+    verified_facts: list[facts.Fact] = []
     # One governed DB card already has a deterministic, chart-aware summary and complete
     # rows. Re-synthesizing it made the model omit endpoint months, mis-rank values, and
     # waste a second local-model call. Composition remains necessary when evidence must be
@@ -335,12 +311,12 @@ async def answer_results(state: WorkbenchState) -> dict[str, Any]:
         r.source in {"knowledge", "schema", "macro", "competitive", "regulatory", "web"}
         for r in results
     ))
-    if result is not None:
-        candidate = result.text.strip()
-        if candidate and composer.numbers_are_grounded(candidate, findings, fact_ledger):
-            text = candidate
-        else:
-            text = composer.extractive_fallback(results)
+    candidate = result.text.strip() if result is not None else ""
+    # How a repair replays exactly what the answering model saw, per path.
+    repair_client = None
+    repair_messages: list[dict[str, Any]] = list(state.get("agent_synthesis_messages", []))
+    repair_version = prompts.AGENT_PROMPT_VERSION
+    repair_prefix = state.get("agent_prompt_prefix_hash", "")
     try:
         if needs_composition:
             client = models.for_step(
@@ -348,25 +324,28 @@ async def answer_results(state: WorkbenchState) -> dict[str, Any]:
                 sensitive=bool(state.get("agent_native"))
                 or any(r.sensitive or r.source == "db" for r in results),
             )
+            repair_client = client
             prompt = prompts.build_composer_prompt(
                 question=state["question"], findings=findings,
                 history_messages=composer.relevant_history(state.get("history_messages", [])),
+                facts=facts_block,
             )
-            remaining = settings.nlq_request_budget_s - (
-                time.perf_counter() - state["timing"]["started_at"]
-            )
-            async with asyncio.timeout(max(0.001, min(
-                settings.workbench_composer_timeout_s, remaining,
-            ))):
+            async with asyncio.timeout(_synthesis_timeout(state)):
                 if state.get("agent_native"):
                     from app.services.workbench.agent_tools import native_tool_definitions
 
-                    rounds = int(state.get("_agent_rounds", 0))
-                    if rounds >= settings.workbench_agent_max_rounds:
-                        raise RuntimeError("native agent exhausted its rounds before synthesis")
-                    state["_agent_rounds"] = rounds + 1
+                    # The agent's TurnBudget is the only round accounting; synthesis
+                    # is a round like any other and BudgetExhausted lands in the
+                    # composer-unavailable limitation below.
+                    if (budget := state.get("_agent_budget")) is not None:
+                        budget.charge_round("agent_synthesize")
+                    repair_messages = list(state.get("agent_synthesis_messages", prompt.messages))
+                    if facts_block:
+                        repair_messages.append(
+                            {"role": "user", "content": composer.facts_message(facts_block)}
+                        )
                     result = await client.complete(
-                        messages=state.get("agent_synthesis_messages", prompt.messages),
+                        messages=repair_messages,
                         tools=native_tool_definitions(
                             state["source_policy"], catalog=state.get("_agent_catalog"),
                         ),
@@ -378,9 +357,11 @@ async def answer_results(state: WorkbenchState) -> dict[str, Any]:
                         prefix_hash=state.get("agent_prompt_prefix_hash", ""),
                         max_output_tokens=settings.workbench_composer_max_tokens,
                     )
-                    if result.tool_calls:
+                    if getattr(result, "tool_calls", None):
                         raise RuntimeError("tool call returned during final synthesis phase")
                 else:
+                    repair_messages = list(prompt.messages)
+                    repair_version, repair_prefix = prompt.version, prompt.prefix_hash
                     result = await client.complete(
                         messages=prompt.messages,
                         timeout_s=settings.workbench_composer_timeout_s,
@@ -390,95 +371,25 @@ async def answer_results(state: WorkbenchState) -> dict[str, Any]:
                         max_output_tokens=settings.workbench_composer_max_tokens,
                     )
             candidate = result.text.strip()
-            unsupported = composer.unsupported_numbers(candidate, findings, fact_ledger)
-            if candidate and not unsupported:
-                text = candidate
-            elif (
-                candidate
-                and unsupported
-                and state.get("agent_native")
-                and settings.workbench_agent_synthesis_repairs
-                and int(state.get("_agent_rounds", 0))
-                < settings.workbench_agent_max_rounds
-            ):
-                repair_base = (
-                    state.get("agent_synthesis_messages", prompt.messages)
-                    if state.get("agent_native") else prompt.messages
-                )
-                repair_messages = [
-                    *repair_base,
-                    {"role": "assistant", "content": candidate},
-                    {
-                        "role": "user",
-                        "content": (
-                            "Rewrite the answer once. Remove or correct these unsupported "
-                            f"numeric claims: {', '.join(unsupported)}. Use only the supplied "
-                            "evidence; do not introduce new figures."
-                        ),
-                    },
-                ]
-                repair_kwargs = {}
-                if state.get("agent_native"):
-                    from app.services.workbench.agent_tools import native_tool_definitions
-
-                    state["_agent_rounds"] = int(state.get("_agent_rounds", 0)) + 1
-                    repair_kwargs = {
-                        "tools": native_tool_definitions(
-                            state["source_policy"], catalog=state.get("_agent_catalog"),
-                        ),
-                        "tool_choice": "none",
-                        "parallel_tool_calls": False,
-                    }
-                repaired = await client.complete(
-                    messages=repair_messages,
-                    timeout_s=max(0.001, min(
-                        settings.workbench_composer_timeout_s,
-                        settings.nlq_request_budget_s
-                        - (time.perf_counter() - state["timing"]["started_at"]),
-                    )),
-                    call_purpose="agent_synthesize",
-                    call_kind="repair",
-                    prompt_version=(
-                        prompts.AGENT_PROMPT_VERSION
-                        if state.get("agent_native") else prompt.version
-                    ),
-                    prefix_hash=(
-                        state.get("agent_prompt_prefix_hash", "")
-                        if state.get("agent_native") else prompt.prefix_hash
-                    ),
-                    max_output_tokens=settings.workbench_composer_max_tokens,
-                    **repair_kwargs,
-                )
-                if repaired.tool_calls:
-                    raise RuntimeError("tool call returned during synthesis repair phase")
-                repaired_candidate = repaired.text.strip()
-                if repaired_candidate and composer.numbers_are_grounded(
-                    repaired_candidate, findings, fact_ledger,
-                ):
-                    text = repaired_candidate
-                else:
-                    remaining_unsupported = composer.unsupported_numbers(
-                        repaired_candidate, findings, fact_ledger,
-                    )
-                    cleaned = composer.remove_unsupported_numeric_sentences(
-                        repaired_candidate, remaining_unsupported,
-                    )
-                    text = cleaned or composer.extractive_fallback(results)
-                    composition_limitation = {
-                        "source": "composer",
-                        "reason": (
-                            "Unsupported numeric claims were removed after the bounded "
-                            "synthesis repair."
-                            if cleaned
-                            else "The repaired synthesis remained ungrounded; showing retrieved evidence instead."
-                        ),
-                    }
-            else:
+            if not candidate:
                 text = composer.extractive_fallback(results)
                 composition_limitation = {
                     "source": "composer",
-                    "reason": "The generated synthesis was not fully grounded; showing retrieved evidence instead.",
+                    "reason": "The answer composer returned no text; showing retrieved evidence instead.",
                 }
+        if candidate:
+            async def repair(validation: composer.ClaimValidation) -> str | None:
+                client = repair_client or models.for_step("synthesize", sensitive=True)
+                return await _repair_synthesis(
+                    state, client, base_messages=repair_messages, candidate=candidate,
+                    validation=validation, facts_block=facts_block,
+                    prompt_version=repair_version, prefix_hash=repair_prefix,
+                )
+
+            text, composition_limitation, verified_facts = await _ground_answer(
+                state, candidate=candidate, findings=findings, fact_set=fact_set,
+                facts_block=facts_block, results=results, repair=repair,
+            )
     except Exception as exc:  # noqa: BLE001 - deterministic findings remain usable
         logger.warning("workbench synthesis failed, using grounded findings: %s", exc)
         text = composer.extractive_fallback(results)
@@ -508,6 +419,8 @@ async def answer_results(state: WorkbenchState) -> dict[str, Any]:
         "citations": citations,
         "unavailable_sources": unavailable,
         "limitations": limitations,
+        # Verified facts the prose cites, rendered apart from any qualitative observation.
+        "facts": [composer.fact_dict(fact) for fact in verified_facts],
     }
     await emit.put(sse("answer", payload))
     state["timing"].setdefault(
@@ -550,19 +463,9 @@ async def run_workbench(
         logger.warning("workbench transcript load failed; continuing without history", exc_info=True)
         built = history.Transcript()
     history_messages = built.messages
-    try:
-        agent_history_messages = history.build_native_transcript(
-            conversation_id, user=user,
-        )
-        agent_private_entities = history.private_entities(conversation_id, user=user)
-    except history.NativeTranscriptOverflow:
-        raise
-    except Exception:  # noqa: BLE001
-        logger.warning("workbench native transcript load failed", exc_info=True)
-        agent_history_messages = history_messages
-        agent_private_entities = ()
     source_policy = access.build_policy(
         role=role, external_sources_enabled=external_sources_enabled,
+        pinned_source=pinned,
     )
     try:
         turn_id = history.begin_turn(
@@ -597,6 +500,64 @@ async def run_workbench(
     first_event_ms = int((time.perf_counter() - started_at) * 1000)
     try:
         yield sse("conversation", {"conversation_id": conversation_id})
+        # The native transcript is loaded only after the turn exists and the client has
+        # the conversation id, so a transcript that cannot fit becomes a recorded,
+        # user-visible error rather than a dropped stream.
+        try:
+            agent_history_messages = history.build_native_transcript(
+                conversation_id, user=user,
+            )
+            agent_private_entities = history.private_entities(conversation_id, user=user)
+        except history.NativeTranscriptOverflow as exc:
+            logger.warning(
+                "workbench native transcript overflow: conversation=%s turn=%s: %s",
+                conversation_id, turn_id, exc,
+            )
+            log_app_event(
+                "Workbench turn refused: native transcript exceeds the context window",
+                event="workbench_turn_completed",
+                outcome="error",
+                error=str(exc),
+                data={"code": CONTEXT_CAPACITY_CODE, "reason": exc.reason},
+            )
+            _persist(history.set_error, conversation_id, user, turn_id, CONTEXT_FULL_MESSAGE)
+            _persist(history.complete_turn, conversation_id, user, turn_id, partial=True)
+            # `reason` says whether compaction could have helped
+            # (conversation_exceeds_budget) or the newest turn alone is too large
+            # (single_turn_exceeds_budget); the message to the user is the same.
+            yield sse("error", {
+                "message": CONTEXT_FULL_MESSAGE, "retryable": False,
+                "code": CONTEXT_CAPACITY_CODE, "reason": exc.reason,
+            })
+            yield sse("done", {})
+            return
+        except Exception as exc:  # noqa: BLE001
+            # Anything but overflow means the durable record could not be read. Handing
+            # the agent the 20-row prose transcript instead would answer from a
+            # different history than the one the user can see, so the turn fails
+            # visibly and retryably.
+            logger.exception(
+                "workbench native transcript load failed: conversation=%s turn=%s",
+                conversation_id, turn_id,
+            )
+            message = (
+                "The conversation history could not be loaded, so this question was "
+                "not answered. Please try again; if it keeps failing, start a new chat."
+            )
+            log_app_event(
+                "Workbench turn failed: conversation history could not be loaded",
+                event="workbench_turn_completed",
+                outcome="error",
+                error=str(exc),
+                data={"code": "HISTORY_UNAVAILABLE"},
+            )
+            _persist(history.set_error, conversation_id, user, turn_id, message)
+            _persist(history.complete_turn, conversation_id, user, turn_id, partial=True)
+            yield sse("error", {
+                "message": message, "retryable": True, "code": "HISTORY_UNAVAILABLE",
+            })
+            yield sse("done", {})
+            return
         if built.overflow:
         # The conversation no longer fits its own most recent exchange. The answer below
         # is still produced, but from a clipped view, so say so rather than let quality
@@ -633,9 +594,9 @@ async def run_workbench(
         call_records = []
         try:
             with collect_calls() as call_records:
-                from app.services.workbench.orchestrator import run
+                from app.services.workbench import agent
 
-                await run(state)
+                await agent.run(state)
             log_app_event(
                 "Workbench turn completed successfully",
                 event="workbench_turn_completed",
@@ -646,22 +607,21 @@ async def run_workbench(
             raise
         except Exception as exc:  # noqa: BLE001 - surface as an error frame, never a 500
             partial = True
-            # A context-window rejection is not a transient fault: asking again in this
-            # conversation sends the same oversized prompt. Say what will actually help.
-            if _is_context_overflow(exc):
+            code, message, retryable = _native_error(exc)
+            if code == CONTEXT_CAPACITY_CODE:
                 logger.warning("workbench context overflow: conversation=%s", conversation_id)
-                message, retryable = CONTEXT_FULL_MESSAGE, False
             else:
                 logger.exception("workbench graph failed")
-                message, retryable = "The workbench hit an error.", True
             log_app_event(
                 f"Workbench turn failed: {message}",
                 event="workbench_turn_completed",
                 outcome="error",
-                error=str(exc),
+                error=str(exc), data={"code": code},
             )
             _persist(history.set_error, conversation_id, user, turn_id, message)
-            await emit.put(sse("error", {"message": message, "retryable": retryable}))
+            await emit.put(sse("error", {
+                "code": code, "message": message, "retryable": retryable,
+            }))
         finally:
             if call_records:
                 _persist(history.set_usage,

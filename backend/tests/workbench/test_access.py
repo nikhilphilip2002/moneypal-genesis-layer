@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from app.services.workbench import access, history, nodes, router, tools
+from app.services.workbench import access, history, nodes, tools
 from app.api.routes.workbench import AskRequest, ToolRequest
 
 
@@ -53,69 +53,22 @@ def test_consent_cannot_grant_role_or_deployment_capability(monkeypatch):
 
 
 @pytest.mark.anyio
-async def test_deployment_kill_switch_returns_unavailable_not_consent_prompt(monkeypatch):
-    monkeypatch.setattr(access.settings, "workbench_external_connectors_enabled", False)
-    policy = access.build_policy(role="admin", external_sources_enabled=True)
-    decision = await router.route("Karnataka GDP outlook", role="admin", policy=policy)
-    assert decision.route == "refuse"
-    assert decision.reason == "source_unavailable"
-
-
-@pytest.mark.anyio
-async def test_external_only_request_is_deterministic_when_consent_is_off(monkeypatch):
-    class MustNotRun:
-        async def complete(self, **_kwargs):  # pragma: no cover - a call is the failure
-            raise AssertionError("router model must not run")
-
-    monkeypatch.setattr(router.models, "for_step", lambda *args, **kwargs: MustNotRun())
-    policy = access.build_policy(role="admin", external_sources_enabled=False)
-    decision = await router.route(
-        "Explain Karnataka GDP growth trends", role="admin", policy=policy,
-    )
-    assert decision.route == "refuse"
-    assert decision.reason == "external_consent_required"
-    assert decision.model == "policy"
-
-
-@pytest.mark.anyio
-async def test_governed_record_lookup_bypasses_router_model(monkeypatch):
-    class MustNotRun:
-        async def complete(self, **_kwargs):  # pragma: no cover - a call is the failure
-            raise AssertionError("router model must not run")
-
-    monkeypatch.setattr(router.models, "for_step", lambda *args, **kwargs: MustNotRun())
-    policy = access.build_policy(role="admin", external_sources_enabled=False)
-    decision = await router.route(
-        "repayment history for customer ID 42", role="admin", policy=policy,
-    )
-    assert decision.sources == ["db"]
-    assert decision.model == "catalog"
-
-
-@pytest.mark.anyio
-async def test_mixed_request_returns_only_db_with_a_limitation_when_off(monkeypatch):
-    class MustNotRun:
-        async def complete(self, **_kwargs):  # pragma: no cover - a call is the failure
-            raise AssertionError("router model must not run")
-
-    monkeypatch.setattr(router.models, "for_step", lambda *args, **kwargs: MustNotRun())
-    policy = access.build_policy(role="admin", external_sources_enabled=False)
-    decision = await router.route(
-        "Compare our loan growth with inflation", role="admin", policy=policy,
-    )
-    assert decision.route == "dispatch"
-    assert decision.sources == ["db"]
-    assert decision.limitations
-    assert decision.model == "policy"
-
-
-@pytest.mark.anyio
 async def test_external_pin_and_direct_handler_cannot_bypass_consent():
     policy = access.build_policy(role="admin", external_sources_enabled=False)
-    decision = await router.route("anything", role="admin", pinned="macro", policy=policy)
-    assert decision.reason == "external_consent_required"
+    pinned = access.build_policy(
+        role="admin", external_sources_enabled=False, pinned_source="macro",
+    )
+    assert pinned.effective_sources == ()
     with pytest.raises(access.SourceAccessDenied):
         await nodes.run_macro("outlook", policy=policy)
+
+
+def test_authorized_pin_only_narrows_effective_sources():
+    policy = access.build_policy(
+        role="admin", external_sources_enabled=True, pinned_source="macro",
+    )
+    assert policy.effective_sources == ("macro",)
+    assert policy.pinned_source == "macro"
 
 
 @pytest.mark.anyio

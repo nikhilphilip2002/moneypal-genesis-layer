@@ -56,6 +56,7 @@ class SourceAccessPolicy:
     role_sources: tuple[str, ...]
     deployment_sources: tuple[str, ...]
     effective_sources: tuple[str, ...]
+    pinned_source: str | None = None
     version: str = POLICY_VERSION
 
     def allows(self, source_id: str) -> bool:
@@ -72,11 +73,12 @@ class SourceAccessPolicy:
             "external_sources_enabled": self.external_sources_enabled,
             "deployment_external_connectors_enabled": self.deployment_external_connectors_enabled,
             "effective_sources": list(self.effective_sources),
+            "pinned_source": self.pinned_source,
         }
 
 
 def build_policy(
-    *, role: str, external_sources_enabled: bool = False,
+    *, role: str, external_sources_enabled: bool = False, pinned_source: str | None = None,
 ) -> SourceAccessPolicy:
     ordered_ids = tuple(SOURCES)
     role_sources = tuple(source_id for source_id in ordered_ids if SOURCES[source_id].visible_to(role))
@@ -95,6 +97,7 @@ def build_policy(
         if source_id in role_sources
         and source_id in deployment_sources
         and (external_sources_enabled or not is_external(source_id))
+        and (pinned_source is None or source_id == pinned_source)
     )
     return SourceAccessPolicy(
         role=role,
@@ -103,6 +106,7 @@ def build_policy(
         role_sources=role_sources,
         deployment_sources=deployment_sources,
         effective_sources=effective_sources,
+        pinned_source=pinned_source,
     )
 
 

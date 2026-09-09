@@ -14,7 +14,6 @@ pipeline: no model-specific quirk is allowed to leak past this module.
 from __future__ import annotations
 
 import asyncio
-import fcntl
 import json
 import logging
 import os
@@ -24,6 +23,11 @@ from dataclasses import dataclass, field
 from typing import Any, Protocol, runtime_checkable
 
 import httpx
+
+try:  # POSIX-only advisory locks; Windows development hosts fall back to the process gate.
+    import fcntl
+except ImportError:  # pragma: no cover - exercised only on non-POSIX platforms
+    fcntl = None  # type: ignore[assignment]
 
 from app.core.config import settings
 from app.services.nlq.llm.messages import ChatMessage, coalesce_system_messages
@@ -55,6 +59,15 @@ async def _local_request_gate(provider: str):
 
     from app.services.nlq.ratelimit import llm_semaphore
 
+    if fcntl is None:
+        # Without advisory file locks only this process is serialized. That is sufficient
+        # for single-container development; production runs on Linux where the shared lock
+        # below coordinates the API and MCP containers.
+        _warn_no_file_lock()
+        async with llm_semaphore():
+            yield
+        return
+
     async with llm_semaphore():
         path = settings.nlq_llm_lock_path
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -72,6 +85,34 @@ async def _local_request_gate(provider: str):
             if acquired:
                 fcntl.flock(descriptor, fcntl.LOCK_UN)
             os.close(descriptor)
+
+
+_REASONING_FIELDS = ("reasoning_content", "reasoning")
+
+
+def _strip_replay_reasoning(messages: list[ChatMessage]) -> list[ChatMessage]:
+    """Keep provider reasoning in stored history; replay it only when enabled."""
+    if settings.nlq_llm_replay_reasoning:
+        return list(messages)
+    stripped: list[ChatMessage] = []
+    for message in messages:
+        if isinstance(message, dict) and any(key in message for key in _REASONING_FIELDS):
+            message = {k: v for k, v in message.items() if k not in _REASONING_FIELDS}
+        stripped.append(message)
+    return stripped
+
+
+_NO_FILE_LOCK_WARNED = False
+
+
+def _warn_no_file_lock() -> None:
+    global _NO_FILE_LOCK_WARNED
+    if not _NO_FILE_LOCK_WARNED:
+        _NO_FILE_LOCK_WARNED = True
+        logger.warning(
+            "fcntl is unavailable on this platform; llama.cpp requests are serialized "
+            "per process only"
+        )
 
 
 class LLMError(RuntimeError):
@@ -329,7 +370,7 @@ class OpenAICompatibleClient:
         merged after the existing system context: this preserves the cacheable prefix and
         avoids consecutive system messages that some chat templates silently discard.
         """
-        prepared = coalesce_system_messages(messages)
+        prepared = coalesce_system_messages(_strip_replay_reasoning(messages))
         if json_schema is None or self.profile.supports_json_schema:
             return prepared
         return coalesce_system_messages([

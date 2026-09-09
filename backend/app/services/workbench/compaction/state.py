@@ -136,25 +136,24 @@ def extract_turn(turn: dict[str, Any], assistant_text: str) -> SessionState:
     if turn.get("pinned"):
         state.pinned = str(turn["pinned"])
 
-    for exchange in turn.get("agent_exchanges") or []:
-        if not isinstance(exchange, dict):
-            continue
-        for call in exchange.get("calls") or []:
-            if not isinstance(call, dict):
-                continue
-            name = str(call.get("name", ""))
-            arguments = call.get("arguments") if isinstance(call.get("arguments"), dict) else {}
-            if name in {
-                "query_metrics", "run_analysis", "create_worklist",
-                "generate_briefing", "run_validated_query",
-            }:
-                rendered = json.dumps(arguments, sort_keys=True, default=str, separators=(",", ":"))
-                state.active_plans.append(f"{name}:{rendered[:600]}")
-            if name == "lookup_records":
-                selector = str(arguments.get("selector", ""))
-                value = str(arguments.get("value", ""))
-                if selector and value:
-                    state.selected_entities.append(f"{selector}={value}"[:SENTENCE_MAX])
+    # Native calls are read from the turn's event stream — the one representation every
+    # reader shares — never from the per-turn exchange copy kept for rollback.
+    from app.services.workbench.history import native_tool_calls
+
+    for call in native_tool_calls(turn):
+        name = str(call.get("name", ""))
+        arguments = call.get("arguments") if isinstance(call.get("arguments"), dict) else {}
+        if name in {
+            "query_metrics", "run_analysis", "create_worklist",
+            "generate_briefing", "run_validated_query",
+        }:
+            rendered = json.dumps(arguments, sort_keys=True, default=str, separators=(",", ":"))
+            state.active_plans.append(f"{name}:{rendered[:600]}")
+        if name == "lookup_records":
+            selector = str(arguments.get("selector", ""))
+            value = str(arguments.get("value", ""))
+            if selector and value:
+                state.selected_entities.append(f"{selector}={value}"[:SENTENCE_MAX])
 
     fallback_period = _period_in(str(turn.get("question", "")))
     for card in turn.get("cards") or []:
