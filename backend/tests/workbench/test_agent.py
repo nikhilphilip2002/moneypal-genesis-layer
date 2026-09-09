@@ -84,6 +84,65 @@ async def test_invalid_arguments_receive_one_native_repair(monkeypatch):
 
 
 @pytest.mark.anyio
+async def test_grouped_null_filter_receives_native_repair(monkeypatch):
+    bad = NativeToolCall(
+        id="bad_null",
+        name="query_metrics",
+        arguments={
+            "metrics": ["customer_count"],
+            "dimensions": ["loan_agent"],
+            "filters": [{"field": "loan_agent", "op": "is_null", "value": None}],
+            "period": {"relative": "all_time"},
+            "order_by": {"field": "customer_count", "direction": "desc"},
+            "limit": 50,
+        },
+    )
+    good = NativeToolCall(
+        id="good",
+        name="query_metrics",
+        arguments={
+            "metrics": ["customer_count"],
+            "dimensions": ["loan_agent"],
+            "filters": [],
+            "period": {"relative": "all_time"},
+            "order_by": {"field": "customer_count", "direction": "desc"},
+            "limit": 50,
+        },
+    )
+    responses = [_result(bad), _result(good)]
+    repair_seen = []
+
+    async def select(_state, *, repair_messages=None):
+        repair_seen.append(repair_messages)
+        return responses.pop(0)
+
+    monkeypatch.setattr(agent, "_select", select)
+    state = _state()
+    state["question"] = "list the agents with highest customer count"
+    result = await agent.select_calls(state)
+
+    assert result.tool_calls == [good]
+    assert "cannot group by loan_agent while filtering" in repair_seen[1][-1]["content"]
+
+
+def test_explicit_missing_value_request_allows_null_filter():
+    call = NativeToolCall(
+        id="missing_agent",
+        name="query_metrics",
+        arguments={
+            "metrics": ["customer_count"],
+            "dimensions": [],
+            "filters": [{"field": "loan_agent", "op": "is_null", "value": None}],
+            "period": {"relative": "all_time"},
+        },
+    )
+    state = _state()
+    state["question"] = "show customers without an assigned agent"
+
+    assert agent._preflight(_result(call), state) == []
+
+
+@pytest.mark.anyio
 async def test_invalid_duplicate_period_is_returned_for_native_repair_not_rewritten(monkeypatch):
     call = NativeToolCall(
         id="year",

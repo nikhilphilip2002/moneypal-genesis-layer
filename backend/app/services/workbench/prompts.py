@@ -19,7 +19,7 @@ from app.services.nlq.catalog.retrieval import (
 from app.services.nlq.llm.messages import ChatMessage, coalesce_system_messages
 from app.services.nlq.llm.telemetry import prefix_hash
 COMPOSER_PROMPT_VERSION = "workbench-composer-v2-facts"
-AGENT_PROMPT_VERSION = "workbench-native-agent-v3-full-schema"
+AGENT_PROMPT_VERSION = "workbench-native-agent-v4-grounded-filters"
 
 COMPOSER_SYSTEM_PROMPT = (
     "Answer the bank user's question using only the supplied evidence. Every number you "
@@ -41,7 +41,9 @@ AGENT_SYSTEM_PROMPT = (
     "metric, table, filter, grouping, or source. Never send customer, account, repayment, staff, "
     "or other private bank information to public web search. Use finish_without_data only for "
     "genuine ambiguity, refusal, or an unsupported request. Catalog hints are advisory and "
-    "partial; function schemas are the complete allowlist."
+    "partial; function schemas are the complete allowlist. Filters and having clauses restrict "
+    "the result: leave them empty unless the user explicitly requested the constraint. In "
+    "particular, is_null means only missing values; never use it to request all values."
 )
 
 

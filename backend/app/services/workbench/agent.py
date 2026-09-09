@@ -256,10 +256,26 @@ def _preflight(result, state: dict[str, Any]) -> list[tuple[str, str, str]]:
         if terminals and len(result.tool_calls) != 1 and call in terminals:
             continue
         try:
-            validate_agent_arguments(
+            parsed = validate_agent_arguments(
                 call.name, call.arguments,
                 policy=state["source_policy"], catalog=state.get("_agent_catalog"),
             )
+            constraints = [
+                *getattr(parsed, "filters", ()),
+                *getattr(parsed, "having", ()),
+            ]
+            dimensions = set(getattr(parsed, "dimensions", ()))
+            grouped_null_fields = list(dict.fromkeys(
+                item.field
+                for item in constraints
+                if item.op == "is_null" and item.field in dimensions
+            ))
+            if grouped_null_fields:
+                fields = ", ".join(grouped_null_fields)
+                raise AgentToolArgumentsInvalid(
+                    f"cannot group by {fields} while filtering the same dimension to null; "
+                    "remove the grouping or the null constraint based on the user's request"
+                )
         except AgentToolAccessDenied as exc:
             failures.append((call.id, str(exc), "POLICY_DENIED"))
         except AgentToolNotFound as exc:
