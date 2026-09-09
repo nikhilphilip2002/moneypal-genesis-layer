@@ -703,7 +703,7 @@ class OpenAICompatibleClient:
         raise last_exc or LLMUnavailable(f"{self.provider} failed with no diagnosis")
 
     async def health(self) -> dict[str, Any]:
-        """Never raises — the ask bar degrades on this, so it must always answer."""
+        """Return provider readiness from its health endpoint without model-name checks."""
         if self.profile.name == "groq" and not self.profile.api_key:
             return {"status": "unconfigured", "provider": self.provider, "model": self.model,
                     "detail": "GROQ_API_KEY is not set"}
@@ -715,42 +715,12 @@ class OpenAICompatibleClient:
             return {"status": "down", "provider": self.provider, "model": self.model,
                     "detail": str(exc)[:200]}
         ok = resp.status_code < 400
-        result: dict[str, Any] = {
+        return {
             "status": "ok" if ok else "degraded",
             "provider": self.provider,
             "model": self.model,
             "detail": "" if ok else f"HTTP {resp.status_code}",
         }
-        if not ok or self.profile.name != "llamacpp":
-            return result
-
-        # llama-server accepts an arbitrary model string in completion requests. Check
-        # /v1/models as well as /health so a stale endpoint cannot masquerade as the
-        # configured deployment (for example, configured 9B but actually serving 35B).
-        try:
-            models_response = await self._http().get("/models", timeout=5.0)
-            models_body = models_response.json() if models_response.status_code < 400 else {}
-            model_items = models_body.get("data", []) if isinstance(models_body, dict) else []
-            served_models = [
-                str(item.get("id"))
-                for item in model_items
-                if isinstance(item, dict) and item.get("id")
-            ]
-        except (AttributeError, httpx.HTTPError, ValueError, TypeError):
-            # Older compatible servers may not expose /models. Root readiness remains
-            # useful, but model identity is explicitly unknown rather than invented.
-            result["model_match"] = None
-            return result
-
-        result["served_models"] = served_models
-        result["model_match"] = self.model in served_models if served_models else None
-        if result["model_match"] is False:
-            result["status"] = "degraded"
-            result["detail"] = (
-                f"configured model {self.model!r} is not served; endpoint reports "
-                + ", ".join(served_models)
-            )
-        return result
 
 
 def _profile(provider: str) -> _ProviderProfile:

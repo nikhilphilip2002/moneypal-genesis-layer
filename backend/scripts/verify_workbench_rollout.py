@@ -61,21 +61,16 @@ def percentile(values: list[int], percent: float) -> int:
 
 
 def assert_required_llm(health: dict[str, Any]) -> None:
-    """Reject false-green rollout states where generation is not proven ready."""
+    """Require the health endpoint to report that free-text asking is ready."""
     llm = health.get("llm") or {}
     ready = bool((health.get("capabilities") or {}).get("ask"))
-    identity_proven = not (
-        llm.get("provider") == "llamacpp"
-        and llm.get("model_match") is not True
-    )
-    if ready and identity_proven:
+    if ready and llm.get("status") == "ok":
         return
     raise AssertionError(
         "LLM is not ready: "
         f"status={llm.get('status', 'unknown')} "
         f"provider={llm.get('provider', 'unknown')} "
         f"model={llm.get('model', 'unknown')} "
-        f"served_models={llm.get('served_models', 'unknown')} "
         f"detail={llm.get('detail', '')}"
     )
 

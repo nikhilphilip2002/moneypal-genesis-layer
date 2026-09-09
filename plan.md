@@ -243,8 +243,9 @@ reading older history records.
 - Load version-7 and older records whose route and error fields lack the new optional metadata.
 - Use one `LLM_TIMEOUT` setting for every individual model request; retain the separate overall
   turn budget and tool/connector deadlines because they govern different execution boundaries.
-- Check llama.cpp readiness through `/health` before the first Workbench model request so an
-  unavailable API fails fast rather than consuming the model timeout.
+- Check provider readiness through `/health` before the first Workbench model request so an
+  unavailable API fails fast rather than consuming the model timeout; readiness depends only on
+  health status and never on configured or served model names.
 - Apply the same readiness gate in the frontend before rendering/sending the first user message,
   with three retries and a retained draft on failure.
 - If model continuation or synthesis times out after a tool has returned usable evidence, serve
