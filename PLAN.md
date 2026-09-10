@@ -178,7 +178,7 @@ expose the authorized read-only PostgreSQL MCP tools and `finish_without_data`.
 
 Update the executor so every discovered PostgreSQL MCP tool dispatches by its original name and
 arguments through the PostgreSQL MCP client. Remove direct calls from the Workbench agent to
-governed metric/record execution, `text_to_sql.generate`, and `run_sql`.
+governed metric/record execution and the legacy local SQL-generation workflow.
 
 Return all recoverable MCP failures to the same model as structured tool observations containing:
 

@@ -1,5 +1,9 @@
 # Genesis NLQ — Natural Language Query Layer: Technical Roadmap
 
+> Historical design document: the local text-to-SQL fallback described below has been
+> removed. Workbench free-form database access now runs through PostgreSQL MCP; the legacy
+> NLQ API retains governed QuerySpec planning and deterministic record lookups.
+
 **Milestone:** Ask business questions in plain English → intent understood → SQL generated and
 executed against PostgreSQL → accurate answer + auto-generated chart / KPI / table.
 

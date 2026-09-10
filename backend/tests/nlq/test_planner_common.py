@@ -12,10 +12,8 @@ from app.services.nlq.contracts import (
     ClarifyPlan,
     QuerySpecPlan,
     RefusalPlan,
-    SqlPlan,
 )
 from app.services.nlq.planner import plan
-from app.services.nlq.text_to_sql import generate
 
 
 class NoModel:
@@ -109,34 +107,18 @@ async def test_single_open_account_count_filters_instead_of_grouping(state_word)
 
 
 @pytest.mark.anyio
-async def test_various_interest_rates_uses_validated_column_query_path():
+async def test_various_interest_rates_asks_for_a_governed_metric():
     outcome = await plan("what are the various intrest rate?", client=NoModel())
-    assert isinstance(outcome.plan, SqlPlan)
-    assert outcome.plan.tables == ["gold.loan_accounts"]
-
-    attempt = await generate("what are the various intrest rate?", client=NoModel())
-    assert attempt.validated is True
-    assert "GROUP BY" in attempt.sql and "interest_rate" in attempt.sql
-    assert attempt.column_units == {"interest_rate": "percent", "loan_count": "count"}
+    assert isinstance(outcome.plan, ClarifyPlan)
+    assert outcome.plan.suggestions == ["Show average interest rate by loan scheme"]
 
 
 @pytest.mark.anyio
-async def test_loan_types_and_interest_rates_include_governed_loan_names():
+async def test_loan_types_and_interest_rates_asks_for_a_governed_metric():
     question = "Display different types of loans and interest rate of it?"
 
     outcome = await plan(question, client=NoModel())
-    assert isinstance(outcome.plan, SqlPlan)
-
-    attempt = await generate(question, client=NoModel())
-    assert attempt.validated is True
-    assert "scheme_name" in attempt.sql
-    assert "product_name" in attempt.sql
-    assert "AS loan_name" in attempt.sql
-    assert attempt.column_units == {
-        "loan_name": "text",
-        "interest_rate": "percent",
-        "loan_count": "count",
-    }
+    assert isinstance(outcome.plan, ClarifyPlan)
 
 
 @pytest.mark.anyio

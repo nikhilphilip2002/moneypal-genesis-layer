@@ -1,4 +1,4 @@
-"""Adversarial suite for the text-to-SQL validator.
+"""Adversarial suite for the PostgreSQL MCP SQL validator.
 
 Every case here is a real technique. The build plan's definition of done requires 100% of
 them to be rejected, and the suite is written to fail loudly rather than to be reassuring:

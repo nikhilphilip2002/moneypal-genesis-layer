@@ -62,9 +62,9 @@ user re-enables it.
       question-routing regex.
 - [x] Verify direct-tool and pinned-source entry points cannot broaden authorization.
 
-### F5. Remove hidden text-to-SQL shortcuts
+### F5. Remove hidden local SQL-generation shortcuts
 
-- [x] Remove `allow_reviewed_shortcuts` from `text_to_sql.generate` and its callers.
+- [x] Remove the legacy local SQL generator and its callers.
 - [x] Delete automatic question-pattern selection for interest-rate distributions,
       agent/borrower collections, agent directory queries, named-borrower disbursement, and
       named-borrower principal collection.

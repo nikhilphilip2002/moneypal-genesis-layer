@@ -29,7 +29,7 @@ class TestHealth:
         assert response.status_code == 200
         body = response.json()
         assert body["status"] in ("ok", "degraded")
-        assert set(body["capabilities"]) == {"execute", "text_to_sql"}
+        assert set(body["capabilities"]) == {"execute"}
 
     def test_catalog_exposes_labels_not_column_names(self, client):
         """Column names are meaningless to a user and leak schema."""

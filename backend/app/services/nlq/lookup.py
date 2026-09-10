@@ -15,8 +15,8 @@ from app.services.nlq.catalog import Catalog, get_catalog
 from app.services.nlq.contracts import ChartSpec, ClarifyPlan, LookupPlan
 from app.services.nlq.executor import execute_raw
 from app.services.nlq.normalization import normalize_apostrophes
-from app.services.nlq.pipeline import run_sql
-from app.services.nlq.text_to_sql import SqlAttempt
+from app.services.nlq.pipeline import run_validated_sql
+from app.services.nlq.sql_execution import ValidatedSql
 from app.services.nlq.validator import validate
 
 
@@ -810,22 +810,18 @@ def _validated_attempt(
     explanation: str,
     units: dict[str, str],
     pii_columns: set[str] | None = None,
-) -> SqlAttempt:
+) -> ValidatedSql:
     checked = validate(
         sql,
         catalog=catalog,
         allow_pii=bool(pii_columns),
         allowed_pii_columns=pii_columns,
     )
-    return SqlAttempt(
+    return ValidatedSql(
         sql=checked.sql,
         tables=checked.tables,
         explanation=explanation,
         validated=True,
-        attempts=0,
-        model="deterministic",
-        provider="catalog",
-        pii_columns=checked.pii_columns,
         column_units=units,
     )
 
@@ -909,7 +905,7 @@ def _where(plan: LookupPlan) -> str:
     )
 
 
-def _loan_details(plan: LookupPlan, catalog: Catalog) -> SqlAttempt:
+def _loan_details(plan: LookupPlan, catalog: Catalog) -> ValidatedSql:
     available = {
         "sanction_amount": ("approved_amount AS sanction_amount", "inr"),
         "sanction_date": ("approved_on AS sanction_date", "date"),
@@ -983,7 +979,7 @@ def chart_column_unit(chart: ChartSpec, field: str) -> str:
     return column.unit if column is not None else "number"
 
 
-def _customer_summary(plan: LookupPlan, catalog: Catalog) -> SqlAttempt:
+def _customer_summary(plan: LookupPlan, catalog: Catalog) -> ValidatedSql:
     """Return the intentionally narrow customer profile requested by the UI."""
     value = _literal(_plain_identifier(plan.value).lower())
     sql = (
@@ -1021,7 +1017,7 @@ def _customer_summary(plan: LookupPlan, catalog: Catalog) -> SqlAttempt:
             "agency_name",
         },
     )
-def _repayment_history(plan: LookupPlan, catalog: Catalog) -> SqlAttempt:
+def _repayment_history(plan: LookupPlan, catalog: Catalog) -> ValidatedSql:
     sql = (
         "SELECT loan_account_number::text AS loan_account_number, repayment_date, "
         "principal_due, interest_due, total_due, principal_paid, interest_paid, "
@@ -1048,7 +1044,7 @@ def _repayment_history(plan: LookupPlan, catalog: Catalog) -> SqlAttempt:
     )
 
 
-def _gender_sample(catalog: Catalog) -> SqlAttempt:
+def _gender_sample(catalog: Catalog) -> ValidatedSql:
     sql = (
         "SELECT gender, loan_account_number FROM ("
         "SELECT CASE WHEN LOWER(TRIM(customer.gender)) IN ('m', 'male') THEN 'Male' "
@@ -1069,7 +1065,7 @@ def _gender_sample(catalog: Catalog) -> SqlAttempt:
     )
 
 
-def _agent_details(plan: LookupPlan, catalog: Catalog) -> SqlAttempt:
+def _agent_details(plan: LookupPlan, catalog: Catalog) -> ValidatedSql:
     value = _literal(plan.value.lower())
     available = {
         "agent_name": "text", "agent_type": "text", "designation": "text",
@@ -1164,7 +1160,7 @@ def _shape_agent_details(chart: ChartSpec, plan: LookupPlan) -> None:
     chart.summary = "; ".join(facts) + "."
 
 
-def _agent_count(catalog: Catalog) -> SqlAttempt:
+def _agent_count(catalog: Catalog) -> ValidatedSql:
     return _validated_attempt(
         "SELECT COUNT(agent_code) AS agent_count FROM gold.agents LIMIT 1",
         catalog=catalog,
@@ -1173,7 +1169,7 @@ def _agent_count(catalog: Catalog) -> SqlAttempt:
     )
 
 
-def _agent_accounts(plan: LookupPlan, catalog: Catalog) -> SqlAttempt:
+def _agent_accounts(plan: LookupPlan, catalog: Catalog) -> ValidatedSql:
     value = _literal(plan.value.lower())
     requested = list(dict.fromkeys(plan.requested_fields))
     available = {
@@ -1205,7 +1201,7 @@ def _agent_accounts(plan: LookupPlan, catalog: Catalog) -> SqlAttempt:
     )
 
 
-def _agent_customers(plan: LookupPlan, catalog: Catalog) -> SqlAttempt:
+def _agent_customers(plan: LookupPlan, catalog: Catalog) -> ValidatedSql:
     """Return each borrower once for the selected agent, regardless of loan count."""
     value = _literal(plan.value.lower())
     display_name = "TRIM(REGEXP_REPLACE(reporting.customer_name, '\\s+', ' ', 'g'))"
@@ -1268,7 +1264,7 @@ def _agent_customers(plan: LookupPlan, catalog: Catalog) -> SqlAttempt:
     )
 
 
-def _agent_directory(catalog: Catalog) -> SqlAttempt:
+def _agent_directory(catalog: Catalog) -> ValidatedSql:
     sql = (
         "SELECT agent_code, agent_name, agent_type, designation, branch_code, "
         "linked_customer_count, linked_loan_count FROM gold.agents "
@@ -1285,7 +1281,7 @@ def _agent_directory(catalog: Catalog) -> SqlAttempt:
     )
 
 
-def _branch_directory(plan: LookupPlan, catalog: Catalog) -> SqlAttempt:
+def _branch_directory(plan: LookupPlan, catalog: Catalog) -> ValidatedSql:
     where = (
         ""
         if plan.value == "all"
@@ -1306,7 +1302,7 @@ def _branch_directory(plan: LookupPlan, catalog: Catalog) -> SqlAttempt:
     )
 
 
-def _branch_customers(plan: LookupPlan, catalog: Catalog) -> SqlAttempt:
+def _branch_customers(plan: LookupPlan, catalog: Catalog) -> ValidatedSql:
     """Return each sanctioned borrower once for the named reporting branch."""
     value = _literal(plan.value.lower())
     display_name = "TRIM(REGEXP_REPLACE(reporting.customer_name, '\\s+', ' ', 'g'))"
@@ -1335,7 +1331,7 @@ def _branch_customers(plan: LookupPlan, catalog: Catalog) -> SqlAttempt:
     )
 
 
-def _product_details(plan: LookupPlan, catalog: Catalog) -> SqlAttempt:
+def _product_details(plan: LookupPlan, catalog: Catalog) -> ValidatedSql:
     value = _literal(_plain_identifier(plan.value).lower())
     sql = (
         "SELECT DISTINCT product_code::text AS product_code, product_name "
@@ -1434,7 +1430,7 @@ def run(plan: LookupPlan, *, role: str | None, catalog: Catalog | None = None) -
     else:
         attempt = _gender_sample(cat)
 
-    chart = run_sql(attempt, question=plan.reasoning, role=role, catalog=cat)
+    chart = run_validated_sql(attempt, question=plan.reasoning, role=role, catalog=cat)
     if not chart.rows:
         return LookupResult(no_match=True)
     chart.subtitle = "Governed read-only record lookup"

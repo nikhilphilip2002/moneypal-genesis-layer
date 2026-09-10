@@ -29,7 +29,6 @@ def plan_schema(catalog: Catalog | None = None) -> dict[str, Any]:
     metric_ids = sorted(cat.metrics)
     dimension_ids = sorted(cat.dimensions)
     filterable = sorted(d for d in cat.dimensions if not cat.dimensions[d].is_time)
-    allowed_tables = sorted(cat.allowed_tables())
 
     from app.services.worklists.rules import FILTERABLE as worklist_filterable
 
@@ -165,8 +164,7 @@ def plan_schema(catalog: Catalog | None = None) -> dict[str, Any]:
     # A real tagged union, one branch per route. Flattening these into one object with
     # `required: ["route"]` looks equivalent and is not: the grammar would then let the
     # model open `{"route":"queryspec"`, emit `confidence` and `reasoning`, and close —
-    # a structurally valid plan with no spec in it, which is a silent demotion to
-    # text-to-SQL and, from the user's seat, "not answerable from the loan book".
+    # a structurally valid plan with no spec in it, which cannot be executed safely.
     #
     # Field order is load-bearing too. Constrained decoding emits properties in schema
     # order, so the payload that decides the answer is written before the prose about it;
@@ -244,21 +242,6 @@ def plan_schema(catalog: Catalog | None = None) -> dict[str, Any]:
             {
                 "type": "object",
                 "properties": {
-                    "route": {"const": "sql"},
-                    "intent": {"type": "string"},
-                    "tables": {
-                        "type": "array",
-                        "items": {"type": "string", "enum": allowed_tables},
-                    },
-                    "confidence": confidence,
-                    "reasoning": reasoning,
-                },
-                "required": ["route", "intent", "tables"],
-                "additionalProperties": False,
-            },
-            {
-                "type": "object",
-                "properties": {
                     "route": {"const": "clarify"},
                     "question": {"type": "string"},
                     "suggestions": {
@@ -300,21 +283,5 @@ def rewrite_schema() -> dict[str, Any]:
             "is_followup": {"type": "boolean"},
         },
         "required": ["question", "is_followup"],
-        "additionalProperties": False,
-    }
-
-
-def sql_schema() -> dict[str, Any]:
-    """Text-to-SQL output. One statement, and the model states its own tables so the
-    validator can cross-check what it claims against what it actually wrote."""
-    return {
-        "title": "GeneratedSql",
-        "type": "object",
-        "properties": {
-            "sql": {"type": "string"},
-            "tables": {"type": "array", "items": {"type": "string"}},
-            "explanation": {"type": "string", "maxLength": 300},
-        },
-        "required": ["sql", "tables"],
         "additionalProperties": False,
     }

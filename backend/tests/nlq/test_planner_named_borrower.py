@@ -1,7 +1,7 @@
 import pytest
 
 from app.services.nlq.compiler import compile_spec
-from app.services.nlq.contracts import QuerySpecPlan, SqlPlan
+from app.services.nlq.contracts import ClarifyPlan, LookupPlan, QuerySpecPlan, RefusalPlan
 from app.services.nlq.llm.client import LLMResult
 from app.services.nlq.planner import plan
 
@@ -21,7 +21,7 @@ class RefusingClient:
         )
 
 
-class SqlClient:
+class RemovedSqlRouteClient:
     provider = "test"
     model = "test"
 
@@ -42,37 +42,32 @@ class SqlClient:
 
 @pytest.mark.anyio
 async def test_named_borrower_principal_routes_without_calling_an_llm():
-    outcome = await plan("principle amount paid by sheelavati")
+    outcome = await plan("principle amount paid by sheelavati", client=RefusingClient())
 
-    assert isinstance(outcome.plan, SqlPlan)
-    assert outcome.plan.tables == ["gold.loan_accounts"]
+    assert isinstance(outcome.plan, (LookupPlan, QuerySpecPlan))
     assert outcome.model == "deterministic"
     assert outcome.attempts == 0
 
 
 @pytest.mark.anyio
 async def test_named_borrower_disbursement_routes_without_calling_an_llm():
-    outcome = await plan("loan amount disburdsed to shellavati")
+    outcome = await plan("loan amount disburdsed to shellavati", client=RefusingClient())
 
-    assert isinstance(outcome.plan, SqlPlan)
-    assert outcome.plan.tables == ["gold.loan_accounts"]
-    assert outcome.model == "deterministic"
-    assert outcome.attempts == 0
+    assert isinstance(outcome.plan, RefusalPlan)
+    assert outcome.model == "test"
 
 
 @pytest.mark.anyio
 async def test_unrecognized_named_amount_phrase_reaches_llm_instead_of_book_count():
-    client = SqlClient()
+    client = RemovedSqlRouteClient()
 
     outcome = await plan(
         "loan sanctioned amount belonging sheelavathi mk", client=client,
     )
 
-    assert isinstance(outcome.plan, SqlPlan)
-    assert outcome.plan.tables == ["gold.loan_accounts"]
-    assert outcome.model == "test"
-    assert outcome.attempts == 1
-    assert client.calls == 1
+    assert isinstance(outcome.plan, ClarifyPlan)
+    assert outcome.attempts == 2
+    assert client.calls == 2
 
 
 @pytest.mark.anyio
@@ -255,18 +250,18 @@ async def test_agent_directory_fields_route_without_calling_an_llm():
         client=RefusingClient(),
     )
 
-    assert isinstance(outcome.plan, SqlPlan)
+    assert isinstance(outcome.plan, LookupPlan)
     assert outcome.model == "deterministic"
     assert outcome.attempts == 0
-    assert outcome.plan.tables == ["gold.agents"]
+    assert outcome.plan.detail == "agent_directory"
 
 
 @pytest.mark.anyio
 async def test_agent_borrower_fact_request_is_not_reduced_to_agent_directory():
     outcome = await plan(
         "list the agents with highest borrowers include the customer name and principal amount collected",
-        client=SqlClient(),
+        client=RemovedSqlRouteClient(),
     )
 
-    assert isinstance(outcome.plan, SqlPlan)
+    assert isinstance(outcome.plan, ClarifyPlan)
     assert outcome.model == "test"

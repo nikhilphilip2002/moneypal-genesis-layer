@@ -7,7 +7,7 @@ different half of the questions.
 
 Two things worth stating plainly:
 
-1. **Retrieval narrows context; it does not authorize SQL.** The native agent and text-to-SQL
+1. **Retrieval narrows context; it does not authorize SQL.** The native agent and PostgreSQL MCP
    paths use a compact retrieved projection so hundreds of columns are not sent together.
    The catalog compiler and validators still enforce the complete metric, dimension, join,
    and table allowlists at the execution boundary.
@@ -284,7 +284,7 @@ def retrieve(
 def _join_closure(catalog: Catalog, tables: list[str]) -> list[str]:
     """Every declared edge connecting the selected tables.
 
-    Without this the text-to-SQL prompt sees two tables and no way to relate them, which is
+    Without this a database agent sees two tables and no way to relate them, which is
     exactly when a model invents a join condition.
     """
     selected = set(tables)

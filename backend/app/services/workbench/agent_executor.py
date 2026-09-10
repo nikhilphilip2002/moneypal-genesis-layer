@@ -114,12 +114,6 @@ class ExecutedAgentCall:
         }
 
 
-_SQL_TRACE_KEYS = (
-    "round", "call_purpose", "model", "provider", "candidate_sql", "validated_sql",
-    "validation", "error",
-)
-
-
 def observation_limit_chars(tool_name: str | None) -> int:
     """Per-tool observation bound, falling back to the deployment default."""
     limit = settings.workbench_agent_observation_max_chars
@@ -133,29 +127,6 @@ def observation_limit_chars(tool_name: str | None) -> int:
 
 def _encoded_size(payload: dict[str, Any]) -> int:
     return len(json.dumps(payload, default=str, separators=(",", ":")))
-
-
-def _strip_sql_trace(lineage: Any) -> Any:
-    """Keep the SQL decisions of every round, drop the prompts that produced them."""
-    if not isinstance(lineage, dict):
-        return lineage
-    nested = lineage.get("text_to_sql")
-    if not isinstance(nested, dict):
-        return lineage
-    trace = nested.get("trace")
-    if not isinstance(trace, list):
-        return lineage
-    return {
-        **lineage,
-        "text_to_sql": {
-            **nested,
-            "trace": [
-                {key: item[key] for key in _SQL_TRACE_KEYS if key in item}
-                if isinstance(item, dict) else item
-                for item in trace
-            ],
-        },
-    }
 
 
 def shape_observation(
@@ -172,8 +143,6 @@ def shape_observation(
         max_facts = settings.workbench_agent_observation_max_facts
     shaped: dict[str, Any] = dict(payload)
     truncated: dict[str, Any] = {}
-    if "lineage" in shaped:
-        shaped["lineage"] = _strip_sql_trace(shaped["lineage"])
     facts = shaped.get("facts")
     if isinstance(facts, list) and len(facts) > max_facts:
         truncated["facts_omitted"] = len(facts) - max_facts
@@ -288,7 +257,7 @@ async def _execute_postgres_mcp(
         warnings=[str(item) for item in payload.get("warnings", [])],
     )
     lineage = Lineage(
-        path="text_to_sql",
+        path="postgres_mcp",
         sql=result.sql,
         display_sql=result.sql,
         source_tables=[str(item) for item in payload.get("tables", [])],

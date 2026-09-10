@@ -61,7 +61,6 @@ async def health():
         "catalog": catalog_state,
         "capabilities": {
             "execute": database.get("status") == "ok" and catalog_state["status"] == "ok",
-            "text_to_sql": False,  # Phase 3
         },
     }
 

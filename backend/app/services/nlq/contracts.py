@@ -243,16 +243,6 @@ class QuerySpecPlan(_Model):
     reasoning: str = Field(default="", max_length=500)
 
 
-class SqlPlan(_Model):
-    """Catalog miss: hand off to text-to-SQL, which runs behind validator.py."""
-
-    route: Literal["sql"] = "sql"
-    intent: str
-    tables: list[str] = Field(default_factory=list)
-    confidence: float = Field(ge=0.0, le=1.0)
-    reasoning: str = Field(default="", max_length=500)
-
-
 class LookupPlan(_Model):
     """Governed person/account lookup compiled by the application, never by the LLM."""
 
@@ -334,7 +324,7 @@ class RefusalPlan(_Model):
 
 PlanResult = Annotated[
     Union[
-        QuerySpecPlan, AnalysisPlan, WorklistPlan, BriefingPlan, SqlPlan, LookupPlan, ClarifyPlan,
+        QuerySpecPlan, AnalysisPlan, WorklistPlan, BriefingPlan, LookupPlan, ClarifyPlan,
         RefusalPlan,
     ],
     Field(discriminator="route"),
@@ -350,7 +340,7 @@ PlanResult = Annotated[
 class Lineage(_Model):
     """Attached to every answer. The difference between a demo and a tool a CFO trusts."""
 
-    path: Literal["queryspec", "text_to_sql"]
+    path: Literal["queryspec", "validated_sql", "postgres_mcp"]
     sql: str
     display_sql: str = Field(
         default="",
@@ -368,7 +358,7 @@ class Lineage(_Model):
     warnings: list[str] = Field(default_factory=list)
     unverified: bool = Field(
         default=False,
-        description="True on the text-to-SQL path — the UI marks these answers visually.",
+        description="True for model-authored PostgreSQL MCP results that need user review.",
     )
     requires_signoff: list[str] = Field(
         default_factory=list, description="Metric ids whose definition is not yet client-ratified."

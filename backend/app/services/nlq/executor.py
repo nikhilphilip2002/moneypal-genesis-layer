@@ -124,7 +124,7 @@ def execute_raw(sql: str, *, explain_gate: bool = True) -> QueryResult:
 
     Separate from `execute` so the type system makes the difference visible: this takes a
     bare string and therefore must only ever be called with validator output. It carries no
-    parameters, because the text-to-SQL path produces a complete literal statement.
+    parameters because the validator receives a complete literal statement.
     """
     started = time.perf_counter()
     try:

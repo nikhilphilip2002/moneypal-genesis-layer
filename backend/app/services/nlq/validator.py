@@ -1,4 +1,4 @@
-"""AST allowlist for the text-to-SQL path (§2.6).
+"""AST allowlist for SQL accepted by the PostgreSQL MCP boundary.
 
 Parsed with sqlglot, not matched with regular expressions. A regex denylist is defeated by
 comments, casing, unicode escapes and nesting; an AST walk sees the statement the database

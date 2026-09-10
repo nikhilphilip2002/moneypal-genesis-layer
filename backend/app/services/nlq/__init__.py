@@ -1,6 +1,5 @@
 """Genesis NLQ — natural-language query layer over governed `gold.*` views.
 
-See docs/GENESIS_NLQ_BUILD_PLAN.md. Two paths reach the database: a deterministic
-QuerySpec compiler (the trusted path) and an LLM text-to-SQL fallback behind an AST
-validator. Both execute under the `nlq_readonly` Postgres role.
+The legacy API uses the deterministic QuerySpec compiler. Workbench database access goes
+through PostgreSQL MCP, whose AST validator and `nlq_readonly` role enforce the boundary.
 """

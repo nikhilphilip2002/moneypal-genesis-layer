@@ -262,48 +262,15 @@ def test_observation_is_bounded_while_durable_replay_keeps_every_row(monkeypatch
     assert executed.observation_message()["tool_call_id"] == "call_big"
 
 
-def test_small_results_replay_unchanged_apart_from_the_sql_prompt_trace():
+def test_small_results_replay_unchanged():
     executed = _large_lookup(rows=30)
-    executed.card.lineage = {
-        **executed.card.lineage,
-        "text_to_sql": {
-            "model": "ling", "provider": "llamacpp", "attempts": 2,
-            "trace": [
-                {
-                    "round": 1, "call_purpose": "sql_generate", "model": "ling",
-                    "provider": "llamacpp",
-                    "request_messages": [{"role": "system", "content": "SECRET PROMPT DDL"}],
-                    "assistant_message": {"role": "assistant", "content": "{}",
-                                          "reasoning_content": "thinking"},
-                    "candidate_sql": "SELECT disbursement_amount FROM gold.semantic_loan_account",
-                    "validation": {"status": "rejected", "error": "column does not exist"},
-                },
-                {
-                    "round": 2, "call_purpose": "sql_repair", "model": "ling",
-                    "provider": "llamacpp",
-                    "request_messages": [{"role": "system", "content": "SECRET PROMPT DDL"}],
-                    "candidate_sql": "SELECT sanction_amount FROM gold.semantic_loan_account",
-                    "validated_sql": "SELECT sanction_amount FROM gold.semantic_loan_account LIMIT 5000",
-                    "validation": {"status": "accepted", "tables": ["gold.semantic_loan_account"]},
-                },
-            ],
-        },
-    }
 
     durable = json.loads(executed.replay_message()["content"])
     text = executed.observation_message()["content"]
     observation = json.loads(text)
 
-    assert "SECRET PROMPT DDL" in json.dumps(durable)
-    assert "SECRET PROMPT DDL" not in text
-    assert "thinking" not in text
     assert observation["payload"]["rows"] == durable["payload"]["rows"]
     assert "truncated" not in observation
-    trace = observation["lineage"]["text_to_sql"]["trace"]
-    assert [item["round"] for item in trace] == [1, 2]
-    assert trace[0]["validation"]["status"] == "rejected"
-    assert trace[1]["validated_sql"].startswith("SELECT sanction_amount")
-    assert "request_messages" not in trace[0] and "assistant_message" not in trace[0]
 
 
 def test_shape_observation_caps_facts_and_drops_evidence_before_clipping_summary():

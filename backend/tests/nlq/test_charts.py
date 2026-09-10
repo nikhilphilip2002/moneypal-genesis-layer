@@ -395,7 +395,7 @@ class TestNarration:
         chart = charts.build_from_rows(
             question="what are the various intrest rate?",
             result=result,
-            lineage=Lineage(path="text_to_sql", sql="SELECT 1", unverified=True),
+            lineage=Lineage(path="postgres_mcp", sql="SELECT 1", unverified=True),
             catalog=catalog,
             unit_hints={"interest_rate": "percent", "loan_count": "count"},
             description="Distinct contractual rates with the account count at each rate.",

@@ -130,14 +130,6 @@ class Settings:
         self.workbench_agent_synthesis_max_tokens = int(
             get("WORKBENCH_AGENT_SYNTHESIS_MAX_TOKENS", "512") or "512"
         )
-        # The text-to-SQL long tail can augment catalog matching with embeddings. Keep it
-        # configurable because an isolated MCP container may not carry a warm model cache;
-        # downloading bge-m3 during a user request exceeds the MCP deadline. Lexical mode
-        # still uses the catalog's curated labels and synonyms and never changes SQL safety.
-        self.nlq_catalog_vectors = (get("NLQ_CATALOG_VECTORS", "true") or "true").lower() in (
-            "1", "true", "yes", "on",
-        )
-
         # Read-only database role (see docs/GENESIS_NLQ_BUILD_PLAN.md §7.1). Separate
         # credentials from the app role — this is the real security boundary, so it must
         # never silently fall back to POSTGRES_USER.
@@ -151,9 +143,8 @@ class Settings:
         self.nlq_open_pii_access = (
             get("NLQ_OPEN_PII_ACCESS", "true") or "true"
         ).lower() in ("1", "true", "yes", "on")
-        # Text-to-SQL function policy. `denylist` (default) blocks the known exfiltration
-        # and DoS primitives and logs any function outside the validator's allowlist so the
-        # list can be completed from canary evidence; `allowlist` rejects everything not on it.
+        # PostgreSQL MCP function policy. `denylist` (default) blocks known exfiltration and
+        # DoS primitives; `allowlist` rejects every function not explicitly approved.
         self.nlq_sql_function_mode = (
             get("NLQ_SQL_FUNCTION_MODE", "denylist") or "denylist"
         ).lower()

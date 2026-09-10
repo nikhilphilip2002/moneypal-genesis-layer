@@ -1,7 +1,7 @@
 """The `analysis` route has to survive the planner, not just the JSON schema.
 
 The schema offered the model an `analysis` branch while `_parse` still whitelisted four
-routes, so every analysis plan was rejected as an unknown route and demoted to text-to-SQL —
+routes, so every analysis plan was rejected as an unknown route —
 the whole multi-query feature was unreachable from a question. These tests pin the route open
 end to end.
 """

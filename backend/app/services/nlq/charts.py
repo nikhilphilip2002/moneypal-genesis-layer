@@ -44,7 +44,6 @@ def build(
     *,
     prior: QueryResult | None = None,
     catalog: Catalog | None = None,
-    path: str = "queryspec",
 ) -> ChartSpec:
     """Assemble the single response payload."""
     cat = catalog or get_catalog()
@@ -54,7 +53,7 @@ def build(
     chart_type = choose_chart_type(spec, compiled, result, cat)
 
     lineage = Lineage(
-        path="text_to_sql" if path == "text_to_sql" else "queryspec",
+        path="queryspec",
         sql=result.sql,
         display_sql=render_sql_for_display(compiled.sql, compiled.params),
         parameters=describe_parameters(compiled.params),
@@ -64,7 +63,7 @@ def build(
         duration_ms=result.duration_ms,
         as_of=compiled.as_of,
         warnings=_lineage_warnings(compiled, result),
-        unverified=path == "text_to_sql",
+        unverified=False,
         requires_signoff=compiled.signoff_pending,
     )
 
@@ -491,11 +490,11 @@ def build_from_rows(
     unit_hints: dict[str, str] | None = None,
     description: str = "",
 ) -> ChartSpec:
-    """ChartSpec for the text-to-SQL path, where there is no QuerySpec to read from.
+    """ChartSpec for validated tabular SQL where there is no QuerySpec to read from.
 
     Shape is inferred from the returned columns rather than from a catalog entry, so the
-    rules are necessarily weaker than on the trusted path. Generated answers are marked
-    unverified; application-owned record lookups use the same renderer but remain reviewed.
+    rules are necessarily weaker than on the QuerySpec path. PostgreSQL MCP callers mark
+    model-authored statements unverified; fixed record lookups use the same renderer.
     """
     cat = catalog or get_catalog()
     unit_hints = unit_hints or {}

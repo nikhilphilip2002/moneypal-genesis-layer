@@ -14,7 +14,7 @@ from mcp.server.fastmcp import Context, FastMCP
 from app.services.nlq import db as nlq_db, pii
 from app.services.nlq.catalog import get_catalog
 from app.services.nlq.executor import ExecutionError, execute_raw
-from app.services.nlq.text_to_sql import _infer_column_units
+from app.services.nlq.sql_execution import infer_column_units
 from app.services.nlq.validator import ValidationError as SqlValidationError
 from app.services.nlq.validator import validate
 
@@ -105,7 +105,7 @@ def query(sql: str, ctx: Context) -> dict[str, Any]:
         "pii_columns": checked.pii_columns,
         "limit_injected": checked.limit_injected,
         "warnings": [*checked.warnings, *result.warnings],
-        "column_units": _infer_column_units(checked.sql, checked.tables, catalog),
+        "column_units": infer_column_units(checked.sql, checked.tables, catalog),
         "catalog_version": catalog.version,
     }
 

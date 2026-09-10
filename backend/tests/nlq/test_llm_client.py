@@ -133,8 +133,8 @@ class TestJsonSalvage:
 
 class TestThinkingModels:
     """A hybrid-reasoning model that thinks past its token budget answers 200 OK with an
-    empty `content` and the whole trace in `reasoning_content`. That produced a planner
-    demotion to text-to-SQL and, to the user, "not answerable from the loan book"."""
+    empty `content` and the whole trace in `reasoning_content`. That produced an unnecessary
+    planner repair and, to the user, "not answerable from the loan book"."""
 
     def test_empty_content_names_the_cause(self):
         result = LLMResult(

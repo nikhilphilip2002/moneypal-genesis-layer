@@ -329,59 +329,22 @@ def turn_events(turn: dict[str, Any]) -> list[dict[str, Any]]:
     return derive_turn_events(turn)
 
 
-def _parsed_tool_content(message: dict[str, Any]) -> dict[str, Any] | None:
-    content = message.get("content")
-    if not isinstance(content, str) or not content.startswith("{"):
-        return None
-    try:
-        parsed = json.loads(content)
-    except ValueError:
-        return None
-    return parsed if isinstance(parsed, dict) else None
-
-
-def _sql_trace_of(message: dict[str, Any]) -> list[dict[str, Any]]:
-    """The nested text-to-SQL rounds a governed call went through, oldest first."""
-    parsed = _parsed_tool_content(message)
-    if parsed is None:
-        return []
-    lineage = parsed.get("lineage")
-    nested = lineage.get("text_to_sql") if isinstance(lineage, dict) else None
-    trace = nested.get("trace") if isinstance(nested, dict) else None
-    if not isinstance(trace, list):
-        return []
-    return [item for item in trace if isinstance(item, dict)]
-
-
 def _append_native_exchange_events(
     turn: dict[str, Any], *, assistant: ChatMessage, calls: list[dict[str, Any]],
     tool_messages: list[dict[str, Any]], stage: str, timestamp: str | None = None,
     derived: bool = False,
 ) -> None:
-    """One assistant message, then per call its ``tool_call`` and the ordered child
-    ``text_to_sql_attempt`` events of any nested generation it ran, then the results."""
-    results_by_call = {
-        str(message.get("tool_call_id", "")): message for message in tool_messages
-    }
+    """Append one assistant message, its tool calls, and the corresponding results."""
     _append_turn_event(turn, "llm_assistant_message", {
         "execution_path": "native",
         "stage": stage,
         "message": assistant,
     }, timestamp=timestamp, derived=derived)
     for call in calls:
-        parent = _append_turn_event(turn, "tool_call", {
+        _append_turn_event(turn, "tool_call", {
             "execution_path": "native",
             "call": call,
         }, timestamp=timestamp, derived=derived)
-        result = results_by_call.get(str(call.get("id", "")))
-        for index, item in enumerate(_sql_trace_of(result) if result else []):
-            _append_turn_event(turn, "text_to_sql_attempt", {
-                "execution_path": "native_child",
-                "parent_sequence": parent["sequence"],
-                "parent_call_id": str(call.get("id", "")),
-                "index": index,
-                "attempt": item,
-            }, timestamp=timestamp, derived=derived)
     for message in tool_messages:
         _append_turn_event(turn, "tool_result", {
             "execution_path": "native",

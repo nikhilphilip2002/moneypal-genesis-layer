@@ -249,7 +249,7 @@ def test_single_loan_result_displays_only_the_requested_fact():
             columns=["customer_id", "loan_account_number", "sanction_amount"],
             status="ok", duration_ms=1, sql="SELECT 1", row_count=1,
         ),
-        lineage=Lineage(path="text_to_sql", sql="SELECT 1", unverified=False),
+        lineage=Lineage(path="validated_sql", sql="SELECT 1", unverified=False),
         unit_hints={
             "customer_id": "text", "loan_account_number": "text", "sanction_amount": "inr",
         },
@@ -355,7 +355,7 @@ def test_missing_agent_phone_is_reported_as_unavailable_not_as_an_unrelated_metr
             columns=["agent_code", "mobile"],
             status="ok", duration_ms=1, sql="SELECT 1", row_count=1,
         ),
-        lineage=Lineage(path="text_to_sql", sql="SELECT 1", unverified=False),
+        lineage=Lineage(path="validated_sql", sql="SELECT 1", unverified=False),
         unit_hints={"agent_code": "text", "mobile": "text"},
     )
     _shape_agent_details(
@@ -697,7 +697,7 @@ def test_numeric_identifiers_follow_text_units_in_rows_and_summary():
             columns=["customer_id", "loan_account_number"],
             status="ok", duration_ms=1, sql="SELECT 1", row_count=1,
         ),
-        lineage=Lineage(path="text_to_sql", sql="SELECT 1", unverified=False),
+        lineage=Lineage(path="validated_sql", sql="SELECT 1", unverified=False),
         unit_hints={"customer_id": "text", "loan_account_number": "text"},
     )
 

@@ -11,7 +11,7 @@ from app.services.nlq.catalog import get_catalog
 from app.services.nlq.llm.schemas import plan_schema
 
 ROUTES = (
-    "queryspec", "analysis", "worklist", "briefing", "sql", "clarify", "refuse",
+    "queryspec", "analysis", "worklist", "briefing", "clarify", "refuse",
 )
 
 
@@ -32,7 +32,7 @@ class TestPlanSchemaIsTagged:
 
     That is what produced the outage: the model emitted {"route":"queryspec",
     "confidence":0.98,"reasoning":"..."} with no spec — legal under the old schema — so the
-    planner rejected it twice, demoted to text-to-SQL, and the user was told the loan book
+    planner rejected it twice, and the user was told the loan book
     could not answer the question.
     """
 
@@ -42,7 +42,7 @@ class TestPlanSchemaIsTagged:
 
     @pytest.mark.parametrize(
         "route,field",
-        [("queryspec", "spec"), ("sql", "intent"), ("clarify", "question"), ("refuse", "reason")],
+        [("queryspec", "spec"), ("clarify", "question"), ("refuse", "reason")],
     )
     def test_each_branch_requires_its_payload(self, schema, route, field):
         assert field in _branch(schema, route)["required"]

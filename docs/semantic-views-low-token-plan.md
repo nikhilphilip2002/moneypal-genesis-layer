@@ -1,5 +1,8 @@
 # Semantic Views and Low-Token Retrieval Plan
 
+> Historical design document: references below to a local text-to-SQL fallback are
+> superseded by PostgreSQL MCP access.
+
 ## Objective
 
 Build a governed semantic layer that lets the assistant answer broad, previously unseen

@@ -21,8 +21,8 @@ calculations, charts, citations, lineage, persistence, and streaming.
    through a structured-output compatibility path.
 6. After repair failure, the turn degrades to an eligible deterministic path, clarification,
    or an explicit error.
-7. Existing structured-output NLQ and text-to-SQL calls may remain operational during
-   migration, but they are separate workflows—not fallback transports for tool calling.
+7. Structured-output NLQ planning remains separate from native tool calling. The former
+   local SQL-generation fallback has been removed; Workbench SQL uses PostgreSQL MCP.
 8. Every call is authorized and validated again at execution time, even if its schema was
    filtered before being shown to the model.
 

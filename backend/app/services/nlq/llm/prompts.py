@@ -212,8 +212,7 @@ def _gold_yaml_for_version(version: str) -> str:
     `columns.yaml` is deliberately compacted to table -> column names. Sending its full
     labels and repeated table names adds roughly 47 KB and exceeds the 32K context of the
     production Qwen model once instructions, examples and the output grammar are added.
-    The projection still includes every governed column; text-to-SQL adds detailed labels,
-    units and PII metadata for the question's retrieved tables separately.
+    The projection still includes every governed column needed by the structured planner.
     """
     sections = [
         "ACTIVE GOLD SEMANTIC CATALOG (authoritative YAML)",
@@ -329,18 +328,6 @@ FEW_SHOTS: list[tuple[str, str]] = [
         '"period":{"relative":"all_time"}}}',
     ),
     (
-        "What principal amount was paid by Sheelavati?",
-        '{"route":"sql","intent":"cumulative principal repaid by borrower Sheelavati",'
-        '"tables":["gold.loan_accounts"],"confidence":0.94,'
-        '"reasoning":"named-borrower filter requires validated SQL"}',
-    ),
-    (
-        "List branch name, IFSC code, branch status, opened date and closed date.",
-        '{"route":"sql","intent":"list requested branch master attributes",'
-        '"tables":["gold.branches"],"confidence":0.97,'
-        '"reasoning":"specific columns requested without an aggregate metric"}',
-    ),
-    (
         "Compare this quarter's collections with last quarter",
         '{"route":"queryspec","confidence":0.92,"reasoning":"period comparison drives variance",'
         '"spec":{"metrics":["amount_collected"],"period":{"relative":"this_quarter"},'
@@ -396,12 +383,11 @@ def build_messages(
 
     The system message is the fixed prefix (cacheable). It carries the complete governed
     metric/dimension surface and a compact table index, but not hundreds of column-level
-    definitions that the structured planner never emits. Text-to-SQL retrieves detailed
-    columns only after this planner selects that route.
+    definitions that the structured planner never emits.
     """
     # Qwen's llama.cpp chat template keeps only the first consecutive system message.
-    # The compact catalog comes first so planner and text-to-SQL share a useful stable
-    # prefix without paying to prefill every governed column on every question.
+    # The compact catalog comes first to keep the planner prefix stable without paying to
+    # prefill every governed column on every question.
     messages = [{
         "role": "system",
         "content": (

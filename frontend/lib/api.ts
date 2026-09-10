@@ -681,7 +681,7 @@ export type Unit =
   | 'ratio' | 'text' | 'date' | 'datetime' | 'boolean';
 
 export type Lineage = {
-  path: 'queryspec' | 'text_to_sql';
+  path: 'queryspec' | 'validated_sql' | 'postgres_mcp';
   sql: string;
   display_sql: string;
   parameters: Record<string, string>;
@@ -894,7 +894,7 @@ export type NlqHealth = {
   llm: { status: string; provider: string; model: string; detail?: string };
   db: { status: string; detail?: string };
   catalog: { status: string; version?: string; metrics?: number };
-  capabilities: { execute: boolean; text_to_sql: boolean };
+  capabilities: { execute: boolean };
 };
 
 export const nlq = {

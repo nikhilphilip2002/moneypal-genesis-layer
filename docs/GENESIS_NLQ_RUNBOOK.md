@@ -18,7 +18,7 @@ says how to run it.
 Steps 1, 2 and 4 gate different capabilities, and `/nlq/health` reports them separately:
 
 ```json
-"capabilities": { "execute": true, "ask": false, "text_to_sql": false }
+"capabilities": { "execute": true }
 ```
 
 `execute: true` with `ask: false` is a **working product**, not an outage — saved questions,
@@ -158,7 +158,7 @@ WHERE feedback = 'down' ORDER BY ts DESC;
 |---|---|---|
 | `db.status = "unconfigured"` | `NLQ_DB_PASSWORD` unset | Create the role, set the variable. NLQ deliberately refuses to fall back to the app role |
 | Every question refuses | Catalog failed to load | `/nlq/health` → `catalog.status`; check the YAML |
-| Every question refuses, catalog and DB healthy | The planner is failing and demoting to text-to-SQL, which then declines. The `plan` SSE frame shows `route: "sql", attempts: 2, repaired: true` | Read the `NLQ plan rejected on attempt N` log line — it carries the exact reason. A thinking model with `NLQ_LLM_THINKING=true` spends the whole token budget on `reasoning_content` and returns empty `content` |
+| Every question asks for clarification, catalog and DB healthy | The planner is failing validation twice; there is no local SQL-generation fallback | Read the `NLQ plan rejected on attempt N` log line — it carries the exact reason. A thinking model with `NLQ_LLM_THINKING=true` may spend the token budget on `reasoning_content` and return empty `content` |
 | `ask: false`, `execute: true` | LLM unreachable | Expected degradation. The ask bar says so; dashboards keep working |
 | A repeated ~18k prompt is fully evaluated despite high `f_keep` | Qwen3.5/3.6 recurrent checkpoint was invalidated, or concurrent traffic moved to another slot | Run llama-server with `--parallel 1 --cache-prompt`; verify both app containers share `NLQ_LLM_LOCK_PATH`. The compact planner prefix should now be about 8k tokens before history |
 | PAR looks impossibly low | Denominator is the classified subset (₹198.5 Cr), not the whole book (₹275.2 Cr) | Working as documented — see the coverage warning on every PAR answer, and §7 below |

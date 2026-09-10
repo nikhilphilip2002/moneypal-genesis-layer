@@ -589,41 +589,6 @@ def test_selection_stage_and_nudges_are_stored_but_nudges_are_not_replayed():
     assert all(m.get("content") != "Inspect the results above." for m in replay)
 
 
-def test_nested_text_to_sql_trace_becomes_ordered_child_events_of_the_tool_call():
-    turn_id = history.begin_turn("sql-trace", "alice", "Average ticket by branch")
-    trace = [
-        {"round": 1, "sql": "SELECT 1", "error": "unknown column"},
-        {"round": 2, "sql": "SELECT branch, AVG(amount) FROM v", "error": None},
-    ]
-    content = json.dumps({
-        "status": "ok", "summary": "Two branches.",
-        "lineage": {"sql": trace[-1]["sql"], "text_to_sql": {"trace": trace}},
-    })
-    history.add_agent_exchange(
-        "sql-trace", "alice", turn_id,
-        assistant_message=_assistant_calling("q1", "run_validated_query"),
-        calls=[{"id": "q1", "name": "run_validated_query", "arguments": {"question": "avg"}}],
-        tool_messages=[_tool("q1", content)],
-    )
-    history.complete_turn("sql-trace", "alice", turn_id)
-
-    turn = history.get("sql-trace", user="alice").turns[0]
-    assert _types(turn) == [
-        "user_message", "llm_assistant_message", "tool_call",
-        "text_to_sql_attempt", "text_to_sql_attempt", "tool_result",
-    ]
-    parent = turn["events"][2]
-    children = turn["events"][3:5]
-    assert [c["payload"]["index"] for c in children] == [0, 1]
-    assert all(c["payload"]["parent_sequence"] == parent["sequence"] for c in children)
-    assert all(c["payload"]["parent_call_id"] == "q1" for c in children)
-    assert [c["payload"]["attempt"] for c in children] == trace
-    # The lineage copy inside the result is kept this phase; children are not replayed.
-    assert json.loads(turn["events"][5]["payload"]["message"]["content"])["lineage"]["text_to_sql"]
-    replay = history.build_native_transcript("sql-trace", user="alice")
-    assert [m["role"] for m in replay] == ["user", "assistant", "tool"]
-
-
 def test_synthesis_candidate_and_final_answer_are_one_event_each():
     turn_id = history.begin_turn("candidate", "alice", "PAR?")
     history.set_synthesis(

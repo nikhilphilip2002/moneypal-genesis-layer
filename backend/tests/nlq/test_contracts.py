@@ -20,7 +20,6 @@ from app.services.nlq.contracts import (
     QuerySpec,
     QuerySpecPlan,
     RefusalPlan,
-    SqlPlan,
 )
 
 
@@ -152,7 +151,6 @@ class TestPlanUnion:
                 {"route": "queryspec", "spec": None, "confidence": 0.9},
                 QuerySpecPlan,
             ),
-            ({"route": "sql", "intent": "gl detail", "confidence": 0.5}, SqlPlan),
             ({"route": "clarify", "question": "FY or calendar year?"}, ClarifyPlan),
             ({"route": "refuse", "reason": "predictive"}, RefusalPlan),
         ],
@@ -172,7 +170,7 @@ class TestPlanUnion:
 
     def test_confidence_is_bounded(self):
         with pytest.raises(ValidationError):
-            SqlPlan(intent="x", confidence=1.4)
+            QuerySpecPlan(spec=_spec(), confidence=1.4)
 
 
 class TestChartSpec:
@@ -180,11 +178,11 @@ class TestChartSpec:
         with pytest.raises(ValidationError):
             ChartSpec(chart_type="kpi", title="Disbursement")
 
-    def test_text_to_sql_answers_are_marked_unverified(self):
+    def test_postgres_mcp_answers_can_be_marked_unverified(self):
         chart = ChartSpec(
             chart_type="kpi",
             title="Disbursement",
-            lineage=Lineage(path="text_to_sql", sql="SELECT 1", unverified=True),
+            lineage=Lineage(path="postgres_mcp", sql="SELECT 1", unverified=True),
         )
         assert chart.lineage.unverified is True
         assert chart.rows == []

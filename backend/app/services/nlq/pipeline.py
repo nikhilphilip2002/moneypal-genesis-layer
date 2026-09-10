@@ -10,11 +10,12 @@ from __future__ import annotations
 import logging
 from datetime import date
 
-from app.services.nlq import charts, pii, text_to_sql
+from app.services.nlq import charts, pii
 from app.services.nlq.catalog import Catalog, get_catalog
 from app.services.nlq.compiler import CompileError, compile_comparison, compile_spec
 from app.services.nlq.contracts import ChartSpec, QuerySpec
 from app.services.nlq.executor import ExecutionError, QueryResult, execute
+from app.services.nlq.sql_execution import ValidatedSql, lineage_for_validated_sql
 
 logger = logging.getLogger(__name__)
 
@@ -24,7 +25,6 @@ def run_spec(
     *,
     catalog: Catalog | None = None,
     today: date | None = None,
-    path: str = "queryspec",
     role: str | None = None,
 ) -> ChartSpec:
     """Execute a QuerySpec and return a rendered ChartSpec.
@@ -43,12 +43,18 @@ def run_spec(
         compiled = compile_spec(spec, cat, today)
         result = execute(compiled)
 
-    chart = charts.build(spec, compiled, result, prior=prior, catalog=cat, path=path)
+    chart = charts.build(spec, compiled, result, prior=prior, catalog=cat)
     return _mask(chart, role, cat)
 
 
-def run_sql(attempt, *, question: str, role: str | None, catalog: Catalog | None = None) -> ChartSpec:
-    """Execute an already-validated generated statement.
+def run_validated_sql(
+    statement: ValidatedSql,
+    *,
+    question: str,
+    role: str | None,
+    catalog: Catalog | None = None,
+) -> ChartSpec:
+    """Execute an already-validated, application-owned statement.
 
     `attempt.validated` is asserted rather than checked politely: reaching here with an
     unvalidated statement is a programming error, and failing loudly is the only acceptable
@@ -57,17 +63,17 @@ def run_sql(attempt, *, question: str, role: str | None, catalog: Catalog | None
     from app.services.nlq.executor import execute_raw
 
     cat = catalog or get_catalog()
-    if not getattr(attempt, "validated", False):
+    if not statement.validated:
         raise AssertionError("refusing to execute SQL that did not pass the validator")
 
-    result = execute_raw(attempt.sql)
+    result = execute_raw(statement.sql)
     chart = charts.build_from_rows(
         question=question,
         result=result,
-        lineage=text_to_sql.lineage_for(attempt, result.row_count, result.duration_ms),
+        lineage=lineage_for_validated_sql(statement, result.row_count, result.duration_ms),
         catalog=cat,
-        unit_hints=getattr(attempt, "column_units", None),
-        description=getattr(attempt, "explanation", ""),
+        unit_hints=statement.column_units,
+        description=statement.explanation,
     )
     return _mask(chart, role, cat)
 
@@ -83,4 +89,4 @@ def _mask(chart: ChartSpec, role: str | None, catalog: Catalog) -> ChartSpec:
     return chart
 
 
-__all__ = ["run_spec", "run_sql", "CompileError", "ExecutionError"]
+__all__ = ["run_spec", "run_validated_sql", "CompileError", "ExecutionError"]

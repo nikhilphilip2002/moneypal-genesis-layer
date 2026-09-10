@@ -3,8 +3,7 @@
 Routing policy (§2.4):
   queryspec, confidence >= 0.6, validates against the catalog -> compile and execute
   queryspec that fails validation                             -> one repair round-trip,
-                                                                 then demote to `sql`
-  sql                                                         -> text-to-SQL (Phase 3)
+                                                                 then clarify
   clarify / refuse                                            -> return, execute nothing
 
 The confidence floor matters more than it looks. A model that is unsure has usually picked
@@ -25,18 +24,17 @@ from pydantic import TypeAdapter, ValidationError
 
 from app.services.nlq import cache
 from app.services.nlq.catalog import Catalog, get_catalog
-from app.services.nlq.catalog.retrieval import retrieve
 from app.services.nlq.compiler import CompileError, compile_spec
 from app.services.nlq.contracts import (
     AnalysisPlan,
     BriefingPlan,
     ClarifyPlan,
     Filter,
+    LookupPlan,
     PlanResult,
     Period,
     QuerySpecPlan,
     RefusalPlan,
-    SqlPlan,
     WorklistPlan,
 )
 from app.services.nlq.llm import LLMError, LLMUnavailable, get_llm_client
@@ -160,12 +158,6 @@ _INTEREST_RATE_AMOUNT_RE = re.compile(
 _VARIOUS_INTEREST_RATES_RE = re.compile(
     r"\b(?:various|different|distinct|available|list|range\s+of)\b[^?]{0,40}"
     r"\binterest\s+rates?\b|\bwhat\s+(?:are|is)\b[^?]{0,30}\binterest\s+rates?\b",
-    re.IGNORECASE,
-)
-_LOAN_NAME_WITH_RATE_RE = re.compile(
-    r"\b(?:different|various|available)\s+(?:types?|names?)\s+of\s+loans?\b|"
-    r"\bloan\s+(?:types?|names?)\b[^?]{0,60}\binterest\s+rates?\b|"
-    r"\b(?:products?|schemes?)\b[^?]{0,60}\binterest\s+rates?\b",
     re.IGNORECASE,
 )
 _INTEREST_BY_SCHEME_RE = re.compile(
@@ -677,17 +669,12 @@ def _common_business_plan(question: str) -> PlanResult | None:
         )
 
     if _VARIOUS_INTEREST_RATES_RE.search(question):
-        with_loan_names = _LOAN_NAME_WITH_RATE_RE.search(question) is not None
-        return SqlPlan(
-            intent=(
-                "list each governed loan scheme name with its distinct account interest "
-                "rates and loan count"
-                if with_loan_names
-                else "list the distinct account interest rates and loan count at each rate"
+        return ClarifyPlan(
+            question=(
+                "Distinct account-level interest-rate listings are not a governed metric. "
+                "Would you like the average interest rate by loan scheme?"
             ),
-            tables=["gold.loan_accounts"],
-            confidence=1.0,
-            reasoning="a distinct rate distribution is a governed column-list query",
+            suggestions=["Show average interest rate by loan scheme"],
         )
 
     if _SCHEME_AMOUNT_PAID_RE.search(question):
@@ -885,21 +872,10 @@ def _generic_governed_metric_plan(question: str, catalog: Catalog) -> QuerySpecP
         compile_spec(plan.spec, catalog=catalog)
     except CompileError:
         # Some natural combinations require an undeclared multi-hop join (for example,
-        # disbursement events -> loan account -> customer gender). The generated-SQL path
-        # may answer those, but the governed compiler must never emit an invalid shortcut.
+        # disbursement events -> loan account -> customer gender). The governed compiler
+        # must never emit an invalid shortcut.
         return None
     return plan
-
-
-def _catalog_tables_for(question: str, catalog: Catalog) -> list[str]:
-    """Return Gold tables backed by a strong curated lexical match."""
-    result = retrieve(question, catalog=catalog, use_vectors=False)
-    if not any(
-        hit.lexical >= 1.0 and hit.doc.kind in {"table", "column", "metric", "dimension"}
-        for hit in result.hits
-    ):
-        return []
-    return result.tables
 
 
 @dataclass(slots=True)
@@ -1094,16 +1070,17 @@ def _top_agents_plan(question: str) -> QuerySpecPlan | None:
     )
 
 
-def _agent_directory_plan(question: str) -> SqlPlan | None:
-    """Route requested agent profile fields to reviewed deterministic SQL generation."""
+def _agent_directory_plan(question: str) -> LookupPlan | None:
+    """Route requested agent profile fields to the fixed governed lookup."""
     if (
         _AGENT_DIRECTORY_RE.search(question) is None
         or _AGENT_DIRECTORY_LOAN_FACT_RE.search(question) is not None
     ):
         return None
-    return SqlPlan(
-        intent=question,
-        tables=["gold.agents"],
+    return LookupPlan(
+        selector="agent_name",
+        value="all",
+        detail="agent_directory",
         confidence=1.0,
         reasoning="requested fields from the governed current agent directory",
     )
@@ -1401,18 +1378,6 @@ async def plan(
             parsed = _parse(result.json(), cat)
             parsed = _enforce_relative_period(planning_question, parsed)
             parsed = _enforce_explicit_semantics(planning_question, parsed)
-            if isinstance(parsed, RefusalPlan) and parsed.reason in {
-                "not_in_data",
-                "out_of_scope",
-            }:
-                matched_tables = _catalog_tables_for(planning_question, cat)
-                if matched_tables:
-                    parsed = SqlPlan(
-                        intent=planning_question,
-                        tables=matched_tables,
-                        confidence=0.7,
-                        reasoning="curated Gold catalog overrides an unsupported data refusal",
-                    )
             from app.core.logging import log_parsed_output
 
             plan_dict = parsed.to_dict() if hasattr(parsed, "to_dict") else str(parsed)
@@ -1457,15 +1422,11 @@ async def plan(
             cache.put_plan(planning_question, cat.version, outcome)
         return outcome
 
-    # Both attempts failed validation. Demoting to the SQL fallback is the plan's policy,
-    # and it keeps the failure honest: that path shows its SQL and is marked unverified.
-    logger.info("NLQ planner demoting to text-to-SQL after %d attempts: %s", attempts, error)
+    logger.info("NLQ planner asking for clarification after %d invalid attempts: %s", attempts, error)
     return PlanOutcome(
-        plan=SqlPlan(
-            intent=planning_question,
-            tables=[],
-            confidence=0.3,
-            reasoning=f"planner validation failed: {error}"[:500],
+        plan=ClarifyPlan(
+            question="I could not map that request to a governed metric. Could you rephrase it?",
+            suggestions=_suggestions(cat),
         ),
         attempts=attempts,
         prompt_version=PROMPT_VERSION,
@@ -1584,7 +1545,7 @@ def _parse(payload: Any, catalog: Catalog) -> PlanResult:
 
     route = payload.get("route")
     if route not in (
-        "queryspec", "analysis", "worklist", "briefing", "sql", "clarify", "refuse",
+        "queryspec", "analysis", "worklist", "briefing", "clarify", "refuse",
     ):
         raise PlanValidationError(f"unknown route {route!r}")
 
@@ -1639,7 +1600,6 @@ _ROUTE_FIELDS = {
     "analysis": {"route", "analysis_id", "period", "filters", "confidence", "reasoning"},
     "worklist": {"route", "worklist_id", "filters", "limit", "confidence", "reasoning"},
     "briefing": {"route", "persona_id", "confidence", "reasoning"},
-    "sql": {"route", "intent", "tables", "confidence", "reasoning"},
     "clarify": {"route", "question", "suggestions"},
     "refuse": {"route", "reason", "message", "examples"},
 }
@@ -1649,7 +1609,7 @@ def _trim_to_route(payload: dict[str, Any], route: str) -> dict[str, Any]:
     keep = _ROUTE_FIELDS[route]
     trimmed = {k: v for k, v in payload.items() if k in keep and v is not None}
     if (
-        route in ("queryspec", "analysis", "worklist", "briefing", "sql")
+        route in ("queryspec", "analysis", "worklist", "briefing")
         and "confidence" not in trimmed
     ):
         trimmed["confidence"] = 0.7

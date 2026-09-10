@@ -539,7 +539,7 @@ class Catalog:
         return [c for c in self.columns.values() if c.table == qualified_table]
 
     def allowed_tables(self) -> set[str]:
-        """The full allowlist the SQL validator enforces on the text-to-SQL path."""
+        """The full allowlist the PostgreSQL MCP SQL validator enforces."""
         return {t.table for t in self.tables.values()}
 
     def pii_columns(self) -> set[tuple[str, str]]:
