@@ -24,8 +24,14 @@ def test_workbench_system_prompts_do_not_duplicate_json_schema_prose():
 
 def test_composer_has_no_router_catalog_sql_or_tool_implementation_context():
     system = prompts.COMPOSER_SYSTEM_PROMPT.lower()
-    for forbidden in ("macro", "competitive", "regulatory", "route", "sql", "table", "qdrant", "tool"):
+    for forbidden in ("macro", "competitive", "regulatory", "route", "sql", "qdrant", "tool"):
         assert forbidden not in system
+
+
+def test_answer_prompts_do_not_duplicate_structured_result_rows():
+    for system in (prompts.COMPOSER_SYSTEM_PROMPT, prompts.AGENT_SYSTEM_PROMPT):
+        assert "Structured result rows are rendered separately" in system
+        assert "do not reproduce them as a Markdown table" in system
 
 
 def test_agent_prompt_retrieves_only_relevant_gold_metadata():
