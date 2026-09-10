@@ -145,7 +145,7 @@ async def test_current_whole_book_outstanding_is_deterministic(question):
 
 
 @pytest.mark.anyio
-async def test_long_tail_question_fails_before_completion_when_llamacpp_is_not_ready():
+async def test_long_tail_question_calls_the_model_without_a_readiness_preflight():
     class DownClient:
         provider = "llamacpp"
         model = "configured-model"
@@ -156,14 +156,14 @@ async def test_long_tail_question_fails_before_completion_when_llamacpp_is_not_r
 
         async def complete(self, **_kwargs):
             self.completion_called = True
-            raise AssertionError("completion must not be queued while health is down")
+            raise LLMUnavailable("connection refused")
 
     client = DownClient()
 
     with pytest.raises(LLMUnavailable, match="connection refused"):
         await plan("Which portfolio trend deserves attention?", client=client)
 
-    assert client.completion_called is False
+    assert client.completion_called is True
 
 
 def test_derived_bucket_and_account_state_filters_use_governed_expressions():

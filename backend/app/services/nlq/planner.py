@@ -37,7 +37,7 @@ from app.services.nlq.contracts import (
     RefusalPlan,
     WorklistPlan,
 )
-from app.services.nlq.llm import LLMError, LLMUnavailable, get_llm_client
+from app.services.nlq.llm import LLMError, get_llm_client
 from app.services.nlq.llm.prompts import PROMPT_VERSION, build_messages, stable_prefix_hash
 from app.services.nlq.llm.schemas import plan_schema
 from app.services.nlq.normalization import normalize_lending_question
@@ -1317,15 +1317,6 @@ async def plan(
         )
 
     llm = client or get_llm_client()
-
-    # llama-server can accept TCP connections while the model is still loading or while
-    # the configured endpoint is serving a different model. Do not enqueue an expensive
-    # planner request in that state; deterministic plans above remain fully available.
-    if getattr(llm, "provider", "") == "llamacpp":
-        readiness = await llm.health()
-        if readiness.get("status") != "ok":
-            detail = readiness.get("detail") or "model endpoint is not ready"
-            raise LLMUnavailable(f"llamacpp planner unavailable: {detail}")
 
     # Repeated and rehearsed questions skip the model entirely. The key carries the catalog
     # version, so a catalog edit — which can change what a question *should* plan to —

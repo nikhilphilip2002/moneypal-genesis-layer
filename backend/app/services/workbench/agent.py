@@ -18,7 +18,7 @@ from typing import Any
 
 from app.core.config import settings
 from app.services.nlq.catalog import get_catalog
-from app.services.nlq.llm import LLMError, LLMProtocolError, LLMTimeout, LLMUnavailable
+from app.services.nlq.llm import LLMError, LLMProtocolError, LLMTimeout
 from app.services.workbench import history, models, prompts
 from app.services.workbench.agent_executor import (
     AgentExecutionContext,
@@ -685,11 +685,6 @@ async def run(state: dict[str, Any]) -> None:
 
     emit = state["emit"]
     budget = _budget(state)
-    client = models.client()
-    readiness = await client.health()
-    if readiness.get("status") != "ok":
-        detail = readiness.get("detail") or "model endpoint is not ready"
-        raise LLMUnavailable(f"LLM endpoint unavailable: {detail}")
     catalog = state.setdefault("_agent_catalog", get_catalog())
     context = AgentExecutionContext(
         user=state["user"], role=state["role"],
