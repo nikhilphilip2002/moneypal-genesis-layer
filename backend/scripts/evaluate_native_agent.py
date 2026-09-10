@@ -451,7 +451,6 @@ _SETTING_NAMES = {
     "max_rounds": "workbench_agent_max_rounds",
     "max_calls": "workbench_agent_max_tool_calls",
     "budget_s": "nlq_request_budget_s",
-    "argument_repairs": "workbench_agent_argument_repairs",
 }
 
 
@@ -464,16 +463,16 @@ def patched_environment(
         name: getattr(agent.settings, name)
         for name in (_SETTING_NAMES[key] for key in (overrides or {}))
     }
-    saved = (models.for_step, agent.execute_agent_call, history._ensure_table)
+    saved = (models.client, agent.execute_agent_call, history._ensure_table)
     try:
         for key, value in (overrides or {}).items():
             setattr(agent.settings, _SETTING_NAMES[key], value)
-        models.for_step = lambda *_args, **_kwargs: client  # type: ignore[assignment]
+        models.client = lambda: client  # type: ignore[assignment]
         agent.execute_agent_call = executor  # type: ignore[assignment]
         history._ensure_table = lambda: False  # type: ignore[assignment]
         yield
     finally:
-        models.for_step, agent.execute_agent_call, history._ensure_table = saved  # type: ignore[assignment]
+        models.client, agent.execute_agent_call, history._ensure_table = saved  # type: ignore[assignment]
         for name, value in saved_settings.items():
             setattr(agent.settings, name, value)
 
@@ -843,7 +842,7 @@ async def evaluate(
     cases: list[PromptCase], conversations: list[dict[str, Any]], *,
     model_override: str | None = None, allow_unverified: bool = False,
 ) -> dict[str, Any]:
-    client = models.for_step("agent", sensitive=True)
+    client = models.client()
     configured_model = client.model
     health = await confirm_served_model(
         client, model_override, allow_unverified=allow_unverified,
@@ -863,7 +862,6 @@ async def evaluate(
         "agent_settings": {
             "max_rounds": agent.settings.workbench_agent_max_rounds,
             "max_tool_calls": agent.settings.workbench_agent_max_tool_calls,
-            "argument_repairs": agent.settings.workbench_agent_argument_repairs,
             "observation_max_chars": agent.settings.workbench_agent_observation_max_chars,
             "request_budget_s": agent.settings.nlq_request_budget_s,
         },

@@ -352,9 +352,8 @@ class TestRecordVersioning:
 
 class TestSafety:
     @pytest.mark.anyio
-    async def test_summarization_is_routed_as_sensitive(self, monkeypatch):
-        """A checkpoint can describe loan-book results, so it must stay local."""
-        seen: dict = {}
+    async def test_summarization_uses_the_shared_client(self, monkeypatch):
+        called = False
 
         class FakeClient:
             async def complete(self, **kwargs):
@@ -365,19 +364,19 @@ class TestSafety:
 
                 return Result()
 
-        def fake_for_step(step, *, sensitive):
-            seen["step"] = step
-            seen["sensitive"] = sensitive
+        def fake_client():
+            nonlocal called
+            called = True
             return FakeClient()
 
-        monkeypatch.setattr(compaction.summarize.models, "for_step", fake_for_step)
+        monkeypatch.setattr(compaction.summarize.models, "client", fake_client)
         turns = [{"id": "t1", "question": "q", "synthesis": "a", "status": "complete"}]
 
         await compaction.summarize.write_checkpoint(
             turns, assistant_text_of=lambda t: t["synthesis"]
         )
 
-        assert seen["sensitive"] is True
+        assert called is True
 
     @pytest.mark.anyio
     async def test_tool_call_response_is_rejected(self, monkeypatch):
@@ -391,7 +390,7 @@ class TestSafety:
                 return Result()
 
         monkeypatch.setattr(
-            compaction.summarize.models, "for_step", lambda step, *, sensitive: FakeClient()
+            compaction.summarize.models, "client", lambda: FakeClient()
         )
         turns = [{"id": "t1", "question": "q", "synthesis": "a", "status": "complete"}]
 
@@ -412,7 +411,7 @@ class TestSafety:
                 return Result()
 
         monkeypatch.setattr(
-            compaction.summarize.models, "for_step", lambda step, *, sensitive: FakeClient()
+            compaction.summarize.models, "client", lambda: FakeClient()
         )
         turns = [{"id": "t1", "question": "q", "synthesis": "a", "status": "complete"}]
 

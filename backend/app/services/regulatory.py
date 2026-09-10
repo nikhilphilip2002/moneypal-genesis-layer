@@ -7,7 +7,7 @@ from app.registry import get_regulation_category, load_regulation_categories
 from app.services.rag import (
     build_context,
     extractive_regulatory_summary,
-    generate_with_groq,
+    generate_with_llm,
     key_points_from_text,
     search_qdrant,
 )
@@ -41,7 +41,7 @@ def regulation_detail(category_id: str) -> IntelligenceResponse:
         f"Applicability from config: {category.applicability}\n\n"
         f"Source context:\n{context}"
     )
-    summary = generate_with_groq(prompt) or extractive_regulatory_summary(
+    summary = generate_with_llm(prompt) or extractive_regulatory_summary(
         category.display_name,
         context,
         category.effective_date,

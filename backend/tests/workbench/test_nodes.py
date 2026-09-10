@@ -10,7 +10,6 @@ from types import SimpleNamespace
 import pytest
 
 from app.services.workbench import nodes
-from app.services.workbench import models
 from tests.workbench.conftest import FakeLLM
 
 
@@ -62,8 +61,6 @@ class TestKnowledge:
             "An interest rate is the percentage charged on principal over a stated period. "
             "Interest paid is a rupee amount, so it is different from the rate."
         )
-        monkeypatch.setattr(models, "for_step", lambda *a, **k: fake)
-
         result = await nodes.run_knowledge("what does intrest rate mean?")
 
         assert result.source == "knowledge"
@@ -127,11 +124,6 @@ class TestPostgresMCP:
 
         monkeypatch.setattr(nodes, "ask_once", fake_ask)
         monkeypatch.setattr(nodes.settings, "workbench_personalize_suggestions", False)
-        monkeypatch.setattr(
-            nodes.models, "for_step",
-            lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("model called")),
-        )
-
         result = await nodes.run_db(
             "question", conversation_id="c1", user="u", role="admin", access_mode="direct",
         )
@@ -171,7 +163,6 @@ class TestCompetitive:
         async def run_inline(fn, *args, **kwargs):
             return fn(*args, **kwargs)
         monkeypatch.setattr(nodes.asyncio, "to_thread", run_inline)
-        monkeypatch.setattr(models, "for_step", lambda *a, **k: FakeLLM("Rivals price low."))
 
         result = await nodes.run_competitive("who competes for MSME borrowers")
         assert result.source == "competitive"

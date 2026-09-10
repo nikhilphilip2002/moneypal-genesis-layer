@@ -222,7 +222,7 @@ async def _select(
         # The exact context of the answering request, so a synthesis repair in
         # graph.answer_results replays what the model actually saw.
         state["agent_synthesis_messages"] = messages
-    client = models.for_step("agent" if selecting else "synthesize", sensitive=True)
+    client = models.client()
     extra: dict[str, Any] = {}
     if not selecting:
         extra["max_output_tokens"] = settings.workbench_agent_synthesis_max_tokens
@@ -685,11 +685,11 @@ async def run(state: dict[str, Any]) -> None:
 
     emit = state["emit"]
     budget = _budget(state)
-    client = models.for_step("agent", sensitive=True)
+    client = models.client()
     readiness = await client.health()
     if readiness.get("status") != "ok":
         detail = readiness.get("detail") or "model endpoint is not ready"
-        raise LLMUnavailable(f"llamacpp agent unavailable: {detail}")
+        raise LLMUnavailable(f"LLM endpoint unavailable: {detail}")
     catalog = state.setdefault("_agent_catalog", get_catalog())
     context = AgentExecutionContext(
         user=state["user"], role=state["role"],

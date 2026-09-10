@@ -5,7 +5,7 @@ teams depend on it. Uses the buildathon brief PDF and a throwaway collection.
 
 Prerequisites:
   - On Aroha_T1 / Aroha_G1 WiFi (to reach Qdrant)
-  - .env has a real GROQ_API_KEY
+  - .env points LLM_BASE_URL at a reachable OpenAI-compatible endpoint
   - bge-m3 downloaded (python scripts/download_model.py)
   - genesis-core installed (pip install -e packages/genesis_core)
 

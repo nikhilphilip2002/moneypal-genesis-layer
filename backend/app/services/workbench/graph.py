@@ -310,7 +310,7 @@ async def answer_results(state: WorkbenchState) -> dict[str, Any]:
     repair_messages: list[dict[str, Any]] = list(state.get("agent_synthesis_messages", []))
     try:
         if needs_synthesis:
-            client = models.for_step("synthesize", sensitive=True)
+            client = models.client()
             repair_client = client
             async with asyncio.timeout(_synthesis_timeout(state)):
                 from app.services.workbench.agent_tools import native_tool_definitions
@@ -349,7 +349,7 @@ async def answer_results(state: WorkbenchState) -> dict[str, Any]:
                 }
         if candidate:
             async def repair(validation: composer.ClaimValidation) -> str | None:
-                client = repair_client or models.for_step("synthesize", sensitive=True)
+                client = repair_client or models.client()
                 return await _repair_synthesis(
                     state, client, base_messages=repair_messages, candidate=candidate,
                     validation=validation, facts_block=facts_block,

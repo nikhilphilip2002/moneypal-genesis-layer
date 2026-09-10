@@ -331,9 +331,6 @@ class GenesisAPIClient:
             if res.status == "Answered":
                 return res
 
-        # Direct fallback for Loan Book queries to NLQ ask
-        if query.category == "Loan Book":
-            return self._fallback_direct_nlq(query)
 
         return res
 
@@ -464,42 +461,6 @@ class GenesisAPIClient:
                 )
         except Exception as exc:
             return QueryResult(item=query, status="Error", latency_s=time.time() - start, error_message=str(exc))
-
-    def _fallback_direct_nlq(self, query: QueryItem) -> QueryResult:
-        nlq_url = f"{self.base_url}/api/nlq/ask"
-        req = urllib.request.Request(
-            nlq_url,
-            data=json.dumps({"question": query.question}).encode("utf-8"),
-            headers=self._headers(),
-        )
-        start = time.time()
-        try:
-            with urllib.request.urlopen(req, timeout=self.timeout_s) as resp:
-                buffer = ""
-                for raw_line in resp:
-                    line = raw_line.decode("utf-8", errors="replace")
-                    buffer += line
-                    while "\n\n" in buffer:
-                        frame, buffer = buffer.split("\n\n", 1)
-                        for frame_line in frame.split("\n"):
-                            if frame_line.startswith("data: "):
-                                data = json.loads(frame_line[6:])
-                                if "chart" in data:
-                                    c = data["chart"]
-                                    return QueryResult(
-                                        item=query,
-                                        status="Answered",
-                                        latency_s=time.time() - start,
-                                        sources=["db (direct nlq)"],
-                                        card_types=["chart"],
-                                        headline=c.get("title", "Loan Metric Analysis"),
-                                        summary=c.get("summary", f"{c.get('chart_type')} chart generated successfully."),
-                                        chart_info=c,
-                                    )
-        except Exception as exc:
-            return QueryResult(item=query, status="Error", latency_s=time.time() - start, error_message=str(exc))
-
-        return QueryResult(item=query, status="Error", latency_s=time.time() - start, error_message="Direct NLQ returned no chart.")
 
     def _process_events(
         self,
@@ -768,7 +729,7 @@ def main() -> int:
     )
     parser.add_argument("--sample", type=int, help="Run a reproducible random sample of N queries")
     parser.add_argument("--seed", type=int, default=20260821, help="Seed used with --sample")
-    parser.add_argument("--allow-fallbacks", action="store_true", help="Use legacy direct endpoints after a Workbench failure (diagnostic only)")
+    parser.add_argument("--allow-fallbacks", action="store_true", help="Use specialized report endpoints after a Workbench failure (diagnostic only)")
     args = parser.parse_args()
 
     env_config = load_env_prod(Path(args.env_file) if args.env_file else None)

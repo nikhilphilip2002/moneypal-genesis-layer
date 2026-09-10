@@ -2,7 +2,7 @@
 
 Five explicit steps you can read and debug:
 
-    load (pypdf) -> chunk -> embed (bge-m3) -> store/search (Qdrant) -> generate (Groq)
+    load (pypdf) -> chunk -> embed (bge-m3) -> store/search (Qdrant) -> generate (LLM)
 
 Usage
 -----
@@ -228,111 +228,50 @@ def search_multi(
 
 
 # --------------------------------------------------------------------------
-# Generation (Groq) — with secondary-key failover
+# Generation (single OpenAI-compatible endpoint)
 # --------------------------------------------------------------------------
-_PRIMARY_COOLDOWN = 60.0  # seconds to route via the secondary key after pressure
-_key_state = {"primary_blocked_until": 0.0}
+@lru_cache(maxsize=1)
+def _llm_client():
+    import httpx
 
-
-@lru_cache(maxsize=4)
-def _groq_client(api_key: str):
-    from groq import Groq
-
-    return Groq(api_key=api_key)
-
-
-def _api_keys() -> list[str]:
-    return [k for k in (settings.groq_api_key, settings.groq_api_key_secondary) if k]
-
-
-def _note_rate_headers(headers) -> None:
-    """Fail over proactively: once >=75% of the primary key's per-minute request
-    or token budget is consumed, route the next minute of calls to the secondary."""
-    import time
-
-    for kind in ("requests", "tokens"):
-        try:
-            remaining = float(headers.get(f"x-ratelimit-remaining-{kind}"))
-            limit = float(headers.get(f"x-ratelimit-limit-{kind}"))
-        except (TypeError, ValueError):
-            continue
-        if limit > 0 and remaining / limit <= 0.25:
-            _key_state["primary_blocked_until"] = time.time() + _PRIMARY_COOLDOWN
-            return
+    headers = {"Content-Type": "application/json"}
+    if settings.llm_api_key:
+        headers["Authorization"] = f"Bearer {settings.llm_api_key}"
+    return httpx.Client(
+        base_url=settings.llm_base_url.rstrip("/"),
+        headers=headers,
+        timeout=settings.llm_timeout,
+    )
 
 
 def _chat(messages: list[dict]) -> str:
-    import time
-
-    keys = _api_keys()
-    if not keys:
-        raise RuntimeError("GROQ_API_KEY is not configured")
-
-    ordered = list(keys)
-    if len(keys) > 1 and time.time() < _key_state["primary_blocked_until"]:
-        ordered = keys[1:] + keys[:1]
-
-    last_error: Exception | None = None
-    for key in ordered:
-        try:
-            raw = _groq_client(key).chat.completions.with_raw_response.create(
-                model=settings.groq_model,
-                messages=messages,
-            )
-            if key == keys[0]:
-                _note_rate_headers(raw.headers)
-            return raw.parse().choices[0].message.content.strip()
-        except Exception as exc:  # 429 / transient failure -> try the next key
-            last_error = exc
-            if key == keys[0]:
-                # Daily-quota exhaustion (TPD) won't clear in a minute — back off longer.
-                daily = "per day" in str(exc).lower() or "tpd" in str(exc).lower()
-                cooldown = 900.0 if daily else _PRIMARY_COOLDOWN
-                _key_state["primary_blocked_until"] = time.time() + cooldown
-    raise last_error  # type: ignore[misc]
+    response = _llm_client().post(
+        "/chat/completions",
+        json={"model": settings.llm_model, "messages": messages, "stream": False},
+    )
+    response.raise_for_status()
+    return str(response.json()["choices"][0]["message"]["content"]).strip()
 
 
 def _chat_stream(messages: list[dict]):
-    """Streaming counterpart of _chat. Yields content deltas.
+    """Streaming counterpart of ``_chat``. Yields OpenAI SSE content deltas."""
+    import json
 
-    Fails over to the secondary key only if the primary errors *before* emitting
-    any token — once a stream has started producing text, restarting on a second
-    key would duplicate the answer, so a mid-stream failure just ends the stream.
-    """
-    import time
-
-    keys = _api_keys()
-    if not keys:
-        raise RuntimeError("GROQ_API_KEY is not configured")
-
-    ordered = list(keys)
-    if len(keys) > 1 and time.time() < _key_state["primary_blocked_until"]:
-        ordered = keys[1:] + keys[:1]
-
-    last_error: Exception | None = None
-    for key in ordered:
-        started = False
-        try:
-            stream = _groq_client(key).chat.completions.create(
-                model=settings.groq_model,
-                messages=messages,
-                stream=True,
-            )
-            for chunk in stream:
-                delta = chunk.choices[0].delta.content
-                if delta:
-                    started = True
-                    yield delta
-            return
-        except Exception as exc:  # 429 / transient failure -> try the next key
-            last_error = exc
-            if started:
-                raise  # already emitted tokens; don't regenerate on another key
-            if key == keys[0]:
-                daily = "per day" in str(exc).lower() or "tpd" in str(exc).lower()
-                cooldown = 900.0 if daily else _PRIMARY_COOLDOWN
-                _key_state["primary_blocked_until"] = time.time() + cooldown
-    raise last_error  # type: ignore[misc]
+    with _llm_client().stream(
+        "POST",
+        "/chat/completions",
+        json={"model": settings.llm_model, "messages": messages, "stream": True},
+    ) as response:
+        response.raise_for_status()
+        for line in response.iter_lines():
+            if not line.startswith("data:"):
+                continue
+            data = line.removeprefix("data:").strip()
+            if data == "[DONE]":
+                return
+            delta = json.loads(data)["choices"][0]["delta"].get("content")
+            if delta:
+                yield delta
 
 
 DEFAULT_SYSTEM = (

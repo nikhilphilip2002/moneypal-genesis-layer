@@ -18,7 +18,7 @@ class Source:
     describes: str
     sensitive: bool
     """True when answering pulls private loan-book data — governs whether a synthesis over
-    it may ever leave the machine (see models.for_step)."""
+    it may ever leave the deployment's trusted network."""
     roles: frozenset[str] | None = None  # None = every role
     example_intents: tuple[str, ...] = ()
 

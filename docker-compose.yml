@@ -1,5 +1,5 @@
-# Full stack behind nginx on http://localhost:48106 — set GROQ_API_KEY (and
-# QDRANT_URL for the shared instance at 192.168.1.183:6333) in .env first.
+# Full stack behind nginx on http://localhost:48106 — set LLM_BASE_URL (and QDRANT_URL
+# for the shared instance at 192.168.1.183:6333) in .env first.
 #
 #   nginx :48106 ->  /api/* -> backend :8000 (prefix stripped)
 #                    /*     -> frontend :3000

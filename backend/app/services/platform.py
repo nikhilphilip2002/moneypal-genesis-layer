@@ -83,7 +83,7 @@ def status() -> dict:
 
     return {
         "qdrant": {"ok": qdrant_ok, "host": settings.qdrant_host, "port": settings.qdrant_port},
-        "llm": {"model": settings.groq_model, "configured": bool(settings.groq_api_key)},
+        "llm": {"model": settings.llm_model, "configured": bool(settings.llm_base_url)},
         "embeddings": {"model": settings.embed_model},
         "registries": {"institutions": len(il.load_all()), "regulations": len(rl.load_all())},
         "collections": collections,

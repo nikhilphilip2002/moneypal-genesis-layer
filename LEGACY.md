@@ -94,7 +94,7 @@ Removal condition: update source handlers, audit callers, and tests to the curre
 The older `/nlq` API, planner, deterministic `QuerySpec` execution pipeline, saved questions,
 drilldowns, worklists, dashboards, and autocomplete support remain in the repository. They are
 not an automatic fallback for `/workbench/ask`; a Workbench agent failure does not route a
-question to `/nlq/ask` or to its configured provider.
+question through the retired NLQ conversational path or directly to a provider.
 
 The Workbench intentionally reuses several current NLQ assets:
 
@@ -107,7 +107,7 @@ The Workbench intentionally reuses several current NLQ assets:
 These shared pieces must not be deleted merely because they live under `services/nlq`.
 
 `backend/app/services/workbench/models.py` explicitly selects the local provider for Workbench,
-even if the legacy `/nlq` provider setting selects Groq.
+using the same configured LLM endpoint as `/nlq`.
 
 ## Source-adapter remnants
 

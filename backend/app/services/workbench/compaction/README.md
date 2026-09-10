@@ -126,7 +126,7 @@ an error" which would invite a pointless retry.
 ## Safety properties (asserted in `tests/workbench/test_compaction_integration.py`)
 
 - summarization is always routed `sensitive=True`, so a checkpoint describing loan-book
-  turns can never reach Groq
+  turns use the same deployment-controlled LLM endpoint
 - a response containing a tool call, or no text, is rejected rather than stored
 - a summarizer failure leaves the record untouched and the transcript usable
 - an unknown `first_kept_turn_id` falls back to full replay

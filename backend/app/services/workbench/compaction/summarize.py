@@ -8,7 +8,7 @@ optimization, never a correctness dependency.
 Two safety properties matter and are asserted by tests:
 
 * the call is always routed as ``sensitive=True``, so a checkpoint covering loan-book
-  turns can never be sent to Groq (see ``workbench/models.py``);
+  turns use the same deployment-controlled model endpoint as every other step;
 * a response containing a tool call is rejected rather than stored as prose.
 """
 
@@ -76,8 +76,7 @@ async def write_checkpoint(
     body += prompts.UPDATE_PROMPT if previous_summary else prompts.INITIAL_PROMPT
 
     # Always sensitive: a checkpoint may describe loan-book results, so it must stay on
-    # the local provider even when the deployment has opted into Groq for public sources.
-    client = models.for_step("synthesize", sensitive=True)
+    client = models.client()
     result = await client.complete(
         messages=[
             {"role": "system", "content": prompts.SYSTEM_PROMPT},

@@ -19,7 +19,7 @@ const TOUR_STEPS = [
   },
   {
     title: 'The “+” does more than type',
-    body: 'Open “+” to run tools and reports, pin a source so a question always goes where you want, or check the model — everything runs locally by default.',
+    body: 'Open “+” to run tools and reports, or pin a source so a question always goes where you want.',
   },
   {
     title: 'Your history is saved',
@@ -31,7 +31,7 @@ const FAQ = [
   { q: 'Ask about our loan book', a: 'Just type it — disbursement, PAR 30, collections, by branch or product. It routes to the loan book automatically.' },
   { q: 'Force a specific source', a: 'Use “+” → Pin a source, then ask. Your question goes only there until you unpin it.' },
   { q: 'Run a report or action', a: 'Use “+” → Tools & actions. Available tools depend on your role.' },
-  { q: 'Is my data private?', a: 'Yes — the model runs locally, so loan-book data stays on this machine unless a deployment opts into a cloud burst.' },
+  { q: 'Is my data private?', a: 'Loan-book prompts go only to the model endpoint configured by your deployment. Keep that endpoint inside the trusted VPC.' },
   { q: 'Start a new conversation', a: 'Click “New” in the left rail. Past conversations stay in History.' },
 ];
 

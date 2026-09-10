@@ -1,6 +1,6 @@
 """SQLite cache for LLM-generated briefs.
 
-Generated briefs are expensive (~5-15s of Groq time), rate-limited, and
+Generated briefs are expensive model calls, rate-limited, and
 non-deterministic — an executive dashboard should not change content on every
 tab switch. Each brief is cached by key with a TTL; `?refresh=1` on the route
 forces regeneration.

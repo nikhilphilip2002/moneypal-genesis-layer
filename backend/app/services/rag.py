@@ -137,81 +137,44 @@ def build_context(hits: list[dict[str, Any]], max_chars: int = 9000) -> str:
     return "\n\n".join(parts)
 
 
-def generate_with_groq(prompt: str) -> str | None:
-    # Failover mirrors genesis_core.rag: secondary key takes over once the
-    # primary's per-minute budget is 75% consumed or a call fails (429 etc.).
-    keys = [k for k in (settings.groq_api_key, settings.groq_api_key_secondary) if k]
-    if not keys:
-        return None
+def generate_with_llm(prompt: str) -> str | None:
+    """Generate through the repository's single OpenAI-compatible endpoint."""
     import time
+    import httpx
 
-    from groq import Groq
-
-    ordered = list(keys)
-    if len(keys) > 1 and time.time() < _groq_state["primary_blocked_until"]:
-        ordered = keys[1:] + keys[:1]
-
-    for key in ordered:
-        try:
-            t0 = time.perf_counter()
-            raw = Groq(api_key=key).chat.completions.with_raw_response.create(
-                model=settings.groq_model,
-                messages=[
-                    {
-                        "role": "system",
-                        "content": "You are a concise regulatory intelligence analyst for Indian NBFC leadership.",
-                    },
+    headers = {"Content-Type": "application/json"}
+    if settings.llm_api_key:
+        headers["Authorization"] = f"Bearer {settings.llm_api_key}"
+    try:
+        t0 = time.perf_counter()
+        response = httpx.post(
+            f"{settings.llm_base_url.rstrip('/')}/chat/completions",
+            headers=headers,
+            json={
+                "model": settings.llm_model,
+                "messages": [
+                    {"role": "system", "content": "You are a concise regulatory intelligence analyst for Indian NBFC leadership."},
                     {"role": "user", "content": prompt},
                 ],
-            )
-            duration_ms = (time.perf_counter() - t0) * 1000.0
-            if key == keys[0]:
-                _note_groq_pressure(raw.headers)
-            parsed_content = raw.parse().choices[0].message.content
-            from app.core.logging import log_raw_trace
-
-            log_raw_trace(
-                "Groq completion received",
-                event="llm_completion",
-                provider="groq",
-                model=settings.groq_model,
-                prompt=prompt,
-                completion=parsed_content,
-                duration_ms=duration_ms,
-            )
-            return parsed_content
-        except Exception as exc:
-            from app.core.logging import log_raw_trace
-
-            log_raw_trace(
-                f"Groq generation failed: {exc}",
-                event="llm_error",
-                provider="groq",
-                model=settings.groq_model,
-                prompt=prompt,
-                error=str(exc),
-                level=logging.WARNING,
-            )
-            if key == keys[0]:
-                _groq_state["primary_blocked_until"] = time.time() + 60.0
-    return None
-
-
-_groq_state = {"primary_blocked_until": 0.0}
-
-
-def _note_groq_pressure(headers) -> None:
-    import time
-
-    for kind in ("requests", "tokens"):
-        try:
-            remaining = float(headers.get(f"x-ratelimit-remaining-{kind}"))
-            limit = float(headers.get(f"x-ratelimit-limit-{kind}"))
-        except (TypeError, ValueError):
-            continue
-        if limit > 0 and remaining / limit <= 0.25:
-            _groq_state["primary_blocked_until"] = time.time() + 60.0
-            return
+            },
+            timeout=settings.llm_timeout_s,
+        )
+        response.raise_for_status()
+        content = response.json()["choices"][0]["message"]["content"]
+        from app.core.logging import log_raw_trace
+        log_raw_trace(
+            "LLM completion received", event="llm_completion", provider="llm",
+            model=settings.llm_model, prompt=prompt, completion=content,
+            duration_ms=(time.perf_counter() - t0) * 1000.0,
+        )
+        return content
+    except Exception as exc:
+        from app.core.logging import log_raw_trace
+        log_raw_trace(
+            f"LLM generation failed: {exc}", event="llm_error", provider="llm",
+            model=settings.llm_model, prompt=prompt, error=str(exc), level=logging.WARNING,
+        )
+        return None
 
 
 def extractive_regulatory_summary(category_name: str, context: str, effective_date: str) -> str:

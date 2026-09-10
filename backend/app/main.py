@@ -47,18 +47,16 @@ async def _lifespan(_app: FastAPI):
     # provider-native tool loop.
     logging.getLogger(__name__).info(
         "workbench execution=native_only context_window=%d "
-        "compaction_enabled=%s observation_max_chars=%d llm_provider=%s llm_model=%s",
+        "compaction_enabled=%s observation_max_chars=%d llm_model=%s",
         settings.workbench_context_window, settings.workbench_compaction_enabled,
-        settings.workbench_agent_observation_max_chars,
-        settings.nlq_llm_provider, settings.nlq_llm_model,
+        settings.workbench_agent_observation_max_chars, settings.llm_model,
     )
     warmup_task = None
-    if settings.nlq_llm_provider == "llamacpp":
-        from app.services.nlq.llm import warm_catalog_prompt_cache
+    from app.services.nlq.llm import warm_catalog_prompt_cache
 
-        # Become ready immediately; catalog prompt evaluation happens before the first
-        # analyst question normally arrives, without making API health depend on the LLM.
-        warmup_task = asyncio.create_task(warm_catalog_prompt_cache())
+    # Become ready immediately; catalog prompt evaluation happens before the first
+    # analyst question normally arrives, without making API health depend on the LLM.
+    warmup_task = asyncio.create_task(warm_catalog_prompt_cache())
     # The signal scan runs on a schedule rather than on a question: "what are the emerging
     # issues?" has no answer at request time, because there is no baseline to compare against
     # and nothing has been ranked yet.

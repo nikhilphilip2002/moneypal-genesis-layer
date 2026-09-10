@@ -12,8 +12,7 @@ from app.core.logging.context import get_trace_context
 _SENSITIVE_KEYS = frozenset({
     "authorization",
     "api_key",
-    "groq_api_key",
-    "groq_api_key_secondary",
+    "llm_api_key",
     "qdrant_api_key",
     "secret",
     "password",

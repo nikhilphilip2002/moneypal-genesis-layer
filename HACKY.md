@@ -35,7 +35,7 @@ This document catalogs the overengineered, brittle, and redundant implementation
 * **Locations**: 
   - `backend/app/services/workbench/models.py:L28`
   - `backend/app/services/workbench/graph.py`
-  - `backend/app/services/nlq/ask.py`
+  - The former `backend/app/services/nlq/ask.py` pipeline has been retired.
 * **The Problem**:
   - Rather than running an agent in an unified conversational loop with tools, the orchestrator divides one turn into a sequential conveyor belt of up to 4 separate HTTP requests to the LLM:
     ```python
@@ -47,7 +47,7 @@ This document catalogs the overengineered, brittle, and redundant implementation
     3. `db_plan`: Calls LLM to generate SQL or QuerySpec.
     4. `synthesize`: Calls LLM to stitch together retrieved text.
   - Each step constructs an isolated, ad-hoc prompt and calls a different client instance.
-  - Furthermore, two parallel conversational pipelines exist side-by-side: `/workbench/ask` and `/nlq/ask`, each with its own state object (`WorkbenchState` vs `AskContext`).
+  - Resolved: `/workbench/ask` is now the sole conversational pipeline.
 * **The Minimal Modern Solution**:
   - A single standard ReAct agent loop: the user sends a message in the linear chat thread, the LLM decides which tools to call, inspects the tool output, and streams the answer back in the exact same conversation context.
 
@@ -141,7 +141,7 @@ This document catalogs the overengineered, brittle, and redundant implementation
      - Client B: `packages/genesis_core/src/genesis_core/rag.py` (official `groq.Groq` SDK client with manual rate-limit header snooping).
   2. **Duplicate Conversation Tables**:
      - `public.workbench_conversations` (used by `/workbench/ask`).
-     - `public.nlq_conversations` (used by `/nlq/ask`).
+     - `public.nlq_conversations` (legacy records retained for compatibility).
   3. **Duplicate RAG Implementations**:
      - Engine A: `backend/app/services/rag.py` (sentence-transformers + custom hash fallback + Qdrant REST).
      - Engine B: `packages/genesis_core/src/genesis_core/rag.py` (SentenceTransformer + QdrantClient).
@@ -177,7 +177,7 @@ This document catalogs the overengineered, brittle, and redundant implementation
 2. **Implement Native Tool Calling**:
    - Replace the 320-line `plan_schema` and `route_schema` with clean, modular function definitions in `tools.py`.
 3. **Collapse Multi-Step Conveyor Belts**:
-   - Merge `/workbench/ask` and `/nlq/ask` into a single, clean agent loop that streams SSE frames.
+   - Completed: `/workbench/ask` is the single agent loop that streams SSE frames.
 4. **Enable Narrative Insight Generation**:
    - Retire `narrator.py` string templates and regex number policing in `composer.py`.
    - Prompt the LLM to provide meaningful analysis, risk context, and recommendations.

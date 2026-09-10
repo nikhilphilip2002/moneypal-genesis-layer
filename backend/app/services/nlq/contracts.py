@@ -512,7 +512,6 @@ class AnalysisResult(_Model):
     charts: list[ChartSpec] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
 
-
 # --------------------------------------------------------------------------------------
 # Worklists — where a chain ends in something a team does
 # --------------------------------------------------------------------------------------
@@ -650,54 +649,3 @@ class Briefing(_Model):
     analyses: list[AnalysisResult] = Field(default_factory=list)
     worklists: list[Worklist] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
-
-
-# --------------------------------------------------------------------------------------
-# Conversation + API envelope
-# --------------------------------------------------------------------------------------
-
-
-class Turn(_Model):
-    question: str
-    resolved_question: str
-    route: Literal[
-        "queryspec", "analysis", "worklist", "briefing", "sql", "lookup", "clarify", "refuse"
-    ]
-    chart_type: ChartType | None = None
-    row_count: int = 0
-    ts: datetime
-
-
-class ConversationState(_Model):
-    conversation_id: str
-    turns: list[Turn] = Field(default_factory=list, description="Last 5 retained.")
-    active_spec: QuerySpec | None = Field(default=None, description="Anchor for follow-ups.")
-    entities: dict[str, str] = Field(
-        default_factory=dict, description="Sticky filters, e.g. {'branch': '3'} — shown in the UI."
-    )
-    updated_at: datetime | None = None
-
-
-class AskResponse(_Model):
-    conversation_id: str
-    turn_id: str
-    status: Literal["answered", "clarify", "refused"]
-    chart: ChartSpec | None = None
-    analysis: AnalysisResult | None = Field(
-        default=None,
-        description="Present instead of `chart` when the question needed several queries. "
-        "`chart` stays the single-result field, so every existing consumer is unaffected.",
-    )
-    worklist: Worklist | None = Field(
-        default=None,
-        description="Present instead of `chart` when the answer is a list of accounts to "
-        "act on rather than a number to read.",
-    )
-    briefing: Briefing | None = Field(
-        default=None,
-        description="Present instead of `chart` when the question was "
-        "\"what do I need to know?\" — signals, indicators and lists for one desk.",
-    )
-    clarification: ClarifyPlan | None = None
-    refusal: RefusalPlan | None = None
-    plan_summary: str = ""

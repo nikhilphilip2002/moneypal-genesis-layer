@@ -38,7 +38,7 @@ endpoint/observability discrepancy until corroborated with llama-server access l
 | Product-code DB lookup, toggle off | Correct chart and answer through PostgreSQL MCP | 752 ms | 563 ms | No model call; SQL execution 90 ms |
 | Karnataka GDP, toggle on | Qdrant retrieved one cited passage | 88,442 ms | 452 ms | Composer 87,617 ms; 533 uncached input tokens; 700 output tokens; finish=`length`; zero cached tokens |
 | Latest RBI repo search, toggle on | Web returned eight results but answer was correctly marked partial | 4,292 ms | 4,071 ms | No composer call because deployed normalization produced no excerpts |
-| Total principal outstanding | Routing succeeded; DB source did not complete in the 60-second observation window | 59,853 ms before client cancellation | none | Direct `/nlq/ask` also remained in planning beyond 75 seconds |
+| Total principal outstanding | Routing succeeded; DB source did not complete in the 60-second observation window | 59,853 ms before client cancellation | none | The legacy direct NLQ comparison was subsequently retired. |
 
 The deterministic DB lookup proves Workbench → MCP → governed SQL → PostgreSQL → card and
 answer is healthy. The generic DB failure is in model planning/queueing, not database health.

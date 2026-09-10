@@ -1,6 +1,6 @@
 # Moneypal Genesis AI Assistant: Top 50 Queries Evaluation & Fix Plan
 
-**Evaluated Target**: `http://100.70.118.31:4321` (API Route: `/api/nlq/ask` & `/api/nlq/execute`)  
+**Evaluated Target**: `http://100.70.118.31:4321` (API Route: `/api/workbench/ask`)
 **Catalog Version**: `4a907199709c` (26 metrics, 22 dimensions, 15 governed Gold views)  
 **Database Backend**: PostgreSQL (`moneypaldb`) via `nlq_readonly` role  
 **LLM Planner Engine**: `Qwen 3.6-27b-custom / Qwen 3.5-9B-GGUF`  

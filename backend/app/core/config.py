@@ -36,10 +36,6 @@ class Settings:
         def get(name: str, default: str | None = None) -> str | None:
             return os.environ.get(name) or env_file.get(name) or default
 
-        self.groq_api_key = get("GROQ_API_KEY")
-        self.groq_api_key_secondary = get("GROQ_API_KEY_SECONDARY")
-        self.groq_model = get("GROQ_MODEL", "llama-3.3-70b-versatile") or "llama-3.3-70b-versatile"
-
         self.qdrant_url = get("QDRANT_URL", "http://localhost:6333") or "http://localhost:6333"
         self.qdrant_api_key = get("QDRANT_API_KEY")
         self.qdrant_timeout = float(get("QDRANT_TIMEOUT", "20.0") or "20.0")
@@ -106,13 +102,12 @@ class Settings:
         ).lower() in ("1", "true", "yes", "on")
         self.signals_scan_interval_s = int(get("SIGNALS_SCAN_INTERVAL_S", "21600") or "21600")
 
-        # --- NLQ (natural-language query layer) -------------------------------------
-        # Provider-agnostic by design: the GPU node is not procured yet, so llama.cpp is
-        # selected by config at deploy time and Groq carries development.
-        self.nlq_llm_provider = (get("NLQ_LLM_PROVIDER", "groq") or "groq").lower()
-        self.nlq_llm_base_url = get("NLQ_LLM_BASE_URL", "http://localhost:8080/v1") or "http://localhost:8080/v1"
-        self.nlq_llm_model = get("NLQ_LLM_MODEL", "qwen3.6-32b-instruct-q4_K_M") or "qwen3.6-32b-instruct-q4_K_M"
-        self.nlq_llm_api_key = get("NLQ_LLM_API_KEY")          # llama.cpp ignores it; kept for gateways
+        # --- Shared OpenAI-compatible LLM endpoint ----------------------------------
+        # Every feature uses this one endpoint. Keep it inside the deployment's trusted
+        # network whenever prompts can contain private banking data.
+        self.llm_base_url = get("LLM_BASE_URL", "http://localhost:8080/v1") or "http://localhost:8080/v1"
+        self.llm_api_key = get("LLM_API_KEY")
+        self.llm_model = get("LLM_MODEL", "qwen3.6-32b-instruct-q4_K_M") or "qwen3.6-32b-instruct-q4_K_M"
         self.llm_timeout_s = float(get("LLM_TIMEOUT", "300") or "300")
         self.nlq_llm_max_retries = int(get("NLQ_LLM_MAX_RETRIES", "1") or "1")
         # Every local request is serialized across the API and PostgreSQL MCP containers.
@@ -134,13 +129,6 @@ class Settings:
         # loading or wedged model server cannot consume the whole turn deadline.
         self.workbench_agent_synthesis_max_tokens = int(
             get("WORKBENCH_AGENT_SYNTHESIS_MAX_TOKENS", "512") or "512"
-        )
-        # Qwen3 and its relatives think by default, and llama-server returns that trace in
-        # `reasoning_content` with `content` left empty — the planner then sees no JSON at
-        # all. Nothing on this path wants free-form reasoning, so thinking is off unless a
-        # deployment explicitly asks for it.
-        self.nlq_llm_thinking = (get("NLQ_LLM_THINKING", "false") or "false").lower() in (
-            "1", "true", "yes", "on",
         )
         # The text-to-SQL long tail can augment catalog matching with embeddings. Keep it
         # configurable because an isolated MCP container may not carry a warm model cache;
@@ -206,16 +194,6 @@ class Settings:
         )
 
         # --- Workbench (unified chat orchestrator) ----------------------------------
-        # Completely local by default: every orchestration step runs on the llama.cpp
-        # provider regardless of what NLQ_LLM_PROVIDER is set to. Groq stays wired but is
-        # only reachable when a deployment explicitly opts in AND the step is non-sensitive
-        # (public macro/competitive/regulatory synthesis, never the loan book).
-        self.workbench_local_only = (get("WORKBENCH_LOCAL_ONLY", "true") or "true").lower() in (
-            "1", "true", "yes", "on",
-        )
-        self.workbench_groq_opt_in = (get("WORKBENCH_GROQ_OPT_IN", "false") or "false").lower() in (
-            "1", "true", "yes", "on",
-        )
         # The Workbench has one execution architecture: provider-native tool calling.
         # Model selection remains purpose-aware for privacy, but there is no behavioral
         # router, legacy orchestrator, rollout mode, or percentage assignment.

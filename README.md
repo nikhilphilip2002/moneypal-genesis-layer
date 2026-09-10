@@ -1,6 +1,6 @@
 # Moneypal Genesis Intelligence Console
 
-An advanced regulatory, competitive, and macro-economic intelligence dashboard designed for **GICC** (a Karnataka co-operative bank) to assist in credit assessment and regulatory compliance. Powered by the **Aroha RAG Framework**, utilizing FastAPI, Next.js, Groq, and Qdrant.
+An advanced regulatory, competitive, and macro-economic intelligence dashboard designed for **GICC** (a Karnataka co-operative bank) to assist in credit assessment and regulatory compliance. Powered by the **Aroha RAG Framework**, utilizing FastAPI, Next.js, an OpenAI-compatible LLM endpoint, and Qdrant.
 
 ---
 
@@ -25,7 +25,7 @@ An advanced regulatory, competitive, and macro-economic intelligence dashboard d
 - **MCP:** Python MCP client for internal PostgreSQL access and hosted Exa web search.
 - **Vector DB:** Qdrant (Tailscale shared/local container).
 - **Embeddings:** `BAAI/bge-m3` (1024-dimension).
-- **LLM Engine:** Groq API (`llama-3.3-70b-versatile`).
+- **LLM Engine:** One deployment-configured OpenAI-compatible endpoint.
 
 ---
 
@@ -48,7 +48,7 @@ An advanced regulatory, competitive, and macro-economic intelligence dashboard d
 │   └── lib/                # API client calls and hooks
 ├── Regulations/            # Structured directories of official RBI PDFs
 └── packages/
-    └── genesis_core/       # Shared Python core package (Qdrant & Groq wrapper)
+    └── genesis_core/       # Shared Python core package (Qdrant & LLM wrapper)
 ```
 
 ---
@@ -59,9 +59,9 @@ An advanced regulatory, competitive, and macro-economic intelligence dashboard d
 Create a `.env` file at the root of the project:
 
 ```env
-GROQ_API_KEY=your-primary-key
-GROQ_API_KEY_SECONDARY=your-failover-key
-GROQ_MODEL=llama-3.3-70b-versatile
+LLM_BASE_URL=http://localhost:8080/v1
+LLM_API_KEY=
+LLM_MODEL=qwen3.6-32b-instruct-q4_K_M
 QDRANT_URL=http://localhost:6333
 QDRANT_HOST=localhost
 QDRANT_PORT=6333

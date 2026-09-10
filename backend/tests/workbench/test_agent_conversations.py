@@ -37,7 +37,6 @@ _PREFLIGHT_ERRORS = {
 def _settings(monkeypatch):
     monkeypatch.setattr(access.settings, "workbench_external_connectors_enabled", True)
     monkeypatch.setattr(access.settings, "exa_mcp_enabled", True)
-    monkeypatch.setattr(agent.settings, "workbench_agent_argument_repairs", 1)
     monkeypatch.setattr(agent.settings, "workbench_agent_max_rounds", 5)
     monkeypatch.setattr(agent.settings, "workbench_agent_max_tool_calls", 6)
     monkeypatch.setattr(agent.settings, "nlq_request_budget_s", 60.0)

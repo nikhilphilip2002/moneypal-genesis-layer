@@ -30,9 +30,9 @@ QuerySpec is a persisted contract rather than an internal detail.
 ## 2. Configuration
 
 ```
-NLQ_LLM_PROVIDER=llamacpp|groq
-NLQ_LLM_BASE_URL=http://<gpu-private-ip>:8080/v1
-NLQ_LLM_MODEL=qwen3.6-32b-instruct-q4_K_M
+LLM_BASE_URL=http://<gpu-private-ip>:8080/v1
+LLM_API_KEY=
+LLM_MODEL=qwen3.6-32b-instruct-q4_K_M
 LLM_TIMEOUT=300
 NLQ_LLM_MAX_RETRIES=1
 NLQ_LLM_THINKING=false
@@ -171,7 +171,7 @@ WHERE feedback = 'down' ORDER BY ts DESC;
 ## 6. Rollout gates
 
 1. Catalog + compiler + `/nlq/execute` behind a feature flag — **done**, no LLM required.
-2. `/nlq/ask` with the LLM, internal users only.
+2. `/workbench/ask` with the LLM, internal users only.
 3. Golden-set accuracy ≥ 85% on the QuerySpec path before persona users.
 4. General availability.
 

@@ -19,7 +19,7 @@ from fastapi import APIRouter, Header, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
-from app.services.workbench import access, history, models, tools
+from app.services.workbench import access, history, tools
 from app.services.workbench.graph import run_workbench
 from app.services.workbench.sources import visible_sources
 from app.services.nlq import lookup as record_lookup
@@ -115,10 +115,9 @@ class AskRequest(BaseModel):
 
 @router.get("/sources")
 async def sources(authorization: str | None = Header(default=None)):
-    """The sources this role can reach — drives the '+' pin-source menu and the mode badge."""
+    """The sources this role can reach — drives the '+' pin-source menu."""
     _, role = _identity(authorization)
     return {
-        "mode": models.active_mode(),
         "sources": access.source_metadata(role),
     }
 

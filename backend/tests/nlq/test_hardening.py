@@ -1,4 +1,4 @@
-"""PII masking, rate limiting, caching and the fiscal calendar.
+"""PII masking, caching and the fiscal calendar.
 
 No database, no LLM. These are the modules where a subtle bug is invisible in normal use
 and expensive exactly once.
@@ -8,7 +8,7 @@ from datetime import date
 
 import pytest
 
-from app.services.nlq import cache, pii, ratelimit
+from app.services.nlq import cache, pii
 from app.services.nlq.catalog import get_catalog
 from app.services.nlq.contracts import ColumnSpec
 from app.services.nlq.periods import (
@@ -137,32 +137,6 @@ class TestPiiMasking:
         assert pii.touches_pii(["gold.semantic_customer_profile"])
         assert pii.touches_pii(["gold.semantic_loan_account"])
         assert not pii.touches_pii(["gold.semantic_gl_balance"])
-
-
-# --------------------------------------------------------------------------------------
-# Rate limiting
-# --------------------------------------------------------------------------------------
-
-
-class TestRateLimit:
-    def setup_method(self):
-        ratelimit.reset()
-
-    def test_allows_up_to_the_limit(self):
-        for _ in range(5):
-            ratelimit.check_rate_limit("alice", limit=5)
-
-    def test_rejects_past_the_limit(self):
-        for _ in range(5):
-            ratelimit.check_rate_limit("bob", limit=5)
-        with pytest.raises(ratelimit.RateLimitExceeded) as exc:
-            ratelimit.check_rate_limit("bob", limit=5)
-        assert exc.value.retry_after > 0
-
-    def test_limits_are_per_user(self):
-        for _ in range(5):
-            ratelimit.check_rate_limit("carol", limit=5)
-        ratelimit.check_rate_limit("dave", limit=5)  # must not raise
 
 
 # --------------------------------------------------------------------------------------

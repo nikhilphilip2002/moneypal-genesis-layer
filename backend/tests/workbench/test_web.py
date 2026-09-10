@@ -98,7 +98,7 @@ class TestNode:
             return "latest repo rate", [item], "[RBI release](https://rbi.org.in/release)"
 
         monkeypatch.setattr(web, "retrieve", fake_retrieve)
-        monkeypatch.setattr(models, "for_step", lambda *a, **k: FakeLLM("Grounded answer."))
+        monkeypatch.setattr(models, "client", lambda: FakeLLM("Grounded answer."))
 
         monkeypatch.setattr(access.settings, "workbench_external_connectors_enabled", True)
         monkeypatch.setattr(access.settings, "exa_mcp_enabled", True)

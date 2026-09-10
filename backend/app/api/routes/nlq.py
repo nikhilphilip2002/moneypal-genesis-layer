@@ -1,30 +1,24 @@
 """Natural-language query API (§9).
 
 `/nlq/execute` is deliberately LLM-free: it is what makes drill-downs instant, saved
-questions reliable, and dashboards buildable on the same engine. `/nlq/ask` adds the
-language layer on top of it.
+questions reliable and dashboards buildable without a conversational endpoint.
 """
 
 from __future__ import annotations
 
 import logging
 
-import uuid
 
 from fastapi import APIRouter, Header, HTTPException, Response
-from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
-from app.services.nlq import audit, conversation
 from app.services.nlq import db as nlq_db
-from app.services.nlq.ask import AskContext, ask_stream
 from app.services.nlq.catalog import get_catalog
 from app.services.nlq.compiler import CompileError
 from app.services.nlq.contracts import ChartSpec, Filter, QuerySpec, Worklist
 from app.services.nlq.executor import ExecutionError
 from app.services.nlq.llm import get_llm_client
 from app.services.nlq.pipeline import run_spec
-from app.services.nlq.ratelimit import RateLimitExceeded, check_rate_limit
 from app.services import signals, worklists
 from app.services.worklists import store as worklist_store
 
@@ -67,7 +61,6 @@ async def health():
         "catalog": catalog_state,
         "capabilities": {
             "execute": database.get("status") == "ok" and catalog_state["status"] == "ok",
-            "ask": llm.get("status") == "ok" and database.get("status") == "ok",
             "text_to_sql": False,  # Phase 3
         },
     }
@@ -126,83 +119,6 @@ def execute_spec(req: ExecuteRequest) -> ChartSpec:
     except ExecutionError as exc:
         logger.error("NLQ execution failed: %s", exc.detail)
         raise HTTPException(503, str(exc)) from exc
-
-
-class AskRequest(BaseModel):
-    question: str = Field(min_length=1, max_length=1000)
-    conversation_id: str | None = None
-
-
-def _identity(authorization: str | None) -> tuple[str, str]:
-    """Extract (user, role) from the mock token.
-
-    Mock auth is what exists today (auth.py:13). Every PII decision downstream is only as
-    strong as this, which is why §7.4 makes replacing it a go-live blocker rather than a
-    nice-to-have.
-    """
-    from app.api.routes.auth import USERS
-
-    token = (authorization or "").removeprefix("Bearer ").strip()
-    username = token.removeprefix("mock-token-") if token.startswith("mock-token-") else ""
-    user = USERS.get(username)
-    return (username or "anonymous", user["role"] if user else "anonymous")
-
-
-@router.post("/ask")
-async def ask(req: AskRequest, authorization: str | None = Header(default=None)):
-    """Ask a question in English. Streams SSE stages: stage, plan, chart|clarify|refusal, done."""
-    username, role = _identity(authorization)
-    try:
-        check_rate_limit(username)
-    except RateLimitExceeded as exc:
-        raise HTTPException(429, str(exc), headers={"Retry-After": str(exc.retry_after)}) from exc
-
-    ctx = AskContext(
-        question=req.question,
-        conversation_id=req.conversation_id or uuid.uuid4().hex[:12],
-        user=username,
-        role=role,
-    )
-    return StreamingResponse(
-        ask_stream(ctx),
-        media_type="text/event-stream",
-        headers={
-            "Cache-Control": "no-cache",
-            "Connection": "keep-alive",
-            "X-Accel-Buffering": "no",  # nginx must not buffer the stage events away
-        },
-    )
-
-
-@router.get("/conversations/{conversation_id}")
-def get_conversation(conversation_id: str):
-    state = conversation.load(conversation_id)
-    return {
-        "conversation_id": conversation_id,
-        "turns": [t.model_dump(mode="json") for t in state.turns],
-        "active_spec": state.active_spec.model_dump(mode="json") if state.active_spec else None,
-        "sticky_filters": conversation.sticky_filters(state),
-    }
-
-
-@router.delete("/conversations/{conversation_id}", status_code=204)
-def clear_conversation(conversation_id: str):
-    conversation.clear(conversation_id)
-
-
-class FeedbackRequest(BaseModel):
-    turn_id: str
-    verdict: str = Field(pattern="^(up|down)$")
-    comment: str = ""
-
-
-@router.post("/feedback")
-def submit_feedback(req: FeedbackRequest):
-    """Every thumbs-down becomes a golden-set case — this is the catalog backlog."""
-    recorded = audit.record_feedback(req.turn_id, req.verdict, req.comment)
-    if not recorded:
-        raise HTTPException(404, "Unknown turn, or the audit log is unavailable.")
-    return {"recorded": True}
 
 
 # --------------------------------------------------------------------------------------
@@ -433,25 +349,6 @@ def get_briefing(
     except ExecutionError as exc:
         logger.error("briefing failed: %s", exc.detail)
         raise HTTPException(503, str(exc)) from exc
-
-
-@router.get("/suggestions")
-def suggestions(conversation_id: str | None = None):
-    """Next questions to offer. Context-aware when there is an anchor to build on."""
-    catalog = get_catalog()
-    if conversation_id:
-        state = conversation.load(conversation_id)
-        if state.active_spec:
-            metric = catalog.metrics.get(state.active_spec.metrics[0])
-            current = set(state.active_spec.dimensions)
-            follow_ups = [
-                f"and by {catalog.dimensions[d].label.lower()}?"
-                for d in ("branch", "product", "scheme", "month")
-                if d not in current and d in catalog.dimensions
-            ][:3]
-            if metric:
-                return {"suggestions": follow_ups, "based_on": metric.label}
-    return {"suggestions": EXAMPLE_QUESTIONS[:4], "based_on": None}
 
 
 EXAMPLE_QUESTIONS = [

@@ -614,7 +614,7 @@ cd backend
 pytest backend/tests/nlq/test_golden_questions.py -v
 
 # 3. Direct API test query via curl
-curl -X POST http://localhost:8000/api/v1/nlq/ask \
+curl -X POST http://localhost:8000/workbench/ask \
   -H "Content-Type: application/json" \
   -d '{"question": "What was our disbursement by branch last quarter?"}'
 ```

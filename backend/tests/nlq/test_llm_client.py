@@ -1,9 +1,4 @@
-"""Tests for the provider abstraction.
-
-No network: every call is served by a stub transport. The point of these is that provider
-differences stay inside client.py — the pipeline above it must never learn which model it
-is talking to.
-"""
+"""Tests for the single OpenAI-compatible LLM client."""
 
 import asyncio
 import json
@@ -12,7 +7,6 @@ import httpx
 import pytest
 
 from app.services.nlq.llm.client import (
-    GROQ_BASE_URL,
     LLMError,
     LLMProtocolError,
     LLMResult,
@@ -69,7 +63,7 @@ def _client(
         api_key="k",
         supports_json_schema=supports_json_schema,
         supports_native_tools=supports_native_tools,
-        health_path="/health",
+        health_path="/models",
     )
     client = OpenAICompatibleClient(profile=profile, model="m", max_retries=max_retries)
     client._client = httpx.AsyncClient(
@@ -179,7 +173,7 @@ class TestThinkingModels:
         assert result.reasoning == "thinking..."
 
     @pytest.mark.anyio
-    async def test_llamacpp_thinking_control_is_sent_without_cache_prompt(self):
+    async def test_request_has_no_server_specific_extensions(self):
         seen = {}
 
         def handler(request):
@@ -187,25 +181,11 @@ class TestThinkingModels:
             return _ok('{"route":"refuse"}')
 
         await _client(handler).complete(messages=[{"role": "user", "content": "hi"}])
-        assert seen["chat_template_kwargs"] == {"enable_thinking": False}
+        assert "chat_template_kwargs" not in seen
         assert "cache_prompt" not in seen
         assert "n_cache_reuse" not in seen
         assert "temperature" not in seen
         assert "max_tokens" not in seen
-
-    @pytest.mark.anyio
-    async def test_groq_does_not_receive_llamacpp_extensions(self):
-        seen = {}
-
-        def handler(request):
-            seen.update(json.loads(request.content))
-            return _ok('{"route":"refuse"}')
-
-        await _client(handler, name="groq").complete(
-            messages=[{"role": "user", "content": "hi"}],
-        )
-        assert "chat_template_kwargs" not in seen
-        assert "cache_prompt" not in seen
 
     @pytest.mark.anyio
     async def test_local_requests_are_serialized(self, monkeypatch, tmp_path):
@@ -259,8 +239,7 @@ class TestThinkingModels:
                 calls.append(kwargs)
                 return LLMResult(text="{}", model="m", provider="llamacpp")
 
-        monkeypatch.setattr(settings, "nlq_llm_provider", "llamacpp")
-        monkeypatch.setattr(client_module, "get_llm_client", lambda _provider: StubClient())
+        monkeypatch.setattr(client_module, "get_llm_client", lambda: StubClient())
 
         await client_module.warm_catalog_prompt_cache()
 
@@ -330,7 +309,7 @@ class TestResponseFormat:
             seen.update(json.loads(request.content))
             return _ok('{"route":"refuse"}')
 
-        client = _client(handler, supports_json_schema=False, name="groq")
+        client = _client(handler, supports_json_schema=False, name="json-mode")
         await client.complete(messages=[{"role": "user", "content": "hi"}], json_schema=SCHEMA)
         assert seen["response_format"] == {"type": "json_object"}
         assert [message["role"] for message in seen["messages"]] == ["system", "user"]
@@ -344,7 +323,7 @@ class TestResponseFormat:
             seen.update(json.loads(request.content))
             return _ok('{"route":"refuse"}')
 
-        client = _client(handler, supports_json_schema=False, name="groq")
+        client = _client(handler, supports_json_schema=False, name="json-mode")
         await client.complete(
             messages=[
                 {"role": "system", "content": "Primary instructions"},
@@ -725,7 +704,7 @@ class TestHealth:
         assert (await _client(lambda r: httpx.Response(500)).health())["status"] == "degraded"
 
     @pytest.mark.anyio
-    async def test_llamacpp_reports_a_different_served_model_as_degraded(self):
+    async def test_endpoint_reports_a_different_served_model_as_degraded(self):
         def handler(request):
             if request.url.path == "/v1/models":
                 return httpx.Response(200, json={"data": [{"id": "actual-35b"}]})
@@ -739,18 +718,9 @@ class TestHealth:
         assert health["model_match"] is False
 
 
-class TestProviderSelection:
-    def test_llamacpp_health_path_sits_above_v1(self):
-        client = get_llm_client("llamacpp")
-        assert client.profile.health_path.endswith("/health")
-        assert "/v1/health" not in client.profile.health_path
-
-    def test_groq_profile(self):
-        client = get_llm_client("groq")
-        assert client.profile.base_url == GROQ_BASE_URL
-        assert client.profile.supports_json_schema is False
+class TestEndpointConfiguration:
+    def test_single_profile_uses_standard_models_health_path(self):
+        client = get_llm_client()
+        assert client.profile.health_path == "/models"
+        assert client.profile.supports_json_schema is True
         assert client.profile.supports_native_tools is True
-
-    def test_unknown_provider_is_rejected(self):
-        with pytest.raises(LLMUnavailable):
-            get_llm_client("openai")

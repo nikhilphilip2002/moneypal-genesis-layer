@@ -27,7 +27,7 @@ def test_rotating_logging_streams(tmp_path: Path):
     with bind_trace(trace_id="test-trace-123", conversation_id="conv-1", username="analyst_bob"):
         log_raw_trace(
             "LLM completion received",
-            provider="groq",
+            provider="llm",
             model="llama-3.3-70b-versatile",
             prompt="what is the total loan disbursement?",
             completion="{\"route\": \"data_warehouse\"}",
@@ -65,7 +65,7 @@ def test_rotating_logging_streams(tmp_path: Path):
     assert len(raw_lines) == 1
     assert raw_lines[0]["trace_id"] == "test-trace-123"
     assert raw_lines[0]["user"] == "analyst_bob"
-    assert raw_lines[0]["provider"] == "groq"
+    assert raw_lines[0]["provider"] == "llm"
     assert raw_lines[0]["prompt"] == "what is the total loan disbursement?"
     assert raw_lines[0]["usage"]["prompt_tokens"] == 100
     # Verify redaction

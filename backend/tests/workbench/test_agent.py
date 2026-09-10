@@ -17,7 +17,6 @@ from app.services.workbench.results import SourceResult
 def _settings(monkeypatch):
     monkeypatch.setattr(access.settings, "workbench_external_connectors_enabled", True)
     monkeypatch.setattr(access.settings, "exa_mcp_enabled", True)
-    monkeypatch.setattr(agent.settings, "workbench_agent_argument_repairs", 1)
     monkeypatch.setattr(agent.settings, "workbench_agent_max_tool_calls", 6)
 
 
@@ -430,7 +429,7 @@ def scripted(monkeypatch):
     def install(script, execute):
         client = _ScriptedClient(script)
         holder["client"] = client
-        monkeypatch.setattr(models, "for_step", lambda *_args, **_kwargs: client)
+        monkeypatch.setattr(models, "client", lambda: client)
         monkeypatch.setattr(agent, "execute_agent_call", execute)
         return client
 
@@ -761,7 +760,6 @@ async def test_partially_invalid_batch_keeps_replay_parity(scripted, monkeypatch
 @pytest.mark.anyio
 async def test_outbound_policy_denial_gets_one_native_repair(scripted, monkeypatch):
     monkeypatch.setattr(agent.settings, "workbench_agent_max_rounds", 3)
-    model_policies = []
     web_bad = NativeToolCall(
         id="web_bad", name="search_public_web",
         arguments={"search_query": "customer ID secret-42 latest news"},
@@ -787,11 +785,10 @@ async def test_outbound_policy_denial_gets_one_native_repair(scripted, monkeypat
     )
     real_client = client
 
-    def choose_model(*_args, **kwargs):
-        model_policies.append(kwargs)
+    def choose_model():
         return real_client
 
-    monkeypatch.setattr(models, "for_step", choose_model)
+    monkeypatch.setattr(models, "client", choose_model)
     state = _run_state("web-repair", "Search")
     await agent.run(state)
 
@@ -808,7 +805,6 @@ async def test_outbound_policy_denial_gets_one_native_repair(scripted, monkeypat
     record = history.get("web-repair", user="alice")
     assert len(record.turns[0]["agent_exchanges"]) == 2
     assert "secret-42" not in str(record.turns[0]["agent_exchanges"])
-    assert all(policy["sensitive"] is True for policy in model_policies)
     # A privacy denial is not an error card the user sees; the repaired search is.
     frames = _frames(state)
     assert not any('"card_type": "error"' in frame for frame in frames)

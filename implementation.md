@@ -299,7 +299,7 @@ schema from the earlier abstract proposal.
 
 - add `backend/app/services/workbench/agent_executor.py`
 - refactor `backend/app/services/workbench/nodes.py`
-- refactor reusable execution from `backend/app/services/nlq/ask.py`
+- use the shared governed NLQ execution services from the Workbench agent
 - reuse:
   - `backend/app/services/nlq/pipeline.py`
   - `backend/app/services/nlq/lookup.py`

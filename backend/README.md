@@ -13,7 +13,9 @@ pip install -r requirements.txt
 Add keys/settings to `.env`:
 
 ```env
-GROQ_API_KEY=your_key_here
+LLM_BASE_URL=http://localhost:8080/v1
+LLM_API_KEY=
+LLM_MODEL=qwen3.6-32b-instruct-q4_K_M
 QDRANT_URL=http://localhost:6333
 EMBEDDING_MODEL=BAAI/bge-m3
 ```

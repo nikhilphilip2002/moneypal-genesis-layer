@@ -1,14 +1,8 @@
-"""Provider-agnostic LLM access for the NLQ pipeline.
+"""OpenAI-compatible LLM access for the NLQ and Workbench pipelines.
 
-Both targets speak the OpenAI chat-completions shape, so there is one HTTP implementation
-and the providers differ only in base URL, auth, and their supported protocol features.
-Those differences are declared in `_ProviderProfile`, never branched on inside the
-pipeline: no model-specific quirk is allowed to leak past this module.
-
-- `llamacpp` — self-hosted `llama-server`. Supports `response_format: json_schema`, so the
-  planner physically cannot emit malformed JSON.
-- `groq` — already wired elsewhere in the codebase; carries development until the GPU node
-  is procured. JSON *mode* only, so a parse-and-repair path is kept for it.
+There is one configured endpoint and one protocol. Deployment chooses the server through
+``LLM_BASE_URL``, ``LLM_API_KEY`` and ``LLM_MODEL``; application code never routes prompts
+between providers.
 """
 
 from __future__ import annotations
@@ -40,22 +34,15 @@ from app.services.nlq.llm.telemetry import (
 
 logger = logging.getLogger(__name__)
 
-GROQ_BASE_URL = "https://api.groq.com/openai/v1"
-
-
 @asynccontextmanager
-async def _local_request_gate(provider: str):
-    """Serialize llama.cpp work across both application containers.
+async def _request_gate():
+    """Serialize model work across both application containers.
 
     A normal asyncio lock only coordinates one process. The production API and PostgreSQL
     MCP containers share ``LOG_DIR``, so an advisory lock there also prevents their local
     model calls from occupying different llama-server slots concurrently. Acquisition is
     non-blocking to the event loop and cancellation always closes the descriptor.
     """
-    if provider != "llamacpp":
-        yield
-        return
-
     from app.services.nlq.ratelimit import llm_semaphore
 
     if fcntl is None:
@@ -108,10 +95,7 @@ def _warn_no_file_lock() -> None:
     global _NO_FILE_LOCK_WARNED
     if not _NO_FILE_LOCK_WARNED:
         _NO_FILE_LOCK_WARNED = True
-        logger.warning(
-            "fcntl is unavailable on this platform; llama.cpp requests are serialized "
-            "per process only"
-        )
+        logger.warning("fcntl is unavailable; LLM requests are serialized per process only")
 
 
 class LLMError(RuntimeError):
@@ -362,13 +346,7 @@ class OpenAICompatibleClient:
     def _prepare_messages(
         self, messages: list[ChatMessage], json_schema: dict[str, Any] | None
     ) -> list[ChatMessage]:
-        """Normalize system context and carry schemas for JSON-mode-only providers.
-
-        Groq additionally *rejects* a json_object request whose messages never mention
-        JSON, so the schema instruction is required rather than merely helpful.  It is
-        merged after the existing system context: this preserves the cacheable prefix and
-        avoids consecutive system messages that some chat templates silently discard.
-        """
+        """Normalize system context and carry schemas for JSON-mode-only test profiles."""
         prepared = coalesce_system_messages(_strip_replay_reasoning(messages))
         if json_schema is None or self.profile.supports_json_schema:
             return prepared
@@ -418,10 +396,6 @@ class OpenAICompatibleClient:
             "messages": prepared_messages,
             "stream": False,
         }
-        if self.provider == "llamacpp":
-            payload["chat_template_kwargs"] = {
-                "enable_thinking": settings.nlq_llm_thinking,
-            }
         if max_output_tokens is not None:
             payload["max_tokens"] = max(1, int(max_output_tokens))
         response_format = self._response_format(json_schema)
@@ -438,7 +412,7 @@ class OpenAICompatibleClient:
         attempts_run = 0
         effective_timeout_s = timeout_s if timeout_s is not None else self.timeout_s
         successful_response: tuple[httpx.Response, dict[str, Any], int] | None = None
-        async with _local_request_gate(self.provider):
+        async with _request_gate():
             for attempt in range(self.max_retries + 1):
                 attempts_run = attempt + 1
                 try:
@@ -698,10 +672,7 @@ class OpenAICompatibleClient:
         raise last_exc or LLMUnavailable(f"{self.provider} failed with no diagnosis")
 
     async def health(self) -> dict[str, Any]:
-        """Return provider readiness from its health endpoint without model-name checks."""
-        if self.profile.name == "groq" and not self.profile.api_key:
-            return {"status": "unconfigured", "provider": self.provider, "model": self.model,
-                    "detail": "GROQ_API_KEY is not set"}
+        """Return endpoint readiness from the standard OpenAI models endpoint."""
         try:
             resp = await self._http().request(
                 self.profile.health_method, self.profile.health_path, timeout=5.0
@@ -710,74 +681,76 @@ class OpenAICompatibleClient:
             return {"status": "down", "provider": self.provider, "model": self.model,
                     "detail": str(exc)[:200]}
         ok = resp.status_code < 400
+        served_models: list[str] = []
+        if ok:
+            try:
+                data = resp.json().get("data", [])
+                served_models = [
+                    str(item["id"])
+                    for item in data
+                    if isinstance(item, dict) and item.get("id")
+                ]
+            except (ValueError, AttributeError):
+                # Some compatible gateways return an empty health body. Reachability is
+                # still useful; model matching is reported only when IDs are available.
+                pass
+        model_match = not served_models or self.model in served_models
+        healthy = ok and model_match
         return {
-            "status": "ok" if ok else "degraded",
+            "status": "ok" if healthy else "degraded",
             "provider": self.provider,
             "model": self.model,
-            "detail": "" if ok else f"HTTP {resp.status_code}",
+            "detail": (
+                "" if healthy
+                else f"Configured model {self.model!r} is not served"
+                if ok
+                else f"HTTP {resp.status_code}"
+            ),
+            "served_models": served_models,
+            "model_match": model_match,
         }
 
 
-def _profile(provider: str) -> _ProviderProfile:
-    if provider == "llamacpp":
-        return _ProviderProfile(
-            name="llamacpp",
-            base_url=settings.nlq_llm_base_url,
-            api_key=settings.nlq_llm_api_key,
-            supports_json_schema=True,
-            supports_native_tools=True,
-            # llama-server exposes /health at the server root, one level above /v1.
-            health_path=settings.nlq_llm_base_url.rstrip("/").removesuffix("/v1") + "/health",
-        )
-    if provider == "groq":
-        return _ProviderProfile(
-            name="groq",
-            base_url=GROQ_BASE_URL,
-            api_key=settings.groq_api_key,
-            supports_json_schema=False,
-            supports_native_tools=True,
-            health_path="/models",
-        )
-    raise LLMUnavailable(
-        f"NLQ_LLM_PROVIDER={provider!r} is not supported (expected 'llamacpp' or 'groq')"
+def _profile() -> _ProviderProfile:
+    return _ProviderProfile(
+        name="llm",
+        base_url=settings.llm_base_url,
+        api_key=settings.llm_api_key,
+        supports_json_schema=True,
+        supports_native_tools=True,
+        health_path="/models",
     )
 
 
-_cached: dict[str, OpenAICompatibleClient] = {}
+_cached: OpenAICompatibleClient | None = None
 
 
-def get_llm_client(provider: str | None = None) -> OpenAICompatibleClient:
-    """Return the configured client. Cached so httpx keeps connections warm — and so the
-    system prompt prefix hits llama.cpp's KV cache on every call."""
-    name = (provider or settings.nlq_llm_provider or "groq").lower()
-    if name not in _cached:
-        profile = _profile(name)
-        model = settings.groq_model if name == "groq" else settings.nlq_llm_model
-        _cached[name] = OpenAICompatibleClient(
-            profile=profile,
-            model=model,
+def get_llm_client() -> OpenAICompatibleClient:
+    """Return the sole configured client, cached to keep HTTP connections warm."""
+    global _cached
+    if _cached is None:
+        _cached = OpenAICompatibleClient(
+            profile=_profile(),
+            model=settings.llm_model,
             timeout_s=settings.llm_timeout_s,
             max_retries=settings.nlq_llm_max_retries,
         )
-    return _cached[name]
+    return _cached
 
 
 async def warm_catalog_prompt_cache() -> None:
-    """Populate llama.cpp's KV cache without delaying API startup.
+    """Populate the endpoint's prompt cache without delaying API startup.
 
     The fixed planner prefix contains the complete prompt-safe Gold catalog. A one-token
     completion is sufficient to evaluate and retain that prefix; real questions then
     replace only the short final user message.
     """
-    if settings.nlq_llm_provider != "llamacpp":
-        return
-
     from app.services.nlq.catalog import get_catalog
     from app.services.nlq.llm.prompts import PROMPT_VERSION, build_messages, stable_prefix_hash
     from app.services.nlq.llm.schemas import plan_schema
 
     catalog = get_catalog()
-    client = get_llm_client("llamacpp")
+    client = get_llm_client()
     try:
         result = await client.complete(
             messages=build_messages(

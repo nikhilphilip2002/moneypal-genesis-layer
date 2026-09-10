@@ -64,7 +64,7 @@ flowchart TB
     end
 
     subgraph API ["FastAPI — routes/nlq.py"]
-        EP["POST /nlq/ask (SSE)"]
+        EP["POST /workbench/ask (SSE)"]
     end
 
     subgraph PIPE ["NLQ Pipeline — services/nlq/"]
@@ -570,7 +570,7 @@ Targets: p50 < 3 s, p95 < 8 s end-to-end; SQL execution p95 < 1.5 s. Data volume
 ## 9. API Design
 
 ```
-POST   /nlq/ask                  {question, conversation_id?} → SSE stream → AskResponse
+POST   /workbench/ask            {question, conversation_id?} → SSE stream → Workbench response
 POST   /nlq/execute              {query_spec} → ChartSpec         # drill-down, filter change, saved question — no LLM
 GET    /nlq/catalog              → metrics, dimensions, example questions  # powers autocomplete
 GET    /nlq/conversations/{id}   → turn history
@@ -658,7 +658,7 @@ unauthenticated); security group allows 8080 from the app node only. `/nlq/healt
 node holds model weights and receives only questions plus catalog metadata, never loan or customer
 rows.
 
-Rollout: (1) catalog + compiler + `/nlq/execute` behind a feature flag; (2) `/nlq/ask` with the
+Rollout: (1) catalog + compiler + `/nlq/execute` behind a feature flag; (2) `/workbench/ask` with the
 LLM, internal users only; (3) golden-set accuracy gate ≥ 85% on the QuerySpec path before persona
 users; (4) general availability. Pin the exact GGUF file hash in the runbook so a node rebuild is
 reproducible. Ops: `/nlq/health` on the existing platform dashboard; alerts on LLM error rate,
@@ -744,7 +744,7 @@ system is already useful.**
 17. `retrieval.py`: hybrid vector + lexical, top-k assembly with join closure.
 18. `prompts.py`: system prompt, few-shot exemplars incl. refusal and clarify cases.
 19. `planner.py`: constrained-decode call → PlanResult; validation + one repair round-trip.
-20. `POST /nlq/ask` with SSE staging.
+20. `POST /workbench/ask` with SSE staging.
 21. Eval harness scoring the golden set on execution match; baseline accuracy recorded.
 
 **Exit:** typed question → chart, end to end. Golden-set QuerySpec accuracy ≥ 70% (raise later).

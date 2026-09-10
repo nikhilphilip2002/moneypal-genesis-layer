@@ -13,10 +13,11 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
-    # Groq LLM (secondary key takes over when the primary is 75% rate-limited or 429s)
-    groq_api_key: str = ""
-    groq_api_key_secondary: str = ""
-    groq_model: str = "llama-3.3-70b-versatile"
+    # One OpenAI-compatible endpoint shared by all generation paths.
+    llm_base_url: str = "http://localhost:8080/v1"
+    llm_api_key: str = ""
+    llm_model: str = "qwen3.6-32b-instruct-q4_K_M"
+    llm_timeout: float = 300.0
 
     # Qdrant (shared instance — must be on Aroha_T1 / Aroha_G1 WiFi)
     # QDRANT_URL is the canonical setting and wins when set; host/port remain for

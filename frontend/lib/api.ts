@@ -749,14 +749,6 @@ export type ChartSpec = {
   lineage: Lineage;
 };
 
-export type NlqClarification = { route: 'clarify'; question: string; suggestions: string[] };
-export type NlqRefusal = {
-  route: 'refuse';
-  reason: 'out_of_scope' | 'not_in_data' | 'predictive' | 'advice' | 'unsafe';
-  message: string;
-  examples: string[];
-};
-
 export type Severity = 'info' | 'watch' | 'alert';
 
 // One line of "here is what matters", carrying the query that produced it so the reader is
@@ -885,25 +877,6 @@ export type Briefing = {
   warnings: string[];
 };
 
-export type NlqAskResponse = {
-  conversation_id: string;
-  turn_id: string;
-  status: 'answered' | 'clarify' | 'refused';
-  chart: ChartSpec | null;
-  // Present instead of `chart` when the question needed several queries. `chart` stays the
-  // single-result field, so every existing consumer is unaffected.
-  analysis: AnalysisResult | null;
-  // Present instead of `chart` when the answer is a list of accounts to act on rather than
-  // a number to read.
-  worklist: Worklist | null;
-  // Present instead of `chart` when the question was "what do I need to know?" — signals,
-  // indicators and lists for one desk.
-  briefing: Briefing | null;
-  clarification: NlqClarification | null;
-  refusal: NlqRefusal | null;
-  plan_summary: string;
-};
-
 export type NlqCatalogMetric = {
   id: string; label: string; unit: Unit; grain: string; formula: string;
   synonyms: string[]; requires_signoff: boolean; caveat: string;
@@ -921,24 +894,8 @@ export type NlqHealth = {
   llm: { status: string; provider: string; model: string; detail?: string };
   db: { status: string; detail?: string };
   catalog: { status: string; version?: string; metrics?: number };
-  capabilities: { execute: boolean; ask: boolean; text_to_sql: boolean };
+  capabilities: { execute: boolean; text_to_sql: boolean };
 };
-
-// SSE stage names, in the order the backend emits them.
-export type NlqStage = 'understanding' | 'planning' | 'writing_sql' | 'querying' | 'charting';
-
-export type NlqStreamEvent =
-  | { type: 'stage'; stage: NlqStage }
-  | { type: 'rewrite'; resolved_question: string }
-  | { type: 'plan'; route: string; model: string }
-  | { type: 'chart'; response: NlqAskResponse }
-  | { type: 'analysis'; response: NlqAskResponse }
-  | { type: 'worklist'; response: NlqAskResponse }
-  | { type: 'briefing'; response: NlqAskResponse }
-  | { type: 'clarify'; clarification: NlqClarification }
-  | { type: 'refusal'; refusal: NlqRefusal }
-  | { type: 'error'; message: string; retryable: boolean }
-  | { type: 'done' };
 
 export const nlq = {
   health: (signal?: AbortSignal): Promise<NlqHealth> => apiRequest('/nlq/health', { signal }),
@@ -948,14 +905,6 @@ export const nlq = {
   // they keep working when the assistant is offline.
   execute: (query_spec: QuerySpec): Promise<ChartSpec> =>
     apiRequest('/nlq/execute', { method: 'POST', body: JSON.stringify({ query_spec }) }),
-
-  conversation: (id: string) => apiRequest(`/nlq/conversations/${id}`),
-  clearConversation: (id: string) =>
-    apiRequest(`/nlq/conversations/${id}`, { method: 'DELETE' }),
-  feedback: (turn_id: string, verdict: 'up' | 'down', comment = '') =>
-    apiRequest('/nlq/feedback', { method: 'POST', body: JSON.stringify({ turn_id, verdict, comment }) }),
-  suggestions: (conversation_id?: string) =>
-    apiRequest(`/nlq/suggestions${conversation_id ? `?conversation_id=${conversation_id}` : ''}`),
 
   // Worklists. Also LLM-free: the rules, the score and the playbooks are catalog config, so
   // a saved list regenerates identically whether or not the assistant is reachable.
@@ -1025,71 +974,6 @@ export const nlq = {
     return response.blob();
   },
 
-  // Streams SSE. Uses fetch rather than EventSource because the endpoint is a POST and
-  // needs the Authorization header.
-  async *ask(
-    question: string,
-    conversationId: string | null,
-    signal?: AbortSignal,
-  ): AsyncGenerator<NlqStreamEvent> {
-    const token = typeof window !== 'undefined' ? localStorage.getItem('access') : null;
-    const res = await fetch(`${API_URL}/nlq/ask`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      },
-      body: JSON.stringify({ question, conversation_id: conversationId }),
-      signal,
-    });
-
-    if (!res.ok || !res.body) {
-      const detail = await res.text().catch(() => '');
-      throw new Error(detail || `Ask failed (${res.status})`);
-    }
-
-    const reader = res.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = '';
-
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
-
-      // SSE frames are separated by a blank line; a partial frame stays buffered.
-      let split: number;
-      while ((split = buffer.indexOf('\n\n')) !== -1) {
-        const frame = buffer.slice(0, split);
-        buffer = buffer.slice(split + 2);
-
-        let event = '';
-        let data = '';
-        for (const line of frame.split('\n')) {
-          if (line.startsWith('event: ')) event = line.slice(7).trim();
-          else if (line.startsWith('data: ')) data += line.slice(6);
-        }
-        if (!event) continue;
-
-        let payload: any = {};
-        try { payload = data ? JSON.parse(data) : {}; } catch { continue; }
-
-        switch (event) {
-          case 'stage': yield { type: 'stage', stage: payload.stage }; break;
-          case 'rewrite': yield { type: 'rewrite', resolved_question: payload.resolved_question }; break;
-          case 'plan': yield { type: 'plan', route: payload.route, model: payload.model }; break;
-          case 'chart': yield { type: 'chart', response: payload as NlqAskResponse }; break;
-          case 'analysis': yield { type: 'analysis', response: payload as NlqAskResponse }; break;
-          case 'worklist': yield { type: 'worklist', response: payload as NlqAskResponse }; break;
-          case 'briefing': yield { type: 'briefing', response: payload as NlqAskResponse }; break;
-          case 'clarify': yield { type: 'clarify', clarification: payload as NlqClarification }; break;
-          case 'refusal': yield { type: 'refusal', refusal: payload as NlqRefusal }; break;
-          case 'error': yield { type: 'error', message: payload.message, retryable: !!payload.retryable }; break;
-          case 'done': yield { type: 'done' }; return;
-        }
-      }
-    }
-  },
 };
 
 // --- Workbench (unified chat orchestrator) --------------------------------------------
@@ -1211,7 +1095,7 @@ export type WorkbenchTool = {
 };
 
 export const workbench = {
-  sources: (): Promise<{ mode: string; sources: WorkbenchSource[] }> =>
+  sources: (): Promise<{ sources: WorkbenchSource[] }> =>
     apiRequest('/workbench/sources'),
 
   tools: (): Promise<{ tools: WorkbenchTool[] }> => apiRequest('/workbench/tools'),
