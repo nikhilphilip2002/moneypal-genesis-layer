@@ -60,10 +60,9 @@ def _strip_unsupported_page_citations(answer: str, sources: list[dict]) -> str:
 
 
 async def run_macro(
-    intent: str, *, history_messages: list[dict[str, str]] | None = None,
-    policy: "SourceAccessPolicy | None" = None,
+    intent: str, *, policy: "SourceAccessPolicy | None" = None,
 ) -> SourceResult:
-    """Retrieve published macro evidence; the common composer owns all prose."""
+    """Retrieve published macro evidence; the native agent owns all prose."""
     _require_external(policy, "macro")
     try:
         # Qdrant and sentence-transformers are synchronous. Keep them off the event loop so
@@ -167,7 +166,7 @@ async def run_web(
 
 
 async def run_knowledge(
-    intent: str, *, history_messages: list[dict[str, str]] | None = None,
+    intent: str,
 ) -> SourceResult:
     """Explain stable concepts, grounded by relevant governed metric definitions."""
     question = normalize_lending_question(intent)

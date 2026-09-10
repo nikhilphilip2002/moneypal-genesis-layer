@@ -157,7 +157,7 @@ class TestPostgresMCP:
 
 class TestCompetitive:
     @pytest.mark.anyio
-    async def test_returns_question_specific_retrieval_for_common_composer(self, monkeypatch):
+    async def test_returns_question_specific_retrieval_for_native_agent(self, monkeypatch):
         from app.services import institution_loader
 
         monkeypatch.setattr(institution_loader, "load_all", lambda: [{

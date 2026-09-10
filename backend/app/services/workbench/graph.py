@@ -91,7 +91,6 @@ class WorkbenchState(TypedDict):
     user: str
     role: str
     turn_id: str
-    history_messages: list[dict[str, str]]
     agent_history_messages: NotRequired[list[dict[str, Any]]]
     agent_private_entities: NotRequired[tuple[str, ...]]
     emit: "asyncio.Queue[str | None]"
@@ -100,9 +99,7 @@ class WorkbenchState(TypedDict):
     decision: NotRequired[ExecutionDecision]
     results: NotRequired[list[SourceResult]]
     timing: dict[str, Any]
-    agent_native: NotRequired[bool]
     agent_synthesis_messages: NotRequired[list[dict[str, Any]]]
-    agent_prompt_prefix_hash: NotRequired[str]
 
 
 _ANSWERABLE_CARD_TYPES = frozenset(
@@ -124,8 +121,6 @@ async def _repair_synthesis(
     candidate: str,
     validation: composer.ClaimValidation,
     facts_block: str,
-    prompt_version: str,
-    prefix_hash: str,
 ) -> str | None:
     """One focused repair round naming the exact unsupported claims and the fact set.
 
@@ -145,26 +140,19 @@ async def _repair_synthesis(
         {"role": "assistant", "content": candidate},
         {"role": "user", "content": composer.repair_message(validation.unsupported, facts_block)},
     ]
-    kwargs: dict[str, Any] = {}
-    if state.get("agent_native"):
-        from app.services.workbench.agent_tools import native_tool_definitions
+    from app.services.workbench.agent_tools import native_tool_definitions
 
-        kwargs = {
-            "tools": native_tool_definitions(
-                state["source_policy"], catalog=state.get("_agent_catalog"),
-            ),
-            "tool_choice": "none",
-            "parallel_tool_calls": False,
-        }
     repaired = await client.complete(
         messages=messages,
         timeout_s=_synthesis_timeout(state),
-        call_purpose="agent_synthesize" if state.get("agent_native") else "final_compose",
+        call_purpose="agent_synthesize",
         call_kind="repair",
-        prompt_version=prompt_version,
-        prefix_hash=prefix_hash,
-        max_output_tokens=settings.workbench_composer_max_tokens,
-        **kwargs,
+        max_output_tokens=settings.workbench_agent_synthesis_max_tokens,
+        tools=native_tool_definitions(
+            state["source_policy"], catalog=state.get("_agent_catalog"),
+        ),
+        tool_choice="none",
+        parallel_tool_calls=False,
     )
     if getattr(repaired, "tool_calls", None):
         raise RuntimeError("tool call returned during synthesis repair phase")
@@ -208,11 +196,11 @@ async def _ground_answer(
             f"Removed {len(removed)} statement(s) whose figures the retrieved results "
             f"could not verify: {shown}."
         )
-        return cleaned, {"source": "composer", "reason": reason}, cited
+        return cleaned, {"source": "agent", "reason": reason}, cited
     # Every sentence carried an unverifiable figure, so nothing of the model's text
     # remains to show; the governed evidence is the only text left.
     return composer.extractive_fallback(results), {
-        "source": "composer",
+        "source": "agent",
         "reason": (
             "Every statement in the generated answer carried a figure the retrieved "
             f"results could not verify ({shown}); showing retrieved evidence instead."
@@ -306,81 +294,58 @@ async def answer_results(state: WorkbenchState) -> dict[str, Any]:
     facts_block = composer.facts_text(fact_set)
     text = results[0].summary.strip()
     result = state.get("agent_final_result")
-    composition_limitation: dict[str, str] | None = None
+    synthesis_limitation: dict[str, str] | None = None
     verified_facts: list[facts.Fact] = []
     # One governed DB card already has a deterministic, chart-aware summary and complete
     # rows. Re-synthesizing it made the model omit endpoint months, mis-rank values, and
     # waste a second local-model call. Composition remains necessary when evidence must be
     # combined or interpreted across document/external sources.
-    needs_composition = result is None and (len(results) > 1 or any(
+    needs_synthesis = result is None and (len(results) > 1 or any(
         r.source in {"knowledge", "schema", "macro", "competitive", "regulatory", "web"}
         for r in results
     ))
     candidate = result.text.strip() if result is not None else ""
-    # How a repair replays exactly what the answering model saw, per path.
+    # A repair replays exactly what the native answering model saw.
     repair_client = None
     repair_messages: list[dict[str, Any]] = list(state.get("agent_synthesis_messages", []))
-    repair_version = prompts.AGENT_PROMPT_VERSION
-    repair_prefix = state.get("agent_prompt_prefix_hash", "")
     try:
-        if needs_composition:
-            client = models.for_step(
-                "synthesize",
-                sensitive=bool(state.get("agent_native"))
-                or any(r.sensitive or r.source == "db" for r in results),
-            )
+        if needs_synthesis:
+            client = models.for_step("synthesize", sensitive=True)
             repair_client = client
-            prompt = prompts.build_composer_prompt(
-                question=state["question"], findings=findings,
-                history_messages=composer.relevant_history(state.get("history_messages", [])),
-                facts=facts_block,
-            )
             async with asyncio.timeout(_synthesis_timeout(state)):
-                if state.get("agent_native"):
-                    from app.services.workbench.agent_tools import native_tool_definitions
+                from app.services.workbench.agent_tools import native_tool_definitions
 
-                    # The agent's TurnBudget is the only round accounting; synthesis
-                    # is a round like any other and BudgetExhausted lands in the
-                    # composer-unavailable limitation below.
-                    if (budget := state.get("_agent_budget")) is not None:
-                        budget.charge_round("agent_synthesize")
-                    repair_messages = list(state.get("agent_synthesis_messages", prompt.messages))
-                    if facts_block:
-                        repair_messages.append(
-                            {"role": "user", "content": composer.facts_message(facts_block)}
-                        )
-                    result = await client.complete(
-                        messages=repair_messages,
-                        tools=native_tool_definitions(
-                            state["source_policy"], catalog=state.get("_agent_catalog"),
-                        ),
-                        tool_choice="none",
-                        parallel_tool_calls=False,
-                        timeout_s=_synthesis_timeout(state),
-                        call_purpose="agent_synthesize",
-                        prompt_version=prompts.AGENT_PROMPT_VERSION,
-                        prefix_hash=state.get("agent_prompt_prefix_hash", ""),
-                        max_output_tokens=settings.workbench_composer_max_tokens,
+                # The agent's TurnBudget is the only round accounting; synthesis
+                # is a round like any other and BudgetExhausted lands in the
+                # synthesis-unavailable limitation below.
+                if (budget := state.get("_agent_budget")) is not None:
+                    budget.charge_round("agent_synthesize")
+                repair_messages = list(state.get("agent_synthesis_messages", []))
+                if not repair_messages:
+                    raise RuntimeError("native synthesis context is unavailable")
+                if facts_block:
+                    repair_messages.append(
+                        {"role": "user", "content": composer.facts_message(facts_block)}
                     )
-                    if getattr(result, "tool_calls", None):
-                        raise RuntimeError("tool call returned during final synthesis phase")
-                else:
-                    repair_messages = list(prompt.messages)
-                    repair_version, repair_prefix = prompt.version, prompt.prefix_hash
-                    result = await client.complete(
-                        messages=prompt.messages,
-                        timeout_s=_synthesis_timeout(state),
-                        call_purpose="final_compose",
-                        prompt_version=prompt.version,
-                        prefix_hash=prompt.prefix_hash,
-                        max_output_tokens=settings.workbench_composer_max_tokens,
-                    )
+                result = await client.complete(
+                    messages=repair_messages,
+                    tools=native_tool_definitions(
+                        state["source_policy"], catalog=state.get("_agent_catalog"),
+                    ),
+                    tool_choice="none",
+                    parallel_tool_calls=False,
+                    timeout_s=_synthesis_timeout(state),
+                    call_purpose="agent_synthesize",
+                    max_output_tokens=settings.workbench_agent_synthesis_max_tokens,
+                )
+                if getattr(result, "tool_calls", None):
+                    raise RuntimeError("tool call returned during final synthesis phase")
             candidate = result.text.strip()
             if not candidate:
                 text = composer.extractive_fallback(results)
-                composition_limitation = {
-                    "source": "composer",
-                    "reason": "The answer composer returned no text; showing retrieved evidence instead.",
+                synthesis_limitation = {
+                    "source": "agent",
+                    "reason": "The agent returned no synthesis; showing retrieved evidence instead.",
                 }
         if candidate:
             async def repair(validation: composer.ClaimValidation) -> str | None:
@@ -388,23 +353,22 @@ async def answer_results(state: WorkbenchState) -> dict[str, Any]:
                 return await _repair_synthesis(
                     state, client, base_messages=repair_messages, candidate=candidate,
                     validation=validation, facts_block=facts_block,
-                    prompt_version=repair_version, prefix_hash=repair_prefix,
                 )
 
-            text, composition_limitation, verified_facts = await _ground_answer(
+            text, synthesis_limitation, verified_facts = await _ground_answer(
                 state, candidate=candidate, findings=findings, fact_set=fact_set,
                 facts_block=facts_block, results=results, repair=repair,
             )
     except Exception as exc:  # noqa: BLE001 - deterministic findings remain usable
         logger.warning("workbench synthesis failed, using grounded findings: %s", exc)
         text = composer.extractive_fallback(results)
-        composition_limitation = {
-            "source": "composer",
-            "reason": "The answer composer was unavailable; showing retrieved evidence instead.",
+        synthesis_limitation = {
+            "source": "agent",
+            "reason": "Agent synthesis was unavailable; showing retrieved evidence instead.",
         }
 
-    if composition_limitation is not None:
-        limitations.append(composition_limitation)
+    if synthesis_limitation is not None:
+        limitations.append(synthesis_limitation)
 
     citations: list[dict[str, Any]] = []
     seen_citations: set[tuple[str, str]] = set()
@@ -462,12 +426,6 @@ async def run_workbench(
     """Run one turn, yielding SSE frames as the graph produces them."""
     started_at = time.perf_counter()
     emit: "asyncio.Queue[str | None]" = asyncio.Queue()
-    try:
-        built = history.build_transcript(conversation_id, user=user)
-    except Exception:  # noqa: BLE001
-        logger.warning("workbench transcript load failed; continuing without history", exc_info=True)
-        built = history.Transcript()
-    history_messages = built.messages
     source_policy = access.build_policy(
         role=role, external_sources_enabled=external_sources_enabled,
         pinned_source=pinned,
@@ -569,23 +527,6 @@ async def run_workbench(
             })
             yield sse("done", {})
             return
-        if built.overflow:
-        # The conversation no longer fits its own most recent exchange. The answer below
-        # is still produced, but from a clipped view, so say so rather than let quality
-        # degrade silently. Not retryable: asking again in this conversation cannot help.
-            logger.warning(
-                "workbench transcript overflow: conversation=%s tokens=%d budget=%d",
-                conversation_id, built.tokens, built.budget,
-            )
-            _persist(
-                history.set_error, conversation_id, user, turn_id, CONTEXT_FULL_MESSAGE,
-                code=CONTEXT_CAPACITY_CODE, retryable=False,
-            )
-            yield sse("error", {
-                "code": CONTEXT_CAPACITY_CODE,
-                "message": CONTEXT_FULL_MESSAGE,
-                "retryable": False,
-            })
         yield sse("stage", {"stage": "understanding"})
     except (GeneratorExit, asyncio.CancelledError):
         _persist(history.complete_turn, conversation_id, user, turn_id, partial=True)
@@ -594,7 +535,6 @@ async def run_workbench(
     state: WorkbenchState = {
         "question": question, "conversation_id": conversation_id,
         "user": user, "role": role, "turn_id": turn_id,
-        "history_messages": history_messages,
         "agent_history_messages": agent_history_messages,
         "agent_private_entities": agent_private_entities,
         "emit": emit, "pinned": pinned,

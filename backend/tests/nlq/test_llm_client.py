@@ -179,7 +179,7 @@ class TestThinkingModels:
         assert result.reasoning == "thinking..."
 
     @pytest.mark.anyio
-    async def test_llamacpp_cache_and_thinking_controls_are_sent(self):
+    async def test_llamacpp_thinking_control_is_sent_without_cache_prompt(self):
         seen = {}
 
         def handler(request):
@@ -188,7 +188,7 @@ class TestThinkingModels:
 
         await _client(handler).complete(messages=[{"role": "user", "content": "hi"}])
         assert seen["chat_template_kwargs"] == {"enable_thinking": False}
-        assert seen["cache_prompt"] is True
+        assert "cache_prompt" not in seen
         assert "n_cache_reuse" not in seen
         assert "temperature" not in seen
         assert "max_tokens" not in seen
@@ -301,7 +301,7 @@ class TestThinkingModels:
 
         assert result.uncached_prompt_tokens == 30
         assert result.cache_write_prompt_tokens == 20
-        assert result.prefix_hash
+        assert result.prefix_hash == ""
         assert len(calls) == 1
         assert calls[0].purpose == "route"
         assert calls[0].prompt_version == "router-v1"

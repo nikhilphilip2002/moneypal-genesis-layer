@@ -132,8 +132,8 @@ class Settings:
         )
         # Bound every individual LLM request (including provider retries) uniformly so a
         # loading or wedged model server cannot consume the whole turn deadline.
-        self.workbench_composer_max_tokens = int(
-            get("WORKBENCH_COMPOSER_MAX_TOKENS", "512") or "512"
+        self.workbench_agent_synthesis_max_tokens = int(
+            get("WORKBENCH_AGENT_SYNTHESIS_MAX_TOKENS", "512") or "512"
         )
         # Qwen3 and its relatives think by default, and llama-server returns that trace in
         # `reasoning_content` with `content` left empty — the planner then sees no JSON at

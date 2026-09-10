@@ -208,7 +208,7 @@ async def _select(
         raise LLMError("no native tools are authorized for this request")
     prompt = prompts.build_agent_prompt(
         question=state["question"],
-        history_messages=state.get("agent_history_messages", state.get("history_messages", [])),
+        history_messages=state.get("agent_history_messages", []),
         tool_names=[definition["function"]["name"] for definition in definitions],
         catalog=catalog,
         catalog_context=catalog_context,
@@ -222,11 +222,10 @@ async def _select(
         # The exact context of the answering request, so a synthesis repair in
         # graph.answer_results replays what the model actually saw.
         state["agent_synthesis_messages"] = messages
-        state["agent_prompt_prefix_hash"] = prompt.prefix_hash
     client = models.for_step("agent" if selecting else "synthesize", sensitive=True)
     extra: dict[str, Any] = {}
     if not selecting:
-        extra["max_output_tokens"] = settings.workbench_composer_max_tokens
+        extra["max_output_tokens"] = settings.workbench_agent_synthesis_max_tokens
     return await client.complete(
         messages=messages,
         tools=definitions,
@@ -235,8 +234,6 @@ async def _select(
         timeout_s=budget.remaining_s(settings.llm_timeout_s),
         call_purpose=_PURPOSES[tool_choice],
         call_kind="repair" if repair_messages and selecting else "planned",
-        prompt_version=prompt.version,
-        prefix_hash=prompt.prefix_hash,
         catalog_version=catalog.version,
         **extra,
     )
@@ -687,7 +684,6 @@ async def run(state: dict[str, Any]) -> None:
     from app.services.workbench.graph import answer_results, sse
 
     emit = state["emit"]
-    state["agent_native"] = True
     budget = _budget(state)
     client = models.for_step("agent", sensitive=True)
     readiness = await client.health()

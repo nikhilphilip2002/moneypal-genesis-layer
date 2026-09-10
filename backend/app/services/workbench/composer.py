@@ -12,7 +12,6 @@ from app.services.workbench.facts import Fact
 from app.services.workbench.results import ToolResult
 
 MAX_TOTAL_EVIDENCE_CHARS = 12_000
-MAX_HISTORY_CHARS = 8_000
 MAX_FACTS_CHARS = 6_000
 _NUMBER = re.compile(r"(?<![\w.])[-+]?(?>\d[\d,]*(?:\.\d+)?)%?(?![%\w])")
 # Numbers that are part of a date or a period label are not numeric claims.
@@ -79,22 +78,6 @@ def evidence_text(results: Iterable[ToolResult]) -> str:
             blocks.append(rendered)
             remaining -= len(rendered)
     return "\n".join(blocks)
-
-
-def relevant_history(messages: list[dict[str, str]]) -> list[dict[str, str]]:
-    """Cap replay independently from evidence and retain newest complete messages."""
-    kept: list[dict[str, str]] = []
-    remaining = MAX_HISTORY_CHARS
-    for message in reversed(messages):
-        content = str(message.get("content", ""))
-        if not content:
-            continue
-        clipped = content[-remaining:]
-        kept.append({"role": str(message.get("role", "user")), "content": clipped})
-        remaining -= len(clipped)
-        if remaining <= 0:
-            break
-    return list(reversed(kept))
 
 
 def extractive_fallback(results: Iterable[ToolResult]) -> str:
@@ -420,7 +403,6 @@ def repair_message(unsupported: Iterable[NumericClaim | str], facts_block: str) 
 __all__ = [
     "ClaimValidation",
     "MAX_FACTS_CHARS",
-    "MAX_HISTORY_CHARS",
     "MAX_TOTAL_EVIDENCE_CHARS",
     "NumericClaim",
     "evidence_text",
@@ -430,7 +412,6 @@ __all__ = [
     "facts_text",
     "numbers_are_grounded",
     "numeric_claims",
-    "relevant_history",
     "remove_unsupported_claims",
     "remove_unsupported_numeric_sentences",
     "repair_message",

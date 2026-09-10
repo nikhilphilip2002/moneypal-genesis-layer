@@ -2,11 +2,9 @@ from app.services.nlq.llm import prompts as planner_prompts
 from app.services.workbench import prompts
 
 
-def test_composer_prefix_is_stable_across_evidence():
-    first = prompts.build_composer_prompt(question="q", findings="first")
-    second = prompts.build_composer_prompt(question="q", findings="second")
-    assert first.prefix_hash == second.prefix_hash
-    assert first.messages[0] == second.messages[0]
+def test_workbench_has_one_answer_system_prompt():
+    assert hasattr(prompts, "AGENT_SYSTEM_PROMPT")
+    assert not hasattr(prompts, "COMPOSER_SYSTEM_PROMPT")
 
 
 def test_planner_prefix_is_byte_stable():
@@ -15,23 +13,16 @@ def test_planner_prefix_is_byte_stable():
 
 
 def test_workbench_system_prompts_do_not_duplicate_json_schema_prose():
-    agent = prompts.build_agent_prompt(question="q").messages[0]["content"]
-    composer = prompts.build_composer_prompt(question="q", findings="e").messages[0]["content"]
-    for system_prompt in (agent, composer):
-        assert '"additionalProperties"' not in system_prompt
-        assert '"properties"' not in system_prompt
-
-
-def test_composer_has_no_router_catalog_sql_or_tool_implementation_context():
-    system = prompts.COMPOSER_SYSTEM_PROMPT.lower()
-    for forbidden in ("macro", "competitive", "regulatory", "route", "sql", "qdrant", "tool"):
-        assert forbidden not in system
+    content = prompts.build_agent_prompt(question="q").messages[0]["content"]
+    assert isinstance(content, list)
+    agent = content[0]["text"]
+    assert '"additionalProperties"' not in agent
+    assert '"properties"' not in agent
 
 
 def test_answer_prompts_do_not_duplicate_structured_result_rows():
-    for system in (prompts.COMPOSER_SYSTEM_PROMPT, prompts.AGENT_SYSTEM_PROMPT):
-        assert "Structured result rows are rendered separately" in system
-        assert "do not reproduce them as a Markdown table" in system
+    assert "Structured result rows are rendered separately" in prompts.AGENT_SYSTEM_PROMPT
+    assert "do not reproduce them as a Markdown table" in prompts.AGENT_SYSTEM_PROMPT
 
 
 def test_agent_prompt_retrieves_only_relevant_gold_metadata():
@@ -49,7 +40,6 @@ def test_agent_prompt_retrieves_only_relevant_gold_metadata():
 def test_agent_prompt_keeps_catalog_hints_out_of_stable_prefix():
     receipts = prompts.build_agent_prompt(question="cash receipts")
     leads = prompts.build_agent_prompt(question="MSME lead security value")
-    assert receipts.prefix_hash == leads.prefix_hash
     assert receipts.messages[0] == leads.messages[0]
     assert receipts.messages[-1] != leads.messages[-1]
 

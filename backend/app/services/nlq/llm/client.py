@@ -35,7 +35,6 @@ from app.services.nlq.llm.telemetry import (
     CallKind,
     CallPurpose,
     CallRecord,
-    prefix_hash as compute_prefix_hash,
     record_call,
 )
 
@@ -413,17 +412,13 @@ class OpenAICompatibleClient:
 
         request_started = asyncio.get_event_loop().time()
         prepared_messages = self._prepare_messages(messages, json_schema)
-        effective_prefix_hash = prefix_hash or compute_prefix_hash(prepared_messages[:1])
+        effective_prefix_hash = prefix_hash
         payload: dict[str, Any] = {
             "model": self.model,
             "messages": prepared_messages,
             "stream": False,
         }
         if self.provider == "llamacpp":
-            # Current llama-server defaults cache_prompt to true, but making it explicit
-            # protects this latency contract from server-version/default drift. The
-            # thinking setting was previously documented and parsed but never applied.
-            payload["cache_prompt"] = True
             payload["chat_template_kwargs"] = {
                 "enable_thinking": settings.nlq_llm_thinking,
             }

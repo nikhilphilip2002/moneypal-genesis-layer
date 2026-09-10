@@ -45,7 +45,7 @@ import yaml
 
 from app.services.nlq.catalog import get_catalog
 from app.services.nlq.llm import LLMResult, NativeToolCall
-from app.services.workbench import access, agent, agent_executor, history, models, prompts
+from app.services.workbench import access, agent, agent_executor, history, models
 from app.services.workbench.results import SourceResult
 
 
@@ -859,7 +859,6 @@ async def evaluate(
         "served_models": health.get("served_models", []),
         "requested_model": model_override or configured_model,
         "provider": getattr(client, "provider", "unknown"),
-        "prompt_version": prompts.AGENT_PROMPT_VERSION,
         "catalog_version": catalog.version,
         "agent_settings": {
             "max_rounds": agent.settings.workbench_agent_max_rounds,
