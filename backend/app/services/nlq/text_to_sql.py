@@ -363,11 +363,11 @@ def _few_shots() -> list[dict[str, str]]:
         {
             "role": "assistant",
             "content": (
-                '{"sql":"SELECT application_branch_code, AVG(interest_rate) AS avg_rate '
-                "FROM gold.semantic_loan_account WHERE product_code = 1 "
-                'AND sanction_date >= DATE \'2023-01-01\' '
+                '{"sql":"SELECT application_branch_code, AVG(interest_rate_percent) AS avg_rate '
+                "FROM gold.loan_accounts WHERE product_code = 1 "
+                'AND approved_on >= DATE \'2023-01-01\' '
                 'GROUP BY application_branch_code LIMIT 100",'
-                '"tables":["gold.semantic_loan_account"],'
+                '"tables":["gold.loan_accounts"],'
                 '"explanation":"Average rate per branch for product 1."}'
             ),
         },
@@ -378,11 +378,11 @@ def _few_shots() -> list[dict[str, str]]:
         {
             "role": "assistant",
             "content": (
-                '{"sql":"SELECT loan_account_number, dpd_days, total_overdue '
-                "FROM gold.semantic_portfolio_snapshot "
-                'WHERE dpd_days > 0 ORDER BY dpd_days DESC, total_overdue DESC '
+                '{"sql":"SELECT loan_account_number, days_past_due, total_overdue '
+                "FROM gold.daily_loan_status "
+                'WHERE days_past_due > 0 ORDER BY days_past_due DESC, total_overdue DESC '
                 'LIMIT 100",'
-                '"tables":["gold.semantic_portfolio_snapshot"],'
+                '"tables":["gold.daily_loan_status"],'
                 '"explanation":"Current delinquent accounts, worst first."}'
             ),
         },

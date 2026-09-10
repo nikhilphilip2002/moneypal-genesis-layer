@@ -47,7 +47,7 @@ class TestFlowMetrics:
     def test_disbursement_total(self, warehouse_cursor):
         expected = hand_scalar(
             warehouse_cursor,
-            "SELECT SUM(disbursement_amount) FROM gold.semantic_disbursement_event",
+            "SELECT SUM(amount_given) FROM gold.loan_disbursements",
         )
         actual = scalar(
             warehouse_cursor,
@@ -57,7 +57,7 @@ class TestFlowMetrics:
 
     def test_sanctioned_amount(self, warehouse_cursor):
         expected = hand_scalar(
-            warehouse_cursor, "SELECT SUM(sanction_amount) FROM gold.semantic_loan_account"
+            warehouse_cursor, "SELECT SUM(approved_amount) FROM gold.loan_accounts"
         )
         actual = scalar(
             warehouse_cursor,
@@ -70,12 +70,12 @@ class TestFlowMetrics:
             warehouse_cursor,
             QuerySpec(metrics=["loan_count"], period=Period(relative="all_time")),
         )
-        expected = hand_scalar(warehouse_cursor, "SELECT count(*) FROM gold.semantic_loan_account")
+        expected = hand_scalar(warehouse_cursor, "SELECT count(*) FROM gold.loan_accounts")
         assert actual == expected
 
     def test_amount_collected(self, warehouse_cursor):
         expected = hand_scalar(
-            warehouse_cursor, "SELECT SUM(total_paid) FROM gold.semantic_repayment_event"
+            warehouse_cursor, "SELECT SUM(total_amount_paid) FROM gold.loan_repayments"
         )
         actual = scalar(
             warehouse_cursor,
@@ -86,8 +86,8 @@ class TestFlowMetrics:
     def test_collection_activity_count(self, warehouse_cursor):
         expected = hand_scalar(
             warehouse_cursor,
-            "SELECT COUNT(*) FILTER (WHERE operation_type = 'activity') "
-            "FROM gold.semantic_collection_operation_event",
+            "SELECT COUNT(*) FILTER (WHERE activity_type = 'activity') "
+            "FROM gold.collection_activities",
         )
         actual = scalar(
             warehouse_cursor,
@@ -105,8 +105,8 @@ class TestRatioMetrics:
         repaid-over-disbursed, which makes every young loan look like a default."""
         expected = hand_scalar(
             warehouse_cursor,
-            "SELECT 100.0 * SUM(total_paid) / NULLIF(SUM(total_due), 0) "
-            "FROM gold.semantic_repayment_event",
+            "SELECT 100.0 * SUM(total_amount_paid) / NULLIF(SUM(total_due), 0) "
+            "FROM gold.loan_repayments",
         )
         actual = scalar(
             warehouse_cursor,
@@ -121,7 +121,7 @@ class TestRatioMetrics:
         )
         expected = hand_scalar(
             warehouse_cursor,
-            "SELECT SUM(sanction_amount) / NULLIF(count(*), 0) FROM gold.semantic_loan_account",
+            "SELECT SUM(approved_amount) / NULLIF(count(*), 0) FROM gold.loan_accounts",
         )
         assert close(actual, expected, 0.01)
 
@@ -164,7 +164,7 @@ class TestPointInTimeMetrics:
     def test_whole_book_outstanding(self, warehouse_cursor):
         expected = hand_scalar(
             warehouse_cursor,
-            "SELECT SUM(disbursed_amount - principal_repaid) FROM gold.semantic_loan_account",
+            "SELECT SUM(amount_given - principal_paid_so_far) FROM gold.loan_accounts",
         )
         actual = scalar(
             warehouse_cursor,
@@ -246,7 +246,7 @@ class TestBreakdownsSumToTheTotal:
                 metrics=["loan_count"], dimensions=["product"], period=Period(relative="all_time")
             ),
         )
-        total = hand_scalar(warehouse_cursor, "SELECT count(*) FROM gold.semantic_loan_account")
+        total = hand_scalar(warehouse_cursor, "SELECT count(*) FROM gold.loan_accounts")
         assert sum(int(r[1]) for r in rows) == total
 
     def test_outstanding_by_dpd_bucket_reconciles(self, warehouse_cursor):

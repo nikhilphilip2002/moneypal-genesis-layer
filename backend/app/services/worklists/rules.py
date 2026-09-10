@@ -36,9 +36,9 @@ FILTERABLE = {
     "branch": "s.branch_code",
     "product": "s.product_code",
     "scheme": "s.scheme_code",
-    "asset_class": "s.asset_code",
+    "asset_class": "s.loan_health_code",
     "agent": "l.agent_code",
-    "borrower": "s.customer_name",
+    "borrower": "l.customer_name",
     "loan_account": "s.loan_account_number",
 }
 
@@ -95,7 +95,7 @@ def compile_worklist(
         + "WHERE " + "\n  AND ".join(conditions) + "\n"
         # Ordered here only so the row cap is deterministic; the priority score is computed
         # in Python over the returned candidates and reorders them.
-        "ORDER BY s.total_overdue DESC NULLS LAST, s.dpd_days DESC NULLS LAST\n"
+        "ORDER BY s.total_overdue DESC NULLS LAST, s.days_past_due DESC NULLS LAST\n"
         "LIMIT :row_limit"
     )
 

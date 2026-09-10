@@ -35,7 +35,7 @@ MAX_ROWS = 5000
 # a mixture of numeric and text source types underneath them. Join identifiers by their
 # canonical text representation so a safe catalog edge does not fail on numeric = text.
 _TEXT_JOIN_KEYS = {
-    "entity_num",
+    "company_code",
     "loan_account_number",
     "customer_id",
     "application_number",
@@ -43,24 +43,24 @@ _TEXT_JOIN_KEYS = {
 
 # Alias per table, so generated SQL is readable in the lineage panel.
 _ALIASES = {
-    "gold.semantic_loan_account": "lam",
-    "gold.semantic_portfolio_snapshot": "portfolio",
-    "gold.semantic_disbursement_event": "disb",
-    "gold.semantic_repayment_event": "repay",
-    "gold.semantic_schedule_event": "sched",
-    "gold.semantic_gl_balance": "gl",
-    "gold.semantic_customer_profile": "customer",
-    "gold.semantic_customer_document": "document",
-    "gold.semantic_agent": "agent",
-    "gold.semantic_branch": "branch",
-    "gold.semantic_product_scheme": "product_scheme",
-    "gold.semantic_organization_hierarchy": "hierarchy",
-    "gold.semantic_collection_operation_event": "collection_op",
-    "gold.semantic_application": "application",
-    "gold.semantic_receipt_adjustment_event": "receipt_adjustment",
-    "gold.semantic_loan_ledger_event": "ledger_event",
-    "gold.semantic_origination_vintage": "vintage",
-    "gold.semantic_msme_lead": "msme",
+    "gold.loan_accounts": "loan",
+    "gold.daily_loan_status": "portfolio",
+    "gold.loan_disbursements": "disbursement",
+    "gold.loan_repayments": "repayment",
+    "gold.emi_schedule": "schedule",
+    "gold.general_ledger_balances": "general_ledger",
+    "gold.customers": "customer",
+    "gold.customer_kyc_documents": "customer_document",
+    "gold.agents": "agent",
+    "gold.branches": "branch",
+    "gold.loan_products": "loan_product",
+    "gold.staff_reporting_structure": "staff_hierarchy",
+    "gold.collection_activities": "collection_activity",
+    "gold.loan_applications": "application",
+    "gold.payment_receipts": "payment_receipt",
+    "gold.loan_account_entries": "account_entry",
+    "gold.loan_vintage_performance": "loan_vintage",
+    "gold.business_loan_leads": "business_lead",
 }
 
 

@@ -278,12 +278,12 @@ def test_customer_summary_returns_only_the_requested_profile_fields():
     )
 
     assert attempt.validated and attempt.provider == "catalog"
-    assert "FROM gold.semantic_customer_profile AS customer" in attempt.sql
-    assert "LEFT JOIN gold.semantic_loan_account AS loan" in attempt.sql
+    assert "FROM gold.customers AS customer" in attempt.sql
+    assert "LEFT JOIN gold.loan_accounts AS loan" in attempt.sql
     assert "customer.full_name AS customer_name" in attempt.sql
     assert "CAST(loan.loan_account_number AS TEXT) AS loan_account_number" in attempt.sql
-    assert "loan.sanction_amount" in attempt.sql
-    assert "loan.sanction_date" in attempt.sql
+    assert "loan.approved_amount AS sanction_amount" in attempt.sql
+    assert "loan.approved_on AS sanction_date" in attempt.sql
     assert "AS address" in attempt.sql
     assert "AS occupation" in attempt.sql
     assert "customer.home_branch_code" in attempt.sql
@@ -304,7 +304,7 @@ def test_repayment_history_is_newest_first_and_totals_before_limiting():
 
     assert attempt.validated and attempt.provider == "catalog"
     assert "SUM(total_due) OVER ()" in attempt.sql
-    assert "SUM(total_paid) OVER ()" in attempt.sql
+    assert "SUM(total_amount_paid) OVER ()" in attempt.sql
     assert "ORDER BY\n  repayment_date DESC" in attempt.sql
     assert attempt.sql.rstrip().endswith("LIMIT 500")
 
@@ -313,7 +313,7 @@ def test_gender_sample_uses_compound_join_and_stable_one_per_gender():
     attempt = _gender_sample(get_catalog())
 
     assert attempt.validated and attempt.provider == "catalog"
-    assert "customer.entity_num = loan.entity_num" in attempt.sql
+    assert "customer.company_code = loan.company_code" in attempt.sql
     assert "customer.customer_id = loan.customer_id" in attempt.sql
     assert "ROW_NUMBER() OVER" in attempt.sql
     assert "sample_rank = 1" in attempt.sql
@@ -329,7 +329,7 @@ def test_agent_details_use_the_governed_directory_and_exact_code():
     )
 
     assert attempt.validated and attempt.provider == "catalog"
-    assert "FROM gold.semantic_agent" in attempt.sql
+    assert "FROM gold.agents" in attempt.sql
     assert "LOWER(agent_code) = 'agnt45'" in attempt.sql
     assert "agent_name" in attempt.sql
     assert "linked_loan_count" in attempt.sql
@@ -376,7 +376,7 @@ def test_agent_count_uses_the_governed_agent_directory():
 
     assert attempt.validated and attempt.provider == "catalog"
     assert "COUNT(agent_code) AS agent_count" in attempt.sql
-    assert "FROM gold.semantic_agent" in attempt.sql
+    assert "FROM gold.agents" in attempt.sql
 
 
 def test_agent_accounts_use_exact_code_and_return_only_linked_account_numbers():
@@ -389,7 +389,7 @@ def test_agent_accounts_use_exact_code_and_return_only_linked_account_numbers():
     )
 
     assert attempt.validated and attempt.provider == "catalog"
-    assert "FROM gold.semantic_loan_account AS reporting" in attempt.sql
+    assert "FROM gold.loan_accounts AS reporting" in attempt.sql
     assert "LOWER(reporting.agent_code) = 'agnt45'" in attempt.sql
     assert "loan_account_number" in attempt.sql
     assert "COUNT(reporting.loan_account_number) OVER ()" in attempt.sql
@@ -406,7 +406,7 @@ def test_agent_customers_are_distinct_and_use_the_governed_loan_relation():
     )
 
     assert attempt.validated and attempt.provider == "catalog"
-    assert "FROM gold.semantic_loan_account AS reporting" in attempt.sql
+    assert "FROM gold.loan_accounts AS reporting" in attempt.sql
     assert "LOWER(reporting.agent_code) = 'agnt45'" in attempt.sql
     assert "GROUP BY" in attempt.sql and "reporting.customer_id" in attempt.sql
     assert "COUNT(DISTINCT reporting.loan_account_number) AS linked_loan_count" in attempt.sql
@@ -419,7 +419,7 @@ def test_agent_account_names_use_the_governed_linked_loan_row_when_requested():
     assert plan_result is not None
     assert plan_result.requested_fields == ["borrower_name"]
     attempt = _agent_accounts(plan_result, get_catalog())
-    assert "JOIN gold.semantic_loan_account AS loan" not in attempt.sql
+    assert "JOIN gold.loan_accounts AS loan" not in attempt.sql
     assert "reporting.customer_name AS borrower_name" in attempt.sql
     assert attempt.pii_columns == ["customer_name"]
 
@@ -437,9 +437,9 @@ def test_agent_account_projection_preserves_every_explicitly_requested_field():
     ]
     attempt = _agent_accounts(plan_result, get_catalog())
     assert "reporting.customer_name AS borrower_name" in attempt.sql
-    assert "reporting.sanction_amount" in attempt.sql
+    assert "reporting.approved_amount" in attempt.sql
     assert "reporting.scheme_name" in attempt.sql
-    assert "reporting.number_of_emis" in attempt.sql
+    assert "reporting.total_emi_count" in attempt.sql
 
 
 def test_named_agent_customer_table_can_be_refined_with_disbursed_amount_and_tenure():
@@ -461,8 +461,8 @@ def test_named_agent_customer_table_can_be_refined_with_disbursed_amount_and_ten
         "borrower_name", "disbursed_amount", "number_of_emis",
     ]
     attempt = _agent_accounts(plan_result, get_catalog())
-    assert "reporting.disbursed_amount" in attempt.sql
-    assert "reporting.number_of_emis" in attempt.sql
+    assert "reporting.amount_given" in attempt.sql
+    assert "reporting.total_emi_count" in attempt.sql
 
 
 def test_agent_customer_table_accepts_add_and_misspelled_and_refinement():
@@ -502,7 +502,7 @@ def test_agent_name_candidates_use_the_governed_agent_directory(monkeypatch):
     )[1])
 
     assert _candidate_agents("Vanitha", get_catalog()) == []
-    assert "FROM gold.semantic_agent" in captured["sql"]
+    assert "FROM gold.agents" in captured["sql"]
     assert "agent_name" in captured["sql"]
     assert "= 'vanitha'" in captured["sql"]
 
@@ -646,7 +646,7 @@ def test_branch_directory_uses_the_governed_branch_master():
     )
 
     assert attempt.validated and attempt.provider == "catalog"
-    assert "FROM gold.semantic_branch" in attempt.sql
+    assert "FROM gold.branches" in attempt.sql
     assert "branch_code" in attempt.sql
     assert "branch_name" in attempt.sql
     assert "branch_status" in attempt.sql
@@ -661,8 +661,8 @@ def test_named_branch_customer_list_uses_governed_branch_and_loan_relations():
     assert plan_result.detail == "branch_customers"
 
     attempt = _branch_customers(plan_result, get_catalog())
-    assert "FROM gold.semantic_loan_account AS reporting" in attempt.sql
-    assert "JOIN gold.semantic_branch AS branch" in attempt.sql
+    assert "FROM gold.loan_accounts AS reporting" in attempt.sql
+    assert "JOIN gold.branches AS branch" in attempt.sql
     assert "branch.branch_code = reporting.application_branch_code" in attempt.sql
     assert "LOWER(TRIM(branch.branch_name)) = 'ujire'" in attempt.sql
     assert "GROUP BY" in attempt.sql and "reporting.customer_id" in attempt.sql
@@ -678,7 +678,7 @@ def test_product_code_name_uses_the_governed_product_master():
     )
 
     assert attempt.validated and attempt.provider == "catalog"
-    assert "FROM gold.semantic_product_scheme" in attempt.sql
+    assert "FROM gold.loan_products" in attempt.sql
     assert "LOWER(CAST(product_code AS TEXT)) = '16'" in attempt.sql
     assert "product_name" in attempt.sql
 

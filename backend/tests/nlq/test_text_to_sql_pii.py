@@ -11,14 +11,14 @@ from app.services.nlq.text_to_sql import (
 
 
 def _loan_context(*, allow_pii: bool) -> str:
-    hits = RetrievalResult(tables=["gold.semantic_loan_account"], mode="lexical")
+    hits = RetrievalResult(tables=["gold.loan_accounts"], mode="lexical")
     return _context_block(hits, get_catalog(), allow_pii=allow_pii)
 
 
 def test_authorized_context_exposes_governed_borrower_fields():
     context = _loan_context(allow_pii=True)
     assert "customer_name" in context
-    assert "principal_repaid" in context
+    assert "principal_paid_so_far" in context
     assert "date_of_birth" not in context
 
 
@@ -28,13 +28,13 @@ def test_unauthorized_context_hides_borrower_name():
 
 def test_planner_table_hint_limits_generated_sql_context():
     hits = RetrievalResult(
-        tables=["gold.semantic_msme_lead", "gold.semantic_loan_account"], mode="lexical"
+        tables=["gold.business_loan_leads", "gold.loan_accounts"], mode="lexical"
     )
     context = _context_block(
-        hits, get_catalog(), tables=["gold.semantic_msme_lead"],
+        hits, get_catalog(), tables=["gold.business_loan_leads"],
     )
-    assert "gold.semantic_msme_lead" in context
-    assert "gold.semantic_loan_account" not in context
+    assert "gold.business_loan_leads" in context
+    assert "gold.loan_accounts" not in context
 
 
 def test_prompt_allows_only_explicitly_needed_pii_for_authorized_roles():
@@ -53,14 +53,14 @@ def test_pii_allowlist_is_curated_and_gold_catalog_backed():
 
 def test_generated_aggregate_alias_inherits_catalog_unit():
     units = _infer_column_units(
-        "SELECT firm_type_desc, SUM(requested_amount) AS total_requested_amount, "
-        "SUM(security_value) AS total_security_value FROM gold.semantic_msme_lead "
-        "GROUP BY firm_type_desc LIMIT 5000",
-        ["gold.semantic_msme_lead"],
+        "SELECT business_type, SUM(amount_requested) AS total_requested_amount, "
+        "SUM(security_value) AS total_security_value FROM gold.business_loan_leads "
+        "GROUP BY business_type LIMIT 5000",
+        ["gold.business_loan_leads"],
         get_catalog(),
     )
     assert units == {
-        "firm_type_desc": "text",
+        "business_type": "text",
         "total_requested_amount": "inr",
         "total_security_value": "inr",
     }

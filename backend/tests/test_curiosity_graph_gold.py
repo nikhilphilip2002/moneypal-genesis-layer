@@ -44,9 +44,9 @@ def test_graph_service_does_not_query_silver_or_bronze_views():
     source = Path(__file__).parents[1] / "app/services/curiosity_graph.py"
     text = source.read_text(encoding="utf-8")
 
-    assert "gold.semantic_loan_account" in text
-    assert "gold.semantic_portfolio_snapshot" in text
-    assert "gold.semantic_branch" in text
+    assert "gold.loan_accounts" in text
+    assert "gold.daily_loan_status" in text
+    assert "gold.branches" in text
     assert "silver." not in text
     assert "bronze." not in text
 
@@ -85,8 +85,8 @@ def test_where_filters_support_tenure_and_loan_size():
     })
 
     assert "l.agent_code::text = %s" in where
-    assert "l.number_of_emis > 24 AND l.number_of_emis <= 36" in where
-    assert "l.sanction_amount >= 200000 AND l.sanction_amount < 500000" in where
+    assert "l.total_emi_count > 24 AND l.total_emi_count <= 36" in where
+    assert "l.approved_amount >= 200000 AND l.approved_amount < 500000" in where
     assert "AGNT45" in params
     assert "1616" in params
 
@@ -124,4 +124,3 @@ def test_admin_customer_details_endpoint(monkeypatch):
     assert result["profile"]["customer_id"] == "8"
     assert "loans" in result
     assert "repayment_history" in result
-

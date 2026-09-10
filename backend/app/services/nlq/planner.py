@@ -685,7 +685,7 @@ def _common_business_plan(question: str) -> PlanResult | None:
                 if with_loan_names
                 else "list the distinct account interest rates and loan count at each rate"
             ),
-            tables=["gold.semantic_loan_account"],
+            tables=["gold.loan_accounts"],
             confidence=1.0,
             reasoning="a distinct rate distribution is a governed column-list query",
         )
@@ -1103,7 +1103,7 @@ def _agent_directory_plan(question: str) -> SqlPlan | None:
         return None
     return SqlPlan(
         intent=question,
-        tables=["gold.semantic_agent"],
+        tables=["gold.agents"],
         confidence=1.0,
         reasoning="requested fields from the governed current agent directory",
     )

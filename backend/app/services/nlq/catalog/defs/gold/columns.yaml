@@ -1,538 +1,538 @@
-# Complete column contract for the 18 assistant-facing semantic views.
-- {id: agent.code, table: gold.semantic_agent, column: agent_code, label: Agent code}
-- {id: agent.name, table: gold.semantic_agent, column: agent_name, label: Agent name, sensitivity: pii}
-- {id: agent.type, table: gold.semantic_agent, column: agent_type, label: Agent type}
-- {id: agent.designation, table: gold.semantic_agent, column: designation, label: Designation}
-- {id: agent.mobile, table: gold.semantic_agent, column: mobile, label: Agent mobile, sensitivity: pii}
-- {id: agent.email, table: gold.semantic_agent, column: email, label: Agent email, sensitivity: pii}
-- {id: agent.joined_on, table: gold.semantic_agent, column: joined_on, label: Joined on, unit: date}
-- {id: agent.branch_code, table: gold.semantic_agent, column: branch_code, label: Branch code}
-- {id: agent.role_code, table: gold.semantic_agent, column: role_code, label: Role code}
-- {id: agent.linked_customer_count, table: gold.semantic_agent, column: linked_customer_count, label: Linked customer count, unit: count, agg: [sum, avg, max]}
-- {id: agent.loan_count, table: gold.semantic_agent, column: linked_loan_count, label: Linked loan count, unit: count, agg: [sum]}
-- {id: agent.source_systems, table: gold.semantic_agent, column: source_systems, label: Source systems}
-- {id: agent.data_as_of, table: gold.semantic_agent, column: data_as_of, label: Data As Of, unit: date}
-- {id: agent.coverage_status, table: gold.semantic_agent, column: coverage_status, label: Coverage Status}
-- {id: application.entity_num, table: gold.semantic_application, column: entity_num, label: Entity num}
-- {id: application.number, table: gold.semantic_application, column: application_number, label: Application number}
-- {id: application.date, table: gold.semantic_application, column: application_date, label: Application date, unit: date}
-- {id: application.branch_code, table: gold.semantic_application, column: branch_code, label: Branch code}
-- {id: application.customer_id, table: gold.semantic_application, column: customer_id, label: Customer ID}
-- {id: application.product_code, table: gold.semantic_application, column: product_code, label: Product code}
-- {id: application.scheme_code, table: gold.semantic_application, column: scheme_code, label: Scheme code}
-- {id: application.loan_type, table: gold.semantic_application, column: loan_type, label: Loan type}
-- {id: application.purpose_code, table: gold.semantic_application, column: loan_purpose_code, label: Loan purpose code}
-- {id: application.applied_amount, table: gold.semantic_application, column: applied_amount, label: Applied amount, unit: inr, agg: [sum, avg, max]}
-- {id: application.application_sanction_amount, table: gold.semantic_application, column: application_sanction_amount, label: Application Sanction Amount, unit: inr, agg: [sum, avg, max]}
-- {id: application.loan_account_number, table: gold.semantic_application, column: loan_account_number, label: Loan account number, synonyms: [loan account, account number, linked loan]}
-- {id: application.coapplicant_count, table: gold.semantic_application, column: coapplicant_count, label: Co-applicant count, unit: count, agg: [sum, avg, max]}
-- {id: application.guarantor_count, table: gold.semantic_application, column: guarantor_count, label: Guarantor count, unit: count, agg: [sum, avg, max]}
-- {id: application.sourced_by, table: gold.semantic_application, column: sourced_by, label: Sourced by, sensitivity: pii}
-- {id: application.dealer_code, table: gold.semantic_application, column: dealer_code, label: Dealer code}
-- {id: application.direct_selling_agent, table: gold.semantic_application, column: direct_selling_agent, label: Direct selling agent, sensitivity: pii}
-- {id: application.canvassed_by, table: gold.semantic_application, column: canvassed_by, label: Canvassed by, sensitivity: pii}
-- {id: application.last_completion_stage, table: gold.semantic_application, column: last_completion_stage, label: Last completion stage}
-- {id: application.authorized_on, table: gold.semantic_application, column: authorized_on, label: Authorized on, unit: datetime}
-- {id: application.account_link_status, table: gold.semantic_application, column: account_link_status, label: Account link status}
-- {id: application.observable_outcome_status, table: gold.semantic_application, column: observable_outcome_status, label: Observable Outcome Status}
-- {id: application.application_disbursement_sequence, table: gold.semantic_application, column: application_disbursement_sequence, label: Application Disbursement Sequence, unit: count}
-- {id: application_outcome.first_disbursement_date, table: gold.semantic_application, column: first_disbursement_date, label: First disbursement date, unit: date}
-- {id: application.observable_disbursed_amount, table: gold.semantic_application, column: observable_disbursed_amount, label: Observable Disbursed Amount, unit: inr, agg: [sum, avg, max]}
-- {id: application.observable_sanction_amount, table: gold.semantic_application, column: observable_sanction_amount, label: Observable Sanction Amount, unit: inr, agg: [sum, avg, max]}
-- {id: application.checklist_header_count, table: gold.semantic_application, column: checklist_header_count, label: Checklist Header Count, unit: count}
-- {id: application.checklist_approved_count, table: gold.semantic_application, column: checklist_approved_count, label: Checklist Approved Count, unit: count}
-- {id: application.checklist_rejected_count, table: gold.semantic_application, column: checklist_rejected_count, label: Checklist Rejected Count, unit: count}
-- {id: application.first_checklist_entered_on, table: gold.semantic_application, column: first_checklist_entered_on, label: First Checklist Entered On, unit: datetime}
-- {id: application.last_checklist_entered_on, table: gold.semantic_application, column: last_checklist_entered_on, label: Last Checklist Entered On, unit: datetime}
-- {id: application.checklist_coverage_status, table: gold.semantic_application, column: checklist_coverage_status, label: Checklist Coverage Status}
-- {id: application.source_systems, table: gold.semantic_application, column: source_systems, label: Source systems}
-- {id: application.data_as_of, table: gold.semantic_application, column: data_as_of, label: Data As Of, unit: date}
-- {id: application.coverage_status, table: gold.semantic_application, column: coverage_status, label: Coverage Status}
-- {id: branch.entity_num, table: gold.semantic_branch, column: entity_num, label: Entity num}
-- {id: branch.branch_code, table: gold.semantic_branch, column: branch_code, label: Branch code}
-- {id: branch.branch_name, table: gold.semantic_branch, column: branch_name, label: Branch name}
-- {id: branch.branch_address, table: gold.semantic_branch, column: branch_address, label: Branch address}
-- {id: branch.location_code, table: gold.semantic_branch, column: location_code, label: Location code}
-- {id: branch.branch_category_code, table: gold.semantic_branch, column: branch_category_code, label: Branch category code}
-- {id: branch.branch_category_name, table: gold.semantic_branch, column: branch_category_name, label: Branch category name}
-- {id: branch.branch_size, table: gold.semantic_branch, column: branch_size, label: Branch size}
-- {id: branch.admin_unit_type, table: gold.semantic_branch, column: admin_unit_type, label: Admin unit type}
-- {id: branch.parent_admin_code, table: gold.semantic_branch, column: parent_admin_code, label: Parent admin code}
-- {id: branch.division_codes, table: gold.semantic_branch, column: division_codes, label: Division codes}
-- {id: branch.ifsc_code, table: gold.semantic_branch, column: ifsc_code, label: IFSC code}
-- {id: branch.micr_code, table: gold.semantic_branch, column: micr_code, label: MICR code}
-- {id: branch.bsr_code, table: gold.semantic_branch, column: bsr_code, label: BSR code}
-- {id: branch.base_currency, table: gold.semantic_branch, column: base_currency, label: Base currency}
-- {id: branch.phone_primary, table: gold.semantic_branch, column: phone_primary, label: Phone primary}
-- {id: branch.email_primary, table: gold.semantic_branch, column: email_primary, label: Email primary}
-- {id: branch.opened_on, table: gold.semantic_branch, column: opened_on, label: Opened on, unit: date}
-- {id: branch.closed_on, table: gold.semantic_branch, column: closed_on, label: Closed on, unit: date}
-- {id: branch.branch_status, table: gold.semantic_branch, column: branch_status, label: Branch status}
-- {id: geo.district_code, table: gold.semantic_branch, column: district_code, label: District code}
-- {id: geo.district_name, table: gold.semantic_branch, column: district_name, label: District name}
-- {id: geo.state_code, table: gold.semantic_branch, column: state_code, label: State code}
-- {id: geo.state_name, table: gold.semantic_branch, column: state_name, label: State name}
-- {id: geo.gst_state_code, table: gold.semantic_branch, column: gst_state_code, label: GST state code}
-- {id: geo.region_name, table: gold.semantic_branch, column: region_name, label: Region name}
-- {id: branch.geography_match_status, table: gold.semantic_branch, column: geography_match_status, label: Geography Match Status}
-- {id: branch.source_systems, table: gold.semantic_branch, column: source_systems, label: Source systems}
-- {id: branch.data_as_of, table: gold.semantic_branch, column: data_as_of, label: Data As Of, unit: date}
-- {id: branch.coverage_status, table: gold.semantic_branch, column: coverage_status, label: Coverage Status}
-- {id: collection_operation_event.operation_type, table: gold.semantic_collection_operation_event, column: operation_type, label: Operation Type}
-- {id: assignment.entity_num, table: gold.semantic_collection_operation_event, column: entity_num, label: Entity num}
-- {id: collection_operation_event.source_event_key, table: gold.semantic_collection_operation_event, column: source_event_key, label: Source Event Key}
-- {id: collection_operation_event.operation_date, table: gold.semantic_collection_operation_event, column: operation_date, label: Operation Date, unit: date}
-- {id: collection_operation_event.operation_timestamp, table: gold.semantic_collection_operation_event, column: operation_timestamp, label: Operation Timestamp, unit: datetime}
-- {id: collection_operation_event.application_or_reference_number, table: gold.semantic_collection_operation_event, column: application_or_reference_number, label: Application Or Reference Number}
-- {id: assignment.customer_id, table: gold.semantic_collection_operation_event, column: customer_id, label: Customer ID}
-- {id: collection_operation_event.loan_account_number, table: gold.semantic_collection_operation_event, column: loan_account_number, label: Loan Account Number}
-- {id: collection_activity.branch_code, table: gold.semantic_collection_operation_event, column: branch_code, label: Branch code}
-- {id: handover.from_branch_code, table: gold.semantic_collection_operation_event, column: from_branch_code, label: From branch code}
-- {id: collection_operation_event.to_branch_code, table: gold.semantic_collection_operation_event, column: to_branch_code, label: To Branch Code}
-- {id: collection_operation_event.actor_user_id, table: gold.semantic_collection_operation_event, column: actor_user_id, label: Actor User Id, sensitivity: pii}
-- {id: collection_operation_event.actor_user_name, table: gold.semantic_collection_operation_event, column: actor_user_name, label: Actor User Name, sensitivity: pii}
-- {id: collection_operation_event.manager_user_id, table: gold.semantic_collection_operation_event, column: manager_user_id, label: Manager User Id, sensitivity: pii}
-- {id: collection_activity.agent_code, table: gold.semantic_collection_operation_event, column: agent_code, label: Agent code}
-- {id: assignment.vendor_type, table: gold.semantic_collection_operation_event, column: vendor_type, label: Vendor type}
-- {id: assignment.vendor_id, table: gold.semantic_collection_operation_event, column: vendor_id, label: Vendor ID}
-- {id: assignment.cpv_type, table: gold.semantic_collection_operation_event, column: cpv_type, label: CPV type}
-- {id: assignment.customer_type, table: gold.semantic_collection_operation_event, column: customer_type, label: Customer type}
-- {id: assignment.assigned_on, table: gold.semantic_collection_operation_event, column: assigned_on, label: Assigned on, synonyms: [assigned date, assignment date], unit: date}
-- {id: assignment.completed_on, table: gold.semantic_collection_operation_event, column: completed_on, label: Completed on, unit: date}
-- {id: collection_operation_event.handover_status, table: gold.semantic_collection_operation_event, column: handover_status, label: Handover Status, synonyms: [handover completion, pending handover]}
-- {id: collection_operation_event.handover_effective_date, table: gold.semantic_collection_operation_event, column: handover_effective_date, label: Handover Effective Date, unit: date}
-- {id: collection_activity.total_amount, table: gold.semantic_collection_operation_event, column: total_collection_amount, label: Total collection amount, unit: inr, agg: [sum, avg, max]}
-- {id: collection_activity.final_amount, table: gold.semantic_collection_operation_event, column: final_collection_amount, label: Final collection amount, unit: inr, agg: [sum, avg, max]}
-- {id: collection_operation_event.posting_branch_code, table: gold.semantic_collection_operation_event, column: posting_branch_code, label: Posting Branch Code}
-- {id: collection_operation_event.posting_date, table: gold.semantic_collection_operation_event, column: posting_date, label: Posting Date, unit: date}
-- {id: collection_activity.run_number, table: gold.semantic_collection_operation_event, column: run_number, label: Run number, unit: count}
-- {id: collection_operation_event.account_link_status, table: gold.semantic_collection_operation_event, column: account_link_status, label: Account Link Status}
-- {id: assignment.source_systems, table: gold.semantic_collection_operation_event, column: source_systems, label: Source systems}
-- {id: collection_operation_event.data_as_of, table: gold.semantic_collection_operation_event, column: data_as_of, label: Data As Of, unit: date}
-- {id: collection_operation_event.coverage_status, table: gold.semantic_collection_operation_event, column: coverage_status, label: Coverage Status}
-- {id: kyc.inventory_num, table: gold.semantic_customer_document, column: inventory_num, label: Inventory num}
-- {id: kyc.document_sl, table: gold.semantic_customer_document, column: document_sl, label: Document serial}
-- {id: kyc.entity, table: gold.semantic_customer_document, column: entity_num, label: Entity}
-- {id: kyc.customer_id, table: gold.semantic_customer_document, column: customer_id, label: Customer ID}
-- {id: kyc.customer_name, table: gold.semantic_customer_document, column: customer_name, label: Customer name, sensitivity: pii}
-- {id: kyc.pid_type_code, table: gold.semantic_customer_document, column: pid_type_code, label: PID type code}
-- {id: kyc.type, table: gold.semantic_customer_document, column: pid_type_desc, label: Document type}
-- {id: kyc.number, table: gold.semantic_customer_document, column: document_number, label: Document number, sensitivity: pii}
-- {id: kyc.issue_date, table: gold.semantic_customer_document, column: issue_date, label: Issue date, unit: date}
-- {id: kyc.expiry, table: gold.semantic_customer_document, column: expiry_date, label: Expiry date, unit: date, sensitivity: pii}
-- {id: kyc.issue_place, table: gold.semantic_customer_document, column: issue_place, label: Issue place, sensitivity: pii}
-- {id: kyc.issue_authority, table: gold.semantic_customer_document, column: issue_authority, label: Issue authority}
-- {id: kyc.is_address_proof, table: gold.semantic_customer_document, column: is_address_proof, label: Is address proof, unit: boolean}
-- {id: kyc.is_identity_proof, table: gold.semantic_customer_document, column: is_identity_proof, label: Is identity proof, unit: boolean}
-- {id: kyc.is_pan_type, table: gold.semantic_customer_document, column: is_pan_type, label: Is PAN type, unit: boolean}
-- {id: kyc.is_aadhaar_type, table: gold.semantic_customer_document, column: is_aadhaar_type, label: Is Aadhaar type, unit: boolean}
-- {id: customer_document.document_status, table: gold.semantic_customer_document, column: document_status, label: Document Status}
-- {id: kyc.source_systems, table: gold.semantic_customer_document, column: source_systems, label: Source systems}
-- {id: customer_document.data_as_of, table: gold.semantic_customer_document, column: data_as_of, label: Data As Of, unit: date}
-- {id: customer_document.coverage_status, table: gold.semantic_customer_document, column: coverage_status, label: Coverage Status}
-- {id: customer.entity, table: gold.semantic_customer_profile, column: entity_num, label: Entity}
-- {id: customer.id, table: gold.semantic_customer_profile, column: customer_id, label: Customer ID}
-- {id: customer.customer_ucid, table: gold.semantic_customer_profile, column: customer_ucid, label: Customer UCID}
-- {id: customer.customer_type, table: gold.semantic_customer_profile, column: customer_type, label: Customer type}
-- {id: customer.customer_category_code, table: gold.semantic_customer_profile, column: customer_category_code, label: Customer category code}
-- {id: customer.customer_category, table: gold.semantic_customer_profile, column: customer_category, label: Customer category}
-- {id: customer.customer_status, table: gold.semantic_customer_profile, column: customer_status, label: Customer status}
-- {id: customer.full_name, table: gold.semantic_customer_profile, column: full_name, label: Customer name, sensitivity: pii}
-- {id: customer.prefix_code, table: gold.semantic_customer_profile, column: prefix_code, label: Prefix code}
-- {id: customer.first_name, table: gold.semantic_customer_profile, column: first_name, label: First name, sensitivity: pii}
-- {id: customer.middle_name, table: gold.semantic_customer_profile, column: middle_name, label: Middle name, sensitivity: pii}
-- {id: customer.last_name, table: gold.semantic_customer_profile, column: last_name, label: Last name, sensitivity: pii}
-- {id: customer.father_name, table: gold.semantic_customer_profile, column: father_name, label: Father name, sensitivity: pii}
-- {id: customer.dob, table: gold.semantic_customer_profile, column: date_of_birth, label: Date of birth, unit: date, sensitivity: pii}
-- {id: customer.age, table: gold.semantic_customer_profile, column: age, label: Age, unit: count, agg: [avg, max, min]}
-- {id: customer.gender, table: gold.semantic_customer_profile, column: gender, label: Gender}
-- {id: customer.marital_status, table: gold.semantic_customer_profile, column: marital_status, label: Marital status}
-- {id: customer.resident_status, table: gold.semantic_customer_profile, column: resident_status, label: Resident status}
-- {id: customer.occupation_type, table: gold.semantic_customer_profile, column: occupation_type, label: Occupation type}
-- {id: customer.occupation_name, table: gold.semantic_customer_profile, column: occupation_name, label: Occupation name}
-- {id: customer.occupation_nature, table: gold.semantic_customer_profile, column: occupation_nature, label: Occupation nature}
-- {id: customer.yearly_income, table: gold.semantic_customer_profile, column: yearly_income, label: Yearly income, unit: inr, agg: [sum, avg, max]}
-- {id: customer.monthly_income, table: gold.semantic_customer_profile, column: monthly_income, label: Monthly income, unit: inr, agg: [sum, avg, max]}
-- {id: customer.risk_rating, table: gold.semantic_customer_profile, column: risk_rating, label: Risk rating}
-- {id: customer.mobile, table: gold.semantic_customer_profile, column: mobile_primary, label: Mobile, sensitivity: pii}
-- {id: customer.mobile_secondary, table: gold.semantic_customer_profile, column: mobile_secondary, label: Mobile secondary, sensitivity: pii}
-- {id: customer.email, table: gold.semantic_customer_profile, column: email, label: Email, sensitivity: pii}
-- {id: customer.landline, table: gold.semantic_customer_profile, column: landline, label: Landline, sensitivity: pii}
-- {id: customer.pan, table: gold.semantic_customer_profile, column: pan_number, label: PAN, sensitivity: pii}
-- {id: customer.aadhaar, table: gold.semantic_customer_profile, column: aadhaar_number, label: Aadhaar, sensitivity: pii}
-- {id: customer.kyc_verified_flag, table: gold.semantic_customer_profile, column: kyc_verified_flag, label: KYC verified flag, synonyms: [unverified customer, KYC not verified, unverified KYC]}
-- {id: customer_profile.kyc_document_count, table: gold.semantic_customer_profile, column: kyc_document_count, label: Kyc Document Count, unit: count}
-- {id: customer_profile.kyc_identity_proof_count, table: gold.semantic_customer_profile, column: kyc_identity_proof_count, label: Kyc Identity Proof Count, unit: count}
-- {id: customer_profile.kyc_address_proof_count, table: gold.semantic_customer_profile, column: kyc_address_proof_count, label: Kyc Address Proof Count, unit: count}
-- {id: customer_profile.kyc_expired_document_count, table: gold.semantic_customer_profile, column: kyc_expired_document_count, label: Kyc Expired Document Count, unit: count}
-- {id: customer.address_line1, table: gold.semantic_customer_profile, column: address_line1, label: Address line1, sensitivity: pii}
-- {id: customer.address_line2, table: gold.semantic_customer_profile, column: address_line2, label: Address line2, sensitivity: pii}
-- {id: customer.landmark, table: gold.semantic_customer_profile, column: landmark, label: Landmark, sensitivity: pii}
-- {id: customer.city_code, table: gold.semantic_customer_profile, column: city_code, label: City code}
-- {id: customer.city, table: gold.semantic_customer_profile, column: city, label: City, sensitivity: pii}
-- {id: customer.district_code, table: gold.semantic_customer_profile, column: district_code, label: District code}
-- {id: customer.district, table: gold.semantic_customer_profile, column: district, label: District, sensitivity: pii}
-- {id: customer.state_code, table: gold.semantic_customer_profile, column: state_code, label: State code, sensitivity: pii}
-- {id: customer.state, table: gold.semantic_customer_profile, column: state, label: State}
-- {id: customer.pincode, table: gold.semantic_customer_profile, column: pincode, label: Pincode, sensitivity: pii}
-- {id: customer.additional_address, table: gold.semantic_customer_profile, column: additional_address, label: Additional address, sensitivity: pii}
-- {id: customer.home_branch_code, table: gold.semantic_customer_profile, column: home_branch_code, label: Home branch code}
-- {id: customer.home_branch_name, table: gold.semantic_customer_profile, column: home_branch_name, label: Home branch name, synonyms: [home branch]}
-- {id: customer.agency_code, table: gold.semantic_customer_profile, column: agency_code, label: Agency code}
-- {id: customer.agency_name, table: gold.semantic_customer_profile, column: agency_name, label: Agency name, sensitivity: pii}
-- {id: customer.staff_emp_num, table: gold.semantic_customer_profile, column: staff_emp_num, label: Staff emp num}
-- {id: customer.staff_name, table: gold.semantic_customer_profile, column: staff_name, label: Staff name, sensitivity: pii}
-- {id: customer.is_corporate, table: gold.semantic_customer_profile, column: is_corporate, label: Is corporate, unit: boolean}
-- {id: customer.is_director_elsewhere, table: gold.semantic_customer_profile, column: is_director_elsewhere, label: Is director elsewhere, unit: boolean}
-- {id: customer.primary_din, table: gold.semantic_customer_profile, column: primary_din, label: Primary DIN, sensitivity: pii}
-- {id: customer.firm_party_count, table: gold.semantic_customer_profile, column: firm_party_count, label: Firm party count, unit: count, agg: [sum, avg, max]}
-- {id: customer.related_loan_count, table: gold.semantic_customer_profile, column: related_loan_count, label: Related loan count, unit: count, agg: [sum, avg, max]}
-- {id: customer.source_systems, table: gold.semantic_customer_profile, column: source_systems, label: Source systems}
-- {id: customer_profile.data_as_of, table: gold.semantic_customer_profile, column: data_as_of, label: Data As Of, unit: date}
-- {id: customer_profile.coverage_status, table: gold.semantic_customer_profile, column: coverage_status, label: Coverage Status}
-- {id: disb.entity_num, table: gold.semantic_disbursement_event, column: entity_num, label: Entity num}
-- {id: disb.loan_account_number, table: gold.semantic_disbursement_event, column: loan_account_number, label: Loan account number, synonyms: [loan account, account number]}
-- {id: disb.sequence, table: gold.semantic_disbursement_event, column: disbursement_sequence, label: Disbursement sequence, unit: count}
-- {id: disb.date, table: gold.semantic_disbursement_event, column: disbursement_date, label: Disbursement date, unit: date}
-- {id: disb.amount, table: gold.semantic_disbursement_event, column: disbursement_amount, label: Disbursement amount, unit: inr, agg: [sum, avg, max]}
-- {id: disb.charges_amount, table: gold.semantic_disbursement_event, column: charges_amount, label: Charges amount, unit: inr, agg: [sum, avg, max]}
-- {id: disb.net_amount, table: gold.semantic_disbursement_event, column: net_paid_amount, label: Net amount paid, synonyms: [net paid amount], unit: inr, agg: [sum, avg, max]}
-- {id: disb.currency_code, table: gold.semantic_disbursement_event, column: currency_code, label: Currency code}
-- {id: disb.posting_branch_code, table: gold.semantic_disbursement_event, column: posting_branch_code, label: Posting branch code}
-- {id: disb.customer_id, table: gold.semantic_disbursement_event, column: customer_id, label: Customer ID}
-- {id: disb.application_branch_code, table: gold.semantic_disbursement_event, column: application_branch_code, label: Application branch code}
-- {id: disbursement_event.reporting_branch_code, table: gold.semantic_disbursement_event, column: reporting_branch_code, label: Reporting Branch Code}
-- {id: disb.product_code, table: gold.semantic_disbursement_event, column: product_code, label: Product code}
-- {id: disb.scheme_code, table: gold.semantic_disbursement_event, column: scheme_code, label: Scheme code}
-- {id: disb.agent_code, table: gold.semantic_disbursement_event, column: agent_code, label: Agent code}
-- {id: disbursement_event.source_event_key, table: gold.semantic_disbursement_event, column: source_event_key, label: Source Event Key}
-- {id: disbursement_event.event_type, table: gold.semantic_disbursement_event, column: event_type, label: Event Type}
-- {id: disbursement_event.source_systems, table: gold.semantic_disbursement_event, column: source_systems, label: Source Systems}
-- {id: disbursement_event.data_as_of, table: gold.semantic_disbursement_event, column: data_as_of, label: Data As Of, unit: date}
-- {id: disbursement_event.coverage_status, table: gold.semantic_disbursement_event, column: coverage_status, label: Coverage Status}
-- {id: gl.date, table: gold.semantic_gl_balance, column: balance_date, label: Balance date, unit: date}
-- {id: gl.entity_num, table: gold.semantic_gl_balance, column: entity_num, label: Entity num}
-- {id: gl.branch, table: gold.semantic_gl_balance, column: branch_code, label: GL branch}
-- {id: gl.branch_name, table: gold.semantic_gl_balance, column: branch_name, label: Branch name}
-- {id: gl.number, table: gold.semantic_gl_balance, column: gl_number, label: GL number}
-- {id: gl_ledger.gl_account_code, table: gold.semantic_gl_balance, column: gl_account_code, label: GL account code}
-- {id: gl.name, table: gold.semantic_gl_balance, column: gl_name, label: GL name}
-- {id: gl_ledger.gl_short_name, table: gold.semantic_gl_balance, column: gl_short_name, label: GL short name}
-- {id: gl_ledger.gl_type, table: gold.semantic_gl_balance, column: gl_type, label: GL type}
-- {id: gl_ledger.gl_hierarchy_code, table: gold.semantic_gl_balance, column: gl_hierarchy_code, label: GL hierarchy code}
-- {id: gl_ledger.gl_hierarchy_name, table: gold.semantic_gl_balance, column: gl_hierarchy_name, label: GL hierarchy name}
-- {id: gl_ledger.gl_hierarchy_parent, table: gold.semantic_gl_balance, column: gl_hierarchy_parent, label: GL hierarchy parent}
-- {id: gl_ledger.gl_category_code, table: gold.semantic_gl_balance, column: gl_category_code, label: GL category code}
-- {id: gl_ledger.gl_category_name, table: gold.semantic_gl_balance, column: gl_category_name, label: GL category name}
-- {id: gl.gl_family, table: gold.semantic_gl_balance, column: gl_family, label: GL family}
-- {id: gl_ledger.parent_gl_number, table: gold.semantic_gl_balance, column: parent_gl_number, label: Parent GL number}
-- {id: gl_ledger.parent_gl_name, table: gold.semantic_gl_balance, column: parent_gl_name, label: Parent GL name}
-- {id: gl_ledger.contra_gl, table: gold.semantic_gl_balance, column: contra_gl, label: Contra GL}
-- {id: gl.currency_code, table: gold.semantic_gl_balance, column: currency_code, label: Currency code}
-- {id: gl_ledger.default_currency, table: gold.semantic_gl_balance, column: default_currency, label: Default currency}
-- {id: gl_ledger.allowed_currencies, table: gold.semantic_gl_balance, column: allowed_currencies, label: Allowed currencies}
-- {id: gl.account_currency_balance, table: gold.semantic_gl_balance, column: account_currency_balance, label: Account currency balance, unit: inr, agg: [sum, avg, max]}
-- {id: gl.balance, table: gold.semantic_gl_balance, column: base_currency_balance, label: Base-currency balance, unit: inr, agg: [sum, avg, max]}
-- {id: gl.account_currency_debits, table: gold.semantic_gl_balance, column: account_currency_debits, label: Account currency debits, unit: inr, agg: [sum, avg, max]}
-- {id: gl.account_currency_credits, table: gold.semantic_gl_balance, column: account_currency_credits, label: Account currency credits, unit: inr, agg: [sum, avg, max]}
-- {id: gl.debits, table: gold.semantic_gl_balance, column: base_currency_debits, label: Base-currency debits, unit: inr, agg: [sum, avg, max]}
-- {id: gl.credits, table: gold.semantic_gl_balance, column: base_currency_credits, label: Base-currency credits, unit: inr, agg: [sum, avg, max]}
-- {id: gl_ledger.is_gicc_gl, table: gold.semantic_gl_balance, column: is_gicc_gl, label: Is GICC GL, unit: boolean}
-- {id: gl_balance.is_external_gl, table: gold.semantic_gl_balance, column: is_external_gl, label: Is External Gl, unit: boolean}
-- {id: gl_balance.external_access_code, table: gold.semantic_gl_balance, column: external_access_code, label: External Access Code}
-- {id: gl_balance.external_gl_head, table: gold.semantic_gl_balance, column: external_gl_head, label: External Gl Head}
-- {id: gl_balance.external_gl_usage, table: gold.semantic_gl_balance, column: external_gl_usage, label: External Gl Usage}
-- {id: gl_ledger.gl_status, table: gold.semantic_gl_balance, column: gl_status, label: GL status}
-- {id: gl_ledger.opened_on, table: gold.semantic_gl_balance, column: opened_on, label: Opened on, unit: date}
-- {id: gl_ledger.closed_on, table: gold.semantic_gl_balance, column: closed_on, label: Closed on, unit: date}
-- {id: gl_ledger.source_systems, table: gold.semantic_gl_balance, column: source_systems, label: Source systems}
-- {id: gl_balance.data_as_of, table: gold.semantic_gl_balance, column: data_as_of, label: Data As Of, unit: date}
-- {id: gl_balance.coverage_status, table: gold.semantic_gl_balance, column: coverage_status, label: Coverage Status}
-- {id: loan.entity_number, table: gold.semantic_loan_account, column: entity_num, label: Entity}
-- {id: loan.account_number, table: gold.semantic_loan_account, column: loan_account_number, label: Loan account number, synonyms: [account number, account numbers, loan number]}
-- {id: loan.application_number, table: gold.semantic_loan_account, column: application_number, label: Application number}
-- {id: loan.customer_id, table: gold.semantic_loan_account, column: customer_id, label: Customer ID}
-- {id: loan.customer_name, table: gold.semantic_loan_account, column: customer_name, label: Borrower name, synonyms: [customer name], sensitivity: pii}
-- {id: loan_reporting.application_branch_code, table: gold.semantic_loan_account, column: application_branch_code, label: Application branch code}
-- {id: loan_reporting.posting_branch_code, table: gold.semantic_loan_account, column: posting_branch_code, label: Posting branch code}
-- {id: loan_reporting.servicing_branch_code, table: gold.semantic_loan_account, column: servicing_branch_code, label: Servicing branch code}
-- {id: loan_reporting.reporting_branch_code, table: gold.semantic_loan_account, column: reporting_branch_code, label: Reporting branch code}
-- {id: loan.product_code, table: gold.semantic_loan_account, column: product_code, label: Product code}
-- {id: loan.product_name, table: gold.semantic_loan_account, column: product_name, label: Product}
-- {id: loan.scheme_code, table: gold.semantic_loan_account, column: scheme_code, label: Scheme code}
-- {id: loan.scheme_name, table: gold.semantic_loan_account, column: scheme_name, label: Scheme}
-- {id: loan_account.reporting_product_code, table: gold.semantic_loan_account, column: reporting_product_code, label: Reporting Product Code}
-- {id: loan_account.reporting_product_name, table: gold.semantic_loan_account, column: reporting_product_name, label: Reporting Product Name}
-- {id: loan_account.reporting_product_group, table: gold.semantic_loan_account, column: reporting_product_group, label: Reporting Product Group}
-- {id: loan_account.secured_flag, table: gold.semantic_loan_account, column: secured_flag, label: Secured Flag}
-- {id: loan_account.msme_flag, table: gold.semantic_loan_account, column: msme_flag, label: Msme Flag}
-- {id: loan.loan_type, table: gold.semantic_loan_account, column: loan_type, label: Loan type}
-- {id: loan.loan_purpose_code, table: gold.semantic_loan_account, column: loan_purpose_code, label: Loan purpose code}
-- {id: loan.loan_purpose_desc, table: gold.semantic_loan_account, column: loan_purpose_desc, label: Loan purpose desc}
-- {id: loan.sanction_date, table: gold.semantic_loan_account, column: sanction_date, label: Sanction date, unit: date}
-- {id: loan.sanction_amount, table: gold.semantic_loan_account, column: sanction_amount, label: Sanction amount, unit: inr, agg: [sum, avg, max]}
-- {id: loan.disbursed_amount, table: gold.semantic_loan_account, column: disbursed_amount, label: Cumulative disbursed amount, unit: inr, agg: [sum, avg, max]}
-- {id: loan.first_disbursement_date, table: gold.semantic_loan_account, column: first_disbursement_date, label: First disbursement date, unit: date}
-- {id: loan.disbursement_count, table: gold.semantic_loan_account, column: disbursement_count, label: Disbursement count, unit: count, agg: [sum, avg, max]}
-- {id: loan.interest_rate, table: gold.semantic_loan_account, column: interest_rate, label: Interest rate, unit: percent, agg: [avg, max, min]}
-- {id: loan.emi_amount, table: gold.semantic_loan_account, column: emi_amount, label: EMI amount, unit: inr, agg: [sum, avg, max]}
-- {id: loan.number_of_emis, table: gold.semantic_loan_account, column: number_of_emis, label: Number of EMIs, unit: count, agg: [avg, max, min]}
-- {id: loan.application_emi_date, table: gold.semantic_loan_account, column: application_emi_date, label: Application EMI date, unit: date}
-- {id: loan.coapplicant_count, table: gold.semantic_loan_account, column: coapplicant_count, label: Coapplicant count, unit: count, agg: [sum, avg, max]}
-- {id: loan.repayment_start_date, table: gold.semantic_loan_account, column: repayment_start_date, label: Repayment start date, unit: date}
-- {id: loan.repayment_end_date, table: gold.semantic_loan_account, column: repayment_end_date, label: Repayment end date, unit: date}
-- {id: loan.principal_repaid, table: gold.semantic_loan_account, column: principal_repaid, label: Cumulative principal repaid, unit: inr, agg: [sum, avg, max]}
-- {id: loan.interest_repaid, table: gold.semantic_loan_account, column: interest_repaid, label: Cumulative interest repaid, unit: inr, agg: [sum, avg, max]}
-- {id: loan.receipt_count, table: gold.semantic_loan_account, column: receipt_count, label: Receipt count, unit: count, agg: [sum, avg, max]}
-- {id: loan.total_receipt_amount, table: gold.semantic_loan_account, column: total_receipt_amount, label: Total receipt amount, unit: inr, agg: [sum, avg, max]}
-- {id: loan.last_payment_date, table: gold.semantic_loan_account, column: last_payment_date, label: Last payment date, unit: date}
-- {id: loan.schedule_installments, table: gold.semantic_loan_account, column: schedule_installments, label: Schedule instalments, unit: count, agg: [avg, max, min]}
-- {id: loan.latest_asset_code, table: gold.semantic_loan_account, column: latest_asset_code, label: Latest asset code}
-- {id: loan.latest_asset_category, table: gold.semantic_loan_account, column: latest_asset_category, label: Latest asset category}
-- {id: loan.asset_classified_on, table: gold.semantic_loan_account, column: asset_classified_on, label: Asset classified on, unit: date}
-- {id: loan.dpd_days, table: gold.semantic_loan_account, column: dpd_days, label: DPD days, unit: count, agg: [avg, max, min]}
-- {id: loan_account.principal_outstanding_current, table: gold.semantic_loan_account, column: principal_outstanding_current, label: Principal Outstanding Current, unit: inr, agg: [sum, avg, max]}
-- {id: loan.npa_type, table: gold.semantic_loan_account, column: npa_type, label: NPA type}
-- {id: loan.npa_date, table: gold.semantic_loan_account, column: npa_date, label: NPA date, unit: date}
-- {id: loan.closure_date, table: gold.semantic_loan_account, column: closure_date, label: Closure date, unit: date}
-- {id: loan.status, table: gold.semantic_loan_account, column: loan_status, label: Loan status}
-- {id: loan.agent_code, table: gold.semantic_loan_account, column: agent_code, label: Agent code}
-- {id: loan.agent_name, table: gold.semantic_loan_account, column: agent_name, label: Agent name, sensitivity: pii}
-- {id: loan.sourced_by, table: gold.semantic_loan_account, column: sourced_by, label: Sourced by}
-- {id: loan.direct_selling_agent, table: gold.semantic_loan_account, column: direct_selling_agent, label: Direct selling agent}
-- {id: loan_account.reporting_mapping_status, table: gold.semantic_loan_account, column: reporting_mapping_status, label: Reporting Mapping Status}
-- {id: loan.source_systems, table: gold.semantic_loan_account, column: source_systems, label: Source systems}
-- {id: loan_account.data_as_of, table: gold.semantic_loan_account, column: data_as_of, label: Data As Of, unit: date}
-- {id: loan_account.coverage_status, table: gold.semantic_loan_account, column: coverage_status, label: Coverage Status}
-- {id: loan_ledger_event.record_type, table: gold.semantic_loan_ledger_event, column: record_type, label: Record Type}
-- {id: loan_ledger.entity_num, table: gold.semantic_loan_ledger_event, column: entity_num, label: Entity num}
-- {id: loan_ledger.loan_account_number, table: gold.semantic_loan_ledger_event, column: loan_account_number, label: Loan account number, synonyms: [loan account, account number]}
-- {id: loan_ledger_event.event_date, table: gold.semantic_loan_ledger_event, column: event_date, label: Event Date, unit: date}
-- {id: loan_ledger.day_serial, table: gold.semantic_loan_ledger_event, column: day_serial, label: Day serial, unit: count}
-- {id: loan_ledger.debit_credit_flag, table: gold.semantic_loan_ledger_event, column: debit_credit_flag, label: Debit or credit flag}
-- {id: loan_ledger.currency_code, table: gold.semantic_loan_ledger_event, column: currency_code, label: Currency code}
-- {id: loan_ledger_event.principal_movement, table: gold.semantic_loan_ledger_event, column: principal_movement, label: Principal Movement}
-- {id: loan_ledger_event.interest_movement, table: gold.semantic_loan_ledger_event, column: interest_movement, label: Interest Movement}
-- {id: loan_ledger_event.charges_movement, table: gold.semantic_loan_ledger_event, column: charges_movement, label: Charges Movement, unit: inr, agg: [sum, avg, max]}
-- {id: loan_ledger_event.penal_movement, table: gold.semantic_loan_ledger_event, column: penal_movement, label: Penal Movement}
-- {id: loan_ledger_event.future_installment_movement, table: gold.semantic_loan_ledger_event, column: future_installment_movement, label: Future Installment Movement}
-- {id: loan_ledger.narration, table: gold.semantic_loan_ledger_event, column: narration, label: Transaction narration}
-- {id: loan_ledger_event.transaction_reference, table: gold.semantic_loan_ledger_event, column: transaction_reference, label: Transaction Reference}
-- {id: loan_ledger.breakup_from_date, table: gold.semantic_loan_ledger_event, column: breakup_from_date, label: Breakup from date, unit: date}
-- {id: loan_ledger.breakup_upto_date, table: gold.semantic_loan_ledger_event, column: breakup_upto_date, label: Breakup up to date, unit: date}
-- {id: loan_ledger.breakup_interest_amount, table: gold.semantic_loan_ledger_event, column: breakup_interest_amount, label: Breakup interest amount, unit: inr, agg: [sum, avg, max]}
-- {id: loan_ledger.breakup_interest_rate, table: gold.semantic_loan_ledger_event, column: breakup_interest_rate, label: Breakup interest rate, unit: percent, agg: [avg, max, min]}
-- {id: loan_balance.principal_outstanding, table: gold.semantic_loan_ledger_event, column: principal_outstanding, label: Principal outstanding, unit: inr, agg: [sum, avg, max]}
-- {id: loan_balance.interest_outstanding, table: gold.semantic_loan_ledger_event, column: interest_outstanding, label: Interest outstanding, unit: inr, agg: [sum, avg, max]}
-- {id: loan_balance.charges_outstanding, table: gold.semantic_loan_ledger_event, column: charges_outstanding, label: Charges outstanding, unit: inr, agg: [sum, avg, max]}
-- {id: loan_balance.penal_outstanding, table: gold.semantic_loan_ledger_event, column: penal_outstanding, label: Penal outstanding, unit: inr, agg: [sum, avg, max]}
-- {id: loan_balance.excess_outstanding, table: gold.semantic_loan_ledger_event, column: excess_outstanding, label: Excess outstanding, unit: inr, agg: [sum, avg, max]}
-- {id: loan_balance.channel_id, table: gold.semantic_loan_ledger_event, column: channel_id, label: Channel ID}
-- {id: loan_balance.recovery_type, table: gold.semantic_loan_ledger_event, column: recovery_type, label: Recovery type}
-- {id: loan_balance.asset_code, table: gold.semantic_loan_ledger_event, column: asset_code, label: Asset code}
-- {id: loan_balance.cash_payment, table: gold.semantic_loan_ledger_event, column: cash_payment, label: Cash payment, unit: inr, agg: [sum, avg, max]}
-- {id: loan_balance.online_payment, table: gold.semantic_loan_ledger_event, column: online_payment, label: Online payment, unit: inr, agg: [sum, avg, max]}
-- {id: loan_balance.cheque_payment, table: gold.semantic_loan_ledger_event, column: cheque_payment, label: Cheque payment, unit: inr, agg: [sum, avg, max]}
-- {id: loan_ledger_event.source_event_key, table: gold.semantic_loan_ledger_event, column: source_event_key, label: Source Event Key}
-- {id: loan_ledger.source_systems, table: gold.semantic_loan_ledger_event, column: source_systems, label: Source systems}
-- {id: loan_ledger_event.data_as_of, table: gold.semantic_loan_ledger_event, column: data_as_of, label: Data As Of, unit: date}
-- {id: loan_ledger_event.coverage_status, table: gold.semantic_loan_ledger_event, column: coverage_status, label: Coverage Status}
-- {id: msme.entity_num, table: gold.semantic_msme_lead, column: entity_num, label: Entity num}
-- {id: msme.lead_number, table: gold.semantic_msme_lead, column: lead_number, label: MSME lead number, synonyms: [lead number]}
-- {id: msme.entered_on, table: gold.semantic_msme_lead, column: entered_on, label: Entered date, unit: date}
-- {id: msme.customer_id, table: gold.semantic_msme_lead, column: customer_id, label: Customer ID}
-- {id: msme.customer_name, table: gold.semantic_msme_lead, column: customer_name, label: Customer name, sensitivity: pii}
-- {id: msme.firm_name, table: gold.semantic_msme_lead, column: firm_name, label: Firm name, sensitivity: pii}
-- {id: msme.mobile, table: gold.semantic_msme_lead, column: mobile_number, label: Mobile, sensitivity: pii}
-- {id: msme.branch_code, table: gold.semantic_msme_lead, column: branch_code, label: Branch code}
-- {id: msme.firm_type_code, table: gold.semantic_msme_lead, column: firm_type_code, label: Firm type code}
-- {id: msme.firm_type_desc, table: gold.semantic_msme_lead, column: firm_type_desc, label: Firm type desc}
-- {id: msme.customer_category_code, table: gold.semantic_msme_lead, column: customer_category_code, label: Customer category code}
-- {id: msme.customer_category_desc, table: gold.semantic_msme_lead, column: customer_category_desc, label: Customer category desc}
-- {id: msme.product_code, table: gold.semantic_msme_lead, column: product_code, label: Product code}
-- {id: msme.scheme_code, table: gold.semantic_msme_lead, column: scheme_code, label: Scheme code}
-- {id: msme.loan_purpose_code, table: gold.semantic_msme_lead, column: loan_purpose_code, label: Loan purpose code}
-- {id: msme.requested_amount, table: gold.semantic_msme_lead, column: requested_amount, label: Requested amount, unit: inr, agg: [sum, avg, max]}
-- {id: msme.secured_unsecured, table: gold.semantic_msme_lead, column: secured_unsecured, label: Secured unsecured}
-- {id: msme.security_type, table: gold.semantic_msme_lead, column: security_type, label: Security type}
-- {id: msme.security_value, table: gold.semantic_msme_lead, column: security_value, label: Security value, unit: inr, agg: [sum, avg, max]}
-- {id: msme.lead_source, table: gold.semantic_msme_lead, column: lead_source, label: Lead source}
-- {id: msme_lead.entered_by_employee, table: gold.semantic_msme_lead, column: entered_by_employee, label: Entered By Employee}
-- {id: msme.status, table: gold.semantic_msme_lead, column: lead_status, label: Lead status}
-- {id: msme.reject_reason, table: gold.semantic_msme_lead, column: reject_reason, label: Reject reason}
-- {id: msme.loan_application_number, table: gold.semantic_msme_lead, column: loan_application_number, label: Loan application number}
-- {id: msme.lead_vendor_id, table: gold.semantic_msme_lead, column: lead_vendor_id, label: Lead vendor ID, synonyms: [lead vendor identifier]}
-- {id: msme.vendor_id, table: gold.semantic_msme_lead, column: vendor_id, label: Vendor ID, synonyms: [vendor, vendor identifier]}
-- {id: msme.vehicle_make, table: gold.semantic_msme_lead, column: vehicle_make, label: Vehicle make}
-- {id: msme.vehicle_model, table: gold.semantic_msme_lead, column: vehicle_model, label: Vehicle model}
-- {id: msme.vendor_loan_amount, table: gold.semantic_msme_lead, column: vendor_loan_amount, label: Vendor loan amount, unit: inr, agg: [sum, avg, max]}
-- {id: msme.finance_amount, table: gold.semantic_msme_lead, column: finance_amount, label: Finance amount, unit: inr, agg: [sum, avg, max]}
-- {id: msme.vendor_row_count, table: gold.semantic_msme_lead, column: vendor_row_count, label: Vendor row count, unit: count, agg: [sum, avg, max]}
-- {id: msme.cif_shop_name, table: gold.semantic_msme_lead, column: cif_shop_name, label: CIF shop name, sensitivity: pii}
-- {id: msme.cif_entered_by_agent, table: gold.semantic_msme_lead, column: cif_entered_by_agent, label: CIF entered by agent, sensitivity: pii}
-- {id: msme.msme_status, table: gold.semantic_msme_lead, column: msme_status, label: MSME status}
-- {id: msme.source_systems, table: gold.semantic_msme_lead, column: source_systems, label: Source systems}
-- {id: msme_lead.data_as_of, table: gold.semantic_msme_lead, column: data_as_of, label: Data As Of, unit: date}
-- {id: msme_lead.coverage_status, table: gold.semantic_msme_lead, column: coverage_status, label: Coverage Status}
-- {id: organization_hierarchy.hierarchy_type, table: gold.semantic_organization_hierarchy, column: hierarchy_type, label: Hierarchy Type}
-- {id: sales_hier.version, table: gold.semantic_organization_hierarchy, column: hierarchy_version, label: Hierarchy version}
-- {id: sales_hier.entity_num, table: gold.semantic_organization_hierarchy, column: entity_num, label: Entity num}
-- {id: organization_hierarchy.actor_user_id, table: gold.semantic_organization_hierarchy, column: actor_user_id, label: Actor User Id, synonyms: [actor ID, employee ID, team member ID, collector ID], sensitivity: pii}
-- {id: organization_hierarchy.actor_role_code, table: gold.semantic_organization_hierarchy, column: actor_role_code, label: Actor Role Code}
-- {id: sales_hier.manager_user_id, table: gold.semantic_organization_hierarchy, column: manager_user_id, label: Manager user ID, synonyms: [manager ID, reporting manager ID, collection manager ID], sensitivity: pii}
-- {id: sales_hier.effective_from, table: gold.semantic_organization_hierarchy, column: effective_from, label: Effective from, unit: date}
-- {id: sales_hier.effective_to, table: gold.semantic_organization_hierarchy, column: effective_to, label: Effective to, unit: date}
-- {id: sales_hier.manager_effective_from, table: gold.semantic_organization_hierarchy, column: manager_effective_from, label: Manager effective from, unit: date}
-- {id: sales_hier.remarks, table: gold.semantic_organization_hierarchy, column: remarks, label: Remarks}
-- {id: sales_hier.uploaded_on, table: gold.semantic_organization_hierarchy, column: uploaded_on, label: Uploaded on, unit: datetime}
-- {id: sales_hier.source_systems, table: gold.semantic_organization_hierarchy, column: source_systems, label: Source systems}
-- {id: organization_hierarchy.data_as_of, table: gold.semantic_organization_hierarchy, column: data_as_of, label: Data As Of, unit: date}
-- {id: organization_hierarchy.coverage_status, table: gold.semantic_organization_hierarchy, column: coverage_status, label: Coverage Status}
-- {id: vintage.entity_num, table: gold.semantic_origination_vintage, column: entity_num, label: Entity num}
-- {id: vintage.origination_month, table: gold.semantic_origination_vintage, column: origination_month, label: Origination month, unit: date}
-- {id: vintage.report_month, table: gold.semantic_origination_vintage, column: report_month, label: Report month, unit: date}
-- {id: vintage.months_on_book, table: gold.semantic_origination_vintage, column: months_on_book, label: Months on book, unit: count, agg: [avg, max, min]}
-- {id: vintage.branch_code, table: gold.semantic_origination_vintage, column: branch_code, label: Branch code}
-- {id: vintage.product_code, table: gold.semantic_origination_vintage, column: product_code, label: Product code}
-- {id: vintage.scheme_code, table: gold.semantic_origination_vintage, column: scheme_code, label: Scheme code}
-- {id: vintage.account_count, table: gold.semantic_origination_vintage, column: account_count, label: Account count, unit: count, agg: [sum]}
-- {id: vintage.disbursed_amount, table: gold.semantic_origination_vintage, column: disbursed_amount, label: Disbursed amount, unit: inr, agg: [sum, avg, max]}
-- {id: vintage.principal_outstanding, table: gold.semantic_origination_vintage, column: principal_outstanding, label: Principal outstanding, unit: inr, agg: [sum, avg, max]}
-- {id: vintage.accounts_par30, table: gold.semantic_origination_vintage, column: accounts_par30, label: Accounts PAR 30, unit: count, agg: [sum]}
-- {id: vintage.accounts_par60, table: gold.semantic_origination_vintage, column: accounts_par60, label: Accounts PAR 60, unit: count, agg: [sum]}
-- {id: vintage.accounts_par90, table: gold.semantic_origination_vintage, column: accounts_par90, label: Accounts PAR 90, unit: count, agg: [sum]}
-- {id: vintage.accounts_npa, table: gold.semantic_origination_vintage, column: accounts_npa, label: NPA accounts, unit: count, agg: [sum]}
-- {id: origination_vintage.par30_account_rate, table: gold.semantic_origination_vintage, column: par30_account_rate, label: Par30 Account Rate, unit: percent, agg: [avg, max, min]}
-- {id: origination_vintage.par60_account_rate, table: gold.semantic_origination_vintage, column: par60_account_rate, label: Par60 Account Rate, unit: percent, agg: [avg, max, min]}
-- {id: origination_vintage.par90_account_rate, table: gold.semantic_origination_vintage, column: par90_account_rate, label: Par90 Account Rate, unit: percent, agg: [avg, max, min]}
-- {id: origination_vintage.npa_account_rate, table: gold.semantic_origination_vintage, column: npa_account_rate, label: Npa Account Rate, unit: percent, agg: [avg, max, min]}
-- {id: vintage.source_systems, table: gold.semantic_origination_vintage, column: source_systems, label: Source systems}
-- {id: origination_vintage.data_as_of, table: gold.semantic_origination_vintage, column: data_as_of, label: Data As Of, unit: date}
-- {id: origination_vintage.coverage_status, table: gold.semantic_origination_vintage, column: coverage_status, label: Coverage Status}
-- {id: risk.snapshot_date, table: gold.semantic_portfolio_snapshot, column: snapshot_date, label: Snapshot date, unit: date}
-- {id: risk.entity_num, table: gold.semantic_portfolio_snapshot, column: entity_num, label: Entity num}
-- {id: risk.loan_account_number, table: gold.semantic_portfolio_snapshot, column: loan_account_number, label: Loan account number, synonyms: [loan number, account number]}
-- {id: risk.customer_id, table: gold.semantic_portfolio_snapshot, column: customer_id, label: Customer ID}
-- {id: risk.branch_code, table: gold.semantic_portfolio_snapshot, column: branch_code, label: Branch code}
-- {id: risk.product_code, table: gold.semantic_portfolio_snapshot, column: product_code, label: Product code}
-- {id: risk.scheme_code, table: gold.semantic_portfolio_snapshot, column: scheme_code, label: Scheme code}
-- {id: risk.asset_code, table: gold.semantic_portfolio_snapshot, column: asset_code, label: Asset classification, decode: asset_class}
-- {id: risk.asset_classification, table: gold.semantic_portfolio_snapshot, column: asset_classification, label: Asset classification name}
-- {id: risk.previous_asset_code, table: gold.semantic_portfolio_snapshot, column: previous_asset_code, label: Previous asset code}
-- {id: risk.dpd_days, table: gold.semantic_portfolio_snapshot, column: dpd_days, label: Days past due, synonyms: [days overdue], unit: count, agg: [avg, max]}
-- {id: risk.principal_outstanding, table: gold.semantic_portfolio_snapshot, column: principal_outstanding, label: Principal outstanding, unit: inr, agg: [sum, avg, max]}
-- {id: risk.principal_overdue, table: gold.semantic_portfolio_snapshot, column: principal_overdue, label: Principal overdue, unit: inr, agg: [sum, avg, max]}
-- {id: risk.interest_overdue, table: gold.semantic_portfolio_snapshot, column: interest_overdue, label: Interest overdue, unit: inr, agg: [sum, avg, max]}
-- {id: risk.charges_overdue, table: gold.semantic_portfolio_snapshot, column: charges_overdue, label: Charges overdue, unit: inr, agg: [sum, avg, max]}
-- {id: risk.penal_overdue, table: gold.semantic_portfolio_snapshot, column: penal_overdue, label: Penal overdue, unit: inr, agg: [sum, avg, max]}
-- {id: risk.total_overdue, table: gold.semantic_portfolio_snapshot, column: total_overdue, label: Total overdue, unit: inr, agg: [sum, avg, max]}
-- {id: risk.is_delinquent, table: gold.semantic_portfolio_snapshot, column: is_delinquent, label: Is delinquent, unit: boolean}
-- {id: risk.is_par30, table: gold.semantic_portfolio_snapshot, column: is_par30, label: Is par30, unit: boolean}
-- {id: risk.is_par60, table: gold.semantic_portfolio_snapshot, column: is_par60, label: Is par60, unit: boolean}
-- {id: risk.is_par90, table: gold.semantic_portfolio_snapshot, column: is_par90, label: Is par90, unit: boolean}
-- {id: risk.is_npa, table: gold.semantic_portfolio_snapshot, column: is_npa, label: Is NPA, unit: boolean}
-- {id: portfolio_snapshot.source_systems, table: gold.semantic_portfolio_snapshot, column: source_systems, label: Source Systems}
-- {id: portfolio_snapshot.data_as_of, table: gold.semantic_portfolio_snapshot, column: data_as_of, label: Data As Of, unit: date}
-- {id: portfolio_snapshot.coverage_status, table: gold.semantic_portfolio_snapshot, column: coverage_status, label: Coverage Status}
-- {id: product.entity_num, table: gold.semantic_product_scheme, column: entity_num, label: Entity num}
-- {id: product.product_code, table: gold.semantic_product_scheme, column: product_code, label: Product code}
-- {id: product.product_name, table: gold.semantic_product_scheme, column: product_name, label: Product name}
-- {id: product.product_domain, table: gold.semantic_product_scheme, column: product_domain, label: Product domain}
-- {id: product.product_group, table: gold.semantic_product_scheme, column: product_group, label: Product group}
-- {id: product.scheme_code, table: gold.semantic_product_scheme, column: scheme_code, label: Scheme code}
-- {id: product.scheme_name, table: gold.semantic_product_scheme, column: scheme_name, label: Scheme name}
-- {id: product.loan_type, table: gold.semantic_product_scheme, column: loan_type, label: Loan type}
-- {id: product.security_type_code, table: gold.semantic_product_scheme, column: security_type_code, label: Security type code}
-- {id: product.security_type_desc, table: gold.semantic_product_scheme, column: security_type_desc, label: Security type desc}
-- {id: product.product_family, table: gold.semantic_product_scheme, column: product_family, label: Product family}
-- {id: product.gl_account_code, table: gold.semantic_product_scheme, column: gl_account_code, label: GL account code}
-- {id: product.min_amount, table: gold.semantic_product_scheme, column: min_amount, label: Min amount, unit: inr, agg: [sum, avg, max]}
-- {id: product.max_amount, table: gold.semantic_product_scheme, column: max_amount, label: Max amount, unit: inr, agg: [sum, avg, max]}
-- {id: product.min_tenor_months, table: gold.semantic_product_scheme, column: min_tenor_months, label: Min tenor months, synonyms: [minimum tenor, term lower bound], unit: months, agg: [avg, max, min]}
-- {id: product.max_tenor_months, table: gold.semantic_product_scheme, column: max_tenor_months, label: Max tenor months, synonyms: [maximum tenor, term upper bound], unit: months, agg: [avg, max, min]}
-- {id: product.ltv_rate, table: gold.semantic_product_scheme, column: ltv_rate, label: LTV rate, unit: percent, agg: [avg, max, min]}
-- {id: product.min_interest_rate, table: gold.semantic_product_scheme, column: min_interest_rate, label: Min interest rate, synonyms: [minimum interest rate, minimum rate, pricing lower bound], unit: percent, agg: [avg, max, min]}
-- {id: product.max_interest_rate, table: gold.semantic_product_scheme, column: max_interest_rate, label: Max interest rate, synonyms: [maximum interest rate, maximum rate, pricing upper bound], unit: percent, agg: [avg, max, min]}
-- {id: product.product_status, table: gold.semantic_product_scheme, column: product_status, label: Product status}
-- {id: reporting_product.reporting_product_code, table: gold.semantic_product_scheme, column: reporting_product_code, label: Reporting product code}
-- {id: reporting_product.reporting_product_name, table: gold.semantic_product_scheme, column: reporting_product_name, label: Reporting product name}
-- {id: reporting_product.reporting_product_group, table: gold.semantic_product_scheme, column: reporting_product_group, label: Reporting product group}
-- {id: reporting_product.secured_flag, table: gold.semantic_product_scheme, column: secured_flag, label: Secured flag}
-- {id: reporting_product.msme_flag, table: gold.semantic_product_scheme, column: msme_flag, label: MSME flag}
-- {id: reporting_product.mapping_effective_from, table: gold.semantic_product_scheme, column: mapping_effective_from, label: Mapping effective from, unit: date}
-- {id: reporting_product.mapping_effective_to, table: gold.semantic_product_scheme, column: mapping_effective_to, label: Mapping effective to, unit: date}
-- {id: reporting_product.mapping_status, table: gold.semantic_product_scheme, column: mapping_status, label: Mapping status}
-- {id: product_scheme.mapping_approved_by, table: gold.semantic_product_scheme, column: mapping_approved_by, label: Mapping Approved By}
-- {id: product_scheme.mapping_approved_at, table: gold.semantic_product_scheme, column: mapping_approved_at, label: Mapping Approved At, unit: datetime}
-- {id: product.source_systems, table: gold.semantic_product_scheme, column: source_systems, label: Source systems}
-- {id: product_scheme.data_as_of, table: gold.semantic_product_scheme, column: data_as_of, label: Data As Of, unit: date}
-- {id: product_scheme.coverage_status, table: gold.semantic_product_scheme, column: coverage_status, label: Coverage Status}
-- {id: receipt_adjustment_event.event_type, table: gold.semantic_receipt_adjustment_event, column: event_type, label: Event Type}
-- {id: receipt.entity_num, table: gold.semantic_receipt_adjustment_event, column: entity_num, label: Entity num}
-- {id: receipt.loan_account_number, table: gold.semantic_receipt_adjustment_event, column: loan_account_number, label: Loan account number, synonyms: [loan account, account number]}
-- {id: receipt_adjustment_event.event_date, table: gold.semantic_receipt_adjustment_event, column: event_date, label: Event Date, unit: date}
-- {id: receipt_adjustment_event.source_event_key, table: gold.semantic_receipt_adjustment_event, column: source_event_key, label: Source Event Key}
-- {id: receipt.amount, table: gold.semantic_receipt_adjustment_event, column: receipt_amount, label: Receipt amount, unit: inr, agg: [sum, avg, max]}
-- {id: receipt.principal_adjusted, table: gold.semantic_receipt_adjustment_event, column: principal_adjusted, label: Principal adjusted, unit: inr, agg: [sum, avg, max]}
-- {id: receipt.interest_adjusted, table: gold.semantic_receipt_adjustment_event, column: interest_adjusted, label: Interest adjusted, unit: inr, agg: [sum, avg, max]}
-- {id: receipt.charges_adjusted, table: gold.semantic_receipt_adjustment_event, column: charges_adjusted, label: Charges adjusted, unit: inr, agg: [sum, avg, max]}
-- {id: receipt.penal_adjusted, table: gold.semantic_receipt_adjustment_event, column: penal_adjusted, label: Penal adjusted, unit: inr, agg: [sum, avg, max]}
-- {id: receipt.total_due, table: gold.semantic_receipt_adjustment_event, column: total_due, label: Total due, unit: inr, agg: [sum, avg, max]}
-- {id: receipt_adjustment_event.posting_branch_code, table: gold.semantic_receipt_adjustment_event, column: posting_branch_code, label: Posting Branch Code}
-- {id: receipt.posting_date, table: gold.semantic_receipt_adjustment_event, column: posting_date, label: Posting date, unit: date}
-- {id: receipt.mode, table: gold.semantic_receipt_adjustment_event, column: receipt_mode, label: Receipt mode}
-- {id: receipt_adjustment_event.receipt_branch_code, table: gold.semantic_receipt_adjustment_event, column: receipt_branch_code, label: Receipt Branch Code}
-- {id: receipt.instrument_number, table: gold.semantic_receipt_adjustment_event, column: instrument_number, label: Instrument number, sensitivity: pii}
-- {id: receipt.instrument_date, table: gold.semantic_receipt_adjustment_event, column: instrument_date, label: Instrument date, unit: date}
-- {id: receipt.utr_number, table: gold.semantic_receipt_adjustment_event, column: utr_number, label: UTR number, sensitivity: pii}
-- {id: receipt.detail_amount, table: gold.semantic_receipt_adjustment_event, column: detail_receipt_amount, label: Detail receipt amount, unit: inr, agg: [sum, avg, max]}
-- {id: waiver.interest, table: gold.semantic_receipt_adjustment_event, column: interest_waived, label: Interest waived, unit: inr, agg: [sum, avg, max]}
-- {id: waiver.charges, table: gold.semantic_receipt_adjustment_event, column: charges_waived, label: Charges waived, unit: inr, agg: [sum, avg, max]}
-- {id: waiver.penal, table: gold.semantic_receipt_adjustment_event, column: penal_waived, label: Penal waived, unit: inr, agg: [sum, avg, max]}
-- {id: waiver.total, table: gold.semantic_receipt_adjustment_event, column: total_waived_amount, label: Total waived amount, unit: inr, agg: [sum, avg, max]}
-- {id: waiver.installments_due, table: gold.semantic_receipt_adjustment_event, column: installments_due, label: Installments due, unit: inr, agg: [sum, avg, max]}
-- {id: waiver.installments_paid, table: gold.semantic_receipt_adjustment_event, column: installments_paid, label: Installments paid, unit: inr, agg: [sum, avg, max]}
-- {id: waiver.excess, table: gold.semantic_receipt_adjustment_event, column: excess_amount, label: Excess amount, unit: inr, agg: [sum, avg, max]}
-- {id: waiver.early_payment_charge, table: gold.semantic_receipt_adjustment_event, column: early_payment_charge, label: Early payment charge, unit: inr, agg: [sum, avg, max]}
-- {id: receipt.source_systems, table: gold.semantic_receipt_adjustment_event, column: source_systems, label: Source systems}
-- {id: receipt_adjustment_event.data_as_of, table: gold.semantic_receipt_adjustment_event, column: data_as_of, label: Data As Of, unit: date}
-- {id: receipt_adjustment_event.coverage_status, table: gold.semantic_receipt_adjustment_event, column: coverage_status, label: Coverage Status}
-- {id: repay.entity_num, table: gold.semantic_repayment_event, column: entity_num, label: Entity num}
-- {id: repay.loan_account_number, table: gold.semantic_repayment_event, column: loan_account_number, label: Loan account number, synonyms: [loan account, account number]}
-- {id: repay.sequence, table: gold.semantic_repayment_event, column: repayment_sequence, label: Repayment sequence, unit: count}
-- {id: repay.date, table: gold.semantic_repayment_event, column: repayment_date, label: Repayment date, unit: date}
-- {id: repay.principal_due, table: gold.semantic_repayment_event, column: principal_due, label: Principal due, unit: inr, agg: [sum, avg, max]}
-- {id: repay.interest_due, table: gold.semantic_repayment_event, column: interest_due, label: Interest due, unit: inr, agg: [sum, avg, max]}
-- {id: repay.total_due, table: gold.semantic_repayment_event, column: total_due, label: Total due, unit: inr, agg: [sum, avg, max]}
-- {id: repay.principal_paid, table: gold.semantic_repayment_event, column: principal_paid, label: Principal paid, unit: inr, agg: [sum, avg, max]}
-- {id: repay.interest_paid, table: gold.semantic_repayment_event, column: interest_paid, label: Interest paid, unit: inr, agg: [sum, avg, max]}
-- {id: repay.total_paid, table: gold.semantic_repayment_event, column: total_paid, label: Total paid, unit: inr, agg: [sum, avg, max]}
-- {id: repay.shortfall, table: gold.semantic_repayment_event, column: collection_shortfall, label: Collection shortfall, unit: inr, agg: [sum, avg, max]}
-- {id: repay.collection_efficiency, table: gold.semantic_repayment_event, column: collection_efficiency, label: Collection efficiency, unit: percent, agg: [avg, max, min]}
-- {id: repay.customer_id, table: gold.semantic_repayment_event, column: customer_id, label: Customer ID}
-- {id: repay.branch_code, table: gold.semantic_repayment_event, column: branch_code, label: Branch code}
-- {id: repay.product_code, table: gold.semantic_repayment_event, column: product_code, label: Product code}
-- {id: repay.scheme_code, table: gold.semantic_repayment_event, column: scheme_code, label: Scheme code}
-- {id: repay.agent_code, table: gold.semantic_repayment_event, column: agent_code, label: Agent code}
-- {id: repayment_event.source_event_key, table: gold.semantic_repayment_event, column: source_event_key, label: Source Event Key}
-- {id: repayment_event.event_type, table: gold.semantic_repayment_event, column: event_type, label: Event Type}
-- {id: repayment_event.source_systems, table: gold.semantic_repayment_event, column: source_systems, label: Source Systems}
-- {id: repayment_event.data_as_of, table: gold.semantic_repayment_event, column: data_as_of, label: Data As Of, unit: date}
-- {id: repayment_event.coverage_status, table: gold.semantic_repayment_event, column: coverage_status, label: Coverage Status}
-- {id: schedule.entity_num, table: gold.semantic_schedule_event, column: entity_num, label: Entity num}
-- {id: schedule.loan_account_number, table: gold.semantic_schedule_event, column: loan_account_number, label: Loan account number, synonyms: [loan account, account number]}
-- {id: schedule.sequence, table: gold.semantic_schedule_event, column: instalment_sequence, label: Instalment sequence, unit: count}
-- {id: schedule.date, table: gold.semantic_schedule_event, column: scheduled_date, label: Scheduled date, synonyms: [due date], unit: date}
-- {id: schedule.principal, table: gold.semantic_schedule_event, column: scheduled_principal, label: Scheduled principal, unit: inr, agg: [sum, avg, max]}
-- {id: schedule.interest, table: gold.semantic_schedule_event, column: scheduled_interest, label: Scheduled interest, unit: inr, agg: [sum, avg, max]}
-- {id: schedule.total, table: gold.semantic_schedule_event, column: scheduled_total, label: Scheduled total, unit: inr, agg: [sum, avg, max]}
-- {id: schedule.customer_id, table: gold.semantic_schedule_event, column: customer_id, label: Customer ID}
-- {id: schedule.branch_code, table: gold.semantic_schedule_event, column: branch_code, label: Branch code}
-- {id: schedule.product_code, table: gold.semantic_schedule_event, column: product_code, label: Product code}
-- {id: schedule.scheme_code, table: gold.semantic_schedule_event, column: scheme_code, label: Scheme code}
-- {id: schedule.loan_status, table: gold.semantic_schedule_event, column: loan_status, label: Loan status}
-- {id: schedule_event.source_event_key, table: gold.semantic_schedule_event, column: source_event_key, label: Source Event Key}
-- {id: schedule_event.event_type, table: gold.semantic_schedule_event, column: event_type, label: Event Type}
-- {id: schedule_event.source_systems, table: gold.semantic_schedule_event, column: source_systems, label: Source Systems}
-- {id: schedule_event.data_as_of, table: gold.semantic_schedule_event, column: data_as_of, label: Data As Of, unit: date}
-- {id: schedule_event.coverage_status, table: gold.semantic_schedule_event, column: coverage_status, label: Coverage Status}
+# Complete column contract for the 18 assistant-facing friendly views.
+- {id: agent.code, table: gold.agents, column: agent_code, label: Agent code}
+- {id: agent.name, table: gold.agents, column: agent_name, label: Agent name, sensitivity: pii}
+- {id: agent.type, table: gold.agents, column: agent_type, label: Agent type}
+- {id: agent.designation, table: gold.agents, column: designation, label: Designation}
+- {id: agent.mobile, table: gold.agents, column: mobile, label: Agent mobile, sensitivity: pii}
+- {id: agent.email, table: gold.agents, column: email, label: Agent email, sensitivity: pii}
+- {id: agent.joined_on, table: gold.agents, column: joined_on, label: Joined on, unit: date}
+- {id: agent.branch_code, table: gold.agents, column: branch_code, label: Branch code}
+- {id: agent.role_code, table: gold.agents, column: role_code, label: Role code}
+- {id: agent.linked_customer_count, table: gold.agents, column: linked_customer_count, label: Linked customer count, unit: count, agg: [sum, avg, max]}
+- {id: agent.loan_count, table: gold.agents, column: linked_loan_count, label: Linked loan count, unit: count, agg: [sum]}
+- {id: agent.source_systems, table: gold.agents, column: data_source, label: Source systems}
+- {id: agent.data_as_of, table: gold.agents, column: data_as_of_date, label: Data As Of, unit: date}
+- {id: agent.coverage_status, table: gold.agents, column: data_completeness, label: Coverage Status}
+- {id: application.entity_num, table: gold.loan_applications, column: company_code, label: Entity num}
+- {id: application.number, table: gold.loan_applications, column: application_number, label: Application number}
+- {id: application.date, table: gold.loan_applications, column: application_date, label: Application date, unit: date}
+- {id: application.branch_code, table: gold.loan_applications, column: branch_code, label: Branch code}
+- {id: application.customer_id, table: gold.loan_applications, column: customer_id, label: Customer ID}
+- {id: application.product_code, table: gold.loan_applications, column: product_code, label: Product code}
+- {id: application.scheme_code, table: gold.loan_applications, column: scheme_code, label: Scheme code}
+- {id: application.loan_type, table: gold.loan_applications, column: loan_type, label: Loan type}
+- {id: application.purpose_code, table: gold.loan_applications, column: loan_purpose_code, label: Loan purpose code}
+- {id: application.applied_amount, table: gold.loan_applications, column: amount_applied, label: Applied amount, unit: inr, agg: [sum, avg, max]}
+- {id: application.application_sanction_amount, table: gold.loan_applications, column: amount_approved_on_application, label: Application Sanction Amount, unit: inr, agg: [sum, avg, max]}
+- {id: application.loan_account_number, table: gold.loan_applications, column: loan_account_number, label: Loan account number, synonyms: [loan account, account number, linked loan]}
+- {id: application.coapplicant_count, table: gold.loan_applications, column: co_borrower_count, label: Co-applicant count, unit: count, agg: [sum, avg, max]}
+- {id: application.guarantor_count, table: gold.loan_applications, column: guarantor_count, label: Guarantor count, unit: count, agg: [sum, avg, max]}
+- {id: application.sourced_by, table: gold.loan_applications, column: sourced_by, label: Sourced by, sensitivity: pii}
+- {id: application.dealer_code, table: gold.loan_applications, column: dealer_code, label: Dealer code}
+- {id: application.direct_selling_agent, table: gold.loan_applications, column: direct_selling_agent, label: Direct selling agent, sensitivity: pii}
+- {id: application.canvassed_by, table: gold.loan_applications, column: canvassed_by, label: Canvassed by, sensitivity: pii}
+- {id: application.last_completion_stage, table: gold.loan_applications, column: last_completion_stage, label: Last completion stage}
+- {id: application.authorized_on, table: gold.loan_applications, column: authorized_on, label: Authorized on, unit: datetime}
+- {id: application.account_link_status, table: gold.loan_applications, column: account_link_status, label: Account link status}
+- {id: application.observable_outcome_status, table: gold.loan_applications, column: application_outcome_status, label: Observable Outcome Status}
+- {id: application.application_disbursement_sequence, table: gold.loan_applications, column: application_disbursement_sequence, label: Application Disbursement Sequence, unit: count}
+- {id: application_outcome.first_disbursement_date, table: gold.loan_applications, column: first_amount_given_on, label: First disbursement date, unit: date}
+- {id: application.observable_disbursed_amount, table: gold.loan_applications, column: observed_amount_given, label: Observable Disbursed Amount, unit: inr, agg: [sum, avg, max]}
+- {id: application.observable_sanction_amount, table: gold.loan_applications, column: observed_approved_amount, label: Observable Sanction Amount, unit: inr, agg: [sum, avg, max]}
+- {id: application.checklist_header_count, table: gold.loan_applications, column: checklist_item_count, label: Checklist Header Count, unit: count}
+- {id: application.checklist_approved_count, table: gold.loan_applications, column: checklist_approved_count, label: Checklist Approved Count, unit: count}
+- {id: application.checklist_rejected_count, table: gold.loan_applications, column: checklist_rejected_count, label: Checklist Rejected Count, unit: count}
+- {id: application.first_checklist_entered_on, table: gold.loan_applications, column: first_checklist_entered_on, label: First Checklist Entered On, unit: datetime}
+- {id: application.last_checklist_entered_on, table: gold.loan_applications, column: last_checklist_entered_on, label: Last Checklist Entered On, unit: datetime}
+- {id: application.checklist_coverage_status, table: gold.loan_applications, column: checklist_completeness, label: Checklist Coverage Status}
+- {id: application.source_systems, table: gold.loan_applications, column: data_source, label: Source systems}
+- {id: application.data_as_of, table: gold.loan_applications, column: data_as_of_date, label: Data As Of, unit: date}
+- {id: application.coverage_status, table: gold.loan_applications, column: data_completeness, label: Coverage Status}
+- {id: branch.entity_num, table: gold.branches, column: company_code, label: Entity num}
+- {id: branch.branch_code, table: gold.branches, column: branch_code, label: Branch code}
+- {id: branch.branch_name, table: gold.branches, column: branch_name, label: Branch name}
+- {id: branch.branch_address, table: gold.branches, column: branch_address, label: Branch address}
+- {id: branch.location_code, table: gold.branches, column: location_code, label: Location code}
+- {id: branch.branch_category_code, table: gold.branches, column: branch_category_code, label: Branch category code}
+- {id: branch.branch_category_name, table: gold.branches, column: branch_category_name, label: Branch category name}
+- {id: branch.branch_size, table: gold.branches, column: branch_size, label: Branch size}
+- {id: branch.admin_unit_type, table: gold.branches, column: admin_unit_type, label: Admin unit type}
+- {id: branch.parent_admin_code, table: gold.branches, column: parent_admin_code, label: Parent admin code}
+- {id: branch.division_codes, table: gold.branches, column: division_codes, label: Division codes}
+- {id: branch.ifsc_code, table: gold.branches, column: ifsc_code, label: IFSC code}
+- {id: branch.micr_code, table: gold.branches, column: micr_code, label: MICR code}
+- {id: branch.bsr_code, table: gold.branches, column: bank_branch_statistics_code, label: BSR code}
+- {id: branch.base_currency, table: gold.branches, column: base_currency, label: Base currency}
+- {id: branch.phone_primary, table: gold.branches, column: primary_phone, label: Phone primary}
+- {id: branch.email_primary, table: gold.branches, column: primary_email, label: Email primary}
+- {id: branch.opened_on, table: gold.branches, column: opened_on, label: Opened on, unit: date}
+- {id: branch.closed_on, table: gold.branches, column: closed_on, label: Closed on, unit: date}
+- {id: branch.branch_status, table: gold.branches, column: branch_status, label: Branch status}
+- {id: geo.district_code, table: gold.branches, column: district_code, label: District code}
+- {id: geo.district_name, table: gold.branches, column: district_name, label: District name}
+- {id: geo.state_code, table: gold.branches, column: state_code, label: State code}
+- {id: geo.state_name, table: gold.branches, column: state_name, label: State name}
+- {id: geo.gst_state_code, table: gold.branches, column: gst_state_code, label: GST state code}
+- {id: geo.region_name, table: gold.branches, column: region_name, label: Region name}
+- {id: branch.geography_match_status, table: gold.branches, column: geography_match_status, label: Geography Match Status}
+- {id: branch.source_systems, table: gold.branches, column: data_source, label: Source systems}
+- {id: branch.data_as_of, table: gold.branches, column: data_as_of_date, label: Data As Of, unit: date}
+- {id: branch.coverage_status, table: gold.branches, column: data_completeness, label: Coverage Status}
+- {id: collection_operation_event.operation_type, table: gold.collection_activities, column: activity_type, label: Operation Type}
+- {id: assignment.entity_num, table: gold.collection_activities, column: company_code, label: Entity num}
+- {id: collection_operation_event.source_event_key, table: gold.collection_activities, column: source_event_id, label: Source Event Key}
+- {id: collection_operation_event.operation_date, table: gold.collection_activities, column: activity_date, label: Operation Date, unit: date}
+- {id: collection_operation_event.operation_timestamp, table: gold.collection_activities, column: activity_timestamp, label: Operation Timestamp, unit: datetime}
+- {id: collection_operation_event.application_or_reference_number, table: gold.collection_activities, column: application_or_reference_number, label: Application Or Reference Number}
+- {id: assignment.customer_id, table: gold.collection_activities, column: customer_id, label: Customer ID}
+- {id: collection_operation_event.loan_account_number, table: gold.collection_activities, column: loan_account_number, label: Loan Account Number}
+- {id: collection_activity.branch_code, table: gold.collection_activities, column: branch_code, label: Branch code}
+- {id: handover.from_branch_code, table: gold.collection_activities, column: from_branch_code, label: From branch code}
+- {id: collection_operation_event.to_branch_code, table: gold.collection_activities, column: to_branch_code, label: To Branch Code}
+- {id: collection_operation_event.actor_user_id, table: gold.collection_activities, column: staff_user_id, label: Actor User Id, sensitivity: pii}
+- {id: collection_operation_event.actor_user_name, table: gold.collection_activities, column: staff_user_name, label: Actor User Name, sensitivity: pii}
+- {id: collection_operation_event.manager_user_id, table: gold.collection_activities, column: manager_user_id, label: Manager User Id, sensitivity: pii}
+- {id: collection_activity.agent_code, table: gold.collection_activities, column: agent_code, label: Agent code}
+- {id: assignment.vendor_type, table: gold.collection_activities, column: vendor_type, label: Vendor type}
+- {id: assignment.vendor_id, table: gold.collection_activities, column: vendor_id, label: Vendor ID}
+- {id: assignment.cpv_type, table: gold.collection_activities, column: field_verification_type, label: CPV type}
+- {id: assignment.customer_type, table: gold.collection_activities, column: customer_type, label: Customer type}
+- {id: assignment.assigned_on, table: gold.collection_activities, column: assigned_on, label: Assigned on, synonyms: [assigned date, assignment date], unit: date}
+- {id: assignment.completed_on, table: gold.collection_activities, column: completed_on, label: Completed on, unit: date}
+- {id: collection_operation_event.handover_status, table: gold.collection_activities, column: handover_status, label: Handover Status, synonyms: [handover completion, pending handover]}
+- {id: collection_operation_event.handover_effective_date, table: gold.collection_activities, column: handover_effective_date, label: Handover Effective Date, unit: date}
+- {id: collection_activity.total_amount, table: gold.collection_activities, column: total_collection_amount, label: Total collection amount, unit: inr, agg: [sum, avg, max]}
+- {id: collection_activity.final_amount, table: gold.collection_activities, column: final_collection_amount, label: Final collection amount, unit: inr, agg: [sum, avg, max]}
+- {id: collection_operation_event.posting_branch_code, table: gold.collection_activities, column: posting_branch_code, label: Posting Branch Code}
+- {id: collection_operation_event.posting_date, table: gold.collection_activities, column: posted_on, label: Posting Date, unit: date}
+- {id: collection_activity.run_number, table: gold.collection_activities, column: collection_run_number, label: Run number, unit: count}
+- {id: collection_operation_event.account_link_status, table: gold.collection_activities, column: account_link_status, label: Account Link Status}
+- {id: assignment.source_systems, table: gold.collection_activities, column: data_source, label: Source systems}
+- {id: collection_operation_event.data_as_of, table: gold.collection_activities, column: data_as_of_date, label: Data As Of, unit: date}
+- {id: collection_operation_event.coverage_status, table: gold.collection_activities, column: data_completeness, label: Coverage Status}
+- {id: kyc.inventory_num, table: gold.customer_kyc_documents, column: document_inventory_number, label: Inventory num}
+- {id: kyc.document_sl, table: gold.customer_kyc_documents, column: document_serial_number, label: Document serial}
+- {id: kyc.entity, table: gold.customer_kyc_documents, column: company_code, label: Entity}
+- {id: kyc.customer_id, table: gold.customer_kyc_documents, column: customer_id, label: Customer ID}
+- {id: kyc.customer_name, table: gold.customer_kyc_documents, column: customer_name, label: Customer name, sensitivity: pii}
+- {id: kyc.pid_type_code, table: gold.customer_kyc_documents, column: document_type_code, label: PID type code}
+- {id: kyc.type, table: gold.customer_kyc_documents, column: document_type, label: Document type}
+- {id: kyc.number, table: gold.customer_kyc_documents, column: document_number, label: Document number, sensitivity: pii}
+- {id: kyc.issue_date, table: gold.customer_kyc_documents, column: issue_date, label: Issue date, unit: date}
+- {id: kyc.expiry, table: gold.customer_kyc_documents, column: expiry_date, label: Expiry date, unit: date, sensitivity: pii}
+- {id: kyc.issue_place, table: gold.customer_kyc_documents, column: issue_place, label: Issue place, sensitivity: pii}
+- {id: kyc.issue_authority, table: gold.customer_kyc_documents, column: issue_authority, label: Issue authority}
+- {id: kyc.is_address_proof, table: gold.customer_kyc_documents, column: is_address_proof, label: Is address proof, unit: boolean}
+- {id: kyc.is_identity_proof, table: gold.customer_kyc_documents, column: is_identity_proof, label: Is identity proof, unit: boolean}
+- {id: kyc.is_pan_type, table: gold.customer_kyc_documents, column: is_pan_document, label: Is PAN type, unit: boolean}
+- {id: kyc.is_aadhaar_type, table: gold.customer_kyc_documents, column: is_aadhaar_document, label: Is Aadhaar type, unit: boolean}
+- {id: customer_document.document_status, table: gold.customer_kyc_documents, column: document_status, label: Document Status}
+- {id: kyc.source_systems, table: gold.customer_kyc_documents, column: data_source, label: Source systems}
+- {id: customer_document.data_as_of, table: gold.customer_kyc_documents, column: data_as_of_date, label: Data As Of, unit: date}
+- {id: customer_document.coverage_status, table: gold.customer_kyc_documents, column: data_completeness, label: Coverage Status}
+- {id: customer.entity, table: gold.customers, column: company_code, label: Entity}
+- {id: customer.id, table: gold.customers, column: customer_id, label: Customer ID}
+- {id: customer.customer_ucid, table: gold.customers, column: unique_customer_code, label: Customer UCID}
+- {id: customer.customer_type, table: gold.customers, column: customer_type, label: Customer type}
+- {id: customer.customer_category_code, table: gold.customers, column: customer_category_code, label: Customer category code}
+- {id: customer.customer_category, table: gold.customers, column: customer_category, label: Customer category}
+- {id: customer.customer_status, table: gold.customers, column: customer_status, label: Customer status}
+- {id: customer.full_name, table: gold.customers, column: full_name, label: Customer name, sensitivity: pii}
+- {id: customer.prefix_code, table: gold.customers, column: name_prefix, label: Prefix code}
+- {id: customer.first_name, table: gold.customers, column: first_name, label: First name, sensitivity: pii}
+- {id: customer.middle_name, table: gold.customers, column: middle_name, label: Middle name, sensitivity: pii}
+- {id: customer.last_name, table: gold.customers, column: last_name, label: Last name, sensitivity: pii}
+- {id: customer.father_name, table: gold.customers, column: father_name, label: Father name, sensitivity: pii}
+- {id: customer.dob, table: gold.customers, column: date_of_birth, label: Date of birth, unit: date, sensitivity: pii}
+- {id: customer.age, table: gold.customers, column: age, label: Age, unit: count, agg: [avg, max, min]}
+- {id: customer.gender, table: gold.customers, column: gender, label: Gender}
+- {id: customer.marital_status, table: gold.customers, column: marital_status, label: Marital status}
+- {id: customer.resident_status, table: gold.customers, column: resident_status, label: Resident status}
+- {id: customer.occupation_type, table: gold.customers, column: occupation_type, label: Occupation type}
+- {id: customer.occupation_name, table: gold.customers, column: occupation_name, label: Occupation name}
+- {id: customer.occupation_nature, table: gold.customers, column: occupation_nature, label: Occupation nature}
+- {id: customer.yearly_income, table: gold.customers, column: yearly_income, label: Yearly income, unit: inr, agg: [sum, avg, max]}
+- {id: customer.monthly_income, table: gold.customers, column: monthly_income, label: Monthly income, unit: inr, agg: [sum, avg, max]}
+- {id: customer.risk_rating, table: gold.customers, column: risk_rating, label: Risk rating}
+- {id: customer.mobile, table: gold.customers, column: primary_mobile, label: Mobile, sensitivity: pii}
+- {id: customer.mobile_secondary, table: gold.customers, column: secondary_mobile, label: Mobile secondary, sensitivity: pii}
+- {id: customer.email, table: gold.customers, column: email, label: Email, sensitivity: pii}
+- {id: customer.landline, table: gold.customers, column: landline, label: Landline, sensitivity: pii}
+- {id: customer.pan, table: gold.customers, column: pan_number, label: PAN, sensitivity: pii}
+- {id: customer.aadhaar, table: gold.customers, column: aadhaar_number, label: Aadhaar, sensitivity: pii}
+- {id: customer.kyc_verified_flag, table: gold.customers, column: is_kyc_verified, label: KYC verified flag, synonyms: [unverified customer, KYC not verified, unverified KYC]}
+- {id: customer_profile.kyc_document_count, table: gold.customers, column: kyc_document_count, label: Kyc Document Count, unit: count}
+- {id: customer_profile.kyc_identity_proof_count, table: gold.customers, column: identity_proof_count, label: Kyc Identity Proof Count, unit: count}
+- {id: customer_profile.kyc_address_proof_count, table: gold.customers, column: address_proof_count, label: Kyc Address Proof Count, unit: count}
+- {id: customer_profile.kyc_expired_document_count, table: gold.customers, column: expired_kyc_document_count, label: Kyc Expired Document Count, unit: count}
+- {id: customer.address_line1, table: gold.customers, column: address_line1, label: Address line1, sensitivity: pii}
+- {id: customer.address_line2, table: gold.customers, column: address_line2, label: Address line2, sensitivity: pii}
+- {id: customer.landmark, table: gold.customers, column: landmark, label: Landmark, sensitivity: pii}
+- {id: customer.city_code, table: gold.customers, column: city_code, label: City code}
+- {id: customer.city, table: gold.customers, column: city, label: City, sensitivity: pii}
+- {id: customer.district_code, table: gold.customers, column: district_code, label: District code}
+- {id: customer.district, table: gold.customers, column: district, label: District, sensitivity: pii}
+- {id: customer.state_code, table: gold.customers, column: state_code, label: State code, sensitivity: pii}
+- {id: customer.state, table: gold.customers, column: state, label: State}
+- {id: customer.pincode, table: gold.customers, column: pincode, label: Pincode, sensitivity: pii}
+- {id: customer.additional_address, table: gold.customers, column: additional_address, label: Additional address, sensitivity: pii}
+- {id: customer.home_branch_code, table: gold.customers, column: home_branch_code, label: Home branch code}
+- {id: customer.home_branch_name, table: gold.customers, column: home_branch_name, label: Home branch name, synonyms: [home branch]}
+- {id: customer.agency_code, table: gold.customers, column: agency_code, label: Agency code}
+- {id: customer.agency_name, table: gold.customers, column: agency_name, label: Agency name, sensitivity: pii}
+- {id: customer.staff_emp_num, table: gold.customers, column: staff_emp_num, label: Staff emp num}
+- {id: customer.staff_name, table: gold.customers, column: staff_name, label: Staff name, sensitivity: pii}
+- {id: customer.is_corporate, table: gold.customers, column: is_company_customer, label: Is corporate, unit: boolean}
+- {id: customer.is_director_elsewhere, table: gold.customers, column: is_director_in_other_company, label: Is director elsewhere, unit: boolean}
+- {id: customer.primary_din, table: gold.customers, column: director_identification_number, label: Primary DIN, sensitivity: pii}
+- {id: customer.firm_party_count, table: gold.customers, column: linked_firm_party_count, label: Firm party count, unit: count, agg: [sum, avg, max]}
+- {id: customer.related_loan_count, table: gold.customers, column: linked_loan_count, label: Related loan count, unit: count, agg: [sum, avg, max]}
+- {id: customer.source_systems, table: gold.customers, column: data_source, label: Source systems}
+- {id: customer_profile.data_as_of, table: gold.customers, column: data_as_of_date, label: Data As Of, unit: date}
+- {id: customer_profile.coverage_status, table: gold.customers, column: data_completeness, label: Coverage Status}
+- {id: disb.entity_num, table: gold.loan_disbursements, column: company_code, label: Entity num}
+- {id: disb.loan_account_number, table: gold.loan_disbursements, column: loan_account_number, label: Loan account number, synonyms: [loan account, account number]}
+- {id: disb.sequence, table: gold.loan_disbursements, column: disbursement_sequence, label: Disbursement sequence, unit: count}
+- {id: disb.date, table: gold.loan_disbursements, column: amount_given_on, label: Disbursement date, unit: date}
+- {id: disb.amount, table: gold.loan_disbursements, column: amount_given, label: Disbursement amount, unit: inr, agg: [sum, avg, max]}
+- {id: disb.charges_amount, table: gold.loan_disbursements, column: charges_amount, label: Charges amount, unit: inr, agg: [sum, avg, max]}
+- {id: disb.net_amount, table: gold.loan_disbursements, column: net_amount_paid_to_customer, label: Net amount paid, synonyms: [net paid amount], unit: inr, agg: [sum, avg, max]}
+- {id: disb.currency_code, table: gold.loan_disbursements, column: currency_code, label: Currency code}
+- {id: disb.posting_branch_code, table: gold.loan_disbursements, column: posting_branch_code, label: Posting branch code}
+- {id: disb.customer_id, table: gold.loan_disbursements, column: customer_id, label: Customer ID}
+- {id: disb.application_branch_code, table: gold.loan_disbursements, column: application_branch_code, label: Application branch code}
+- {id: disbursement_event.reporting_branch_code, table: gold.loan_disbursements, column: reporting_branch_code, label: Reporting Branch Code}
+- {id: disb.product_code, table: gold.loan_disbursements, column: product_code, label: Product code}
+- {id: disb.scheme_code, table: gold.loan_disbursements, column: scheme_code, label: Scheme code}
+- {id: disb.agent_code, table: gold.loan_disbursements, column: agent_code, label: Agent code}
+- {id: disbursement_event.source_event_key, table: gold.loan_disbursements, column: source_event_id, label: Source Event Key}
+- {id: disbursement_event.event_type, table: gold.loan_disbursements, column: event_type, label: Event Type}
+- {id: disbursement_event.source_systems, table: gold.loan_disbursements, column: data_source, label: Source Systems}
+- {id: disbursement_event.data_as_of, table: gold.loan_disbursements, column: data_as_of_date, label: Data As Of, unit: date}
+- {id: disbursement_event.coverage_status, table: gold.loan_disbursements, column: data_completeness, label: Coverage Status}
+- {id: gl.date, table: gold.general_ledger_balances, column: balance_date, label: Balance date, unit: date}
+- {id: gl.entity_num, table: gold.general_ledger_balances, column: company_code, label: Entity num}
+- {id: gl.branch, table: gold.general_ledger_balances, column: branch_code, label: GL branch}
+- {id: gl.branch_name, table: gold.general_ledger_balances, column: branch_name, label: Branch name}
+- {id: gl.number, table: gold.general_ledger_balances, column: ledger_account_number, label: GL number}
+- {id: gl_ledger.gl_account_code, table: gold.general_ledger_balances, column: ledger_account_code, label: GL account code}
+- {id: gl.name, table: gold.general_ledger_balances, column: ledger_account_name, label: GL name}
+- {id: gl_ledger.gl_short_name, table: gold.general_ledger_balances, column: ledger_account_short_name, label: GL short name}
+- {id: gl_ledger.gl_type, table: gold.general_ledger_balances, column: ledger_account_type, label: GL type}
+- {id: gl_ledger.gl_hierarchy_code, table: gold.general_ledger_balances, column: ledger_group_code, label: GL hierarchy code}
+- {id: gl_ledger.gl_hierarchy_name, table: gold.general_ledger_balances, column: ledger_group_name, label: GL hierarchy name}
+- {id: gl_ledger.gl_hierarchy_parent, table: gold.general_ledger_balances, column: parent_ledger_group, label: GL hierarchy parent}
+- {id: gl_ledger.gl_category_code, table: gold.general_ledger_balances, column: ledger_category_code, label: GL category code}
+- {id: gl_ledger.gl_category_name, table: gold.general_ledger_balances, column: ledger_category_name, label: GL category name}
+- {id: gl.gl_family, table: gold.general_ledger_balances, column: ledger_family, label: GL family}
+- {id: gl_ledger.parent_gl_number, table: gold.general_ledger_balances, column: parent_ledger_account_number, label: Parent GL number}
+- {id: gl_ledger.parent_gl_name, table: gold.general_ledger_balances, column: parent_ledger_account_name, label: Parent GL name}
+- {id: gl_ledger.contra_gl, table: gold.general_ledger_balances, column: contra_ledger_account, label: Contra GL}
+- {id: gl.currency_code, table: gold.general_ledger_balances, column: currency_code, label: Currency code}
+- {id: gl_ledger.default_currency, table: gold.general_ledger_balances, column: default_currency, label: Default currency}
+- {id: gl_ledger.allowed_currencies, table: gold.general_ledger_balances, column: allowed_currencies, label: Allowed currencies}
+- {id: gl.account_currency_balance, table: gold.general_ledger_balances, column: balance_in_account_currency, label: Account currency balance, unit: inr, agg: [sum, avg, max]}
+- {id: gl.balance, table: gold.general_ledger_balances, column: balance_in_base_currency, label: Base-currency balance, unit: inr, agg: [sum, avg, max]}
+- {id: gl.account_currency_debits, table: gold.general_ledger_balances, column: debits_in_account_currency, label: Account currency debits, unit: inr, agg: [sum, avg, max]}
+- {id: gl.account_currency_credits, table: gold.general_ledger_balances, column: credits_in_account_currency, label: Account currency credits, unit: inr, agg: [sum, avg, max]}
+- {id: gl.debits, table: gold.general_ledger_balances, column: debits_in_base_currency, label: Base-currency debits, unit: inr, agg: [sum, avg, max]}
+- {id: gl.credits, table: gold.general_ledger_balances, column: credits_in_base_currency, label: Base-currency credits, unit: inr, agg: [sum, avg, max]}
+- {id: gl_ledger.is_gicc_gl, table: gold.general_ledger_balances, column: is_gicc_ledger_account, label: Is GICC GL, unit: boolean}
+- {id: gl_balance.is_external_gl, table: gold.general_ledger_balances, column: is_external_ledger_account, label: Is External Gl, unit: boolean}
+- {id: gl_balance.external_access_code, table: gold.general_ledger_balances, column: external_access_code, label: External Access Code}
+- {id: gl_balance.external_gl_head, table: gold.general_ledger_balances, column: external_ledger_head, label: External Gl Head}
+- {id: gl_balance.external_gl_usage, table: gold.general_ledger_balances, column: external_ledger_usage, label: External Gl Usage}
+- {id: gl_ledger.gl_status, table: gold.general_ledger_balances, column: ledger_account_status, label: GL status}
+- {id: gl_ledger.opened_on, table: gold.general_ledger_balances, column: opened_on, label: Opened on, unit: date}
+- {id: gl_ledger.closed_on, table: gold.general_ledger_balances, column: closed_on, label: Closed on, unit: date}
+- {id: gl_ledger.source_systems, table: gold.general_ledger_balances, column: data_source, label: Source systems}
+- {id: gl_balance.data_as_of, table: gold.general_ledger_balances, column: data_as_of_date, label: Data As Of, unit: date}
+- {id: gl_balance.coverage_status, table: gold.general_ledger_balances, column: data_completeness, label: Coverage Status}
+- {id: loan.entity_number, table: gold.loan_accounts, column: company_code, label: Entity}
+- {id: loan.account_number, table: gold.loan_accounts, column: loan_account_number, label: Loan account number, synonyms: [account number, account numbers, loan number]}
+- {id: loan.application_number, table: gold.loan_accounts, column: application_number, label: Application number}
+- {id: loan.customer_id, table: gold.loan_accounts, column: customer_id, label: Customer ID}
+- {id: loan.customer_name, table: gold.loan_accounts, column: customer_name, label: Borrower name, synonyms: [customer name], sensitivity: pii}
+- {id: loan_reporting.application_branch_code, table: gold.loan_accounts, column: application_branch_code, label: Application branch code}
+- {id: loan_reporting.posting_branch_code, table: gold.loan_accounts, column: posting_branch_code, label: Posting branch code}
+- {id: loan_reporting.servicing_branch_code, table: gold.loan_accounts, column: servicing_branch_code, label: Servicing branch code}
+- {id: loan_reporting.reporting_branch_code, table: gold.loan_accounts, column: reporting_branch_code, label: Reporting branch code}
+- {id: loan.product_code, table: gold.loan_accounts, column: product_code, label: Product code}
+- {id: loan.product_name, table: gold.loan_accounts, column: product_name, label: Product}
+- {id: loan.scheme_code, table: gold.loan_accounts, column: scheme_code, label: Scheme code}
+- {id: loan.scheme_name, table: gold.loan_accounts, column: scheme_name, label: Scheme}
+- {id: loan_account.reporting_product_code, table: gold.loan_accounts, column: report_product_code, label: Reporting Product Code}
+- {id: loan_account.reporting_product_name, table: gold.loan_accounts, column: report_product_name, label: Reporting Product Name}
+- {id: loan_account.reporting_product_group, table: gold.loan_accounts, column: report_product_group, label: Reporting Product Group}
+- {id: loan_account.secured_flag, table: gold.loan_accounts, column: is_secured_loan, label: Secured Flag}
+- {id: loan_account.msme_flag, table: gold.loan_accounts, column: is_business_loan, label: Msme Flag}
+- {id: loan.loan_type, table: gold.loan_accounts, column: loan_type, label: Loan type}
+- {id: loan.loan_purpose_code, table: gold.loan_accounts, column: loan_purpose_code, label: Loan purpose code}
+- {id: loan.loan_purpose_desc, table: gold.loan_accounts, column: loan_purpose, label: Loan purpose desc}
+- {id: loan.sanction_date, table: gold.loan_accounts, column: approved_on, label: Sanction date, unit: date}
+- {id: loan.sanction_amount, table: gold.loan_accounts, column: approved_amount, label: Sanction amount, unit: inr, agg: [sum, avg, max]}
+- {id: loan.disbursed_amount, table: gold.loan_accounts, column: amount_given, label: Cumulative disbursed amount, unit: inr, agg: [sum, avg, max]}
+- {id: loan.first_disbursement_date, table: gold.loan_accounts, column: first_amount_given_on, label: First disbursement date, unit: date}
+- {id: loan.disbursement_count, table: gold.loan_accounts, column: times_amount_given, label: Disbursement count, unit: count, agg: [sum, avg, max]}
+- {id: loan.interest_rate, table: gold.loan_accounts, column: interest_rate_percent, label: Interest rate, unit: percent, agg: [avg, max, min]}
+- {id: loan.emi_amount, table: gold.loan_accounts, column: monthly_emi_amount, label: EMI amount, unit: inr, agg: [sum, avg, max]}
+- {id: loan.number_of_emis, table: gold.loan_accounts, column: total_emi_count, label: Number of EMIs, unit: count, agg: [avg, max, min]}
+- {id: loan.application_emi_date, table: gold.loan_accounts, column: planned_first_emi_date, label: Application EMI date, unit: date}
+- {id: loan.coapplicant_count, table: gold.loan_accounts, column: co_borrower_count, label: Coapplicant count, unit: count, agg: [sum, avg, max]}
+- {id: loan.repayment_start_date, table: gold.loan_accounts, column: repayment_start_date, label: Repayment start date, unit: date}
+- {id: loan.repayment_end_date, table: gold.loan_accounts, column: repayment_end_date, label: Repayment end date, unit: date}
+- {id: loan.principal_repaid, table: gold.loan_accounts, column: principal_paid_so_far, label: Cumulative principal repaid, unit: inr, agg: [sum, avg, max]}
+- {id: loan.interest_repaid, table: gold.loan_accounts, column: interest_paid_so_far, label: Cumulative interest repaid, unit: inr, agg: [sum, avg, max]}
+- {id: loan.receipt_count, table: gold.loan_accounts, column: payment_receipt_count, label: Receipt count, unit: count, agg: [sum, avg, max]}
+- {id: loan.total_receipt_amount, table: gold.loan_accounts, column: total_amount_received, label: Total receipt amount, unit: inr, agg: [sum, avg, max]}
+- {id: loan.last_payment_date, table: gold.loan_accounts, column: last_payment_date, label: Last payment date, unit: date}
+- {id: loan.schedule_installments, table: gold.loan_accounts, column: scheduled_emi_count, label: Schedule instalments, unit: count, agg: [avg, max, min]}
+- {id: loan.latest_asset_code, table: gold.loan_accounts, column: loan_health_code, label: Latest asset code}
+- {id: loan.latest_asset_category, table: gold.loan_accounts, column: loan_health_category, label: Latest asset category}
+- {id: loan.asset_classified_on, table: gold.loan_accounts, column: loan_health_marked_on, label: Asset classified on, unit: date}
+- {id: loan.dpd_days, table: gold.loan_accounts, column: days_past_due, label: DPD days, unit: count, agg: [avg, max, min]}
+- {id: loan_account.principal_outstanding_current, table: gold.loan_accounts, column: principal_still_due, label: Principal Outstanding Current, unit: inr, agg: [sum, avg, max]}
+- {id: loan.npa_type, table: gold.loan_accounts, column: bad_loan_type, label: NPA type}
+- {id: loan.npa_date, table: gold.loan_accounts, column: bad_loan_marked_on, label: NPA date, unit: date}
+- {id: loan.closure_date, table: gold.loan_accounts, column: closed_on, label: Closure date, unit: date}
+- {id: loan.status, table: gold.loan_accounts, column: loan_status, label: Loan status}
+- {id: loan.agent_code, table: gold.loan_accounts, column: agent_code, label: Agent code}
+- {id: loan.agent_name, table: gold.loan_accounts, column: agent_name, label: Agent name, sensitivity: pii}
+- {id: loan.sourced_by, table: gold.loan_accounts, column: sourced_by, label: Sourced by}
+- {id: loan.direct_selling_agent, table: gold.loan_accounts, column: direct_selling_agent, label: Direct selling agent}
+- {id: loan_account.reporting_mapping_status, table: gold.loan_accounts, column: product_mapping_status, label: Reporting Mapping Status}
+- {id: loan.source_systems, table: gold.loan_accounts, column: data_source, label: Source systems}
+- {id: loan_account.data_as_of, table: gold.loan_accounts, column: data_as_of_date, label: Data As Of, unit: date}
+- {id: loan_account.coverage_status, table: gold.loan_accounts, column: data_completeness, label: Coverage Status}
+- {id: loan_ledger_event.record_type, table: gold.loan_account_entries, column: entry_type, label: Record Type}
+- {id: loan_ledger.entity_num, table: gold.loan_account_entries, column: company_code, label: Entity num}
+- {id: loan_ledger.loan_account_number, table: gold.loan_account_entries, column: loan_account_number, label: Loan account number, synonyms: [loan account, account number]}
+- {id: loan_ledger_event.event_date, table: gold.loan_account_entries, column: entry_date, label: Event Date, unit: date}
+- {id: loan_ledger.day_serial, table: gold.loan_account_entries, column: day_serial_number, label: Day serial, unit: count}
+- {id: loan_ledger.debit_credit_flag, table: gold.loan_account_entries, column: debit_or_credit, label: Debit or credit flag}
+- {id: loan_ledger.currency_code, table: gold.loan_account_entries, column: currency_code, label: Currency code}
+- {id: loan_ledger_event.principal_movement, table: gold.loan_account_entries, column: principal_change, label: Principal Movement}
+- {id: loan_ledger_event.interest_movement, table: gold.loan_account_entries, column: interest_change, label: Interest Movement}
+- {id: loan_ledger_event.charges_movement, table: gold.loan_account_entries, column: charges_change, label: Charges Movement, unit: inr, agg: [sum, avg, max]}
+- {id: loan_ledger_event.penal_movement, table: gold.loan_account_entries, column: penalty_change, label: Penal Movement}
+- {id: loan_ledger_event.future_installment_movement, table: gold.loan_account_entries, column: future_emi_change, label: Future Installment Movement}
+- {id: loan_ledger.narration, table: gold.loan_account_entries, column: narration, label: Transaction narration}
+- {id: loan_ledger_event.transaction_reference, table: gold.loan_account_entries, column: transaction_reference, label: Transaction Reference}
+- {id: loan_ledger.breakup_from_date, table: gold.loan_account_entries, column: interest_breakup_from, label: Breakup from date, unit: date}
+- {id: loan_ledger.breakup_upto_date, table: gold.loan_account_entries, column: interest_breakup_to, label: Breakup up to date, unit: date}
+- {id: loan_ledger.breakup_interest_amount, table: gold.loan_account_entries, column: interest_breakup_amount, label: Breakup interest amount, unit: inr, agg: [sum, avg, max]}
+- {id: loan_ledger.breakup_interest_rate, table: gold.loan_account_entries, column: interest_breakup_rate_percent, label: Breakup interest rate, unit: percent, agg: [avg, max, min]}
+- {id: loan_balance.principal_outstanding, table: gold.loan_account_entries, column: principal_still_due, label: Principal outstanding, unit: inr, agg: [sum, avg, max]}
+- {id: loan_balance.interest_outstanding, table: gold.loan_account_entries, column: interest_still_due, label: Interest outstanding, unit: inr, agg: [sum, avg, max]}
+- {id: loan_balance.charges_outstanding, table: gold.loan_account_entries, column: charges_still_due, label: Charges outstanding, unit: inr, agg: [sum, avg, max]}
+- {id: loan_balance.penal_outstanding, table: gold.loan_account_entries, column: penalty_still_due, label: Penal outstanding, unit: inr, agg: [sum, avg, max]}
+- {id: loan_balance.excess_outstanding, table: gold.loan_account_entries, column: excess_balance, label: Excess outstanding, unit: inr, agg: [sum, avg, max]}
+- {id: loan_balance.channel_id, table: gold.loan_account_entries, column: payment_channel, label: Channel ID}
+- {id: loan_balance.recovery_type, table: gold.loan_account_entries, column: recovery_type, label: Recovery type}
+- {id: loan_balance.asset_code, table: gold.loan_account_entries, column: loan_health_code, label: Asset code}
+- {id: loan_balance.cash_payment, table: gold.loan_account_entries, column: cash_payment_amount, label: Cash payment, unit: inr, agg: [sum, avg, max]}
+- {id: loan_balance.online_payment, table: gold.loan_account_entries, column: online_payment_amount, label: Online payment, unit: inr, agg: [sum, avg, max]}
+- {id: loan_balance.cheque_payment, table: gold.loan_account_entries, column: cheque_payment_amount, label: Cheque payment, unit: inr, agg: [sum, avg, max]}
+- {id: loan_ledger_event.source_event_key, table: gold.loan_account_entries, column: source_event_id, label: Source Event Key}
+- {id: loan_ledger.source_systems, table: gold.loan_account_entries, column: data_source, label: Source systems}
+- {id: loan_ledger_event.data_as_of, table: gold.loan_account_entries, column: data_as_of_date, label: Data As Of, unit: date}
+- {id: loan_ledger_event.coverage_status, table: gold.loan_account_entries, column: data_completeness, label: Coverage Status}
+- {id: msme.entity_num, table: gold.business_loan_leads, column: company_code, label: Entity num}
+- {id: msme.lead_number, table: gold.business_loan_leads, column: enquiry_number, label: MSME lead number, synonyms: [lead number]}
+- {id: msme.entered_on, table: gold.business_loan_leads, column: enquiry_entered_on, label: Entered date, unit: date}
+- {id: msme.customer_id, table: gold.business_loan_leads, column: customer_id, label: Customer ID}
+- {id: msme.customer_name, table: gold.business_loan_leads, column: customer_name, label: Customer name, sensitivity: pii}
+- {id: msme.firm_name, table: gold.business_loan_leads, column: business_name, label: Firm name, sensitivity: pii}
+- {id: msme.mobile, table: gold.business_loan_leads, column: mobile_number, label: Mobile, sensitivity: pii}
+- {id: msme.branch_code, table: gold.business_loan_leads, column: branch_code, label: Branch code}
+- {id: msme.firm_type_code, table: gold.business_loan_leads, column: business_type_code, label: Firm type code}
+- {id: msme.firm_type_desc, table: gold.business_loan_leads, column: business_type, label: Firm type desc}
+- {id: msme.customer_category_code, table: gold.business_loan_leads, column: customer_category_code, label: Customer category code}
+- {id: msme.customer_category_desc, table: gold.business_loan_leads, column: customer_category, label: Customer category desc}
+- {id: msme.product_code, table: gold.business_loan_leads, column: product_code, label: Product code}
+- {id: msme.scheme_code, table: gold.business_loan_leads, column: scheme_code, label: Scheme code}
+- {id: msme.loan_purpose_code, table: gold.business_loan_leads, column: loan_purpose_code, label: Loan purpose code}
+- {id: msme.requested_amount, table: gold.business_loan_leads, column: amount_requested, label: Requested amount, unit: inr, agg: [sum, avg, max]}
+- {id: msme.secured_unsecured, table: gold.business_loan_leads, column: secured_or_unsecured, label: Secured unsecured}
+- {id: msme.security_type, table: gold.business_loan_leads, column: security_type, label: Security type}
+- {id: msme.security_value, table: gold.business_loan_leads, column: security_value, label: Security value, unit: inr, agg: [sum, avg, max]}
+- {id: msme.lead_source, table: gold.business_loan_leads, column: enquiry_source, label: Lead source}
+- {id: msme_lead.entered_by_employee, table: gold.business_loan_leads, column: entered_by_employee, label: Entered By Employee}
+- {id: msme.status, table: gold.business_loan_leads, column: enquiry_status, label: Lead status}
+- {id: msme.reject_reason, table: gold.business_loan_leads, column: reject_reason, label: Reject reason}
+- {id: msme.loan_application_number, table: gold.business_loan_leads, column: loan_application_number, label: Loan application number}
+- {id: msme.lead_vendor_id, table: gold.business_loan_leads, column: enquiry_vendor_id, label: Lead vendor ID, synonyms: [lead vendor identifier]}
+- {id: msme.vendor_id, table: gold.business_loan_leads, column: vendor_id, label: Vendor ID, synonyms: [vendor, vendor identifier]}
+- {id: msme.vehicle_make, table: gold.business_loan_leads, column: vehicle_make, label: Vehicle make}
+- {id: msme.vehicle_model, table: gold.business_loan_leads, column: vehicle_model, label: Vehicle model}
+- {id: msme.vendor_loan_amount, table: gold.business_loan_leads, column: vendor_loan_amount, label: Vendor loan amount, unit: inr, agg: [sum, avg, max]}
+- {id: msme.finance_amount, table: gold.business_loan_leads, column: finance_amount, label: Finance amount, unit: inr, agg: [sum, avg, max]}
+- {id: msme.vendor_row_count, table: gold.business_loan_leads, column: vendor_row_count, label: Vendor row count, unit: count, agg: [sum, avg, max]}
+- {id: msme.cif_shop_name, table: gold.business_loan_leads, column: shop_name, label: CIF shop name, sensitivity: pii}
+- {id: msme.cif_entered_by_agent, table: gold.business_loan_leads, column: entered_by_agent, label: CIF entered by agent, sensitivity: pii}
+- {id: msme.msme_status, table: gold.business_loan_leads, column: business_loan_status, label: MSME status}
+- {id: msme.source_systems, table: gold.business_loan_leads, column: data_source, label: Source systems}
+- {id: msme_lead.data_as_of, table: gold.business_loan_leads, column: data_as_of_date, label: Data As Of, unit: date}
+- {id: msme_lead.coverage_status, table: gold.business_loan_leads, column: data_completeness, label: Coverage Status}
+- {id: organization_hierarchy.hierarchy_type, table: gold.staff_reporting_structure, column: hierarchy_type, label: Hierarchy Type}
+- {id: sales_hier.version, table: gold.staff_reporting_structure, column: hierarchy_version, label: Hierarchy version}
+- {id: sales_hier.entity_num, table: gold.staff_reporting_structure, column: company_code, label: Entity num}
+- {id: organization_hierarchy.actor_user_id, table: gold.staff_reporting_structure, column: staff_user_id, label: Actor User Id, synonyms: [actor ID, employee ID, team member ID, collector ID], sensitivity: pii}
+- {id: organization_hierarchy.actor_role_code, table: gold.staff_reporting_structure, column: staff_role_code, label: Actor Role Code}
+- {id: sales_hier.manager_user_id, table: gold.staff_reporting_structure, column: manager_user_id, label: Manager user ID, synonyms: [manager ID, reporting manager ID, collection manager ID], sensitivity: pii}
+- {id: sales_hier.effective_from, table: gold.staff_reporting_structure, column: valid_from, label: Effective from, unit: date}
+- {id: sales_hier.effective_to, table: gold.staff_reporting_structure, column: valid_to, label: Effective to, unit: date}
+- {id: sales_hier.manager_effective_from, table: gold.staff_reporting_structure, column: manager_valid_from, label: Manager effective from, unit: date}
+- {id: sales_hier.remarks, table: gold.staff_reporting_structure, column: remarks, label: Remarks}
+- {id: sales_hier.uploaded_on, table: gold.staff_reporting_structure, column: uploaded_on, label: Uploaded on, unit: datetime}
+- {id: sales_hier.source_systems, table: gold.staff_reporting_structure, column: data_source, label: Source systems}
+- {id: organization_hierarchy.data_as_of, table: gold.staff_reporting_structure, column: data_as_of_date, label: Data As Of, unit: date}
+- {id: organization_hierarchy.coverage_status, table: gold.staff_reporting_structure, column: data_completeness, label: Coverage Status}
+- {id: vintage.entity_num, table: gold.loan_vintage_performance, column: company_code, label: Entity num}
+- {id: vintage.origination_month, table: gold.loan_vintage_performance, column: loan_start_month, label: Origination month, unit: date}
+- {id: vintage.report_month, table: gold.loan_vintage_performance, column: report_month, label: Report month, unit: date}
+- {id: vintage.months_on_book, table: gold.loan_vintage_performance, column: months_since_loan_started, label: Months on book, unit: count, agg: [avg, max, min]}
+- {id: vintage.branch_code, table: gold.loan_vintage_performance, column: branch_code, label: Branch code}
+- {id: vintage.product_code, table: gold.loan_vintage_performance, column: product_code, label: Product code}
+- {id: vintage.scheme_code, table: gold.loan_vintage_performance, column: scheme_code, label: Scheme code}
+- {id: vintage.account_count, table: gold.loan_vintage_performance, column: loan_account_count, label: Account count, unit: count, agg: [sum]}
+- {id: vintage.disbursed_amount, table: gold.loan_vintage_performance, column: amount_given, label: Disbursed amount, unit: inr, agg: [sum, avg, max]}
+- {id: vintage.principal_outstanding, table: gold.loan_vintage_performance, column: principal_still_due, label: Principal outstanding, unit: inr, agg: [sum, avg, max]}
+- {id: vintage.accounts_par30, table: gold.loan_vintage_performance, column: accounts_overdue_over_30_days, label: Accounts PAR 30, unit: count, agg: [sum]}
+- {id: vintage.accounts_par60, table: gold.loan_vintage_performance, column: accounts_overdue_over_60_days, label: Accounts PAR 60, unit: count, agg: [sum]}
+- {id: vintage.accounts_par90, table: gold.loan_vintage_performance, column: accounts_overdue_over_90_days, label: Accounts PAR 90, unit: count, agg: [sum]}
+- {id: vintage.accounts_npa, table: gold.loan_vintage_performance, column: bad_loan_account_count, label: NPA accounts, unit: count, agg: [sum]}
+- {id: origination_vintage.par30_account_rate, table: gold.loan_vintage_performance, column: overdue_over_30_days_rate, label: Par30 Account Rate, unit: percent, agg: [avg, max, min]}
+- {id: origination_vintage.par60_account_rate, table: gold.loan_vintage_performance, column: overdue_over_60_days_rate, label: Par60 Account Rate, unit: percent, agg: [avg, max, min]}
+- {id: origination_vintage.par90_account_rate, table: gold.loan_vintage_performance, column: overdue_over_90_days_rate, label: Par90 Account Rate, unit: percent, agg: [avg, max, min]}
+- {id: origination_vintage.npa_account_rate, table: gold.loan_vintage_performance, column: bad_loan_rate, label: Npa Account Rate, unit: percent, agg: [avg, max, min]}
+- {id: vintage.source_systems, table: gold.loan_vintage_performance, column: data_source, label: Source systems}
+- {id: origination_vintage.data_as_of, table: gold.loan_vintage_performance, column: data_as_of_date, label: Data As Of, unit: date}
+- {id: origination_vintage.coverage_status, table: gold.loan_vintage_performance, column: data_completeness, label: Coverage Status}
+- {id: risk.snapshot_date, table: gold.daily_loan_status, column: status_date, label: Snapshot date, unit: date}
+- {id: risk.entity_num, table: gold.daily_loan_status, column: company_code, label: Entity num}
+- {id: risk.loan_account_number, table: gold.daily_loan_status, column: loan_account_number, label: Loan account number, synonyms: [loan number, account number]}
+- {id: risk.customer_id, table: gold.daily_loan_status, column: customer_id, label: Customer ID}
+- {id: risk.branch_code, table: gold.daily_loan_status, column: branch_code, label: Branch code}
+- {id: risk.product_code, table: gold.daily_loan_status, column: product_code, label: Product code}
+- {id: risk.scheme_code, table: gold.daily_loan_status, column: scheme_code, label: Scheme code}
+- {id: risk.asset_code, table: gold.daily_loan_status, column: loan_health_code, label: Asset classification, decode: asset_class}
+- {id: risk.asset_classification, table: gold.daily_loan_status, column: loan_health_category, label: Asset classification name}
+- {id: risk.previous_asset_code, table: gold.daily_loan_status, column: previous_loan_health_code, label: Previous asset code}
+- {id: risk.dpd_days, table: gold.daily_loan_status, column: days_past_due, label: Days past due, synonyms: [days overdue], unit: count, agg: [avg, max]}
+- {id: risk.principal_outstanding, table: gold.daily_loan_status, column: principal_still_due, label: Principal outstanding, unit: inr, agg: [sum, avg, max]}
+- {id: risk.principal_overdue, table: gold.daily_loan_status, column: principal_overdue, label: Principal overdue, unit: inr, agg: [sum, avg, max]}
+- {id: risk.interest_overdue, table: gold.daily_loan_status, column: interest_overdue, label: Interest overdue, unit: inr, agg: [sum, avg, max]}
+- {id: risk.charges_overdue, table: gold.daily_loan_status, column: charges_overdue, label: Charges overdue, unit: inr, agg: [sum, avg, max]}
+- {id: risk.penal_overdue, table: gold.daily_loan_status, column: penalty_overdue, label: Penal overdue, unit: inr, agg: [sum, avg, max]}
+- {id: risk.total_overdue, table: gold.daily_loan_status, column: total_overdue, label: Total overdue, unit: inr, agg: [sum, avg, max]}
+- {id: risk.is_delinquent, table: gold.daily_loan_status, column: is_overdue, label: Is delinquent, unit: boolean}
+- {id: risk.is_par30, table: gold.daily_loan_status, column: overdue_over_30_days, label: Is par30, unit: boolean}
+- {id: risk.is_par60, table: gold.daily_loan_status, column: overdue_over_60_days, label: Is par60, unit: boolean}
+- {id: risk.is_par90, table: gold.daily_loan_status, column: overdue_over_90_days, label: Is par90, unit: boolean}
+- {id: risk.is_npa, table: gold.daily_loan_status, column: is_bad_loan, label: Is NPA, unit: boolean}
+- {id: portfolio_snapshot.source_systems, table: gold.daily_loan_status, column: data_source, label: Source Systems}
+- {id: portfolio_snapshot.data_as_of, table: gold.daily_loan_status, column: data_as_of_date, label: Data As Of, unit: date}
+- {id: portfolio_snapshot.coverage_status, table: gold.daily_loan_status, column: data_completeness, label: Coverage Status}
+- {id: product.entity_num, table: gold.loan_products, column: company_code, label: Entity num}
+- {id: product.product_code, table: gold.loan_products, column: product_code, label: Product code}
+- {id: product.product_name, table: gold.loan_products, column: product_name, label: Product name}
+- {id: product.product_domain, table: gold.loan_products, column: product_domain, label: Product domain}
+- {id: product.product_group, table: gold.loan_products, column: product_group, label: Product group}
+- {id: product.scheme_code, table: gold.loan_products, column: scheme_code, label: Scheme code}
+- {id: product.scheme_name, table: gold.loan_products, column: scheme_name, label: Scheme name}
+- {id: product.loan_type, table: gold.loan_products, column: loan_type, label: Loan type}
+- {id: product.security_type_code, table: gold.loan_products, column: security_type_code, label: Security type code}
+- {id: product.security_type_desc, table: gold.loan_products, column: security_type, label: Security type desc}
+- {id: product.product_family, table: gold.loan_products, column: product_family, label: Product family}
+- {id: product.gl_account_code, table: gold.loan_products, column: ledger_account_code, label: GL account code}
+- {id: product.min_amount, table: gold.loan_products, column: minimum_loan_amount, label: Min amount, unit: inr, agg: [sum, avg, max]}
+- {id: product.max_amount, table: gold.loan_products, column: maximum_loan_amount, label: Max amount, unit: inr, agg: [sum, avg, max]}
+- {id: product.min_tenor_months, table: gold.loan_products, column: minimum_tenure_months, label: Min tenor months, synonyms: [minimum tenor, term lower bound], unit: months, agg: [avg, max, min]}
+- {id: product.max_tenor_months, table: gold.loan_products, column: maximum_tenure_months, label: Max tenor months, synonyms: [maximum tenor, term upper bound], unit: months, agg: [avg, max, min]}
+- {id: product.ltv_rate, table: gold.loan_products, column: loan_to_value_percent, label: LTV rate, unit: percent, agg: [avg, max, min]}
+- {id: product.min_interest_rate, table: gold.loan_products, column: minimum_interest_rate_percent, label: Min interest rate, synonyms: [minimum interest rate, minimum rate, pricing lower bound], unit: percent, agg: [avg, max, min]}
+- {id: product.max_interest_rate, table: gold.loan_products, column: maximum_interest_rate_percent, label: Max interest rate, synonyms: [maximum interest rate, maximum rate, pricing upper bound], unit: percent, agg: [avg, max, min]}
+- {id: product.product_status, table: gold.loan_products, column: product_status, label: Product status}
+- {id: reporting_product.reporting_product_code, table: gold.loan_products, column: report_product_code, label: Reporting product code}
+- {id: reporting_product.reporting_product_name, table: gold.loan_products, column: report_product_name, label: Reporting product name}
+- {id: reporting_product.reporting_product_group, table: gold.loan_products, column: report_product_group, label: Reporting product group}
+- {id: reporting_product.secured_flag, table: gold.loan_products, column: is_secured_loan, label: Secured flag}
+- {id: reporting_product.msme_flag, table: gold.loan_products, column: is_business_loan, label: MSME flag}
+- {id: reporting_product.mapping_effective_from, table: gold.loan_products, column: mapping_valid_from, label: Mapping effective from, unit: date}
+- {id: reporting_product.mapping_effective_to, table: gold.loan_products, column: mapping_valid_to, label: Mapping effective to, unit: date}
+- {id: reporting_product.mapping_status, table: gold.loan_products, column: product_mapping_status, label: Mapping status}
+- {id: product_scheme.mapping_approved_by, table: gold.loan_products, column: mapping_approved_by, label: Mapping Approved By}
+- {id: product_scheme.mapping_approved_at, table: gold.loan_products, column: mapping_approved_at, label: Mapping Approved At, unit: datetime}
+- {id: product.source_systems, table: gold.loan_products, column: data_source, label: Source systems}
+- {id: product_scheme.data_as_of, table: gold.loan_products, column: data_as_of_date, label: Data As Of, unit: date}
+- {id: product_scheme.coverage_status, table: gold.loan_products, column: data_completeness, label: Coverage Status}
+- {id: receipt_adjustment_event.event_type, table: gold.payment_receipts, column: event_type, label: Event Type}
+- {id: receipt.entity_num, table: gold.payment_receipts, column: company_code, label: Entity num}
+- {id: receipt.loan_account_number, table: gold.payment_receipts, column: loan_account_number, label: Loan account number, synonyms: [loan account, account number]}
+- {id: receipt_adjustment_event.event_date, table: gold.payment_receipts, column: receipt_date, label: Event Date, unit: date}
+- {id: receipt_adjustment_event.source_event_key, table: gold.payment_receipts, column: source_event_id, label: Source Event Key}
+- {id: receipt.amount, table: gold.payment_receipts, column: receipt_amount, label: Receipt amount, unit: inr, agg: [sum, avg, max]}
+- {id: receipt.principal_adjusted, table: gold.payment_receipts, column: principal_adjusted_from_receipt, label: Principal adjusted, unit: inr, agg: [sum, avg, max]}
+- {id: receipt.interest_adjusted, table: gold.payment_receipts, column: interest_adjusted_from_receipt, label: Interest adjusted, unit: inr, agg: [sum, avg, max]}
+- {id: receipt.charges_adjusted, table: gold.payment_receipts, column: charges_adjusted_from_receipt, label: Charges adjusted, unit: inr, agg: [sum, avg, max]}
+- {id: receipt.penal_adjusted, table: gold.payment_receipts, column: penalty_adjusted_from_receipt, label: Penal adjusted, unit: inr, agg: [sum, avg, max]}
+- {id: receipt.total_due, table: gold.payment_receipts, column: total_due, label: Total due, unit: inr, agg: [sum, avg, max]}
+- {id: receipt_adjustment_event.posting_branch_code, table: gold.payment_receipts, column: posting_branch_code, label: Posting Branch Code}
+- {id: receipt.posting_date, table: gold.payment_receipts, column: posted_on, label: Posting date, unit: date}
+- {id: receipt.mode, table: gold.payment_receipts, column: payment_mode, label: Receipt mode}
+- {id: receipt_adjustment_event.receipt_branch_code, table: gold.payment_receipts, column: receipt_branch_code, label: Receipt Branch Code}
+- {id: receipt.instrument_number, table: gold.payment_receipts, column: cheque_or_instrument_number, label: Instrument number, sensitivity: pii}
+- {id: receipt.instrument_date, table: gold.payment_receipts, column: cheque_or_instrument_date, label: Instrument date, unit: date}
+- {id: receipt.utr_number, table: gold.payment_receipts, column: bank_reference_utr, label: UTR number, sensitivity: pii}
+- {id: receipt.detail_amount, table: gold.payment_receipts, column: detailed_receipt_amount, label: Detail receipt amount, unit: inr, agg: [sum, avg, max]}
+- {id: waiver.interest, table: gold.payment_receipts, column: interest_waived, label: Interest waived, unit: inr, agg: [sum, avg, max]}
+- {id: waiver.charges, table: gold.payment_receipts, column: charges_waived, label: Charges waived, unit: inr, agg: [sum, avg, max]}
+- {id: waiver.penal, table: gold.payment_receipts, column: penalty_waived, label: Penal waived, unit: inr, agg: [sum, avg, max]}
+- {id: waiver.total, table: gold.payment_receipts, column: total_waived_amount, label: Total waived amount, unit: inr, agg: [sum, avg, max]}
+- {id: waiver.installments_due, table: gold.payment_receipts, column: emis_due, label: Installments due, unit: inr, agg: [sum, avg, max]}
+- {id: waiver.installments_paid, table: gold.payment_receipts, column: emis_paid, label: Installments paid, unit: inr, agg: [sum, avg, max]}
+- {id: waiver.excess, table: gold.payment_receipts, column: excess_amount, label: Excess amount, unit: inr, agg: [sum, avg, max]}
+- {id: waiver.early_payment_charge, table: gold.payment_receipts, column: early_payment_charge, label: Early payment charge, unit: inr, agg: [sum, avg, max]}
+- {id: receipt.source_systems, table: gold.payment_receipts, column: data_source, label: Source systems}
+- {id: receipt_adjustment_event.data_as_of, table: gold.payment_receipts, column: data_as_of_date, label: Data As Of, unit: date}
+- {id: receipt_adjustment_event.coverage_status, table: gold.payment_receipts, column: data_completeness, label: Coverage Status}
+- {id: repay.entity_num, table: gold.loan_repayments, column: company_code, label: Entity num}
+- {id: repay.loan_account_number, table: gold.loan_repayments, column: loan_account_number, label: Loan account number, synonyms: [loan account, account number]}
+- {id: repay.sequence, table: gold.loan_repayments, column: repayment_sequence, label: Repayment sequence, unit: count}
+- {id: repay.date, table: gold.loan_repayments, column: repayment_date, label: Repayment date, unit: date}
+- {id: repay.principal_due, table: gold.loan_repayments, column: principal_due, label: Principal due, unit: inr, agg: [sum, avg, max]}
+- {id: repay.interest_due, table: gold.loan_repayments, column: interest_due, label: Interest due, unit: inr, agg: [sum, avg, max]}
+- {id: repay.total_due, table: gold.loan_repayments, column: total_due, label: Total due, unit: inr, agg: [sum, avg, max]}
+- {id: repay.principal_paid, table: gold.loan_repayments, column: principal_paid, label: Principal paid, unit: inr, agg: [sum, avg, max]}
+- {id: repay.interest_paid, table: gold.loan_repayments, column: interest_paid, label: Interest paid, unit: inr, agg: [sum, avg, max]}
+- {id: repay.total_paid, table: gold.loan_repayments, column: total_amount_paid, label: Total paid, unit: inr, agg: [sum, avg, max]}
+- {id: repay.shortfall, table: gold.loan_repayments, column: collection_shortfall, label: Collection shortfall, unit: inr, agg: [sum, avg, max]}
+- {id: repay.collection_efficiency, table: gold.loan_repayments, column: collection_efficiency_percent, label: Collection efficiency, unit: percent, agg: [avg, max, min]}
+- {id: repay.customer_id, table: gold.loan_repayments, column: customer_id, label: Customer ID}
+- {id: repay.branch_code, table: gold.loan_repayments, column: branch_code, label: Branch code}
+- {id: repay.product_code, table: gold.loan_repayments, column: product_code, label: Product code}
+- {id: repay.scheme_code, table: gold.loan_repayments, column: scheme_code, label: Scheme code}
+- {id: repay.agent_code, table: gold.loan_repayments, column: agent_code, label: Agent code}
+- {id: repayment_event.source_event_key, table: gold.loan_repayments, column: source_event_id, label: Source Event Key}
+- {id: repayment_event.event_type, table: gold.loan_repayments, column: event_type, label: Event Type}
+- {id: repayment_event.source_systems, table: gold.loan_repayments, column: data_source, label: Source Systems}
+- {id: repayment_event.data_as_of, table: gold.loan_repayments, column: data_as_of_date, label: Data As Of, unit: date}
+- {id: repayment_event.coverage_status, table: gold.loan_repayments, column: data_completeness, label: Coverage Status}
+- {id: schedule.entity_num, table: gold.emi_schedule, column: company_code, label: Entity num}
+- {id: schedule.loan_account_number, table: gold.emi_schedule, column: loan_account_number, label: Loan account number, synonyms: [loan account, account number]}
+- {id: schedule.sequence, table: gold.emi_schedule, column: emi_sequence, label: Instalment sequence, unit: count}
+- {id: schedule.date, table: gold.emi_schedule, column: planned_emi_date, label: Scheduled date, synonyms: [due date], unit: date}
+- {id: schedule.principal, table: gold.emi_schedule, column: planned_principal, label: Scheduled principal, unit: inr, agg: [sum, avg, max]}
+- {id: schedule.interest, table: gold.emi_schedule, column: planned_interest, label: Scheduled interest, unit: inr, agg: [sum, avg, max]}
+- {id: schedule.total, table: gold.emi_schedule, column: planned_total_emi, label: Scheduled total, unit: inr, agg: [sum, avg, max]}
+- {id: schedule.customer_id, table: gold.emi_schedule, column: customer_id, label: Customer ID}
+- {id: schedule.branch_code, table: gold.emi_schedule, column: branch_code, label: Branch code}
+- {id: schedule.product_code, table: gold.emi_schedule, column: product_code, label: Product code}
+- {id: schedule.scheme_code, table: gold.emi_schedule, column: scheme_code, label: Scheme code}
+- {id: schedule.loan_status, table: gold.emi_schedule, column: loan_status, label: Loan status}
+- {id: schedule_event.source_event_key, table: gold.emi_schedule, column: source_event_id, label: Source Event Key}
+- {id: schedule_event.event_type, table: gold.emi_schedule, column: event_type, label: Event Type}
+- {id: schedule_event.source_systems, table: gold.emi_schedule, column: data_source, label: Source Systems}
+- {id: schedule_event.data_as_of, table: gold.emi_schedule, column: data_as_of_date, label: Data As Of, unit: date}
+- {id: schedule_event.coverage_status, table: gold.emi_schedule, column: data_completeness, label: Coverage Status}

@@ -33,7 +33,7 @@ class SqlClient:
         return LLMResult(
             text=(
                 '{"route":"sql","intent":"sanction amount for named borrower",'
-                '"tables":["gold.semantic_loan_account"],"confidence":0.9}'
+                '"tables":["gold.loan_accounts"],"confidence":0.9}'
             ),
             model=self.model,
             provider=self.provider,
@@ -45,7 +45,7 @@ async def test_named_borrower_principal_routes_without_calling_an_llm():
     outcome = await plan("principle amount paid by sheelavati")
 
     assert isinstance(outcome.plan, SqlPlan)
-    assert outcome.plan.tables == ["gold.semantic_loan_account"]
+    assert outcome.plan.tables == ["gold.loan_accounts"]
     assert outcome.model == "deterministic"
     assert outcome.attempts == 0
 
@@ -55,7 +55,7 @@ async def test_named_borrower_disbursement_routes_without_calling_an_llm():
     outcome = await plan("loan amount disburdsed to shellavati")
 
     assert isinstance(outcome.plan, SqlPlan)
-    assert outcome.plan.tables == ["gold.semantic_loan_account"]
+    assert outcome.plan.tables == ["gold.loan_accounts"]
     assert outcome.model == "deterministic"
     assert outcome.attempts == 0
 
@@ -69,7 +69,7 @@ async def test_unrecognized_named_amount_phrase_reaches_llm_instead_of_book_coun
     )
 
     assert isinstance(outcome.plan, SqlPlan)
-    assert outcome.plan.tables == ["gold.semantic_loan_account"]
+    assert outcome.plan.tables == ["gold.loan_accounts"]
     assert outcome.model == "test"
     assert outcome.attempts == 1
     assert client.calls == 1
@@ -84,8 +84,8 @@ async def test_agent_borrower_count_routes_without_calling_an_llm():
     assert outcome.plan.spec.filters[0].field == "agent"
     assert outcome.plan.spec.filters[0].value == ["45", "agent45", "agnt45"]
     compiled = compile_spec(outcome.plan.spec)
-    assert "gold.semantic_loan_account" in compiled.sql
-    assert "gold.semantic_loan_account AS lam" in compiled.sql
+    assert "gold.loan_accounts" in compiled.sql
+    assert "gold.loan_accounts AS loan" in compiled.sql
     assert 'LOWER(lam."agent_code"::text) = ANY(:f0)' in compiled.sql
     assert compiled.params["f0"] == ["45", "agent45", "agnt45"]
 
@@ -107,7 +107,7 @@ async def test_named_month_disbursement_routes_without_calling_an_llm():
     assert outcome.attempts == 0
     assert outcome.plan.spec.metrics == ["disbursement_total"]
     compiled = compile_spec(outcome.plan.spec)
-    assert "gold.semantic_disbursement_event" in compiled.sql
+    assert "gold.loan_disbursements" in compiled.sql
     assert compiled.params["period_start"].isoformat() == "2026-07-01"
     assert compiled.params["period_end"].isoformat() == "2026-07-31"
 
@@ -183,9 +183,9 @@ async def test_top_borrowers_is_a_governed_current_outstanding_ranking():
     assert outcome.plan.spec.dimensions == ["borrower"]
     assert outcome.plan.spec.limit == 25
     compiled = compile_spec(outcome.plan.spec)
-    assert "FROM gold.semantic_loan_account AS lam" in compiled.sql
+    assert "FROM gold.loan_accounts AS loan" in compiled.sql
     assert 'lam."customer_name" AS borrower' in compiled.sql
-    assert "ORDER BY SUM(lam.disbursed_amount - lam.principal_repaid) DESC" in compiled.sql
+    assert "ORDER BY SUM(loan.amount_given - loan.principal_paid_so_far) DESC" in compiled.sql
     assert compiled.params["row_limit"] == 25
 
 
@@ -215,7 +215,7 @@ async def test_catalogued_agents_cannot_be_refused_as_missing_data():
     assert outcome.plan.spec.dimensions == ["agent_profile"]
     assert outcome.plan.spec.limit == 10
     compiled = compile_spec(outcome.plan.spec)
-    assert "gold.semantic_agent AS agent" in compiled.sql
+    assert "gold.agents AS agent" in compiled.sql
     assert 'agent."agent_code" AS agent_profile' in compiled.sql
     assert "ORDER BY SUM(agent.linked_loan_count) DESC" in compiled.sql
 
@@ -230,7 +230,7 @@ async def test_agents_with_most_borrowers_uses_linked_customer_metric():
     assert outcome.plan.spec.dimensions == ["loan_agent"]
     compiled = compile_spec(outcome.plan.spec)
     assert "COUNT(DISTINCT lam.customer_id)" in compiled.sql
-    assert "gold.semantic_loan_account AS lam" in compiled.sql
+    assert "gold.loan_accounts AS loan" in compiled.sql
     assert 'lam."agent_code" AS loan_agent' in compiled.sql
 
 
@@ -258,7 +258,7 @@ async def test_agent_directory_fields_route_without_calling_an_llm():
     assert isinstance(outcome.plan, SqlPlan)
     assert outcome.model == "deterministic"
     assert outcome.attempts == 0
-    assert outcome.plan.tables == ["gold.semantic_agent"]
+    assert outcome.plan.tables == ["gold.agents"]
 
 
 @pytest.mark.anyio

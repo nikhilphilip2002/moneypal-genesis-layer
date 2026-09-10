@@ -158,5 +158,5 @@ unavailable:
     needs: Sourcing channel per account, which no gold view carries.
   - detector: Reconciliation break
     needs: >
-      GL-to-loan-book linkage. `gold.semantic_gl_balance` has no account-level relationship, so
+      GL-to-loan-book linkage. `gold.general_ledger_balances` has no account-level relationship, so
       the two sides cannot be tied out at all.

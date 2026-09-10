@@ -20,8 +20,8 @@ def catalog():
 class TestLoads:
     def test_catalog_loads_and_validates(self, catalog):
         assert catalog.metrics and catalog.dimensions and catalog.tables
-        assert catalog.metrics["agent_linked_loans"].base_table == "gold.semantic_agent"
-        assert catalog.dimensions["agent"].table == "gold.semantic_loan_account"
+        assert catalog.metrics["agent_linked_loans"].base_table == "gold.agents"
+        assert catalog.dimensions["agent"].table == "gold.loan_accounts"
         assert catalog.dimensions["loan_agent"].decode == "agent_identity"
         assert catalog.dimensions["agent_profile"].column == "agent_code"
 
@@ -160,9 +160,11 @@ class TestGrainDiscipline:
         assert "COALESCE(" in sql
         assert "NULLIF(" in sql
 
-    def test_portfolio_metrics_use_the_reviewed_as_of_function(self, catalog):
+    def test_portfolio_metrics_use_the_friendly_as_of_columns(self, catalog):
         metric = catalog.metrics["par_30"]
-        assert metric.as_of_function == "gold.portfolio_snapshot_as_of"
+        assert metric.as_of_function is None
+        assert metric.as_of_column == "status_date"
+        assert metric.as_of_key == ("company_code", "loan_account_number")
         assert metric.point_in_time
 
 
@@ -178,7 +180,7 @@ class TestSafetyMetadata:
     def test_gl_is_isolated_from_the_loan_book(self, catalog):
         """No join path — a GL-by-product question must be refusable, not answerable."""
         assert catalog.join_between(
-            "gold.semantic_gl_balance", "gold.semantic_loan_account"
+            "gold.general_ledger_balances", "gold.loan_accounts"
         ) is None
 
     def test_unratified_metrics_are_flagged(self, catalog):
@@ -231,5 +233,5 @@ class TestSearch:
             catalog=catalog,
             use_vectors=False,
         )
-        assert result.tables[0] == "gold.semantic_msme_lead"
+        assert result.tables[0] == "gold.business_loan_leads"
         assert any(hit.doc.kind == "column" for hit in result.hits)

@@ -81,7 +81,7 @@ class TestGeneratedSql:
 
     def test_it_reads_only_the_reviewed_relation(self, catalog):
         sql, _params, _rules = _sql()
-        tables = {"gold.semantic_portfolio_snapshot", "gold.semantic_loan_account"}
+        tables = {"gold.daily_loan_status", "gold.loan_accounts"}
         for token in ("gold.", "bronze.", "silver.", "public."):
             for fragment in sql.split(token)[1:]:
                 name = token + fragment.split()[0].strip("(),")

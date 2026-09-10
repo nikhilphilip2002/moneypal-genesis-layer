@@ -134,9 +134,9 @@ class TestPiiMasking:
         assert fields == []
 
     def test_pii_tables_are_detected_for_the_audit_flag(self):
-        assert pii.touches_pii(["gold.semantic_customer_profile"])
-        assert pii.touches_pii(["gold.semantic_loan_account"])
-        assert not pii.touches_pii(["gold.semantic_gl_balance"])
+        assert pii.touches_pii(["gold.customers"])
+        assert pii.touches_pii(["gold.loan_accounts"])
+        assert not pii.touches_pii(["gold.general_ledger_balances"])
 
 
 # --------------------------------------------------------------------------------------

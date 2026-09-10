@@ -34,21 +34,21 @@ def sql_for(**kwargs) -> str:
 class TestGeneratedSql:
     def test_simple_aggregate(self):
         out = sql_for(metrics=["disbursement_total"])
-        assert "SUM(disb.disbursement_amount)" in out
-        assert "FROM gold.semantic_disbursement_event AS disb" in out
+        assert "SUM(disbursement.amount_given)" in out
+        assert "FROM gold.loan_disbursements AS disbursement" in out
         assert "LIMIT :row_limit" in out
 
     def test_group_by_joins_through_the_hub(self):
         out = sql_for(metrics=["disbursement_total"], dimensions=["branch"])
-        assert "JOIN gold.semantic_loan_account AS lam" in out
-        assert 'disb."entity_num"::text = lam."entity_num"::text' in out
-        assert 'lam."application_branch_code"' in out
+        assert "JOIN gold.loan_accounts AS loan" in out
+        assert 'disbursement."company_code"::text = loan."company_code"::text' in out
+        assert 'loan."application_branch_code"' in out
 
-    def test_entity_number_is_always_in_the_join(self):
-        """entity_num takes two values; omitting it merges two entities' accounts that
+    def test_company_code_is_always_in_the_join(self):
+        """company_code takes two values; omitting it merges two entities' accounts that
         share an account number."""
         out = sql_for(metrics=["collection_efficiency"], dimensions=["product"])
-        assert "entity_num" in out
+        assert "company_code" in out
 
     def test_every_value_is_a_bound_parameter(self):
         compiled = compile_spec(
@@ -67,7 +67,7 @@ class TestGeneratedSql:
 
     def test_time_grain_truncates_the_metrics_own_date_column(self):
         out = sql_for(metrics=["loan_count"], dimensions=["month"])
-        assert "DATE_TRUNC('month', lam.\"sanction_date\")" in out
+        assert "DATE_TRUNC('month', loan.\"approved_on\")" in out
 
     def test_fiscal_year_grain_shifts_by_three_months(self):
         out = sql_for(metrics=["sanctioned_amount"], dimensions=["fy"])
@@ -80,9 +80,9 @@ class TestGeneratedSql:
 
     def test_application_conversion_uses_folded_outcome_column(self):
         out = sql_for(metrics=["application_count"], dimensions=["application_outcome"])
-        assert "FROM gold.semantic_application AS application" in out
-        assert "JOIN gold.semantic_application" not in out
-        assert 'application."observable_outcome_status"' in out
+        assert "FROM gold.loan_applications AS application" in out
+        assert "JOIN gold.loan_applications" not in out
+        assert 'application."application_outcome_status"' in out
 
     def test_reverse_many_to_one_application_join_is_rejected(self):
         """Loan -> applications can multiply each loan and must never reach execution."""
@@ -95,35 +95,36 @@ class TestGeneratedSql:
 
     def test_receipts_can_use_governed_loan_product(self):
         out = sql_for(metrics=["receipt_total"], dimensions=["product"])
-        assert "FROM gold.semantic_receipt_adjustment_event AS receipt_adjustment" in out
-        assert "JOIN gold.semantic_loan_account AS lam" in out
-        assert "SUM(receipt_adjustment.receipt_amount)" in out
+        assert "FROM gold.payment_receipts AS payment_receipt" in out
+        assert "JOIN gold.loan_accounts AS loan" in out
+        assert "SUM(payment_receipt.receipt_amount)" in out
 
     def test_vintage_metric_stays_at_aggregate_grain(self):
         out = sql_for(metrics=["vintage_par30_rate"], dimensions=["months_on_book"])
-        assert "FROM gold.semantic_origination_vintage AS vintage" in out
-        assert "gold.semantic_loan_account" not in out
-        assert "SUM(vintage.accounts_par30)" in out
+        assert "FROM gold.loan_vintage_performance AS loan_vintage" in out
+        assert "gold.loan_accounts" not in out
+        assert "SUM(loan_vintage.accounts_overdue_over_30_days)" in out
 
 
 class TestPointInTimeCollapse:
     """The guard against reading an event log as a snapshot."""
 
-    def test_single_as_of_uses_reviewed_gold_function(self):
+    def test_single_as_of_collapses_the_friendly_daily_status_view(self):
         out = sql_for(metrics=["par_30"])
-        assert "gold.portfolio_snapshot_as_of(:as_of)" in out
+        assert "FROM gold.daily_loan_status" in out
+        assert 'WHERE "status_date" <= :as_of' in out
         assert "silver." not in out
 
     def test_never_filters_by_date_equality(self):
         """Equality reports PAR 30 as NULL where the correct answer is 0.090%."""
         out = sql_for(metrics=["par_30"])
-        assert "snapshot_date =" not in out
+        assert "status_date =" not in out
 
     def test_trend_builds_one_snapshot_per_bucket(self):
         out = sql_for(metrics=["par_30"], dimensions=["month"])
         assert "generate_series" in out
         assert "LATERAL" in out
-        assert "gold.portfolio_snapshot_as_of" in out
+        assert "gold.daily_loan_status" in out
 
     def test_trend_keeps_empty_buckets(self):
         """LEFT, not CROSS — a month with no classified accounts is a visible gap, not a
@@ -206,7 +207,7 @@ class TestFilters:
             ),
             today=TODAY,
         )
-        assert "HAVING SUM(lam.disbursed_amount - lam.principal_repaid) = :h0" in compiled.sql
+        assert "HAVING SUM(loan.amount_given - loan.principal_paid_so_far) = :h0" in compiled.sql
         assert compiled.params["h0"] == 0
 
     def test_having_rejects_a_metric_not_selected(self):

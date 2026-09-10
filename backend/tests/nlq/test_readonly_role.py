@@ -35,11 +35,11 @@ class TestPrivileges:
 
     def test_can_read_gold_view(self):
         with nlq_db.readonly_cursor() as (_conn, cur):
-            cur.execute("SELECT count(*) FROM gold.semantic_loan_account")
+            cur.execute("SELECT count(*) FROM gold.loan_accounts")
             assert cur.fetchone()[0] > 0
 
     def test_sees_every_gold_view(self):
-        """Only the 18 reviewed semantic views are visible to NLQ."""
+        """Only the 18 reviewed friendly views are visible to NLQ."""
         with nlq_db.readonly_cursor() as (_conn, cur):
             cur.execute(
                 "SELECT count(*) FROM information_schema.views WHERE table_schema = 'gold'"
@@ -49,13 +49,13 @@ class TestPrivileges:
     @pytest.mark.parametrize(
         "view",
         [
-            "semantic_application",
-            "semantic_receipt_adjustment_event",
-            "semantic_loan_ledger_event",
-            "semantic_origination_vintage",
+            "loan_applications",
+            "payment_receipts",
+            "loan_account_entries",
+            "loan_vintage_performance",
         ],
     )
-    def test_can_read_consolidated_semantic_views(self, view):
+    def test_can_read_consolidated_friendly_views(self, view):
         with nlq_db.readonly_cursor() as (_conn, cur):
             cur.execute(f"SELECT count(*) FROM gold.{view}")
             assert cur.fetchone()[0] >= 0
@@ -65,28 +65,28 @@ class TestPrivileges:
             error = _fails(cur, "SELECT count(*) FROM gold.loan_account_master")
             assert "permission denied" in error.lower()
 
-    def test_can_execute_reviewed_portfolio_function(self):
+    def test_cannot_execute_technical_portfolio_function(self):
         with nlq_db.readonly_cursor() as (_conn, cur):
-            cur.execute("SELECT count(*) FROM gold.portfolio_snapshot_as_of(CURRENT_DATE)")
-            assert cur.fetchone()[0] >= 0
+            error = _fails(cur, "SELECT count(*) FROM gold.portfolio_snapshot_as_of(CURRENT_DATE)")
+            assert "permission denied" in error.lower()
 
 
 class TestWritesAreRejected:
-    def test_semantic_views_have_no_dml_privileges(self):
+    def test_friendly_views_have_no_dml_privileges(self):
         with nlq_db.readonly_cursor() as (_conn, cur):
             cur.execute(
-                "SELECT has_table_privilege(current_user, 'gold.semantic_loan_account', 'INSERT'), "
-                "has_table_privilege(current_user, 'gold.semantic_loan_account', 'UPDATE'), "
-                "has_table_privilege(current_user, 'gold.semantic_loan_account', 'DELETE')"
+                "SELECT has_table_privilege(current_user, 'gold.loan_accounts', 'INSERT'), "
+                "has_table_privilege(current_user, 'gold.loan_accounts', 'UPDATE'), "
+                "has_table_privilege(current_user, 'gold.loan_accounts', 'DELETE')"
             )
             assert cur.fetchone() == (False, False, False)
 
     @pytest.mark.parametrize(
         "sql",
         [
-            "INSERT INTO gold.semantic_loan_account (loan_account_number) VALUES ('x')",
-            "UPDATE gold.semantic_loan_account SET sanction_amount = 0",
-            "DELETE FROM gold.semantic_loan_account",
+            "INSERT INTO gold.loan_accounts (loan_account_number) VALUES ('x')",
+            "UPDATE gold.loan_accounts SET approved_amount = 0",
+            "DELETE FROM gold.loan_accounts",
             "CREATE TABLE gold.nlq_should_not_exist (i int)",
         ],
     )
@@ -102,7 +102,7 @@ class TestWritesAreRejected:
         What must hold is the privilege set underneath it."""
         with nlq_db.readonly_cursor() as (conn, cur):
             cur.execute("SET default_transaction_read_only = off")
-            error = _fails(cur, "DELETE FROM gold.semantic_loan_account")
+            error = _fails(cur, "DELETE FROM gold.loan_accounts")
             conn.rollback()
         lowered = error.lower()
         assert "denied" in lowered or "cannot " in lowered

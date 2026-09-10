@@ -24,39 +24,34 @@ GRANT CONNECT ON DATABASE moneypaldb TO nlq_readonly;
 
 GRANT USAGE ON SCHEMA gold TO nlq_readonly;
 
--- Start closed, then grant only the reviewed semantic views. PostgreSQL treats views as
+-- Start closed, then grant only the reviewed friendly views. PostgreSQL treats views as
 -- tables for GRANT, so `GRANT ... ON ALL TABLES` would also expose any physical Gold table
 -- added later. Keep this allowlist synchronized with catalog/defs/gold/tables.yaml.
 REVOKE ALL ON ALL TABLES IN SCHEMA gold FROM nlq_readonly;
 GRANT SELECT ON
-    gold.semantic_agent,
-    gold.semantic_application,
-    gold.semantic_branch,
-    gold.semantic_collection_operation_event,
-    gold.semantic_customer_document,
-    gold.semantic_customer_profile,
-    gold.semantic_disbursement_event,
-    gold.semantic_gl_balance,
-    gold.semantic_loan_account,
-    gold.semantic_loan_ledger_event,
-    gold.semantic_msme_lead,
-    gold.semantic_organization_hierarchy,
-    gold.semantic_origination_vintage,
-    gold.semantic_portfolio_snapshot,
-    gold.semantic_product_scheme,
-    gold.semantic_receipt_adjustment_event,
-    gold.semantic_repayment_event,
-    gold.semantic_schedule_event
+    gold.agents,
+    gold.branches,
+    gold.business_loan_leads,
+    gold.collection_activities,
+    gold.customer_kyc_documents,
+    gold.customers,
+    gold.daily_loan_status,
+    gold.emi_schedule,
+    gold.general_ledger_balances,
+    gold.loan_account_entries,
+    gold.loan_accounts,
+    gold.loan_applications,
+    gold.loan_disbursements,
+    gold.loan_products,
+    gold.loan_repayments,
+    gold.loan_vintage_performance,
+    gold.payment_receipts,
+    gold.staff_reporting_structure
 TO nlq_readonly;
 
--- The reviewed as-of function reads raw Silver tables internally. Keep Silver invisible
--- to the runtime role while allowing this one fixed, non-dynamic function to execute with
--- its owner's privileges. Pinning search_path prevents object-shadowing attacks.
-REVOKE ALL ON FUNCTION gold.portfolio_snapshot_as_of(date) FROM PUBLIC;
-ALTER FUNCTION gold.portfolio_snapshot_as_of(date) SECURITY DEFINER;
-ALTER FUNCTION gold.portfolio_snapshot_as_of(date)
-    SET search_path = pg_catalog, gold, silver;
-GRANT EXECUTE ON FUNCTION gold.portfolio_snapshot_as_of(date) TO nlq_readonly;
+-- Point-in-time metrics now collapse the friendly daily status view directly, so the
+-- technical as-of function is outside the assistant surface too.
+REVOKE ALL ON FUNCTION gold.portfolio_snapshot_as_of(date) FROM PUBLIC, nlq_readonly;
 
 -- Re-run this script after creating a new governed view. New objects are intentionally
 -- not auto-granted: adding a source to the LLM surface must be an explicit deployment.
@@ -87,8 +82,8 @@ ALTER ROLE nlq_readonly SET search_path = 'gold';
 -- SELECT count(*) FROM gold.loan_account_master;           -- expect: a number
 -- SELECT count(*) FROM gold.payment_receipt_events;        -- expect: a number
 -- SELECT count(*) FROM gold.origination_vintage_matrix;    -- expect: a number
--- SELECT count(*) FROM gold.semantic_loan_account;          -- expect: a number
--- SELECT count(*) FROM gold.semantic_repayment_event;       -- expect: a number
+-- SELECT count(*) FROM gold.loan_accounts;                  -- expect: a number
+-- SELECT count(*) FROM gold.loan_repayments;                -- expect: a number
 -- SELECT count(*) FROM silver.loan_account_master;         -- expect: permission denied
 -- SELECT count(*) FROM bronze.genlnacnts;                  -- expect: permission denied
 -- CREATE TABLE gold.x (i int);                             -- expect: permission denied

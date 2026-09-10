@@ -43,21 +43,28 @@ class TestTablesExist:
         for table in catalog.allowed_tables():
             assert table.startswith("gold."), table
 
-    def test_every_gold_view_is_cataloged(self, catalog, live_columns):
-        """Every assistant-facing semantic view must be cataloged.
+    def test_every_friendly_gold_view_is_cataloged(self, catalog, live_columns):
+        """Every assistant-facing friendly view must be cataloged.
 
         Gold also contains implementation and compatibility views that are deliberately
-        outside the LLM allowlist. Only the governed ``semantic_*`` contract is required
-        to be complete here; the private helper is not a selectable business relation.
+        outside the LLM allowlist. The technical ``semantic_*`` sources and their private
+        helper are not selectable business relations.
         """
-        semantic_views = {
-            table for table in live_columns
-            if table.startswith("gold.semantic_")
+        friendly_views = {
+            "gold.agents", "gold.branches", "gold.business_loan_leads",
+            "gold.collection_activities", "gold.customer_kyc_documents", "gold.customers",
+            "gold.daily_loan_status", "gold.emi_schedule", "gold.general_ledger_balances",
+            "gold.loan_account_entries", "gold.loan_accounts", "gold.loan_applications",
+            "gold.loan_disbursements", "gold.loan_products", "gold.loan_repayments",
+            "gold.loan_vintage_performance", "gold.payment_receipts",
+            "gold.staff_reporting_structure",
         }
-        uncataloged = sorted(semantic_views - catalog.allowed_tables())
+        uncataloged = sorted(friendly_views - catalog.allowed_tables())
         assert not uncataloged, f"Gold views missing from tables.yaml: {uncataloged}"
-        unexpected = sorted(catalog.allowed_tables() - semantic_views)
-        assert not unexpected, f"non-semantic views exposed by tables.yaml: {unexpected}"
+        unexpected = sorted(catalog.allowed_tables() - friendly_views)
+        assert not unexpected, f"non-friendly views exposed by tables.yaml: {unexpected}"
+        missing_in_database = sorted(friendly_views - live_columns.keys())
+        assert not missing_in_database, f"friendly Gold views missing in PostgreSQL: {missing_in_database}"
 
 
 class TestColumnsExist:
@@ -145,7 +152,7 @@ class TestDocumentedFactsStillHold:
         """A code documented but absent is fine (NPA is). A code in the data but missing
         from the enum renders as a bare number in a chart, which is what this catches."""
         warehouse_cursor.execute(
-            "SELECT DISTINCT product_code FROM gold.semantic_loan_account"
+            "SELECT DISTINCT product_code FROM gold.loan_accounts"
         )
         live = {str(r[0]) for r in warehouse_cursor.fetchall()}
         documented = set(catalog.enums["product"].values)
@@ -153,7 +160,7 @@ class TestDocumentedFactsStillHold:
 
     def test_branch_codes_are_all_documented(self, catalog, warehouse_cursor):
         warehouse_cursor.execute(
-            "SELECT DISTINCT application_branch_code FROM gold.semantic_loan_account"
+            "SELECT DISTINCT application_branch_code FROM gold.loan_accounts"
         )
         live = {str(r[0]) for r in warehouse_cursor.fetchall()}
         documented = set(catalog.enums["branch"].values)

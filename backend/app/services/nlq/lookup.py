@@ -351,7 +351,7 @@ def completions(term: str, kind: str = "all", catalog: Catalog | None = None) ->
         sql = (
             "SELECT TRIM(REGEXP_REPLACE(customer_name, '\\s+', ' ', 'g')) AS borrower_name, "
             "customer_id::text AS customer_id, MIN(loan_account_number::text) AS account_number "
-            "FROM gold.semantic_loan_account WHERE sanction_date <= CURRENT_DATE AND ("
+            "FROM gold.loan_accounts WHERE approved_on <= CURRENT_DATE AND ("
             f"{stored_name} LIKE {name_literal} || '%' OR "
             f"LOWER(customer_id::text) LIKE {id_literal} || '%' OR "
             f"LOWER(loan_account_number::text) LIKE {id_literal} || '%') "
@@ -383,7 +383,7 @@ def completions(term: str, kind: str = "all", catalog: Catalog | None = None) ->
     if kind in {"all", "agent"}:
         literal = _literal(text.lower())
         sql = (
-            "SELECT agent_code, agent_name, designation FROM gold.semantic_agent "
+            "SELECT agent_code, agent_name, designation FROM gold.agents "
             f"WHERE LOWER(agent_code) LIKE {literal} || '%' "
             f"OR LOWER(agent_name) LIKE '%' || {literal} || '%' "
             "ORDER BY agent_code LIMIT 8"
@@ -834,8 +834,8 @@ def _borrower_candidate_sql(where: str, display_name: str) -> str:
     return (
         f"SELECT {display_name} AS borrower_name, customer_id::text AS customer_id, "
         "MIN(loan_account_number::text) AS account_number "
-        "FROM gold.semantic_loan_account "
-        f"WHERE {where} AND sanction_date <= CURRENT_DATE "
+        "FROM gold.loan_accounts "
+        f"WHERE {where} AND approved_on <= CURRENT_DATE "
         f"GROUP BY {display_name}, customer_id ORDER BY {display_name}, customer_id LIMIT 20"
     )
 
@@ -886,7 +886,7 @@ def _candidate_agents(name: str, catalog: Catalog) -> list[dict]:
     stored_name = "LOWER(TRIM(REGEXP_REPLACE(agent_name, '\\s+', ' ', 'g')))"
     sql = (
         "SELECT agent_code::text AS agent_code, agent_name, branch_code "
-        "FROM gold.semantic_agent WHERE " + stored_name + " = " + normalized +
+        "FROM gold.agents WHERE " + stored_name + " = " + normalized +
         " OR " + stored_name + " LIKE " + normalized + " || '%' "
         "ORDER BY CASE WHEN " + stored_name + " = " + normalized +
         " THEN 0 ELSE 1 END, agent_name, agent_code LIMIT 20"
@@ -911,20 +911,20 @@ def _where(plan: LookupPlan) -> str:
 
 def _loan_details(plan: LookupPlan, catalog: Catalog) -> SqlAttempt:
     available = {
-        "sanction_amount": "inr",
-        "sanction_date": "date",
-        "disbursed_amount": "inr",
-        "first_disbursement_date": "date",
-        "scheme_name": "text",
-        "number_of_emis": "count",
+        "sanction_amount": ("approved_amount AS sanction_amount", "inr"),
+        "sanction_date": ("approved_on AS sanction_date", "date"),
+        "disbursed_amount": ("amount_given AS disbursed_amount", "inr"),
+        "first_disbursement_date": ("first_amount_given_on AS first_disbursement_date", "date"),
+        "scheme_name": ("scheme_name", "text"),
+        "number_of_emis": ("total_emi_count AS number_of_emis", "count"),
     }
     requested = list(dict.fromkeys(plan.requested_fields)) or list(available)
-    selected = ", ".join(requested)
+    selected = ", ".join(available[field][0] for field in requested)
     sql = (
         "SELECT customer_id::text AS customer_id, "
         f"loan_account_number::text AS loan_account_number, {selected} "
-        "FROM gold.semantic_loan_account WHERE " + _where(plan) +
-        " AND sanction_date <= CURRENT_DATE ORDER BY sanction_date DESC, "
+        "FROM gold.loan_accounts WHERE " + _where(plan) +
+        " AND approved_on <= CURRENT_DATE ORDER BY approved_on DESC, "
         "loan_account_number LIMIT 500"
     )
     return _validated_attempt(
@@ -932,7 +932,7 @@ def _loan_details(plan: LookupPlan, catalog: Catalog) -> SqlAttempt:
         explanation="Requested governed fields for each matched loan account.",
         units={
             "customer_id": "text", "loan_account_number": "text",
-            **{field: available[field] for field in requested},
+            **{field: available[field][1] for field in requested},
         },
     )
 
@@ -990,7 +990,7 @@ def _customer_summary(plan: LookupPlan, catalog: Catalog) -> SqlAttempt:
         "SELECT customer.customer_id::text AS customer_id, "
         "customer.full_name AS customer_name, "
         "loan.loan_account_number::text AS loan_account_number, "
-        "loan.sanction_amount, loan.sanction_date, "
+        "loan.approved_amount AS sanction_amount, loan.approved_on AS sanction_date, "
         "CONCAT_WS(', ', NULLIF(TRIM(customer.address_line1), ''), "
         "NULLIF(TRIM(customer.address_line2), ''), "
         "NULLIF(TRIM(customer.additional_address), '')) AS address, "
@@ -998,14 +998,14 @@ def _customer_summary(plan: LookupPlan, catalog: Catalog) -> SqlAttempt:
         "NULLIF(TRIM(customer.occupation_type), ''), "
         "NULLIF(TRIM(customer.occupation_nature), '')) AS occupation, "
         "customer.home_branch_code, customer.agency_code, customer.agency_name "
-        "FROM gold.semantic_customer_profile AS customer "
-        "LEFT JOIN gold.semantic_loan_account AS loan "
-        "ON customer.entity_num = loan.entity_num "
+        "FROM gold.customers AS customer "
+        "LEFT JOIN gold.loan_accounts AS loan "
+        "ON customer.company_code = loan.company_code "
         "AND customer.customer_id = loan.customer_id "
-        "AND loan.sanction_date <= CURRENT_DATE "
+        "AND loan.approved_on <= CURRENT_DATE "
         "WHERE LOWER(REGEXP_REPLACE(customer.customer_id::text, '\\.0+$', '')) = "
         + value +
-        " ORDER BY loan.sanction_date DESC, loan.loan_account_number LIMIT 500"
+        " ORDER BY loan.approved_on DESC, loan.loan_account_number LIMIT 500"
     )
     return _validated_attempt(
         sql, catalog=catalog,
@@ -1024,12 +1024,13 @@ def _customer_summary(plan: LookupPlan, catalog: Catalog) -> SqlAttempt:
 def _repayment_history(plan: LookupPlan, catalog: Catalog) -> SqlAttempt:
     sql = (
         "SELECT loan_account_number::text AS loan_account_number, repayment_date, "
-        "principal_due, interest_due, total_due, principal_paid, interest_paid, total_paid, "
-        "collection_shortfall, collection_efficiency, "
+        "principal_due, interest_due, total_due, principal_paid, interest_paid, "
+        "total_amount_paid AS total_paid, collection_shortfall, "
+        "collection_efficiency_percent AS collection_efficiency, "
         "SUM(total_due) OVER () AS history_total_due, "
-        "SUM(total_paid) OVER () AS history_total_paid, "
+        "SUM(total_amount_paid) OVER () AS history_total_paid, "
         "SUM(collection_shortfall) OVER () AS history_total_shortfall "
-        "FROM gold.semantic_repayment_event WHERE " + _where(plan) +
+        "FROM gold.loan_repayments WHERE " + _where(plan) +
         " AND repayment_date <= CURRENT_DATE ORDER BY repayment_date DESC, "
         "repayment_sequence DESC LIMIT 500"
     )
@@ -1055,10 +1056,10 @@ def _gender_sample(catalog: Catalog) -> SqlAttempt:
         "ROW_NUMBER() OVER (PARTITION BY CASE WHEN LOWER(TRIM(customer.gender)) "
         "IN ('m', 'male') THEN 'Male' ELSE 'Female' END "
         "ORDER BY loan.loan_account_number) AS sample_rank "
-        "FROM gold.semantic_customer_profile AS customer JOIN gold.semantic_loan_account AS loan "
-        "ON customer.entity_num = loan.entity_num AND customer.customer_id = loan.customer_id "
+        "FROM gold.customers AS customer JOIN gold.loan_accounts AS loan "
+        "ON customer.company_code = loan.company_code AND customer.customer_id = loan.customer_id "
         "WHERE LOWER(TRIM(customer.gender)) IN ('m', 'male', 'f', 'female') "
-        "AND loan.sanction_date <= CURRENT_DATE) AS ranked "
+        "AND loan.approved_on <= CURRENT_DATE) AS ranked "
         "WHERE sample_rank = 1 ORDER BY gender LIMIT 2"
     )
     return _validated_attempt(
@@ -1082,7 +1083,7 @@ def _agent_details(plan: LookupPlan, catalog: Catalog) -> SqlAttempt:
     ]
     sql = (
         "SELECT agent_code, " + ", ".join(selected) + " "
-        "FROM gold.semantic_agent WHERE LOWER(agent_code) = " + value +
+        "FROM gold.agents WHERE LOWER(agent_code) = " + value +
         " ORDER BY agent_code LIMIT 20"
     )
     pii = {field for field in selected if field in {"agent_name", "mobile", "email"}}
@@ -1165,7 +1166,7 @@ def _shape_agent_details(chart: ChartSpec, plan: LookupPlan) -> None:
 
 def _agent_count(catalog: Catalog) -> SqlAttempt:
     return _validated_attempt(
-        "SELECT COUNT(agent_code) AS agent_count FROM gold.semantic_agent LIMIT 1",
+        "SELECT COUNT(agent_code) AS agent_count FROM gold.agents LIMIT 1",
         catalog=catalog,
         explanation="Count of agents in the current governed agent directory.",
         units={"agent_count": "count"},
@@ -1177,19 +1178,19 @@ def _agent_accounts(plan: LookupPlan, catalog: Catalog) -> SqlAttempt:
     requested = list(dict.fromkeys(plan.requested_fields))
     available = {
         "borrower_name": ("reporting.customer_name AS borrower_name", "text"),
-        "sanction_amount": ("reporting.sanction_amount", "inr"),
-        "sanction_date": ("reporting.sanction_date", "date"),
-        "disbursed_amount": ("reporting.disbursed_amount", "inr"),
-        "first_disbursement_date": ("reporting.first_disbursement_date", "date"),
+        "sanction_amount": ("reporting.approved_amount AS sanction_amount", "inr"),
+        "sanction_date": ("reporting.approved_on AS sanction_date", "date"),
+        "disbursed_amount": ("reporting.amount_given AS disbursed_amount", "inr"),
+        "first_disbursement_date": ("reporting.first_amount_given_on AS first_disbursement_date", "date"),
         "scheme_name": ("reporting.scheme_name", "text"),
-        "number_of_emis": ("reporting.number_of_emis", "count"),
+        "number_of_emis": ("reporting.total_emi_count AS number_of_emis", "count"),
     }
     projections = [available[field][0] for field in requested]
     selected = ", " + ", ".join(projections) if projections else ""
     sql = (
         "SELECT reporting.loan_account_number::text AS loan_account_number" + selected + ", "
         "COUNT(reporting.loan_account_number) OVER () AS total_linked_account_count "
-        "FROM gold.semantic_loan_account AS reporting" +
+        "FROM gold.loan_accounts AS reporting" +
         " WHERE LOWER(reporting.agent_code) = " + value +
         " ORDER BY reporting.loan_account_number LIMIT 500"
     )
@@ -1211,18 +1212,18 @@ def _agent_customers(plan: LookupPlan, catalog: Catalog) -> SqlAttempt:
     requested = list(dict.fromkeys(plan.requested_fields))
     available = {
         "sanction_amount": (
-            "SUM(reporting.sanction_amount) AS sanction_amount", "inr",
+            "SUM(reporting.approved_amount) AS sanction_amount", "inr",
         ),
         "sanction_date": (
-            "STRING_AGG(DISTINCT reporting.sanction_date::text, ', ' "
-            "ORDER BY reporting.sanction_date::text) AS sanction_date", "text",
+            "STRING_AGG(DISTINCT reporting.approved_on::text, ', ' "
+            "ORDER BY reporting.approved_on::text) AS sanction_date", "text",
         ),
         "disbursed_amount": (
-            "SUM(reporting.disbursed_amount) AS disbursed_amount", "inr",
+            "SUM(reporting.amount_given) AS disbursed_amount", "inr",
         ),
         "first_disbursement_date": (
-            "STRING_AGG(DISTINCT reporting.first_disbursement_date::text, ', ' "
-            "ORDER BY reporting.first_disbursement_date::text) AS first_disbursement_date",
+            "STRING_AGG(DISTINCT reporting.first_amount_given_on::text, ', ' "
+            "ORDER BY reporting.first_amount_given_on::text) AS first_disbursement_date",
             "text",
         ),
         "scheme_name": (
@@ -1230,8 +1231,8 @@ def _agent_customers(plan: LookupPlan, catalog: Catalog) -> SqlAttempt:
             "ORDER BY reporting.scheme_name) AS scheme_name", "text",
         ),
         "number_of_emis": (
-            "STRING_AGG(DISTINCT reporting.number_of_emis::text, ', ' "
-            "ORDER BY reporting.number_of_emis::text) AS number_of_emis", "text",
+            "STRING_AGG(DISTINCT reporting.total_emi_count::text, ', ' "
+            "ORDER BY reporting.total_emi_count::text) AS number_of_emis", "text",
         ),
     }
     projections = [available[field][0] for field in requested if field in available]
@@ -1245,10 +1246,10 @@ def _agent_customers(plan: LookupPlan, catalog: Catalog) -> SqlAttempt:
         + selected
         + ", "
         "COUNT(reporting.customer_id) OVER () AS total_linked_customer_count "
-        "FROM gold.semantic_loan_account AS reporting "
+        "FROM gold.loan_accounts AS reporting "
         "WHERE LOWER(reporting.agent_code) = "
         + value
-        + " AND reporting.sanction_date <= CURRENT_DATE "
+        + " AND reporting.approved_on <= CURRENT_DATE "
         "GROUP BY reporting.customer_id "
         "ORDER BY borrower_name, customer_id LIMIT 500"
     )
@@ -1270,7 +1271,7 @@ def _agent_customers(plan: LookupPlan, catalog: Catalog) -> SqlAttempt:
 def _agent_directory(catalog: Catalog) -> SqlAttempt:
     sql = (
         "SELECT agent_code, agent_name, agent_type, designation, branch_code, "
-        "linked_customer_count, linked_loan_count FROM gold.semantic_agent "
+        "linked_customer_count, linked_loan_count FROM gold.agents "
         "ORDER BY agent_code LIMIT 500"
     )
     return _validated_attempt(
@@ -1292,7 +1293,7 @@ def _branch_directory(plan: LookupPlan, catalog: Catalog) -> SqlAttempt:
     )
     sql = (
         "SELECT branch_code, branch_name, branch_category_name, branch_size, "
-        "branch_status, opened_on FROM gold.semantic_branch" + where +
+        "branch_status, opened_on FROM gold.branches" + where +
         " ORDER BY branch_name, branch_code LIMIT 500"
     )
     return _validated_attempt(
@@ -1314,12 +1315,12 @@ def _branch_customers(plan: LookupPlan, catalog: Catalog) -> SqlAttempt:
         "AS borrower_name, COUNT(DISTINCT reporting.loan_account_number) "
         "AS linked_loan_count, COUNT(reporting.customer_id) OVER () "
         "AS total_linked_customer_count "
-        "FROM gold.semantic_loan_account AS reporting "
-        "JOIN gold.semantic_branch AS branch "
-        "ON branch.entity_num = reporting.entity_num "
+        "FROM gold.loan_accounts AS reporting "
+        "JOIN gold.branches AS branch "
+        "ON branch.company_code = reporting.company_code "
         "AND branch.branch_code = reporting.application_branch_code "
         "WHERE LOWER(TRIM(branch.branch_name)) = " + value + " "
-        "AND reporting.sanction_date <= CURRENT_DATE "
+        "AND reporting.approved_on <= CURRENT_DATE "
         "GROUP BY reporting.customer_id "
         "ORDER BY borrower_name, customer_id LIMIT 500"
     )
@@ -1338,7 +1339,7 @@ def _product_details(plan: LookupPlan, catalog: Catalog) -> SqlAttempt:
     value = _literal(_plain_identifier(plan.value).lower())
     sql = (
         "SELECT DISTINCT product_code::text AS product_code, product_name "
-        "FROM gold.semantic_product_scheme WHERE LOWER(product_code::text) = " + value +
+        "FROM gold.loan_products WHERE LOWER(product_code::text) = " + value +
         " ORDER BY product_name, product_code LIMIT 100"
     )
     return _validated_attempt(

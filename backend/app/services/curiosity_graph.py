@@ -25,59 +25,59 @@ WEIGHTS = {"borrowers": "borrower_count", "outstanding": "principal_outstanding"
 CACHE_TTL_SECONDS = float(os.environ.get("CURIOSITY_GRAPH_CACHE_TTL_SECONDS", "1800.0"))
 
 TENURE_BANDS = {
-    "tenure_0_12": ("\u2264 12 Months", "COALESCE(l.number_of_emis, 0) <= 12"),
-    "tenure_13_24": ("13\u201324 Months", "l.number_of_emis > 12 AND l.number_of_emis <= 24"),
-    "tenure_25_36": ("25\u201336 Months", "l.number_of_emis > 24 AND l.number_of_emis <= 36"),
-    "tenure_37_60": ("37\u201360 Months", "l.number_of_emis > 36 AND l.number_of_emis <= 60"),
-    "tenure_60_plus": ("> 60 Months", "l.number_of_emis > 60"),
+    "tenure_0_12": ("\u2264 12 Months", "COALESCE(l.total_emi_count, 0) <= 12"),
+    "tenure_13_24": ("13\u201324 Months", "l.total_emi_count > 12 AND l.total_emi_count <= 24"),
+    "tenure_25_36": ("25\u201336 Months", "l.total_emi_count > 24 AND l.total_emi_count <= 36"),
+    "tenure_37_60": ("37\u201360 Months", "l.total_emi_count > 36 AND l.total_emi_count <= 60"),
+    "tenure_60_plus": ("> 60 Months", "l.total_emi_count > 60"),
 }
 
 LOAN_SIZE_BUCKETS = {
-    "bucket_0_10k": ("0 - 10k", "l.sanction_amount < 10000"),
-    "bucket_10k_50k": ("10k - 50k", "l.sanction_amount >= 10000 AND l.sanction_amount < 50000"),
-    "bucket_50k_1l": ("50k - 1L", "l.sanction_amount >= 50000 AND l.sanction_amount < 100000"),
-    "bucket_1l_2l": ("1L - 2L", "l.sanction_amount >= 100000 AND l.sanction_amount < 200000"),
-    "bucket_2l_5l": ("2L - 5L", "l.sanction_amount >= 200000 AND l.sanction_amount < 500000"),
-    "bucket_5l_10l": ("5L - 10L", "l.sanction_amount >= 500000 AND l.sanction_amount < 1000000"),
-    "bucket_10l_50l": ("10L - 50L", "l.sanction_amount >= 1000000 AND l.sanction_amount < 5000000"),
-    "bucket_50l_plus": ("50L+", "l.sanction_amount >= 5000000"),
+    "bucket_0_10k": ("0 - 10k", "l.approved_amount < 10000"),
+    "bucket_10k_50k": ("10k - 50k", "l.approved_amount >= 10000 AND l.approved_amount < 50000"),
+    "bucket_50k_1l": ("50k - 1L", "l.approved_amount >= 50000 AND l.approved_amount < 100000"),
+    "bucket_1l_2l": ("1L - 2L", "l.approved_amount >= 100000 AND l.approved_amount < 200000"),
+    "bucket_2l_5l": ("2L - 5L", "l.approved_amount >= 200000 AND l.approved_amount < 500000"),
+    "bucket_5l_10l": ("5L - 10L", "l.approved_amount >= 500000 AND l.approved_amount < 1000000"),
+    "bucket_10l_50l": ("10L - 50L", "l.approved_amount >= 1000000 AND l.approved_amount < 5000000"),
+    "bucket_50l_plus": ("50L+", "l.approved_amount >= 5000000"),
 }
 
 TENURE_KEY_SQL = """CASE
-    WHEN COALESCE(l.number_of_emis, 0) <= 12 THEN 'tenure_0_12'
-    WHEN l.number_of_emis <= 24 THEN 'tenure_13_24'
-    WHEN l.number_of_emis <= 36 THEN 'tenure_25_36'
-    WHEN l.number_of_emis <= 60 THEN 'tenure_37_60'
+    WHEN COALESCE(l.total_emi_count, 0) <= 12 THEN 'tenure_0_12'
+    WHEN l.total_emi_count <= 24 THEN 'tenure_13_24'
+    WHEN l.total_emi_count <= 36 THEN 'tenure_25_36'
+    WHEN l.total_emi_count <= 60 THEN 'tenure_37_60'
     ELSE 'tenure_60_plus'
 END"""
 
 TENURE_LABEL_SQL = """MAX(CASE
-    WHEN COALESCE(l.number_of_emis, 0) <= 12 THEN '\u2264 12 Months'
-    WHEN l.number_of_emis <= 24 THEN '13\u201324 Months'
-    WHEN l.number_of_emis <= 36 THEN '25\u201336 Months'
-    WHEN l.number_of_emis <= 60 THEN '37\u201360 Months'
+    WHEN COALESCE(l.total_emi_count, 0) <= 12 THEN '\u2264 12 Months'
+    WHEN l.total_emi_count <= 24 THEN '13\u201324 Months'
+    WHEN l.total_emi_count <= 36 THEN '25\u201336 Months'
+    WHEN l.total_emi_count <= 60 THEN '37\u201360 Months'
     ELSE '> 60 Months'
 END)"""
 
 LOAN_SIZE_KEY_SQL = """CASE
-    WHEN l.sanction_amount < 10000 THEN 'bucket_0_10k'
-    WHEN l.sanction_amount < 50000 THEN 'bucket_10k_50k'
-    WHEN l.sanction_amount < 100000 THEN 'bucket_50k_1l'
-    WHEN l.sanction_amount < 200000 THEN 'bucket_1l_2l'
-    WHEN l.sanction_amount < 500000 THEN 'bucket_2l_5l'
-    WHEN l.sanction_amount < 1000000 THEN 'bucket_5l_10l'
-    WHEN l.sanction_amount < 5000000 THEN 'bucket_10l_50l'
+    WHEN l.approved_amount < 10000 THEN 'bucket_0_10k'
+    WHEN l.approved_amount < 50000 THEN 'bucket_10k_50k'
+    WHEN l.approved_amount < 100000 THEN 'bucket_50k_1l'
+    WHEN l.approved_amount < 200000 THEN 'bucket_1l_2l'
+    WHEN l.approved_amount < 500000 THEN 'bucket_2l_5l'
+    WHEN l.approved_amount < 1000000 THEN 'bucket_5l_10l'
+    WHEN l.approved_amount < 5000000 THEN 'bucket_10l_50l'
     ELSE 'bucket_50l_plus'
 END"""
 
 LOAN_SIZE_LABEL_SQL = """MAX(CASE
-    WHEN l.sanction_amount < 10000 THEN '0 - 10k'
-    WHEN l.sanction_amount < 50000 THEN '10k - 50k'
-    WHEN l.sanction_amount < 100000 THEN '50k - 1L'
-    WHEN l.sanction_amount < 200000 THEN '1L - 2L'
-    WHEN l.sanction_amount < 500000 THEN '2L - 5L'
-    WHEN l.sanction_amount < 1000000 THEN '5L - 10L'
-    WHEN l.sanction_amount < 5000000 THEN '10L - 50L'
+    WHEN l.approved_amount < 10000 THEN '0 - 10k'
+    WHEN l.approved_amount < 50000 THEN '10k - 50k'
+    WHEN l.approved_amount < 100000 THEN '50k - 1L'
+    WHEN l.approved_amount < 200000 THEN '1L - 2L'
+    WHEN l.approved_amount < 500000 THEN '2L - 5L'
+    WHEN l.approved_amount < 1000000 THEN '5L - 10L'
+    WHEN l.approved_amount < 5000000 THEN '10L - 50L'
     ELSE '50L+'
 END)"""
 
@@ -108,28 +108,31 @@ BRANCH_SQL = (
     "NULLIF(BTRIM(l.application_branch_code::text), ''), 'UNASSIGNED')"
 )
 
-# Optimized single-scan CTE for semantic risk snapshot
+# Optimized single-scan CTE for the friendly risk snapshot. Aliases preserve the
+# endpoint's stable internal metric vocabulary while physical columns stay layman-friendly.
 RISK_CTE = """
 WITH latest_risk AS (
-    SELECT entity_num, loan_account_number, principal_outstanding, total_overdue,
-           dpd_days, is_par30, is_npa, asset_classification
-    FROM gold.semantic_portfolio_snapshot
-    WHERE entity_num = %s
+    SELECT company_code AS entity_num, loan_account_number,
+           principal_still_due AS principal_outstanding, total_overdue,
+           days_past_due AS dpd_days, overdue_over_30_days AS is_par30,
+           is_bad_loan AS is_npa, loan_health_category AS asset_classification
+    FROM gold.daily_loan_status
+    WHERE company_code = %s
 )
 """
 
 METRIC_SQL = """
 COUNT(*)::bigint AS account_count,
-COUNT(*) FILTER (WHERE l.closure_date IS NULL)::bigint AS active_account_count,
+COUNT(*) FILTER (WHERE l.closed_on IS NULL)::bigint AS active_account_count,
 COUNT(DISTINCT l.customer_id)::bigint AS borrower_count,
-COALESCE(SUM(l.sanction_amount), 0) AS sanctioned_amount,
-COALESCE(SUM(l.disbursed_amount), 0) AS disbursed_amount,
+COALESCE(SUM(l.approved_amount), 0) AS sanctioned_amount,
+COALESCE(SUM(l.amount_given), 0) AS disbursed_amount,
 COALESCE(SUM(r.principal_outstanding), 0) AS principal_outstanding,
 COALESCE(SUM(r.total_overdue), 0) AS total_overdue,
 COALESCE(SUM(r.principal_outstanding) FILTER (WHERE r.is_par30), 0) AS par30_outstanding,
 COALESCE(SUM(r.principal_outstanding) FILTER (WHERE r.is_npa), 0) AS npa_outstanding,
 COUNT(r.loan_account_number)::bigint AS risk_covered_accounts,
-MAX(l.data_as_of) AS loan_data_as_of
+MAX(l.data_as_of_date) AS loan_data_as_of
 """
 
 METRIC_COLUMNS = (
@@ -178,7 +181,7 @@ def _metrics(values: Iterable[Any]) -> dict[str, Any]:
 
 
 def _where(filters: dict[str, str], month: str | None = None) -> tuple[str, list[Any]]:
-    clauses = ["l.entity_num = %s"]
+    clauses = ["l.company_code = %s"]
     params: list[Any] = [GICC_ENTITY]
     if filters.get("product_code"):
         clauses.append("l.product_code::text = %s")
@@ -207,7 +210,7 @@ def _where(filters: dict[str, str], month: str | None = None) -> tuple[str, list
         clauses.append("l.customer_id::text = %s")
         params.append(filters["customer_id"])
     if month:
-        clauses.append("TO_CHAR(l.sanction_date, 'YYYY-MM') = %s")
+        clauses.append("TO_CHAR(l.approved_on, 'YYYY-MM') = %s")
         params.append(month)
     return " AND ".join(clauses), params
 
@@ -217,9 +220,9 @@ def _aggregate(cur: Any, filters: dict[str, str], month: str | None) -> dict[str
     cur.execute(
         RISK_CTE + f"""
         SELECT {METRIC_SQL}
-        FROM gold.semantic_loan_account l
+        FROM gold.loan_accounts l
         LEFT JOIN latest_risk r
-          ON r.entity_num = l.entity_num
+          ON r.entity_num = l.company_code
          AND r.loan_account_number = l.loan_account_number
         WHERE {where}
         """,
@@ -235,8 +238,8 @@ def _snapshot_info(cur: Any) -> dict[str, Any]:
         return dict(cache_entry[0])
 
     cur.execute(
-        "SELECT MAX(snapshot_date), MAX(data_as_of), COUNT(DISTINCT entity_num) "
-        "FROM gold.semantic_portfolio_snapshot WHERE entity_num = %s",
+        "SELECT MAX(status_date), MAX(data_as_of_date), COUNT(DISTINCT company_code) "
+        "FROM gold.daily_loan_status WHERE company_code = %s",
         (GICC_ENTITY,),
     )
     snapshot_date, data_as_of, entities = cur.fetchone()
@@ -256,8 +259,8 @@ def _branch_names(cur: Any) -> dict[str, str]:
         return dict(cache_entry[0])
 
     cur.execute(
-        "SELECT branch_code::text, branch_name FROM gold.semantic_branch "
-        "WHERE entity_num = %s AND branch_code IS NOT NULL",
+        "SELECT branch_code::text, branch_name FROM gold.branches "
+        "WHERE company_code = %s AND branch_code IS NOT NULL",
         (GICC_ENTITY,),
     )
     res = {_text(code): (_text(name) or f"Branch {code}") for code, name in cur.fetchall()}
@@ -292,7 +295,7 @@ def _title(cur: Any, level: str, filters: dict[str, str], branch_names: dict[str
         "agent": "MAX(NULLIF(BTRIM(l.agent_name), ''))",
         "customer": "MAX(NULLIF(BTRIM(l.customer_name), ''))",
     }[level]
-    cur.execute(f"SELECT {field} FROM gold.semantic_loan_account l WHERE {where}", tuple(params))
+    cur.execute(f"SELECT {field} FROM gold.loan_accounts l WHERE {where}", tuple(params))
     label = _text(cur.fetchone()[0])
     title = label or (f"Unassigned {level}" if code == "UNASSIGNED" else f"{level.title()} {code}")
     _TITLE_CACHE[cache_key] = (title, now + CACHE_TTL_SECONDS)
@@ -333,9 +336,9 @@ def _children(
     sql = RISK_CTE + f"""
         SELECT {key_sql} AS node_key, {label_sql} AS node_label, {METRIC_SQL},
                COUNT(*) OVER ()::bigint AS total_groups
-        FROM gold.semantic_loan_account l
+        FROM gold.loan_accounts l
         LEFT JOIN latest_risk r
-          ON r.entity_num = l.entity_num
+          ON r.entity_num = l.company_code
          AND r.loan_account_number = l.loan_account_number
         WHERE {where}
         GROUP BY {key_sql}
@@ -377,15 +380,15 @@ def _accounts_and_agents(
         RISK_CTE + """
         SELECT l.loan_account_number::text, l.product_code::text, l.product_name,
                l.application_branch_code::text, l.scheme_code::text, l.scheme_name,
-               l.agent_code::text, l.agent_name, l.sanction_amount, l.disbursed_amount,
-               l.closure_date, l.loan_status, r.principal_outstanding, r.total_overdue,
+               l.agent_code::text, l.agent_name, l.approved_amount, l.amount_given,
+               l.closed_on, l.loan_status, r.principal_outstanding, r.total_overdue,
                r.dpd_days, r.is_par30, r.is_npa
-        FROM gold.semantic_loan_account l
+        FROM gold.loan_accounts l
         LEFT JOIN latest_risk r
-          ON r.entity_num = l.entity_num
+          ON r.entity_num = l.company_code
          AND r.loan_account_number = l.loan_account_number
-        WHERE l.entity_num = %s AND l.customer_id::text = %s
-        ORDER BY l.sanction_date DESC NULLS LAST, l.loan_account_number
+        WHERE l.company_code = %s AND l.customer_id::text = %s
+        ORDER BY l.approved_on DESC NULLS LAST, l.loan_account_number
         """,
         (GICC_ENTITY, GICC_ENTITY, customer_id),
     )
@@ -479,33 +482,33 @@ def _get_portfolio_data(entity_num: str = GICC_ENTITY) -> dict[str, Any]:
                 l.scheme_name,
                 COALESCE(NULLIF(BTRIM(l.agent_code::text), ''), 'UNASSIGNED') AS agent_code,
                 l.agent_name,
-                COALESCE(l.sanction_amount, 0),
-                COALESCE(l.disbursed_amount, 0),
-                l.sanction_date,
-                l.closure_date,
-                COALESCE(l.number_of_emis, 0),
-                l.data_as_of,
+                COALESCE(l.approved_amount, 0),
+                COALESCE(l.amount_given, 0),
+                l.approved_on,
+                l.closed_on,
+                COALESCE(l.total_emi_count, 0),
+                l.data_as_of_date,
                 l.loan_status,
-                COALESCE(r.principal_outstanding, 0),
+                COALESCE(r.principal_still_due, 0),
                 COALESCE(r.total_overdue, 0),
-                COALESCE(r.is_par30, false),
-                COALESCE(r.is_npa, false),
+                COALESCE(r.overdue_over_30_days, false),
+                COALESCE(r.is_bad_loan, false),
                 r.loan_account_number IS NOT NULL AS has_risk,
-                COALESCE(r.dpd_days, 0),
-                r.snapshot_date
-            FROM gold.semantic_loan_account l
-            LEFT JOIN gold.semantic_portfolio_snapshot r
-              ON r.entity_num = l.entity_num
+                COALESCE(r.days_past_due, 0),
+                r.status_date
+            FROM gold.loan_accounts l
+            LEFT JOIN gold.daily_loan_status r
+              ON r.company_code = l.company_code
              AND r.loan_account_number = l.loan_account_number
-            WHERE l.entity_num = %s
+            WHERE l.company_code = %s
             """,
             (entity_num,),
         )
         rows = cur.fetchall()
 
         cur.execute(
-            "SELECT branch_code::text, branch_name FROM gold.semantic_branch "
-            "WHERE entity_num = %s AND branch_code IS NOT NULL",
+            "SELECT branch_code::text, branch_name FROM gold.branches "
+            "WHERE company_code = %s AND branch_code IS NOT NULL",
             (entity_num,),
         )
         branch_names = {_text(code): (_text(name) or f"Branch {code}") for code, name in cur.fetchall()}
@@ -975,8 +978,8 @@ def get_curiosity_graph(
             "branch_basis_note": "Reporting branch is currently empty in Gold; application branch supplies the hierarchy until remediation.",
             "source_schema": "gold",
             "source_views": [
-                "gold.semantic_loan_account", "gold.semantic_portfolio_snapshot",
-                "gold.semantic_branch",
+                "gold.loan_accounts", "gold.daily_loan_status",
+                "gold.branches",
             ],
         },
     }
@@ -1050,13 +1053,13 @@ def get_customer_360_details(customer_id: str) -> dict[str, Any]:
         # 1. Profile
         cur.execute(
             """
-            SELECT customer_id::text, full_name, mobile_primary, mobile_secondary, email,
+            SELECT customer_id::text, full_name, primary_mobile, secondary_mobile, email,
                    address_line1, address_line2, landmark, city, district, state, pincode,
-                   pan_number, aadhaar_number, kyc_verified_flag, kyc_document_count,
+                   pan_number, aadhaar_number, is_kyc_verified, kyc_document_count,
                    yearly_income, monthly_income, occupation_name, occupation_type, risk_rating,
                    home_branch_code::text, home_branch_name
-            FROM gold.semantic_customer_profile
-            WHERE entity_num = %s AND customer_id::text = %s
+            FROM gold.customers
+            WHERE company_code = %s AND customer_id::text = %s
             LIMIT 1
             """,
             (GICC_ENTITY, clean_id),
@@ -1066,8 +1069,8 @@ def get_customer_360_details(customer_id: str) -> dict[str, Any]:
             cur.execute(
                 """
                 SELECT customer_id::text, MAX(customer_name)
-                FROM gold.semantic_loan_account
-                WHERE entity_num = %s AND customer_id::text = %s
+                FROM gold.loan_accounts
+                WHERE company_code = %s AND customer_id::text = %s
                 GROUP BY customer_id
                 """,
                 (GICC_ENTITY, clean_id),
@@ -1127,18 +1130,18 @@ def get_customer_360_details(customer_id: str) -> dict[str, Any]:
         cur.execute(
             RISK_CTE + """
             SELECT l.loan_account_number::text, l.product_code::text, l.product_name,
-                   l.scheme_code::text, l.scheme_name, l.sanction_date, l.closure_date,
-                   l.sanction_amount, l.disbursed_amount, l.principal_repaid, l.interest_repaid,
-                   l.interest_rate, l.number_of_emis, l.emi_amount, l.loan_status,
+                   l.scheme_code::text, l.scheme_name, l.approved_on, l.closed_on,
+                   l.approved_amount, l.amount_given, l.principal_paid_so_far, l.interest_paid_so_far,
+                   l.interest_rate_percent, l.total_emi_count, l.monthly_emi_amount, l.loan_status,
                    l.agent_code::text, l.agent_name,
                    r.principal_outstanding, r.total_overdue, r.dpd_days, r.is_par30, r.is_npa,
                    r.asset_classification
-            FROM gold.semantic_loan_account l
+            FROM gold.loan_accounts l
             LEFT JOIN latest_risk r
-              ON r.entity_num = l.entity_num
+              ON r.entity_num = l.company_code
              AND r.loan_account_number = l.loan_account_number
-            WHERE l.entity_num = %s AND l.customer_id::text = %s
-            ORDER BY l.sanction_date DESC NULLS LAST, l.loan_account_number
+            WHERE l.company_code = %s AND l.customer_id::text = %s
+            ORDER BY l.approved_on DESC NULLS LAST, l.loan_account_number
             """,
             (GICC_ENTITY, GICC_ENTITY, clean_id),
         )
@@ -1198,10 +1201,10 @@ def get_customer_360_details(customer_id: str) -> dict[str, Any]:
             """
             SELECT loan_account_number::text, repayment_sequence, repayment_date,
                    principal_due, interest_due, total_due,
-                   principal_paid, interest_paid, total_paid,
-                   collection_shortfall, collection_efficiency
-            FROM gold.semantic_repayment_event
-            WHERE entity_num = %s AND customer_id::text = %s
+                   principal_paid, interest_paid, total_amount_paid,
+                   collection_shortfall, collection_efficiency_percent
+            FROM gold.loan_repayments
+            WHERE company_code = %s AND customer_id::text = %s
             ORDER BY repayment_date DESC NULLS LAST, repayment_sequence DESC
             """,
             (GICC_ENTITY, clean_id),

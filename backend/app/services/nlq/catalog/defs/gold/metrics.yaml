@@ -5,9 +5,9 @@
   label: Disbursement
   unit: inr
   grain: flow
-  base_table: gold.semantic_disbursement_event
-  date_column: disbursement_date
-  expression: SUM({t}.disbursement_amount)
+  base_table: gold.loan_disbursements
+  date_column: amount_given_on
+  expression: SUM({t}.amount_given)
   formula: Sum of disbursement event amounts in the period
   synonyms:
     [disbursement, disbursed, disbursement amount and count, loan releases,
@@ -18,8 +18,8 @@
   label: Number of disbursements
   unit: count
   grain: flow
-  base_table: gold.semantic_disbursement_event
-  date_column: disbursement_date
+  base_table: gold.loan_disbursements
+  date_column: amount_given_on
   expression: COUNT(*)
   formula: Count of disbursement events in the period
   synonyms:
@@ -32,9 +32,9 @@
   label: Sanctioned amount
   unit: inr
   grain: flow
-  base_table: gold.semantic_loan_account
-  date_column: sanction_date
-  expression: SUM({t}.sanction_amount)
+  base_table: gold.loan_accounts
+  date_column: approved_on
+  expression: SUM({t}.approved_amount)
   formula: Sum of sanctioned amounts for accounts sanctioned in the period
   synonyms: [sanctioned, sanction, loan sanctions, approved amount, credit approved]
   verified: 2290958902.00 across 5753 accounts
@@ -43,8 +43,8 @@
   label: Loans sanctioned
   unit: count
   grain: flow
-  base_table: gold.semantic_loan_account
-  date_column: sanction_date
+  base_table: gold.loan_accounts
+  date_column: approved_on
   expression: COUNT(*)
   formula: Count of loan accounts sanctioned in the period
   synonyms: [loan count, number of loans, how many loans, accounts, new loans, bookings]
@@ -54,8 +54,8 @@
   label: Borrowers
   unit: count
   grain: flow
-  base_table: gold.semantic_loan_account
-  date_column: sanction_date
+  base_table: gold.loan_accounts
+  date_column: approved_on
   expression: COUNT(DISTINCT {t}.customer_id)
   formula: Distinct borrowers with an account sanctioned in the period
   synonyms:
@@ -67,9 +67,9 @@
   label: Average ticket size
   unit: inr
   grain: ratio
-  base_table: gold.semantic_loan_account
-  date_column: sanction_date
-  numerator: SUM({t}.sanction_amount)
+  base_table: gold.loan_accounts
+  date_column: approved_on
+  numerator: SUM({t}.approved_amount)
   denominator: COUNT(*)
   formula: Total sanctioned amount divided by number of loans
   # Account count — the ratio's denominator. Named so driver decomposition can split a change into
@@ -81,10 +81,10 @@
   label: Average interest rate
   unit: percent
   grain: ratio
-  base_table: gold.semantic_loan_account
-  date_column: sanction_date
-  numerator: SUM({t}.interest_rate * {t}.sanction_amount)
-  denominator: SUM({t}.sanction_amount)
+  base_table: gold.loan_accounts
+  date_column: approved_on
+  numerator: SUM({t}.interest_rate_percent * {t}.approved_amount)
+  denominator: SUM({t}.approved_amount)
   formula: Sanction-amount-weighted average account interest rate
   # Sanctioned amount — the ratio's denominator. Named so driver decomposition can split a change into
   # mix and rate effects exactly rather than approximately.
@@ -96,8 +96,8 @@
   label: Principal outstanding (whole book)
   unit: inr
   grain: point_in_time
-  base_table: gold.semantic_loan_account
-  expression: SUM({t}.disbursed_amount - {t}.principal_repaid)
+  base_table: gold.loan_accounts
+  expression: SUM({t}.amount_given - {t}.principal_paid_so_far)
   formula: Cumulative disbursed minus cumulative principal repaid across loan accounts
   synonyms: [total outstanding, whole book, total portfolio, loan book size]
   no_time_travel: true
@@ -109,7 +109,7 @@
   label: Linked loans
   unit: count
   grain: point_in_time
-  base_table: gold.semantic_agent
+  base_table: gold.agents
   expression: SUM({t}.linked_loan_count)
   formula: Sum of loan accounts linked to each governed agent
   synonyms:
@@ -121,9 +121,10 @@
   label: Principal outstanding
   unit: inr
   grain: point_in_time
-  base_table: gold.semantic_portfolio_snapshot
-  as_of_function: gold.portfolio_snapshot_as_of
-  expression: SUM({t}.principal_outstanding)
+  base_table: gold.daily_loan_status
+  as_of_column: status_date
+  as_of_key: [company_code, loan_account_number]
+  expression: SUM({t}.principal_still_due)
   formula: Principal outstanding from each classified account at the requested snapshot
   synonyms: [outstanding, principal outstanding, POS, book size, exposure, AUM]
   verified: 2045394519.25 across 5466 classified accounts as of 2026-07-31
@@ -132,8 +133,9 @@
   label: Classified loan accounts
   unit: count
   grain: point_in_time
-  base_table: gold.semantic_portfolio_snapshot
-  as_of_function: gold.portfolio_snapshot_as_of
+  base_table: gold.daily_loan_status
+  as_of_column: status_date
+  as_of_key: [company_code, loan_account_number]
   expression: COUNT(*)
   formula: Count of loan accounts present in the requested classified portfolio snapshot
   synonyms: [classified accounts, accounts by asset class, loan accounts by classification]
@@ -143,8 +145,9 @@
   label: Overdue principal
   unit: inr
   grain: point_in_time
-  base_table: gold.semantic_portfolio_snapshot
-  as_of_function: gold.portfolio_snapshot_as_of
+  base_table: gold.daily_loan_status
+  as_of_column: status_date
+  as_of_key: [company_code, loan_account_number]
   expression: SUM({t}.principal_overdue)
   formula: Principal overdue at the requested portfolio snapshot
   synonyms: [overdue, arrears, past due, principal due, delinquent amount]
@@ -154,8 +157,9 @@
   label: Total overdue
   unit: inr
   grain: point_in_time
-  base_table: gold.semantic_portfolio_snapshot
-  as_of_function: gold.portfolio_snapshot_as_of
+  base_table: gold.daily_loan_status
+  as_of_column: status_date
+  as_of_key: [company_code, loan_account_number]
   expression: SUM({t}.total_overdue)
   formula: Principal, interest, charges and penal overdue at the requested snapshot
   synonyms: [total overdue, total arrears, total dues, amount overdue]
@@ -164,9 +168,10 @@
   label: Delinquent accounts
   unit: count
   grain: point_in_time
-  base_table: gold.semantic_portfolio_snapshot
-  as_of_function: gold.portfolio_snapshot_as_of
-  expression: COUNT(*) FILTER (WHERE {t}.is_delinquent)
+  base_table: gold.daily_loan_status
+  as_of_column: status_date
+  as_of_key: [company_code, loan_account_number]
+  expression: COUNT(*) FILTER (WHERE {t}.is_overdue)
   formula: Count of classified accounts with DPD greater than zero
   synonyms: [delinquent accounts, accounts overdue, how many are late, defaulters]
 
@@ -174,9 +179,10 @@
   label: Average DPD
   unit: days
   grain: ratio
-  base_table: gold.semantic_portfolio_snapshot
-  as_of_function: gold.portfolio_snapshot_as_of
-  numerator: SUM({t}.dpd_days)
+  base_table: gold.daily_loan_status
+  as_of_column: status_date
+  as_of_key: [company_code, loan_account_number]
+  numerator: SUM({t}.days_past_due)
   denominator: COUNT(*)
   formula: Mean days past due across classified accounts at the snapshot
   synonyms: [average DPD, mean days past due, average delinquency]
@@ -186,10 +192,11 @@
   unit: percent
   grain: ratio
   point_in_time: true
-  base_table: gold.semantic_portfolio_snapshot
-  as_of_function: gold.portfolio_snapshot_as_of
-  numerator: SUM({t}.principal_outstanding) FILTER (WHERE {t}.is_par30)
-  denominator: SUM({t}.principal_outstanding)
+  base_table: gold.daily_loan_status
+  as_of_column: status_date
+  as_of_key: [company_code, loan_account_number]
+  numerator: SUM({t}.principal_still_due) FILTER (WHERE {t}.overdue_over_30_days)
+  denominator: SUM({t}.principal_still_due)
   scale: 100
   formula: Principal outstanding over 30 DPD divided by classified principal outstanding
   # Book size — the ratio's denominator. Named so driver decomposition can split a change into
@@ -207,10 +214,11 @@
   unit: percent
   grain: ratio
   point_in_time: true
-  base_table: gold.semantic_portfolio_snapshot
-  as_of_function: gold.portfolio_snapshot_as_of
-  numerator: SUM({t}.principal_outstanding) FILTER (WHERE {t}.is_par60)
-  denominator: SUM({t}.principal_outstanding)
+  base_table: gold.daily_loan_status
+  as_of_column: status_date
+  as_of_key: [company_code, loan_account_number]
+  numerator: SUM({t}.principal_still_due) FILTER (WHERE {t}.overdue_over_60_days)
+  denominator: SUM({t}.principal_still_due)
   scale: 100
   formula: Principal outstanding over 60 DPD divided by classified principal outstanding
   # Book size — the ratio's denominator. Named so driver decomposition can split a change into
@@ -224,10 +232,11 @@
   unit: percent
   grain: ratio
   point_in_time: true
-  base_table: gold.semantic_portfolio_snapshot
-  as_of_function: gold.portfolio_snapshot_as_of
-  numerator: SUM({t}.principal_outstanding) FILTER (WHERE {t}.is_par90)
-  denominator: SUM({t}.principal_outstanding)
+  base_table: gold.daily_loan_status
+  as_of_column: status_date
+  as_of_key: [company_code, loan_account_number]
+  numerator: SUM({t}.principal_still_due) FILTER (WHERE {t}.overdue_over_90_days)
+  denominator: SUM({t}.principal_still_due)
   scale: 100
   formula: Principal outstanding over 90 DPD divided by classified principal outstanding
   # Book size — the ratio's denominator. Named so driver decomposition can split a change into
@@ -241,10 +250,11 @@
   unit: percent
   grain: ratio
   point_in_time: true
-  base_table: gold.semantic_portfolio_snapshot
-  as_of_function: gold.portfolio_snapshot_as_of
-  numerator: SUM({t}.principal_outstanding) FILTER (WHERE {t}.is_npa)
-  denominator: SUM({t}.principal_outstanding)
+  base_table: gold.daily_loan_status
+  as_of_column: status_date
+  as_of_key: [company_code, loan_account_number]
+  numerator: SUM({t}.principal_still_due) FILTER (WHERE {t}.is_bad_loan)
+  denominator: SUM({t}.principal_still_due)
   scale: 100
   formula: NPA-classified principal outstanding divided by classified principal outstanding
   # Book size — the ratio's denominator. Named so driver decomposition can split a change into
@@ -257,9 +267,9 @@
   label: Collection efficiency
   unit: percent
   grain: ratio
-  base_table: gold.semantic_repayment_event
+  base_table: gold.loan_repayments
   date_column: repayment_date
-  numerator: SUM({t}.total_paid)
+  numerator: SUM({t}.total_amount_paid)
   denominator: SUM({t}.total_due)
   scale: 100
   formula: Total principal and interest paid divided by total principal and interest due
@@ -273,9 +283,9 @@
   label: Amount collected
   unit: inr
   grain: flow
-  base_table: gold.semantic_repayment_event
+  base_table: gold.loan_repayments
   date_column: repayment_date
-  expression: SUM({t}.total_paid)
+  expression: SUM({t}.total_amount_paid)
   formula: Principal plus interest paid in the period
   synonyms: [collected, collections, received, repayments, recovery, inflow]
   verified: 227742182.62
@@ -284,7 +294,7 @@
   label: Principal collected
   unit: inr
   grain: flow
-  base_table: gold.semantic_repayment_event
+  base_table: gold.loan_repayments
   date_column: repayment_date
   expression: SUM({t}.principal_paid)
   formula: Principal paid in the period
@@ -298,7 +308,7 @@
   label: Interest collected
   unit: inr
   grain: flow
-  base_table: gold.semantic_repayment_event
+  base_table: gold.loan_repayments
   date_column: repayment_date
   expression: SUM({t}.interest_paid)
   formula: Interest paid in the period
@@ -312,7 +322,7 @@
   label: Amount due
   unit: inr
   grain: flow
-  base_table: gold.semantic_repayment_event
+  base_table: gold.loan_repayments
   date_column: repayment_date
   expression: SUM({t}.total_due)
   formula: Principal plus interest due in the period
@@ -323,7 +333,7 @@
   label: Collection shortfall
   unit: inr
   grain: flow
-  base_table: gold.semantic_repayment_event
+  base_table: gold.loan_repayments
   date_column: repayment_date
   expression: SUM({t}.collection_shortfall)
   formula: Amount due minus amount paid in the period
@@ -333,9 +343,9 @@
   label: Scheduled instalments
   unit: inr
   grain: flow
-  base_table: gold.semantic_schedule_event
-  date_column: scheduled_date
-  expression: SUM({t}.scheduled_total)
+  base_table: gold.emi_schedule
+  date_column: planned_emi_date
+  expression: SUM({t}.planned_total_emi)
   formula: Contractual principal plus interest scheduled in the period
   synonyms:
     [scheduled, scheduled amount, repayment schedule total, future repayment schedule,
@@ -345,10 +355,10 @@
   label: GL balance
   unit: inr
   grain: point_in_time
-  base_table: gold.semantic_gl_balance
+  base_table: gold.general_ledger_balances
   as_of_column: balance_date
-  as_of_key: [entity_num, branch_code, gl_number, currency_code]
-  expression: SUM({t}.base_currency_balance)
+  as_of_key: [company_code, branch_code, ledger_account_number, currency_code]
+  expression: SUM({t}.balance_in_base_currency)
   formula: Base-currency GL closing balance at the requested date
   synonyms: [GL balance, ledger balance, trial balance, account balance, base-currency balance, financials]
   restrictions: Cannot be grouped by loan product, scheme or loan branch.
@@ -358,14 +368,14 @@
   label: Share capital
   unit: inr
   grain: point_in_time
-  base_table: gold.semantic_gl_balance
+  base_table: gold.general_ledger_balances
   expression: >
     SUM(CASE WHEN LEFT(COALESCE({t}.external_access_code, ''), 4) = '1001'
-             THEN COALESCE({t}.base_currency_balance, 0) ELSE 0 END)
+             THEN COALESCE({t}.balance_in_base_currency, 0) ELSE 0 END)
   formula: Current base-currency balance of governed GL accounts in access-code group 1001
   synonyms: [share capital, capital share, equity shares, equity share capital, paid-up equity]
   as_of_column: balance_date
-  as_of_key: [entity_num, branch_code, gl_number, currency_code]
+  as_of_key: [company_code, branch_code, ledger_account_number, currency_code]
   restrictions: Standalone current GL measure; cannot be grouped by lending dimensions.
   requires_signoff: true
   signoff_note: Uses the same governed access-code group as DNBS-02 Part 1 capital reporting.
@@ -374,15 +384,15 @@
   label: Capital reserves and surplus
   unit: inr
   grain: point_in_time
-  base_table: gold.semantic_gl_balance
+  base_table: gold.general_ledger_balances
   expression: >
     SUM(CASE WHEN LEFT(COALESCE({t}.external_access_code, ''), 4) = '1033'
-             THEN COALESCE({t}.base_currency_balance, 0) ELSE 0 END)
+             THEN COALESCE({t}.balance_in_base_currency, 0) ELSE 0 END)
   formula: Current base-currency balance of governed GL accounts in access-code group 1033
   synonyms: [capital reserve, capital reserves, reserves balances, reserves and surplus,
              reserve shares, reserve capital, total reserves]
   as_of_column: balance_date
-  as_of_key: [entity_num, branch_code, gl_number, currency_code]
+  as_of_key: [company_code, branch_code, ledger_account_number, currency_code]
   restrictions: Standalone current GL measure; cannot be grouped by lending dimensions.
   requires_signoff: true
   signoff_note: Uses the same governed access-code group as DNBS-02 Part 1 reserves reporting.
@@ -392,7 +402,7 @@
   label: Applications received
   unit: count
   grain: flow
-  base_table: gold.semantic_application
+  base_table: gold.loan_applications
   date_column: application_date
   expression: COUNT(*)
   formula: Count of application master records entered in the period
@@ -403,9 +413,9 @@
   label: Applications observed as disbursed
   unit: count
   grain: flow
-  base_table: gold.semantic_application
+  base_table: gold.loan_applications
   date_column: application_date
-  expression: COUNT(*) FILTER (WHERE {t}.observable_outcome_status = 'disbursed')
+  expression: COUNT(*) FILTER (WHERE {t}.application_outcome_status = 'disbursed')
   formula: Applications carrying either an explicit disbursement record or a linked loan account
   synonyms: [applications disbursed, converted applications, application outcomes]
   requires_signoff: true
@@ -417,9 +427,9 @@
   label: Observable application-to-disbursement conversion
   unit: percent
   grain: ratio
-  base_table: gold.semantic_application
+  base_table: gold.loan_applications
   date_column: application_date
-  numerator: COUNT(*) FILTER (WHERE {t}.observable_outcome_status = 'disbursed')
+  numerator: COUNT(*) FILTER (WHERE {t}.application_outcome_status = 'disbursed')
   denominator: COUNT(*)
   scale: 100
   formula: Applications observed as disbursed divided by all application records in the period
@@ -433,8 +443,8 @@
   label: Payment receipts
   unit: inr
   grain: flow
-  base_table: gold.semantic_receipt_adjustment_event
-  date_column: event_date
+  base_table: gold.payment_receipts
+  date_column: receipt_date
   expression: SUM({t}.receipt_amount) FILTER (WHERE {t}.event_type = 'receipt')
   formula: Sum of governed loan receipt amounts in the period
   synonyms:
@@ -446,8 +456,8 @@
   label: Number of payment receipts
   unit: count
   grain: flow
-  base_table: gold.semantic_receipt_adjustment_event
-  date_column: event_date
+  base_table: gold.payment_receipts
+  date_column: receipt_date
   expression: COUNT(*) FILTER (WHERE {t}.event_type = 'receipt')
   formula: Count of governed loan receipt events in the period
   synonyms:
@@ -459,9 +469,9 @@
   label: Loan ledger transactions
   unit: count
   grain: flow
-  base_table: gold.semantic_loan_ledger_event
-  date_column: event_date
-  expression: COUNT(*) FILTER (WHERE {t}.record_type = 'ledger')
+  base_table: gold.loan_account_entries
+  date_column: entry_date
+  expression: COUNT(*) FILTER (WHERE {t}.entry_type = 'ledger')
   formula: Count of loan account ledger transactions in the period
   synonyms:
     [ledger transactions, loan transactions, loan transaction events,
@@ -472,9 +482,9 @@
   label: Collection activity amount
   unit: inr
   grain: flow
-  base_table: gold.semantic_collection_operation_event
-  date_column: operation_date
-  expression: SUM({t}.final_collection_amount) FILTER (WHERE {t}.operation_type = 'activity')
+  base_table: gold.collection_activities
+  date_column: activity_date
+  expression: SUM({t}.final_collection_amount) FILTER (WHERE {t}.activity_type = 'activity')
   formula: Sum of final collection amounts recorded in collector activity summaries
   synonyms:
     [collector amount, team collections, field collections, recovery operations amount,
@@ -484,9 +494,9 @@
   label: Collection activities
   unit: count
   grain: flow
-  base_table: gold.semantic_collection_operation_event
-  date_column: operation_date
-  expression: COUNT(*) FILTER (WHERE {t}.operation_type = 'activity')
+  base_table: gold.collection_activities
+  date_column: activity_date
+  expression: COUNT(*) FILTER (WHERE {t}.activity_type = 'activity')
   formula: Count of deduplicated collector activity operations in the period
   synonyms:
     [collection activity count, activity count, collection activities, recovery operations volume,
@@ -496,9 +506,9 @@
   label: Collection handovers
   unit: count
   grain: flow
-  base_table: gold.semantic_collection_operation_event
-  date_column: operation_date
-  expression: COUNT(*) FILTER (WHERE {t}.operation_type = 'handover')
+  base_table: gold.collection_activities
+  date_column: activity_date
+  expression: COUNT(*) FILTER (WHERE {t}.activity_type = 'handover')
   formula: Count of collection ownership handover records in the period
   synonyms: [handovers, collector reassignments, collection transfers]
   verified: 174 handover records
@@ -507,10 +517,10 @@
   label: Vintage PAR 30 account rate
   unit: percent
   grain: ratio
-  base_table: gold.semantic_origination_vintage
+  base_table: gold.loan_vintage_performance
   date_column: report_month
-  numerator: SUM({t}.accounts_par30)
-  denominator: SUM({t}.account_count)
+  numerator: SUM({t}.accounts_overdue_over_30_days)
+  denominator: SUM({t}.loan_account_count)
   scale: 100
   formula: PAR-30 account count divided by cohort account count at each report month
   synonyms:
@@ -525,10 +535,10 @@
   label: Vintage NPA account rate
   unit: percent
   grain: ratio
-  base_table: gold.semantic_origination_vintage
+  base_table: gold.loan_vintage_performance
   date_column: report_month
-  numerator: SUM({t}.accounts_npa)
-  denominator: SUM({t}.account_count)
+  numerator: SUM({t}.bad_loan_account_count)
+  denominator: SUM({t}.loan_account_count)
   scale: 100
   formula: NPA account count divided by cohort account count at each report month
   synonyms:
