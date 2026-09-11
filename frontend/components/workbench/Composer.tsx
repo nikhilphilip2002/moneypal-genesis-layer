@@ -7,7 +7,6 @@ import {
   Database,
   Filter,
   Plus,
-  ShieldCheck,
   Square,
   Wrench,
   X,
@@ -294,7 +293,7 @@ export default function Composer({
             </span>
           </label>
 
-          {pinned ? (
+          {pinned && (
             <span className="flex min-w-0 items-center gap-1.5 rounded-lg bg-accent px-2.5 py-1.5 text-xs font-medium text-accent-foreground">
               <Database className="size-3.5 shrink-0" />
               <span className="truncate">{pinnedLabel}</span>
@@ -306,11 +305,6 @@ export default function Composer({
               >
                 <X className="size-3.5" />
               </button>
-            </span>
-          ) : (
-            <span className="hidden items-center gap-1.5 px-1.5 text-[11px] text-muted-foreground sm:flex">
-              <ShieldCheck className="size-3.5 text-primary" />
-              PostgreSQL MCP
             </span>
           )}
         </div>
