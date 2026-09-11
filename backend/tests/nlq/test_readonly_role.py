@@ -65,10 +65,17 @@ class TestPrivileges:
             error = _fails(cur, "SELECT count(*) FROM gold.loan_account_master")
             assert "permission denied" in error.lower()
 
-    def test_cannot_execute_technical_portfolio_function(self):
+    def test_can_execute_portfolio_snapshot_dependency(self):
+        """The friendly daily status view depends on the snapshot function in production."""
         with nlq_db.readonly_cursor() as (_conn, cur):
-            error = _fails(cur, "SELECT count(*) FROM gold.portfolio_snapshot_as_of(CURRENT_DATE)")
-            assert "permission denied" in error.lower()
+            cur.execute("SELECT count(*) FROM gold.portfolio_snapshot_as_of(CURRENT_DATE)")
+            assert cur.fetchone()[0] >= 0
+
+    def test_can_read_daily_loan_status(self):
+        """Exercise the dependency that portfolio, PAR, and NPA queries actually use."""
+        with nlq_db.readonly_cursor() as (_conn, cur):
+            cur.execute("SELECT count(*) FROM gold.daily_loan_status")
+            assert cur.fetchone()[0] >= 0
 
 
 class TestWritesAreRejected:

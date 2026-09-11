@@ -49,9 +49,12 @@ GRANT SELECT ON
     gold.staff_reporting_structure
 TO nlq_readonly;
 
--- Point-in-time metrics now collapse the friendly daily status view directly, so the
--- technical as-of function is outside the assistant surface too.
-REVOKE ALL ON FUNCTION gold.portfolio_snapshot_as_of(date) FROM PUBLIC, nlq_readonly;
+-- `gold.daily_loan_status` depends on this function in the deployed Gold schema.  The
+-- read-only role therefore needs EXECUTE in addition to SELECT on the friendly view;
+-- otherwise both EXPLAIN and every portfolio/PAR/NPA query fail during permission checks.
+-- Keep PUBLIC closed and grant only the dedicated read-only role.
+REVOKE ALL ON FUNCTION gold.portfolio_snapshot_as_of(date) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION gold.portfolio_snapshot_as_of(date) TO nlq_readonly;
 
 -- Re-run this script after creating a new governed view. New objects are intentionally
 -- not auto-granted: adding a source to the LLM surface must be an explicit deployment.
