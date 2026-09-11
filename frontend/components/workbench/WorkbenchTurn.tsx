@@ -16,7 +16,13 @@ import ExecutionTrace from './ExecutionTrace';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import StatusRow from '@/components/ui/status-row';
-import { BLOCK_GAP, SOURCE_BADGE, SUGGESTION_CHIP, sourceLabel } from '@/lib/workbench-ui';
+import {
+  BLOCK_GAP,
+  SOURCE_BADGE,
+  STREAM_RENDERABLE_CARD_TYPES,
+  SUGGESTION_CHIP,
+  sourceLabel,
+} from '@/lib/workbench-ui';
 
 // One conversational turn: the question, the route the orchestrator chose, an optional
 // merged synthesis lead, and a card per source. Cards stream in as each source returns, so
@@ -51,9 +57,10 @@ const BRIEF_TITLES: Record<string, string> = {
 
 export default function WorkbenchTurn({ turn, onAsk }: { turn: WorkbenchTurnData; onAsk: (q: string) => void }) {
   const hasFinalAnswer = Boolean(turn.answer || turn.synthesis);
-  const supportingCards = hasFinalAnswer
-    ? turn.cards.filter((card) => ['chart', 'analysis', 'worklist', 'briefing', 'schema', 'catalog'].includes(card.card_type))
-    : (turn.done ? turn.cards : []);
+  const supportingCards = turn.cards.filter((card) =>
+    STREAM_RENDERABLE_CARD_TYPES.has(card.card_type)
+    || (!hasFinalAnswer && turn.done),
+  );
   const answerText = turn.answer?.text || turn.synthesis;
   return (
     <section className="space-y-5">

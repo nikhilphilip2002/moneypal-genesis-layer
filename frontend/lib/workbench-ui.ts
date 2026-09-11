@@ -4,6 +4,18 @@
 // same badge, the same chip and the same inset spacing. Keeping the class strings here is
 // what stops one card type from quietly drifting a pixel or two away from the rest.
 
+import type { WorkbenchCard } from '@/lib/api';
+
+/** Cards that can render as soon as their source result arrives. */
+export const STREAM_RENDERABLE_CARD_TYPES: ReadonlySet<WorkbenchCard['card_type']> = new Set([
+  'chart',
+  'analysis',
+  'worklist',
+  'briefing',
+  'schema',
+  'catalog',
+]);
+
 export const SOURCE_LABELS: Record<string, string> = {
   db: 'Loan book',
   macro: 'Macro',
