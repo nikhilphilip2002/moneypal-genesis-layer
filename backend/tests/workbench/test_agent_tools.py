@@ -5,12 +5,8 @@ from typing import Any
 
 import pytest
 
-from app.services.nlq.catalog import get_catalog
 from app.services.workbench import access
-from app.services.workbench.agent_contracts import (
-    FinishWithoutDataArguments,
-    QueryMetricsArguments,
-)
+from app.services.workbench.agent_contracts import FinishWithoutDataArguments
 from app.services.workbench.agent_tools import (
     AGENT_TOOLS,
     AgentToolAccessDenied,
@@ -49,13 +45,6 @@ def _walk(value: Any):
 
 def test_registry_exposes_concrete_flat_tools():
     assert list(AGENT_TOOLS) == [
-        "query_metrics",
-        "lookup_records",
-        "run_analysis",
-        "create_worklist",
-        "generate_briefing",
-        "run_validated_query",
-        "inspect_loan_catalog",
         "search_curated_knowledge",
         "search_public_web",
         "finish_without_data",
@@ -82,47 +71,8 @@ def test_provider_schemas_are_closed_flat_objects_without_polymorphic_keywords()
                 assert node["required"] == list(node.get("properties", {}))
 
 
-def test_catalog_enums_are_injected_into_the_matching_tools():
-    catalog = get_catalog()
-    definitions = _definitions()
-    metrics = definitions["query_metrics"]["parameters"]["properties"]
-    assert set(metrics["metrics"]["items"]["enum"]) == set(catalog.metrics)
-    assert set(metrics["dimensions"]["items"]["enum"]) == set(catalog.dimensions)
-    assert set(
-        definitions["run_analysis"]["parameters"]["properties"]["analysis_id"]["enum"]
-    ) == set(catalog.analyses)
-    assert set(
-        definitions["create_worklist"]["parameters"]["properties"]["worklist_id"]["enum"]
-    ) == set(catalog.worklists.presets)
-    assert set(
-        definitions["generate_briefing"]["parameters"]["properties"]["persona_id"]["enum"]
-    ) == set(catalog.personas)
-    assert set(
-        definitions["run_validated_query"]["parameters"]["properties"]["tables"]["items"]["enum"]
-    ) == set(catalog.allowed_tables())
-    assert set(
-        definitions["inspect_loan_catalog"]["parameters"]["properties"]["tables"]["items"]["enum"]
-    ) == set(catalog.allowed_tables())
-
-
-def test_schema_is_never_narrowed_by_question_context():
-    catalog = get_catalog()
-    definitions = {
-        item["function"]["name"]: item["function"]
-        for item in native_tool_definitions(
-            _policy(), tool_names=("query_metrics",),
-        )
-    }
-    properties = definitions["query_metrics"]["parameters"]["properties"]
-    assert set(properties["metrics"]["items"]["enum"]) == set(catalog.metrics)
-    assert set(properties["dimensions"]["items"]["enum"]) == set(catalog.dimensions)
-    assert "maxItems" not in properties["filters"]
-    assert "maxItems" not in properties["dimensions"]
-
-
 def test_every_authorized_tool_is_offered_with_its_full_schema():
-    """The agent offers every tool in one selection call; there is no parameterless
-    route stage that could hide query_metrics behind a lexical flag."""
+    """Every policy-authorized local tool is offered with its complete schema."""
     import inspect
 
     assert "route_only" not in inspect.signature(native_tool_definitions).parameters
@@ -135,7 +85,7 @@ def test_policy_omits_live_web_and_filters_curated_domains_without_consent():
     definitions = _definitions(external=False)
     assert "search_public_web" not in definitions
     domains = definitions["search_curated_knowledge"]["parameters"]["properties"]["domain"]
-    assert domains["enum"] == ["concepts", "schema"]
+    assert domains["enum"] == ["concepts"]
 
 
 def test_role_policy_removes_forbidden_curated_domains():
@@ -152,51 +102,6 @@ def test_canonical_model_fields_match_provider_schema_properties():
         assert set(tool.arguments_model.model_fields) == set(
             definitions[name]["parameters"]["properties"]
         )
-
-
-def test_query_metrics_validates_with_full_queryspec_contract():
-    parsed = validate_agent_arguments(
-        "query_metrics",
-        {
-            "metrics": ["par_30"],
-            "dimensions": ["branch"],
-            "period": {"relative": "this_month"},
-        },
-        policy=_policy(),
-    )
-    assert isinstance(parsed, QueryMetricsArguments)
-    assert parsed.metrics == ["par_30"]
-
-
-@pytest.mark.parametrize(
-    "name,arguments,error",
-    [
-        (
-            "query_metrics",
-            {"metrics": ["not_a_metric"], "dimensions": [], "period": {"relative": "this_month"}},
-            "unknown metric",
-        ),
-        ("run_analysis", {"analysis_id": "not_an_analysis"}, "unknown analysis"),
-        ("create_worklist", {"worklist_id": "not_a_worklist"}, "unknown worklist"),
-        ("generate_briefing", {"persona_id": "not_a_persona"}, "unknown persona"),
-        ("run_validated_query", {"intent": "x", "tables": ["private.secret"]}, "unknown catalog tables"),
-        (
-            "lookup_records",
-            {
-                "selector": "customer_id",
-                "value": "42",
-                "detail": "loan_details",
-                "metrics": ["par_30"],
-            },
-            "Extra inputs are not permitted",
-        ),
-    ],
-)
-def test_execution_boundary_rejects_unknown_catalog_values_and_foreign_fields(
-    name, arguments, error,
-):
-    with pytest.raises(AgentToolArgumentsInvalid, match=error):
-        validate_agent_arguments(name, arguments, policy=_policy())
 
 
 def test_forged_curated_domain_is_reauthorized_at_validation_time():

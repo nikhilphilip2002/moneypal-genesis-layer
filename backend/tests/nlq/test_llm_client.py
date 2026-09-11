@@ -228,25 +228,6 @@ class TestThinkingModels:
         assert seen["max_tokens"] == 300
 
     @pytest.mark.anyio
-    async def test_catalog_warmup_generates_only_one_token(self, monkeypatch):
-        from app.core.config import settings
-        from app.services.nlq.llm import client as client_module
-
-        calls = []
-
-        class StubClient:
-            async def complete(self, **kwargs):
-                calls.append(kwargs)
-                return LLMResult(text="{}", model="m", provider="llamacpp")
-
-        monkeypatch.setattr(client_module, "get_llm_client", lambda: StubClient())
-
-        await client_module.warm_catalog_prompt_cache()
-
-        assert len(calls) == 1
-        assert calls[0]["max_output_tokens"] == 1
-
-    @pytest.mark.anyio
     async def test_cached_prompt_token_count_is_captured(self):
         def handler(_request):
             response = _ok('{"route":"refuse"}')

@@ -51,12 +51,6 @@ async def _lifespan(_app: FastAPI):
         settings.workbench_context_window, settings.workbench_compaction_enabled,
         settings.workbench_agent_observation_max_chars, settings.llm_model,
     )
-    warmup_task = None
-    from app.services.nlq.llm import warm_catalog_prompt_cache
-
-    # Become ready immediately; catalog prompt evaluation happens before the first
-    # analyst question normally arrives, without making API health depend on the LLM.
-    warmup_task = asyncio.create_task(warm_catalog_prompt_cache())
     # The signal scan runs on a schedule rather than on a question: "what are the emerging
     # issues?" has no answer at request time, because there is no baseline to compare against
     # and nothing has been ranked yet.
@@ -70,10 +64,6 @@ async def _lifespan(_app: FastAPI):
     yield
 
     await signal_scheduler.stop(scan_task)
-    if warmup_task is not None and not warmup_task.done():
-        warmup_task.cancel()
-        with contextlib.suppress(asyncio.CancelledError):
-            await warmup_task
     if warm_graph_task is not None and not warm_graph_task.done():
         warm_graph_task.cancel()
         with contextlib.suppress(asyncio.CancelledError):

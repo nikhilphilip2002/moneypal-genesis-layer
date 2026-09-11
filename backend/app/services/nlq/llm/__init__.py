@@ -9,7 +9,6 @@ from app.services.nlq.llm.client import (
     LLMUnavailable,
     NativeToolCall,
     get_llm_client,
-    warm_catalog_prompt_cache,
 )
 
 __all__ = [
@@ -21,5 +20,4 @@ __all__ = [
     "LLMUnavailable",
     "NativeToolCall",
     "get_llm_client",
-    "warm_catalog_prompt_cache",
 ]
