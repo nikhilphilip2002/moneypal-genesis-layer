@@ -40,6 +40,8 @@ Regulations/
 # Archives / Zip
 *.zip
 
+archive/
+
 # Generated brief cache + local fallback index
 backend/vector_store/
 
