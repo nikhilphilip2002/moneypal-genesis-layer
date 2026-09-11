@@ -99,6 +99,7 @@ class WorkbenchState(TypedDict):
     decision: NotRequired[ExecutionDecision]
     results: NotRequired[list[SourceResult]]
     timing: dict[str, Any]
+    trace: NotRequired[list[dict[str, Any]]]
     agent_synthesis_messages: NotRequired[list[dict[str, Any]]]
 
 
@@ -135,6 +136,15 @@ async def _repair_synthesis(
         if budget.rounds_remaining <= 0:
             return None
         budget.charge_round("agent_synthesize_repair")
+    from app.services.workbench.agent import _emit_trace
+
+    trace_id = f"model-grounding-repair-{getattr(budget, 'rounds_used', 0)}"
+    trace_started_at = time.perf_counter()
+    await _emit_trace(state, {
+        "id": trace_id, "kind": "model", "status": "running",
+        "label": "Model repairing grounded answer",
+        "detail": "Removing unsupported claims",
+    })
     messages = [
         *base_messages,
         {"role": "assistant", "content": candidate},
@@ -142,18 +152,31 @@ async def _repair_synthesis(
     ]
     from app.services.workbench.agent_tools import native_tool_definitions
 
-    repaired = await client.complete(
-        messages=messages,
-        timeout_s=_synthesis_timeout(state),
-        call_purpose="agent_synthesize",
-        call_kind="repair",
-        max_output_tokens=settings.workbench_agent_synthesis_max_tokens,
-        tools=native_tool_definitions(
-            state["source_policy"], catalog=state.get("_agent_catalog"),
-        ),
-        tool_choice="none",
-        parallel_tool_calls=False,
-    )
+    try:
+        repaired = await client.complete(
+            messages=messages,
+            timeout_s=_synthesis_timeout(state),
+            call_purpose="agent_synthesize",
+            call_kind="repair",
+            max_output_tokens=settings.workbench_agent_synthesis_max_tokens,
+            tools=native_tool_definitions(
+                state["source_policy"], catalog=state.get("_agent_catalog"),
+            ),
+            tool_choice="none",
+            parallel_tool_calls=False,
+        )
+    except Exception as exc:
+        await _emit_trace(state, {
+            "id": trace_id, "kind": "model", "status": "error",
+            "label": "Model repairing grounded answer", "detail": str(exc)[:500],
+            "duration_ms": int((time.perf_counter() - trace_started_at) * 1000),
+        })
+        raise
+    await _emit_trace(state, {
+        "id": trace_id, "kind": "model", "status": "complete",
+        "label": "Model repairing grounded answer", "detail": "Repair prepared",
+        "duration_ms": int((time.perf_counter() - trace_started_at) * 1000),
+    })
     if getattr(repaired, "tool_calls", None):
         raise RuntimeError("tool call returned during synthesis repair phase")
     return repaired.text.strip() or None
@@ -308,10 +331,22 @@ async def answer_results(state: WorkbenchState) -> dict[str, Any]:
     # A repair replays exactly what the native answering model saw.
     repair_client = None
     repair_messages: list[dict[str, Any]] = list(state.get("agent_synthesis_messages", []))
+    synthesis_trace_id: str | None = None
+    synthesis_started_at = 0.0
+    synthesis_trace_completed = False
     try:
         if needs_synthesis:
             client = models.client()
             repair_client = client
+            from app.services.workbench.agent import _emit_trace
+
+            synthesis_trace_id = "model-cross-source-synthesis"
+            synthesis_started_at = time.perf_counter()
+            await _emit_trace(state, {
+                "id": synthesis_trace_id, "kind": "model", "status": "running",
+                "label": "Model combining source evidence",
+                "detail": f"Combining {len(results)} source result(s)",
+            })
             async with asyncio.timeout(_synthesis_timeout(state)):
                 from app.services.workbench.agent_tools import native_tool_definitions
 
@@ -340,6 +375,12 @@ async def answer_results(state: WorkbenchState) -> dict[str, Any]:
                 )
                 if getattr(result, "tool_calls", None):
                     raise RuntimeError("tool call returned during final synthesis phase")
+            await _emit_trace(state, {
+                "id": synthesis_trace_id, "kind": "model", "status": "complete",
+                "label": "Model combining source evidence", "detail": "Response prepared",
+                "duration_ms": int((time.perf_counter() - synthesis_started_at) * 1000),
+            })
+            synthesis_trace_completed = True
             candidate = result.text.strip()
             if not candidate:
                 text = composer.extractive_fallback(results)
@@ -360,6 +401,14 @@ async def answer_results(state: WorkbenchState) -> dict[str, Any]:
                 facts_block=facts_block, results=results, repair=repair,
             )
     except Exception as exc:  # noqa: BLE001 - deterministic findings remain usable
+        if synthesis_trace_id is not None and not synthesis_trace_completed:
+            from app.services.workbench.agent import _emit_trace
+
+            await _emit_trace(state, {
+                "id": synthesis_trace_id, "kind": "model", "status": "error",
+                "label": "Model combining source evidence", "detail": str(exc)[:500],
+                "duration_ms": int((time.perf_counter() - synthesis_started_at) * 1000),
+            })
         logger.warning("workbench synthesis failed, using grounded findings: %s", exc)
         text = composer.extractive_fallback(results)
         synthesis_limitation = {
@@ -545,6 +594,7 @@ async def run_workbench(
             "source_attempts": [],
             "source_completions": [],
         },
+        "trace": [],
     }
 
     async def drive() -> None:
@@ -598,6 +648,11 @@ async def run_workbench(
                 source_attempts=state["timing"].get("source_attempts", []),
                 source_completions=state["timing"].get("source_completions", []),
             )
+            _persist(
+                history.set_execution_trace,
+                conversation_id, user, turn_id,
+                trace=state.get("trace", []),
+            )
             _persist(history.complete_turn, conversation_id, user, turn_id, partial=partial)
             # Checkpoint after the turn, never before it: the summarization call would
             # otherwise sit between the user's question and their first streamed token.
@@ -618,4 +673,4 @@ async def run_workbench(
             task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
                 await task
-    yield sse("done", {})
+    yield sse("done", {"total_ms": int((time.perf_counter() - started_at) * 1000)})

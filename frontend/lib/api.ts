@@ -1059,6 +1059,18 @@ export type WorkbenchRoute = {
   tools?: string[];
 };
 
+export type WorkbenchTraceStep = {
+  id: string;
+  kind: 'model' | 'tool' | 'status';
+  status: 'running' | 'complete' | 'error';
+  label: string;
+  detail?: string;
+  call_id?: string;
+  arguments?: Record<string, unknown>;
+  elapsed_ms: number;
+  duration_ms?: number;
+};
+
 export type WorkbenchError = {
   message: string;
   code?: string;
@@ -1076,6 +1088,7 @@ export type WorkbenchConversation = {
 export type WorkbenchStreamEvent =
   | { type: 'conversation'; conversation_id: string }
   | { type: 'stage'; stage: string }
+  | { type: 'trace'; step: WorkbenchTraceStep }
   | ({ type: 'route' } & WorkbenchRoute)
   | { type: 'source_start'; source: string }
   | { type: 'source_card'; card: WorkbenchCard }
@@ -1083,7 +1096,7 @@ export type WorkbenchStreamEvent =
   | { type: 'synthesis'; text: string }
   | { type: 'refusal'; refusal: { reason?: string; message: string; origin?: string } }
   | ({ type: 'error' } & WorkbenchError)
-  | { type: 'done' };
+  | { type: 'done'; total_ms?: number };
 
 export type WorkbenchTool = {
   id: string;
@@ -1129,6 +1142,8 @@ export const workbench = {
       status: 'running' | 'complete' | 'partial';
       created_at: string | null;
       completed_at: string | null;
+      execution_trace?: WorkbenchTraceStep[];
+      timing?: { total_ms?: number } | null;
       legacy_answer_unavailable: boolean;
     }[];
   }> => apiRequest(`/workbench/conversations/${id}`),
@@ -1201,6 +1216,7 @@ export const workbench = {
         switch (event) {
           case 'conversation': yield { type: 'conversation', conversation_id: payload.conversation_id }; break;
           case 'stage': yield { type: 'stage', stage: payload.stage }; break;
+          case 'trace': yield { type: 'trace', step: payload as WorkbenchTraceStep }; break;
           case 'route':
             yield {
               type: 'route', sources: payload.sources || [], intent: payload.intent || '',
@@ -1234,7 +1250,7 @@ export const workbench = {
               retryable: !!payload.retryable, reason: payload.reason,
             };
             break;
-          case 'done': yield { type: 'done' }; return;
+          case 'done': yield { type: 'done', total_ms: payload.total_ms }; return;
         }
       }
     }

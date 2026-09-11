@@ -1,9 +1,9 @@
 'use client';
 
-import { Loader2, AlertTriangle, Ban, HelpCircle, Sparkles } from 'lucide-react';
+import { AlertTriangle, Ban, HelpCircle } from 'lucide-react';
 import { nlq, type AnalysisResult, type ChartSpec, type QuerySpec, type Briefing, type Worklist,
   type WorkbenchAnswer, type WorkbenchCard as CardData, type WorkbenchError,
-  type WorkbenchRoute } from '@/lib/api';
+  type WorkbenchRoute, type WorkbenchTraceStep } from '@/lib/api';
 import AnalysisCard from '@/components/nlq/AnalysisCard';
 import ChartRenderer from '@/components/nlq/ChartRenderer';
 import NextQuestions from '@/components/nlq/NextQuestions';
@@ -12,6 +12,7 @@ import WorklistCard from '@/components/nlq/WorklistCard';
 import LineagePanel from '@/components/nlq/LineagePanel';
 import BriefRenderer from '@/components/intel/BriefRenderer';
 import WorkbenchCard from './WorkbenchCard';
+import ExecutionTrace from './ExecutionTrace';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import StatusRow from '@/components/ui/status-row';
@@ -38,6 +39,9 @@ export type WorkbenchTurnData = {
   legacyAnswerUnavailable?: boolean;
   partial?: boolean;
   done: boolean;
+  executionTrace?: WorkbenchTraceStep[];
+  startedAt?: number;
+  totalMs?: number;
 };
 
 const BRIEF_TITLES: Record<string, string> = {
@@ -61,10 +65,13 @@ export default function WorkbenchTurn({ turn, onAsk }: { turn: WorkbenchTurnData
 
       <div className="flex items-start gap-3">
         <div className="min-w-0 flex-1 space-y-3">
-          {!turn.done && turn.stage && !turn.route && (
-            <StatusRow icon={Loader2} spin className="py-1">
-              <span className="capitalize">{turn.stage}…</span>
-            </StatusRow>
+          {(!turn.done || (turn.executionTrace?.length ?? 0) > 0) && (
+            <ExecutionTrace
+              updates={turn.executionTrace ?? []}
+              active={!turn.done}
+              startedAt={turn.startedAt}
+              totalMs={turn.totalMs}
+            />
           )}
 
           {answerText && (
@@ -146,22 +153,6 @@ export default function WorkbenchTurn({ turn, onAsk }: { turn: WorkbenchTurnData
             </StatusRow>
           )}
 
-          {turn.pending
-            .filter((source) => !turn.cards.some((card) => card.source === source))
-            .map((source) => (
-              <StatusRow key={source} icon={Loader2} spin size="sm" className="py-1">
-                Checking {sourceLabel(source)}…
-              </StatusRow>
-            ))}
-
-          {!turn.done && turn.route && !hasFinalAnswer && turn.pending.every(
-            (source) => turn.cards.some((card) => card.source === source),
-          ) && (
-            <StatusRow icon={Loader2} spin className="py-1">
-              Combining findings…
-            </StatusRow>
-          )}
-
           {turn.refusal && !hasFinalAnswer && (
             <StatusRow icon={Ban} tone="warning" surface label="Not answerable:">
               {turn.refusal.message || 'That request cannot be handled here.'}
@@ -202,16 +193,6 @@ export default function WorkbenchTurn({ turn, onAsk }: { turn: WorkbenchTurnData
             </div>
           )}
 
-          {turn.done && turn.route?.tools && turn.route.tools.length > 0 && (
-            <div className="flex flex-wrap items-center gap-1.5 pt-0.5" aria-label="Capabilities used">
-              <span className="text-[11px] leading-5 text-muted-foreground">Capabilities used</span>
-              {turn.route.tools.map((tool) => (
-                <Badge key={tool} variant="secondary" className={`${SOURCE_BADGE} font-mono normal-case tracking-normal text-muted-foreground`}>
-                  {tool}
-                </Badge>
-              ))}
-            </div>
-          )}
         </div>
       </div>
     </section>

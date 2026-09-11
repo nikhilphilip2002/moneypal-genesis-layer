@@ -769,6 +769,20 @@ def set_timing(
     _mutate(conversation_id, user, turn_id, apply)
 
 
+def set_execution_trace(
+    conversation_id: str, user: str, turn_id: str, *, trace: list[dict[str, Any]],
+) -> None:
+    """Persist the safe user-visible execution trace after streaming completes.
+
+    This deliberately excludes provider reasoning content. Tool arguments have already
+    been display-sanitized by the agent before they reach this field.
+    """
+    def apply(turn: dict[str, Any]) -> None:
+        turn["execution_trace"] = [dict(step) for step in trace if isinstance(step, dict)]
+
+    _mutate(conversation_id, user, turn_id, apply)
+
+
 def set_refusal(conversation_id: str, user: str, turn_id: str, payload: dict[str, Any]) -> None:
     def apply(turn: dict[str, Any]) -> None:
         turn["refusal"] = payload

@@ -62,6 +62,7 @@ class ExecutedAgentCall:
     card: SourceResult | None = None
     terminal: dict[str, Any] | None = None
     error: dict[str, Any] | None = None
+    duration_ms: int = 0
 
     def replay_payload(self) -> dict[str, Any]:
         if self.error is not None:

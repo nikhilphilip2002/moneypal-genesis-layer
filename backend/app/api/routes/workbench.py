@@ -177,6 +177,7 @@ def _turn_for_api(turn: dict) -> dict:
         "completed_at": turn.get("completed_at"),
         "usage": turn.get("usage"),
         "timing": turn.get("timing"),
+        "execution_trace": list(turn.get("execution_trace", []) or []),
         "source_policy": turn.get("source_policy") or {
             "version": "legacy",
             "external_sources_enabled": False,

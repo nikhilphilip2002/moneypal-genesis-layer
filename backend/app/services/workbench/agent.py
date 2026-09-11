@@ -182,6 +182,29 @@ _PURPOSES = {"required": "agent_select", "auto": "agent_continue", "none": "agen
 _STAGES = {"required": "route", "auto": "continue", "none": "synthesize"}
 
 
+def _elapsed_ms(state: dict[str, Any]) -> int:
+    started_at = state.get("timing", {}).get("started_at", time.perf_counter())
+    return max(0, int((time.perf_counter() - started_at) * 1000))
+
+
+def _trace_arguments(call) -> dict[str, Any]:
+    """Return arguments safe to render to the authenticated user."""
+    arguments = dict(call.arguments) if isinstance(call.arguments, dict) else {}
+    if call.name == "search_public_web" and "search_query" in arguments:
+        # A denied call can contain private material before outbound policy evaluation.
+        arguments["search_query"] = "[redacted after policy evaluation]"
+    return arguments
+
+
+async def _emit_trace(state: dict[str, Any], step: dict[str, Any]) -> None:
+    """Stream and retain a safe activity update, excluding hidden model reasoning."""
+    from app.services.workbench.graph import sse
+
+    payload = {**step, "elapsed_ms": _elapsed_ms(state)}
+    state.setdefault("trace", []).append(payload)
+    await state["emit"].put(sse("trace", payload))
+
+
 async def _select(
     state: dict[str, Any], *, repair_messages=None, tool_choice: str = "required",
     supplement: str = "",
@@ -532,8 +555,9 @@ async def select_calls(state: dict[str, Any]):
 
 
 async def _execute_one(state, context: AgentExecutionContext, call) -> ExecutedAgentCall:
+    started_at = time.perf_counter()
     try:
-        return await execute_agent_call(call, context)
+        item = await execute_agent_call(call, context)
     except Exception as exc:  # noqa: BLE001 - isolate independent calls
         logger.warning("native tool %s failed: %s", call.name, exc)
         code = getattr(exc, "code", "SOURCE_UNAVAILABLE")
@@ -553,7 +577,9 @@ async def _execute_one(state, context: AgentExecutionContext, call) -> ExecutedA
                 },
                 "authorized_tools": _authorized_tool_names(state),
             }
-        return ExecutedAgentCall(call=call, error=error)
+        item = ExecutedAgentCall(call=call, error=error)
+    item.duration_ms = max(0, int((time.perf_counter() - started_at) * 1000))
+    return item
 
 
 async def _stream_item(state: dict[str, Any], item: ExecutedAgentCall) -> None:
@@ -573,6 +599,20 @@ async def _stream_item(state: dict[str, Any], item: ExecutedAgentCall) -> None:
                     "retryable": bool(item.error.get("retryable", True)),
                 },
             )
+    trace_status = "error" if item.error is not None else "complete"
+    if item.error is not None:
+        trace_detail = str(item.error.get("message") or item.error.get("code") or "Tool failed")
+    elif item.terminal is not None:
+        trace_detail = str(item.terminal.get("message") or "No data action required")
+    elif item.card is not None:
+        trace_detail = item.card.summary or f"Returned {item.card.card_type} result"
+    else:
+        trace_detail = "Tool completed"
+    await _emit_trace(state, {
+        "id": f"tool-{item.call.id}", "kind": "tool", "status": trace_status,
+        "label": item.call.name, "call_id": item.call.id,
+        "detail": trace_detail[:500], "duration_ms": item.duration_ms,
+    })
     if item.card is None:
         return
     source = item.card.source
@@ -591,6 +631,11 @@ async def _execute_batch(state, context: AgentExecutionContext, calls) -> list[E
     from app.services.workbench.graph import sse
 
     for call in calls:
+        await _emit_trace(state, {
+            "id": f"tool-{call.id}", "kind": "tool", "status": "running",
+            "label": call.name, "call_id": call.id,
+            "detail": "Calling tool", "arguments": _trace_arguments(call),
+        })
         source = _source_for_call(call)
         if source is not None:
             state["timing"]["source_attempts"].append(source)
@@ -715,16 +760,37 @@ async def run(state: dict[str, Any]) -> None:
         else:
             tool_choice = "auto"
         budget.charge_round(_PURPOSES[tool_choice])
+        round_number = budget.rounds_used
+        model_trace_id = f"model-{round_number}"
+        model_started_at = time.perf_counter()
+        model_label = (
+            "Model preparing answer" if tool_choice == "none"
+            else "Model deciding next action"
+        )
+        await _emit_trace(state, {
+            "id": model_trace_id, "kind": "model", "status": "running",
+            "label": model_label, "detail": f"Round {round_number}",
+        })
         try:
             result = await _select(
                 state, repair_messages=exchange or None, tool_choice=tool_choice,
                 supplement=last_error,
             )
         except (TimeoutError, LLMTimeout):
+            await _emit_trace(state, {
+                "id": model_trace_id, "kind": "model", "status": "error",
+                "label": model_label, "detail": "Model request timed out",
+                "duration_ms": int((time.perf_counter() - model_started_at) * 1000),
+            })
             if not has_data:
                 raise
             break
         except LLMProtocolError as exc:
+            await _emit_trace(state, {
+                "id": model_trace_id, "kind": "model", "status": "error",
+                "label": model_label, "detail": str(exc)[:500],
+                "duration_ms": int((time.perf_counter() - model_started_at) * 1000),
+            })
             if not budget.rounds_remaining:
                 if has_data:
                     break
@@ -732,6 +798,22 @@ async def run(state: dict[str, Any]) -> None:
             last_error = str(exc)
             _queue_protocol_repair(state, exchange, exc, tool_choice)
             continue
+        except Exception as exc:
+            await _emit_trace(state, {
+                "id": model_trace_id, "kind": "model", "status": "error",
+                "label": model_label, "detail": str(exc)[:500],
+                "duration_ms": int((time.perf_counter() - model_started_at) * 1000),
+            })
+            raise
+        model_detail = (
+            f"Selected {len(result.tool_calls)} tool call(s)"
+            if result.tool_calls else "Prepared the response"
+        )
+        await _emit_trace(state, {
+            "id": model_trace_id, "kind": "model", "status": "complete",
+            "label": model_label, "detail": model_detail,
+            "duration_ms": int((time.perf_counter() - model_started_at) * 1000),
+        })
         if not result.tool_calls:
             if tool_choice == "required":
                 exc = LLMProtocolError(
@@ -782,6 +864,16 @@ async def run(state: dict[str, Any]) -> None:
             await _announce_route(state, result.tool_calls)
         failures = _preflight(result, state)
         failed_ids = {call_id for call_id, _message, _code in failures}
+        calls_by_id = {call.id: call for call in result.tool_calls}
+        for call_id, message, code in failures:
+            failed_call = calls_by_id.get(call_id)
+            await _emit_trace(state, {
+                "id": f"tool-{call_id}", "kind": "tool", "status": "error",
+                "label": failed_call.name if failed_call is not None else "Tool validation",
+                "call_id": call_id, "detail": f"{code}: {message}"[:500],
+                "arguments": _trace_arguments(failed_call) if failed_call is not None else {},
+                "duration_ms": 0,
+            })
         items = await _execute_batch(
             state, context, [call for call in result.tool_calls if call.id not in failed_ids],
         )

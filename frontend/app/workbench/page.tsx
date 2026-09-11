@@ -110,6 +110,8 @@ export default function WorkbenchPage() {
         route: turn.route,
         legacyAnswerUnavailable: turn.legacy_answer_unavailable,
         partial: turn.status === 'partial',
+        executionTrace: turn.execution_trace ?? [],
+        totalMs: turn.timing?.total_ms,
       })));
       setConversationId(id);
       setExternalSourcesEnabled(record.external_sources_enabled ?? false);
@@ -137,7 +139,10 @@ export default function WorkbenchPage() {
     const id = `t-${Date.now()}`;
     setTurns((previous) => [
       ...previous,
-      { id, question, stage: 'understanding', pending: [], cards: [], done: false },
+      {
+        id, question, stage: 'understanding', pending: [], cards: [], done: false,
+        executionTrace: [], startedAt: Date.now(),
+      },
     ]);
 
     const patch = (changes: Partial<WorkbenchTurnData>) =>
@@ -156,6 +161,12 @@ export default function WorkbenchPage() {
             break;
           case 'stage':
             patch({ stage: event.stage });
+            break;
+          case 'trace':
+            patchWith((turn) => ({
+              ...turn,
+              executionTrace: [...(turn.executionTrace ?? []), event.step],
+            }));
             break;
           case 'route':
             {
@@ -182,7 +193,7 @@ export default function WorkbenchPage() {
             patch({ error: event });
             break;
           case 'done':
-            patch({ done: true, stage: undefined });
+            patch({ done: true, stage: undefined, totalMs: event.total_ms });
             break;
           }
         }
