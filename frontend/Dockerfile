@@ -1,51 +1,59 @@
-# Dockerfile for Next.js Frontend
-FROM node:20-alpine
+ARG NODE_VERSION=24.21.0-slim
+
+FROM node:${NODE_VERSION} AS dependencies
 
 WORKDIR /app
 
-# Cap node heap during install AND build so npm itself does not OOM-die
-# inside resource-constrained build hosts (manifests as the
-# "Exit handler never called!" npm crash). 512M was too low for Next 16
-# + React 19 + the radix-ui dep tree.
-ENV NODE_OPTIONS="--max-old-space-size=2048"
-ENV NPM_CONFIG_AUDIT=false
-ENV NPM_CONFIG_FUND=false
-ENV NPM_CONFIG_UPDATE_NOTIFIER=false
+# Copy package-related files
+COPY package.json package-lock.json* ./
 
-# Copy package files
-COPY package*.json ./
+# Install dependencies
+RUN --mount=type=cache,target=/root/.npm \
+  npm ci --no-audit --no-fund
 
-# Prefer the deterministic lockfile install. Fall back to `npm install`
-# only if no lockfile is present. Force --include=dev so build-time tools
-# are present even if NODE_ENV=production is in the environment, and
-# verify that the `next` binary symlink was created — earlier npm crashes
-# left a half-installed node_modules in the build cache.
-RUN if [ -f package-lock.json ]; then \
-      npm ci --legacy-peer-deps --include=dev --prefer-offline --no-audit --no-fund; \
-    else \
-      npm install --legacy-peer-deps --include=dev --no-audit --no-fund; \
-    fi && \
-    test -x node_modules/.bin/next || (echo "next binary missing after install" && exit 1)
+# Build Next.js application
+FROM node:${NODE_VERSION} AS builder
 
-# Copy project files
+WORKDIR /app
+
+# Copy project dependencies from dependencies stage
+COPY --from=dependencies /app/node_modules ./node_modules
+
+# Copy application source code
 COPY . .
 
-# Build arguments
-ARG NEXT_PUBLIC_API_URL
-ENV NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
+ENV NODE_ENV=production
+ENV NEXT_TELEMETRY_DISABLED=1
 
-# Bind to all interfaces so other containers (nginx) can reach this server
+RUN --mount=type=cache,target=/app/.next/cache \
+  npm run build
+
+
+# Run Next.js application
+FROM node:${NODE_VERSION} AS runner
+
+WORKDIR /app
+
+# Set production environment variables
+ENV NODE_ENV=production
+ENV PORT=3000
 ENV HOSTNAME="0.0.0.0"
 
-# Build the application via the package.json `build` script. npm resolves
-# the `next` binary through its own lookup chain, which is more robust
-# than calling ./node_modules/.bin/next directly and avoids npx, which
-# probes registry.npmjs.org and fails with ERR_SSL_WRONG_VERSION_NUMBER
-# in this build environment.
-RUN npm run build -- --webpack
+# Copy production assets
+COPY --from=builder --chown=node:node /app/public ./public
 
-# Expose port
+# Set the correct permission for prerender cache
+RUN mkdir .next
+RUN chown node:node .next
+
+COPY --from=builder --chown=node:node /app/.next/standalone ./
+COPY --from=builder --chown=node:node /app/.next/static ./.next/static
+
+# Switch to non-root user for security best practices
+USER node
+
+# Expose port 3000 to allow HTTP traffic
 EXPOSE 3000
 
-# Start the application — bind explicitly to 0.0.0.0
-CMD ["npm", "start"]
+# Start Next.js standalone server
+CMD ["node", "server.js"]
