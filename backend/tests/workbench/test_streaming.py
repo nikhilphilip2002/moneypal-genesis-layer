@@ -1,0 +1,39 @@
+import asyncio
+import json
+
+import pytest
+
+from app.services.nlq.llm.client import LLMResult, LLMTimeout, NativeToolCall
+from app.services.workbench.streaming import complete_answer
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize('outcome', ['answer', 'tools', 'error', 'cancel'])
+async def test_answer_deltas_are_live_and_discarded_for_tools_or_failure(outcome):
+    queue = asyncio.Queue()
+
+    class Client:
+        async def complete(self, *, on_text):
+            assert 'answer_reset' in queue.get_nowait()
+            await on_text('Hello')
+            frame = queue.get_nowait()
+            assert frame.startswith('event: answer_delta\n')
+            assert json.loads(frame.split('data: ')[1]) == {'text': 'Hello'}
+            if outcome == 'error':
+                raise LLMTimeout('timeout')
+            if outcome == 'cancel':
+                raise asyncio.CancelledError()
+            return LLMResult(
+                text='Hello', model='m', provider='llm',
+                tool_calls=[NativeToolCall('a', 'tool', {})] if outcome == 'tools' else [],
+            )
+
+    if outcome in {'error', 'cancel'}:
+        with pytest.raises(LLMTimeout if outcome == 'error' else asyncio.CancelledError):
+            await complete_answer(Client(), {'emit': queue})
+    else:
+        result = await complete_answer(Client(), {'emit': queue})
+        assert result.text == 'Hello'
+    if outcome != 'answer':
+        assert 'answer_reset' in queue.get_nowait()
+    assert queue.empty()

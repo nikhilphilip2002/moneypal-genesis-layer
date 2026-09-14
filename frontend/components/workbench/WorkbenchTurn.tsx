@@ -40,6 +40,7 @@ export type WorkbenchTurnData = {
   cards: CardData[];
   answer?: WorkbenchAnswer;
   synthesis?: string;
+  draftText?: string;
   refusal?: { reason?: string; message: string; origin?: string };
   error?: WorkbenchError;
   legacyAnswerUnavailable?: boolean;
@@ -61,7 +62,7 @@ export default function WorkbenchTurn({ turn, onAsk }: { turn: WorkbenchTurnData
     STREAM_RENDERABLE_CARD_TYPES.has(card.card_type)
     || (!hasFinalAnswer && turn.done),
   );
-  const answerText = turn.answer?.text || turn.synthesis;
+  const answerText = turn.answer?.text || turn.draftText || turn.synthesis;
   return (
     <section className="space-y-5">
       <div className="flex justify-end">
@@ -82,7 +83,10 @@ export default function WorkbenchTurn({ turn, onAsk }: { turn: WorkbenchTurnData
           )}
 
           {answerText && (
-            <div className="text-sm leading-7 text-foreground">
+            <div className="text-sm leading-7 text-foreground" aria-busy={Boolean(turn.draftText)}>
+              {turn.draftText && (
+                <p className="text-xs text-muted-foreground">Draft · checking facts</p>
+              )}
               <BriefRenderer content={answerText} />
             </div>
           )}

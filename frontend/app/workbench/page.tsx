@@ -181,19 +181,25 @@ export default function WorkbenchPage() {
             patchWith((turn) => ({ ...turn, cards: [...turn.cards, event.card] }));
             break;
           case 'answer':
-            patch({ answer: event.answer, synthesis: event.answer.text });
+            patch({ answer: event.answer, synthesis: event.answer.text, draftText: undefined });
+            break;
+          case 'answer_delta':
+            patchWith((turn) => ({ ...turn, draftText: (turn.draftText ?? '') + event.text }));
+            break;
+          case 'answer_reset':
+            patch({ draftText: undefined });
             break;
           case 'synthesis':
             patch({ synthesis: event.text });
             break;
           case 'refusal':
-            patch({ refusal: event.refusal });
+            patch({ refusal: event.refusal, draftText: undefined });
             break;
           case 'error':
-            patch({ error: event });
+            patch({ error: event, draftText: undefined });
             break;
           case 'done':
-            patch({ done: true, stage: undefined, totalMs: event.total_ms });
+            patch({ done: true, stage: undefined, totalMs: event.total_ms, draftText: undefined });
             break;
           }
         }
@@ -205,6 +211,7 @@ export default function WorkbenchPage() {
               : error?.message ?? 'Something went wrong.',
           },
           done: true,
+          draftText: undefined,
         });
       } finally {
         setBusy(false);

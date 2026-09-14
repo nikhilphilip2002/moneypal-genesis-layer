@@ -12,6 +12,7 @@ import json
 import logging
 import os
 import re
+from collections.abc import Awaitable, Callable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from typing import Any, Protocol, runtime_checkable
@@ -114,6 +115,73 @@ class LLMProtocolError(LLMError):
     """A successful provider response violated the native chat/tool protocol."""
 
 
+async def _read_completion_stream(
+    response: httpx.Response,
+    on_text: Callable[[str], Awaitable[None]] | None = None,
+) -> dict[str, Any]:
+    """Assemble SSE deltas before validating tools; expose only assistant text."""
+    message: dict[str, Any] = {"role": "assistant", "content": ""}
+    body: dict[str, Any] = {"choices": [{"message": message, "finish_reason": ""}]}
+    calls: dict[int, dict[str, Any]] = {}
+    data: list[str] = []
+    finished = False
+    async for line in response.aiter_lines():
+        if line.startswith("data:"):
+            data.append(line[5:].lstrip())
+            continue
+        if line or not data:
+            continue
+        raw = "\n".join(data)
+        data.clear()
+        if raw == "[DONE]":
+            if not finished:
+                raise LLMProtocolError("completion stream ended without a finish reason")
+            break
+        try:
+            chunk = json.loads(raw)
+            if chunk.get("error"):
+                raise LLMProtocolError(f"completion stream error: {chunk['error']}")
+            if chunk.get("model"):
+                body["model"] = chunk["model"]
+            if chunk.get("usage"):
+                body["usage"] = chunk["usage"]
+            for choice in chunk.get("choices", []):
+                if choice.get("index", 0) != 0:
+                    continue
+                delta = choice.get("delta") or {}
+                for key in ("content", "reasoning_content", "reasoning"):
+                    value = delta.get(key)
+                    if value is not None:
+                        if not isinstance(value, str):
+                            raise LLMProtocolError(f"delta.{key} must be a string")
+                        message[key] = message.get(key, "") + value
+                        if key == "content" and value and on_text:
+                            await on_text(value)
+                for fragment in delta.get("tool_calls") or []:
+                    index = fragment["index"]
+                    if not isinstance(index, int) or index < 0:
+                        raise LLMProtocolError("tool delta index must be a nonnegative integer")
+                    call = calls.setdefault(index, {
+                        "id": "", "type": "function", "function": {"name": "", "arguments": ""},
+                    })
+                    if fragment.get("id"):
+                        call["id"] += fragment["id"]
+                    if fragment.get("type"):
+                        call["type"] = fragment["type"]
+                    for key in ("name", "arguments"):
+                        call["function"][key] += (fragment.get("function") or {}).get(key) or ""
+                if choice.get("finish_reason"):
+                    body["choices"][0]["finish_reason"] = choice["finish_reason"]
+                    finished = True
+        except (ValueError, TypeError, KeyError, AttributeError) as exc:
+            raise LLMProtocolError("malformed completion stream") from exc
+    if not finished or data:
+        raise LLMProtocolError("completion stream was interrupted")
+    if calls:
+        message["tool_calls"] = [calls[index] for index in sorted(calls)]
+    return body
+
+
 @dataclass(frozen=True, slots=True)
 class NativeToolCall:
     id: str
@@ -209,6 +277,7 @@ class LLMClient(Protocol):
         catalog_version: str = "",
         prefix_hash: str = "",
         max_output_tokens: int | None = None,
+        on_text: Callable[[str], Awaitable[None]] | None = None,
     ) -> LLMResult: ...
 
     async def health(self) -> dict[str, Any]: ...
@@ -377,6 +446,7 @@ class OpenAICompatibleClient:
         catalog_version: str = "",
         prefix_hash: str = "",
         max_output_tokens: int | None = None,
+        on_text: Callable[[str], Awaitable[None]] | None = None,
     ) -> LLMResult:
         if tools is not None and json_schema is not None:
             raise LLMError("tools and json_schema are mutually exclusive request modes")
@@ -394,7 +464,8 @@ class OpenAICompatibleClient:
         payload: dict[str, Any] = {
             "model": self.model,
             "messages": prepared_messages,
-            "stream": False,
+            "stream": True,
+            "stream_options": {"include_usage": True},
         }
         if max_output_tokens is not None:
             payload["max_tokens"] = max(1, int(max_output_tokens))
@@ -412,24 +483,50 @@ class OpenAICompatibleClient:
         attempts_run = 0
         effective_timeout_s = timeout_s if timeout_s is not None else self.timeout_s
         successful_response: tuple[httpx.Response, dict[str, Any], int] | None = None
+        text_emitted = False
+
+        async def emit_text(text: str) -> None:
+            nonlocal text_emitted
+            if on_text is not None:
+                text_emitted = True
+                await on_text(text)
+
         async with _request_gate():
             for attempt in range(self.max_retries + 1):
                 attempts_run = attempt + 1
                 try:
-                    resp = await self._http().post(
-                        "/chat/completions",
+                    async with self._http().stream(
+                        "POST", "/chat/completions",
                         json=payload,
                         timeout=effective_timeout_s,
-                    )
+                    ) as resp:
+                        if resp.status_code >= 400:
+                            await resp.aread()
+                        elif "text/event-stream" in resp.headers.get("content-type", ""):
+                            body = await _read_completion_stream(resp, emit_text)
+                        else:
+                            # Some compatible servers ignore stream and return JSON.
+                            await resp.aread()
+                            body = resp.json()
+                            content = ((body.get("choices") or [{}])[0].get("message") or {}).get("content")
+                            if isinstance(content, str) and content:
+                                await emit_text(content)
+                except LLMProtocolError as exc:
+                    last_exc = exc
+                    break
                 except httpx.TimeoutException as exc:
                     last_exc = LLMTimeout(
                         f"{self.provider} timed out after {effective_timeout_s}s"
                     )
                     logger.warning("NLQ LLM timeout (attempt %d): %s", attempt + 1, exc)
+                    if text_emitted:
+                        break
                     continue
                 except httpx.HTTPError as exc:
                     last_exc = LLMUnavailable(f"{self.provider} unreachable: {exc}")
                     logger.warning("NLQ LLM transport error (attempt %d): %s", attempt + 1, exc)
+                    if text_emitted:
+                        break
                     continue
 
                 if resp.status_code == 429 or resp.status_code >= 500:
@@ -444,7 +541,6 @@ class OpenAICompatibleClient:
                     )
                     break
 
-                body = resp.json()
                 successful_response = (resp, body, attempt)
                 break
 

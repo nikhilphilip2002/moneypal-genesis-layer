@@ -249,7 +249,14 @@ async def _select(
     extra: dict[str, Any] = {}
     if not selecting:
         extra["max_output_tokens"] = settings.workbench_agent_synthesis_max_tokens
-    return await client.complete(
+    from app.services.workbench.streaming import complete_answer
+
+    async def complete(**kwargs):
+        if selecting:
+            return await client.complete(**kwargs)
+        return await complete_answer(client, state, **kwargs)
+
+    return await complete(
         messages=messages,
         tools=definitions,
         tool_choice=tool_choice,

@@ -111,6 +111,111 @@ def _raw_tool_call(call_id="call_1", name="query_metrics", arguments='{"metric":
     }
 
 
+def _sse_chunk(delta=None, finish_reason=None, **extra):
+    return 'data: ' + json.dumps({
+        'choices': [{'index': 0, 'delta': delta or {}, 'finish_reason': finish_reason}],
+        **extra,
+    }) + '\r\n\r\n'
+
+
+@pytest.mark.anyio
+async def test_stream_delivers_text_before_completion_and_preserves_usage():
+    received = []
+
+    class Stream(httpx.AsyncByteStream):
+        async def __aiter__(self):
+            # Split inside UTF-8 and SSE framing, as real network reads can.
+            first = _sse_chunk({'content': '₹ '}).encode()
+            for byte in first:
+                yield bytes([byte])
+            assert received == ['₹ ']
+            yield _sse_chunk({'reasoning_content': 'private', 'content': '42'}).encode()
+            yield _sse_chunk(finish_reason='stop', model='stream-model').encode()
+            yield ('data: ' + json.dumps({'choices': [], 'usage': {
+                'prompt_tokens': 12, 'completion_tokens': 4,
+                'prompt_tokens_details': {'cached_tokens': 8},
+            }}) + '\n\ndata: [DONE]\n\n').encode()
+
+    async def on_text(text):
+        received.append(text)
+
+    client = _client(lambda _: httpx.Response(
+        200, headers={'content-type': 'text/event-stream'}, stream=Stream(),
+    ))
+    with collect_calls() as records:
+        result = await client.complete(messages=[], on_text=on_text)
+    assert received == ['₹ ', '42']
+    assert result.text == '₹ 42'
+    assert result.reasoning == 'private'
+    assert result.model == 'stream-model'
+    assert result.cached_prompt_tokens == 8
+    assert records[0].completion_tokens == 4
+
+
+@pytest.mark.anyio
+async def test_stream_assembles_interleaved_tool_arguments():
+    frames = [
+        _sse_chunk({'tool_calls': [
+            {'index': 0, 'id': 'a', 'type': 'function', 'function': {'name': 'query_', 'arguments': '{"metric":'}},
+            {'index': 1, 'id': 'b', 'type': 'function', 'function': {'name': 'lookup_records', 'arguments': '{"customer_name":'}},
+        ]}),
+        _sse_chunk({'tool_calls': [
+            {'index': 1, 'function': {'arguments': '"A"}'}},
+            {'index': 0, 'function': {'name': 'metrics', 'arguments': '"par_30"}'}},
+        ]}),
+        _sse_chunk(finish_reason='tool_calls'), 'data: [DONE]\n\n',
+    ]
+    client = _client(lambda _: httpx.Response(
+        200, headers={'content-type': 'text/event-stream'}, content=''.join(frames),
+    ))
+    result = await client.complete(messages=[], tools=TOOLS, tool_choice='auto')
+    assert [(call.id, call.name, call.arguments) for call in result.tool_calls] == [
+        ('a', 'query_metrics', {'metric': 'par_30'}),
+        ('b', 'lookup_records', {'customer_name': 'A'}),
+    ]
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize('content', [
+    _sse_chunk({'content': 'partial'}),
+    _sse_chunk({'content': 'partial'}) + 'data: [DONE]\n\n',
+    'data: invalid\n\n',
+    'data: {"error": {"message": "failed"}}\n\n',
+])
+async def test_stream_rejects_truncated_and_invalid_responses(content):
+    client = _client(lambda _: httpx.Response(
+        200, headers={'content-type': 'text/event-stream'}, content=content,
+    ))
+    with pytest.raises(LLMProtocolError):
+        await client.complete(messages=[])
+
+
+@pytest.mark.anyio
+async def test_stream_does_not_retry_after_visible_text_and_closes_connection():
+    requests = []
+    closed = []
+
+    class Stream(httpx.AsyncByteStream):
+        async def __aiter__(self):
+            yield _sse_chunk({'content': 'partial'}).encode()
+            raise httpx.ReadTimeout('connection stalled')
+
+        async def aclose(self):
+            closed.append(True)
+
+    def handler(request):
+        requests.append(request)
+        return httpx.Response(200, headers={'content-type': 'text/event-stream'}, stream=Stream())
+
+    async def on_text(_text):
+        pass
+
+    with pytest.raises(LLMTimeout):
+        await _client(handler).complete(messages=[], on_text=on_text)
+    assert len(requests) == 1
+    assert closed == [True]
+
+
 class TestJsonSalvage:
     """Only the non-grammar providers need this; it must never mangle valid JSON."""
 
@@ -356,7 +461,8 @@ class TestResponseFormat:
         )
         assert "temperature" not in seen
         assert "max_tokens" not in seen
-        assert seen["stream"] is False
+        assert seen["stream"] is True
+        assert seen["stream_options"] == {"include_usage": True}
 
 
 class TestNativeTools:

@@ -1093,6 +1093,8 @@ export type WorkbenchStreamEvent =
   | { type: 'source_start'; source: string }
   | { type: 'source_card'; card: WorkbenchCard }
   | { type: 'answer'; answer: WorkbenchAnswer }
+  | { type: 'answer_delta'; text: string }
+  | { type: 'answer_reset' }
   | { type: 'synthesis'; text: string }
   | { type: 'refusal'; refusal: { reason?: string; message: string; origin?: string } }
   | ({ type: 'error' } & WorkbenchError)
@@ -1192,67 +1194,74 @@ export const workbench = {
     const decoder = new TextDecoder();
     let buffer = '';
 
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) throw new Error('The answer stream was interrupted. Please try again.');
+        buffer += decoder.decode(value, { stream: true });
 
-      let split: number;
-      while ((split = buffer.indexOf('\n\n')) !== -1) {
-        const frame = buffer.slice(0, split);
-        buffer = buffer.slice(split + 2);
+        let split: number;
+        while ((split = buffer.indexOf('\n\n')) !== -1) {
+          const frame = buffer.slice(0, split);
+          buffer = buffer.slice(split + 2);
 
-        let event = '';
-        let data = '';
-        for (const line of frame.split('\n')) {
-          if (line.startsWith('event: ')) event = line.slice(7).trim();
-          else if (line.startsWith('data: ')) data += line.slice(6);
-        }
-        if (!event) continue;
-
-        let payload: any = {};
-        try { payload = data ? JSON.parse(data) : {}; } catch { continue; }
-
-        switch (event) {
-          case 'conversation': yield { type: 'conversation', conversation_id: payload.conversation_id }; break;
-          case 'stage': yield { type: 'stage', stage: payload.stage }; break;
-          case 'trace': yield { type: 'trace', step: payload as WorkbenchTraceStep }; break;
-          case 'route':
-            yield {
-              type: 'route', sources: payload.sources || [], intent: payload.intent || '',
-              model: payload.model || '', reason: payload.reason,
-              confidence: payload.confidence, fallback_used: payload.fallback_used,
-              policy_version: payload.policy_version, tools: payload.tools || [],
-              effective_sources: payload.effective_sources,
-            };
-            break;
-          case 'source_start': yield { type: 'source_start', source: payload.source }; break;
-          case 'source_card': {
-            const { source, card_type, ...rest } = payload;
-            yield { type: 'source_card', card: { source, card_type, payload: rest } };
-            break;
+          let event = '';
+          let data = '';
+          for (const line of frame.split('\n')) {
+            if (line.startsWith('event: ')) event = line.slice(7).trim();
+            else if (line.startsWith('data: ')) data += line.slice(6);
           }
-          case 'answer': yield { type: 'answer', answer: payload as WorkbenchAnswer }; break;
-          case 'synthesis': yield { type: 'synthesis', text: payload.text }; break;
-          case 'refusal':
-            yield {
-              type: 'refusal',
-              refusal: {
-                reason: payload.reason,
-                message: payload.text ?? payload.message ?? '',
-                origin: payload.origin,
-              },
-            };
-            break;
-          case 'error':
-            yield {
-              type: 'error', message: payload.message, code: payload.code,
-              retryable: !!payload.retryable, reason: payload.reason,
-            };
-            break;
-          case 'done': yield { type: 'done', total_ms: payload.total_ms }; return;
+          if (!event) continue;
+
+          let payload: any = {};
+          try { payload = data ? JSON.parse(data) : {}; } catch { continue; }
+
+          switch (event) {
+            case 'conversation': yield { type: 'conversation', conversation_id: payload.conversation_id }; break;
+            case 'stage': yield { type: 'stage', stage: payload.stage }; break;
+            case 'trace': yield { type: 'trace', step: payload as WorkbenchTraceStep }; break;
+            case 'route':
+              yield {
+                type: 'route', sources: payload.sources || [], intent: payload.intent || '',
+                model: payload.model || '', reason: payload.reason,
+                confidence: payload.confidence, fallback_used: payload.fallback_used,
+                policy_version: payload.policy_version, tools: payload.tools || [],
+                effective_sources: payload.effective_sources,
+              };
+              break;
+            case 'source_start': yield { type: 'source_start', source: payload.source }; break;
+            case 'source_card': {
+              const { source, card_type, ...rest } = payload;
+              yield { type: 'source_card', card: { source, card_type, payload: rest } };
+              break;
+            }
+            case 'answer': yield { type: 'answer', answer: payload as WorkbenchAnswer }; break;
+            case 'answer_delta': yield { type: 'answer_delta', text: payload.text || '' }; break;
+            case 'answer_reset': yield { type: 'answer_reset' }; break;
+            case 'synthesis': yield { type: 'synthesis', text: payload.text }; break;
+            case 'refusal':
+              yield {
+                type: 'refusal',
+                refusal: {
+                  reason: payload.reason,
+                  message: payload.text ?? payload.message ?? '',
+                  origin: payload.origin,
+                },
+              };
+              break;
+            case 'error':
+              yield {
+                type: 'error', message: payload.message, code: payload.code,
+                retryable: !!payload.retryable, reason: payload.reason,
+              };
+              break;
+            case 'done': yield { type: 'done', total_ms: payload.total_ms }; return;
+          }
         }
       }
+    } finally {
+      await reader.cancel().catch(() => {});
+      reader.releaseLock();
     }
   },
 };

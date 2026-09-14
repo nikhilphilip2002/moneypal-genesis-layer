@@ -16,6 +16,7 @@ from app.services.workbench import (
     access, calculations, compaction, composer, facts, history, models, prompts,
 )
 from app.services.workbench.results import ExecutionDecision, SourceResult
+from app.services.workbench.streaming import complete_answer
 
 logger = logging.getLogger(__name__)
 
@@ -362,7 +363,8 @@ async def answer_results(state: WorkbenchState) -> dict[str, Any]:
                     repair_messages.append(
                         {"role": "user", "content": composer.facts_message(facts_block)}
                     )
-                result = await client.complete(
+                result = await complete_answer(
+                    client, state,
                     messages=repair_messages,
                     tools=native_tool_definitions(
                         state["source_policy"], catalog=state.get("_agent_catalog"),
