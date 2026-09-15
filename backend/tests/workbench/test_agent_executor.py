@@ -7,7 +7,11 @@ import pytest
 from app.services.nlq.catalog import get_catalog
 from app.services.nlq.llm import NativeToolCall
 from app.services.workbench import access, agent_executor
-from app.services.workbench.agent_executor import AgentExecutionContext, AgentToolTimeout
+from app.services.workbench.agent_executor import (
+    AgentExecutionContext,
+    AgentExecutionError,
+    AgentToolTimeout,
+)
 from app.services.workbench.results import SourceResult
 
 
@@ -139,6 +143,30 @@ async def test_handler_timeout_is_typed(monkeypatch):
             ),
             context,
         )
+
+
+@pytest.mark.anyio
+async def test_postgres_statement_timeout_keeps_typed_retry_feedback(monkeypatch):
+    from app.mcp import postgres_client
+
+    async def timed_out(*_args, **_kwargs):
+        return {
+            "status": "error",
+            "code": "QUERY_TIMEOUT",
+            "message": "Rewrite it to scan less data and do not repeat the same SQL.",
+            "detail": "QueryCanceled: canceling statement due to statement timeout",
+            "retryable": True,
+        }
+
+    monkeypatch.setattr(postgres_client, "call_tool", timed_out)
+    call = NativeToolCall(id="call-timeout", name="query", arguments={"sql": "SELECT 1"})
+
+    with pytest.raises(AgentExecutionError) as caught:
+        await agent_executor._execute_postgres_mcp(call, _context())
+
+    assert caught.value.code == "QUERY_TIMEOUT"
+    assert caught.value.retryable is True
+    assert "do not repeat the same SQL" in str(caught.value)
 
 
 @pytest.mark.anyio

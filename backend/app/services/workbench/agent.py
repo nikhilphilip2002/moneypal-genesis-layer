@@ -132,6 +132,7 @@ def _source_for_call(call) -> str | None:
 
 _USER_ERROR_MESSAGES = {
     "TOOL_TIMEOUT": "This source took too long to answer.",
+    "QUERY_TIMEOUT": "The database query exceeded its execution time limit.",
     "COMPILE_REJECTED": "The generated query did not pass the safety checks.",
     "NO_MATCHING_ROWS": "No matching records were found.",
     "SOURCE_UNAVAILABLE": "This source is unavailable right now.",

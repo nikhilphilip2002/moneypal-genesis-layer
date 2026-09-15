@@ -33,9 +33,37 @@ class ExecutionError(RuntimeError):
     """A query that failed to run. The message shown to the user is deliberately generic —
     a raw Postgres error leaks schema (§2.6)."""
 
+    code = "SQL_EXECUTION_ERROR"
+    retryable = True
+
     def __init__(self, message: str, *, detail: str = "") -> None:
         super().__init__(message)
         self.detail = detail
+
+
+class QueryTimeoutError(ExecutionError):
+    """PostgreSQL canceled a statement after the governed execution deadline."""
+
+    code = "QUERY_TIMEOUT"
+
+
+def _is_statement_timeout(exc: BaseException) -> bool:
+    sqlstate = getattr(exc, "sqlstate", None) or getattr(exc, "pgcode", None)
+    detail = f"{type(exc).__name__}: {exc}".lower()
+    return (
+        "statement timeout" in detail
+        and (sqlstate in {None, "57014"} or "querycanceled" in detail)
+    )
+
+
+def _query_timeout(exc: BaseException) -> QueryTimeoutError:
+    timeout_s = settings.nlq_statement_timeout_ms / 1000
+    return QueryTimeoutError(
+        f"The generated query exceeded the {timeout_s:g}-second execution limit. "
+        "Rewrite it to scan less data: narrow the date range, aggregate before joining, "
+        "avoid correlated subqueries, and do not repeat the same SQL.",
+        detail=f"{type(exc).__name__}: {exc}",
+    )
 
 
 @dataclass(slots=True)
@@ -88,6 +116,13 @@ def execute(
             "The query service is not configured yet.", detail=str(exc)
         ) from exc
     except Exception as exc:  # noqa: BLE001 - one generic message, full detail to the log
+        if _is_statement_timeout(exc):
+            logger.warning(
+                "NLQ query exceeded the %d ms statement timeout: %s",
+                settings.nlq_statement_timeout_ms,
+                compiled.sql,
+            )
+            raise _query_timeout(exc) from exc
         logger.exception("NLQ query failed: %s", compiled.sql)
         raise ExecutionError(
             "The query could not be completed against the warehouse.",
@@ -143,6 +178,13 @@ def execute_raw(sql: str, *, explain_gate: bool = True) -> QueryResult:
     except ExecutionError:
         raise
     except Exception as exc:  # noqa: BLE001
+        if _is_statement_timeout(exc):
+            logger.warning(
+                "NLQ generated SQL exceeded the %d ms statement timeout: %s",
+                settings.nlq_statement_timeout_ms,
+                sql,
+            )
+            raise _query_timeout(exc) from exc
         logger.exception("NLQ generated SQL failed: %s", sql)
         raise ExecutionError(
             "The generated query could not be completed.",
