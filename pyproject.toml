@@ -23,6 +23,7 @@ dependencies = [
     "beautifulsoup4>=4.13.0",
     "lxml>=5.3.0",
     "APScheduler>=3.10,<4",
+    "openai>=1.0,<2",
 ]
 
 [dependency-groups]

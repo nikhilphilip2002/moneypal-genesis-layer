@@ -10,6 +10,8 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
+from openai import OpenAI
+
 from app.core.config import settings
 
 
@@ -140,27 +142,28 @@ def build_context(hits: list[dict[str, Any]], max_chars: int = 9000) -> str:
 def generate_with_llm(prompt: str) -> str | None:
     """Generate through the repository's single OpenAI-compatible endpoint."""
     import time
-    import httpx
-
-    headers = {"Content-Type": "application/json"}
-    if settings.llm_api_key:
-        headers["Authorization"] = f"Bearer {settings.llm_api_key}"
+    client = OpenAI(
+        api_key=settings.llm_api_key or "not-needed",
+        base_url=settings.llm_base_url.rstrip("/") + "/",
+        timeout=settings.llm_timeout_s,
+        max_retries=0,
+    )
     try:
         t0 = time.perf_counter()
-        response = httpx.post(
-            f"{settings.llm_base_url.rstrip('/')}/chat/completions",
-            headers=headers,
-            json={
-                "model": settings.llm_model,
-                "messages": [
-                    {"role": "system", "content": "You are a concise regulatory intelligence analyst for Indian NBFC leadership."},
-                    {"role": "user", "content": prompt},
-                ],
-            },
-            timeout=settings.llm_timeout_s,
+        response = client.chat.completions.create(
+            model=settings.llm_model,
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        "You are a concise regulatory intelligence analyst for Indian "
+                        "NBFC leadership."
+                    ),
+                },
+                {"role": "user", "content": prompt},
+            ],
         )
-        response.raise_for_status()
-        content = response.json()["choices"][0]["message"]["content"]
+        content = response.choices[0].message.content
         from app.core.logging import log_raw_trace
         log_raw_trace(
             "LLM completion received", event="llm_completion", provider="llm",
@@ -175,6 +178,8 @@ def generate_with_llm(prompt: str) -> str | None:
             model=settings.llm_model, prompt=prompt, error=str(exc), level=logging.WARNING,
         )
         return None
+    finally:
+        client.close()
 
 
 def extractive_regulatory_summary(category_name: str, context: str, effective_date: str) -> str:

@@ -5,6 +5,7 @@ import json
 
 import httpx
 import pytest
+from openai import AsyncOpenAI
 
 from app.services.nlq.llm.client import (
     LLMError,
@@ -63,44 +64,68 @@ def _client(
         api_key="k",
         supports_json_schema=supports_json_schema,
         supports_native_tools=supports_native_tools,
-        health_path="/models",
     )
     client = OpenAICompatibleClient(profile=profile, model="m", max_retries=max_retries)
-    client._client = httpx.AsyncClient(
-        base_url="http://stub/v1", transport=httpx.MockTransport(handler)
+    client._client = AsyncOpenAI(
+        api_key="k",
+        base_url="http://stub/v1",
+        max_retries=0,
+        http_client=httpx.AsyncClient(
+            base_url="http://stub/v1", transport=httpx.MockTransport(handler)
+        ),
     )
+    # Avoid the SDK's first-request thread probe in the restricted test sandbox.
+    client._client._platform = "Linux"
     return client
 
 
-def _ok(content="{}"):
+def _completion_body(content="{}"):
+    return {
+        "model": "m",
+        "choices": [{"message": {"content": content}, "finish_reason": "stop"}],
+        "usage": {"prompt_tokens": 10, "completion_tokens": 3},
+    }
+
+
+def _stream_response(body):
+    choice = body["choices"][0]
+    message = choice["message"]
+    delta = {key: value for key, value in message.items() if value is not None}
+    if "tool_calls" in delta:
+        delta["tool_calls"] = [call | {"index": index} for index, call in enumerate(delta["tool_calls"])]
+    frames = [
+        _sse_chunk(delta, finish_reason=choice["finish_reason"], model=body.get("model", "m")),
+        "data: " + json.dumps({"choices": [], "usage": body.get("usage", {})}) + "\n\n",
+        "data: [DONE]\n\n",
+    ]
     return httpx.Response(
-        200,
-        json={
-            "model": "m",
-            "choices": [{"message": {"content": content}, "finish_reason": "stop"}],
-            "usage": {"prompt_tokens": 10, "completion_tokens": 3},
-        },
+        200, headers={"content-type": "text/event-stream"}, content="".join(frames)
     )
+
+
+def _ok(content="{}"):
+    return _stream_response(_completion_body(content))
+
+
+def _tool_body(*calls, content=None):
+    return {
+        "model": "m",
+        "choices": [
+            {
+                "message": {
+                    "role": "assistant",
+                    "content": content,
+                    "tool_calls": list(calls),
+                },
+                "finish_reason": "tool_calls",
+            }
+        ],
+        "usage": {"prompt_tokens": 12, "completion_tokens": 5},
+    }
 
 
 def _tool_ok(*calls, content=None):
-    return httpx.Response(
-        200,
-        json={
-            "model": "m",
-            "choices": [
-                {
-                    "message": {
-                        "role": "assistant",
-                        "content": content,
-                        "tool_calls": list(calls),
-                    },
-                    "finish_reason": "tool_calls",
-                }
-            ],
-            "usage": {"prompt_tokens": 12, "completion_tokens": 5},
-        },
-    )
+    return _stream_response(_tool_body(*calls, content=content))
 
 
 def _raw_tool_call(call_id="call_1", name="query_metrics", arguments='{"metric":"par_30"}'):
@@ -259,9 +284,8 @@ class TestThinkingModels:
     @pytest.mark.anyio
     async def test_reasoning_content_is_captured(self):
         def handler(request):
-            return httpx.Response(
-                200,
-                json={
+            return _stream_response(
+                {
                     "model": "m",
                     "choices": [
                         {
@@ -270,7 +294,7 @@ class TestThinkingModels:
                         }
                     ],
                     "usage": {"prompt_tokens": 10, "completion_tokens": 700},
-                },
+                }
             )
 
         result = await _client(handler).complete(messages=[{"role": "user", "content": "hi"}])
@@ -335,10 +359,9 @@ class TestThinkingModels:
     @pytest.mark.anyio
     async def test_cached_prompt_token_count_is_captured(self):
         def handler(_request):
-            response = _ok('{"route":"refuse"}')
-            body = json.loads(response.content)
+            body = _completion_body('{"route":"refuse"}')
             body["usage"]["prompt_tokens_details"] = {"cached_tokens": 9000}
-            return httpx.Response(200, json=body)
+            return _stream_response(body)
 
         result = await _client(handler).complete(messages=[{"role": "user", "content": "hi"}])
         assert result.prompt_tokens == 10
@@ -348,14 +371,13 @@ class TestThinkingModels:
     @pytest.mark.anyio
     async def test_purpose_prefix_and_uncached_usage_are_recorded(self):
         def handler(_request):
-            response = _ok('{"route":"refuse"}')
-            body = json.loads(response.content)
+            body = _completion_body('{"route":"refuse"}')
             body["usage"]["prompt_tokens"] = 100
             body["usage"]["prompt_tokens_details"] = {
                 "cached_tokens": 70,
                 "cache_creation_tokens": 20,
             }
-            return httpx.Response(200, json=body)
+            return _stream_response(body)
 
         with collect_calls() as calls:
             result = await _client(handler).complete(
@@ -597,9 +619,9 @@ class TestNativeTools:
         def handler(request):
             requests.append(json.loads(request.content))
             if len(requests) == 1:
-                body = _tool_ok(_raw_tool_call()).json()
+                body = _tool_body(_raw_tool_call())
                 body["choices"][0]["message"]["reasoning_content"] = "hidden reasoning"
-                return httpx.Response(200, json=body)
+                return _stream_response(body)
             return _ok("PAR 30 is available.")
 
         client = _client(handler)
@@ -659,24 +681,28 @@ class TestNativeTools:
     @pytest.mark.parametrize(
         ("raw_calls", "error"),
         [
-            ({"not": "an array"}, "must be an array"),
+            ({"not": "an array"}, "malformed completion stream"),
             ([{"type": "function", "function": {"name": "query_metrics", "arguments": "{}"}}], "no call ID"),
             ([_raw_tool_call(call_id="same"), _raw_tool_call(call_id="same")], "duplicate tool call ID"),
             ([_raw_tool_call() | {"type": "custom"}], "not type 'function'"),
             ([_raw_tool_call(name="not_registered")], "unknown function"),
             ([_raw_tool_call(arguments="not-json")], "not valid JSON"),
             ([_raw_tool_call(arguments="[]")], "decode to an object"),
-            ([{"id": "call_1", "type": "function", "function": {"name": "query_metrics", "arguments": {}}}], "JSON-encoded string"),
+            ([{"id": "call_1", "type": "function", "function": {"name": "query_metrics", "arguments": {}}}], "valid JSON|JSON-encoded string|malformed completion stream"),
         ],
     )
     async def test_malformed_native_calls_are_protocol_errors(self, raw_calls, error):
         def handler(_request):
             if isinstance(raw_calls, list):
                 return _tool_ok(*raw_calls)
-            response = _tool_ok()
-            body = json.loads(response.content)
-            body["choices"][0]["message"]["tool_calls"] = raw_calls
-            return httpx.Response(200, json=body)
+            return httpx.Response(
+                200,
+                headers={"content-type": "text/event-stream"},
+                content=(
+                    _sse_chunk({"tool_calls": raw_calls}, finish_reason="tool_calls")
+                    + "data: [DONE]\n\n"
+                ),
+            )
 
         with pytest.raises(LLMProtocolError, match=error):
             await _client(handler).complete(
@@ -777,7 +803,9 @@ class TestHealth:
 
     @pytest.mark.anyio
     async def test_ok(self):
-        assert (await _client(lambda r: httpx.Response(200)).health())["status"] == "ok"
+        assert (await _client(lambda r: httpx.Response(
+            200, json={"object": "list", "data": []},
+        )).health())["status"] == "ok"
 
     @pytest.mark.anyio
     async def test_unreachable_is_down_not_an_exception(self):
@@ -795,7 +823,7 @@ class TestHealth:
         def handler(request):
             if request.url.path == "/v1/models":
                 return httpx.Response(200, json={"data": [{"id": "actual-35b"}]})
-            return httpx.Response(200)
+            return httpx.Response(200, json={"object": "list", "data": []})
 
         health = await _client(handler).health()
 
@@ -806,8 +834,7 @@ class TestHealth:
 
 
 class TestEndpointConfiguration:
-    def test_single_profile_uses_standard_models_health_path(self):
+    def test_single_profile_supports_standard_openai_features(self):
         client = get_llm_client()
-        assert client.profile.health_path == "/models"
         assert client.profile.supports_json_schema is True
         assert client.profile.supports_native_tools is True

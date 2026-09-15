@@ -16,3 +16,4 @@ requests
 beautifulsoup4
 lxml
 APScheduler>=3.10,<4
+openai>=1.0,<2

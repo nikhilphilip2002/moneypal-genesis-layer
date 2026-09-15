@@ -11,6 +11,7 @@ import asyncio
 import json
 import logging
 import os
+import platform
 import re
 from collections.abc import Awaitable, Callable
 from contextlib import asynccontextmanager
@@ -18,6 +19,15 @@ from dataclasses import dataclass, field
 from typing import Any, Protocol, runtime_checkable
 
 import httpx
+from openai import (
+    APIConnectionError,
+    APIError,
+    APIStatusError,
+    APITimeoutError,
+    AsyncOpenAI,
+)
+from openai import AsyncStream
+from openai.types.chat import ChatCompletionChunk
 
 try:  # POSIX-only advisory locks; Windows development hosts fall back to the process gate.
     import fcntl
@@ -116,29 +126,17 @@ class LLMProtocolError(LLMError):
 
 
 async def _read_completion_stream(
-    response: httpx.Response,
+    stream: AsyncStream[ChatCompletionChunk],
     on_text: Callable[[str], Awaitable[None]] | None = None,
 ) -> dict[str, Any]:
-    """Assemble SSE deltas before validating tools; expose only assistant text."""
-    message: dict[str, Any] = {"role": "assistant", "content": ""}
+    """Assemble SDK stream chunks before validating tools; expose assistant text."""
+    message: dict[str, Any] = {"role": "assistant", "content": None}
     body: dict[str, Any] = {"choices": [{"message": message, "finish_reason": ""}]}
     calls: dict[int, dict[str, Any]] = {}
-    data: list[str] = []
     finished = False
-    async for line in response.aiter_lines():
-        if line.startswith("data:"):
-            data.append(line[5:].lstrip())
-            continue
-        if line or not data:
-            continue
-        raw = "\n".join(data)
-        data.clear()
-        if raw == "[DONE]":
-            if not finished:
-                raise LLMProtocolError("completion stream ended without a finish reason")
-            break
+    async for event in stream:
         try:
-            chunk = json.loads(raw)
+            chunk = event.model_dump(exclude_none=True)
             if chunk.get("error"):
                 raise LLMProtocolError(f"completion stream error: {chunk['error']}")
             if chunk.get("model"):
@@ -154,7 +152,7 @@ async def _read_completion_stream(
                     if value is not None:
                         if not isinstance(value, str):
                             raise LLMProtocolError(f"delta.{key} must be a string")
-                        message[key] = message.get(key, "") + value
+                        message[key] = (message.get(key) or "") + value
                         if key == "content" and value and on_text:
                             await on_text(value)
                 for fragment in delta.get("tool_calls") or []:
@@ -175,7 +173,7 @@ async def _read_completion_stream(
                     finished = True
         except (ValueError, TypeError, KeyError, AttributeError) as exc:
             raise LLMProtocolError("malformed completion stream") from exc
-    if not finished or data:
+    if not finished:
         raise LLMProtocolError("completion stream was interrupted")
     if calls:
         message["tool_calls"] = [calls[index] for index in sorted(calls)]
@@ -290,8 +288,6 @@ class _ProviderProfile:
     api_key: str | None
     supports_json_schema: bool
     supports_native_tools: bool
-    health_path: str
-    health_method: str = "GET"
 
 
 def _native_tool_names(tools: list[dict[str, Any]]) -> set[str]:
@@ -370,7 +366,7 @@ class OpenAICompatibleClient:
     model: str
     timeout_s: float = 30.0
     max_retries: int = 1
-    _client: httpx.AsyncClient | None = field(default=None, repr=False)
+    _client: AsyncOpenAI | None = field(default=None, repr=False)
 
     @property
     def provider(self) -> str:
@@ -380,21 +376,30 @@ class OpenAICompatibleClient:
     def supports_native_tools(self) -> bool:
         return self.profile.supports_native_tools
 
-    def _http(self) -> httpx.AsyncClient:
-        if self._client is None or self._client.is_closed:
-            headers = {"Content-Type": "application/json"}
-            if self.profile.api_key:
-                headers["Authorization"] = f"Bearer {self.profile.api_key}"
-            self._client = httpx.AsyncClient(
-                base_url=self.profile.base_url.rstrip("/"),
-                headers=headers,
-                timeout=httpx.Timeout(self.timeout_s),
+    def _openai(self) -> AsyncOpenAI:
+        if self._client is None or self._client.is_closed():
+            self._client = AsyncOpenAI(
+                api_key=self.profile.api_key or "not-needed",
+                base_url=self.profile.base_url.rstrip("/") + "/",
+                timeout=self.timeout_s,
+                # This class owns retries so attempt telemetry remains exact.
+                max_retries=0,
             )
+            # Resolve this synchronously once. The SDK otherwise starts a worker thread
+            # on the first async request solely to populate its diagnostic OS header.
+            system = platform.system().lower()
+            self._client._platform = {
+                "darwin": "MacOS",
+                "linux": "Linux",
+                "windows": "Windows",
+                "freebsd": "FreeBSD",
+                "openbsd": "OpenBSD",
+            }.get(system, "Unknown")
         return self._client
 
     async def aclose(self) -> None:
-        if self._client is not None and not self._client.is_closed:
-            await self._client.aclose()
+        if self._client is not None and not self._client.is_closed():
+            await self._client.close()
 
     def _response_format(self, json_schema: dict[str, Any] | None) -> dict[str, Any] | None:
         if json_schema is None:
@@ -482,7 +487,7 @@ class OpenAICompatibleClient:
         last_exc: Exception | None = None
         attempts_run = 0
         effective_timeout_s = timeout_s if timeout_s is not None else self.timeout_s
-        successful_response: tuple[httpx.Response, dict[str, Any], int] | None = None
+        successful_response: tuple[dict[str, Any], int] | None = None
         text_emitted = False
 
         async def emit_text(text: str) -> None:
@@ -495,26 +500,20 @@ class OpenAICompatibleClient:
             for attempt in range(self.max_retries + 1):
                 attempts_run = attempt + 1
                 try:
-                    async with self._http().stream(
-                        "POST", "/chat/completions",
-                        json=payload,
+                    stream = await self._openai().chat.completions.create(
+                        **payload,
                         timeout=effective_timeout_s,
-                    ) as resp:
-                        if resp.status_code >= 400:
-                            await resp.aread()
-                        elif "text/event-stream" in resp.headers.get("content-type", ""):
-                            body = await _read_completion_stream(resp, emit_text)
-                        else:
-                            # Some compatible servers ignore stream and return JSON.
-                            await resp.aread()
-                            body = resp.json()
-                            content = ((body.get("choices") or [{}])[0].get("message") or {}).get("content")
-                            if isinstance(content, str) and content:
-                                await emit_text(content)
+                    )
+                    try:
+                        body = await _read_completion_stream(stream, emit_text)
+                    except (APIError, ValueError, TypeError, KeyError, AttributeError) as exc:
+                        raise LLMProtocolError("malformed completion stream") from exc
+                    finally:
+                        await stream.close()
                 except LLMProtocolError as exc:
                     last_exc = exc
                     break
-                except httpx.TimeoutException as exc:
+                except (APITimeoutError, httpx.TimeoutException) as exc:
                     last_exc = LLMTimeout(
                         f"{self.provider} timed out after {effective_timeout_s}s"
                     )
@@ -522,30 +521,32 @@ class OpenAICompatibleClient:
                     if text_emitted:
                         break
                     continue
-                except httpx.HTTPError as exc:
+                except APIStatusError as exc:
+                    if exc.status_code == 429 or exc.status_code >= 500:
+                        last_exc = LLMUnavailable(
+                            f"{self.provider} returned {exc.status_code}"
+                        )
+                        logger.warning(
+                            "NLQ LLM %s on attempt %d", exc.status_code, attempt + 1
+                        )
+                        await asyncio.sleep(0.5 * (attempt + 1))
+                        continue
+                    last_exc = LLMError(
+                        f"{self.provider} rejected the request: {str(exc)[:300]}"
+                    )
+                    break
+                except (APIConnectionError, httpx.HTTPError) as exc:
                     last_exc = LLMUnavailable(f"{self.provider} unreachable: {exc}")
                     logger.warning("NLQ LLM transport error (attempt %d): %s", attempt + 1, exc)
                     if text_emitted:
                         break
                     continue
 
-                if resp.status_code == 429 or resp.status_code >= 500:
-                    last_exc = LLMUnavailable(f"{self.provider} returned {resp.status_code}")
-                    logger.warning("NLQ LLM %s on attempt %d", resp.status_code, attempt + 1)
-                    await asyncio.sleep(0.5 * (attempt + 1))
-                    continue
-                if resp.status_code >= 400:
-                    # 4xx is a request bug (bad schema, wrong model) — retrying repeats it.
-                    last_exc = LLMError(
-                        f"{self.provider} rejected the request: {resp.text[:300]}"
-                    )
-                    break
-
-                successful_response = (resp, body, attempt)
+                successful_response = (body, attempt)
                 break
 
         if successful_response is not None:
-            resp, body, successful_attempt = successful_response
+            body, successful_attempt = successful_response
             choice = (body.get("choices") or [{}])[0]
             usage = body.get("usage") or {}
             prompt_details = usage.get("prompt_tokens_details") or {}
@@ -608,7 +609,7 @@ class OpenAICompatibleClient:
                     raw_payload=payload,
                     raw_response=body,
                     duration_ms=duration_ms,
-                    status_code=resp.status_code,
+                    status_code=200,
                     call_purpose=str(call_purpose),
                     call_kind=str(call_kind),
                     error=str(exc),
@@ -678,7 +679,7 @@ class OpenAICompatibleClient:
                 raw_payload=payload,
                 raw_response=body,
                 duration_ms=result.duration_ms,
-                status_code=resp.status_code,
+                status_code=200,
                 finish_reason=result.finish_reason,
                 tool_call_count=len(result.tool_calls),
                 tool_names=tuple(call.name for call in result.tool_calls),
@@ -770,37 +771,24 @@ class OpenAICompatibleClient:
     async def health(self) -> dict[str, Any]:
         """Return endpoint readiness from the standard OpenAI models endpoint."""
         try:
-            resp = await self._http().request(
-                self.profile.health_method, self.profile.health_path, timeout=5.0
-            )
-        except httpx.HTTPError as exc:
+            models = await self._openai().models.list(timeout=5.0)
+        except APIStatusError as exc:
+            return {
+                "status": "degraded", "provider": self.provider, "model": self.model,
+                "detail": f"HTTP {exc.status_code}", "served_models": [],
+                "model_match": False,
+            }
+        except (APIConnectionError, APITimeoutError) as exc:
             return {"status": "down", "provider": self.provider, "model": self.model,
                     "detail": str(exc)[:200]}
-        ok = resp.status_code < 400
-        served_models: list[str] = []
-        if ok:
-            try:
-                data = resp.json().get("data", [])
-                served_models = [
-                    str(item["id"])
-                    for item in data
-                    if isinstance(item, dict) and item.get("id")
-                ]
-            except (ValueError, AttributeError):
-                # Some compatible gateways return an empty health body. Reachability is
-                # still useful; model matching is reported only when IDs are available.
-                pass
+        served_models = [str(item.id) for item in models.data if item.id]
         model_match = not served_models or self.model in served_models
-        healthy = ok and model_match
         return {
-            "status": "ok" if healthy else "degraded",
+            "status": "ok" if model_match else "degraded",
             "provider": self.provider,
             "model": self.model,
             "detail": (
-                "" if healthy
-                else f"Configured model {self.model!r} is not served"
-                if ok
-                else f"HTTP {resp.status_code}"
+                "" if model_match else f"Configured model {self.model!r} is not served"
             ),
             "served_models": served_models,
             "model_match": model_match,
@@ -814,7 +802,6 @@ def _profile() -> _ProviderProfile:
         api_key=settings.llm_api_key,
         supports_json_schema=True,
         supports_native_tools=True,
-        health_path="/models",
     )
 
 
