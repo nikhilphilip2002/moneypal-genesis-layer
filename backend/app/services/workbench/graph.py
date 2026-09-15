@@ -57,7 +57,14 @@ def _is_context_overflow(exc: BaseException) -> bool:
 
 def _native_error(exc: BaseException) -> tuple[str, str, bool]:
     """Map every native-loop escape to one stable, user-facing error contract."""
-    from app.services.nlq.llm import LLMError, LLMProtocolError, LLMTimeout, LLMUnavailable
+    from app.services.nlq.llm import (
+        LLMError,
+        LLMIncomplete,
+        LLMProtocolError,
+        LLMResponseBlocked,
+        LLMTimeout,
+        LLMUnavailable,
+    )
     from app.services.workbench.agent import BudgetExhausted
     from app.services.workbench.agent_tools import AgentToolAccessDenied
 
@@ -73,6 +80,10 @@ def _native_error(exc: BaseException) -> tuple[str, str, bool]:
         return "AGENT_TIMEOUT", "The agent took too long to answer.", True
     if isinstance(exc, LLMUnavailable):
         return "MODEL_UNAVAILABLE", "The language model is unavailable right now.", True
+    if isinstance(exc, LLMIncomplete):
+        return "MODEL_INCOMPLETE", "The language model response was cut short.", True
+    if isinstance(exc, LLMResponseBlocked):
+        return "MODEL_RESPONSE_BLOCKED", "The language model could not provide a response.", False
     if isinstance(exc, AgentToolAccessDenied):
         return "POLICY_DENIED", "That capability is not authorized for this request.", False
     if isinstance(exc, LLMProtocolError):

@@ -13,6 +13,8 @@ import logging
 import os
 import platform
 import re
+from datetime import UTC, datetime
+from email.utils import parsedate_to_datetime
 from collections.abc import Awaitable, Callable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
@@ -123,6 +125,55 @@ class LLMUnavailable(LLMError):
 
 class LLMProtocolError(LLMError):
     """A successful provider response violated the native chat/tool protocol."""
+
+
+class LLMIncomplete(LLMError):
+    """The provider stopped before producing a complete response."""
+
+
+class LLMResponseBlocked(LLMError):
+    """The provider declined to return a response because of a content policy."""
+
+
+_RETRYABLE_STATUS_CODES = frozenset({408, 409, 425, 429})
+
+
+def _retry_after_s(exc: APIStatusError) -> float | None:
+    """Parse Retry-After as delta seconds or an HTTP date."""
+    value = exc.response.headers.get("retry-after")
+    if not value:
+        return None
+    try:
+        return max(0.0, float(value))
+    except ValueError:
+        pass
+    try:
+        retry_at = parsedate_to_datetime(value)
+        if retry_at.tzinfo is None:
+            retry_at = retry_at.replace(tzinfo=UTC)
+        return max(0.0, (retry_at - datetime.now(UTC)).total_seconds())
+    except (TypeError, ValueError, OverflowError):
+        return None
+
+
+def _validate_finish_reason(
+    finish_reason: str, *, tool_calls: list[NativeToolCall], reasoning: str = ""
+) -> None:
+    if finish_reason == "length":
+        detail = (
+            f" after producing {len(reasoning)} chars of reasoning"
+            if reasoning
+            else ""
+        )
+        raise LLMIncomplete(
+            f"model output was truncated at the configured token limit{detail}"
+        )
+    if finish_reason == "content_filter":
+        raise LLMResponseBlocked("model response was blocked by the provider content filter")
+    if finish_reason == "tool_calls" and not tool_calls:
+        raise LLMProtocolError("finish_reason was tool_calls but no tool calls were returned")
+    if finish_reason not in {"stop", "tool_calls"}:
+        raise LLMProtocolError(f"unsupported finish_reason {finish_reason!r}")
 
 
 async def _read_completion_stream(
@@ -365,7 +416,11 @@ class OpenAICompatibleClient:
     profile: _ProviderProfile
     model: str
     timeout_s: float = 30.0
-    max_retries: int = 1
+    max_retries: int = 4
+    transport_max_retries: int = 1
+    retry_base_delay_s: float = 2.0
+    retry_max_delay_s: float = 30.0
+    retry_budget_s: float = 30.0
     _client: AsyncOpenAI | None = field(default=None, repr=False)
 
     @property
@@ -400,6 +455,24 @@ class OpenAICompatibleClient:
     async def aclose(self) -> None:
         if self._client is not None and not self._client.is_closed():
             await self._client.close()
+
+    async def _wait_before_retry(
+        self,
+        attempt: int,
+        retry_deadline: float,
+        status_error: APIStatusError | None = None,
+    ) -> bool:
+        remaining = retry_deadline - asyncio.get_event_loop().time()
+        if remaining <= 0:
+            return False
+        retry_after = _retry_after_s(status_error) if status_error is not None else None
+        delay = (
+            retry_after
+            if retry_after is not None
+            else self.retry_base_delay_s * (2 ** attempt)
+        )
+        await asyncio.sleep(min(remaining, self.retry_max_delay_s, max(0.0, delay)))
+        return True
 
     def _response_format(self, json_schema: dict[str, Any] | None) -> dict[str, Any] | None:
         if json_schema is None:
@@ -487,6 +560,7 @@ class OpenAICompatibleClient:
         last_exc: Exception | None = None
         attempts_run = 0
         effective_timeout_s = timeout_s if timeout_s is not None else self.timeout_s
+        retry_deadline = request_started + self.retry_budget_s
         successful_response: tuple[dict[str, Any], int] | None = None
         text_emitted = False
 
@@ -518,18 +592,29 @@ class OpenAICompatibleClient:
                         f"{self.provider} timed out after {effective_timeout_s}s"
                     )
                     logger.warning("NLQ LLM timeout (attempt %d): %s", attempt + 1, exc)
-                    if text_emitted:
+                    if (
+                        text_emitted
+                        or attempt >= min(self.max_retries, self.transport_max_retries)
+                        or not await self._wait_before_retry(attempt, retry_deadline)
+                    ):
                         break
                     continue
                 except APIStatusError as exc:
-                    if exc.status_code == 429 or exc.status_code >= 500:
+                    if exc.status_code in _RETRYABLE_STATUS_CODES or exc.status_code >= 500:
                         last_exc = LLMUnavailable(
-                            f"{self.provider} returned {exc.status_code}"
+                            f"{self.provider} returned retryable HTTP {exc.status_code}: "
+                            f"{str(exc)[:200]}"
                         )
                         logger.warning(
                             "NLQ LLM %s on attempt %d", exc.status_code, attempt + 1
                         )
-                        await asyncio.sleep(0.5 * (attempt + 1))
+                        if (
+                            attempt >= self.max_retries
+                            or not await self._wait_before_retry(
+                                attempt, retry_deadline, exc
+                            )
+                        ):
+                            break
                         continue
                     last_exc = LLMError(
                         f"{self.provider} rejected the request: {str(exc)[:300]}"
@@ -538,7 +623,11 @@ class OpenAICompatibleClient:
                 except (APIConnectionError, httpx.HTTPError) as exc:
                     last_exc = LLMUnavailable(f"{self.provider} unreachable: {exc}")
                     logger.warning("NLQ LLM transport error (attempt %d): %s", attempt + 1, exc)
-                    if text_emitted:
+                    if (
+                        text_emitted
+                        or attempt >= min(self.max_retries, self.transport_max_retries)
+                        or not await self._wait_before_retry(attempt, retry_deadline)
+                    ):
                         break
                     continue
 
@@ -560,18 +649,31 @@ class OpenAICompatibleClient:
             prompt_tokens = int(usage.get("prompt_tokens", 0) or 0)
             cached_prompt_tokens = int(prompt_details.get("cached_tokens", 0) or 0)
             message = choice.get("message") or {}
+            finish_reason = choice.get("finish_reason", "")
             try:
                 if not isinstance(message, dict):
                     raise LLMProtocolError("choice.message must be an object")
+                if not isinstance(finish_reason, str) or not finish_reason:
+                    raise LLMProtocolError("choice.finish_reason must be a nonempty string")
                 tool_calls = _parse_native_tool_calls(
                     message, allowed_names=allowed_tool_names,
                 )
                 content = message.get("content")
                 if content is not None and not isinstance(content, str):
                     raise LLMProtocolError("message.content must be a string or null")
-            except LLMProtocolError as exc:
+                _validate_finish_reason(
+                    finish_reason,
+                    tool_calls=tool_calls,
+                    reasoning=str(message.get("reasoning_content") or ""),
+                )
+            except (LLMProtocolError, LLMIncomplete, LLMResponseBlocked) as exc:
                 duration_ms = int(
                     (asyncio.get_event_loop().time() - request_started) * 1000
+                )
+                recorded_finish_reason = (
+                    finish_reason
+                    if isinstance(exc, (LLMIncomplete, LLMResponseBlocked))
+                    else "protocol_error"
                 )
                 record_call(CallRecord(
                     purpose=str(call_purpose),
@@ -593,17 +695,23 @@ class OpenAICompatibleClient:
                     duration_ms=duration_ms,
                     attempts=successful_attempt + 1,
                     retries=successful_attempt,
-                    finish_reason="protocol_error",
+                    finish_reason=recorded_finish_reason,
                 ))
                 logger.warning(
-                    "LLM native protocol error purpose=%s provider=%s model=%s: %s",
-                    call_purpose, self.provider, body.get("model", self.model), exc,
+                    "LLM completion rejected purpose=%s provider=%s model=%s "
+                    "finish_reason=%s: %s",
+                    call_purpose, self.provider, body.get("model", self.model),
+                    recorded_finish_reason, exc,
                 )
                 from app.core.logging import log_raw_trace
 
                 log_raw_trace(
-                    f"LLM native protocol error: {exc}",
-                    event="llm_protocol_error",
+                    f"LLM completion rejected: {exc}",
+                    event=(
+                        "llm_protocol_error"
+                        if isinstance(exc, LLMProtocolError)
+                        else "llm_finish_error"
+                    ),
                     provider=self.provider,
                     model=body.get("model", self.model),
                     raw_payload=payload,
@@ -612,6 +720,7 @@ class OpenAICompatibleClient:
                     status_code=200,
                     call_purpose=str(call_purpose),
                     call_kind=str(call_kind),
+                    finish_reason=recorded_finish_reason,
                     error=str(exc),
                     level=logging.WARNING,
                 )
@@ -646,7 +755,7 @@ class OpenAICompatibleClient:
                 ),
                 completion_tokens=int(usage.get("completion_tokens", 0) or 0),
                 duration_ms=int((asyncio.get_event_loop().time() - request_started) * 1000),
-                finish_reason=choice.get("finish_reason", ""),
+                finish_reason=finish_reason,
                 attempts=successful_attempt + 1,
                 retries=successful_attempt,
                 call_purpose=str(call_purpose),
@@ -719,11 +828,6 @@ class OpenAICompatibleClient:
                 tool_call_count=len(result.tool_calls),
                 tool_names=tuple(call.name for call in result.tool_calls),
             ))
-            if result.finish_reason == "length":
-                logger.warning(
-                    "LLM output hit token length limit (prompt=%s completion=%s)",
-                    result.prompt_tokens, result.completion_tokens,
-                )
             return result
         from app.core.logging import log_raw_trace
 

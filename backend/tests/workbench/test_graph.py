@@ -6,7 +6,12 @@ import json
 
 import pytest
 
-from app.services.nlq.llm import LLMProtocolError, LLMUnavailable
+from app.services.nlq.llm import (
+    LLMIncomplete,
+    LLMProtocolError,
+    LLMResponseBlocked,
+    LLMUnavailable,
+)
 from app.services.workbench import graph
 from app.services.workbench.agent import BudgetExhausted
 
@@ -89,6 +94,8 @@ async def test_native_transcript_overflow_is_recorded_and_visible(monkeypatch):
     (BudgetExhausted("spent"), "AGENT_BUDGET_EXHAUSTED", False),
     (TimeoutError("late"), "AGENT_TIMEOUT", True),
     (LLMUnavailable("offline"), "MODEL_UNAVAILABLE", True),
+    (LLMIncomplete("truncated"), "MODEL_INCOMPLETE", True),
+    (LLMResponseBlocked("filtered"), "MODEL_RESPONSE_BLOCKED", False),
     (LLMProtocolError("invalid"), "MODEL_PROTOCOL_ERROR", True),
 ])
 async def test_native_failures_emit_one_typed_error(monkeypatch, failure, code, retryable):

@@ -3,7 +3,9 @@
 from app.services.nlq.llm.client import (
     LLMClient,
     LLMError,
+    LLMIncomplete,
     LLMProtocolError,
+    LLMResponseBlocked,
     LLMResult,
     LLMTimeout,
     LLMUnavailable,
@@ -14,7 +16,9 @@ from app.services.nlq.llm.client import (
 __all__ = [
     "LLMClient",
     "LLMError",
+    "LLMIncomplete",
     "LLMProtocolError",
+    "LLMResponseBlocked",
     "LLMResult",
     "LLMTimeout",
     "LLMUnavailable",

@@ -14,7 +14,8 @@ def test_generate_uses_the_configured_openai_endpoint(monkeypatch):
             seen["request"] = kwargs
             return SimpleNamespace(
                 choices=[SimpleNamespace(
-                    message=SimpleNamespace(content="configured response")
+                    message=SimpleNamespace(content="configured response"),
+                    finish_reason="stop",
                 )]
             )
 
@@ -34,6 +35,6 @@ def test_generate_uses_the_configured_openai_endpoint(monkeypatch):
     assert rag.generate_with_llm("summarize") == "configured response"
     assert seen["client"]["base_url"] == "http://model.test/v1/"
     assert seen["client"]["api_key"] == "secret"
-    assert seen["client"]["max_retries"] == 0
+    assert seen["client"]["max_retries"] == settings.nlq_llm_max_retries
     assert seen["request"]["model"] == "test-model"
     assert seen["closed"] is True

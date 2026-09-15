@@ -9,7 +9,9 @@ from openai import AsyncOpenAI
 
 from app.services.nlq.llm.client import (
     LLMError,
+    LLMIncomplete,
     LLMProtocolError,
+    LLMResponseBlocked,
     LLMResult,
     LLMTimeout,
     LLMUnavailable,
@@ -65,7 +67,12 @@ def _client(
         supports_json_schema=supports_json_schema,
         supports_native_tools=supports_native_tools,
     )
-    client = OpenAICompatibleClient(profile=profile, model="m", max_retries=max_retries)
+    client = OpenAICompatibleClient(
+        profile=profile,
+        model="m",
+        max_retries=max_retries,
+        retry_base_delay_s=0,
+    )
     client._client = AsyncOpenAI(
         api_key="k",
         base_url="http://stub/v1",
@@ -282,7 +289,7 @@ class TestThinkingModels:
         assert "length" in message
 
     @pytest.mark.anyio
-    async def test_reasoning_content_is_captured(self):
+    async def test_reasoning_only_length_response_is_rejected_with_diagnostics(self):
         def handler(request):
             return _stream_response(
                 {
@@ -297,9 +304,8 @@ class TestThinkingModels:
                 }
             )
 
-        result = await _client(handler).complete(messages=[{"role": "user", "content": "hi"}])
-        assert result.text == ""
-        assert result.reasoning == "thinking..."
+        with pytest.raises(LLMIncomplete, match="11 chars of reasoning"):
+            await _client(handler).complete(messages=[{"role": "user", "content": "hi"}])
 
     @pytest.mark.anyio
     async def test_request_has_no_server_specific_extensions(self):
@@ -744,18 +750,74 @@ class TestNativeTools:
 
 class TestFailureHandling:
     @pytest.mark.anyio
-    async def test_retries_on_503_then_succeeds(self):
+    @pytest.mark.parametrize("status_code", [408, 409, 425, 429, 503])
+    async def test_retries_transient_status_then_succeeds(self, status_code):
         calls = {"n": 0}
 
         def handler(request):
             calls["n"] += 1
-            return httpx.Response(503) if calls["n"] == 1 else _ok('{"ok":true}')
+            return (
+                httpx.Response(status_code)
+                if calls["n"] == 1
+                else _ok('{"ok":true}')
+            )
 
         result = await _client(handler, max_retries=1).complete(
             messages=[{"role": "user", "content": "hi"}]
         )
         assert calls["n"] == 2
         assert result.json() == {"ok": True}
+
+    @pytest.mark.anyio
+    async def test_cold_model_can_recover_after_all_default_retries(self):
+        calls = {"n": 0}
+
+        def handler(_request):
+            calls["n"] += 1
+            return httpx.Response(503) if calls["n"] < 5 else _ok('{"ready":true}')
+
+        client = _client(handler, max_retries=4)
+        result = await client.complete(messages=[{"role": "user", "content": "hi"}])
+
+        assert calls["n"] == 5
+        assert result.attempts == 5
+        assert result.json() == {"ready": True}
+
+    @pytest.mark.anyio
+    async def test_retry_after_header_controls_backoff(self, monkeypatch):
+        calls = {"n": 0}
+        delays = []
+
+        def handler(_request):
+            calls["n"] += 1
+            if calls["n"] == 1:
+                return httpx.Response(503, headers={"Retry-After": "3"})
+            return _ok()
+
+        async def fake_sleep(delay):
+            delays.append(delay)
+
+        monkeypatch.setattr(asyncio, "sleep", fake_sleep)
+        await _client(handler, max_retries=1).complete(
+            messages=[{"role": "user", "content": "hi"}]
+        )
+
+        assert delays == [3.0]
+
+    @pytest.mark.anyio
+    async def test_final_failed_attempt_does_not_sleep(self, monkeypatch):
+        delays = []
+
+        async def fake_sleep(delay):
+            delays.append(delay)
+
+        monkeypatch.setattr(asyncio, "sleep", fake_sleep)
+        with pytest.raises(LLMUnavailable):
+            await _client(lambda _: httpx.Response(503), max_retries=0).complete(
+                messages=[{"role": "user", "content": "hi"}]
+            )
+
+        assert delays == []
 
     @pytest.mark.anyio
     async def test_does_not_retry_4xx(self):
@@ -795,6 +857,41 @@ class TestFailureHandling:
         with pytest.raises(LLMUnavailable):
             await _client(handler, max_retries=0).complete(
                 messages=[{"role": "user", "content": "hi"}]
+            )
+
+
+class TestFinishReasons:
+    @pytest.mark.anyio
+    @pytest.mark.parametrize(
+        ("finish_reason", "error_type", "telemetry_reason"),
+        [
+            ("length", LLMIncomplete, "length"),
+            ("content_filter", LLMResponseBlocked, "content_filter"),
+            ("function_call", LLMProtocolError, "protocol_error"),
+        ],
+    )
+    async def test_unsafe_finish_reason_is_rejected_and_recorded(
+        self, finish_reason, error_type, telemetry_reason
+    ):
+        body = _completion_body("partial")
+        body["choices"][0]["finish_reason"] = finish_reason
+
+        with collect_calls() as calls:
+            with pytest.raises(error_type):
+                await _client(lambda _: _stream_response(body)).complete(
+                    messages=[{"role": "user", "content": "hi"}]
+                )
+
+        assert calls[0].finish_reason == telemetry_reason
+
+    @pytest.mark.anyio
+    async def test_tool_calls_finish_requires_at_least_one_call(self):
+        body = _completion_body(None)
+        body["choices"][0]["finish_reason"] = "tool_calls"
+
+        with pytest.raises(LLMProtocolError, match="no tool calls"):
+            await _client(lambda _: _stream_response(body)).complete(
+                messages=[{"role": "user", "content": "hi"}], tools=TOOLS,
             )
 
 

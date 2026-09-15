@@ -146,7 +146,7 @@ def generate_with_llm(prompt: str) -> str | None:
         api_key=settings.llm_api_key or "not-needed",
         base_url=settings.llm_base_url.rstrip("/") + "/",
         timeout=settings.llm_timeout_s,
-        max_retries=0,
+        max_retries=settings.nlq_llm_max_retries,
     )
     try:
         t0 = time.perf_counter()
@@ -163,7 +163,25 @@ def generate_with_llm(prompt: str) -> str | None:
                 {"role": "user", "content": prompt},
             ],
         )
-        content = response.choices[0].message.content
+        choice = response.choices[0]
+        finish_reason = choice.finish_reason or ""
+        from app.services.nlq.llm import (
+            LLMIncomplete,
+            LLMProtocolError,
+            LLMResponseBlocked,
+        )
+
+        if finish_reason == "length":
+            raise LLMIncomplete("model output was truncated at the configured token limit")
+        if finish_reason == "content_filter":
+            raise LLMResponseBlocked(
+                "model response was blocked by the provider content filter"
+            )
+        if finish_reason != "stop":
+            raise LLMProtocolError(f"unsupported finish_reason {finish_reason!r}")
+        content = choice.message.content
+        if not content:
+            raise LLMProtocolError("model returned no content")
         from app.core.logging import log_raw_trace
         log_raw_trace(
             "LLM completion received", event="llm_completion", provider="llm",

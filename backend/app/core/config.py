@@ -109,7 +109,7 @@ class Settings:
         self.llm_api_key = get("LLM_API_KEY")
         self.llm_model = get("LLM_MODEL", "qwen3.6-32b-instruct-q4_K_M") or "qwen3.6-32b-instruct-q4_K_M"
         self.llm_timeout_s = float(get("LLM_TIMEOUT", "300") or "300")
-        self.nlq_llm_max_retries = int(get("NLQ_LLM_MAX_RETRIES", "1") or "1")
+        self.nlq_llm_max_retries = int(get("NLQ_LLM_MAX_RETRIES", "4") or "4")
         # Every local request is serialized across the API and PostgreSQL MCP containers.
         # Qwen3.5/3.6 use recurrent state and llama-server can invalidate their reusable
         # prompt state when concurrent requests move between slots. Both containers mount
