@@ -1,4 +1,7 @@
-const API_URL = (process.env.NEXT_PUBLIC_API_URL || 'http://100.70.118.31:4321/api').replace(/\/$/, '');
+// The production browser talks to nginx on the same origin; nginx forwards /api/* to
+// FastAPI. An absolute host fallback gets frozen into the Next.js bundle and breaks as soon
+// as the UI is opened through another hostname, port, or HTTPS endpoint.
+const API_URL = (process.env.NEXT_PUBLIC_API_URL || '/api').replace(/\/$/, '');
 
 // ─── Shared response contract (mirrors genesis_core.schema) ───
 

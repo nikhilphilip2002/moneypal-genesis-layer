@@ -25,6 +25,11 @@ COPY . .
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
 
+# NEXT_PUBLIC_* values are compiled into browser JavaScript at build time. Compose passes
+# /api so every deployed browser uses the same nginx origin instead of a fixed host/IP.
+ARG NEXT_PUBLIC_API_URL=/api
+ENV NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
+
 RUN --mount=type=cache,target=/app/.next/cache \
   npm run build
 

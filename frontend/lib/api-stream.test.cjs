@@ -8,28 +8,45 @@ const compiled = ts.transpileModule(readFileSync(`${__dirname}/api.ts`, 'utf8'),
   compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
 }).outputText;
 
-function clientFor(body) {
+function clientFor(body, onFetch) {
   const context = {
-    exports: {}, process, TextDecoder,
-    fetch: async () => new Response(body),
+    exports: {}, process: { env: {} }, TextDecoder,
+    fetch: async (url) => {
+      onFetch?.(url);
+      return new Response(body);
+    },
   };
   vm.runInNewContext(compiled, context);
-  return context.exports.workbench;
+  return context.exports;
 }
 
 const frame = (event, data) => new TextEncoder().encode(
   `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`,
 );
 
+test('login uses the same-origin API path by default', async () => {
+  let requestedUrl = '';
+  const client = clientFor(
+    JSON.stringify({ access_token: 'token' }),
+    (url) => { requestedUrl = url; },
+  );
+
+  await client.auth.login('admin', 'password');
+
+  assert.equal(requestedUrl, '/api/auth/login/');
+});
+
 test('yields fragmented answer text before the stream closes, then the final answer', async () => {
   let controller;
   let cancelled = false;
+  let requestedUrl = '';
   const body = new ReadableStream({
     start(value) { controller = value; },
     cancel() { cancelled = true; },
   });
-  const events = clientFor(body).ask('question', null);
+  const events = clientFor(body, (url) => { requestedUrl = url; }).workbench.ask('question', null);
   const pending = events.next();
+  assert.equal(requestedUrl, '/api/workbench/ask');
   controller.enqueue(frame('trace_delta', {
     id: 'model-1', reasoning_delta: 'Checking available data…',
   }));
@@ -62,7 +79,7 @@ test('yields fragmented answer text before the stream closes, then the final ans
 
 test('rejects premature EOF and releases the response reader', async () => {
   const body = new ReadableStream({ start(controller) { controller.close(); } });
-  await assert.rejects(clientFor(body).ask('q', null).next(), /interrupted/);
+  await assert.rejects(clientFor(body).workbench.ask('q', null).next(), /interrupted/);
   assert.equal(body.locked, false);
 });
 
@@ -72,7 +89,7 @@ test('cancels the response when the consumer stops early', async () => {
     start(controller) { controller.enqueue(frame('answer_delta', { text: 'first' })); },
     cancel() { cancelled = true; },
   });
-  for await (const event of clientFor(body).ask('q', null)) {
+  for await (const event of clientFor(body).workbench.ask('q', null)) {
     assert.equal(event.type, 'answer_delta');
     break;
   }

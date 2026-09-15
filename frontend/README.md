@@ -43,7 +43,7 @@ npm run build
 
 ## Environment Variables
 
-- `NEXT_PUBLIC_API_URL` - Backend API URL (default: http://localhost:8000/api)
+- `NEXT_PUBLIC_API_URL` - Browser API URL (default: `/api`, proxied by nginx on the same origin)
 
 Authentication is driven by the Django API's `/api/auth/oidc/config/` endpoint.
 For local development, configure the backend with:
