@@ -165,7 +165,10 @@ async def _repair_synthesis(
     from app.services.workbench.agent_tools import native_tool_definitions
 
     try:
-        repaired = await client.complete(
+        from app.services.workbench.streaming import complete_answer
+
+        repaired = await complete_answer(
+            client, state, trace_id=trace_id,
             messages=messages,
             timeout_s=_synthesis_timeout(state),
             call_purpose="agent_synthesize",
@@ -184,11 +187,14 @@ async def _repair_synthesis(
             "duration_ms": int((time.perf_counter() - trace_started_at) * 1000),
         })
         raise
-    await _emit_trace(state, {
+    repair_trace: dict[str, Any] = {
         "id": trace_id, "kind": "model", "status": "complete",
         "label": "Model repairing grounded answer", "detail": "Repair prepared",
         "duration_ms": int((time.perf_counter() - trace_started_at) * 1000),
-    })
+    }
+    if reasoning := getattr(repaired, "reasoning", ""):
+        repair_trace["reasoning"] = reasoning
+    await _emit_trace(state, repair_trace)
     if getattr(repaired, "tool_calls", None):
         raise RuntimeError("tool call returned during synthesis repair phase")
     return repaired.text.strip() or None
@@ -375,7 +381,7 @@ async def answer_results(state: WorkbenchState) -> dict[str, Any]:
                         {"role": "user", "content": composer.facts_message(facts_block)}
                     )
                 result = await complete_answer(
-                    client, state,
+                    client, state, trace_id=synthesis_trace_id,
                     messages=repair_messages,
                     tools=native_tool_definitions(
                         state["source_policy"], catalog=state.get("_agent_catalog"),
@@ -388,11 +394,14 @@ async def answer_results(state: WorkbenchState) -> dict[str, Any]:
                 )
                 if getattr(result, "tool_calls", None):
                     raise RuntimeError("tool call returned during final synthesis phase")
-            await _emit_trace(state, {
+            synthesis_trace: dict[str, Any] = {
                 "id": synthesis_trace_id, "kind": "model", "status": "complete",
                 "label": "Model combining source evidence", "detail": "Response prepared",
                 "duration_ms": int((time.perf_counter() - synthesis_started_at) * 1000),
-            })
+            }
+            if reasoning := getattr(result, "reasoning", ""):
+                synthesis_trace["reasoning"] = reasoning
+            await _emit_trace(state, synthesis_trace)
             synthesis_trace_completed = True
             candidate = result.text.strip()
             if not candidate:

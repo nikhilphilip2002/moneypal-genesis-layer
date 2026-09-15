@@ -30,9 +30,23 @@ test('yields fragmented answer text before the stream closes, then the final ans
   });
   const events = clientFor(body).ask('question', null);
   const pending = events.next();
+  controller.enqueue(frame('trace_delta', {
+    id: 'model-1', reasoning_delta: 'Checking available data…',
+  }));
+  const reasoning = (await pending).value;
+  assert.equal(reasoning.type, 'trace_delta');
+  assert.equal(reasoning.reasoning_delta, 'Checking available data…');
+  const toolPending = events.next();
+  controller.enqueue(frame('trace_delta', {
+    id: 'model-1', tool_call: { index: 0, id: 'call-1', name: 'query_metrics' },
+  }));
+  const tool = (await toolPending).value;
+  assert.equal(tool.type, 'trace_delta');
+  assert.equal(tool.tool_call.name, 'query_metrics');
+  const answerPending = events.next();
   const bytes = frame('answer_delta', { text: '₹ 42' });
   for (const byte of bytes) controller.enqueue(Uint8Array.of(byte));
-  const delta = (await pending).value;
+  const delta = (await answerPending).value;
   assert.equal(delta.type, 'answer_delta');
   assert.equal(delta.text, '₹ 42');
   controller.enqueue(frame('answer_reset', {}));

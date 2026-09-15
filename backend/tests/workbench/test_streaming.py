@@ -13,8 +13,21 @@ async def test_answer_deltas_are_live_and_discarded_for_tools_or_failure(outcome
     queue = asyncio.Queue()
 
     class Client:
-        async def complete(self, *, on_text):
+        async def complete(self, *, on_text, on_reasoning, on_tool_call):
             assert 'answer_reset' in queue.get_nowait()
+            await on_reasoning('Checking facts')
+            frame = queue.get_nowait()
+            assert frame.startswith('event: trace_delta\n')
+            assert json.loads(frame.split('data: ')[1]) == {
+                'id': 'model-1', 'reasoning_delta': 'Checking facts',
+            }
+            await on_tool_call({'index': 0, 'id': 'a', 'name': 'tool'})
+            frame = queue.get_nowait()
+            assert frame.startswith('event: trace_delta\n')
+            assert json.loads(frame.split('data: ')[1]) == {
+                'id': 'model-1',
+                'tool_call': {'index': 0, 'id': 'a', 'name': 'tool'},
+            }
             await on_text('Hello')
             frame = queue.get_nowait()
             assert frame.startswith('event: answer_delta\n')
@@ -30,9 +43,9 @@ async def test_answer_deltas_are_live_and_discarded_for_tools_or_failure(outcome
 
     if outcome in {'error', 'cancel'}:
         with pytest.raises(LLMTimeout if outcome == 'error' else asyncio.CancelledError):
-            await complete_answer(Client(), {'emit': queue})
+            await complete_answer(Client(), {'emit': queue}, trace_id='model-1')
     else:
-        result = await complete_answer(Client(), {'emit': queue})
+        result = await complete_answer(Client(), {'emit': queue}, trace_id='model-1')
         assert result.text == 'Hello'
     if outcome != 'answer':
         assert 'answer_reset' in queue.get_nowait()

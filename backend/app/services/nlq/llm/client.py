@@ -179,8 +179,10 @@ def _validate_finish_reason(
 async def _read_completion_stream(
     stream: AsyncStream[ChatCompletionChunk],
     on_text: Callable[[str], Awaitable[None]] | None = None,
+    on_reasoning: Callable[[str], Awaitable[None]] | None = None,
+    on_tool_call: Callable[[dict[str, Any]], Awaitable[None]] | None = None,
 ) -> dict[str, Any]:
-    """Assemble SDK stream chunks before validating tools; expose assistant text."""
+    """Assemble SDK chunks while forwarding public text and model activity."""
     message: dict[str, Any] = {"role": "assistant", "content": None}
     body: dict[str, Any] = {"choices": [{"message": message, "finish_reason": ""}]}
     calls: dict[int, dict[str, Any]] = {}
@@ -206,6 +208,8 @@ async def _read_completion_stream(
                         message[key] = (message.get(key) or "") + value
                         if key == "content" and value and on_text:
                             await on_text(value)
+                        elif key in _REASONING_FIELDS and value and on_reasoning:
+                            await on_reasoning(value)
                 for fragment in delta.get("tool_calls") or []:
                     index = fragment["index"]
                     if not isinstance(index, int) or index < 0:
@@ -219,6 +223,16 @@ async def _read_completion_stream(
                         call["type"] = fragment["type"]
                     for key in ("name", "arguments"):
                         call["function"][key] += (fragment.get("function") or {}).get(key) or ""
+                    if on_tool_call:
+                        # Arguments are deliberately not forwarded while incomplete. They
+                        # can contain outbound text which must pass the workbench privacy
+                        # policy before it is rendered. The completed, sanitized arguments
+                        # are emitted by the tool execution trace.
+                        await on_tool_call({
+                            "index": index,
+                            "id": call["id"],
+                            "name": call["function"]["name"],
+                        })
                 if choice.get("finish_reason"):
                     body["choices"][0]["finish_reason"] = choice["finish_reason"]
                     finished = True
@@ -327,6 +341,8 @@ class LLMClient(Protocol):
         prefix_hash: str = "",
         max_output_tokens: int | None = None,
         on_text: Callable[[str], Awaitable[None]] | None = None,
+        on_reasoning: Callable[[str], Awaitable[None]] | None = None,
+        on_tool_call: Callable[[dict[str, Any]], Awaitable[None]] | None = None,
     ) -> LLMResult: ...
 
     async def health(self) -> dict[str, Any]: ...
@@ -525,6 +541,8 @@ class OpenAICompatibleClient:
         prefix_hash: str = "",
         max_output_tokens: int | None = None,
         on_text: Callable[[str], Awaitable[None]] | None = None,
+        on_reasoning: Callable[[str], Awaitable[None]] | None = None,
+        on_tool_call: Callable[[dict[str, Any]], Awaitable[None]] | None = None,
     ) -> LLMResult:
         if tools is not None and json_schema is not None:
             raise LLMError("tools and json_schema are mutually exclusive request modes")
@@ -562,13 +580,25 @@ class OpenAICompatibleClient:
         effective_timeout_s = timeout_s if timeout_s is not None else self.timeout_s
         retry_deadline = request_started + self.retry_budget_s
         successful_response: tuple[dict[str, Any], int] | None = None
-        text_emitted = False
+        visible_output_emitted = False
 
         async def emit_text(text: str) -> None:
-            nonlocal text_emitted
+            nonlocal visible_output_emitted
             if on_text is not None:
-                text_emitted = True
+                visible_output_emitted = True
                 await on_text(text)
+
+        async def emit_reasoning(text: str) -> None:
+            nonlocal visible_output_emitted
+            if on_reasoning is not None:
+                visible_output_emitted = True
+                await on_reasoning(text)
+
+        async def emit_tool_call(tool_call: dict[str, Any]) -> None:
+            nonlocal visible_output_emitted
+            if on_tool_call is not None:
+                visible_output_emitted = True
+                await on_tool_call(tool_call)
 
         async with _request_gate():
             for attempt in range(self.max_retries + 1):
@@ -579,7 +609,12 @@ class OpenAICompatibleClient:
                         timeout=effective_timeout_s,
                     )
                     try:
-                        body = await _read_completion_stream(stream, emit_text)
+                        body = await _read_completion_stream(
+                            stream,
+                            on_text=emit_text,
+                            on_reasoning=emit_reasoning,
+                            on_tool_call=emit_tool_call,
+                        )
                     except (APIError, ValueError, TypeError, KeyError, AttributeError) as exc:
                         raise LLMProtocolError("malformed completion stream") from exc
                     finally:
@@ -593,7 +628,7 @@ class OpenAICompatibleClient:
                     )
                     logger.warning("NLQ LLM timeout (attempt %d): %s", attempt + 1, exc)
                     if (
-                        text_emitted
+                        visible_output_emitted
                         or attempt >= min(self.max_retries, self.transport_max_retries)
                         or not await self._wait_before_retry(attempt, retry_deadline)
                     ):
@@ -624,7 +659,7 @@ class OpenAICompatibleClient:
                     last_exc = LLMUnavailable(f"{self.provider} unreachable: {exc}")
                     logger.warning("NLQ LLM transport error (attempt %d): %s", attempt + 1, exc)
                     if (
-                        text_emitted
+                        visible_output_emitted
                         or attempt >= min(self.max_retries, self.transport_max_retries)
                         or not await self._wait_before_retry(attempt, retry_deadline)
                     ):
@@ -661,10 +696,13 @@ class OpenAICompatibleClient:
                 content = message.get("content")
                 if content is not None and not isinstance(content, str):
                     raise LLMProtocolError("message.content must be a string or null")
+                reasoning = str(
+                    message.get("reasoning_content") or message.get("reasoning") or ""
+                )
                 _validate_finish_reason(
                     finish_reason,
                     tool_calls=tool_calls,
-                    reasoning=str(message.get("reasoning_content") or ""),
+                    reasoning=reasoning,
                 )
             except (LLMProtocolError, LLMIncomplete, LLMResponseBlocked) as exc:
                 duration_ms = int(
@@ -729,15 +767,13 @@ class OpenAICompatibleClient:
                 "role": "assistant",
                 "content": content,
             }
-            if message.get("reasoning_content") is not None:
-                assistant_message["reasoning_content"] = str(
-                    message.get("reasoning_content") or ""
-                )
+            if reasoning:
+                assistant_message["reasoning_content"] = reasoning
             if message.get("tool_calls") is not None:
                 assistant_message["tool_calls"] = list(message["tool_calls"])
             result = LLMResult(
                 text=content or "",
-                reasoning=message.get("reasoning_content") or "",
+                reasoning=reasoning,
                 tool_calls=tool_calls,
                 assistant_message=assistant_message,
                 model=body.get("model", self.model),

@@ -1069,6 +1069,20 @@ export type WorkbenchTraceStep = {
   arguments?: Record<string, unknown>;
   elapsed_ms: number;
   duration_ms?: number;
+  reasoning?: string;
+  tool_calls?: WorkbenchTraceToolCall[];
+};
+
+export type WorkbenchTraceToolCall = {
+  index: number;
+  id?: string;
+  name?: string;
+};
+
+export type WorkbenchTraceDelta = {
+  id: string;
+  reasoning_delta?: string;
+  tool_call?: WorkbenchTraceToolCall;
 };
 
 export type WorkbenchError = {
@@ -1089,6 +1103,7 @@ export type WorkbenchStreamEvent =
   | { type: 'conversation'; conversation_id: string }
   | { type: 'stage'; stage: string }
   | { type: 'trace'; step: WorkbenchTraceStep }
+  | ({ type: 'trace_delta' } & WorkbenchTraceDelta)
   | ({ type: 'route' } & WorkbenchRoute)
   | { type: 'source_start'; source: string }
   | { type: 'source_card'; card: WorkbenchCard }
@@ -1220,6 +1235,14 @@ export const workbench = {
             case 'conversation': yield { type: 'conversation', conversation_id: payload.conversation_id }; break;
             case 'stage': yield { type: 'stage', stage: payload.stage }; break;
             case 'trace': yield { type: 'trace', step: payload as WorkbenchTraceStep }; break;
+            case 'trace_delta':
+              yield {
+                type: 'trace_delta',
+                id: payload.id,
+                reasoning_delta: payload.reasoning_delta,
+                tool_call: payload.tool_call,
+              };
+              break;
             case 'route':
               yield {
                 type: 'route', sources: payload.sources || [], intent: payload.intent || '',

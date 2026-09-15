@@ -197,7 +197,7 @@ def _trace_arguments(call) -> dict[str, Any]:
 
 
 async def _emit_trace(state: dict[str, Any], step: dict[str, Any]) -> None:
-    """Stream and retain a safe activity update, excluding hidden model reasoning."""
+    """Stream and retain safe, user-visible model and tool activity."""
     from app.services.workbench.graph import sse
 
     payload = {**step, "elapsed_ms": _elapsed_ms(state)}
@@ -207,7 +207,7 @@ async def _emit_trace(state: dict[str, Any], step: dict[str, Any]) -> None:
 
 async def _select(
     state: dict[str, Any], *, repair_messages=None, tool_choice: str = "required",
-    supplement: str = "",
+    supplement: str = "", trace_id: str | None = None,
 ):
     """Make exactly one provider request with every authorized tool.
 
@@ -254,7 +254,7 @@ async def _select(
     async def complete(**kwargs):
         if selecting:
             return await client.complete(**kwargs)
-        return await complete_answer(client, state, **kwargs)
+        return await complete_answer(client, state, trace_id=trace_id, **kwargs)
 
     return await complete(
         messages=messages,
@@ -781,7 +781,7 @@ async def run(state: dict[str, Any]) -> None:
         try:
             result = await _select(
                 state, repair_messages=exchange or None, tool_choice=tool_choice,
-                supplement=last_error,
+                supplement=last_error, trace_id=model_trace_id,
             )
         except (TimeoutError, LLMTimeout):
             await _emit_trace(state, {
@@ -816,11 +816,20 @@ async def run(state: dict[str, Any]) -> None:
             f"Selected {len(result.tool_calls)} tool call(s)"
             if result.tool_calls else "Prepared the response"
         )
-        await _emit_trace(state, {
+        model_trace: dict[str, Any] = {
             "id": model_trace_id, "kind": "model", "status": "complete",
             "label": model_label, "detail": model_detail,
             "duration_ms": int((time.perf_counter() - model_started_at) * 1000),
-        })
+        }
+        if reasoning := getattr(result, "reasoning", ""):
+            model_trace["reasoning"] = reasoning
+        if result.tool_calls:
+            model_trace["tool_calls"] = [{
+                "index": index,
+                "id": call.id,
+                "name": call.name,
+            } for index, call in enumerate(result.tool_calls)]
+        await _emit_trace(state, model_trace)
         if not result.tool_calls:
             if tool_choice == "required":
                 exc = LLMProtocolError(

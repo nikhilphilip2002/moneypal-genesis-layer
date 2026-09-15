@@ -116,6 +116,32 @@ export default function ExecutionTrace({
                       {step.detail}
                     </p>
                   )}
+                  {step.reasoning && (
+                    <div className="mt-1.5 rounded-lg border border-border/50 bg-muted/25 p-2">
+                      <p className="mb-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                        Model reasoning
+                      </p>
+                      <p className="max-h-64 overflow-auto whitespace-pre-wrap break-words text-[11px] leading-4 text-foreground/90">
+                        {step.reasoning}
+                      </p>
+                    </div>
+                  )}
+                  {step.tool_calls && step.tool_calls.length > 0 && (
+                    <div className="mt-1.5 space-y-1">
+                      <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                        Model tool calls
+                      </p>
+                      {step.tool_calls.map((call) => (
+                        <div
+                          key={`${call.index}-${call.id ?? ''}`}
+                          className="flex items-center gap-1.5 rounded-md bg-muted/30 px-2 py-1 font-mono text-[10px] text-foreground"
+                        >
+                          <Wrench className="size-3 shrink-0 text-muted-foreground" />
+                          <span>{call.name || 'Receiving tool call…'}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                   {step.arguments && Object.keys(step.arguments).length > 0 && (
                     <details className="mt-1.5">
                       <summary className="cursor-pointer select-none text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
@@ -131,7 +157,7 @@ export default function ExecutionTrace({
             );
           })}
           <p className="border-t border-border/50 pt-2 text-[10px] leading-4 text-muted-foreground">
-            Shows model actions and sanitized tool activity. Private chain-of-thought is not exposed.
+            Shows reasoning returned by the model and sanitized tool activity. Reasoning the provider keeps private is not available.
           </p>
         </div>
       )}

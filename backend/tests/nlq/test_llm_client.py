@@ -153,6 +153,7 @@ def _sse_chunk(delta=None, finish_reason=None, **extra):
 @pytest.mark.anyio
 async def test_stream_delivers_text_before_completion_and_preserves_usage():
     received = []
+    reasoning = []
 
     class Stream(httpx.AsyncByteStream):
         async def __aiter__(self):
@@ -171,12 +172,18 @@ async def test_stream_delivers_text_before_completion_and_preserves_usage():
     async def on_text(text):
         received.append(text)
 
+    async def on_reasoning(text):
+        reasoning.append(text)
+
     client = _client(lambda _: httpx.Response(
         200, headers={'content-type': 'text/event-stream'}, stream=Stream(),
     ))
     with collect_calls() as records:
-        result = await client.complete(messages=[], on_text=on_text)
+        result = await client.complete(
+            messages=[], on_text=on_text, on_reasoning=on_reasoning,
+        )
     assert received == ['₹ ', '42']
+    assert reasoning == ['private']
     assert result.text == '₹ 42'
     assert result.reasoning == 'private'
     assert result.model == 'stream-model'
@@ -186,6 +193,11 @@ async def test_stream_delivers_text_before_completion_and_preserves_usage():
 
 @pytest.mark.anyio
 async def test_stream_assembles_interleaved_tool_arguments():
+    streamed_calls = []
+
+    async def on_tool_call(call):
+        streamed_calls.append(call)
+
     frames = [
         _sse_chunk({'tool_calls': [
             {'index': 0, 'id': 'a', 'type': 'function', 'function': {'name': 'query_', 'arguments': '{"metric":'}},
@@ -200,10 +212,18 @@ async def test_stream_assembles_interleaved_tool_arguments():
     client = _client(lambda _: httpx.Response(
         200, headers={'content-type': 'text/event-stream'}, content=''.join(frames),
     ))
-    result = await client.complete(messages=[], tools=TOOLS, tool_choice='auto')
+    result = await client.complete(
+        messages=[], tools=TOOLS, tool_choice='auto', on_tool_call=on_tool_call,
+    )
     assert [(call.id, call.name, call.arguments) for call in result.tool_calls] == [
         ('a', 'query_metrics', {'metric': 'par_30'}),
         ('b', 'lookup_records', {'customer_name': 'A'}),
+    ]
+    assert streamed_calls == [
+        {'index': 0, 'id': 'a', 'name': 'query_'},
+        {'index': 1, 'id': 'b', 'name': 'lookup_records'},
+        {'index': 1, 'id': 'b', 'name': 'lookup_records'},
+        {'index': 0, 'id': 'a', 'name': 'query_metrics'},
     ]
 
 
@@ -246,6 +266,29 @@ async def test_stream_does_not_retry_after_visible_text_and_closes_connection():
         await _client(handler).complete(messages=[], on_text=on_text)
     assert len(requests) == 1
     assert closed == [True]
+
+
+@pytest.mark.anyio
+async def test_stream_does_not_retry_after_visible_reasoning():
+    requests = []
+
+    class Stream(httpx.AsyncByteStream):
+        async def __aiter__(self):
+            yield _sse_chunk({'reasoning_content': 'working'}).encode()
+            raise httpx.ReadTimeout('connection stalled')
+
+    def handler(request):
+        requests.append(request)
+        return httpx.Response(
+            200, headers={'content-type': 'text/event-stream'}, stream=Stream(),
+        )
+
+    async def on_reasoning(_text):
+        pass
+
+    with pytest.raises(LLMTimeout):
+        await _client(handler).complete(messages=[], on_reasoning=on_reasoning)
+    assert len(requests) == 1
 
 
 class TestJsonSalvage:

@@ -168,6 +168,39 @@ export default function WorkbenchPage() {
               executionTrace: [...(turn.executionTrace ?? []), event.step],
             }));
             break;
+          case 'trace_delta':
+            patchWith((turn) => {
+              const executionTrace = [...(turn.executionTrace ?? [])];
+              let traceIndex = -1;
+              for (let index = executionTrace.length - 1; index >= 0; index -= 1) {
+                if (executionTrace[index].id === event.id) {
+                  traceIndex = index;
+                  break;
+                }
+              }
+              if (traceIndex < 0) return turn;
+
+              const step = executionTrace[traceIndex];
+              const toolCalls = [...(step.tool_calls ?? [])];
+              if (event.tool_call) {
+                const callIndex = toolCalls.findIndex(
+                  (call) => call.index === event.tool_call?.index,
+                );
+                if (callIndex >= 0) {
+                  toolCalls[callIndex] = { ...toolCalls[callIndex], ...event.tool_call };
+                } else {
+                  toolCalls.push(event.tool_call);
+                }
+                toolCalls.sort((left, right) => left.index - right.index);
+              }
+              executionTrace[traceIndex] = {
+                ...step,
+                reasoning: `${step.reasoning ?? ''}${event.reasoning_delta ?? ''}` || undefined,
+                tool_calls: toolCalls.length ? toolCalls : undefined,
+              };
+              return { ...turn, executionTrace };
+            });
+            break;
           case 'route':
             {
               const { type: _type, ...route } = event;
