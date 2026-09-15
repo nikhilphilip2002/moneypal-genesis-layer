@@ -49,6 +49,9 @@ RUN chown node:node .next
 COPY --from=builder --chown=node:node /app/.next/standalone ./
 COPY --from=builder --chown=node:node /app/.next/static ./.next/static
 
+# Next.js runtime does not require the build cache. The builder's cache is
+# mounted only for the build and may not exist as an image path afterward.
+
 # Switch to non-root user for security best practices
 USER node
 
