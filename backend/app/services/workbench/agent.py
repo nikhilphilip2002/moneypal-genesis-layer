@@ -247,8 +247,6 @@ async def _select(
         state["agent_synthesis_messages"] = messages
     client = models.client()
     extra: dict[str, Any] = {}
-    if not selecting:
-        extra["max_output_tokens"] = settings.workbench_agent_synthesis_max_tokens
     from app.services.workbench.streaming import complete_answer
 
     async def complete(**kwargs):

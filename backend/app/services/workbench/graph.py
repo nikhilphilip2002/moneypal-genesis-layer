@@ -173,7 +173,6 @@ async def _repair_synthesis(
             timeout_s=_synthesis_timeout(state),
             call_purpose="agent_synthesize",
             call_kind="repair",
-            max_output_tokens=settings.workbench_agent_synthesis_max_tokens,
             tools=native_tool_definitions(
                 state["source_policy"], catalog=state.get("_agent_catalog"),
             ),
@@ -390,7 +389,6 @@ async def answer_results(state: WorkbenchState) -> dict[str, Any]:
                     parallel_tool_calls=False,
                     timeout_s=_synthesis_timeout(state),
                     call_purpose="agent_synthesize",
-                    max_output_tokens=settings.workbench_agent_synthesis_max_tokens,
                 )
                 if getattr(result, "tool_calls", None):
                     raise RuntimeError("tool call returned during final synthesis phase")

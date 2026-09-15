@@ -128,18 +128,18 @@ scopes:
 # nothing else in the product notices.
 data_health:
   - table: semantic_loan_account
-    date_column: sanction_date
+    date_column: approved_on
     watch_days: 7
     alert_days: 30
     note: >
       Sanctions are lumpy; a quiet week is normal and this is the loosest of the four.
   - table: semantic_portfolio_snapshot
-    date_column: snapshot_date
+    date_column: status_date
     watch_days: 2
     alert_days: 5
     note: A daily snapshot two days behind is a pipeline failure, not a quiet week.
   - table: semantic_disbursement_event
-    date_column: disbursement_date
+    date_column: amount_given_on
     watch_days: 7
     alert_days: 21
   - table: semantic_repayment_event

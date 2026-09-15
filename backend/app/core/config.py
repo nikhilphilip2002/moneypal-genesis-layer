@@ -127,9 +127,6 @@ class Settings:
         )
         # Bound every individual LLM request (including provider retries) uniformly so a
         # loading or wedged model server cannot consume the whole turn deadline.
-        self.workbench_agent_synthesis_max_tokens = int(
-            get("WORKBENCH_AGENT_SYNTHESIS_MAX_TOKENS", "512") or "512"
-        )
         # Read-only database role (see docs/GENESIS_NLQ_BUILD_PLAN.md §7.1). Separate
         # credentials from the app role — this is the real security boundary, so it must
         # never silently fall back to POSTGRES_USER.

@@ -202,6 +202,8 @@ class TestTheCatalogHoldsUp:
         for check in catalog.signals.data_health:
             assert check.table in catalog.tables
             assert check.watch_days <= check.alert_days
+            table = catalog.tables[check.table]
+            assert any(col.column == check.date_column for col in catalog.columns_for(table.table))
 
 
 class TestSignalIdentity:
