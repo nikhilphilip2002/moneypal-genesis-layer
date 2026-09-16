@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ArrowUp,
   Check,
@@ -64,7 +64,10 @@ export default function Composer({
   const [value, setValue] = useState('');
   const [sources, setSources] = useState<WorkbenchSource[]>([]);
   const [toolList, setToolList] = useState<WorkbenchTool[]>([]);
-  const [completions, setCompletions] = useState<WorkbenchCompletion[]>([]);
+  const [completionState, setCompletionState] = useState<{
+    key: string;
+    results: WorkbenchCompletion[];
+  }>({ key: '', results: [] });
   const [completionIndex, setCompletionIndex] = useState(0);
   const [focused, setFocused] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -72,6 +75,14 @@ export default function Composer({
   const listRef = useRef<HTMLUListElement>(null);
   const shellRef = useRef<HTMLDivElement>(null);
   const [listMaxHeight, setListMaxHeight] = useState(288);
+  const activeCompletionContext = useMemo(() => completionContext(value), [value]);
+  const completionKey = activeCompletionContext
+    ? `${activeCompletionContext.kind}\u0000${activeCompletionContext.term}`
+    : '';
+  const completions = useMemo(
+    () => (!busy && completionState.key === completionKey ? completionState.results : []),
+    [busy, completionKey, completionState],
+  );
   const completionsOpen = focused && completions.length > 0;
 
   const loadData = () => {
@@ -86,25 +97,23 @@ export default function Composer({
   }, []);
 
   useEffect(() => {
-    const context = completionContext(value);
     const requestId = ++completionRequestRef.current;
-    if (!context || busy) {
-      setCompletions([]);
-      return;
-    }
+    if (!activeCompletionContext || busy) return;
     const timer = window.setTimeout(() => {
-      workbench.completions(context.term, context.kind)
+      workbench.completions(activeCompletionContext.term, activeCompletionContext.kind)
         .then((response) => {
           if (completionRequestRef.current !== requestId) return;
-          setCompletions(response.results);
+          setCompletionState({ key: completionKey, results: response.results });
           setCompletionIndex(0);
         })
         .catch(() => {
-          if (completionRequestRef.current === requestId) setCompletions([]);
+          if (completionRequestRef.current === requestId) {
+            setCompletionState({ key: completionKey, results: [] });
+          }
         });
     }, 300);
     return () => window.clearTimeout(timer);
-  }, [value, busy]);
+  }, [activeCompletionContext, busy, completionKey]);
 
   // The list opens upward, so its ceiling is the gap between the header and the composer —
   // not the viewport. Clamping against the viewport is what made the top of the list sit
@@ -144,7 +153,7 @@ export default function Composer({
     const accepted = await onAsk(question);
     if (!accepted) return;
     setValue('');
-    setCompletions([]);
+    setCompletionState({ key: '', results: [] });
     if (textareaRef.current) textareaRef.current.style.height = '72px';
   };
 
@@ -153,7 +162,7 @@ export default function Composer({
     if (!context) return;
     const next = value.slice(0, context.start) + item.value + value.slice(context.end);
     setValue(next);
-    setCompletions([]);
+    setCompletionState({ key: '', results: [] });
     requestAnimationFrame(() => {
       textareaRef.current?.focus();
       textareaRef.current?.setSelectionRange(next.length, next.length);
@@ -236,7 +245,7 @@ export default function Composer({
           }
           if (event.key === 'Escape' && completions.length > 0) {
             event.preventDefault();
-            setCompletions([]);
+            setCompletionState({ key: '', results: [] });
             return;
           }
           if (event.key === 'Enter' && !event.shiftKey) {

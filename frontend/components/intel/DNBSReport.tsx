@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import {
   regulatory,
   type DNBS02ReportData,
@@ -132,7 +132,7 @@ export default function DNBSReport() {
     return () => { cancelled = true; };
   }, [selectedReport, reportCatalog]);
 
-  const fetchReport = async () => {
+  const fetchReport = useCallback(async () => {
     const custom = reportMode === 'custom';
     if (custom && (!startDate || !endDate || endDate < startDate)) return;
     if (!custom && !period) return;
@@ -165,15 +165,15 @@ export default function DNBSReport() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [endDate, frequency, genericPeriods, period, reportMode, selectedReport, startDate]);
 
   useEffect(() => {
     // Date inputs are edited one at a time, so auto-fetching a custom range can send a
     // transient invalid pair (for example Jul 1 through Jun 30). Custom reports run
     // only when the user presses Generate.
     if (reportMode === 'custom') return;
-    fetchReport();
-  }, [selectedReport, reportMode, frequency, period, genericPeriods]);
+    void fetchReport();
+  }, [fetchReport, reportMode]);
 
   const periodOptions = selectedReport !== 'dnbs02'
     ? ((frequency === 'monthly' ? genericPeriods?.monthly : genericPeriods?.quarterly) ?? [])

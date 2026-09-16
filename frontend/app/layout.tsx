@@ -5,6 +5,8 @@ import { ThemeProvider } from '@/components/ThemeProvider'
 import PWARegister from '@/components/PWARegister'
 import type { Viewport } from 'next'
 
+/* eslint-disable @next/next/no-page-custom-font -- The App Router root layout applies this stylesheet to every route. */
+
 export const metadata: Metadata = {
   title: 'Moneypal — Genesis Intelligence Console',
   description: 'Macro-economic, competitive and regulatory intelligence for GICC leadership — by Moneypal.',

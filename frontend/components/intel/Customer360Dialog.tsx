@@ -50,34 +50,35 @@ export default function Customer360Dialog({
   const [selectedLoanAccount, setSelectedLoanAccount] = useState<string>('all');
 
   useEffect(() => {
-    if (!open || !customerId) {
-      setData(null);
-      setError('');
-      return;
-    }
-
     let isCancelled = false;
-    setLoading(true);
-    setError('');
+    const syncCustomer = async () => {
+      // Yield once so the effect schedules a request-state transition instead of causing
+      // a synchronous cascading render during dialog mount/unmount.
+      await Promise.resolve();
+      if (isCancelled) return;
+      if (!open || !customerId) {
+        setData(null);
+        setError('');
+        return;
+      }
 
-    admin
-      .customerDetails(customerId)
-      .then((res) => {
+      setLoading(true);
+      setError('');
+      try {
+        const response = await admin.customerDetails(customerId);
         if (!isCancelled) {
-          setData(res);
+          setData(response);
           setSelectedLoanAccount('all');
         }
-      })
-      .catch((err) => {
+      } catch (reason) {
         if (!isCancelled) {
-          setError(err instanceof Error ? err.message : 'Could not fetch customer 360 details');
+          setError(reason instanceof Error ? reason.message : 'Could not fetch customer 360 details');
         }
-      })
-      .finally(() => {
-        if (!isCancelled) {
-          setLoading(false);
-        }
-      });
+      } finally {
+        if (!isCancelled) setLoading(false);
+      }
+    };
+    void syncCustomer();
 
     return () => {
       isCancelled = true;

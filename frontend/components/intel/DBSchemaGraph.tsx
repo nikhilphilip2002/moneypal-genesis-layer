@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import dynamic from 'next/dynamic';
 import { useTheme } from 'next-themes';
+import type { ForceGraphMethods, LinkObject, NodeObject } from 'react-force-graph-2d';
 import {
   AlertTriangle,
   Award,
@@ -261,8 +262,8 @@ function shortLabel(label: string, max = 24): string {
  * re-export it, so this keeps the graph free of a new dependency. The naive pairwise
  * sweep is fine at one page of children (≤ 21 nodes).
  */
-function collisionForce(radiusOf: (node: any) => number) {
-  let nodes: any[] = [];
+function collisionForce(radiusOf: (node: NodeObject) => number) {
+  let nodes: NodeObject[] = [];
   const force = (alpha: number) => {
     for (let i = 0; i < nodes.length; i += 1) {
       for (let j = i + 1; j < nodes.length; j += 1) {
@@ -283,7 +284,7 @@ function collisionForce(radiusOf: (node: any) => number) {
       }
     }
   };
-  force.initialize = (next: any[]) => { nodes = next; };
+  force.initialize = (next: NodeObject[]) => { nodes = next; };
   return force;
 }
 
@@ -316,7 +317,7 @@ export default function DBSchemaGraph({ contained = false }: { contained?: boole
   // forcedTheme wins over the stored theme, so a stale `dark` in localStorage must not
   // paint a near-black canvas inside the light app shell.
   const { resolvedTheme, forcedTheme } = useTheme();
-  const graphRef = useRef<any>(null);
+  const graphRef = useRef<ForceGraphMethods<NodeObject, LinkObject<NodeObject>> | undefined>(undefined);
   const canvasRef = useRef<HTMLDivElement>(null);
   const fittedForRef = useRef<string>('');
 
@@ -503,21 +504,24 @@ export default function DBSchemaGraph({ contained = false }: { contained?: boole
     graphRef.current?.zoomToFit(400, 70);
   }, [currentNodeId, displayMode]);
 
-  const paintNode = useCallback((node: any, ctx: CanvasRenderingContext2D, scale: number) => {
+  const paintNode = useCallback((node: NodeObject, ctx: CanvasRenderingContext2D, scale: number) => {
+    const x = node.x ?? 0;
+    const y = node.y ?? 0;
+    const nodeId = node.id == null ? '' : String(node.id);
     const size = node.size || 14;
-    const isSelected = selectedNode?.id === node.id;
-    const isHovered = hoverNode?.id === node.id;
-    const isDimmed = Boolean(hoverNode && hoverNode.id !== node.id && !linksByNode.get(hoverNode.id)?.has(node.id));
+    const isSelected = selectedNode?.id === nodeId;
+    const isHovered = hoverNode?.id === nodeId;
+    const isDimmed = Boolean(hoverNode && hoverNode.id !== nodeId && !linksByNode.get(hoverNode.id)?.has(nodeId));
 
     if (isSelected || isHovered) {
       ctx.beginPath();
-      ctx.arc(node.x, node.y, size + 3.5 / scale, 0, 2 * Math.PI);
+      ctx.arc(x, y, size + 3.5 / scale, 0, 2 * Math.PI);
       ctx.fillStyle = isDark ? 'rgba(140, 145, 155, 0.18)' : 'rgba(80, 85, 95, 0.12)';
       ctx.fill();
     }
 
     ctx.beginPath();
-    ctx.arc(node.x, node.y, size + (isHovered ? 1 : 0), 0, 2 * Math.PI);
+    ctx.arc(x, y, size + (isHovered ? 1 : 0), 0, 2 * Math.PI);
     ctx.fillStyle = isDimmed ? (isDark ? '#1e2026' : '#d1d5db') : node.color;
     ctx.fill();
     ctx.strokeStyle = isSelected
@@ -541,11 +545,11 @@ export default function DBSchemaGraph({ contained = false }: { contained?: boole
     const textWidth = getCachedTextWidth(ctx, label, font);
     const showWeight = isSpecial || scale > 1;
     const boxHeight = fontSize * (showWeight ? 2.4 : 1.2) + 6;
-    const textY = node.y + size + 5;
+    const textY = y + size + 5;
 
     ctx.fillStyle = isDark ? 'rgba(15,23,42,0.88)' : 'rgba(255,255,255,0.92)';
     ctx.beginPath();
-    ctx.roundRect(node.x - textWidth / 2 - 6, textY - 3, textWidth + 12, boxHeight, 4);
+    ctx.roundRect(x - textWidth / 2 - 6, textY - 3, textWidth + 12, boxHeight, 4);
     ctx.fill();
     ctx.strokeStyle = isDark ? 'rgba(255,255,255,0.1)' : 'rgba(15,23,42,0.1)';
     ctx.lineWidth = 1 / scale;
@@ -555,17 +559,17 @@ export default function DBSchemaGraph({ contained = false }: { contained?: boole
     ctx.textAlign = 'center';
     ctx.textBaseline = 'top';
     ctx.fillStyle = isDark ? '#f8fafc' : '#0f172a';
-    ctx.fillText(label, node.x, textY);
+    ctx.fillText(label, x, textY);
 
     if (!showWeight) return;
     ctx.font = `500 ${fontSize * 0.85}px Inter, system-ui, sans-serif`;
     ctx.fillStyle = isDark ? '#94a3b8' : '#475569';
-    ctx.fillText(node.formattedWeight || weightText(node as GraphNode, weightBy), node.x, textY + fontSize * 1.3);
+    ctx.fillText(node.formattedWeight || weightText(node as GraphNode, weightBy), x, textY + fontSize * 1.3);
   }, [selectedNode, hoverNode, linksByNode, isDark, weightBy]);
 
-  const paintLink = useCallback((link: any, ctx: CanvasRenderingContext2D, scale: number) => {
-    const start = link.source;
-    const end = link.target;
+  const paintLink = useCallback((link: LinkObject, ctx: CanvasRenderingContext2D, scale: number) => {
+    const start = typeof link.source === 'object' ? link.source : undefined;
+    const end = typeof link.target === 'object' ? link.target : undefined;
     // A node parked at exactly x = 0 is falsy; guard on null, not truthiness, or its
     // edges silently vanish.
     if (start?.x == null || start?.y == null || end?.x == null || end?.y == null) return;
@@ -607,14 +611,16 @@ export default function DBSchemaGraph({ contained = false }: { contained?: boole
 
   // The hit area has to cover the label chip too — the label is what people aim at —
   // but stay tight enough that neighbouring nodes do not steal each other's clicks.
-  const paintPointerArea = useCallback((node: any, color: string, ctx: CanvasRenderingContext2D) => {
+  const paintPointerArea = useCallback((node: NodeObject, color: string, ctx: CanvasRenderingContext2D) => {
+    const x = node.x ?? 0;
+    const y = node.y ?? 0;
     const size = (node.size || 14) + 4;
     ctx.fillStyle = color;
     ctx.beginPath();
-    ctx.arc(node.x, node.y, size, 0, 2 * Math.PI);
+    ctx.arc(x, y, size, 0, 2 * Math.PI);
     ctx.fill();
     const labelWidth = Math.max(70, Math.min(190, shortLabel(node.label, 22).length * 7 + 16));
-    ctx.fillRect(node.x - labelWidth / 2, node.y + size, labelWidth, 22);
+    ctx.fillRect(x - labelWidth / 2, y + size, labelWidth, 22);
   }, []);
 
   const zoomBy = (factor: number) => graphRef.current?.zoom((graphRef.current?.zoom() || 1) * factor, 300);
@@ -954,8 +960,8 @@ export default function DBSchemaGraph({ contained = false }: { contained?: boole
                     nodeCanvasObject={paintNode}
                     nodePointerAreaPaint={paintPointerArea}
                     linkCanvasObject={paintLink}
-                    onNodeClick={(node: any) => navigateNode(node as GraphNode)}
-                    onNodeHover={(node: any) => setHoverNode((node as GraphNode) || null)}
+                    onNodeClick={(node: NodeObject) => navigateNode(node as unknown as GraphNode)}
+                    onNodeHover={(node: NodeObject | null) => setHoverNode((node as unknown as GraphNode) || null)}
                     enableNodeDrag
                     minZoom={0.15}
                     maxZoom={4}

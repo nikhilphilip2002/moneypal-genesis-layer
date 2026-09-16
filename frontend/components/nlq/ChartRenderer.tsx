@@ -37,6 +37,21 @@ type Props = {
   hideSummary?: boolean;
 };
 
+type TooltipDatum = Record<string, unknown>;
+
+type TooltipEntry = {
+  color?: string;
+  dataKey?: string | number;
+  name?: string | number;
+  payload?: TooltipDatum;
+  value?: unknown;
+};
+
+type TooltipContent = {
+  active?: boolean;
+  payload?: readonly TooltipEntry[];
+};
+
 export default function ChartRenderer({ chart, onDrilldown, hideHeader = false, hideSummary = false }: Props) {
   const [asTable, setAsTable] = useState(false);
   const [expanded, setExpanded] = useState(false);
@@ -841,12 +856,17 @@ function WaterfallView({ chart, mode }: { chart: ChartSpec; mode: 'light' | 'dar
 
 // Reads the signed `value` off the datum rather than the drawn `span`, and says whether the
 // bar is one of the two anchors or a movement between them.
-function WaterfallTooltip({ active, payload, unit }: any) {
+function WaterfallTooltip({
+  active,
+  payload,
+  unit,
+}: TooltipContent & { unit: string }) {
   if (!active || !payload?.length) return null;
   const datum = payload[0]?.payload;
   if (!datum) return null;
   const value = typeof datum.value === 'number' ? datum.value : 0;
-  const sign = datum.isTotal || value === 0 ? '' : value > 0 ? '+' : '−';
+  const isTotal = datum.isTotal === true;
+  const sign = isTotal || value === 0 ? '' : value > 0 ? '+' : '−';
 
   return (
     <div
@@ -856,9 +876,9 @@ function WaterfallTooltip({ active, payload, unit }: any) {
         '[-webkit-backdrop-filter:saturate(180%)_blur(20px)]',
       )}
     >
-      <div className="mb-1 font-medium text-foreground">{datum.step}</div>
+      <div className="mb-1 font-medium text-foreground">{String(datum.step ?? '')}</div>
       <div className="text-muted-foreground">
-        {datum.isTotal ? 'Total' : 'Contribution'}{' '}
+        {isTotal ? 'Total' : 'Contribution'}{' '}
         <span className="font-medium text-foreground">
           {sign}
           {formatValue(Math.abs(value), unit)}
@@ -1265,7 +1285,19 @@ function SmallMultiplesView({ chart, mode }: { chart: ChartSpec; mode: 'light' |
 
 // ─── Tooltip ───
 
-function ChartTooltip({ chart, active, payload, label, total, labelKey }: any) {
+function ChartTooltip({
+  chart,
+  active,
+  payload,
+  label,
+  total,
+  labelKey,
+}: TooltipContent & {
+  chart: ChartSpec;
+  label?: unknown;
+  total?: number;
+  labelKey?: string;
+}) {
   if (!active || !payload?.length) return null;
   // After a pivot the dataKeys are category names, so they are not in chart.series. The
   // metric's unit is the same for every one of them either way.
@@ -1286,8 +1318,8 @@ function ChartTooltip({ chart, active, payload, label, total, labelKey }: any) {
       {heading != null && heading !== '' && (
         <div className="mb-1 font-medium text-foreground">{String(heading)}</div>
       )}
-      {payload.map((entry: any, index: number) => {
-        const series = chart.series.find((s: any) => s.field === entry.dataKey);
+      {payload.map((entry, index) => {
+        const series = chart.series.find((candidate) => candidate.field === entry.dataKey);
         const unit = series?.unit ?? fallbackUnit;
         const share =
           typeof total === 'number' && total > 0 && typeof entry.value === 'number'
@@ -1297,7 +1329,10 @@ function ChartTooltip({ chart, active, payload, label, total, labelKey }: any) {
           <div key={`${entry.dataKey}-${index}`} className="flex items-center gap-2">
             <span
               className="inline-block h-2 w-2 rounded-full"
-              style={{ background: entry.color ?? entry.payload?.fill }}
+              style={{
+                background: entry.color
+                  ?? (typeof entry.payload?.fill === 'string' ? entry.payload.fill : undefined),
+              }}
             />
             <span className="text-muted-foreground">{series?.label ?? entry.name}</span>
             <span className="ml-auto font-medium tabular-nums text-foreground">

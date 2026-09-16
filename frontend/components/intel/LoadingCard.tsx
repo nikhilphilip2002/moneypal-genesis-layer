@@ -17,7 +17,6 @@ function StatusLine({ stages, intervalMs = 1600 }: { stages: string[]; intervalM
   const [index, setIndex] = useState(0);
 
   useEffect(() => {
-    setIndex(0);
     const id = setInterval(() => {
       setIndex((i) => (i < stages.length - 1 ? i + 1 : i));
     }, intervalMs);
@@ -70,7 +69,7 @@ export default function LoadingCard({
       <CardContent className="space-y-2.5">
         {phases && (
           <div className="pb-1">
-            <StatusLine stages={phases} />
+            <StatusLine key={phases.join('\u0000')} stages={phases} />
           </div>
         )}
         {Array.from({ length: lines }).map((_, i) => (

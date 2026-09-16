@@ -93,7 +93,7 @@ export default function RegulatoryPage() {
   const [activeTab, setActiveTab] = useState('briefings');
 
   useEffect(() => {
-    if (typeof window !== 'undefined') {
+    const frame = window.requestAnimationFrame(() => {
       const params = new URLSearchParams(window.location.search);
       const tab = params.get('tab');
       if (tab === 'schema') {
@@ -101,7 +101,8 @@ export default function RegulatoryPage() {
       } else if (tab === 'dnbs') {
         setActiveTab('dnbs');
       }
-    }
+    });
+    return () => window.cancelAnimationFrame(frame);
   }, []);
 
 

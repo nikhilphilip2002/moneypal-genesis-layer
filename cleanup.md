@@ -280,9 +280,9 @@ than deleted as dead code.
 The production `console.log("Toast:", props)` was removed from
 `frontend/components/ui/use-toast.ts`. The active toast hook and Toaster remain.
 
-`npm run lint` now uses ESLint 9 flat configuration and exits successfully. The current baseline
-reports 21 warnings, primarily third-party graph/chart callback types and React Compiler migration
-diagnostics. Those checks remain visible as warnings for a later component-hardening pass.
+`npm run lint` now uses ESLint 9 flat configuration and exits successfully with no errors or
+warnings. Third-party graph/chart callbacks have explicit boundary types, and the flagged React
+effects now derive state or schedule request-driven transitions without synchronous effect resets.
 
 ---
 
@@ -413,7 +413,7 @@ Commands executed during this revision:
 | `cd frontend && node --test lib/api-stream.test.cjs` | Pass: 1 test |
 | `cd frontend && npx tsc --noEmit` | Pass |
 | `uv run ruff check backend --select F401,F821,F841` | Pass |
-| `cd frontend && npm run lint` | Pass with 21 migration warnings |
+| `cd frontend && npm run lint` | Pass: no errors or warnings |
 | `uv run pytest -q backend/tests/nlq backend/tests/workbench` | Pass: 1,018; skip: 98 integration tests |
 | `uv run pytest -q backend/tests --ignore=backend/tests/macro` | Pass: 1,079; skip: 160 integration tests |
 | `uv run pytest -q backend/tests/macro` | Environment-blocked: 10 pass, 13 fail because NumPy cannot load missing `libstdc++.so.6` |

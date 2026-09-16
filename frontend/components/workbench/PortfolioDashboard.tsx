@@ -79,7 +79,10 @@ export default function PortfolioDashboard({
     setLoading(false);
   }, [period, execute]);
 
-  useEffect(() => { void load(); }, [load]);
+  useEffect(() => {
+    const timer = window.setTimeout(() => { void load(); }, 0);
+    return () => window.clearTimeout(timer);
+  }, [load]);
 
   const definitions = widgets(period);
   const loaded = Object.keys(charts).length;
