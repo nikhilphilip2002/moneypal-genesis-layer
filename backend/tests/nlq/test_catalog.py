@@ -24,6 +24,16 @@ class TestLoads:
         assert catalog.dimensions["loan_agent"].decode == "agent_identity"
         assert catalog.dimensions["agent_profile"].column == "agent_code"
 
+    def test_agent_catalog_exposes_current_postgres_limitations(self, catalog):
+        loans = catalog.table_by_name("gold.loan_accounts")
+        agents = catalog.table_by_name("gold.agents")
+
+        assert loans is not None and "no populated agent_code" in loans.coverage_warning
+        assert "Do not use this table" in loans.restrictions
+        assert agents is not None and "linked customer counts are zero" in agents.coverage_warning
+        assert "it has no company_code" in agents.restrictions
+        assert "entirely null" in catalog.dimensions["agent"].description
+
     def test_version_is_content_addressed(self, catalog):
         assert len(catalog.version) == 12
         assert get_catalog().version == catalog.version
@@ -42,7 +52,7 @@ class TestLoads:
                 continue
             assert isinstance(yaml.safe_load(path.read_text()), list), path.name
 
-    def test_every_gold_view_has_a_complete_unique_column_section(self, catalog):
+    def test_every_gold_relation_has_a_complete_unique_column_section(self, catalog):
         raw = yaml.safe_load((ACTIVE_DEFS_DIR / "columns.yaml").read_text())
         pairs = [(entry["table"], entry["column"]) for entry in raw]
         assert len(catalog.columns) == len(raw), "duplicate column ids are not allowed"
@@ -62,7 +72,7 @@ class TestReferentialIntegrity:
         for metric in catalog.metrics.values():
             assert metric.base_table in catalog.allowed_tables(), metric.id
 
-    def test_active_allowlist_contains_only_gold_views(self, catalog):
+    def test_active_allowlist_contains_only_gold_relations(self, catalog):
         assert catalog.allowed_tables()
         assert all(table.startswith("gold.") for table in catalog.allowed_tables())
 

@@ -23,8 +23,6 @@ def live_columns(warehouse_cursor):
     warehouse_cursor.execute(
         "SELECT c.table_schema || '.' || c.table_name, c.column_name "
         "FROM information_schema.columns c "
-        "JOIN information_schema.views v "
-        "ON v.table_schema = c.table_schema AND v.table_name = c.table_name "
         "WHERE c.table_schema = 'gold'"
     )
     mapping: dict[str, set[str]] = {}
@@ -39,18 +37,18 @@ class TestTablesExist:
         assert not missing, f"catalog references tables that do not exist: {missing}"
 
     def test_no_catalog_table_is_outside_gold(self, catalog):
-        """Only governed Gold views may enter the LLM SQL allowlist."""
+        """Only governed Gold relations may enter the LLM SQL allowlist."""
         for table in catalog.allowed_tables():
             assert table.startswith("gold."), table
 
-    def test_every_friendly_gold_view_is_cataloged(self, catalog, live_columns):
-        """Every assistant-facing friendly view must be cataloged.
+    def test_every_friendly_gold_relation_is_cataloged(self, catalog, live_columns):
+        """Every assistant-facing friendly table or view must be cataloged.
 
-        Gold also contains implementation and compatibility views that are deliberately
+        Gold also contains implementation and compatibility relations that are deliberately
         outside the LLM allowlist. The technical ``semantic_*`` sources and their private
         helper are not selectable business relations.
         """
-        friendly_views = {
+        friendly_relations = {
             "gold.agents", "gold.branches", "gold.business_loan_leads",
             "gold.collection_activities", "gold.customer_kyc_documents", "gold.customers",
             "gold.daily_loan_status", "gold.emi_schedule", "gold.general_ledger_balances",
@@ -59,12 +57,12 @@ class TestTablesExist:
             "gold.loan_vintage_performance", "gold.payment_receipts",
             "gold.staff_reporting_structure",
         }
-        uncataloged = sorted(friendly_views - catalog.allowed_tables())
-        assert not uncataloged, f"Gold views missing from tables.yaml: {uncataloged}"
-        unexpected = sorted(catalog.allowed_tables() - friendly_views)
-        assert not unexpected, f"non-friendly views exposed by tables.yaml: {unexpected}"
-        missing_in_database = sorted(friendly_views - live_columns.keys())
-        assert not missing_in_database, f"friendly Gold views missing in PostgreSQL: {missing_in_database}"
+        uncataloged = sorted(friendly_relations - catalog.allowed_tables())
+        assert not uncataloged, f"Gold relations missing from tables.yaml: {uncataloged}"
+        unexpected = sorted(catalog.allowed_tables() - friendly_relations)
+        assert not unexpected, f"non-friendly relations exposed by tables.yaml: {unexpected}"
+        missing_in_database = sorted(friendly_relations - live_columns.keys())
+        assert not missing_in_database, f"friendly Gold relations missing in PostgreSQL: {missing_in_database}"
 
 
 class TestColumnsExist:

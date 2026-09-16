@@ -1,12 +1,12 @@
-# Governed assistant-facing Gold semantic layer. These 18 friendly views are the complete NLQ
-# allowlist; Bronze, Silver, implementation views, and compatibility views stay hidden.
+# Governed assistant-facing Gold semantic layer. These 18 friendly relations are the complete
+# NLQ allowlist; Bronze, Silver, implementation relations, and compatibility relations stay hidden.
 
 - id: semantic_loan_account
   table: gold.loan_accounts
   label: Loan accounts
   grain: one row per loan account
   key: [company_code, loan_account_number]
-  row_count: 5753
+  row_count: 6145
   is_hub: true
   contains_pii: true
   synonyms:
@@ -15,13 +15,15 @@
   date_columns: {sanction: approved_on, first_disbursement: first_amount_given_on, repayment_start: repayment_start_date, repayment_end: repayment_end_date, last_payment: last_payment_date, asset_classification: loan_health_marked_on, npa: bad_loan_marked_on, closure: closed_on}
   description: Account-level loan facts, reporting attributes, borrower identity, and cumulative values.
   notes: Cumulative fields are current values, not period event flows.
+  coverage_warning: The current PostgreSQL load has no populated agent_code values in this table.
+  restrictions: Do not use this table for loans, borrowers, or customers by agent until agent_code is populated.
 
 - id: semantic_customer_profile
   table: gold.customers
   label: Customers
   grain: one row per customer
   key: [company_code, customer_id]
-  row_count: 17972
+  row_count: 19313
   contains_pii: true
   synonyms: [customers, borrowers, clients, customer profile, customer profiles, borrower profiles, contact details, customer KYC, KYC profile, KYC status]
   date_columns: {date_of_birth: date_of_birth}
@@ -32,7 +34,7 @@
   label: Customer documents
   grain: one row per customer document
   key: [document_inventory_number, document_serial_number]
-  row_count: 72295
+  row_count: 77694
   contains_pii: true
   synonyms: [KYC, PAN, Aadhaar, identity document, customer documents]
   date_columns: {issued: issue_date, expiry: expiry_date}
@@ -74,7 +76,8 @@
   synonyms: [agents, agent directory, field agents, staff, sourcing agents, collection agents]
   date_columns: {joined: joined_on}
   description: Governed staff and field-agent directory with pre-aggregated relationship counts.
-  restrictions: Standalone directory; linked customer and loan counts are already aggregated.
+  coverage_warning: Linked loan counts are pre-aggregated, but linked customer counts are zero in the current PostgreSQL load.
+  restrictions: Standalone directory keyed only by agent_code; it has no company_code. Do not join it to loan or customer tables. Use linked_loan_count for agent loan totals, and do not claim or list customers by agent from the current Gold layer.
 
 - id: semantic_organization_hierarchy
   table: gold.staff_reporting_structure
@@ -94,7 +97,7 @@
   label: Disbursement events
   grain: one row per loan disbursement
   key: [company_code, loan_account_number, disbursement_sequence]
-  row_count: 5696
+  row_count: 6077
   contains_pii: true
   synonyms: [disbursements, releases, payouts, loan payouts, drawdowns, individual drawdowns, loan amount disbursed]
   date_columns: {disbursement: amount_given_on}
@@ -106,7 +109,7 @@
   label: Repayment events
   grain: one row per contractual due-versus-paid repayment event
   key: [company_code, loan_account_number, repayment_sequence]
-  row_count: 18836
+  row_count: 24506
   contains_pii: true
   synonyms:
     [repayments, principal and interest payments, borrower payments, collections,
@@ -120,7 +123,7 @@
   label: Scheduled instalments
   grain: one row per scheduled instalment
   key: [company_code, loan_account_number, emi_sequence]
-  row_count: 225132
+  row_count: 236164
   contains_pii: true
   synonyms:
     [schedule, repayment schedule, scheduled instalments, contractual dues,
@@ -134,20 +137,20 @@
   label: Portfolio snapshots
   grain: one row per loan account and snapshot date
   key: [status_date, company_code, loan_account_number]
-  row_count: 5466
+  row_count: 5588
   point_in_time: true
   as_of_column: status_date
   contains_pii: true
   synonyms: [portfolio, outstanding, overdue, past due customers, DPD, PAR, NPA, asset classification, classified loans, delinquent accounts, late loans]
   description: Classified account portfolio snapshot used for exposure and credit-quality measures.
-  coverage_warning: Covers 5,466 of 5,753 loans. History runs only from 2026-05-22.
+  coverage_warning: Covers 5,588 of 6,145 loans. History runs only from 2026-05-22.
 
 - id: semantic_application
   table: gold.loan_applications
   label: Loan applications
   grain: one row per loan application
   key: [company_code, application_number]
-  row_count: 9021
+  row_count: 9699
   contains_pii: true
   synonyms: [applications, application linkage, origination, origination records, acquisition pipeline, observable outcomes, checklists]
   date_columns: {application: application_date, authorized: authorized_on, first_disbursement: first_amount_given_on}
@@ -160,7 +163,7 @@
   label: Receipt and adjustment events
   grain: one row per receipt or waiver source event
   key: [event_type, company_code, loan_account_number, source_event_id]
-  row_count: 86565
+  row_count: 108862
   contains_pii: true
   synonyms:
     [receipts, cash collections, payment modes, waiver events, waivers, interest waivers,
@@ -174,7 +177,7 @@
   label: Loan ledger and balance events
   grain: one row per ledger movement or post-transaction balance event
   key: [entry_type, company_code, loan_account_number, source_event_id]
-  row_count: 196445
+  row_count: 247873
   contains_pii: true
   synonyms:
     [loan ledger, account transactions, post-transaction balances, account balance history, historical balances,
@@ -199,7 +202,7 @@
   label: Origination vintage
   grain: one row per origination month, report month, branch, product, and scheme
   key: [company_code, loan_start_month, report_month, branch_code, product_code, scheme_code]
-  row_count: 286
+  row_count: 350
   point_in_time: true
   as_of_column: report_month
   synonyms: [vintage, origination cohort, month on book, MOB, cohort performance]
@@ -213,7 +216,7 @@
   label: General-ledger balances
   grain: one row per GL account, branch, currency, and balance date
   key: [balance_date, company_code, branch_code, ledger_account_number, currency_code]
-  row_count: 203933
+  row_count: 229866
   point_in_time: true
   as_of_column: balance_date
   synonyms: [GL, ledger, trial balance, daily balances, financials, chart of accounts]
@@ -226,7 +229,7 @@
   label: MSME leads
   grain: one row per MSME lead
   key: [company_code, enquiry_number]
-  row_count: 9168
+  row_count: 9898
   contains_pii: true
   synonyms: [MSME, leads, MSME lead applications, lead pipeline, business-loan leads, applications, business borrowers]
   date_columns: {entered: enquiry_entered_on}
