@@ -16,16 +16,18 @@ from __future__ import annotations
 
 import argparse
 import datetime as dt
-import json
 import random
 import sys
 import time
-import urllib.error
-import urllib.request
 from collections import Counter
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
+
+try:
+    from scripts.benchmark_common import load_env_file, stream_sse
+except ImportError:
+    from benchmark_common import load_env_file, stream_sse
 
 
 DOMAIN_SOURCES = {
@@ -333,27 +335,6 @@ class BenchmarkResult:
         return set(self.item.expected_sources).issubset(self.actual_sources)
 
 
-def load_env_file(path: Path | None) -> dict[str, str]:
-    """Load simple KEY=VALUE configuration without importing app dependencies."""
-    candidates = [
-        path,
-        Path(".env.prod"),
-        Path(__file__).resolve().parents[1] / ".env.prod",
-        Path(".env"),
-    ]
-    target = next((candidate for candidate in candidates if candidate and candidate.is_file()), None)
-    values: dict[str, str] = {}
-    if target is None:
-        return values
-    for raw_line in target.read_text(encoding="utf-8").splitlines():
-        line = raw_line.strip()
-        if not line or line.startswith("#") or "=" not in line:
-            continue
-        key, value = line.split("=", 1)
-        values[key.strip()] = value.strip().strip("'\"")
-    return values
-
-
 def build_questions() -> list[BenchmarkQuestion]:
     """Return 32 per single source plus 40 hybrid questions, 200 overall."""
     questions: list[BenchmarkQuestion] = []
@@ -402,52 +383,14 @@ class WorkbenchClient:
 
     def execute(self, item: BenchmarkQuestion) -> BenchmarkResult:
         body = request_payload(item.question)
-        request = urllib.request.Request(
+        events, error, latency_s = stream_sse(
             f"{self.base_url}/api/workbench/ask",
-            data=json.dumps(body).encode("utf-8"),
-            headers={
-                "Authorization": f"Bearer {self.token}",
-                "Content-Type": "application/json",
-                "User-Agent": "Moneypal-Mixed-Benchmark/1.0",
-            },
+            body,
+            token=self.token,
+            timeout_s=self.timeout_s,
+            user_agent="Moneypal-Mixed-Benchmark/1.0",
         )
-        started = time.monotonic()
-        events: list[tuple[str, dict[str, Any]]] = []
-        error = ""
-        try:
-            with urllib.request.urlopen(request, timeout=self.timeout_s) as response:
-                event_name = ""
-                data_lines: list[str] = []
-                for raw_line in response:
-                    line = raw_line.decode("utf-8", errors="replace").rstrip("\r\n")
-                    if not line:
-                        if event_name:
-                            events.append((event_name, _decode_event(data_lines)))
-                        event_name, data_lines = "", []
-                    elif line.startswith("event:"):
-                        event_name = line.partition(":")[2].strip()
-                    elif line.startswith("data:"):
-                        data_lines.append(line.partition(":")[2].lstrip())
-                if event_name:
-                    events.append((event_name, _decode_event(data_lines)))
-        except urllib.error.HTTPError as exc:
-            error = f"HTTP {exc.code}: {exc.reason}"
-        except urllib.error.URLError as exc:
-            error = f"Connection error: {exc.reason}"
-        except TimeoutError:
-            error = f"Request timed out after {self.timeout_s}s"
-        except Exception as exc:  # noqa: BLE001 - benchmark must record and continue
-            error = f"Unexpected error: {exc}"
-        return _result_from_events(item, events, time.monotonic() - started, error)
-
-
-def _decode_event(data_lines: list[str]) -> dict[str, Any]:
-    raw = "\n".join(data_lines)
-    try:
-        value = json.loads(raw) if raw else {}
-    except json.JSONDecodeError:
-        return {"raw": raw}
-    return value if isinstance(value, dict) else {"value": value}
+        return _result_from_events(item, events, latency_s, error)
 
 
 def _result_from_events(
@@ -667,7 +610,7 @@ def _select_questions(
     return all_questions[:args.limit]
 
 
-def main() -> int:
+def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description="Run 200 unpinned questions across all Genesis intelligence sources",
     )
@@ -684,7 +627,7 @@ def main() -> int:
         "--questions-only", action="store_true",
         help="Write the 200-question report without calling the application",
     )
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
 
     env = load_env_file(Path(args.env_file) if args.env_file else None)
     base_url = args.url or env.get("BENCHMARK_BASE_URL") or "http://100.70.118.31:4321"

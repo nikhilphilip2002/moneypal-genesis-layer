@@ -14,13 +14,13 @@ records only findings that can be supported by the current repository.
 
 | Area | Verified result |
 | :--- | :--- |
-| Unreachable source removal completed | 29 files, approximately 6,168 physical lines |
+| Unreachable or superseded source removal completed | 33 files, approximately 10,136 physical lines |
 | Frontend dependency removal completed | 18 packages plus their unused transitive packages |
 | Declaration-only backend symbols resolved | 12 removed; `close_pool()` wired into shutdown |
 | Legacy conversational implementations removed | NLQ planner/evaluator and stale Workbench evaluator corpora |
 | Caller-free API endpoints removed | 9 endpoints and their orphaned service code |
 | Endpoints incorrectly classified as dead in the prior audit | 6 endpoints; all are retained |
-| Benchmark inventory used by the previous 6,148-line total | 7 files, not 8 |
+| Benchmark consolidation | 4 superseded runners (3,968 lines) removed; 1 CLI, 2 canonical corpora |
 | Archive inventory | 30 files, 1,718,572 bytes |
 
 The exact previous claims of **141 `jscpd` clones**, **1,872 duplicated lines**, **26 unused
@@ -36,7 +36,8 @@ with their client wrappers and orphaned implementation code.
 
 The verified cleanup passes are complete:
 
-- Removed the 29 unreachable source files recorded in Section 2.
+- Removed the 29 unreachable source files recorded in Section 2 and four superseded benchmark
+  runners recorded in Section 7.4.
 - Removed the 18 direct frontend dependencies recorded in Section 5 and regenerated the lockfile.
 - Removed unreachable frontend API exports, the obsolete role hook/cache, and `_format_chunks()`.
 - Removed all verified Ruff `F401` and `F841` findings.
@@ -59,8 +60,8 @@ The verified cleanup passes are complete:
 - Wired the NLQ database pool into application shutdown.
 - Removed nine caller-free endpoints, the invalid mock refresh flow, their orphaned service code,
   and the six inactive parent NLQ catalog definitions.
-- Retained active NLQ execution infrastructure and endpoints, both RAG implementations pending the
-  compatibility migration, archives, and benchmark scripts.
+- Retained active NLQ execution infrastructure and endpoints, consolidated RAG behind
+  `genesis_core`, and reduced the benchmark suite to one CLI with explicit execution modes.
 
 ---
 
@@ -193,7 +194,7 @@ The following frontend/backend symbols were also removed during the cleanup:
 | :--- | :--- | :--- |
 | `useUserRole()` | `frontend/lib/useUserRole.ts` | Removed with its now-unnecessary role cache |
 | `streamBriefing()` | `frontend/lib/api.ts` | Removed after `StreamingBrief.tsx` deletion |
-| `intelligence` client object | `frontend/lib/api.ts` | Removed; backend endpoints remain pending deprecation review |
+| `intelligence` client object | `frontend/lib/api.ts` | Removed with its caller-free backend router and service |
 | `health` client object | `frontend/lib/api.ts` | Removed |
 | `_format_chunks()` | `backend/app/services/workbench/nodes.py` | Removed |
 
@@ -327,7 +328,7 @@ tests use only `backend/app/services/nlq/catalog/defs/gold`.
 - **Resolved:** `AIBriefPanel` and the expanded state of `IntelligenceCard` share one briefing body
   renderer while retaining their distinct card headers and collapse behavior.
 
-### 7.4 Benchmark suite
+### 7.4 Benchmark suite — resolved
 
 The earlier 6,148-line figure is the total for these seven files:
 
@@ -339,16 +340,20 @@ The earlier 6,148-line figure is the total for these seven files:
 6. `scripts/run_500_loanbook_benchmark.py`
 7. `scripts/run_50_executive_queries.py`
 
-There is clear semantic duplication in environment loading, SSE decoding, result models,
-conversation loops, percentile calculations, checkpoint writing, and Markdown reports. Exact clone
-percentages are intentionally omitted until a reproducible detector is added.
+The four superseded runners were removed, eliminating 3,968 lines of repeated transport, parsing,
+reporting, and orchestration code. The retained suite is 2,217 lines across five focused files:
 
-Recommended direction:
+1. `scripts/run_benchmark.py` is the sole CLI and exposes `single`, `multi`, and `reconcile` modes.
+2. `scripts/benchmark_common.py` owns environment loading, SSE transport/decoding, and percentiles.
+3. `scripts/run_200_mixed_queries.py` retains the canonical mixed-source single-turn corpus and its
+   evaluator metadata.
+4. `scripts/chains_500_loanbook.py` is a data-only corpus of 100 five-turn chains.
+5. `scripts/run_500_loanbook_benchmark.py` runs those chains with optional PostgreSQL
+   reconciliation and telemetry.
 
-1. Move question and chain corpora into data-only modules or JSON fixtures.
-2. Extract shared SSE, result, reporting, checkpoint, and environment helpers.
-3. Expose one CLI with explicit single-turn, multi-turn, and reconciliation modes.
-4. Preserve corpus metadata and output compatibility before deleting runners.
+The retained runners keep their existing report formats and output defaults. The narrower 50-,
+100-, and 200-loan-book runner-specific corpora were intentionally retired; their inventory and
+scope remain documented above and their exact contents remain recoverable from Git history.
 
 ---
 
@@ -391,9 +396,10 @@ Recommended direction:
 4. **Deferred by design:** Any rename of retained `nlq` infrastructure is an architectural change,
    not required for cleanup.
 
-### Phase 4: Refactoring
+### Phase 4: Refactoring — completed
 
-1. Consolidate benchmark infrastructure.
+1. **Completed:** Consolidate benchmark infrastructure behind one three-mode CLI, two canonical
+   corpora, and shared environment/SSE/statistics helpers; remove four superseded runners.
 2. **Completed:** six role-gated pages now use `useRequireAuth()`, and shared INR formatters retain
    the distinct precision required by account details, compact cards, charts, and regulatory tables.
 3. **Completed:** Re-export the shared `genesis_core.schema` response contract from the backend.
@@ -416,8 +422,10 @@ Commands executed during this revision:
 | `uv run ruff check backend --select F401,F821,F841` | Pass |
 | `cd frontend && npm run lint` | Pass: no errors or warnings |
 | `uv run pytest -q backend/tests/nlq backend/tests/workbench` | Pass: 1,018; skip: 98 integration tests |
-| `uv run pytest -q backend/tests --ignore=backend/tests/macro` | Pass: 1,080; skip: 160 integration tests |
+| `uv run pytest -q backend/tests --ignore=backend/tests/macro` | Pass: 1,088; skip: 160 integration tests |
 | `uv run pytest -q backend/tests/test_json_registry.py` | Pass: 6 tests |
+| `python -m py_compile scripts/benchmark_common.py scripts/run_benchmark.py scripts/run_200_mixed_queries.py scripts/run_500_loanbook_benchmark.py scripts/chains_500_loanbook.py` | Pass |
+| `python scripts/run_benchmark.py single --questions-only --limit 2 --output-md /tmp/moneypal-benchmark-smoke.md` | Pass |
 | `uv run pytest -q backend/tests/macro` | Environment-blocked: 10 pass, 13 fail because NumPy cannot load missing `libstdc++.so.6` |
 | `cd frontend && npm run build` | Pass: optimized Next.js production build and 14 static routes |
 | `git diff --check` | Pass |
