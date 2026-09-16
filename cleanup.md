@@ -325,8 +325,8 @@ Each differs from its Gold counterpart; they are not verbatim duplicates. Delete
   contract instead of repeating client-side role guards and casts.
 - **Resolved:** customer, schema graph, NLQ chart, and DNBS report components now share exact,
   compact, and Indian-grouped formatters while retaining context-specific precision.
-- `AIBriefPanel` and the expanded state of `IntelligenceCard` share briefing body rendering. Extract
-  the common body while leaving their distinct card/header behavior intact.
+- **Resolved:** `AIBriefPanel` and the expanded state of `IntelligenceCard` share one briefing body
+  renderer while retaining their distinct card headers and collapse behavior.
 
 ### 7.4 Benchmark suite
 
