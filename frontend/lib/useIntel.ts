@@ -47,7 +47,9 @@ export function useIntel<T>(
     return { data: cached, loading: cached === null, error: false };
   });
   const fetcherRef = useRef(fetcher);
-  fetcherRef.current = fetcher;
+  useEffect(() => {
+    fetcherRef.current = fetcher;
+  }, [fetcher]);
 
   const load = useCallback(
     (force = false) => {

@@ -292,6 +292,26 @@ function redirectToLogin() {
   window.location.href = '/login';
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function stringValue(value: unknown): string {
+  return typeof value === 'string' ? value : '';
+}
+
+function optionalString(value: unknown): string | undefined {
+  return typeof value === 'string' ? value : undefined;
+}
+
+function optionalNumber(value: unknown): number | undefined {
+  return typeof value === 'number' ? value : undefined;
+}
+
+function stringArray(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : [];
+}
+
 // Generic API request helper
 async function apiRequest<T = unknown>(
   endpoint: string,
@@ -1118,57 +1138,80 @@ export const workbench = {
           }
           if (!event) continue;
 
-          let payload: any = {};
-          try { payload = data ? JSON.parse(data) : {}; } catch { continue; }
+          let payload: Record<string, unknown>;
+          try {
+            const parsed: unknown = data ? JSON.parse(data) : {};
+            if (!isRecord(parsed)) continue;
+            payload = parsed;
+          } catch {
+            continue;
+          }
 
           switch (event) {
-            case 'conversation': yield { type: 'conversation', conversation_id: payload.conversation_id }; break;
-            case 'stage': yield { type: 'stage', stage: payload.stage }; break;
-            case 'trace': yield { type: 'trace', step: payload as WorkbenchTraceStep }; break;
+            case 'conversation': yield { type: 'conversation', conversation_id: stringValue(payload.conversation_id) }; break;
+            case 'stage': yield { type: 'stage', stage: stringValue(payload.stage) }; break;
+            case 'trace': yield { type: 'trace', step: payload as unknown as WorkbenchTraceStep }; break;
             case 'trace_delta':
               yield {
                 type: 'trace_delta',
-                id: payload.id,
-                reasoning_delta: payload.reasoning_delta,
-                tool_call: payload.tool_call,
+                id: stringValue(payload.id),
+                reasoning_delta: optionalString(payload.reasoning_delta),
+                tool_call: isRecord(payload.tool_call)
+                  ? payload.tool_call as WorkbenchTraceToolCall
+                  : undefined,
               };
               break;
             case 'route':
               yield {
-                type: 'route', sources: payload.sources || [], intent: payload.intent || '',
-                model: payload.model || '', reason: payload.reason,
-                confidence: payload.confidence, fallback_used: payload.fallback_used,
-                policy_version: payload.policy_version, tools: payload.tools || [],
-                effective_sources: payload.effective_sources,
+                type: 'route', sources: stringArray(payload.sources),
+                intent: stringValue(payload.intent), model: stringValue(payload.model),
+                reason: optionalString(payload.reason),
+                confidence: optionalNumber(payload.confidence),
+                fallback_used: typeof payload.fallback_used === 'boolean'
+                  ? payload.fallback_used
+                  : undefined,
+                policy_version: optionalString(payload.policy_version),
+                tools: stringArray(payload.tools),
+                effective_sources: Array.isArray(payload.effective_sources)
+                  ? stringArray(payload.effective_sources)
+                  : undefined,
               };
               break;
-            case 'source_start': yield { type: 'source_start', source: payload.source }; break;
+            case 'source_start': yield { type: 'source_start', source: stringValue(payload.source) }; break;
             case 'source_card': {
               const { source, card_type, ...rest } = payload;
-              yield { type: 'source_card', card: { source, card_type, payload: rest } };
+              yield {
+                type: 'source_card',
+                card: {
+                  source: stringValue(source),
+                  card_type: card_type as WorkbenchCard['card_type'],
+                  payload: rest,
+                },
+              };
               break;
             }
-            case 'answer': yield { type: 'answer', answer: payload as WorkbenchAnswer }; break;
-            case 'answer_delta': yield { type: 'answer_delta', text: payload.text || '' }; break;
+            case 'answer': yield { type: 'answer', answer: payload as unknown as WorkbenchAnswer }; break;
+            case 'answer_delta': yield { type: 'answer_delta', text: stringValue(payload.text) }; break;
             case 'answer_reset': yield { type: 'answer_reset' }; break;
-            case 'synthesis': yield { type: 'synthesis', text: payload.text }; break;
+            case 'synthesis': yield { type: 'synthesis', text: stringValue(payload.text) }; break;
             case 'refusal':
               yield {
                 type: 'refusal',
                 refusal: {
-                  reason: payload.reason,
-                  message: payload.text ?? payload.message ?? '',
-                  origin: payload.origin,
+                  reason: optionalString(payload.reason),
+                  message: stringValue(payload.text) || stringValue(payload.message),
+                  origin: optionalString(payload.origin),
                 },
               };
               break;
             case 'error':
               yield {
-                type: 'error', message: payload.message, code: payload.code,
-                retryable: !!payload.retryable, reason: payload.reason,
+                type: 'error', message: stringValue(payload.message),
+                code: optionalString(payload.code), retryable: payload.retryable === true,
+                reason: optionalString(payload.reason),
               };
               break;
-            case 'done': yield { type: 'done', total_ms: payload.total_ms }; return;
+            case 'done': yield { type: 'done', total_ms: optionalNumber(payload.total_ms) }; return;
           }
         }
       }

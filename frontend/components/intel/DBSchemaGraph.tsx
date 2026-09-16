@@ -495,12 +495,13 @@ export default function DBSchemaGraph({ contained = false }: { contained?: boole
     fittedForRef.current = '';
   }, [data?.current?.id, displayMode]);
 
+  const currentNodeId = data?.current?.id;
   const fitOnce = useCallback(() => {
-    const key = `${data?.current?.id || ''}:${displayMode}`;
+    const key = `${currentNodeId || ''}:${displayMode}`;
     if (fittedForRef.current === key) return;
     fittedForRef.current = key;
     graphRef.current?.zoomToFit(400, 70);
-  }, [data?.current?.id, displayMode]);
+  }, [currentNodeId, displayMode]);
 
   const paintNode = useCallback((node: any, ctx: CanvasRenderingContext2D, scale: number) => {
     const size = node.size || 14;

@@ -758,23 +758,31 @@ function WaterfallView({ chart, mode }: { chart: ChartSpec; mode: 'light' | 'dar
   const unit = chart.columns.find((column) => column.name === 'value')?.unit ?? 'count';
 
   const data = useMemo(() => {
-    let running = 0;
-    return chart.rows.map((row) => {
+    type WaterfallDatum = {
+      step: string;
+      range: [number, number];
+      value: number;
+      isTotal: boolean;
+    };
+
+    return chart.rows.reduce<{ items: WaterfallDatum[]; running: number }>((state, row) => {
       const value = typeof row.value === 'number' ? row.value : 0;
       const isTotal = row.kind === 'total';
-      const start = isTotal ? 0 : running;
-      const end = isTotal ? value : running + value;
-      running = end;
+      const start = isTotal ? 0 : state.running;
+      const end = isTotal ? value : state.running + value;
       return {
-        step: String(row.step ?? ''),
-        // Recharts supports a [low, high] tuple for floating bars. Using the native range
-        // form is important here: in Recharts 3 a transparent spacer in a stacked pair can
-        // leave the visible member without rectangle geometry, producing an empty chart.
-        range: [Math.min(start, end), Math.max(start, end)],
-        value,
-        isTotal,
+        running: end,
+        items: state.items.concat({
+          step: String(row.step ?? ''),
+          // Recharts supports a [low, high] tuple for floating bars. Using the native range
+          // form is important here: in Recharts 3 a transparent spacer in a stacked pair can
+          // leave the visible member without rectangle geometry, producing an empty chart.
+          range: [Math.min(start, end), Math.max(start, end)],
+          value,
+          isTotal,
+        }),
       };
-    });
+    }, { items: [], running: 0 }).items;
   }, [chart.rows]);
   const compressed = hasCompressedValues(chart.rows, ['value']);
 

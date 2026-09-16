@@ -84,13 +84,14 @@ export default function Customer360Dialog({
     };
   }, [open, customerId]);
 
+  const repaymentHistory = data?.repayment_history;
   const filteredRepayments = useMemo(() => {
-    if (!data?.repayment_history) return [];
-    if (selectedLoanAccount === 'all') return data.repayment_history;
-    return data.repayment_history.filter(
+    if (!repaymentHistory) return [];
+    if (selectedLoanAccount === 'all') return repaymentHistory;
+    return repaymentHistory.filter(
       (item) => item.loan_account_number === selectedLoanAccount
     );
-  }, [data?.repayment_history, selectedLoanAccount]);
+  }, [repaymentHistory, selectedLoanAccount]);
 
   const repaymentTotals = useMemo(() => {
     let due = 0;
