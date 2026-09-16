@@ -117,12 +117,12 @@ class TestRegulatory:
 
     @pytest.mark.anyio
     async def test_matches_the_category_the_question_is_about(self, monkeypatch):
-        from app.services import rag as regulatory_rag
+        from app.services import regulatory_rag
         from app.services import regulatory
 
         seen = {}
         monkeypatch.setattr(regulatory, "list_categories", self._categories)
-        monkeypatch.setattr(regulatory_rag, "search_qdrant", lambda *a, **k: [])
+        monkeypatch.setattr(regulatory_rag, "search", lambda *a, **k: [])
         async def run_inline(fn, *args, **kwargs):
             return fn(*args, **kwargs)
         monkeypatch.setattr(nodes.asyncio, "to_thread", run_inline)
@@ -141,12 +141,12 @@ class TestRegulatory:
 
     @pytest.mark.anyio
     async def test_defaults_to_the_first_category_when_nothing_matches(self, monkeypatch):
-        from app.services import rag as regulatory_rag
+        from app.services import regulatory_rag
         from app.services import regulatory
 
         seen = {}
         monkeypatch.setattr(regulatory, "list_categories", self._categories)
-        monkeypatch.setattr(regulatory_rag, "search_qdrant", lambda *a, **k: [])
+        monkeypatch.setattr(regulatory_rag, "search", lambda *a, **k: [])
         async def run_inline(fn, *args, **kwargs):
             return fn(*args, **kwargs)
         monkeypatch.setattr(nodes.asyncio, "to_thread", run_inline)

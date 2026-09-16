@@ -13,7 +13,7 @@ sys.path.append(str(ROOT / "backend"))
 from app.core.config import DATA_DIR, MACRO_COLLECTION, settings  # noqa: E402
 from app.registry import load_regulation_categories, source_paths_for_category  # noqa: E402
 from app.services import institution_loader as il  # noqa: E402
-from app.services.rag import chunk_text, embed_batch  # noqa: E402
+from genesis_core.rag import chunk_text_chars as chunk_text, embed_batch  # noqa: E402
 
 
 def read_pdf_pages(path: Path) -> list[tuple[int, str]]:

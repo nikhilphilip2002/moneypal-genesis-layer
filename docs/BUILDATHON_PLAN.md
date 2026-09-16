@@ -90,9 +90,9 @@ Do not split yet. Everyone does this first.
 
 ### Repo Setup
 - Create monorepo, push all folder structure
-- Integration Lead commits two shared files — all teams pull before starting:
-  - `shared/schema.py` — the response contract (Pydantic model)
-  - `shared/rag_helpers.py` — three functions: `embed_text()`, `search_qdrant()`, `generate_with_groq()`. Teams import these, do not rewrite them
+- Integration Lead commits two shared modules — all teams pull before starting:
+  - `genesis_core/schema.py` — the response contract (Pydantic model)
+  - `genesis_core/rag.py` — embedding, Qdrant retrieval, ingestion, and grounded generation. Teams import these, do not rewrite them
 - Everyone confirms their FastAPI service starts and returns 200 on `/health`
 
 ### Environment

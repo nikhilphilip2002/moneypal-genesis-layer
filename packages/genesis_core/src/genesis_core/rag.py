@@ -110,6 +110,22 @@ def chunk_text(text: str, chunk_words: int = 500, overlap: int = 50) -> list[str
     return chunks
 
 
+def chunk_text_chars(text: str, chunk_size: int = 1800, overlap: int = 250) -> list[str]:
+    """Split normalized text into character windows for regulatory document ingestion."""
+    clean = " ".join(text.split())
+    if not clean:
+        return []
+    chunks: list[str] = []
+    start = 0
+    while start < len(clean):
+        end = min(start + chunk_size, len(clean))
+        chunks.append(clean[start:end])
+        if end == len(clean):
+            break
+        start = max(end - overlap, start + 1)
+    return chunks
+
+
 # --------------------------------------------------------------------------
 # Ingestion
 # --------------------------------------------------------------------------

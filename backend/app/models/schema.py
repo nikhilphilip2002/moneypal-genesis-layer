@@ -1,19 +1,8 @@
+from genesis_core.schema import IntelligenceResponse as IntelligenceResponse
+from genesis_core.schema import SourceRef
 from pydantic import BaseModel, Field
 
-
-class Source(BaseModel):
-    document: str
-    url: str
-
-
-class IntelligenceResponse(BaseModel):
-    title: str
-    summary: str
-    key_points: list[str] = Field(default_factory=list)
-    source: Source
-    ai_note: str
-    last_updated: str
-    confidence: str = Field(pattern="^(high|medium|low)$")
+Source = SourceRef
 
 
 class RegulationCategory(BaseModel):

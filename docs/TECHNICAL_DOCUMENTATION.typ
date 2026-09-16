@@ -376,5 +376,4 @@ The *Next.js* (TypeScript) frontend is the single operator surface for all modul
   [`REGISTRY_DIR`], [Regulation registry override (containers)], [`/srv/backend/registry/regulations`],
   [`LOCAL_INDEX_PATH`], [Lexical index location (containers)], [`.../regulatory_chunks.jsonl`],
   [`NEXT_PUBLIC_API_URL`], [Frontend API base (build arg)], [`/api`],
-  [`ALLOW_HASH_EMBEDDINGS`], [Offline-dev hash-embedding fallback], [`1` (opt-in only)],
 )

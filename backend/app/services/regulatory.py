@@ -4,12 +4,12 @@ from fastapi import HTTPException
 
 from app.models.schema import IntelligenceResponse, RegulatoryAlert, RegulationCategory, Source
 from app.registry import get_regulation_category, load_regulation_categories
-from app.services.rag import (
+from app.services.regulatory_rag import (
     build_context,
     extractive_regulatory_summary,
-    generate_with_llm,
+    generate_brief,
     key_points_from_text,
-    search_qdrant,
+    search,
 )
 
 
@@ -30,7 +30,7 @@ def regulation_detail(category_id: str) -> IntelligenceResponse:
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
-    hits = search_qdrant(category.qdrant_collection, f"{category.display_name}. {DETAIL_QUERY}", limit=8)
+    hits = search(category.qdrant_collection, f"{category.display_name}. {DETAIL_QUERY}", limit=8)
     context = build_context(hits)
     prompt = (
         "Using only the source context below, write a director-level regulatory briefing. "
@@ -38,10 +38,9 @@ def regulation_detail(category_id: str) -> IntelligenceResponse:
         "Business Impact, Compliance Actions, Effective Date. Specifically address NBFCs below "
         f"Rs. 500 crore. Effective date from config: {category.effective_date}.\n\n"
         f"Category: {category.display_name}\n"
-        f"Applicability from config: {category.applicability}\n\n"
-        f"Source context:\n{context}"
+        f"Applicability from config: {category.applicability}"
     )
-    summary = generate_with_llm(prompt) or extractive_regulatory_summary(
+    summary = generate_brief(prompt, hits) or extractive_regulatory_summary(
         category.display_name,
         context,
         category.effective_date,

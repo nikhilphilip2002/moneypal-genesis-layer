@@ -315,7 +315,7 @@ async def run_regulatory(
     and that category's grounded detail is returned; an unmatched question falls to the
     first category rather than guessing."""
     _require_external(policy, "regulatory")
-    from app.services import rag as regulatory_rag
+    from app.services import regulatory_rag
     from app.services import regulatory
 
     try:
@@ -325,7 +325,7 @@ async def run_regulatory(
                                 payload={"message": "No regulatory categories are loaded."})
         chosen = _best_category(intent, categories)
         hits = await asyncio.to_thread(
-            regulatory_rag.search_qdrant, chosen.qdrant_collection, intent, 8,
+            regulatory_rag.search, chosen.qdrant_collection, intent, 8,
         )
     except Exception as exc:  # noqa: BLE001
         logger.warning("workbench regulatory node failed: %s", exc)

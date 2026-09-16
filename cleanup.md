@@ -299,29 +299,18 @@ effects now derive state or schedule request-driven transitions without synchron
 
 ## 7. Duplication Findings
 
-### 7.1 RAG implementations: overlap, not a safe deletion
+### 7.1 RAG implementation — resolved
 
-`packages/genesis_core/src/genesis_core/rag.py` and `backend/app/services/rag.py` both provide
-embedding, Qdrant, chunking, and generation utilities, but they are not simple clones:
+`genesis_core.rag` is now the single engine for embeddings, Qdrant access, word- and
+character-window chunking, ingestion, and grounded generation. The duplicate
+`backend/app/services/rag.py` engine was removed. `backend/app/services/regulatory_rag.py` is a
+domain adapter only: it retains the regulatory JSONL fallback, extractive briefing fallback, and
+key-point formatting while delegating vector search and generation to the shared engine.
 
-- They use different settings objects and embedding-model names.
-- Their chunking units differ (words versus characters).
-- The backend version provides a guarded hash fallback and local-index search fallback.
-- They use different LLM clients and error-handling behavior.
-- `genesis_core.rag` owns ingestion and streaming functionality absent from the backend module.
-- Regulatory code and Workbench intentionally call the backend implementation, while macro,
-  competitive, policy, and platform code use `genesis_core.rag`.
+### 7.2 Inactive parent catalog definitions — resolved
 
-Consolidation remains worthwhile, but it requires an explicit compatibility contract and migration
-tests. Do not delete `backend/app/services/rag.py` after merely moving “missing methods.”
-
-### 7.2 Inactive parent catalog definitions
-
-The NLQ loader explicitly selects `backend/app/services/nlq/catalog/defs/gold`. The six YAML files
-directly under `defs/` are inactive legacy definitions totaling 1,490 lines.
-
-Each differs from its Gold counterpart; they are not verbatim duplicates. Delete or move them to
-`archive/` only after confirming no external catalog tooling consumes the old paths.
+The six inactive YAML files directly under `defs/` were removed. The loader, retrieval index, and
+tests use only `backend/app/services/nlq/catalog/defs/gold`.
 
 ### 7.3 Smaller structural duplication
 
@@ -329,8 +318,8 @@ Each differs from its Gold counterpart; they are not verbatim duplicates. Delete
   byte-for-byte clones. A generic registry is optional and should retain domain-specific validation.
 - PDF page extraction is repeated in `genesis_core.rag`, `backend/scripts/ingest.py`, and the macro
   extractor, with different exception policies. A shared primitive should make that policy explicit.
-- Backend and `genesis_core` response models overlap but are not identical: page support, defaults,
-  and required fields differ. The drift should be resolved in favor of one API contract.
+- **Resolved:** backend regulatory models re-export the `genesis_core.schema` intelligence response
+  and source models; only domain-specific category and alert models remain local.
 - **Resolved:** six frontend pages now share `useRequireAuth()` and one validated `UserRole`
   contract instead of repeating client-side role guards and casts.
 - **Resolved:** customer, schema graph, NLQ chart, and DNBS report components now share exact,
@@ -407,8 +396,9 @@ Recommended direction:
 1. Consolidate benchmark infrastructure.
 2. **Completed:** six role-gated pages now use `useRequireAuth()`, and shared INR formatters retain
    the distinct precision required by account details, compact cards, charts, and regulatory tables.
-3. Resolve the duplicate response contract.
-4. Design and test a single RAG interface before migrating callers.
+3. **Completed:** Re-export the shared `genesis_core.schema` response contract from the backend.
+4. **Completed:** Migrate embeddings, Qdrant, chunking, and generation to `genesis_core.rag`, with
+   a focused regulatory fallback adapter and migration tests.
 5. **Completed:** Remove the inactive parent catalog YAML; the loader and tests use only `defs/gold`.
 
 ---
@@ -424,7 +414,7 @@ Commands executed during this revision:
 | `uv run ruff check backend --select F401,F821,F841` | Pass |
 | `cd frontend && npm run lint` | Pass: no errors or warnings |
 | `uv run pytest -q backend/tests/nlq backend/tests/workbench` | Pass: 1,018; skip: 98 integration tests |
-| `uv run pytest -q backend/tests --ignore=backend/tests/macro` | Pass: 1,079; skip: 160 integration tests |
+| `uv run pytest -q backend/tests --ignore=backend/tests/macro` | Pass: 1,080; skip: 160 integration tests |
 | `uv run pytest -q backend/tests/macro` | Environment-blocked: 10 pass, 13 fail because NumPy cannot load missing `libstdc++.so.6` |
 | `cd frontend && npm run build` | Pass: optimized Next.js production build and 14 static routes |
 | `git diff --check` | Pass |
