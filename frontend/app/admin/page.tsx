@@ -15,6 +15,7 @@ import {
 } from '@/lib/api';
 import { ROLE_LABELS } from '@/lib/useUserRole';
 import { useRequireAuth } from '@/lib/useRequireAuth';
+import { errorMessage } from '@/lib/errors';
 import { useIntel } from '@/lib/useIntel';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -63,8 +64,8 @@ function AddInstitutionDialog({ onAdded }: { onAdded: () => void }) {
       setForm({ name: '', type: '', website: '', headquarters: '' });
       setOpen(false);
       onAdded();
-    } catch (err: any) {
-      setError(err.message || 'Failed to add institution.');
+    } catch (error: unknown) {
+      setError(errorMessage(error, 'Failed to add institution.'));
     } finally {
       setSaving(false);
     }
@@ -133,8 +134,8 @@ function AddRegulationDialog({ onAdded }: { onAdded: () => void }) {
       setForm({ display_name: '', rbi_url: '', applicability: '', effective_date: '' });
       setOpen(false);
       onAdded();
-    } catch (err: any) {
-      setError(err.message || 'Failed to add regulation category.');
+    } catch (error: unknown) {
+      setError(errorMessage(error, 'Failed to add regulation category.'));
     } finally {
       setSaving(false);
     }

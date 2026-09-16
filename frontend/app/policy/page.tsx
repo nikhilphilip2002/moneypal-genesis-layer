@@ -10,6 +10,7 @@ import {
   type IntelligenceResponse,
 } from '@/lib/api';
 import { useRequireAuth } from '@/lib/useRequireAuth';
+import { errorMessage } from '@/lib/errors';
 import { useIntel } from '@/lib/useIntel';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -50,8 +51,8 @@ export default function PolicyPage() {
         focus,
       });
       setBrief(result);
-    } catch (err: any) {
-      setError(err.message || 'Policy synthesis failed.');
+    } catch (error: unknown) {
+      setError(errorMessage(error, 'Policy synthesis failed.'));
     } finally {
       setGenerating(false);
     }

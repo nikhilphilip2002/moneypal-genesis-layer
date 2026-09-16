@@ -33,6 +33,7 @@ import {
 } from 'lucide-react';
 
 import { admin } from '@/lib/api';
+import { formatCompactINR, formatIndianNumber } from '@/lib/formatters';
 import Customer360Dialog from '@/components/intel/Customer360Dialog';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -209,15 +210,14 @@ function getNodeColor(type: string, isDark: boolean): string {
 
 function formatMoney(raw?: number): string {
   const value = Number(raw || 0);
-  const abs = Math.abs(value);
-  if (abs >= 10_000_000) return `₹${(value / 10_000_000).toFixed(abs >= 1_000_000_000 ? 1 : 2)} Cr`;
-  if (abs >= 100_000) return `₹${(value / 100_000).toFixed(abs >= 10_000_000 ? 1 : 2)} L`;
-  if (abs >= 1_000) return `₹${(value / 1_000).toFixed(abs >= 100_000 ? 1 : 2)} K`;
-  return `₹${value.toLocaleString('en-IN', { maximumFractionDigits: 0 })}`;
+  return formatCompactINR(value, {
+    croreDigits: Math.abs(value) >= 1_000_000_000 ? 1 : 2,
+    thousandDigits: 2,
+  });
 }
 
 function formatCount(value?: number): string {
-  return Number(value || 0).toLocaleString('en-IN');
+  return formatIndianNumber(Number(value || 0));
 }
 
 function nodeWeight(node: GraphNode, weight: WeightBy): number {

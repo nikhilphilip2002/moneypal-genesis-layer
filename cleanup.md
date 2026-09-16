@@ -44,6 +44,10 @@ The verified cleanup passes are complete:
 - Consolidated backend demo-token identity parsing across auth, NLQ, and Workbench routes.
 - Replaced six duplicated frontend authorization effects with a shared `useRequireAuth()` guard
   and tightened the shared user-role response type.
+- Consolidated exact, compact, and Indian-grouped currency formatting across customer details,
+  portfolio graphs, NLQ charts, and DNBS reports while retaining their display precision.
+- Replaced unsafe page-level error casts with an `unknown`-safe helper, made the shared API request
+  boundary generic, and removed three caller-free analytics client methods.
 - Removed straightforward unused frontend imports and the toast debug log.
 - Replaced `next lint` with ESLint 9 flat configuration.
 - Removed Workbench node tests for production adapters that no longer exist.
@@ -277,7 +281,8 @@ The production `console.log("Toast:", props)` was removed from
 `frontend/components/ui/use-toast.ts`. The active toast hook and Toaster remain.
 
 `npm run lint` now uses ESLint 9 flat configuration and exits successfully. The initial baseline
-still reports 47 warnings, primarily existing explicit `any` types and React Compiler migration
+still reports 25 warnings, primarily third-party graph/chart callback types and React Compiler
+migration
 diagnostics. Those checks remain visible as warnings for a later component-hardening pass.
 
 ---
@@ -318,9 +323,8 @@ Each differs from its Gold counterpart; they are not verbatim duplicates. Delete
   and required fields differ. The drift should be resolved in favor of one API contract.
 - **Resolved:** six frontend pages now share `useRequireAuth()` and one validated `UserRole`
   contract instead of repeating client-side role guards and casts.
-- INR formatting is fragmented across customer, schema graph, chart, and DNBS report components.
-  Consolidate shared exact and compact formatters without forcing all display contexts to use one
-  precision rule.
+- **Resolved:** customer, schema graph, NLQ chart, and DNBS report components now share exact,
+  compact, and Indian-grouped formatters while retaining context-specific precision.
 - `AIBriefPanel` and the expanded state of `IntelligenceCard` share briefing body rendering. Extract
   the common body while leaving their distinct card/header behavior intact.
 
@@ -393,8 +397,8 @@ Recommended direction:
 ### Phase 4: Refactoring
 
 1. Consolidate benchmark infrastructure.
-2. **Auth guard completed:** six role-gated pages now use `useRequireAuth()`; shared INR formatters
-   remain a separate display refactor.
+2. **Completed:** six role-gated pages now use `useRequireAuth()`, and shared INR formatters retain
+   the distinct precision required by account details, compact cards, charts, and regulatory tables.
 3. Resolve the duplicate response contract.
 4. Design and test a single RAG interface before migrating callers.
 5. Decide whether inactive parent catalog YAML belongs in version control or archive history.
@@ -410,7 +414,7 @@ Commands executed during this revision:
 | `cd frontend && node --test lib/api-stream.test.cjs` | Pass: 1 test |
 | `cd frontend && npx tsc --noEmit` | Pass |
 | `uv run ruff check backend --select F401,F821,F841` | Pass |
-| `cd frontend && npm run lint` | Pass with 47 migration warnings |
+| `cd frontend && npm run lint` | Pass with 25 migration warnings |
 | `uv run pytest -q backend/tests/nlq backend/tests/workbench` | Pass: 1,018; skip: 98 integration tests |
 | `uv run pytest -q backend/tests --ignore=backend/tests/macro` | Pass: 1,079; skip: 160 integration tests |
 | `uv run pytest -q backend/tests/macro` | Environment-blocked: 10 pass, 13 fail because NumPy cannot load missing `libstdc++.so.6` |

@@ -9,6 +9,8 @@ import {
   type RegulatoryReportDefinition,
   type RegulatoryReportPeriods,
 } from '@/lib/api';
+import { formatIndianNumber, formatINR } from '@/lib/formatters';
+import { errorMessage } from '@/lib/errors';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -85,9 +87,9 @@ export default function DNBSReport() {
           setLoading(false);
         }
       })
-      .catch((err: any) => {
+      .catch((error: unknown) => {
         if (!cancelled) {
-          setError(err?.message || 'Failed to load reportable periods');
+          setError(errorMessage(error, 'Failed to load reportable periods'));
           setLoading(false);
         }
       });
@@ -121,9 +123,9 @@ export default function DNBSReport() {
         setPeriod(latest.value);
         updateDatesForPeriod(fixedFrequency, latest.value);
       })
-      .catch((err: any) => {
+      .catch((error: unknown) => {
         if (!cancelled) {
-          setError(err?.message || 'Failed to load reportable periods');
+          setError(errorMessage(error, 'Failed to load reportable periods'));
           setLoading(false);
         }
       });
@@ -158,8 +160,8 @@ export default function DNBSReport() {
         setGenericReport(data);
         setReport(null);
       }
-    } catch (err: any) {
-      setError(err?.message || 'Failed to load the selected report');
+    } catch (error: unknown) {
+      setError(errorMessage(error, 'Failed to load the selected report'));
     } finally {
       setLoading(false);
     }
@@ -452,7 +454,7 @@ export default function DNBSReport() {
                       {key.replaceAll('_', ' ')}
                     </p>
                     <p className="mt-1 text-sm font-semibold">
-                      {typeof value === 'number' ? value.toLocaleString('en-IN') : value}
+                      {typeof value === 'number' ? formatIndianNumber(value) : value}
                     </p>
                   </div>
                 ))}
@@ -491,8 +493,8 @@ export default function DNBSReport() {
               <div className="flex items-start justify-between">
                 <div className="space-y-1">
                   <p className="text-xs text-muted-foreground">Total Loan Portfolio</p>
-                  <p className="text-xl font-bold tracking-tight">₹{report.summary.total_loan_book.toLocaleString('en-IN')} Lakhs</p>
-                  <p className="text-[11px] text-muted-foreground">₹{(report.summary.total_loan_book / 100).toFixed(2)} Crore</p>
+                  <p className="text-xl font-bold tracking-tight">{formatINR(report.summary.total_loan_book)} Lakhs</p>
+                  <p className="text-[11px] text-muted-foreground">{formatINR(report.summary.total_loan_book / 100, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} Crore</p>
                 </div>
                 <div className="rounded-xl bg-primary/10 p-2 text-primary">
                   <Landmark className="h-5 w-5" />
@@ -504,7 +506,7 @@ export default function DNBSReport() {
               <div className="flex items-start justify-between">
                 <div className="space-y-1">
                   <p className="text-xs text-muted-foreground">Owned Funds</p>
-                  <p className="text-xl font-bold tracking-tight">₹{report.summary.owned_funds.toLocaleString('en-IN')} Lakhs</p>
+                  <p className="text-xl font-bold tracking-tight">{formatINR(report.summary.owned_funds)} Lakhs</p>
                   <p className="text-[11px] text-muted-foreground">GL trial balance, FY {report.gl_year}</p>
                 </div>
                 <div className="rounded-xl bg-emerald-500/10 p-2 text-emerald-600 dark:text-emerald-400">
@@ -538,7 +540,7 @@ export default function DNBSReport() {
                   <p className="text-xs text-muted-foreground">Gross NPA Ratio</p>
                   <p className="text-xl font-bold tracking-tight text-emerald-600 dark:text-emerald-400">{report.summary.gross_npa_pct}%</p>
                   <p className="text-[11px] text-muted-foreground">
-                    ₹{report.summary.gross_npa_amount.toLocaleString('en-IN')} Lakhs sub-standard, doubtful &amp; loss
+                    {formatINR(report.summary.gross_npa_amount)} Lakhs sub-standard, doubtful &amp; loss
                   </p>
                 </div>
                 <div className="rounded-xl bg-amber-500/10 p-2 text-amber-600 dark:text-amber-400">
@@ -591,7 +593,7 @@ export default function DNBSReport() {
                         <tr key={idx} className={cn('hover:bg-accent/40', row.gl_group === 'TOTAL' && 'bg-primary/5 font-semibold')}>
                           <td className="px-4 py-3 font-mono">{row.gl_group}</td>
                           <td className="px-4 py-3">{row.particulars}</td>
-                          <td className="px-4 py-3 text-right font-mono font-medium">₹{row.amount_lakhs.toLocaleString('en-IN')}</td>
+                          <td className="px-4 py-3 text-right font-mono font-medium">{formatINR(row.amount_lakhs)}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -619,7 +621,7 @@ export default function DNBSReport() {
                       {report.part2_loans.map((row, idx) => (
                         <tr key={idx} className="hover:bg-accent/40">
                           <td className="px-4 py-3 font-medium">{row.category}</td>
-                          <td className="px-4 py-3 text-right font-mono">₹{row.amount_lakhs.toLocaleString('en-IN')}</td>
+                          <td className="px-4 py-3 text-right font-mono">{formatINR(row.amount_lakhs)}</td>
                           <td className="px-4 py-3 text-right font-mono font-semibold">{row.share_pct}%</td>
                         </tr>
                       ))}
@@ -647,7 +649,7 @@ export default function DNBSReport() {
                       {report.part3_income.map((row, idx) => (
                         <tr key={idx} className={cn('hover:bg-accent/40', row.head.includes('Net Profit') && 'bg-emerald-500/10 font-semibold text-emerald-700 dark:text-emerald-300')}>
                           <td className="px-4 py-3 font-medium">{row.head}</td>
-                          <td className="px-4 py-3 text-right font-mono font-semibold">₹{row.amount_lakhs.toLocaleString('en-IN')}</td>
+                          <td className="px-4 py-3 text-right font-mono font-semibold">{formatINR(row.amount_lakhs)}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -676,7 +678,7 @@ export default function DNBSReport() {
                         <tr key={idx} className="hover:bg-accent/40">
                           <td className="px-4 py-3 font-medium">{row.sector}</td>
                           <td className="px-4 py-3 text-muted-foreground">{row.particulars}</td>
-                          <td className="px-4 py-3 text-right font-mono">₹{row.exposure_lakhs.toLocaleString('en-IN')}</td>
+                          <td className="px-4 py-3 text-right font-mono">{formatINR(row.exposure_lakhs)}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -706,8 +708,8 @@ export default function DNBSReport() {
                         <tr key={idx} className="hover:bg-accent/40">
                           <td className="px-4 py-3 font-medium">{row.status}</td>
                           <td className="px-4 py-3 text-right font-mono">{row.count.toLocaleString()}</td>
-                          <td className="px-4 py-3 text-right font-mono">₹{row.amount_lakhs.toLocaleString('en-IN')}</td>
-                          <td className="px-4 py-3 text-right font-mono">₹{row.provision_lakhs.toLocaleString('en-IN')}</td>
+                          <td className="px-4 py-3 text-right font-mono">{formatINR(row.amount_lakhs)}</td>
+                          <td className="px-4 py-3 text-right font-mono">{formatINR(row.provision_lakhs)}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -738,7 +740,7 @@ export default function DNBSReport() {
                         <tr key={idx} className="hover:bg-accent/40">
                           <td className="px-4 py-3 font-medium">{row.category}</td>
                           <td className="px-4 py-3 text-right font-mono">{row.account_count.toLocaleString()}</td>
-                          <td className="px-4 py-3 text-right font-mono">₹{row.amount_lakhs.toLocaleString('en-IN')}</td>
+                          <td className="px-4 py-3 text-right font-mono">{formatINR(row.amount_lakhs)}</td>
                           <td className="px-4 py-3 text-right font-mono">{row.min_interest_rate}% / {row.max_interest_rate}%</td>
                           <td className="px-4 py-3 text-right font-mono font-semibold">{row.weighted_avg_interest_rate}%</td>
                         </tr>
@@ -810,9 +812,9 @@ export default function DNBSReport() {
                           <td className="px-4 py-3 font-semibold">{b.borrower_name}</td>
                           <td className="px-4 py-3 font-mono text-muted-foreground">{b.pan}</td>
                           <td className="px-4 py-3"><Badge variant="outline" className="text-[10px] uppercase">{b.borrower_type}</Badge></td>
-                          <td className="px-4 py-3 text-right font-mono">₹{b.sanctioned_amt.toLocaleString('en-IN')}</td>
-                          <td className="px-4 py-3 text-right font-mono">₹{b.disbursed_amt.toLocaleString('en-IN')}</td>
-                          <td className="px-4 py-3 text-right font-mono font-semibold">₹{b.total_outstanding.toLocaleString('en-IN')}</td>
+                          <td className="px-4 py-3 text-right font-mono">{formatINR(b.sanctioned_amt)}</td>
+                          <td className="px-4 py-3 text-right font-mono">{formatINR(b.disbursed_amt)}</td>
+                          <td className="px-4 py-3 text-right font-mono font-semibold">{formatINR(b.total_outstanding)}</td>
                           <td className="px-4 py-3">
                             <Badge className="bg-emerald-500/10 text-emerald-600 dark:bg-emerald-500/20 dark:text-emerald-400 border-none text-[10px]">
                               {b.account_status}
@@ -853,9 +855,9 @@ export default function DNBSReport() {
                           <td className="px-4 py-3"><Badge variant="outline" className="text-[10px] uppercase">{inv.nature || 'CURRENT'}</Badge></td>
                           <td className="px-4 py-3 text-muted-foreground">{inv.investment_type}</td>
                           <td className="px-4 py-3 font-mono text-muted-foreground">{inv.pan || 'NA'}</td>
-                          <td className="px-4 py-3 text-right font-mono">₹{inv.book_value.toLocaleString('en-IN')}</td>
+                          <td className="px-4 py-3 text-right font-mono">{formatINR(inv.book_value)}</td>
                           <td className="px-4 py-3 text-center font-mono text-muted-foreground">{inv.is_group_company || 'false'}</td>
-                          <td className="px-4 py-3 text-right font-mono font-semibold">₹{inv.amt_outstanding.toLocaleString('en-IN')}</td>
+                          <td className="px-4 py-3 text-right font-mono font-semibold">{formatINR(inv.amt_outstanding)}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -888,7 +890,7 @@ export default function DNBSReport() {
                           <td className="px-4 py-3 font-semibold">{br.branch_name}</td>
                           <td className="px-4 py-3 text-right font-mono">{br.customer_count.toLocaleString()}</td>
                           <td className="px-4 py-3 text-right font-mono">{br.account_count.toLocaleString()}</td>
-                          <td className="px-4 py-3 text-right font-mono font-semibold">₹{br.total_outstanding.toLocaleString('en-IN')}</td>
+                          <td className="px-4 py-3 text-right font-mono font-semibold">{formatINR(br.total_outstanding)}</td>
                         </tr>
                       ))}
                     </tbody>

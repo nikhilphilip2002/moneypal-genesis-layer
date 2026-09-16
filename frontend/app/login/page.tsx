@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { auth } from '@/lib/api';
 import { homeRoute } from '@/lib/useUserRole';
+import { errorMessage } from '@/lib/errors';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -28,8 +29,8 @@ export default function LoginPage() {
       const landing = me?.role ? homeRoute(me.role) : '/';
       router.replace(landing);
       router.refresh();
-    } catch (err: any) {
-      setError(err.message || 'Invalid username or password.');
+    } catch (error: unknown) {
+      setError(errorMessage(error, 'Invalid username or password.'));
       setLoading(false);
     }
   };

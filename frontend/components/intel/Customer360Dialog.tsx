@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 
 import { admin, Customer360Response } from '@/lib/api';
+import { formatCompactINR, formatINR } from '@/lib/formatters';
 import { Badge } from '@/components/ui/badge';
 import {
   Dialog,
@@ -31,19 +32,12 @@ interface Customer360DialogProps {
   onOpenChange: (open: boolean) => void;
 }
 
-function formatExactMoney(val?: number): string {
-  const num = Number(val || 0);
-  return `₹${num.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-}
+const formatExactMoney = (value?: number) => formatINR(value, {
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2,
+});
 
-function formatCompactMoney(val?: number): string {
-  const value = Number(val || 0);
-  const abs = Math.abs(value);
-  if (abs >= 10_000_000) return `₹${(value / 10_000_000).toFixed(2)} Cr`;
-  if (abs >= 100_000) return `₹${(value / 100_000).toFixed(2)} L`;
-  if (abs >= 1_000) return `₹${(value / 1_000).toFixed(1)} K`;
-  return `₹${value.toLocaleString('en-IN', { maximumFractionDigits: 0 })}`;
-}
+const formatCompactMoney = formatCompactINR;
 
 export default function Customer360Dialog({
   customerId,

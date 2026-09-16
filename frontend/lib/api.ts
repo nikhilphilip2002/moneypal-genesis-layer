@@ -293,7 +293,11 @@ function redirectToLogin() {
 }
 
 // Generic API request helper
-async function apiRequest(endpoint: string, options: RequestInit = {}, retry = true): Promise<any> {
+async function apiRequest<T = unknown>(
+  endpoint: string,
+  options: RequestInit = {},
+  retry = true,
+): Promise<T> {
   const token = getToken();
 
   const response = await fetch(`${API_URL}${endpoint}`, {
@@ -323,7 +327,7 @@ async function apiRequest(endpoint: string, options: RequestInit = {}, retry = t
 // ─── Auth API (hardcoded demo users on the backend) ───
 
 export const auth = {
-  login: (username: string, password: string) =>
+  login: (username: string, password: string): Promise<{ access: string; refresh: string }> =>
     apiRequest('/auth/login/', {
       method: 'POST',
       body: JSON.stringify({ username, password }),
@@ -358,7 +362,6 @@ export const competitive = {
   swot: (id: string, refresh?: boolean): Promise<SwotResponse> =>
     apiRequest(`/competitive/institutions/${encodeURIComponent(id)}/swot${refresh ? '?refresh=1' : ''}`),
   landscape: (refresh?: boolean): Promise<IntelligenceResponse> => apiRequest(`/competitive/landscape${refresh ? '?refresh=1' : ''}`),
-  momVintage: (): Promise<any> => apiRequest('/competitive/mom-vintage'),
 };
 
 // ─── Module 3: Regulatory intelligence ───
@@ -498,7 +501,7 @@ export const admin = {
     weight_by?: string;
     limit?: number;
     offset?: number;
-  } | string): Promise<any> => {
+  } | string): Promise<unknown> => {
     let q = '';
     if (typeof params === 'string') {
       q = params ? `?search=${encodeURIComponent(params)}` : '';
@@ -522,11 +525,7 @@ export const admin = {
   },
   customerDetails: (customerId: string): Promise<Customer360Response> =>
     apiRequest(`/admin/customers/${encodeURIComponent(customerId)}/details`),
-  monthlyBreakdown: (month?: string): Promise<any> =>
-    apiRequest(`/admin/monthly-breakdown${month ? `?month=${encodeURIComponent(month)}` : ''}`),
-  momLoanAnalysis: (): Promise<any> =>
-    apiRequest('/admin/mom-loan-analysis'),
-  dbSchemaSearch: (q: string, entity_type: string = 'all'): Promise<{ query: string; entity_type: string; results: any[] }> =>
+  dbSchemaSearch: (q: string, entity_type: string = 'all'): Promise<{ query: string; entity_type: string; results: unknown[] }> =>
     apiRequest(`/admin/db-schema/search?q=${encodeURIComponent(q)}&entity_type=${encodeURIComponent(entity_type)}`),
   addInstitution: (data: { name: string; type: string; website?: string; headquarters?: string; msme_focus?: boolean }) =>
     apiRequest('/competitive/institutions', { method: 'POST', body: JSON.stringify(data) }),
@@ -691,7 +690,7 @@ export type WorklistItem = {
   action: string;
   owner: string;
   weights: ScoreWeight[];
-  fields: Record<string, any>;
+  fields: Record<string, unknown>;
 };
 
 // A ranked, account-level list with the reason each row is on it — the end of the chain.
@@ -890,7 +889,7 @@ export type WorkbenchCard = {
   card_type:
     | 'chart' | 'analysis' | 'worklist' | 'briefing' | 'brief' | 'schema' | 'catalog'
     | 'clarify' | 'refusal' | 'error';
-  payload: any;
+  payload: unknown;
 };
 
 export type WorkbenchVerifiedFact = {
@@ -1007,7 +1006,7 @@ export type WorkbenchTool = {
   label: string;
   description: string;
   kind: string;
-  params: Record<string, any>;
+  params: Record<string, unknown>;
   source_id: string;
 };
 
@@ -1054,10 +1053,14 @@ export const workbench = {
 
   runTool: async (
     toolId: string,
-    params: Record<string, any> = {},
+    params: Record<string, unknown> = {},
     externalSourcesEnabled = false,
   ): Promise<WorkbenchCard> => {
-    const { source, card_type, ...payload } = await apiRequest(`/workbench/tool/${toolId}`, {
+    const { source, card_type, ...payload } = await apiRequest<{
+      source: string;
+      card_type: WorkbenchCard['card_type'];
+      [key: string]: unknown;
+    }>(`/workbench/tool/${toolId}`, {
       method: 'POST',
       body: JSON.stringify({ params, external_sources_enabled: externalSourcesEnabled }),
     });

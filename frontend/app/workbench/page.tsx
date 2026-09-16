@@ -21,9 +21,11 @@ import {
   workbench,
   type DemoUser,
   type WorkbenchConversation,
+  type WorkbenchRoute,
   type WorkbenchTool,
 } from '@/lib/api';
 import { ROLE_LABELS } from '@/lib/useUserRole';
+import { errorMessage, isAbortError } from '@/lib/errors';
 import Composer from '@/components/workbench/Composer';
 import WorkbenchTurn, { type WorkbenchTurnData } from '@/components/workbench/WorkbenchTurn';
 import HistoryRail from '@/components/workbench/HistoryRail';
@@ -203,7 +205,17 @@ export default function WorkbenchPage() {
             break;
           case 'route':
             {
-              const { type: _type, ...route } = event;
+              const route: WorkbenchRoute = {
+                sources: event.sources,
+                intent: event.intent,
+                model: event.model,
+                reason: event.reason,
+                confidence: event.confidence,
+                fallback_used: event.fallback_used,
+                policy_version: event.policy_version,
+                effective_sources: event.effective_sources,
+                tools: event.tools,
+              };
               patch({ route, pending: event.sources });
             }
             break;
@@ -236,12 +248,12 @@ export default function WorkbenchPage() {
             break;
           }
         }
-      } catch (error: any) {
+      } catch (error: unknown) {
         patch({
           error: {
-            message: error?.name === 'AbortError'
+            message: isAbortError(error)
               ? 'Response stopped.'
-              : error?.message ?? 'Something went wrong.',
+              : errorMessage(error, 'Something went wrong.'),
           },
           done: true,
           draftText: undefined,
@@ -276,8 +288,8 @@ export default function WorkbenchPage() {
     try {
       const card = await workbench.runTool(tool.id, {}, externalSourcesEnabled);
       patch({ cards: [card], done: true });
-    } catch (error: any) {
-      patch({ error: { message: error?.message ?? 'The tool failed.' }, done: true });
+    } catch (error: unknown) {
+      patch({ error: { message: errorMessage(error, 'The tool failed.') }, done: true });
     } finally {
       setBusy(false);
     }

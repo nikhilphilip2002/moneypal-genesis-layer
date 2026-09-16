@@ -95,8 +95,8 @@ function Row({ item, columns }: { item: WorklistItem; columns: Worklist['columns
   const [open, setOpen] = useState(false);
   const tone = SEVERITY[item.severity];
   const Icon = tone.icon;
-  const borrower = item.fields.borrower;
-  const branch = item.fields.branch;
+  const borrower = String(item.fields.borrower ?? '');
+  const branch = String(item.fields.branch ?? '');
 
   return (
     <li className={cn('rounded-lg border', tone.ring)}>

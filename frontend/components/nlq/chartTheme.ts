@@ -1,3 +1,5 @@
+import { formatCompactINR, formatINR } from '@/lib/formatters';
+
 // Chart theme for the NLQ layer.
 //
 // The categorical order is fixed and never cycled: slot N always belongs to the Nth series
@@ -121,9 +123,8 @@ export function formatValue(value: unknown, unit: string): string {
   switch (unit) {
     case 'inr': {
       const magnitude = Math.abs(value);
-      if (magnitude >= CRORE) return `₹${(value / CRORE).toFixed(2)} Cr`;
-      if (magnitude >= LAKH) return `₹${(value / LAKH).toFixed(2)} L`;
-      return `₹${value.toLocaleString('en-IN', { maximumFractionDigits: 0 })}`;
+      if (magnitude >= LAKH) return formatCompactINR(value);
+      return formatINR(value, { maximumFractionDigits: 0 });
     }
     case 'percent':
       return Math.abs(value) < 1 ? `${value.toFixed(2)}%` : `${value.toFixed(1)}%`;
