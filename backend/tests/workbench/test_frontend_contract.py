@@ -30,9 +30,11 @@ def test_workbench_stream_preserves_native_contract_fields():
     assert "suggestions?: string[]" in api
     assert "tools?: string[]" in api
     assert "code?: string" in api
-    assert "message: payload.text ?? payload.message ?? ''" in api
-    assert "policy_version: payload.policy_version, tools: payload.tools || []" in api
-    assert "retryable: !!payload.retryable, reason: payload.reason" in api
+    assert "message: stringValue(payload.text) || stringValue(payload.message)" in api
+    assert "policy_version: optionalString(payload.policy_version)" in api
+    assert "tools: stringArray(payload.tools)" in api
+    assert "retryable: payload.retryable === true" in api
+    assert "reason: optionalString(payload.reason)" in api
 
 
 def test_workbench_turn_renders_preserved_answer_and_route_metadata():

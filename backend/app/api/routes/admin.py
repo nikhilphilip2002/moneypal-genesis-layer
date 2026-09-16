@@ -1,23 +1,14 @@
-"""Platform administration + cross-collection search (Moneypal Administrator)."""
+"""Platform administration and governed portfolio exploration."""
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
 
-from app.services import brief_cache, platform
+from app.services import platform
 from app.services.curiosity_graph import (
     get_curiosity_graph,
     get_customer_360_details,
     search_curiosity_entities,
 )
-from app.services.db_schema import (
-    get_monthly_breakdown,
-    get_mom_loan_start_analysis,
-)
 
 router = APIRouter(tags=["admin"])
-
-
-class SearchRequest(BaseModel):
-    query: str
 
 
 @router.get("/admin/status")
@@ -78,18 +69,6 @@ def customer_details(customer_id: str):
     return result
 
 
-@router.get("/admin/monthly-breakdown")
-def monthly_breakdown(month: str = None):
-    """Retrieve monthly basis aggregates (sanctions, disbursements, repayments, efficiency)."""
-    return get_monthly_breakdown(selected_month=month)
-
-
-@router.get("/admin/mom-loan-analysis")
-def mom_loan_analysis():
-    """Month-on-month loan start date analysis tracking institution growth and improvement over time."""
-    return get_mom_loan_start_analysis()
-
-
 @router.get("/admin/db-schema/search")
 def db_schema_search(q: str = "", entity_type: str = "all"):
     """Instant Gold-layer autocomplete for agents and borrowers."""
@@ -97,27 +76,3 @@ def db_schema_search(q: str = "", entity_type: str = "all"):
     if entity_type not in ("", "all"):
         results = [row for row in results if row["type"] == entity_type]
     return {"query": q, "entity_type": entity_type, "results": results}
-
-
-@router.post("/intelligence/search")
-def search(req: SearchRequest):
-    if not req.query.strip():
-        raise HTTPException(400, "Query must not be empty")
-    try:
-        return {"query": req.query, "results": platform.search(req.query)}
-    except Exception:
-        raise HTTPException(503, "Semantic search is unavailable — vector store not reachable")
-
-
-@router.post("/intelligence/ask")
-def ask(req: SearchRequest):
-    """Ask Genesis: natural-language question -> grounded, cited answer + sources.
-
-    Answers are cached (same question asked twice costs zero LLM tokens)."""
-    if not req.query.strip():
-        raise HTTPException(400, "Question must not be empty")
-    cache_key = "ask:" + " ".join(req.query.lower().split())
-    try:
-        return brief_cache.cached(cache_key, lambda: platform.ask(req.query))
-    except Exception:
-        raise HTTPException(503, "Ask Genesis is unavailable — intelligence services not reachable")

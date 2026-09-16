@@ -14,12 +14,12 @@ records only findings that can be supported by the current repository.
 
 | Area | Verified result |
 | :--- | :--- |
-| Unreachable source removal completed | 27 files, approximately 6,039 physical lines |
+| Unreachable source removal completed | 29 files, approximately 6,168 physical lines |
 | Frontend dependency removal completed | 18 packages plus their unused transitive packages |
 | Declaration-only backend symbols resolved | 12 removed; `close_pool()` wired into shutdown |
 | Legacy conversational implementations removed | NLQ planner/evaluator and stale Workbench evaluator corpora |
-| API endpoints requiring an ownership/deprecation decision | 8 endpoints |
-| Endpoints incorrectly classified as dead in the prior audit | 5 endpoints; all are retained |
+| Caller-free API endpoints removed | 9 endpoints and their orphaned service code |
+| Endpoints incorrectly classified as dead in the prior audit | 6 endpoints; all are retained |
 | Benchmark inventory used by the previous 6,148-line total | 7 files, not 8 |
 | Archive inventory | 30 files, 1,718,572 bytes |
 
@@ -28,14 +28,15 @@ TypeScript types**, and **12 major duplication patterns** are not retained. No r
 command, configuration, tool version, symbol list, or generated report exists in the repository
 for those totals.
 
-Static absence of an in-repository caller does not prove that a public API is unused by external
-clients. API removals therefore require a deprecation decision, not an immediate deletion.
+The final cleanup decision treats the repository and its documented entrypoints as the supported
+product boundary. Routes with no caller, documentation, or active contract were removed together
+with their client wrappers and orphaned implementation code.
 
 ### Cleanup progress
 
 The verified cleanup passes are complete:
 
-- Removed the 27 unreachable source files recorded in Section 2.
+- Removed the 29 unreachable source files recorded in Section 2.
 - Removed the 18 direct frontend dependencies recorded in Section 5 and regenerated the lockfile.
 - Removed unreachable frontend API exports, the obsolete role hook/cache, and `_format_chunks()`.
 - Removed all verified Ruff `F401` and `F841` findings.
@@ -56,8 +57,10 @@ The verified cleanup passes are complete:
   planner-only tests after verifying there was no application, route, scheduler, or script caller.
 - Removed the stale native-agent evaluator and its retired tool-name corpora.
 - Wired the NLQ database pool into application shutdown.
-- Kept every API deprecation candidate, active NLQ execution infrastructure and endpoints, RAG
-  implementations, catalog YAML, archives, and benchmark scripts unchanged.
+- Removed nine caller-free endpoints, the invalid mock refresh flow, their orphaned service code,
+  and the six inactive parent NLQ catalog definitions.
+- Retained active NLQ execution infrastructure and endpoints, both RAG implementations pending the
+  compatibility migration, archives, and benchmark scripts.
 
 ---
 
@@ -157,6 +160,12 @@ exists. The fifth encoded retired Workbench tool names and semantic-table assump
 planner/evaluator-only tests and golden corpora were removed with them. The active QuerySpec golden
 corpus remains because it still validates the retained compiler.
 
+### 2.5 Retired API-only modules
+
+The final endpoint pass removed `backend/app/api/routes/intelligence.py` and
+`backend/app/services/intelligence.py`. Their four routes had no application, frontend, script,
+test, or documented consumer after the dashboard widgets were retired.
+
 ---
 
 ## 3. Resolved Declaration-Only Symbols
@@ -203,6 +212,7 @@ The prior audit incorrectly marked these endpoints as dead:
 | `POST /nlq/signals/{fingerprint}/status` | `frontend/components/nlq/BriefingCard.tsx` |
 | `GET /regulatory/reports/{report_id}/periods` | `frontend/components/intel/DNBSReport.tsx` |
 | `GET /regulatory/reports/{report_id}/export` | `frontend/components/intel/DNBSReport.tsx` |
+| `GET /admin/customers/{customer_id}/details` | `frontend/components/intel/Customer360Dialog.tsx` |
 
 `/nlq/execute` is also active through `frontend/components/workbench/PortfolioDashboard.tsx`.
 
@@ -211,23 +221,23 @@ Workbench tool registry may no longer produce new `worklist` or `briefing` cards
 saved conversation history or external clients still depend on those card types before simplifying
 them.
 
-### 4.2 Deprecation-review candidates
+### 4.2 Removed caller-free endpoints
 
-These endpoints have no active frontend caller in the current tree:
+The final pass removed these endpoints after adopting the repository and documented entrypoints as
+the supported product boundary:
 
-| Endpoint | Current evidence | Required decision |
-| :--- | :--- | :--- |
-| `GET /intelligence/recent` | Former unused client wrapper removed; no in-repository caller | Confirm external/dashboard consumers, then deprecate or remove |
-| `GET /intelligence/action-items` | Former unused client wrapper removed; no in-repository caller | Confirm external/dashboard consumers, then deprecate or remove |
-| `POST /intelligence/search` | Its only caller was removed with unreachable `GenesisSearch.tsx` | Prefer Workbench curated-search tools |
-| `POST /intelligence/ask` | Its only caller was removed with unreachable `GenesisSearch.tsx` | Prefer `POST /workbench/ask` |
-| `GET /macro/briefing/stream` | Its only caller was removed with unreachable `StreamingBrief.tsx` | Retain only if external SSE clients exist |
-| `GET /admin/customers/{customer_id}/details` | Former unused client wrapper removed; backend test covers route behavior | Decide whether it remains a supported API |
-| `POST /auth/session/refresh/` | No caller; frontend stores but never uses `refreshToken` | Implement a valid refresh flow or remove both token and endpoint |
-| `POST /nlq/worklists/{worklist_id}/status` | Former unused client wrapper removed; no UI caller | Retain only if worklist assignment remains planned/supported |
+1. `GET /intelligence/recent`
+2. `GET /intelligence/action-items`
+3. `POST /intelligence/search`
+4. `POST /intelligence/ask`
+5. `GET /macro/briefing/stream`
+6. `POST /auth/session/refresh/`
+7. `POST /nlq/worklists/{worklist_id}/status`
+8. `GET /admin/monthly-breakdown`
+9. `GET /admin/mom-loan-analysis`
 
-The refresh endpoint currently returns `mock-token-refresh`, which `/auth/me/` cannot resolve to a
-known user. It is not merely unused; it would be invalid if the frontend began calling it.
+The invalid refresh token was also removed from login responses and browser storage. Customer 360
+was moved to the retained list after its active dialog caller was verified.
 
 ---
 
@@ -376,14 +386,12 @@ Recommended direction:
    explanatory comments.
 7. **Completed:** Remove the toast debug log while retaining the active hook.
 
-### Phase 2: API deprecation
+### Phase 2: API deprecation — completed
 
-1. Inventory access logs, deployed consumers, scripts, and external integrations for the eight
-   candidates in Section 4.2.
-2. Mark supported public APIs explicitly.
-3. Deprecate or remove unused wrappers and endpoints together.
-4. Resolve authentication refresh as a feature decision: implement it correctly or remove both the
-   unused stored refresh token and backend route.
+1. **Completed:** Treat repository callers and documented entrypoints as the supported boundary.
+2. **Completed:** Remove nine caller-free routes with their wrappers and orphaned service code.
+3. **Completed:** Remove the invalid refresh route, response field, and browser storage entry.
+4. **Completed:** Correct the audit and retain the actively used customer 360 endpoint.
 
 ### Phase 3: NLQ migration boundary — completed
 
@@ -401,7 +409,7 @@ Recommended direction:
    the distinct precision required by account details, compact cards, charts, and regulatory tables.
 3. Resolve the duplicate response contract.
 4. Design and test a single RAG interface before migrating callers.
-5. Decide whether inactive parent catalog YAML belongs in version control or archive history.
+5. **Completed:** Remove the inactive parent catalog YAML; the loader and tests use only `defs/gold`.
 
 ---
 

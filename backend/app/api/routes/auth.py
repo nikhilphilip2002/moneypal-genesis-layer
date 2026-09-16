@@ -51,17 +51,7 @@ def login(req: LoginRequest):
     if not user or user["password"] != req.password:
         raise HTTPException(401, "Invalid username or password.")
     # Return mock token containing username
-    return {
-        "access": f"mock-token-{req.username}",
-        "refresh": "mock-refresh-token"
-    }
-
-@router.post("/session/refresh/")
-def refresh():
-    return {
-        "access": "mock-token-refresh",
-        "refresh": "mock-refresh-token"
-    }
+    return {"access": f"mock-token-{req.username}"}
 
 @router.get("/users/")
 def list_users():

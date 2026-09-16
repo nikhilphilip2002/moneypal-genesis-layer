@@ -283,7 +283,6 @@ export const getToken = () => {
 export function clearLocalAuthState() {
   if (typeof window === 'undefined') return;
   localStorage.removeItem('token');
-  localStorage.removeItem('refreshToken');
 }
 
 function redirectToLogin() {
@@ -347,7 +346,7 @@ async function apiRequest<T = unknown>(
 // ─── Auth API (hardcoded demo users on the backend) ───
 
 export const auth = {
-  login: (username: string, password: string): Promise<{ access: string; refresh: string }> =>
+  login: (username: string, password: string): Promise<{ access: string }> =>
     apiRequest('/auth/login/', {
       method: 'POST',
       body: JSON.stringify({ username, password }),
@@ -831,17 +830,6 @@ export const nlq = {
     }[];
     unavailable: { rule: string; needs: string }[];
   }> => apiRequest('/nlq/worklists'),
-
-  setWorklistStatus: (
-    worklist_id: string,
-    account: string,
-    status: string,
-    opts: { note?: string; assigned_to?: string } = {},
-  ) =>
-    apiRequest(`/nlq/worklists/${worklist_id}/status`, {
-      method: 'POST',
-      body: JSON.stringify({ account, status, ...opts }),
-    }),
 
   // Signals and the morning briefing. Retrieval, not analysis: the scan runs on a schedule,
   // so reading this costs one indexed query rather than eleven warehouse scans.

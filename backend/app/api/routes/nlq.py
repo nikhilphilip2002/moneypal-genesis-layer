@@ -194,32 +194,6 @@ def list_worklists(authorization: str | None = Header(default=None)):
     }
 
 
-class WorklistStatusRequest(BaseModel):
-    account: str
-    status: str
-    note: str = ""
-    assigned_to: str = ""
-
-
-@router.post("/worklists/{worklist_id}/status")
-def set_worklist_status(
-    worklist_id: str,
-    req: WorklistStatusRequest,
-    authorization: str | None = Header(default=None),
-):
-    """Record what a person did about one account. Only a person calls this — nothing in
-    the product infers that an account was contacted."""
-    user, _role = identity_from_authorization(authorization)
-    try:
-        saved = worklist_store.set_status(
-            worklist_id, req.account, req.status,
-            owner=user, note=req.note, assigned_to=req.assigned_to,
-        )
-    except worklist_store.WorklistStoreError as exc:
-        raise HTTPException(404, str(exc)) from exc
-    return {"worklist_id": saved.worklist_id, "statuses": saved.statuses}
-
-
 @router.get("/worklists/{worklist_id}/export")
 def export_worklist(worklist_id: str, authorization: str | None = Header(default=None)):
     """The saved list as CSV, because that is how it reaches a branch.

@@ -12,7 +12,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api.routes import admin, auth, competitive, intelligence, macro, nlq, policy, regulatory, review, workbench
+from app.api.routes import admin, auth, competitive, macro, nlq, policy, regulatory, review, workbench
 from app.core.config import settings
 from app.core.logging import bind_trace, start_logging, stop_logging
 
@@ -98,7 +98,6 @@ def create_app() -> FastAPI:
     app.include_router(admin.router)
     app.include_router(review.router)
     app.include_router(policy.router)
-    app.include_router(intelligence.router)
     app.include_router(nlq.router)
     app.include_router(workbench.router)
 

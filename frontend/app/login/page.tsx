@@ -24,7 +24,6 @@ export default function LoginPage() {
     try {
       const data = await auth.login(username, password);
       localStorage.setItem('token', data.access);
-      localStorage.setItem('refreshToken', data.refresh);
       const me = await auth.me().catch(() => null);
       const landing = me?.role ? homeRoute(me.role) : '/';
       router.replace(landing);

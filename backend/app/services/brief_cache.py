@@ -53,20 +53,6 @@ def put(cache_key: str, payload: Any) -> Any:
     return encoded
 
 
-def recent(limit: int = 5) -> list[tuple[str, float]]:
-    """Most recently generated briefs as (cache_key, generated_at), newest first.
-
-    The stored ``cache_key`` still carries the ``CACHE_VERSION`` prefix — callers
-    strip it before resolving to a display item.
-    """
-    with _conn() as conn:
-        rows = conn.execute(
-            "SELECT cache_key, generated_at FROM briefs ORDER BY generated_at DESC LIMIT ?",
-            (limit,),
-        ).fetchall()
-    return [(row[0], row[1]) for row in rows]
-
-
 def cached(
     cache_key: str,
     producer: Callable[[], Any],

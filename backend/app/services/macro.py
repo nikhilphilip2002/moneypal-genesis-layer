@@ -79,13 +79,3 @@ def briefing_response(summary: str, sources: list[dict]):
 def briefing():
     answer, sources = rag.ask(MACRO_COLLECTION, prompts.BRIEFING, queries=prompts.BRIEFING_QUERIES)
     return briefing_response(answer, sources)
-
-
-def briefing_stream():
-    """Retrieve context, then return (sources, token_generator) for the briefing.
-
-    Retrieval runs up front so the caller can build the final response envelope
-    from the same sources once streaming completes.
-    """
-    sources = rag.search_multi(MACRO_COLLECTION, prompts.BRIEFING_QUERIES)
-    return sources, rag.generate_stream(prompts.BRIEFING, sources)
