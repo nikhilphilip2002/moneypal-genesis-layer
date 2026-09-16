@@ -12,6 +12,7 @@ import logging
 from fastapi import APIRouter, Header, HTTPException, Response
 from pydantic import BaseModel, Field
 
+from app.api.routes.auth import identity_from_authorization
 from app.services.nlq import db as nlq_db
 from app.services.nlq.catalog import get_catalog
 from app.services.nlq.compiler import CompileError
@@ -140,7 +141,7 @@ class WorklistRequest(BaseModel):
 @router.post("/worklist", response_model=Worklist)
 def generate_worklist(req: WorklistRequest, authorization: str | None = Header(default=None)):
     """Run a worklist preset. No LLM involved — the rules and the score are catalog config."""
-    user, role = _identity(authorization)
+    user, role = identity_from_authorization(authorization)
     try:
         result = worklists.build(
             req.worklist_id, filters=list(req.filters), limit=req.limit, role=role
@@ -160,7 +161,7 @@ def generate_worklist(req: WorklistRequest, authorization: str | None = Header(d
 @router.get("/worklists")
 def list_worklists(authorization: str | None = Header(default=None)):
     """The presets available, and the lists already being worked."""
-    user, _role = _identity(authorization)
+    user, _role = identity_from_authorization(authorization)
     catalog = get_catalog()
     return {
         "presets": [
@@ -208,7 +209,7 @@ def set_worklist_status(
 ):
     """Record what a person did about one account. Only a person calls this — nothing in
     the product infers that an account was contacted."""
-    user, _role = _identity(authorization)
+    user, _role = identity_from_authorization(authorization)
     try:
         saved = worklist_store.set_status(
             worklist_id, req.account, req.status,
@@ -226,7 +227,7 @@ def export_worklist(worklist_id: str, authorization: str | None = Header(default
     Re-exports the frozen snapshot rather than re-running the rules: a list half-worked
     since this morning must export as the list that was worked.
     """
-    user, _role = _identity(authorization)
+    user, _role = identity_from_authorization(authorization)
     saved = worklist_store.get(worklist_id, owner=user)
     if saved is None:
         raise HTTPException(404, "Unknown worklist.")
@@ -301,7 +302,7 @@ def set_signal_status(
     Acknowledging says "I have seen this", not "this is fixed" — acknowledged signals stay in
     the feed, because a standing deterioration must not disappear by being read.
     """
-    user, _role = _identity(authorization)
+    user, _role = identity_from_authorization(authorization)
     try:
         stored = signals.set_status(fingerprint, req.status, user=user)
     except signals.SignalStoreError as exc:
@@ -340,7 +341,7 @@ def get_briefing(
     authorization: str | None = Header(default=None),
 ):
     """One desk's morning read: what is notable, where the book stands, who to call."""
-    _user, role = _identity(authorization)
+    _user, role = identity_from_authorization(authorization)
     try:
         return signals.briefing(persona_id, role=role, include_worklists=include_worklists)
     except signals.BriefingError as exc:

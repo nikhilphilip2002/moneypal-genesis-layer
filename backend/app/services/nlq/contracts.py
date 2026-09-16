@@ -57,11 +57,6 @@ Unit = Literal[
 
 Sensitivity = Literal["public", "internal", "pii"]
 
-MetricGrain = Literal["flow", "point_in_time", "ratio"]
-"""`flow` sums across periods (disbursement). `point_in_time` must not be summed across
-dates (PAR, outstanding balance) - it needs a pinned as-of date. `ratio` is recomputed
-from numerator/denominator at the requested grain, never averaged from sub-totals."""
-
 ChartType = Literal[
     "kpi",
     "line",

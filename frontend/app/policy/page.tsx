@@ -1,9 +1,7 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useState } from 'react';
 import {
-  auth,
   competitive,
   regulatory,
   policy,
@@ -11,7 +9,7 @@ import {
   type RegulationCategory,
   type IntelligenceResponse,
 } from '@/lib/api';
-import { canAccess, homeRoute, type UserRole } from '@/lib/useUserRole';
+import { useRequireAuth } from '@/lib/useRequireAuth';
 import { useIntel } from '@/lib/useIntel';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -25,29 +23,14 @@ import { useToast } from '@/components/ui/use-toast';
 import { Building, Copy, FileText, Scale, Sparkles } from 'lucide-react';
 
 export default function PolicyPage() {
-  const router = useRouter();
+  const authorized = useRequireAuth('/policy');
   const { toast } = useToast();
-  const [authorized, setAuthorized] = useState(false);
   const [selectedRegs, setSelectedRegs] = useState<string[]>([]);
   const [selectedInsts, setSelectedInsts] = useState<string[]>([]);
   const [focus, setFocus] = useState('');
   const [brief, setBrief] = useState<IntelligenceResponse | null>(null);
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState('');
-
-  useEffect(() => {
-    auth
-      .me()
-      .then((user) => {
-        const role = user.role as UserRole;
-        if (!canAccess(role, '/policy')) {
-          router.replace(homeRoute(role));
-          return;
-        }
-        setAuthorized(true);
-      })
-      .catch(() => router.replace('/login'));
-  }, [router]);
 
   const regulations = useIntel<RegulationCategory[]>('regulatory:categories', regulatory.categories);
   const institutions = useIntel<Institution[]>('competitive:institutions', competitive.institutions);

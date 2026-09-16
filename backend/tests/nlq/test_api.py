@@ -7,40 +7,62 @@ working when the assistant is offline.
 import json
 
 import pytest
-from fastapi.testclient import TestClient
+from fastapi import HTTPException
+from httpx import ASGITransport, AsyncClient
 
 from app.main import app
 from app.services.nlq import cache, ratelimit
 from tests.nlq.conftest import requires_db
 
+pytestmark = pytest.mark.anyio
+
 
 @pytest.fixture
-def client():
+async def client():
     ratelimit.reset()
     cache.clear_all()
-    return TestClient(app)
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test",
+    ) as test_client:
+        yield test_client
 
 
 class TestHealth:
-    def test_health_is_always_200(self, client):
+    async def test_health_is_always_200(self, client, monkeypatch):
         """A degraded LLM is a product state, not an error — the ask bar renders its
         offline message from this, and a 503 would give it nothing to render."""
-        response = client.get("/nlq/health")
+        from app.api.routes import nlq as nlq_route
+
+        class OfflineLLM:
+            async def health(self):
+                return {"status": "down", "detail": "offline test"}
+
+        monkeypatch.setattr(nlq_route, "get_llm_client", lambda: OfflineLLM())
+        monkeypatch.setattr(
+            nlq_route.nlq_db,
+            "health",
+            lambda: {"status": "unconfigured", "detail": "offline test"},
+        )
+        response = await client.get("/nlq/health")
         assert response.status_code == 200
         body = response.json()
         assert body["status"] in ("ok", "degraded")
         assert set(body["capabilities"]) == {"execute"}
 
-    def test_catalog_exposes_labels_not_column_names(self, client):
+    async def test_catalog_exposes_labels_not_column_names(self):
         """Column names are meaningless to a user and leak schema."""
-        body = client.get("/nlq/catalog").json()
+        from app.api.routes import nlq as nlq_route
+
+        body = nlq_route.catalog_summary()
         assert body["metrics"] and body["dimensions"] and body["example_questions"]
         serialised = json.dumps(body)
         for internal in ("gnlnac_", "ascd_", "lnrepay_"):
             assert internal not in serialised
 
-    def test_catalog_marks_unratified_metrics(self, client):
-        metrics = {m["id"]: m for m in client.get("/nlq/catalog").json()["metrics"]}
+    async def test_catalog_marks_unratified_metrics(self):
+        from app.api.routes import nlq as nlq_route
+
+        metrics = {m["id"]: m for m in nlq_route.catalog_summary()["metrics"]}
         assert metrics["par_30"]["requires_signoff"] is True
 
 
@@ -48,8 +70,8 @@ class TestHealth:
 class TestExecuteEndpoint:
     """The LLM-free path: saved questions, drill-downs and dashboards all run through it."""
 
-    def test_returns_a_rendered_chart(self, client, readonly_via_warehouse):
-        response = client.post(
+    async def test_returns_a_rendered_chart(self, client, readonly_via_warehouse):
+        response = await client.post(
             "/nlq/execute",
             json={
                 "query_spec": {
@@ -68,8 +90,8 @@ class TestExecuteEndpoint:
         assert chart["lineage"]["sql"]
         assert chart["summary"]
 
-    def test_par_30_carries_its_lineage_and_badge(self, client, readonly_via_warehouse):
-        response = client.post(
+    async def test_par_30_carries_its_lineage_and_badge(self, client, readonly_via_warehouse):
+        response = await client.post(
             "/nlq/execute",
             json={
                 "query_spec": {
@@ -85,9 +107,9 @@ class TestExecuteEndpoint:
         assert "gold.portfolio_snapshot_as_of" in chart["lineage"]["sql"]
         assert chart["lineage"]["formulas"]["par_30"]
 
-    def test_a_refused_spec_returns_422_with_a_readable_reason(self, client):
+    async def test_a_refused_spec_returns_422_with_a_readable_reason(self, client):
         """The message is written for the user, not copied from a database error."""
-        response = client.post(
+        response = await client.post(
             "/nlq/execute",
             json={
                 "query_spec": {
@@ -100,20 +122,50 @@ class TestExecuteEndpoint:
         assert response.status_code == 422
         assert "no declared join" in response.json()["detail"]
 
-    def test_a_malformed_spec_is_422(self, client):
-        response = client.post("/nlq/execute", json={"query_spec": {"metrics": []}})
+    async def test_a_malformed_spec_is_422(self, client):
+        response = await client.post(
+            "/nlq/execute", json={"query_spec": {"metrics": []}},
+        )
         assert response.status_code == 422
 
-    def test_repeat_requests_hit_the_result_cache(self, client, readonly_via_warehouse):
+    async def test_repeat_requests_hit_the_result_cache(self, client, readonly_via_warehouse):
         payload = {
             "query_spec": {"metrics": ["loan_count"], "period": {"relative": "all_time"}}
         }
-        first = client.post("/nlq/execute", json=payload).json()
-        second = client.post("/nlq/execute", json=payload).json()
+        first = (await client.post("/nlq/execute", json=payload)).json()
+        second = (await client.post("/nlq/execute", json=payload)).json()
         assert first["rows"] == second["rows"]
         assert second["lineage"]["duration_ms"] <= first["lineage"]["duration_ms"]
 
 
 class TestRemovedAskEndpoint:
-    def test_legacy_ask_route_is_absent(self, client):
-        assert client.post("/nlq/ask", json={"question": "hello"}).status_code == 404
+    async def test_legacy_ask_route_is_absent(self, client):
+        response = await client.post("/nlq/ask", json={"question": "hello"})
+        assert response.status_code == 404
+
+
+class TestRouteIdentity:
+    async def test_known_demo_token_resolves_for_owned_resources(self):
+        from app.api.routes.auth import identity_from_authorization
+
+        assert identity_from_authorization("Bearer mock-token-moneypal_admin") == (
+            "moneypal_admin", "admin",
+        )
+
+    async def test_missing_token_is_anonymous(self):
+        from app.api.routes.auth import identity_from_authorization
+
+        assert identity_from_authorization(None) == ("anonymous", "anonymous")
+
+    async def test_auth_me_uses_the_shared_identity_parser(self):
+        from app.api.routes.auth import me
+
+        assert me("Bearer mock-token-moneypal_admin")["role"] == "admin"
+
+    async def test_auth_me_still_rejects_an_invalid_token(self):
+        from app.api.routes.auth import me
+
+        with pytest.raises(HTTPException) as exc_info:
+            me("Bearer not-a-demo-token")
+
+        assert exc_info.value.status_code == 401

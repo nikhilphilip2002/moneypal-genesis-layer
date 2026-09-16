@@ -1391,12 +1391,3 @@ FIELD_SPECS: List[FieldSpec] = (
         ),
     ]
 )
-
-
-def specs_for_sheet(sheet: str) -> List[FieldSpec]:
-    return [s for s in FIELD_SPECS if s.sheet == sheet]
-
-
-def written_specs() -> List[FieldSpec]:
-    """Specs that actually put a value in the workbook."""
-    return [s for s in FIELD_SPECS if s.kind != KIND_NO_SOURCE]

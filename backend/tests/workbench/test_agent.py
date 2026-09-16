@@ -15,9 +15,29 @@ from app.services.workbench.results import SourceResult
 
 @pytest.fixture(autouse=True)
 def _settings(monkeypatch):
+    from app.mcp import postgres_client
+
     monkeypatch.setattr(access.settings, "workbench_external_connectors_enabled", True)
     monkeypatch.setattr(access.settings, "exa_mcp_enabled", True)
     monkeypatch.setattr(agent.settings, "workbench_agent_max_tool_calls", 6)
+    monkeypatch.setitem(
+        postgres_client._model_tools,
+        "query",
+        {
+            "type": "function",
+            "function": {
+                "name": "query",
+                "description": "Run governed read-only SQL.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {"sql": {"type": "string"}},
+                    "required": ["sql"],
+                    "additionalProperties": False,
+                },
+                "strict": True,
+            },
+        },
+    )
 
 
 def _state():
@@ -57,15 +77,11 @@ async def test_content_only_json_is_not_a_selection(monkeypatch):
 @pytest.mark.anyio
 async def test_invalid_arguments_receive_one_native_repair(monkeypatch):
     responses = [
-        _result(NativeToolCall(id="bad", name="query_metrics", arguments={})),
+        _result(NativeToolCall(id="bad", name="retired_query_tool", arguments={})),
         _result(NativeToolCall(
             id="good",
-            name="query_metrics",
-            arguments={
-                "metrics": ["par_30"],
-                "dimensions": [],
-                "period": {"relative": "this_month"},
-            },
+            name="query",
+            arguments={"sql": "SELECT par_30 FROM gold.daily_loan_status LIMIT 1"},
         )),
     ]
     repair_seen = []
@@ -79,7 +95,7 @@ async def test_invalid_arguments_receive_one_native_repair(monkeypatch):
     assert result.tool_calls[0].id == "good"
     assert repair_seen[0] is None
     assert repair_seen[1][-1]["tool_call_id"] == "bad"
-    assert "INVALID_TOOL_ARGUMENTS" in repair_seen[1][-1]["content"]
+    assert "TOOL_NOT_FOUND" in repair_seen[1][-1]["content"]
 
 
 @pytest.mark.anyio
@@ -87,26 +103,12 @@ async def test_grouped_null_filter_receives_native_repair(monkeypatch):
     bad = NativeToolCall(
         id="bad_null",
         name="query_metrics",
-        arguments={
-            "metrics": ["customer_count"],
-            "dimensions": ["loan_agent"],
-            "filters": [{"field": "loan_agent", "op": "is_null", "value": None}],
-            "period": {"relative": "all_time"},
-            "order_by": {"field": "customer_count", "direction": "desc"},
-            "limit": 50,
-        },
+        arguments={},
     )
     good = NativeToolCall(
         id="good",
-        name="query_metrics",
-        arguments={
-            "metrics": ["customer_count"],
-            "dimensions": ["loan_agent"],
-            "filters": [],
-            "period": {"relative": "all_time"},
-            "order_by": {"field": "customer_count", "direction": "desc"},
-            "limit": 50,
-        },
+        name="query",
+        arguments={"sql": "SELECT agent_code FROM gold.agents WHERE agent_code IS NOT NULL"},
     )
     responses = [_result(bad), _result(good)]
     repair_seen = []
@@ -121,19 +123,14 @@ async def test_grouped_null_filter_receives_native_repair(monkeypatch):
     result = await agent.select_calls(state)
 
     assert result.tool_calls == [good]
-    assert "cannot group by loan_agent while filtering" in repair_seen[1][-1]["content"]
+    assert "TOOL_NOT_FOUND" in repair_seen[1][-1]["content"]
 
 
 def test_explicit_missing_value_request_allows_null_filter():
     call = NativeToolCall(
         id="missing_agent",
-        name="query_metrics",
-        arguments={
-            "metrics": ["customer_count"],
-            "dimensions": [],
-            "filters": [{"field": "loan_agent", "op": "is_null", "value": None}],
-            "period": {"relative": "all_time"},
-        },
+        name="query",
+        arguments={"sql": "SELECT agent_code FROM gold.agents WHERE agent_code IS NULL"},
     )
     state = _state()
     state["question"] = "show customers without an assigned agent"
@@ -145,22 +142,8 @@ def test_explicit_missing_value_request_allows_null_filter():
 async def test_invalid_duplicate_period_is_returned_for_native_repair_not_rewritten(monkeypatch):
     call = NativeToolCall(
         id="year",
-        name="query_metrics",
-        arguments={
-            "metrics": ["disbursement_total"],
-            "dimensions": ["month"],
-            "filters": [],
-            "having": [],
-            "period": {
-                "grain": "month", "start": "2026-01-01", "end": "2026-12-31",
-                "relative": "all_time",
-            },
-            "compare_to": None,
-            "order_by": {"field": "month", "direction": "asc"},
-            "limit": 100,
-            "as_share": False,
-            "explain": False,
-        },
+        name="query",
+        arguments={"sql": "SELECT approved_on FROM gold.loan_accounts LIMIT 100"},
     )
     response = _result(call)
 
@@ -170,9 +153,8 @@ async def test_invalid_duplicate_period_is_returned_for_native_repair_not_rewrit
     monkeypatch.setattr(agent, "_select", select)
     state = _state()
     state["question"] = "loan disbursed month wise in 2026"
-    with pytest.raises(Exception):
-        await agent.select_calls(state)
-    assert call.arguments["period"]["relative"] == "all_time"
+    result = await agent.select_calls(state)
+    assert result.tool_calls[0].arguments == call.arguments
 
 
 @pytest.mark.anyio
@@ -187,21 +169,8 @@ async def test_invalid_duplicate_period_is_returned_for_native_repair_not_rewrit
 async def test_application_does_not_invent_a_missing_month_dimension(monkeypatch, question):
     call = NativeToolCall(
         id="monthly",
-        name="query_metrics",
-        arguments={
-            "metrics": ["interest_collected"],
-            "dimensions": [],
-            "filters": [],
-            "having": [],
-            "period": {
-                "grain": "month", "start": None, "end": None, "relative": "all_time",
-            },
-            "compare_to": None,
-            "order_by": None,
-            "limit": 100,
-            "as_share": False,
-            "explain": False,
-        },
+        name="query",
+        arguments={"sql": "SELECT interest_collected FROM gold.loan_repayments LIMIT 100"},
     )
     response = _result(call)
 
@@ -214,8 +183,7 @@ async def test_application_does_not_invent_a_missing_month_dimension(monkeypatch
     result = await agent.select_calls(state)
 
     arguments = result.tool_calls[0].arguments
-    assert arguments["dimensions"] == []
-    assert arguments["order_by"] is None
+    assert arguments == call.arguments
     raw_arguments = json.loads(
         result.assistant_message["tool_calls"][0]["function"]["arguments"]
     )
@@ -226,24 +194,8 @@ async def test_application_does_not_invent_a_missing_month_dimension(monkeypatch
 async def test_application_does_not_rewrite_a_conflicting_lifetime_period(monkeypatch):
     call = NativeToolCall(
         id="lifetime",
-        name="query_metrics",
-        arguments={
-            "metrics": ["disbursement_total"],
-            "dimensions": ["month"],
-            "filters": [],
-            "having": [],
-            "period": {
-                "grain": "month",
-                "start": "2025-10-15",
-                "end": "2026-09-07",
-                "relative": "all_time",
-            },
-            "compare_to": None,
-            "order_by": {"field": "month", "direction": "asc"},
-            "limit": 5000,
-            "as_share": False,
-            "explain": False,
-        },
+        name="query",
+        arguments={"sql": "SELECT amount_given FROM gold.loan_accounts LIMIT 5000"},
     )
     response = _result(call)
 
@@ -253,14 +205,8 @@ async def test_application_does_not_rewrite_a_conflicting_lifetime_period(monkey
     monkeypatch.setattr(agent, "_select", select)
     state = _state()
     state["question"] = "show disbursement monthwise till today"
-    with pytest.raises(Exception):
-        await agent.select_calls(state)
-    assert call.arguments["period"] == {
-        "grain": "month",
-        "start": "2025-10-15",
-        "end": "2026-09-07",
-        "relative": "all_time",
-    }
+    result = await agent.select_calls(state)
+    assert result.tool_calls[0].arguments == call.arguments
 
 
 
@@ -297,7 +243,7 @@ async def test_unauthorized_domain_is_a_policy_observation_then_fails(monkeypatc
     assert [item["code"] for item in observed] == ["POLICY_DENIED"]
     assert "external source consent" in observed[0]["message"]
     # The denial names what remains authorized so the model can choose again.
-    assert "query_metrics" in observed[0]["authorized_tools"]
+    assert "query" in observed[0]["authorized_tools"]
     assert "search_public_web" not in observed[0]["authorized_tools"]
     assert state["_agent_budget"].rounds_used == 2
     assert state["_agent_budget"].calls_used == 2
@@ -374,8 +320,8 @@ class _ScriptedClient:
 
 
 _PAR_30 = NativeToolCall(
-    id="call_1", name="query_metrics",
-    arguments={"metrics": ["par_30"], "dimensions": [], "period": {"relative": "this_month"}},
+    id="call_1", name="query",
+    arguments={"sql": "SELECT par_30 FROM gold.daily_loan_status LIMIT 1"},
 )
 
 
@@ -474,19 +420,14 @@ async def test_single_native_db_card_returns_to_the_model_for_final_answer(scrip
     assert any("event: source_start" in frame for frame in frames)
     assert any("event: source_card" in frame for frame in frames)
     assert any("event: answer" in frame and "4.2%" in frame for frame in frames)
-    assert [call["tool_choice"] for call in client.requests] == ["required", "auto"]
+    assert [call["tool_choice"] for call in client.requests] == ["auto", "auto"]
     assert [call["call_purpose"] for call in client.requests] == [
-        "agent_select", "agent_continue",
+        "agent_continue", "agent_continue",
     ]
     assert all("json_schema" not in call for call in client.requests)
     offered = [tool["function"]["name"] for tool in client.requests[0]["tools"]]
-    assert "query_metrics" in offered and "run_validated_query" in offered
-    dimensions = next(
-        tool for tool in client.requests[0]["tools"]
-        if tool["function"]["name"] == "query_metrics"
-    )["function"]["parameters"]["properties"]["dimensions"]
-    assert "maxItems" not in dimensions
-    assert "month" in dimensions["items"]["enum"]
+    assert "query" in offered
+    assert "query_metrics" not in offered and "run_validated_query" not in offered
     assert state["_agent_budget"].snapshot() == {
         "rounds_used": 2, "max_rounds": 5, "calls_used": 1, "max_calls": 6,
     }
@@ -506,7 +447,7 @@ async def test_last_round_result_is_shown_to_the_model_in_a_synthesis_only_call(
     state = _run_state("min-rounds")
     await agent.run(state)
 
-    assert [call["tool_choice"] for call in client.requests] == ["required", "none"]
+    assert [call["tool_choice"] for call in client.requests] == ["auto", "none"]
     assert client.requests[1]["call_purpose"] == "agent_synthesize"
     synthesis_messages = client.requests[1]["messages"]
     assert any(
@@ -527,20 +468,20 @@ async def test_failure_path_spends_exactly_max_rounds_requests(scripted, monkeyp
     three requests, each carrying the previous observation, and the turn ends with a
     BudgetExhausted protocol error, never a fabricated call."""
     monkeypatch.setattr(agent.settings, "workbench_agent_max_rounds", 3)
-    invalid = NativeToolCall(id="bad", name="query_metrics", arguments={})
+    invalid = NativeToolCall(id="bad", name="retired_query_tool", arguments={})
     client = scripted([_tool_response(invalid)] * 3, lambda call, _ctx: _async(_card(call)))
     state = _run_state("always-invalid")
 
     with pytest.raises(agent.BudgetExhausted):
         await agent.run(state)
 
-    assert [call["tool_choice"] for call in client.requests] == ["required"] * 3
+    assert [call["tool_choice"] for call in client.requests] == ["auto"] * 3
     assert [
         sum(1 for message in request["messages"] if message.get("role") == "tool")
         for request in client.requests
     ] == [0, 1, 2]
     assert all(
-        "INVALID_TOOL_ARGUMENTS" in message["content"]
+        "TOOL_NOT_FOUND" in message["content"]
         for message in client.requests[2]["messages"] if message.get("role") == "tool"
     )
     assert state["_agent_budget"].snapshot() == {
@@ -555,12 +496,12 @@ async def test_execution_error_is_returned_to_llm_for_a_cross_tool_repair(
 ):
     monkeypatch.setattr(agent.settings, "workbench_agent_max_rounds", 3)
     failed = NativeToolCall(
-        id="failed_metric", name="query_metrics",
-        arguments={"metrics": ["par_30"], "dimensions": [], "period": {"relative": "today"}},
+        id="failed_metric", name="query",
+        arguments={"sql": "SELECT par_30 FROM gold.daily_loan_status LIMIT 1"},
     )
     repaired = NativeToolCall(
-        id="repaired_detail", name="run_validated_query",
-        arguments={"intent": "Show governed loan details", "tables": ["gold.semantic_loan_account"]},
+        id="repaired_detail", name="query",
+        arguments={"sql": "SELECT loan_account_number FROM gold.loan_accounts LIMIT 1"},
     )
 
     async def execute(call, _ctx):
@@ -572,7 +513,7 @@ async def test_execution_error_is_returned_to_llm_for_a_cross_tool_repair(
                 source="db", card_type="chart",
                 payload={"rows": [{"loan_account_number": "L1"}]},
                 summary="One governed loan.",
-                lineage={"sql": "SELECT loan_account_number FROM gold.semantic_loan_account"},
+                lineage={"sql": "SELECT loan_account_number FROM gold.loan_accounts LIMIT 1"},
             ),
         )
 
@@ -584,7 +525,7 @@ async def test_execution_error_is_returned_to_llm_for_a_cross_tool_repair(
     await agent.run(state)
 
     assert [request["call_purpose"] for request in client.requests] == [
-        "agent_select", "agent_select", "agent_synthesize",
+        "agent_continue", "agent_continue", "agent_synthesize",
     ]
     assert any(
         message.get("role") == "tool" and "metric execution failed" in message.get("content", "")
@@ -615,22 +556,22 @@ async def test_catalog_context_is_recomputed_from_the_latest_tool_error(
 
     monkeypatch.setattr(agent.prompts, "build_agent_catalog_context", spy)
     bad = NativeToolCall(
-        id="bad", name="query_metrics",
-        arguments={
-            "metrics": ["interest_collected"], "dimensions": ["schemes"],
-            "period": {"relative": "all_time"},
-        },
+        id="bad", name="query",
+        arguments={"sql": "SELECT schemes FROM gold.loan_repayments LIMIT 100"},
     )
     good = NativeToolCall(
-        id="good", name="query_metrics",
-        arguments={
-            "metrics": ["interest_collected"], "dimensions": ["scheme"],
-            "period": {"relative": "all_time"},
-        },
+        id="good", name="query",
+        arguments={"sql": "SELECT scheme_code FROM gold.loan_accounts LIMIT 100"},
     )
+
+    async def execute(call, _ctx):
+        if call.id == "bad":
+            raise RuntimeError("unknown column schemes; did you mean scheme")
+        return _card(call)
+
     client = scripted(
         [_tool_response(bad), _tool_response(good), _text_response("Shown by scheme.")],
-        lambda call, _ctx: _async(_card(call)),
+        execute,
     )
     state = _run_state("error-context", "interest collected")
     await agent.run(state)
@@ -642,7 +583,7 @@ async def test_catalog_context_is_recomputed_from_the_latest_tool_error(
         )
 
     assert seen[0] == ""
-    assert seen[1].startswith("unknown dimension(s): schemes")
+    assert seen[1].startswith("unknown column schemes")
     assert seen[2] == ""  # the successful round clears the supplement
     assert hints(client.requests[0]) != hints(client.requests[1])
     assert "must appear in `dimensions`" in hints(client.requests[1])
@@ -651,7 +592,7 @@ async def test_catalog_context_is_recomputed_from_the_latest_tool_error(
         json.loads(message["content"]) for message in client.requests[1]["messages"]
         if message.get("role") == "tool"
     )
-    assert observation["code"] == "INVALID_TOOL_ARGUMENTS"
+    assert observation["code"] == "SOURCE_UNAVAILABLE"
     assert "scheme" in observation["message"]
 
 
@@ -664,7 +605,7 @@ async def test_model_can_call_multiple_resource_tools_before_answering(scripted,
     )
 
     async def execute(call, _ctx):
-        if call.name == "query_metrics":
+        if call.name == "query":
             result = SourceResult(
                 source="db", card_type="chart", payload={"rows": [{"par_30": 4.2}]},
                 summary="PAR 30 is 4.2%.",
@@ -688,13 +629,13 @@ async def test_model_can_call_multiple_resource_tools_before_answering(scripted,
     await agent.run(state)
 
     assert [request["call_purpose"] for request in client.requests] == [
-        "agent_select", "agent_continue", "agent_continue",
+        "agent_continue", "agent_continue", "agent_continue",
     ]
     record = history.get("multi-tool", user="alice")
     assert len(record.turns[0]["agent_exchanges"]) == 2
     assert [
         exchange["calls"][0]["name"] for exchange in record.turns[0]["agent_exchanges"]
-    ] == ["query_metrics", "search_curated_knowledge"]
+    ] == ["query", "search_curated_knowledge"]
     assert state["agent_final_result"].text.startswith("The portfolio result")
 
 
@@ -704,10 +645,12 @@ async def test_invalid_continuation_call_is_persisted_and_returned_to_model(
 ):
     monkeypatch.setattr(agent.settings, "workbench_agent_max_rounds", 4)
     valid = NativeToolCall(
-        id="valid", name="query_metrics",
-        arguments={"metrics": ["par_30"], "dimensions": [], "period": {"relative": "today"}},
+        id="valid", name="query",
+        arguments={"sql": "SELECT par_30 FROM gold.daily_loan_status LIMIT 1"},
     )
-    invalid_next = NativeToolCall(id="invalid_next", name="query_metrics", arguments={})
+    invalid_next = NativeToolCall(
+        id="invalid_next", name="retired_query_tool", arguments={},
+    )
     client = scripted(
         [_tool_response(valid), _tool_response(invalid_next), _text_response("PAR 30 is 4.2%.")],
         lambda call, _ctx: _async(_card(call)),
@@ -718,12 +661,12 @@ async def test_invalid_continuation_call_is_persisted_and_returned_to_model(
     continuation_requests = [
         request for request in client.requests if request.get("call_purpose") == "agent_continue"
     ]
-    assert len(continuation_requests) == 2
+    assert len(continuation_requests) == 3
     assert any(
         message.get("role") == "tool"
         and message.get("tool_call_id") == "invalid_next"
-        and "INVALID_TOOL_ARGUMENTS" in message.get("content", "")
-        for message in continuation_requests[1]["messages"]
+        and "TOOL_NOT_FOUND" in message.get("content", "")
+        for message in continuation_requests[2]["messages"]
     )
     record = history.get("invalid-continuation", user="alice")
     assert [
@@ -736,7 +679,7 @@ async def test_partially_invalid_batch_keeps_replay_parity(scripted, monkeypatch
     """B2: a batch with one valid and one invalid call persists one tool message per
     call; the valid call is executed and gets its real observation."""
     monkeypatch.setattr(agent.settings, "workbench_agent_max_rounds", 3)
-    invalid = NativeToolCall(id="bad", name="query_metrics", arguments={})
+    invalid = NativeToolCall(id="bad", name="retired_query_tool", arguments={})
     client = scripted(
         [_tool_response(_PAR_30, invalid), _text_response("PAR 30 is 4.2%.")],
         lambda call, _ctx: _async(_card(call)),
@@ -749,7 +692,7 @@ async def test_partially_invalid_batch_keeps_replay_parity(scripted, monkeypatch
     assert [call["id"] for call in exchange["calls"]] == ["call_1", "bad"]
     assert [message["tool_call_id"] for message in exchange["tools"]] == ["call_1", "bad"]
     assert json.loads(exchange["tools"][0]["content"])["status"] == "ok"
-    assert json.loads(exchange["tools"][1]["content"])["code"] == "INVALID_TOOL_ARGUMENTS"
+    assert json.loads(exchange["tools"][1]["content"])["code"] == "TOOL_NOT_FOUND"
     observed = [
         message for message in client.requests[1]["messages"] if message.get("role") == "tool"
     ]
@@ -793,7 +736,7 @@ async def test_outbound_policy_denial_gets_one_native_repair(scripted, monkeypat
     await agent.run(state)
 
     assert [request["tool_choice"] for request in client.requests] == [
-        "required", "required", "none",
+        "auto", "auto", "none",
     ]
     denial = next(
         json.loads(message["content"]) for message in client.requests[1]["messages"]
@@ -836,7 +779,7 @@ async def test_unresolved_policy_denial_ends_with_an_application_refusal(scripte
     frames = _frames(state)
 
     assert len(client.requests) == 3
-    assert all(request["tool_choice"] == "required" for request in client.requests)
+    assert all(request["tool_choice"] == "auto" for request in client.requests)
     refusal = next(
         json.loads(frame.split("data: ", 1)[1]) for frame in frames if "event: refusal" in frame
     )
@@ -887,7 +830,7 @@ async def test_budget_spent_after_data_answers_from_the_result_with_a_limitation
     """Nothing is retrieved until the last round; the result still reaches the user,
     marked as answered without the model's synthesis."""
     monkeypatch.setattr(agent.settings, "workbench_agent_max_rounds", 2)
-    invalid = NativeToolCall(id="bad", name="query_metrics", arguments={})
+    invalid = NativeToolCall(id="bad", name="retired_query_tool", arguments={})
     scripted(
         [_tool_response(invalid), _tool_response(_PAR_30)],
         lambda call, _ctx: _async(_card(call)),
@@ -897,7 +840,8 @@ async def test_budget_spent_after_data_answers_from_the_result_with_a_limitation
 
     answer = next(
         json.loads(frame.split("data: ", 1)[1])
-        for frame in _frames(state) if "event: answer" in frame
+        for frame in _frames(state)
+        if "event: answer" in frame and '"status"' in frame
     )
     assert answer["status"] == "partial"
     assert answer["text"] == "PAR 30 is 4.2%."

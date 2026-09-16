@@ -7,19 +7,11 @@ import math
 import os
 import re
 from functools import lru_cache
-from pathlib import Path
 from typing import Any
 
 from openai import OpenAI
 
 from app.core.config import settings
-
-
-def normalize_collection_name(value: str) -> str:
-    value = re.sub(r"[^a-zA-Z0-9_]+", "_", value.lower()).strip("_")
-    return f"{settings.collection_prefix}{value}"
-
-
 def chunk_text(text: str, chunk_size: int = 1800, overlap: int = 250) -> list[str]:
     clean = re.sub(r"\s+", " ", text).strip()
     if not clean:

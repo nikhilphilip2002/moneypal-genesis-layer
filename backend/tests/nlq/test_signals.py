@@ -6,7 +6,7 @@ that fires on noise trains the reader to ignore it, and then the real signal arr
 ignored with it.
 """
 
-from datetime import date, datetime, timedelta, timezone
+from datetime import date
 
 import pytest
 

@@ -12,10 +12,7 @@ import pytest
 from app.core.config import settings
 from app.services.nlq import db as nlq_db
 
-pytestmark = pytest.mark.skipif(
-    not settings.nlq_db_password,
-    reason="nlq_readonly not provisioned — run scripts/sql/nlq_readonly_role.sql and set NLQ_DB_PASSWORD",
-)
+pytestmark = pytest.mark.usefixtures("reachable_readonly_role")
 
 
 def _fails(cur, sql: str) -> str:

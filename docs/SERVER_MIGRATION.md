@@ -523,9 +523,9 @@ that for at least a week, and take a final `pg_dump` before you do.
   `docker compose exec backend pytest tests/nlq -q` — expect 505 passing, including the
   16 `test_readonly_role.py` tests that skip when the role is absent. If those 16 skip,
   §5.3 did not take.
-- **Re-run the golden-set eval** once the LLM endpoint is final:
-  `docker compose exec backend python -m app.services.nlq.eval`. The gate before persona
-  users is ≥ 85% on the QuerySpec path.
+- **Re-run the retained NLQ compiler corpus:**
+  `docker compose exec backend pytest tests/nlq/test_golden_set.py -q`. The former
+  conversational NLQ planner/evaluator was retired when Workbench became the canonical chat path.
 
 ### Carried-over open items
 

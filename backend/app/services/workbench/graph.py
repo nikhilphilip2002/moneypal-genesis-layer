@@ -13,7 +13,7 @@ from typing import Any, AsyncIterator, NotRequired, TypedDict
 from app.core.config import settings
 from app.services.nlq.llm.telemetry import collect_calls, summarize_calls
 from app.services.workbench import (
-    access, calculations, compaction, composer, facts, history, models, prompts,
+    access, calculations, compaction, composer, facts, history, models,
 )
 from app.services.workbench.results import ExecutionDecision, SourceResult
 from app.services.workbench.streaming import complete_answer

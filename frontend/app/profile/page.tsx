@@ -2,21 +2,14 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { auth } from '@/lib/api';
-import { ROLE_LABELS, ROLE_ROUTES, homeRoute, type UserRole } from '@/lib/useUserRole';
+import { auth, type DemoUser } from '@/lib/api';
+import { ROLE_LABELS, ROLE_ROUTES, homeRoute } from '@/lib/useUserRole';
 import { Card, CardContent } from '@/components/ui/card';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { ArrowLeft } from 'lucide-react';
 import Link from 'next/link';
-
-interface UserProfile {
-    username: string;
-    email: string;
-    full_name: string;
-    role: UserRole;
-}
 
 const MODULE_NAMES: Record<string, string> = {
     '/': 'Executive Dashboard',
@@ -36,13 +29,13 @@ function getInitials(name: string): string {
 }
 
 export default function ProfilePage() {
-    const [user, setUser] = useState<UserProfile | null>(null);
+    const [user, setUser] = useState<DemoUser | null>(null);
     const [loading, setLoading] = useState(true);
     const router = useRouter();
 
     useEffect(() => {
         auth.me()
-            .then((userData: UserProfile) => setUser(userData))
+            .then(setUser)
             .catch(() => router.push('/login'))
             .finally(() => setLoading(false));
     }, [router]);

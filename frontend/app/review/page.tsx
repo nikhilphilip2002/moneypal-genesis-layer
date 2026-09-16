@@ -1,10 +1,10 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useState } from 'react';
 import Image from 'next/image';
 import { auth, review, type ReviewItem, type DemoUser } from '@/lib/api';
-import { canAccess, homeRoute, ROLE_LABELS, type UserRole } from '@/lib/useUserRole';
+import { ROLE_LABELS } from '@/lib/useUserRole';
+import { useRequireAuth } from '@/lib/useRequireAuth';
 import { useIntel } from '@/lib/useIntel';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -99,22 +99,7 @@ function ReviewRow({ item, onSaved }: { item: ReviewItem; onSaved: () => void })
 }
 
 export default function ReviewPage() {
-  const router = useRouter();
-  const [authorized, setAuthorized] = useState(false);
-
-  useEffect(() => {
-    auth
-      .me()
-      .then((user) => {
-        const role = user.role as UserRole;
-        if (!canAccess(role, '/review')) {
-          router.replace(homeRoute(role));
-          return;
-        }
-        setAuthorized(true);
-      })
-      .catch(() => router.replace('/login'));
-  }, [router]);
+  const authorized = useRequireAuth('/review');
 
   const items = useIntel<ReviewItem[]>('review:items', review.items);
   const users = useIntel<DemoUser[]>('auth:users', auth.users);
@@ -206,7 +191,7 @@ export default function ReviewPage() {
                       <div key={user.username} className="flex items-center justify-between gap-2">
                         <span className="font-medium">{user.full_name}</span>
                         <Badge variant="secondary" className="rounded-full text-[10px]">
-                          {ROLE_LABELS[user.role as UserRole] || user.role}
+                          {ROLE_LABELS[user.role] || user.role}
                         </Badge>
                       </div>
                     ))}

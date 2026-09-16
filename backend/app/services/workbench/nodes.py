@@ -422,16 +422,6 @@ def _best_category(intent: str, categories: list):
     return best
 
 
-def _format_chunks(chunks: list[dict]) -> str:
-    parts = []
-    for chunk in chunks:
-        doc = chunk.get("document") or chunk.get("source") or "source"
-        page = chunk.get("page")
-        tag = f"[{doc}" + (f", p.{page}" if page else "") + "]"
-        parts.append(f"{tag}\n{chunk.get('text', '').strip()}")
-    return "\n\n".join(parts)
-
-
 def _source_refs(chunks: list[dict]) -> list[dict]:
     refs = []
     for chunk in chunks[:6]:

@@ -1,15 +1,9 @@
-from app.services.nlq.llm import prompts as planner_prompts
 from app.services.workbench import prompts
 
 
 def test_workbench_has_one_answer_system_prompt():
     assert hasattr(prompts, "AGENT_SYSTEM_PROMPT")
     assert not hasattr(prompts, "COMPOSER_SYSTEM_PROMPT")
-
-
-def test_planner_prefix_is_byte_stable():
-    assert planner_prompts.stable_prefix() == planner_prompts.stable_prefix()
-    assert planner_prompts.stable_prefix_hash() == planner_prompts.stable_prefix_hash()
 
 
 def test_workbench_system_prompts_do_not_duplicate_json_schema_prose():
@@ -28,10 +22,10 @@ def test_answer_prompts_do_not_duplicate_structured_result_rows():
 def test_agent_prompt_retrieves_only_relevant_gold_metadata():
     bundle = prompts.build_agent_prompt(
         question="monthly cash receipts by payment mode",
-        tool_names=["query_metrics", "run_validated_query"],
+        tool_names=["query"],
     )
     content = bundle.messages[-1]["content"]
-    assert "gold.semantic_receipt_adjustment_event" in content
+    assert "gold.payment_receipts" in content
     assert "receipt_total" in content
     assert "receipt_mode" in content
     assert "gold.semantic_msme_lead" not in content
@@ -54,24 +48,14 @@ def test_scheme_wise_metric_prompt_exposes_the_governed_scheme_dimension():
 
 
 def test_no_time_cue_still_permits_a_month_breakdown():
-    """B4: retrieval annotates; it never removes a dimension from the schema."""
-    from app.services.workbench import access
-    from app.services.workbench.agent_tools import native_tool_definitions
-
+    """Retrieval annotates; it never removes a dimension from the full schema."""
     context = prompts.build_agent_catalog_context("interest collected")
     assert "month" not in context.dimensions
     assert "must appear in `dimensions`" in context.text
-    definitions = native_tool_definitions(
-        access.build_policy(role="admin", external_sources_enabled=True),
-    )
-    dimensions = next(
-        item for item in definitions if item["function"]["name"] == "query_metrics"
-    )["function"]["parameters"]["properties"]["dimensions"]
-    assert "month" in dimensions["items"]["enum"]
-    assert "maxItems" not in dimensions
+    assert "- month |" in prompts.build_agent_gold_schema()
 
 
-def test_row_question_still_offers_both_governed_query_tools():
+def test_database_tools_are_not_defined_in_the_local_registry():
     from app.services.workbench import access
     from app.services.workbench.agent_tools import native_tool_definitions
 
@@ -80,7 +64,8 @@ def test_row_question_still_offers_both_governed_query_tools():
             access.build_policy(role="admin", external_sources_enabled=True),
         )
     ]
-    assert "query_metrics" in offered and "run_validated_query" in offered
+    assert not ({"query_metrics", "run_validated_query", "query"} & set(offered))
+    assert set(offered) == {"search_curated_knowledge", "finish_without_data"}
 
 
 def test_latest_tool_error_supplements_catalog_retrieval():

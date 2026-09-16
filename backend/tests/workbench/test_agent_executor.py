@@ -17,8 +17,28 @@ from app.services.workbench.results import SourceResult
 
 @pytest.fixture(autouse=True)
 def _connectors(monkeypatch):
+    from app.mcp import postgres_client
+
     monkeypatch.setattr(access.settings, "workbench_external_connectors_enabled", True)
     monkeypatch.setattr(access.settings, "exa_mcp_enabled", True)
+    monkeypatch.setitem(
+        postgres_client._model_tools,
+        "query",
+        {
+            "type": "function",
+            "function": {
+                "name": "query",
+                "description": "Run governed read-only SQL.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {"sql": {"type": "string"}},
+                    "required": ["sql"],
+                    "additionalProperties": False,
+                },
+                "strict": True,
+            },
+        },
+    )
 
 
 def _context(*, external=True):
@@ -37,8 +57,8 @@ def _context(*, external=True):
 
 @pytest.mark.anyio
 async def test_validated_call_dispatches_and_replay_is_lossless(monkeypatch):
-    async def fake_handler(args, _ctx):
-        assert args.metrics == ["par_30"]
+    async def fake_handler(call, _ctx):
+        assert call.arguments == {"sql": "SELECT par_30 FROM gold.daily_loan_status LIMIT 1"}
         return SourceResult(
             source="db",
             card_type="chart",
@@ -47,16 +67,12 @@ async def test_validated_call_dispatches_and_replay_is_lossless(monkeypatch):
             lineage={"sql": "never replay this"},
         )
 
-    monkeypatch.setitem(agent_executor._HANDLERS, "query_metrics", fake_handler)
+    monkeypatch.setattr(agent_executor, "_execute_postgres_mcp", fake_handler)
     executed = await agent_executor.execute_agent_call(
         NativeToolCall(
             id="call_1",
-            name="query_metrics",
-            arguments={
-                "metrics": ["par_30"],
-                "dimensions": [],
-                "period": {"relative": "this_month"},
-            },
+            name="query",
+            arguments={"sql": "SELECT par_30 FROM gold.daily_loan_status LIMIT 1"},
         ),
         _context(),
     )
@@ -89,37 +105,11 @@ async def test_terminal_call_executes_no_data_handler():
 
 
 @pytest.mark.anyio
-async def test_catalog_inspection_returns_governed_columns_and_declared_metadata():
-    executed = await agent_executor.execute_agent_call(
-        NativeToolCall(
-            id="catalog_1",
-            name="inspect_loan_catalog",
-            arguments={
-                "topic": "sanction amount and number of EMIs",
-                "tables": ["gold.semantic_loan_account"],
-            },
-        ),
-        _context(),
-    )
-
-    payload = executed.card.payload
-    loan_table = next(
-        table for table in payload["tables"]
-        if table["name"] == "gold.semantic_loan_account"
-    )
-    column_names = {column["name"] for column in loan_table["columns"]}
-    assert "sanction_amount" in column_names
-    assert "number_of_emis" in column_names
-    assert payload["catalog_version"] == get_catalog().version
-    assert executed.replay_payload()["payload"] == payload
-
-
-@pytest.mark.anyio
 async def test_handler_timeout_is_typed(monkeypatch):
-    async def stalled(_args, _ctx):
+    async def stalled(_call, _ctx):
         await asyncio.sleep(1)
 
-    monkeypatch.setitem(agent_executor._HANDLERS, "query_metrics", stalled)
+    monkeypatch.setattr(agent_executor, "_execute_postgres_mcp", stalled)
     context = _context()
     context = AgentExecutionContext(
         user=context.user,
@@ -134,12 +124,8 @@ async def test_handler_timeout_is_typed(monkeypatch):
         await agent_executor.execute_agent_call(
             NativeToolCall(
                 id="call_3",
-                name="query_metrics",
-                arguments={
-                    "metrics": ["par_30"],
-                    "dimensions": [],
-                    "period": {"relative": "this_month"},
-                },
+                name="query",
+                arguments={"sql": "SELECT 1"},
             ),
             context,
         )
@@ -195,25 +181,6 @@ async def test_web_call_is_reauthorized_before_handler(monkeypatch):
     ("name", "arguments", "source"),
     [
         (
-            "query_metrics",
-            {"metrics": ["par_30"], "dimensions": [], "period": {"relative": "today"}},
-            "db",
-        ),
-        (
-            "lookup_records",
-            {"selector": "customer_id", "value": "42", "detail": "customer_summary"},
-            "db",
-        ),
-        ("run_analysis", {"analysis_id": "portfolio_health"}, "db"),
-        ("create_worklist", {"worklist_id": "collections_today"}, "db"),
-        ("generate_briefing", {"persona_id": "ceo"}, "db"),
-        ("run_validated_query", {"intent": "catalog miss", "tables": []}, "db"),
-        (
-            "inspect_loan_catalog",
-            {"topic": "sanction amount and tenure", "tables": []},
-            "schema",
-        ),
-        (
             "search_curated_knowledge",
             {"domain": "concepts", "query": "PAR 30"},
             "knowledge",
@@ -262,7 +229,7 @@ def _large_lookup(rows: int = 5000) -> agent_executor.ExecutedAgentCall:
         lineage={"sql": "SELECT ... LIMIT 5000", "params": {"agent_name": "vanitha"}},
     )
     return agent_executor.ExecutedAgentCall(
-        call=NativeToolCall(id="call_big", name="lookup_records", arguments={}),
+        call=NativeToolCall(id="call_big", name="query", arguments={}),
         card=card,
     )
 

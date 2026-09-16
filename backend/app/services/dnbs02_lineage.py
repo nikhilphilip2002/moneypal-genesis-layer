@@ -402,7 +402,7 @@ def _write_mapping_block(sheet, report_wb, data: Dict[str, Any],
                               end_row=row, end_column=first_col + len(MAP_HEADERS) - 1)
             row += 1
         sql = source.sql.strip()
-        cell = _set(sheet, row, first_col, sql, font=MONO, wrap=True)
+        _set(sheet, row, first_col, sql, font=MONO, wrap=True)
         sheet.merge_cells(start_row=row, start_column=first_col,
                           end_row=row, end_column=first_col + len(MAP_HEADERS) - 1)
         # One line of Consolas 9 is about 12 points; cap so a long CTE does not push the

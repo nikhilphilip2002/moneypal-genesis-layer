@@ -26,7 +26,7 @@ import threading
 import time
 from collections import OrderedDict
 from dataclasses import dataclass
-from typing import Any, Callable, Generic, TypeVar
+from typing import Any, Generic, TypeVar
 
 logger = logging.getLogger(__name__)
 
@@ -128,16 +128,6 @@ def get_result(key: str) -> Any | None:
 
 def put_result(key: str, value: Any) -> None:
     _results.put(key, value)
-
-
-def cached_result(sql: str, params: Any, compute: Callable[[], T]) -> T:
-    key = result_key(sql, params)
-    hit = _results.get(key)
-    if hit is not None:
-        return hit
-    value = compute()
-    _results.put(key, value)
-    return value
 
 
 _WHITESPACE = re.compile(r"\s+")

@@ -250,7 +250,6 @@ export default function Composer({
           : 'Ask about the loan book...'}
         aria-label="Ask Moneypal Workbench"
         aria-autocomplete="list"
-        aria-expanded={completionsOpen}
         aria-controls="workbench-completions"
         aria-activedescendant={
           completionsOpen

@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Image from 'next/image';
 import {
@@ -13,7 +13,8 @@ import {
   type Institution,
   type RegulationCategory,
 } from '@/lib/api';
-import { canAccess, homeRoute, ROLE_LABELS, type UserRole } from '@/lib/useUserRole';
+import { ROLE_LABELS } from '@/lib/useUserRole';
+import { useRequireAuth } from '@/lib/useRequireAuth';
 import { useIntel } from '@/lib/useIntel';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -189,21 +190,7 @@ function AddRegulationDialog({ onAdded }: { onAdded: () => void }) {
 
 export default function AdminPage() {
   const router = useRouter();
-  const [authorized, setAuthorized] = useState(false);
-
-  useEffect(() => {
-    auth
-      .me()
-      .then((user) => {
-        const role = user.role as UserRole;
-        if (!canAccess(role, '/admin')) {
-          router.replace(homeRoute(role));
-          return;
-        }
-        setAuthorized(true);
-      })
-      .catch(() => router.replace('/login'));
-  }, [router]);
+  const authorized = useRequireAuth('/admin');
 
   const status = useIntel<PlatformStatus>('admin:status', admin.status, { live: true });
   const users = useIntel<DemoUser[]>('auth:users', auth.users);
@@ -267,7 +254,7 @@ export default function AdminPage() {
                               <TableCell className="font-medium">{user.full_name}</TableCell>
                               <TableCell>
                                 <Badge variant="secondary" className="rounded-full text-[10px]">
-                                  {ROLE_LABELS[user.role as UserRole] || user.role}
+                                  {ROLE_LABELS[user.role] || user.role}
                                 </Badge>
                               </TableCell>
                               <TableCell className="text-xs text-muted-foreground">{user.email}</TableCell>

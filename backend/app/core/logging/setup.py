@@ -4,8 +4,6 @@ import logging
 from logging.handlers import QueueHandler, QueueListener, RotatingFileHandler
 from pathlib import Path
 import queue
-import sys
-from typing import Any
 
 from app.core.logging.formatters import JSONLinesFormatter
 

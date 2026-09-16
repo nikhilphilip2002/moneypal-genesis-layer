@@ -37,8 +37,10 @@ def test_workbench_stream_preserves_native_contract_fields():
 
 def test_workbench_turn_renders_preserved_answer_and_route_metadata():
     source = (ROOT / "frontend/components/workbench/WorkbenchTurn.tsx").read_text()
-    assert "'schema', 'catalog'" in source
+    assert "card.card_type === 'schema'" in source
+    assert "card.card_type === 'catalog'" in source
     assert 'aria-label="Verified facts"' in source
     assert 'aria-label="Suggested follow-up questions"' in source
     assert "turn.error.code" in source
-    assert 'aria-label="Capabilities used"' in source
+    assert "turn.route.sources" in source
+    assert ">Sources</span>" in source

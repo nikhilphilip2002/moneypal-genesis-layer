@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { auth } from '@/lib/api';
-import { clearUserRoleCache, homeRoute, type UserRole } from '@/lib/useUserRole';
+import { homeRoute } from '@/lib/useUserRole';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -24,9 +24,8 @@ export default function LoginPage() {
       const data = await auth.login(username, password);
       localStorage.setItem('token', data.access);
       localStorage.setItem('refreshToken', data.refresh);
-      clearUserRoleCache();
       const me = await auth.me().catch(() => null);
-      const landing = me?.role ? homeRoute(me.role as UserRole) : '/';
+      const landing = me?.role ? homeRoute(me.role) : '/';
       router.replace(landing);
       router.refresh();
     } catch (err: any) {

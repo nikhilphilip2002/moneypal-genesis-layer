@@ -12,15 +12,16 @@ from app.services.workbench import tools
 
 
 def test_the_phase3_tools_are_registered():
-    assert {"show_schema", "competitor_landscape"} <= set(tools.TOOLS)
+    assert set(tools.TOOLS) == {
+        "competitor_landscape", "macro_brief", "regulatory_alerts",
+    }
 
 
 def test_visible_tools_respect_role():
     director = {t.id for t in tools.visible_tools("gicc_director")}
     policy = {t.id for t in tools.visible_tools("gicc_policy")}
-    # The director owns the portfolio (schema) but not the competitor set; policy the reverse.
-    assert "show_schema" in director and "competitor_landscape" not in director
-    assert "competitor_landscape" in policy and "show_schema" not in policy
+    assert director == {"macro_brief"}
+    assert policy == {"competitor_landscape", "macro_brief", "regulatory_alerts"}
 
 
 def test_get_tool_returns_none_for_an_unknown_id():
@@ -32,18 +33,25 @@ class TestRunTool:
     async def test_dispatches_to_the_handler(self, monkeypatch):
         from app.services.workbench import nodes
 
-        async def fake_schema(intent):
-            return nodes.SourceResult(source="schema", card_type="schema", payload={"node_count": 2})
+        async def fake_macro(intent, **_kwargs):
+            return nodes.SourceResult(
+                source="macro", card_type="brief", payload={"summary": "Outlook."},
+            )
 
-        monkeypatch.setattr(nodes, "run_schema", fake_schema)
-        result = await tools.run_tool("show_schema", role="admin", params={})
-        assert result.card_type == "schema"
+        monkeypatch.setattr(nodes, "run_macro", fake_macro)
+        result = await tools.run_tool(
+            "macro_brief", role="admin", params={}, external_sources_enabled=True,
+        )
+        assert result.card_type == "brief"
 
     @pytest.mark.anyio
     async def test_running_a_tool_the_role_cannot_see_is_refused(self, monkeypatch):
-        # gicc_policy has no access to schema; calling the endpoint directly must not work.
+        # A director cannot bypass the competitive source role policy.
         with pytest.raises(tools.ToolAccessError):
-            await tools.run_tool("show_schema", role="gicc_policy", params={})
+            await tools.run_tool(
+                "competitor_landscape", role="gicc_director", params={},
+                external_sources_enabled=True,
+            )
 
     @pytest.mark.anyio
     async def test_running_an_unknown_tool_raises(self):

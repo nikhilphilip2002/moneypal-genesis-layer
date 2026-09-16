@@ -4,28 +4,18 @@ import { useEffect, useMemo, useState } from 'react';
 import {
   AlertTriangle,
   BadgeCheck,
-  Building2,
-  Calendar,
-  CheckCircle2,
-  ChevronRight,
   CircleDollarSign,
   Clock,
-  CreditCard,
-  FileText,
   Mail,
   MapPin,
   Phone,
   RefreshCw,
   Shield,
-  ShieldAlert,
   User,
-  X,
-  XCircle,
 } from 'lucide-react';
 
 import { admin, Customer360Response } from '@/lib/api';
 import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
 import {
   Dialog,
   DialogContent,

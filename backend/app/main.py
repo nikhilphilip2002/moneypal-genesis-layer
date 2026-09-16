@@ -68,6 +68,9 @@ async def _lifespan(_app: FastAPI):
         warm_graph_task.cancel()
         with contextlib.suppress(asyncio.CancelledError):
             await warm_graph_task
+    from app.services.nlq import db as nlq_db
+
+    nlq_db.close_pool()
     stop_logging()
 
 

@@ -14,7 +14,6 @@ def _connector_settings(monkeypatch):
 
 def test_source_groups_match_the_product_contract():
     assert access.source_group("db") is access.SourceGroup.INTERNAL_DATA
-    assert access.source_group("schema") is access.SourceGroup.INTERNAL_METADATA
     assert access.source_group("knowledge") is access.SourceGroup.LOCAL_KNOWLEDGE
     assert access.source_group("macro") is access.SourceGroup.EXTERNAL_INDEXED
     assert access.source_group("competitive") is access.SourceGroup.EXTERNAL_INDEXED
@@ -29,7 +28,7 @@ def test_api_request_models_default_external_access_off():
 
 def test_default_policy_keeps_internal_sources_and_blocks_all_external_sources():
     policy = access.build_policy(role="admin", external_sources_enabled=False)
-    assert {"db", "schema", "knowledge"} <= set(policy.effective_sources)
+    assert {"db", "knowledge"} <= set(policy.effective_sources)
     assert not ({"macro", "competitive", "regulatory", "web"} & set(policy.effective_sources))
 
 

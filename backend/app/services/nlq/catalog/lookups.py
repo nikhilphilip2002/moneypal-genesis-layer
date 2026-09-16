@@ -98,8 +98,3 @@ def label_for(catalog: Catalog, dimension_id: str, code: Any) -> str:
     if dynamic:
         return dynamic
     return enum.fallback_label.replace("{code}", key)
-
-
-def clear_cache() -> None:
-    with _lock:
-        _cache.clear()

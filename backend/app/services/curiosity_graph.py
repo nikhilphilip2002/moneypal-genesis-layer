@@ -90,16 +90,6 @@ _SEARCH_CACHE: dict[tuple, tuple[list[dict[str, str]], float]] = {}
 _CUSTOMER_360_CACHE: dict[str, tuple[dict[str, Any], float]] = {}
 
 
-def clear_graph_cache() -> None:
-    """Clear in-memory metadata, title, search, portfolio and query caches."""
-    _PORTFOLIO_CACHE.clear()
-    _META_CACHE.clear()
-    _TITLE_CACHE.clear()
-    _GRAPH_CACHE.clear()
-    _SEARCH_CACHE.clear()
-    _CUSTOMER_360_CACHE.clear()
-
-
 # reporting_branch_code is the business-preferred key.  The live Gold audit on 2026-09-02
 # found it empty on every loan, while application_branch_code is complete.  Keep the
 # preference explicit and the fallback visible in response metadata.
@@ -231,27 +221,6 @@ def _aggregate(cur: Any, filters: dict[str, str], month: str | None) -> dict[str
     return _metrics(cur.fetchone())
 
 
-def _snapshot_info(cur: Any) -> dict[str, Any]:
-    now = time.time()
-    cache_entry = _META_CACHE.get("snapshot_info")
-    if cache_entry and now < cache_entry[1]:
-        return dict(cache_entry[0])
-
-    cur.execute(
-        "SELECT MAX(status_date), MAX(data_as_of_date), COUNT(DISTINCT company_code) "
-        "FROM gold.daily_loan_status WHERE company_code = %s",
-        (GICC_ENTITY,),
-    )
-    snapshot_date, data_as_of, entities = cur.fetchone()
-    res = {
-        "snapshot_date": snapshot_date.isoformat() if snapshot_date else None,
-        "snapshot_data_as_of": data_as_of.isoformat() if data_as_of else None,
-        "snapshot_entity_count": int(entities or 0),
-    }
-    _META_CACHE["snapshot_info"] = (res, now + CACHE_TTL_SECONDS)
-    return res
-
-
 def _branch_names(cur: Any) -> dict[str, str]:
     now = time.time()
     cache_entry = _META_CACHE.get("branch_names")
@@ -369,63 +338,6 @@ def _children(
             rank=offset + index + 1,
         ))
     return result, total_returned
-
-
-def _accounts_and_agents(
-    cur: Any,
-    customer_id: str,
-    selected_agent_code: str | None,
-) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, str]]]:
-    cur.execute(
-        RISK_CTE + """
-        SELECT l.loan_account_number::text, l.product_code::text, l.product_name,
-               l.application_branch_code::text, l.scheme_code::text, l.scheme_name,
-               l.agent_code::text, l.agent_name, l.approved_amount, l.amount_given,
-               l.closed_on, l.loan_status, r.principal_outstanding, r.total_overdue,
-               r.dpd_days, r.is_par30, r.is_npa
-        FROM gold.loan_accounts l
-        LEFT JOIN latest_risk r
-          ON r.entity_num = l.company_code
-         AND r.loan_account_number = l.loan_account_number
-        WHERE l.company_code = %s AND l.customer_id::text = %s
-        ORDER BY l.approved_on DESC NULLS LAST, l.loan_account_number
-        """,
-        (GICC_ENTITY, GICC_ENTITY, customer_id),
-    )
-    rows = cur.fetchall()
-    account_nodes: list[dict[str, Any]] = []
-    related: dict[str, dict[str, Any]] = {}
-    links: list[dict[str, str]] = []
-    for row in rows:
-        account = _text(row[0])
-        agent_code = _text(row[6]) or "UNASSIGNED"
-        agent_name = _text(row[7]) or "Unassigned agent"
-        account_nodes.append({
-            "id": f"account:{account}", "type": "account", "code": account,
-            "label": f"Loan {account}",
-            "metrics": {
-                "account_count": 1, "active_account_count": 1 if row[10] is None else 0,
-                "borrower_count": 1,
-                "sanctioned_amount": _money(row[8]), "disbursed_amount": _money(row[9]),
-                "active": row[10] is None, "loan_status": _text(row[11]),
-                "principal_outstanding": _money(row[12]), "total_overdue": _money(row[13]),
-                "dpd_days": int(row[14] or 0), "is_par30": bool(row[15]),
-                "is_npa": bool(row[16]),
-                "par30_ratio": 100.0 if row[15] else 0.0,
-                "npa_ratio": 100.0 if row[16] else 0.0,
-                "risk_coverage_pct": 100.0 if row[12] is not None else 0.0,
-            },
-            "product_code": _text(row[1]), "product_name": _text(row[2]),
-            "branch_code": _text(row[3]), "scheme_code": _text(row[4]),
-            "scheme_name": _text(row[5]), "agent_code": agent_code,
-        })
-        related.setdefault(agent_code, {
-            "id": f"related-agent:{agent_code}", "type": "related_agent", "code": agent_code,
-            "label": agent_name, "account_count": 0,
-            "is_selected_path": agent_code == selected_agent_code,
-        })["account_count"] += 1
-        links.append({"source": f"related-agent:{agent_code}", "target": f"account:{account}", "label": "HANDLES"})
-    return account_nodes, list(related.values()), links
 
 
 def _tenure_band(emis: Any) -> str:

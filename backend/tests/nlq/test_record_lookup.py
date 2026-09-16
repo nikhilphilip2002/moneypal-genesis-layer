@@ -26,7 +26,6 @@ from app.services.nlq.lookup import (
     resolve_followup,
     run,
 )
-from app.services.nlq.planner import plan
 
 
 @pytest.mark.parametrize(
@@ -153,39 +152,6 @@ def test_lookup_intent_is_phrase_independent(question, selector, value, detail):
     assert (result.selector, result.value, result.detail) == (selector, value, detail)
 
 
-@pytest.mark.anyio
-async def test_record_lookup_bypasses_the_llm_planner():
-    outcome = await plan("what is ARUNA P repayment history")
-
-    assert isinstance(outcome.plan, LookupPlan)
-    assert outcome.attempts == 0
-    assert outcome.model == "deterministic"
-
-
-@pytest.mark.anyio
-async def test_implicit_agent_customer_followup_bypasses_the_llm_planner():
-    outcome = await plan("show me customers under vanitha")
-
-    assert isinstance(outcome.plan, LookupPlan)
-    assert outcome.plan.selector == "agent_name"
-    assert outcome.plan.value == "vanitha"
-    assert outcome.plan.detail == "agent_customers"
-    assert outcome.attempts == 0
-    assert outcome.model == "deterministic"
-
-
-@pytest.mark.anyio
-async def test_terse_named_sanction_amount_bypasses_portfolio_count_metric():
-    outcome = await plan("9loan sanctioned amount sheelavathi mk")
-
-    assert isinstance(outcome.plan, LookupPlan)
-    assert outcome.plan.selector == "borrower_name"
-    assert outcome.plan.value == "sheelavathi mk"
-    assert outcome.plan.requested_fields == ["sanction_amount"]
-    assert outcome.attempts == 0
-    assert outcome.model == "deterministic"
-
-
 @pytest.mark.parametrize(
     "question",
     [
@@ -198,16 +164,6 @@ def test_bare_field_suffix_does_not_treat_period_or_dimension_as_a_name(question
     assert detect(question) is None
 
 
-@pytest.mark.anyio
-async def test_misspelled_repayment_history_still_bypasses_the_llm_planner():
-    outcome = await plan("gshow me the borrower id 128 repayment histoy")
-
-    assert isinstance(outcome.plan, LookupPlan)
-    assert outcome.plan.detail == "repayment_history"
-    assert outcome.plan.value == "128"
-    assert outcome.attempts == 0
-
-
 def test_customer_details_query_returns_both_sanction_and_disbursement_fields():
     attempt = _loan_details(
         LookupPlan(
@@ -217,7 +173,7 @@ def test_customer_details_query_returns_both_sanction_and_disbursement_fields():
         get_catalog(),
     )
 
-    assert attempt.validated and attempt.provider == "catalog"
+    assert attempt.validated
     assert "sanction_amount" in attempt.sql
     assert "sanction_date" in attempt.sql
     assert "disbursed_amount" in attempt.sql
@@ -277,7 +233,7 @@ def test_customer_summary_returns_only_the_requested_profile_fields():
         get_catalog(),
     )
 
-    assert attempt.validated and attempt.provider == "catalog"
+    assert attempt.validated
     assert "FROM gold.customers AS customer" in attempt.sql
     assert "LEFT JOIN gold.loan_accounts AS loan" in attempt.sql
     assert "customer.full_name AS customer_name" in attempt.sql
@@ -302,7 +258,7 @@ def test_repayment_history_is_newest_first_and_totals_before_limiting():
         get_catalog(),
     )
 
-    assert attempt.validated and attempt.provider == "catalog"
+    assert attempt.validated
     assert "SUM(total_due) OVER ()" in attempt.sql
     assert "SUM(total_amount_paid) OVER ()" in attempt.sql
     assert "ORDER BY\n  repayment_date DESC" in attempt.sql
@@ -312,7 +268,7 @@ def test_repayment_history_is_newest_first_and_totals_before_limiting():
 def test_gender_sample_uses_compound_join_and_stable_one_per_gender():
     attempt = _gender_sample(get_catalog())
 
-    assert attempt.validated and attempt.provider == "catalog"
+    assert attempt.validated
     assert "customer.company_code = loan.company_code" in attempt.sql
     assert "customer.customer_id = loan.customer_id" in attempt.sql
     assert "ROW_NUMBER() OVER" in attempt.sql
@@ -328,7 +284,7 @@ def test_agent_details_use_the_governed_directory_and_exact_code():
         get_catalog(),
     )
 
-    assert attempt.validated and attempt.provider == "catalog"
+    assert attempt.validated
     assert "FROM gold.agents" in attempt.sql
     assert "LOWER(agent_code) = 'agnt45'" in attempt.sql
     assert "agent_name" in attempt.sql
@@ -374,7 +330,7 @@ def test_missing_agent_phone_is_reported_as_unavailable_not_as_an_unrelated_metr
 def test_agent_count_uses_the_governed_agent_directory():
     attempt = _agent_count(get_catalog())
 
-    assert attempt.validated and attempt.provider == "catalog"
+    assert attempt.validated
     assert "COUNT(agent_code) AS agent_count" in attempt.sql
     assert "FROM gold.agents" in attempt.sql
 
@@ -388,7 +344,7 @@ def test_agent_accounts_use_exact_code_and_return_only_linked_account_numbers():
         get_catalog(),
     )
 
-    assert attempt.validated and attempt.provider == "catalog"
+    assert attempt.validated
     assert "FROM gold.loan_accounts AS reporting" in attempt.sql
     assert "LOWER(reporting.agent_code) = 'agnt45'" in attempt.sql
     assert "loan_account_number" in attempt.sql
@@ -405,12 +361,11 @@ def test_agent_customers_are_distinct_and_use_the_governed_loan_relation():
         get_catalog(),
     )
 
-    assert attempt.validated and attempt.provider == "catalog"
+    assert attempt.validated
     assert "FROM gold.loan_accounts AS reporting" in attempt.sql
     assert "LOWER(reporting.agent_code) = 'agnt45'" in attempt.sql
     assert "GROUP BY" in attempt.sql and "reporting.customer_id" in attempt.sql
     assert "COUNT(DISTINCT reporting.loan_account_number) AS linked_loan_count" in attempt.sql
-    assert attempt.pii_columns == ["customer_name"]
 
 
 def test_agent_account_names_use_the_governed_linked_loan_row_when_requested():
@@ -421,7 +376,6 @@ def test_agent_account_names_use_the_governed_linked_loan_row_when_requested():
     attempt = _agent_accounts(plan_result, get_catalog())
     assert "JOIN gold.loan_accounts AS loan" not in attempt.sql
     assert "reporting.customer_name AS borrower_name" in attempt.sql
-    assert attempt.pii_columns == ["customer_name"]
 
 
 def test_agent_account_projection_preserves_every_explicitly_requested_field():
@@ -645,7 +599,7 @@ def test_branch_directory_uses_the_governed_branch_master():
         get_catalog(),
     )
 
-    assert attempt.validated and attempt.provider == "catalog"
+    assert attempt.validated
     assert "FROM gold.branches" in attempt.sql
     assert "branch_code" in attempt.sql
     assert "branch_name" in attempt.sql
@@ -677,7 +631,7 @@ def test_product_code_name_uses_the_governed_product_master():
         get_catalog(),
     )
 
-    assert attempt.validated and attempt.provider == "catalog"
+    assert attempt.validated
     assert "FROM gold.loan_products" in attempt.sql
     assert "LOWER(CAST(product_code AS TEXT)) = '16'" in attempt.sql
     assert "product_name" in attempt.sql

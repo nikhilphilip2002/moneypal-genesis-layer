@@ -58,12 +58,12 @@ def test_consent_is_checked_before_search():
         )
 
 
-def test_public_comparison_keeps_only_external_half():
-    decision = outbound_policy.authorize_public_search(
-        {"search_query": "Compare our portfolio against RBI bank credit growth"},
-        policy=_policy(),
-    )
-    assert decision.query == "RBI bank credit growth"
+def test_mixed_internal_public_comparison_is_rejected():
+    with pytest.raises(outbound_policy.OutboundPolicyDenied):
+        outbound_policy.authorize_public_search(
+            {"search_query": "Compare our portfolio against RBI bank credit growth"},
+            policy=_policy(),
+        )
 
 
 @pytest.mark.anyio

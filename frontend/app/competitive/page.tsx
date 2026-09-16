@@ -1,15 +1,13 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useMemo, useState } from 'react';
 import {
-  auth,
   competitive,
   type Institution,
   type IntelligenceResponse,
   type SwotResponse,
 } from '@/lib/api';
-import { canAccess, homeRoute, type UserRole } from '@/lib/useUserRole';
+import { useRequireAuth } from '@/lib/useRequireAuth';
 import { useIntel } from '@/lib/useIntel';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -56,25 +54,10 @@ function InstitutionDetail({ institution }: { institution: Institution }) {
 }
 
 export default function CompetitivePage() {
-  const router = useRouter();
-  const [authorized, setAuthorized] = useState(false);
+  const authorized = useRequireAuth('/competitive');
   const [search, setSearch] = useState('');
   const [typeFilter, setTypeFilter] = useState('all');
   const [selected, setSelected] = useState<Institution | null>(null);
-
-  useEffect(() => {
-    auth
-      .me()
-      .then((user) => {
-        const role = user.role as UserRole;
-        if (!canAccess(role, '/competitive')) {
-          router.replace(homeRoute(role));
-          return;
-        }
-        setAuthorized(true);
-      })
-      .catch(() => router.replace('/login'));
-  }, [router]);
 
   const institutions = useIntel<Institution[]>('competitive:institutions', competitive.institutions);
 
@@ -90,6 +73,14 @@ export default function CompetitivePage() {
       return true;
     });
   }, [institutions.data, search, typeFilter]);
+
+  if (!authorized) {
+    return (
+      <div className="mx-auto w-full max-w-6xl space-y-4 px-4 py-8 md:px-6">
+        <LoadingCard lines={6} />
+      </div>
+    );
+  }
 
   return (
     <div className="h-full overflow-auto">

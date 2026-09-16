@@ -1,9 +1,3 @@
-'use client'
-
-import { useEffect, useState } from 'react'
-import { usePathname } from 'next/navigation'
-import { auth } from '@/lib/api'
-
 // admin = Moneypal Administrator (full platform)
 // gicc_admin = GICC Administrator (dashboard + competitive + regulatory)
 // gicc_policy = GICC Policy Maker (regulatory + competitive)
@@ -15,6 +9,10 @@ export const ROLE_LABELS: Record<UserRole, string> = {
   gicc_admin: 'GICC Administrator',
   gicc_policy: 'GICC Policy Maker',
   gicc_director: 'GICC Director',
+}
+
+export function isUserRole(role: string): role is UserRole {
+  return Object.prototype.hasOwnProperty.call(ROLE_LABELS, role)
 }
 
 // Routes each role may see, in nav order (first entry = landing page).
@@ -40,55 +38,4 @@ export function homeRoute(role: UserRole): string {
 
 export function canAccess(role: UserRole, route: string): boolean {
   return ROLE_ROUTES[role].includes(route)
-}
-
-// Module-level cache so multiple consumers (AppSidebar, NavBar, …) don't
-// each re-fetch /me on every navigation.
-let cachedRole: UserRole | null = null
-let inflight: Promise<UserRole | null> | null = null
-
-function fetchRole(): Promise<UserRole | null> {
-  if (cachedRole) return Promise.resolve(cachedRole)
-  if (inflight) return inflight
-  inflight = auth
-    .me()
-    .then((user: { role?: string }) => {
-      const role = (user.role as UserRole) || null
-      cachedRole = role
-      return role
-    })
-    .catch(() => null)
-    .finally(() => {
-      inflight = null
-    })
-  return inflight
-}
-
-export function clearUserRoleCache() {
-  cachedRole = null
-}
-
-export function useUserRole(): { role: UserRole | null; ready: boolean } {
-  const pathname = usePathname()
-  const [role, setRole] = useState<UserRole | null>(cachedRole)
-  const [ready, setReady] = useState<boolean>(cachedRole !== null)
-
-  // Re-runs on client-side navigation (e.g. right after login) so consumers
-  // like AppSidebar pick up the role without a hard refresh. fetchRole caches,
-  // so this only hits /me while the role is still unknown.
-  useEffect(() => {
-    if (typeof window === 'undefined') return
-    let cancelled = false
-    fetchRole().then((r) => {
-      if (!cancelled) {
-        setRole(r)
-        setReady(true)
-      }
-    })
-    return () => {
-      cancelled = true
-    }
-  }, [pathname])
-
-  return { role, ready }
 }

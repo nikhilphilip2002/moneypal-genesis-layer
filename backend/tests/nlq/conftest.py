@@ -1,9 +1,8 @@
 import contextlib
-import os
 
 import pytest
 
-from app.core.config import _load_env_file, settings
+from app.core.config import settings
 
 
 @pytest.fixture
@@ -12,25 +11,38 @@ def anyio_backend():
     return "asyncio"
 
 
-def _db_configured() -> bool:
-    # Credentials normally live in the repo's .env rather than the process environment,
-    # which is how these tests silently skipped the first time they were written.
-    return bool(
-        os.environ.get("POSTGRES_PASSWORD")
-        or _load_env_file().get("POSTGRES_PASSWORD")
-        or settings.nlq_db_password
-    )
+def _db_available() -> bool:
+    # Credentials in .env do not mean the warehouse is reachable from this process.
+    # Match the other integration suites and probe with the driver's bounded timeout.
+    from app.services.db_schema import get_connection
+
+    try:
+        connection = get_connection()
+    except Exception:
+        return False
+    connection.close()
+    return True
 
 
 requires_db = pytest.mark.skipif(
-    not _db_configured(),
-    reason="no database credentials available",
+    not _db_available(),
+    reason="PostgreSQL warehouse not reachable",
 )
 
-requires_readonly_role = pytest.mark.skipif(
-    not settings.nlq_db_password,
-    reason="nlq_readonly not provisioned — run scripts/sql/nlq_readonly_role.sql",
-)
+@pytest.fixture(scope="module")
+def reachable_readonly_role():
+    """Skip role assertions when the credential exists but its warehouse is offline."""
+    if not settings.nlq_db_password:
+        pytest.skip("nlq_readonly role is not configured")
+
+    from app.services.nlq import db as nlq_db
+
+    try:
+        with nlq_db.readonly_cursor() as (_connection, cursor):
+            cursor.execute("SELECT 1")
+            cursor.fetchone()
+    except Exception as exc:
+        pytest.skip(f"nlq_readonly warehouse is unreachable: {exc}")
 
 
 @pytest.fixture(scope="session")

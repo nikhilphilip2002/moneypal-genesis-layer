@@ -27,7 +27,7 @@ class TestListTools:
         r = await client.get("/workbench/tools", headers=_auth("moneypal_admin"))
         assert r.status_code == 200
         ids = {t["id"] for t in r.json()["tools"]}
-        assert {"show_schema", "competitor_landscape"} <= ids
+        assert ids == {"competitor_landscape", "macro_brief", "regulatory_alerts"}
 
     @pytest.mark.anyio
     async def test_policy_maker_does_not_see_the_schema_tool(self, client):
@@ -118,23 +118,33 @@ class TestRunTool:
 
     @pytest.mark.anyio
     async def test_unauthorized_tool_is_403(self, client):
-        r = await client.post("/workbench/tool/show_schema", headers=_auth("gicc_policy"), json={})
+        r = await client.post(
+            "/workbench/tool/competitor_landscape",
+            headers=_auth("gicc_director"),
+            json={"external_sources_enabled": True},
+        )
         assert r.status_code == 403
 
     @pytest.mark.anyio
     async def test_authorized_run_returns_a_card(self, client, monkeypatch):
         from app.services.workbench import nodes
 
-        async def fake_schema(intent):
-            return nodes.SourceResult(source="schema", card_type="schema",
-                                      payload={"node_count": 3, "edge_count": 2, "nodes": [], "edges": []})
+        async def fake_competitive(intent, **_kwargs):
+            return nodes.SourceResult(
+                source="competitive", card_type="brief",
+                payload={"summary": "Rivals.", "key_points": []},
+            )
 
-        monkeypatch.setattr(nodes, "run_schema", fake_schema)
-        r = await client.post("/workbench/tool/show_schema", headers=_auth("moneypal_admin"), json={})
+        monkeypatch.setattr(nodes, "run_competitive", fake_competitive)
+        r = await client.post(
+            "/workbench/tool/competitor_landscape",
+            headers=_auth("moneypal_admin"),
+            json={"external_sources_enabled": True},
+        )
         assert r.status_code == 200
         body = r.json()
-        assert body["card_type"] == "schema"
-        assert body["source"] == "schema"
+        assert body["card_type"] == "brief"
+        assert body["source"] == "competitive"
 
 
 class TestConversationOwnership:

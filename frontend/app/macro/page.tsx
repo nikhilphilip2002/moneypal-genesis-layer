@@ -1,9 +1,7 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
-import { auth, macro, type IntelligenceResponse } from '@/lib/api';
-import { canAccess, homeRoute, type UserRole } from '@/lib/useUserRole';
+import { macro, type IntelligenceResponse } from '@/lib/api';
+import { useRequireAuth } from '@/lib/useRequireAuth';
 import { useIntel } from '@/lib/useIntel';
 
 import AIBriefPanel from '@/components/intel/AIBriefPanel';
@@ -12,22 +10,7 @@ import LoadingCard from '@/components/intel/LoadingCard';
 import WidgetError from '@/components/intel/WidgetError';
 
 export default function MacroPage() {
-  const router = useRouter();
-  const [authorized, setAuthorized] = useState(false);
-
-  useEffect(() => {
-    auth
-      .me()
-      .then((user) => {
-        const role = user.role as UserRole;
-        if (!canAccess(role, '/macro')) {
-          router.replace(homeRoute(role));
-          return;
-        }
-        setAuthorized(true);
-      })
-      .catch(() => router.replace('/login'));
-  }, [router]);
+  const authorized = useRequireAuth('/macro');
 
   const briefing = useIntel<IntelligenceResponse>('macro:briefing', macro.briefing);
   const snapshot = useIntel<IntelligenceResponse>('macro:snapshot', macro.snapshot);

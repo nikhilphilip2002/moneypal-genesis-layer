@@ -13,13 +13,10 @@ import {
   CircleDollarSign,
   Clock,
   CreditCard,
-  Database,
   GitBranch,
   LayoutGrid,
-  Link2,
   Maximize2,
   Minimize2,
-  Move,
   Network,
   PanelRightClose,
   PanelRightOpen,
@@ -209,18 +206,6 @@ function getNodeColor(type: string, isDark: boolean): string {
   const palette = isDark ? chartColorsDark : chartColorsLight;
   return palette[chartVar] || (isDark ? '#64748b' : '#475569');
 }
-
-/** The tier a node of each type drills into, used for the canvas legend. */
-const childLevelOf: Record<GraphLevel, string> = {
-  portfolio: 'product',
-  product: 'branch',
-  branch: 'scheme',
-  scheme: 'agent',
-  agent: 'scheme',
-  tenure: 'loan_size',
-  loan_size: 'customer',
-  customer: 'account',
-};
 
 function formatMoney(raw?: number): string {
   const value = Number(raw || 0);

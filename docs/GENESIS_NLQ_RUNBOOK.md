@@ -98,29 +98,23 @@ pytest backend/tests/nlq/test_catalog_introspection.py
 ```
 pytest backend/tests/nlq/test_catalog.py backend/tests/nlq/test_catalog_introspection.py
 python -m app.services.nlq.catalog.index
-python -m app.services.nlq.eval --pace 2
+pytest backend/tests/nlq/test_golden_set.py
 ```
 
 The catalog version is a content hash, so plan-cache entries from before the edit are
 invalidated automatically. Qdrant vectors are **not** — that is what the index command is
 for.
 
-### Scoring the planner
+### Validating the retained NLQ compiler
+
+The former conversational NLQ planner and its LLM evaluator were retired after Workbench became
+the canonical conversational path. `tests/nlq/golden/questions.yaml` remains as a compiler corpus:
 
 ```
-python -m app.services.nlq.eval                 # full golden set
-python -m app.services.nlq.eval --category refuse
-python -m app.services.nlq.eval --json          # for CI
+pytest backend/tests/nlq/test_golden_set.py
 ```
 
-Scoring is on execution match, not string match. The gate before persona users is **≥ 85%
-on the QuerySpec path**.
-
-> On a rate-limited free-tier provider a full 54-case run exceeds the daily token budget
-> (~3.9k tokens per call, doubled by the repair attempt). Use `--pace`, a paid tier, or the
-> self-hosted endpoint. A run that reports 0% accuracy with `LLMUnavailable: 429` in every
-> failure detail is a quota result, not a quality result — read the failure details before
-> concluding anything about the model.
+Workbench conversational behavior is covered by `pytest backend/tests/workbench -q`.
 
 ---
 

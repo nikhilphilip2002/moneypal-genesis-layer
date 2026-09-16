@@ -23,7 +23,7 @@ import {
   type WorkbenchConversation,
   type WorkbenchTool,
 } from '@/lib/api';
-import { clearUserRoleCache, ROLE_LABELS, type UserRole } from '@/lib/useUserRole';
+import { ROLE_LABELS } from '@/lib/useUserRole';
 import Composer from '@/components/workbench/Composer';
 import WorkbenchTurn, { type WorkbenchTurnData } from '@/components/workbench/WorkbenchTurn';
 import HistoryRail from '@/components/workbench/HistoryRail';
@@ -74,7 +74,7 @@ export default function WorkbenchPage() {
   useEffect(() => {
     auth.me()
       .then((currentUser) => {
-        setUser(currentUser as DemoUser);
+        setUser(currentUser);
         setAuthorized(true);
         refreshHistory();
       })
@@ -308,7 +308,6 @@ export default function WorkbenchPage() {
 
   const logout = async () => {
     await auth.logout();
-    clearUserRoleCache();
     router.replace('/login');
   };
 
@@ -411,7 +410,7 @@ function WorkbenchHeader({
   const name = user?.full_name || user?.username || 'User';
   const initials = name.split(' ').map((part) => part[0]).join('').toUpperCase().slice(0, 2);
   const roleLabel = user?.role
-    ? ROLE_LABELS[user.role as UserRole] ?? user.role
+    ? ROLE_LABELS[user.role] ?? user.role
     : 'User';
   const modules = modulesForRole(user?.role).filter((module) => module.id !== 'profile');
 

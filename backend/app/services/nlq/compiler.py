@@ -452,10 +452,6 @@ def _join_plan(
     return out
 
 
-def _has_additive_metric(plan: metric_rules.MetricPlan) -> bool:
-    return any(m.expression and "SUM(" in m.expression.upper() for m in plan.metrics)
-
-
 def _dimension_sql(
     cat: Catalog, dim: Dimension, base_table: str, base_alias: str
 ) -> tuple[str, str | None]:

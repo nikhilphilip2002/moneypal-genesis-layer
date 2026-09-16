@@ -24,8 +24,6 @@ import {
   TrendingUp,
   AlertCircle,
   Database,
-  Building2,
-  Users,
   ChevronDown,
   Calendar,
 } from 'lucide-react';

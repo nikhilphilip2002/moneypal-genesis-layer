@@ -17,10 +17,23 @@
 
 SELECT 'CREATE ROLE nlq_readonly LOGIN'
 WHERE NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'nlq_readonly') \gexec
+\if :{?pw}
 ALTER ROLE nlq_readonly LOGIN PASSWORD :'pw';
+\else
+-- Interactive runs prompt securely; automation can continue to pass `-v pw=...`.
+\password nlq_readonly
+\endif
 
-REVOKE ALL ON DATABASE moneypaldb FROM nlq_readonly;
-GRANT CONNECT ON DATABASE moneypaldb TO nlq_readonly;
+-- Apply database-level privileges to whichever database this script is connected to.
+-- This keeps the script reusable when the deployment database is not named moneypaldb.
+SELECT format(
+    'REVOKE ALL ON DATABASE %I FROM nlq_readonly',
+    current_database()
+) \gexec
+SELECT format(
+    'GRANT CONNECT ON DATABASE %I TO nlq_readonly',
+    current_database()
+) \gexec
 
 GRANT USAGE ON SCHEMA gold TO nlq_readonly;
 
@@ -53,8 +66,12 @@ TO nlq_readonly;
 -- read-only role therefore needs EXECUTE in addition to SELECT on the friendly view;
 -- otherwise both EXPLAIN and every portfolio/PAR/NPA query fail during permission checks.
 -- Keep PUBLIC closed and grant only the dedicated read-only role.
-REVOKE ALL ON FUNCTION gold.portfolio_snapshot_as_of(date) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION gold.portfolio_snapshot_as_of(date) TO nlq_readonly;
+-- Older deployments expose daily status through this function; newer warehouse
+-- snapshots materialize gold.daily_loan_status directly. Grant it only when present.
+SELECT 'REVOKE ALL ON FUNCTION gold.portfolio_snapshot_as_of(date) FROM PUBLIC'
+WHERE to_regprocedure('gold.portfolio_snapshot_as_of(date)') IS NOT NULL \gexec
+SELECT 'GRANT EXECUTE ON FUNCTION gold.portfolio_snapshot_as_of(date) TO nlq_readonly'
+WHERE to_regprocedure('gold.portfolio_snapshot_as_of(date)') IS NOT NULL \gexec
 
 -- Re-run this script after creating a new governed view. New objects are intentionally
 -- not auto-granted: adding a source to the LLM surface must be an explicit deployment.

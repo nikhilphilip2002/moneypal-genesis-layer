@@ -1,14 +1,12 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
 import {
-  auth,
   regulatory,
   type RegulationCategory,
   type IntelligenceResponse,
 } from '@/lib/api';
-import { canAccess, homeRoute, type UserRole } from '@/lib/useUserRole';
+import { useRequireAuth } from '@/lib/useRequireAuth';
 import { useIntel } from '@/lib/useIntel';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -91,23 +89,8 @@ function CategoryRow({ category }: { category: RegulationCategory }) {
 }
 
 export default function RegulatoryPage() {
-  const router = useRouter();
-  const [authorized, setAuthorized] = useState(false);
+  const authorized = useRequireAuth('/regulatory');
   const [activeTab, setActiveTab] = useState('briefings');
-
-  useEffect(() => {
-    auth
-      .me()
-      .then((user) => {
-        const role = user.role as UserRole;
-        if (!canAccess(role, '/regulatory')) {
-          router.replace(homeRoute(role));
-          return;
-        }
-        setAuthorized(true);
-      })
-      .catch(() => router.replace('/login'));
-  }, [router]);
 
   useEffect(() => {
     if (typeof window !== 'undefined') {

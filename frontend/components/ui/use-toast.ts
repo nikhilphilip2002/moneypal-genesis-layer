@@ -2,7 +2,6 @@
 import { useState, useEffect } from "react"
 
 const TOAST_LIMIT = 1
-const TOAST_REMOVE_DELAY = 1000000
 
 type ToastType = {
     id: string
@@ -53,8 +52,6 @@ export function useToast() {
 
     return {
         toast: (props: ToastInput) => {
-            // Just log for now if we don't have a Toaster component
-            console.log("Toast:", props)
             dispatch({ type: "ADD_TOAST", toast: props })
             return {
                 id: genId(),

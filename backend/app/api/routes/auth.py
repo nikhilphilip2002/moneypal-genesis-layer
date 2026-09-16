@@ -37,6 +37,14 @@ USERS = {
     },
 }
 
+
+def identity_from_authorization(authorization: str | None) -> tuple[str, str]:
+    """Resolve the demo bearer token to the resource owner and access-policy role."""
+    token = (authorization or "").removeprefix("Bearer ").strip()
+    username = token.removeprefix("mock-token-") if token.startswith("mock-token-") else ""
+    user = USERS.get(username)
+    return (username or "anonymous", user["role"] if user else "anonymous")
+
 @router.post("/login/")
 def login(req: LoginRequest):
     user = USERS.get(req.username)
@@ -66,13 +74,11 @@ def list_users():
 
 @router.get("/me/")
 def me(authorization: Optional[str] = Header(None)):
-    if not authorization or not authorization.startswith("Bearer "):
-        raise HTTPException(401, "Not authenticated")
-    token = authorization.split(" ")[1]
-    username = token.replace("mock-token-", "")
+    username, _role = identity_from_authorization(authorization)
     user = USERS.get(username)
     if not user:
-        raise HTTPException(401, "Invalid token")
+        detail = "Not authenticated" if not authorization else "Invalid token"
+        raise HTTPException(401, detail)
     return {
         "username": username,
         "role": user["role"],

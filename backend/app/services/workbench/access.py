@@ -12,7 +12,6 @@ from app.services.workbench.sources import SOURCES
 
 class SourceGroup(str, Enum):
     INTERNAL_DATA = "internal_data"
-    INTERNAL_METADATA = "internal_metadata"
     LOCAL_KNOWLEDGE = "local_knowledge"
     EXTERNAL_INDEXED = "external_indexed"
     LIVE_EXTERNAL = "live_external"
@@ -20,7 +19,6 @@ class SourceGroup(str, Enum):
 
 SOURCE_GROUPS: dict[str, SourceGroup] = {
     "db": SourceGroup.INTERNAL_DATA,
-    "schema": SourceGroup.INTERNAL_METADATA,
     "knowledge": SourceGroup.LOCAL_KNOWLEDGE,
     "macro": SourceGroup.EXTERNAL_INDEXED,
     "competitive": SourceGroup.EXTERNAL_INDEXED,

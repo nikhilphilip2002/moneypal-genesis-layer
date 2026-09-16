@@ -1,6 +1,8 @@
 // The production browser talks to nginx on the same origin; nginx forwards /api/* to
 // FastAPI. An absolute host fallback gets frozen into the Next.js bundle and breaks as soon
 // as the UI is opened through another hostname, port, or HTTPS endpoint.
+import type { UserRole } from '@/lib/useUserRole';
+
 const API_URL = (process.env.NEXT_PUBLIC_API_URL || '/api').replace(/\/$/, '');
 
 // ─── Shared response contract (mirrors genesis_core.schema) ───
@@ -229,7 +231,7 @@ export type RegulatoryReportPeriods = {
 
 export type DemoUser = {
   username: string;
-  role: string;
+  role: UserRole;
   full_name: string;
   email: string;
 };
@@ -267,15 +269,6 @@ export type ReviewItem = {
   status: 'pending' | 'reviewed' | 'flagged';
   note: string;
   reviewed_at: string | null;
-};
-
-export type SearchResult = {
-  module: string;
-  collection_label: string;
-  text: string;
-  source: string;
-  page: number | null;
-  score: number;
 };
 
 // ─── Auth/session helpers ───
@@ -336,7 +329,7 @@ export const auth = {
       body: JSON.stringify({ username, password }),
     }),
 
-  me: () => apiRequest('/auth/me/'),
+  me: (): Promise<DemoUser> => apiRequest('/auth/me/'),
 
   users: (): Promise<DemoUser[]> => apiRequest('/auth/users/'),
 
@@ -355,78 +348,6 @@ export const macro = {
   msme: (refresh?: boolean): Promise<IntelligenceResponse> => apiRequest(`/macro/msme${refresh ? '?refresh=1' : ''}`),
   briefing: (refresh?: boolean): Promise<IntelligenceResponse> => apiRequest(`/macro/briefing${refresh ? '?refresh=1' : ''}`),
 };
-
-export type BriefStreamHandlers = {
-  onToken: (text: string) => void;
-  onDone: (data: IntelligenceResponse) => void;
-  onError: (message: string) => void;
-};
-
-// Consumes the /macro/briefing/stream SSE endpoint. Uses fetch (not EventSource)
-// so the Bearer token can be sent. A cached brief arrives as a single `done`
-// event; a freshly generated one streams `token` events first.
-export async function streamBriefing(
-  { refresh, signal }: { refresh?: boolean; signal?: AbortSignal },
-  { onToken, onDone, onError }: BriefStreamHandlers,
-): Promise<void> {
-  const token = getToken();
-  let response: Response;
-  try {
-    response = await fetch(`${API_URL}/macro/briefing/stream${refresh ? '?refresh=1' : ''}`, {
-      headers: { ...(token && { Authorization: `Bearer ${token}` }) },
-      signal,
-    });
-  } catch (err: any) {
-    if (err?.name !== 'AbortError') onError('Could not reach the briefing service.');
-    return;
-  }
-
-  if (!response.ok || !response.body) {
-    if (response.status === 401) redirectToLogin();
-    onError(`Briefing stream failed (status ${response.status}).`);
-    return;
-  }
-
-  const reader = response.body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = '';
-
-  const dispatch = (frame: string) => {
-    let event = 'message';
-    const dataLines: string[] = [];
-    for (const line of frame.split('\n')) {
-      if (line.startsWith('event:')) event = line.slice(6).trim();
-      else if (line.startsWith('data:')) dataLines.push(line.slice(5).trim());
-    }
-    if (!dataLines.length) return;
-    let payload: any;
-    try {
-      payload = JSON.parse(dataLines.join('\n'));
-    } catch {
-      return;
-    }
-    if (event === 'token') onToken(payload.t ?? '');
-    else if (event === 'done') onDone(payload as IntelligenceResponse);
-    else if (event === 'error') onError(payload.message || 'Generation failed.');
-  };
-
-  try {
-    for (;;) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
-      let sep: number;
-      // SSE frames are separated by a blank line.
-      while ((sep = buffer.indexOf('\n\n')) !== -1) {
-        const frame = buffer.slice(0, sep);
-        buffer = buffer.slice(sep + 2);
-        if (frame.trim()) dispatch(frame);
-      }
-    }
-  } catch (err: any) {
-    if (err?.name !== 'AbortError') onError('The briefing stream was interrupted.');
-  }
-}
 
 // ─── Module 2: Competitive intelligence ───
 
@@ -629,43 +550,6 @@ export const review = {
 export const policy = {
   brief: (data: { regulation_ids: string[]; institution_ids: string[]; focus: string }): Promise<IntelligenceResponse> =>
     apiRequest('/policy/brief', { method: 'POST', body: JSON.stringify(data) }),
-};
-
-// ─── Cross-collection semantic search + Ask Genesis Q&A ───
-
-export type AskResponse = {
-  question: string;
-  answer: string;
-  results: SearchResult[];
-};
-
-export type RecentIntel = {
-  title: string;
-  module: 'Macro' | 'Competitive' | 'Regulatory';
-  href: string;
-  last_updated: number | null;
-};
-
-export type ActionItem = {
-  title: string;
-  detail: string;
-  priority: 'High' | 'Medium';
-  href: string;
-};
-
-export const intelligence = {
-  search: (query: string): Promise<{ query: string; results: SearchResult[] }> =>
-    apiRequest('/intelligence/search', { method: 'POST', body: JSON.stringify({ query }) }),
-  ask: (query: string): Promise<AskResponse> =>
-    apiRequest('/intelligence/ask', { method: 'POST', body: JSON.stringify({ query }) }),
-  recent: (): Promise<RecentIntel[]> => apiRequest('/intelligence/recent'),
-  actionItems: (): Promise<ActionItem[]> => apiRequest('/intelligence/action-items'),
-};
-
-// ─── Health check ───
-
-export const health = {
-  check: () => apiRequest('/health'),
 };
 
 // ─── Genesis NLQ — natural-language query layer ───

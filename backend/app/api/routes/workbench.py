@@ -19,11 +19,11 @@ from fastapi import APIRouter, Header, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
+from app.api.routes.auth import identity_from_authorization
 from app.services.workbench import access, history, tools
 from app.services.workbench.graph import run_workbench
 from app.services.workbench.sources import visible_sources
 from app.services.nlq import lookup as record_lookup
-from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -95,16 +95,6 @@ async def _completion_results(q: str, kind: str) -> list[dict]:
     return await future
 
 
-def _identity(authorization: str | None) -> tuple[str, str]:
-    """(user, role) from the mock token — same scheme as the NLQ route."""
-    from app.api.routes.auth import USERS
-
-    token = (authorization or "").removeprefix("Bearer ").strip()
-    username = token.removeprefix("mock-token-") if token.startswith("mock-token-") else ""
-    user = USERS.get(username)
-    return (username or "anonymous", user["role"] if user else "anonymous")
-
-
 class AskRequest(BaseModel):
     question: str = Field(min_length=1, max_length=2000)
     conversation_id: str | None = None
@@ -116,7 +106,7 @@ class AskRequest(BaseModel):
 @router.get("/sources")
 async def sources(authorization: str | None = Header(default=None)):
     """The sources this role can reach — drives the '+' pin-source menu."""
-    _, role = _identity(authorization)
+    _, role = identity_from_authorization(authorization)
     return {
         "sources": access.source_metadata(role),
     }
@@ -125,7 +115,7 @@ async def sources(authorization: str | None = Header(default=None)):
 @router.get("/conversations")
 async def list_conversations(limit: int = 50, authorization: str | None = Header(default=None)):
     """Recent conversations for the History rail, most-recent first."""
-    username, _ = _identity(authorization)
+    username, _ = identity_from_authorization(authorization)
     return {
         "conversations": [
             {"conversation_id": c.conversation_id, "title": c.title,
@@ -137,7 +127,7 @@ async def list_conversations(limit: int = 50, authorization: str | None = Header
 
 @router.get("/conversations/{conversation_id}")
 async def get_conversation(conversation_id: str, authorization: str | None = Header(default=None)):
-    username, _ = _identity(authorization)
+    username, _ = identity_from_authorization(authorization)
     rec = history.get(conversation_id, user=username)
     if rec is None:
         raise HTTPException(404, "Unknown conversation.")
@@ -190,7 +180,7 @@ def _turn_for_api(turn: dict) -> dict:
 @router.get("/tools")
 async def list_tools(authorization: str | None = Header(default=None)):
     """Tools this role may run — populates the '+' menu."""
-    _, role = _identity(authorization)
+    _, role = identity_from_authorization(authorization)
     return {
         "tools": [
             {"id": t.id, "label": t.label, "description": t.description,
@@ -209,7 +199,7 @@ async def chat_completions(
     """Bounded borrower/account/agent suggestions for Tab completion in chat."""
     global _completion_db_retry_after, _completion_in_flight
 
-    _username, role = _identity(authorization)
+    _username, role = identity_from_authorization(authorization)
     if (
         "db" not in {source.id for source in visible_sources(role)}
         or not _completion_query_allowed(q, kind)
@@ -238,7 +228,7 @@ class ToolRequest(BaseModel):
 async def run_tool(tool_id: str, req: ToolRequest | None = None,
                    authorization: str | None = Header(default=None)):
     """Run a '+' tool. Access is enforced here, not just hidden in the menu."""
-    _, role = _identity(authorization)
+    _, role = identity_from_authorization(authorization)
     params = req.params if req else {}
     try:
         result = await tools.run_tool(
@@ -255,7 +245,7 @@ async def run_tool(tool_id: str, req: ToolRequest | None = None,
 @router.post("/ask")
 async def ask(req: AskRequest, authorization: str | None = Header(default=None)):
     """Ask anything. The model selects authorized native tools and streams cards back."""
-    username, role = _identity(authorization)
+    username, role = identity_from_authorization(authorization)
     if (
         req.conversation_id
         and history.exists(req.conversation_id)
