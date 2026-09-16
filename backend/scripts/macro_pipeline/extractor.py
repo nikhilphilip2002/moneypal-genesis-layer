@@ -26,19 +26,8 @@ log = logging.getLogger("macro.extractor")
 
 def _pdf_pages(path: Path) -> list[tuple[int | None, str]]:
     """Return [(page_number, text), ...], skipping pages with no extractable text."""
-    from pypdf import PdfReader
-
-    reader = PdfReader(str(path))
-    pages: list[tuple[int | None, str]] = []
-    for number, page in enumerate(reader.pages, start=1):
-        try:
-            text = page.extract_text() or ""
-        except Exception:
-            # A single malformed page should not cost us the rest of the document.
-            text = ""
-        if text.strip():
-            pages.append((number, text))
-    return pages
+    # A single malformed page should not cost us the rest of the document.
+    return rag.load_pdf(str(path), skip_page_errors=True)
 
 
 def _spreadsheet_text(path: Path) -> str:

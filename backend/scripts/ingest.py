@@ -6,24 +6,17 @@ import sys
 import uuid
 from pathlib import Path
 
-from pypdf import PdfReader
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.append(str(ROOT / "backend"))
 
 from app.core.config import DATA_DIR, MACRO_COLLECTION, settings  # noqa: E402
 from app.registry import load_regulation_categories, source_paths_for_category  # noqa: E402
 from app.services import institution_loader as il  # noqa: E402
-from genesis_core.rag import chunk_text_chars as chunk_text, embed_batch  # noqa: E402
+from genesis_core.rag import chunk_text_chars as chunk_text, embed_batch, load_pdf  # noqa: E402
 
 
 def read_pdf_pages(path: Path) -> list[tuple[int, str]]:
-    reader = PdfReader(str(path))
-    pages: list[tuple[int, str]] = []
-    for index, page in enumerate(reader.pages, start=1):
-        text = page.extract_text() or ""
-        if text.strip():
-            pages.append((index, text))
-    return pages
+    return load_pdf(str(path))
 
 
 def ensure_collection(client, collection_name: str) -> None:

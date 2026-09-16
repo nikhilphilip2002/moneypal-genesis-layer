@@ -312,12 +312,12 @@ key-point formatting while delegating vector search and generation to the shared
 The six inactive YAML files directly under `defs/` were removed. The loader, retrieval index, and
 tests use only `backend/app/services/nlq/catalog/defs/gold`.
 
-### 7.3 Smaller structural duplication
+### 7.3 Smaller structural duplication — resolved
 
-- `institution_loader.py` and `reg_loader.py` repeat the same JSON registry operations, but are not
-  byte-for-byte clones. A generic registry is optional and should retain domain-specific validation.
-- PDF page extraction is repeated in `genesis_core.rag`, `backend/scripts/ingest.py`, and the macro
-  extractor, with different exception policies. A shared primitive should make that policy explicit.
+- `institution_loader.py` and `reg_loader.py` now delegate filesystem operations and safe identifier
+  handling to `json_registry.py` while retaining their domain-specific directories and public APIs.
+- PDF page extraction now lives in `genesis_core.rag.load_pdf()`. Strict extraction remains the
+  default; the macro pipeline explicitly opts into malformed-page isolation.
 - **Resolved:** backend regulatory models re-export the `genesis_core.schema` intelligence response
   and source models; only domain-specific category and alert models remain local.
 - **Resolved:** six frontend pages now share `useRequireAuth()` and one validated `UserRole`
@@ -400,6 +400,8 @@ Recommended direction:
 4. **Completed:** Migrate embeddings, Qdrant, chunking, and generation to `genesis_core.rag`, with
    a focused regulatory fallback adapter and migration tests.
 5. **Completed:** Remove the inactive parent catalog YAML; the loader and tests use only `defs/gold`.
+6. **Completed:** Consolidate JSON registry persistence and PDF page extraction behind shared,
+   policy-explicit primitives.
 
 ---
 
@@ -415,6 +417,7 @@ Commands executed during this revision:
 | `cd frontend && npm run lint` | Pass: no errors or warnings |
 | `uv run pytest -q backend/tests/nlq backend/tests/workbench` | Pass: 1,018; skip: 98 integration tests |
 | `uv run pytest -q backend/tests --ignore=backend/tests/macro` | Pass: 1,080; skip: 160 integration tests |
+| `uv run pytest -q backend/tests/test_json_registry.py` | Pass: 6 tests |
 | `uv run pytest -q backend/tests/macro` | Environment-blocked: 10 pass, 13 fail because NumPy cannot load missing `libstdc++.so.6` |
 | `cd frontend && npm run build` | Pass: optimized Next.js production build and 14 static routes |
 | `git diff --check` | Pass |

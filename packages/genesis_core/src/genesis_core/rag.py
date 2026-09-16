@@ -77,14 +77,19 @@ def ensure_collection(name: str) -> None:
 # --------------------------------------------------------------------------
 # Loading & chunking
 # --------------------------------------------------------------------------
-def load_pdf(path: str) -> list[tuple[int, str]]:
-    """Return [(page_number, text), ...] for pages that have extractable text."""
+def load_pdf(path: str, *, skip_page_errors: bool = False) -> list[tuple[int, str]]:
+    """Return extractable PDF pages, optionally isolating malformed-page failures."""
     from pypdf import PdfReader
 
     reader = PdfReader(path)
     out: list[tuple[int, str]] = []
     for i, page in enumerate(reader.pages, start=1):
-        text = (page.extract_text() or "").strip()
+        try:
+            text = (page.extract_text() or "").strip()
+        except Exception:
+            if not skip_page_errors:
+                raise
+            text = ""
         if text:
             out.append((i, text))
     return out
