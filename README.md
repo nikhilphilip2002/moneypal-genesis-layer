@@ -88,7 +88,7 @@ the turn. Tool arguments are assembled and validated before execution; model
 reasoning is never forwarded to the browser. Servers that return JSON despite
 the streaming request remain compatible, but deliver their text all at once.
 
-Run the frontend streaming checks with `cd frontend && node --test lib/api-stream.test.cjs`.
+Run the frontend streaming checks with `cd frontend && npm test`.
 
 Never use an `EXA_API_KEY` name prefixed with `NEXT_PUBLIC_`; the browser must not receive
 the key. The backend sends it to Exa using the `x-api-key` MCP request header.

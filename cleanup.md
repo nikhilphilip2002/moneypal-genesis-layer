@@ -50,6 +50,7 @@ The verified cleanup passes are complete:
   boundary generic, and removed three caller-free analytics client methods.
 - Removed straightforward unused frontend imports and the toast debug log.
 - Replaced `next lint` with ESLint 9 flat configuration.
+- Exposed the retained Workbench SSE parser regression through the frontend `npm test` script.
 - Removed Workbench node tests for production adapters that no longer exist.
 - Removed the unreachable NLQ conversational planner, its LLM prompt/schema layer, evaluator, and
   planner-only tests after verifying there was no application, route, scheduler, or script caller.
@@ -136,10 +137,10 @@ These 18 components and one hook are outside the active Next.js import graph:
 `frontend/lib/api-stream.test.cjs` is **not dead code**. The root README documents:
 
 ```bash
-cd frontend && node --test lib/api-stream.test.cjs
+cd frontend && npm test
 ```
 
-The command currently passes. Keep this file and consider exposing it as an npm `test` script.
+The command currently passes and is exposed as the frontend `npm test` script.
 
 ### 2.4 Retired conversational evaluators
 
@@ -410,7 +411,7 @@ Commands executed during this revision:
 
 | Check | Result |
 | :--- | :--- |
-| `cd frontend && node --test lib/api-stream.test.cjs` | Pass: 1 test |
+| `cd frontend && npm test` | Pass: 1 test |
 | `cd frontend && npx tsc --noEmit` | Pass |
 | `uv run ruff check backend --select F401,F821,F841` | Pass |
 | `cd frontend && npm run lint` | Pass: no errors or warnings |
