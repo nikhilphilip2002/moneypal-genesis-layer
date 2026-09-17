@@ -757,14 +757,11 @@ async def run(state: dict[str, Any]) -> None:
         if any(item.terminal is not None for item in executed):
             break
         has_data = any(item.card is not None and item.error is None for item in executed)
-        if not has_data:
-            if not budget.calls_remaining:
-                break
-            tool_choice = "auto"
-        elif budget.rounds_remaining == 1 or not budget.calls_remaining:
-            tool_choice = "none"
-        else:
-            tool_choice = "auto"
+        if not has_data and not budget.calls_remaining:
+            break
+        # The model decides whether to call a tool or finish with content. Do not force a
+        # synthesis-only response merely because this is the last application round.
+        tool_choice = "auto"
         budget.charge_round(_PURPOSES[tool_choice])
         round_number = budget.rounds_used
         model_trace_id = f"model-{round_number}"
@@ -908,7 +905,7 @@ async def run(state: dict[str, Any]) -> None:
         state["agent_final_result"] = final
         # The candidate as the model wrote it; `answer_results` records the final text.
         history.set_synthesis(
-            state["conversation_id"], state["user"], state["turn_id"], final.text.strip(),
+            state["conversation_id"], state["user"], state["turn_id"], final.text,
             message=final.assistant_message, stage="synthesize",
         )
     elif not cards:

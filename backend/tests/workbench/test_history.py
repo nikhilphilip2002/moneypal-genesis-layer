@@ -603,6 +603,7 @@ def test_synthesis_candidate_and_final_answer_are_one_event_each():
     candidate = turn["events"][1]["payload"]
     assert candidate["candidate"] is True and candidate["stage"] == "synthesize"
     assert candidate["message"]["content"] == "PAR 30 is about 4%."
+    assert turn["model_messages"] == ["PAR 30 is about 4%."]
     assert turn["events"][2]["payload"]["answer"]["text"] == "PAR 30 is 4.2%."
     # The compatibility field mirrors the final text; the events keep both.
     assert turn["synthesis"] == "PAR 30 is 4.2%."

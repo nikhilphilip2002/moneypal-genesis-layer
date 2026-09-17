@@ -494,6 +494,7 @@ def begin_turn(
         }],
         "answer": None,
         "synthesis": None,
+        "model_messages": [],
         "refusal": None,
         "error": None,
         "error_details": None,
@@ -594,6 +595,9 @@ def add_agent_exchange(
             turn, assistant=safe_assistant, calls=safe_calls, tool_messages=safe_tools,
             stage=stage,
         )
+        content = safe_assistant.get("content")
+        if isinstance(content, str) and content:
+            turn.setdefault("model_messages", []).append(content)
         if rendered:
             turn.setdefault("cards", []).extend(rendered)
 
@@ -677,6 +681,10 @@ def set_synthesis(
 
     def apply(turn: dict[str, Any]) -> None:
         turn["synthesis"] = text
+        if text:
+            messages = turn.setdefault("model_messages", [])
+            if not messages or messages[-1] != text:
+                messages.append(text)
         _append_turn_event(turn, "llm_assistant_message", {
             "execution_path": "synthesis",
             "stage": stage,

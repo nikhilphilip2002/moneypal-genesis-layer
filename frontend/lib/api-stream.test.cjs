@@ -77,6 +77,23 @@ test('yields fragmented answer text before the stream closes, then the final ans
   assert.equal(body.locked, false);
 });
 
+test('exposes permanent model-message boundaries', async () => {
+  const body = new ReadableStream({
+    start(controller) {
+      controller.enqueue(frame('answer_start', {}));
+      controller.enqueue(frame('answer_delta', { text: 'Planning or answering.' }));
+      controller.enqueue(frame('done', {}));
+      controller.close();
+    },
+  });
+  const events = clientFor(body).workbench.ask('q', null);
+  assert.equal((await events.next()).value.type, 'answer_start');
+  const delta = (await events.next()).value;
+  assert.equal(delta.type, 'answer_delta');
+  assert.equal(delta.text, 'Planning or answering.');
+  assert.equal((await events.next()).value.type, 'done');
+});
+
 test('rejects premature EOF and releases the response reader', async () => {
   const body = new ReadableStream({ start(controller) { controller.close(); } });
   await assert.rejects(clientFor(body).workbench.ask('q', null).next(), /interrupted/);

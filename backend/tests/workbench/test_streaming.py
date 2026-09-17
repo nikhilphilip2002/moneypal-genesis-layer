@@ -9,12 +9,12 @@ from app.services.workbench.streaming import complete_answer
 
 @pytest.mark.anyio
 @pytest.mark.parametrize('outcome', ['answer', 'tools', 'error', 'cancel'])
-async def test_answer_deltas_are_live_and_discarded_for_tools_or_failure(outcome):
+async def test_answer_deltas_are_live_and_never_retracted(outcome):
     queue = asyncio.Queue()
 
     class Client:
         async def complete(self, *, on_text, on_reasoning, on_tool_call):
-            assert 'answer_reset' in queue.get_nowait()
+            assert 'answer_start' in queue.get_nowait()
             await on_reasoning('Checking facts')
             frame = queue.get_nowait()
             assert frame.startswith('event: trace_delta\n')
@@ -47,6 +47,4 @@ async def test_answer_deltas_are_live_and_discarded_for_tools_or_failure(outcome
     else:
         result = await complete_answer(Client(), {'emit': queue}, trace_id='model-1')
         assert result.text == 'Hello'
-    if outcome != 'answer':
-        assert 'answer_reset' in queue.get_nowait()
     assert queue.empty()

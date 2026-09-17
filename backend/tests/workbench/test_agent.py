@@ -434,11 +434,10 @@ async def test_single_native_db_card_returns_to_the_model_for_final_answer(scrip
 
 
 @pytest.mark.anyio
-async def test_last_round_result_is_shown_to_the_model_in_a_synthesis_only_call(
+async def test_last_round_result_is_shown_without_forcing_synthesis(
     scripted, monkeypatch,
 ):
-    """B3: with the minimum budget the tool executed on round 1 is still shown to the
-    model on round 2 with tool_choice="none", and the answer is the model's text."""
+    """The model sees the tool result and remains free to call a tool or return content."""
     monkeypatch.setattr(agent.settings, "workbench_agent_max_rounds", 2)
     client = scripted(
         [_tool_response(_PAR_30), _text_response("PAR 30 stands at 4.2% this month.")],
@@ -447,8 +446,8 @@ async def test_last_round_result_is_shown_to_the_model_in_a_synthesis_only_call(
     state = _run_state("min-rounds")
     await agent.run(state)
 
-    assert [call["tool_choice"] for call in client.requests] == ["auto", "none"]
-    assert client.requests[1]["call_purpose"] == "agent_synthesize"
+    assert [call["tool_choice"] for call in client.requests] == ["auto", "auto"]
+    assert client.requests[1]["call_purpose"] == "agent_continue"
     synthesis_messages = client.requests[1]["messages"]
     assert any(
         message.get("role") == "tool" and message.get("tool_call_id") == "call_1"
@@ -525,7 +524,7 @@ async def test_execution_error_is_returned_to_llm_for_a_cross_tool_repair(
     await agent.run(state)
 
     assert [request["call_purpose"] for request in client.requests] == [
-        "agent_continue", "agent_continue", "agent_synthesize",
+        "agent_continue", "agent_continue", "agent_continue",
     ]
     assert any(
         message.get("role") == "tool" and "metric execution failed" in message.get("content", "")
@@ -736,7 +735,7 @@ async def test_outbound_policy_denial_gets_one_native_repair(scripted, monkeypat
     await agent.run(state)
 
     assert [request["tool_choice"] for request in client.requests] == [
-        "auto", "auto", "none",
+        "auto", "auto", "auto",
     ]
     denial = next(
         json.loads(message["content"]) for message in client.requests[1]["messages"]

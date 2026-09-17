@@ -104,6 +104,7 @@ export default function WorkbenchPage() {
         cards: turn.cards,
         answer: turn.answer ?? undefined,
         synthesis: turn.synthesis ?? undefined,
+        modelMessages: turn.model_messages ?? [],
         refusal: turn.refusal ?? undefined,
         error: turn.error_details ?? (
           turn.error ? { message: turn.error } : undefined
@@ -226,25 +227,36 @@ export default function WorkbenchPage() {
             patchWith((turn) => ({ ...turn, cards: [...turn.cards, event.card] }));
             break;
           case 'answer':
-            patch({ answer: event.answer, synthesis: event.answer.text, draftText: undefined });
+            patch({ answer: event.answer, synthesis: event.answer.text });
+            break;
+          case 'answer_start':
+            patchWith((turn) => ({
+              ...turn,
+              modelMessages: [...(turn.modelMessages ?? []), ''],
+            }));
             break;
           case 'answer_delta':
-            patchWith((turn) => ({ ...turn, draftText: (turn.draftText ?? '') + event.text }));
+            patchWith((turn) => {
+              const messages = [...(turn.modelMessages ?? [])];
+              if (messages.length === 0) messages.push('');
+              messages[messages.length - 1] += event.text;
+              return { ...turn, modelMessages: messages };
+            });
             break;
           case 'answer_reset':
-            patch({ draftText: undefined });
+            // Compatibility with older backends. Content already received is permanent.
             break;
           case 'synthesis':
             patch({ synthesis: event.text });
             break;
           case 'refusal':
-            patch({ refusal: event.refusal, draftText: undefined });
+            patch({ refusal: event.refusal });
             break;
           case 'error':
-            patch({ error: event, draftText: undefined });
+            patch({ error: event });
             break;
           case 'done':
-            patch({ done: true, stage: undefined, totalMs: event.total_ms, draftText: undefined });
+            patch({ done: true, stage: undefined, totalMs: event.total_ms });
             break;
           }
         }
@@ -256,7 +268,6 @@ export default function WorkbenchPage() {
               : errorMessage(error, 'Something went wrong.'),
           },
           done: true,
-          draftText: undefined,
         });
       } finally {
         setBusy(false);

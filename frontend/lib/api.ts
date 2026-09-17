@@ -1002,6 +1002,7 @@ export type WorkbenchStreamEvent =
   | { type: 'source_start'; source: string }
   | { type: 'source_card'; card: WorkbenchCard }
   | { type: 'answer'; answer: WorkbenchAnswer }
+  | { type: 'answer_start' }
   | { type: 'answer_delta'; text: string }
   | { type: 'answer_reset' }
   | { type: 'synthesis'; text: string }
@@ -1047,6 +1048,7 @@ export const workbench = {
       cards: WorkbenchCard[];
       answer: WorkbenchAnswer | null;
       synthesis: string | null;
+      model_messages?: string[];
       refusal: { reason: string; message: string } | null;
       error: string | null;
       error_details?: WorkbenchError | null;
@@ -1179,6 +1181,7 @@ export const workbench = {
               break;
             }
             case 'answer': yield { type: 'answer', answer: payload as unknown as WorkbenchAnswer }; break;
+            case 'answer_start': yield { type: 'answer_start' }; break;
             case 'answer_delta': yield { type: 'answer_delta', text: stringValue(payload.text) }; break;
             case 'answer_reset': yield { type: 'answer_reset' }; break;
             case 'synthesis': yield { type: 'synthesis', text: stringValue(payload.text) }; break;

@@ -12,11 +12,8 @@ from typing import Any, AsyncIterator, NotRequired, TypedDict
 
 from app.core.config import settings
 from app.services.nlq.llm.telemetry import collect_calls, summarize_calls
-from app.services.workbench import (
-    access, calculations, compaction, composer, facts, history, models,
-)
+from app.services.workbench import access, compaction, history
 from app.services.workbench.results import ExecutionDecision, SourceResult
-from app.services.workbench.streaming import complete_answer
 
 logger = logging.getLogger(__name__)
 
@@ -119,134 +116,6 @@ _ANSWERABLE_CARD_TYPES = frozenset(
     {"chart", "analysis", "worklist", "briefing", "brief", "schema"}
 )
 
-def _synthesis_timeout(state: WorkbenchState) -> float:
-    return max(0.001, min(
-        settings.llm_timeout_s,
-        settings.nlq_request_budget_s - (time.perf_counter() - state["timing"]["started_at"]),
-    ))
-
-
-async def _repair_synthesis(
-    state: WorkbenchState,
-    client,
-    *,
-    base_messages: list[dict[str, Any]],
-    candidate: str,
-    validation: composer.ClaimValidation,
-    facts_block: str,
-) -> str | None:
-    """One focused repair round naming the exact unsupported claims and the fact set.
-
-    Returns the repaired text, or ``None`` when a repair is disabled, unaffordable under
-    the agent's TurnBudget, or the model returned nothing. The caller decides what to do
-    with a repair that is still not fully grounded.
-    """
-    if not settings.workbench_agent_synthesis_repairs or not base_messages:
-        return None
-    budget = state.get("_agent_budget")
-    if budget is not None:
-        if budget.rounds_remaining <= 0:
-            return None
-        budget.charge_round("agent_synthesize_repair")
-    from app.services.workbench.agent import _emit_trace
-
-    trace_id = f"model-grounding-repair-{getattr(budget, 'rounds_used', 0)}"
-    trace_started_at = time.perf_counter()
-    await _emit_trace(state, {
-        "id": trace_id, "kind": "model", "status": "running",
-        "label": "Model repairing grounded answer",
-        "detail": "Removing unsupported claims",
-    })
-    messages = [
-        *base_messages,
-        {"role": "assistant", "content": candidate},
-        {"role": "user", "content": composer.repair_message(validation.unsupported, facts_block)},
-    ]
-    from app.services.workbench.agent_tools import native_tool_definitions
-
-    try:
-        from app.services.workbench.streaming import complete_answer
-
-        repaired = await complete_answer(
-            client, state, trace_id=trace_id,
-            messages=messages,
-            timeout_s=_synthesis_timeout(state),
-            call_purpose="agent_synthesize",
-            call_kind="repair",
-            tools=native_tool_definitions(
-                state["source_policy"], catalog=state.get("_agent_catalog"),
-            ),
-            tool_choice="none",
-            parallel_tool_calls=False,
-        )
-    except Exception as exc:
-        await _emit_trace(state, {
-            "id": trace_id, "kind": "model", "status": "error",
-            "label": "Model repairing grounded answer", "detail": str(exc)[:500],
-            "duration_ms": int((time.perf_counter() - trace_started_at) * 1000),
-        })
-        raise
-    repair_trace: dict[str, Any] = {
-        "id": trace_id, "kind": "model", "status": "complete",
-        "label": "Model repairing grounded answer", "detail": "Repair prepared",
-        "duration_ms": int((time.perf_counter() - trace_started_at) * 1000),
-    }
-    if reasoning := getattr(repaired, "reasoning", ""):
-        repair_trace["reasoning"] = reasoning
-    await _emit_trace(state, repair_trace)
-    if getattr(repaired, "tool_calls", None):
-        raise RuntimeError("tool call returned during synthesis repair phase")
-    return repaired.text.strip() or None
-
-
-async def _ground_answer(
-    state: WorkbenchState,
-    *,
-    candidate: str,
-    findings: str,
-    fact_set: list[facts.Fact],
-    facts_block: str,
-    results: list[SourceResult],
-    repair,
-) -> tuple[str, dict[str, str] | None, list[facts.Fact]]:
-    """Claim-level grounding: validate, repair once, then omit what is still unsupported.
-
-    The model's text is never replaced wholesale. ``repair`` is an awaitable taking the
-    failed validation and returning repaired text or ``None``.
-    """
-    validation = composer.validate_claims(candidate, findings, fact_set)
-    if validation.ok:
-        return candidate, None, validation.cited_facts
-    try:
-        repaired = await repair(validation)
-    except Exception as exc:  # noqa: BLE001 - the original text still has a grounded core
-        logger.warning("workbench synthesis repair failed; removing unsupported claims: %s", exc)
-        repaired = None
-    if repaired:
-        repaired_validation = composer.validate_claims(repaired, findings, fact_set)
-        if repaired_validation.ok:
-            return repaired, None, repaired_validation.cited_facts
-        candidate, validation = repaired, repaired_validation
-    cleaned, removed = composer.remove_unsupported_claims(candidate, validation.unsupported)
-    names = validation.unsupported_texts
-    shown = ", ".join(names[:8]) + (f" and {len(names) - 8} more" if len(names) > 8 else "")
-    if cleaned:
-        cited = composer.validate_claims(cleaned, findings, fact_set).cited_facts
-        reason = (
-            f"Removed {len(removed)} statement(s) whose figures the retrieved results "
-            f"could not verify: {shown}."
-        )
-        return cleaned, {"source": "agent", "reason": reason}, cited
-    # Every sentence carried an unverifiable figure, so nothing of the model's text
-    # remains to show; the governed evidence is the only text left.
-    return composer.extractive_fallback(results), {
-        "source": "agent",
-        "reason": (
-            "Every statement in the generated answer carried a figure the retrieved "
-            f"results could not verify ({shown}); showing retrieved evidence instead."
-        ),
-    }, []
-
 
 async def answer_results(state: WorkbenchState) -> dict[str, Any]:
     emit = state["emit"]
@@ -326,118 +195,12 @@ async def answer_results(state: WorkbenchState) -> dict[str, Any]:
             }))
         return {}
 
-    findings = composer.evidence_text(results)
-    fact_ledger = facts.from_results(results, max_per_result=100)
-    # Source facts plus their deterministic derivations (totals, shares, deltas, rates,
-    # rankings). The model may state any of them; the validator accepts nothing else.
-    fact_set = calculations.fact_set(fact_ledger)
-    facts_block = composer.facts_text(fact_set)
     text = results[0].summary.strip()
     result = state.get("agent_final_result")
-    synthesis_limitation: dict[str, str] | None = None
-    verified_facts: list[facts.Fact] = []
-    # One governed DB card already has a deterministic, chart-aware summary and complete
-    # rows. Re-synthesizing it made the model omit endpoint months, mis-rank values, and
-    # waste a second local-model call. Composition remains necessary when evidence must be
-    # combined or interpreted across document/external sources.
-    needs_synthesis = result is None and (len(results) > 1 or any(
-        r.source in {"knowledge", "schema", "macro", "competitive", "regulatory", "web"}
-        for r in results
-    ))
-    candidate = result.text.strip() if result is not None else ""
-    # A repair replays exactly what the native answering model saw.
-    repair_client = None
-    repair_messages: list[dict[str, Any]] = list(state.get("agent_synthesis_messages", []))
-    synthesis_trace_id: str | None = None
-    synthesis_started_at = 0.0
-    synthesis_trace_completed = False
-    try:
-        if needs_synthesis:
-            client = models.client()
-            repair_client = client
-            from app.services.workbench.agent import _emit_trace
-
-            synthesis_trace_id = "model-cross-source-synthesis"
-            synthesis_started_at = time.perf_counter()
-            await _emit_trace(state, {
-                "id": synthesis_trace_id, "kind": "model", "status": "running",
-                "label": "Model combining source evidence",
-                "detail": f"Combining {len(results)} source result(s)",
-            })
-            async with asyncio.timeout(_synthesis_timeout(state)):
-                from app.services.workbench.agent_tools import native_tool_definitions
-
-                # The agent's TurnBudget is the only round accounting; synthesis
-                # is a round like any other and BudgetExhausted lands in the
-                # synthesis-unavailable limitation below.
-                if (budget := state.get("_agent_budget")) is not None:
-                    budget.charge_round("agent_synthesize")
-                repair_messages = list(state.get("agent_synthesis_messages", []))
-                if not repair_messages:
-                    raise RuntimeError("native synthesis context is unavailable")
-                if facts_block:
-                    repair_messages.append(
-                        {"role": "user", "content": composer.facts_message(facts_block)}
-                    )
-                result = await complete_answer(
-                    client, state, trace_id=synthesis_trace_id,
-                    messages=repair_messages,
-                    tools=native_tool_definitions(
-                        state["source_policy"], catalog=state.get("_agent_catalog"),
-                    ),
-                    tool_choice="none",
-                    parallel_tool_calls=False,
-                    timeout_s=_synthesis_timeout(state),
-                    call_purpose="agent_synthesize",
-                )
-                if getattr(result, "tool_calls", None):
-                    raise RuntimeError("tool call returned during final synthesis phase")
-            synthesis_trace: dict[str, Any] = {
-                "id": synthesis_trace_id, "kind": "model", "status": "complete",
-                "label": "Model combining source evidence", "detail": "Response prepared",
-                "duration_ms": int((time.perf_counter() - synthesis_started_at) * 1000),
-            }
-            if reasoning := getattr(result, "reasoning", ""):
-                synthesis_trace["reasoning"] = reasoning
-            await _emit_trace(state, synthesis_trace)
-            synthesis_trace_completed = True
-            candidate = result.text.strip()
-            if not candidate:
-                text = composer.extractive_fallback(results)
-                synthesis_limitation = {
-                    "source": "agent",
-                    "reason": "The agent returned no synthesis; showing retrieved evidence instead.",
-                }
-        if candidate:
-            async def repair(validation: composer.ClaimValidation) -> str | None:
-                client = repair_client or models.client()
-                return await _repair_synthesis(
-                    state, client, base_messages=repair_messages, candidate=candidate,
-                    validation=validation, facts_block=facts_block,
-                )
-
-            text, synthesis_limitation, verified_facts = await _ground_answer(
-                state, candidate=candidate, findings=findings, fact_set=fact_set,
-                facts_block=facts_block, results=results, repair=repair,
-            )
-    except Exception as exc:  # noqa: BLE001 - deterministic findings remain usable
-        if synthesis_trace_id is not None and not synthesis_trace_completed:
-            from app.services.workbench.agent import _emit_trace
-
-            await _emit_trace(state, {
-                "id": synthesis_trace_id, "kind": "model", "status": "error",
-                "label": "Model combining source evidence", "detail": str(exc)[:500],
-                "duration_ms": int((time.perf_counter() - synthesis_started_at) * 1000),
-            })
-        logger.warning("workbench synthesis failed, using grounded findings: %s", exc)
-        text = composer.extractive_fallback(results)
-        synthesis_limitation = {
-            "source": "agent",
-            "reason": "Agent synthesis was unavailable; showing retrieved evidence instead.",
-        }
-
-    if synthesis_limitation is not None:
-        limitations.append(synthesis_limitation)
+    if result is not None and result.text:
+        # Preserve the model's content verbatim. Tool calls and tool results remain
+        # separate messages, and the agent loop alone decides whether to continue.
+        text = result.text
 
     citations: list[dict[str, Any]] = []
     seen_citations: set[tuple[str, str]] = set()
@@ -457,8 +220,7 @@ async def answer_results(state: WorkbenchState) -> dict[str, Any]:
         "citations": citations,
         "unavailable_sources": unavailable,
         "limitations": limitations,
-        # Verified facts the prose cites, rendered apart from any qualitative observation.
-        "facts": [composer.fact_dict(fact) for fact in verified_facts],
+        "facts": [],
     }
     await emit.put(sse("answer", payload))
     state["timing"].setdefault(

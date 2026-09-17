@@ -40,7 +40,7 @@ export type WorkbenchTurnData = {
   cards: CardData[];
   answer?: WorkbenchAnswer;
   synthesis?: string;
-  draftText?: string;
+  modelMessages?: string[];
   refusal?: { reason?: string; message: string; origin?: string };
   error?: WorkbenchError;
   legacyAnswerUnavailable?: boolean;
@@ -62,7 +62,10 @@ export default function WorkbenchTurn({ turn, onAsk }: { turn: WorkbenchTurnData
     STREAM_RENDERABLE_CARD_TYPES.has(card.card_type)
     || (!hasFinalAnswer && turn.done),
   );
-  const answerText = turn.answer?.text || turn.draftText || turn.synthesis;
+  const modelMessages = (turn.modelMessages ?? []).filter(Boolean);
+  const answerText = modelMessages.length === 0
+    ? (turn.answer?.text || turn.synthesis)
+    : undefined;
   return (
     <section className="space-y-5">
       <div className="flex justify-end">
@@ -82,11 +85,14 @@ export default function WorkbenchTurn({ turn, onAsk }: { turn: WorkbenchTurnData
             />
           )}
 
+          {modelMessages.map((message, index) => (
+            <div key={`model-message-${index}`} className="text-sm leading-7 text-foreground">
+              <BriefRenderer content={message} />
+            </div>
+          ))}
+
           {answerText && (
-            <div className="text-sm leading-7 text-foreground" aria-busy={Boolean(turn.draftText)}>
-              {turn.draftText && (
-                <p className="text-xs text-muted-foreground">Draft · checking facts</p>
-              )}
+            <div className="text-sm leading-7 text-foreground">
               <BriefRenderer content={answerText} />
             </div>
           )}
