@@ -11,6 +11,7 @@ import BriefingCard from '@/components/nlq/BriefingCard';
 import WorklistCard from '@/components/nlq/WorklistCard';
 import LineagePanel from '@/components/nlq/LineagePanel';
 import BriefRenderer from '@/components/intel/BriefRenderer';
+import MarkdownRenderer from './MarkdownRenderer';
 import WorkbenchCard from './WorkbenchCard';
 import ExecutionTrace from './ExecutionTrace';
 import { Badge } from '@/components/ui/badge';
@@ -87,13 +88,13 @@ export default function WorkbenchTurn({ turn, onAsk }: { turn: WorkbenchTurnData
 
           {modelMessages.map((message, index) => (
             <div key={`model-message-${index}`} className="text-sm leading-7 text-foreground">
-              <BriefRenderer content={message} />
+              <MarkdownRenderer content={message} />
             </div>
           ))}
 
           {answerText && (
             <div className="text-sm leading-7 text-foreground">
-              <BriefRenderer content={answerText} />
+              <MarkdownRenderer content={answerText} />
             </div>
           )}
 
