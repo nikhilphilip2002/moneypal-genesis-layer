@@ -67,7 +67,16 @@ export default function WorkbenchPage() {
   const [workspaceView, setWorkspaceView] = useState<WorkspaceView | null>(null);
   const [completionsHeight, setCompletionsHeight] = useState(0);
   const abortRef = useRef<AbortController | null>(null);
-  const bottomRef = useRef<HTMLDivElement>(null);
+  const transcriptRef = useRef<HTMLDivElement>(null);
+  const autoFollowRef = useRef(true);
+
+  const handleTranscriptScroll = useCallback(() => {
+    const transcript = transcriptRef.current;
+    if (!transcript) return;
+    const distanceFromBottom =
+      transcript.scrollHeight - transcript.scrollTop - transcript.clientHeight;
+    autoFollowRef.current = distanceFromBottom <= 96;
+  }, []);
 
   const refreshHistory = useCallback(() => {
     workbench.conversations().then((result) => setConversations(result.conversations)).catch(() => {});
@@ -85,6 +94,7 @@ export default function WorkbenchPage() {
 
   const newConversation = useCallback(() => {
     abortRef.current?.abort();
+    autoFollowRef.current = true;
     setTurns([]);
     setConversationId(null);
     setBusy(false);
@@ -95,6 +105,7 @@ export default function WorkbenchPage() {
   const openConversation = useCallback(async (id: string) => {
     abortRef.current?.abort();
     setBusy(false);
+    autoFollowRef.current = true;
     try {
       const record = await workbench.conversation(id);
       setTurns(record.turns.map((turn) => ({
@@ -124,7 +135,12 @@ export default function WorkbenchPage() {
   }, []);
 
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
+    if (!autoFollowRef.current) return;
+    const frame = requestAnimationFrame(() => {
+      const transcript = transcriptRef.current;
+      if (transcript) transcript.scrollTop = transcript.scrollHeight;
+    });
+    return () => cancelAnimationFrame(frame);
   }, [turns, completionsHeight]);
 
   useEffect(() => {
@@ -134,6 +150,7 @@ export default function WorkbenchPage() {
   }, [externalSourcesEnabled, workspaceView]);
 
   const ask = useCallback(async (question: string): Promise<boolean> => {
+    autoFollowRef.current = true;
     setBusy(true);
 
     const controller = new AbortController();
@@ -279,6 +296,7 @@ export default function WorkbenchPage() {
   }, [conversationId, pinned, externalSourcesEnabled, refreshHistory]);
 
   const runTool = useCallback(async (tool: WorkbenchTool) => {
+    autoFollowRef.current = true;
     const id = `t-${Date.now()}`;
     setTurns((previous) => [
       ...previous,
@@ -375,7 +393,11 @@ export default function WorkbenchPage() {
           <EmptyState onAsk={ask} onOpenWorkspace={openWorkspace}>{composer}</EmptyState>
         ) : (
           <>
-            <div className="min-h-0 flex-1 overflow-y-auto py-6 sm:py-8">
+            <div
+              ref={transcriptRef}
+              className="min-h-0 flex-1 overflow-y-auto py-6 sm:py-8"
+              onScroll={handleTranscriptScroll}
+            >
               <div className="mx-auto w-full max-w-4xl space-y-8 px-4 sm:px-6">
                 {turns.map((turn) => (
                   <WorkbenchTurn key={turn.id} turn={turn} onAsk={ask} />
@@ -383,7 +405,6 @@ export default function WorkbenchPage() {
                 {completionsHeight > 0 && (
                   <div aria-hidden style={{ height: completionsHeight }} />
                 )}
-                <div ref={bottomRef} />
               </div>
             </div>
             <div className="shrink-0 bg-background pb-[calc(env(safe-area-inset-bottom,0px)+12px)] pt-2 sm:pb-4">
