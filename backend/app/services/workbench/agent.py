@@ -19,6 +19,8 @@ from typing import Any
 from app.core.config import settings
 from app.services.nlq.catalog import get_catalog
 from app.services.nlq.llm import LLMError, LLMProtocolError, LLMTimeout
+from app.services.nlq.llm.client import request_gate
+from app.services.nlq.llm.slot_cache import build_warmup_bundle, restore_or_warm
 from app.services.workbench import history, models, prompts
 from app.services.workbench.agent_executor import (
     AgentExecutionContext,
@@ -255,17 +257,29 @@ async def _select(
             return await client.complete(**kwargs)
         return await complete_answer(client, state, trace_id=trace_id, **kwargs)
 
-    return await complete(
-        messages=messages,
-        tools=definitions,
-        tool_choice=tool_choice,
-        parallel_tool_calls=False,
-        timeout_s=budget.remaining_s(settings.llm_timeout_s),
-        call_purpose=_PURPOSES[tool_choice],
-        call_kind="repair" if repair_messages and selecting else "planned",
-        catalog_version=catalog.version,
-        **extra,
-    )
+    async def request():
+        return await complete(
+            messages=messages,
+            tools=definitions,
+            tool_choice=tool_choice,
+            parallel_tool_calls=False,
+            timeout_s=budget.remaining_s(settings.llm_timeout_s),
+            call_purpose=_PURPOSES[tool_choice],
+            call_kind="repair" if repair_messages and selecting else "planned",
+            catalog_version=catalog.version,
+            **extra,
+        )
+
+    if state.pop("_restore_system_slot", False):
+        # Keep restore/warm and the first real completion in one serialized section. The
+        # nested client calls recognize that the gate is already held, so no lock is
+        # reacquired and no other chat can replace slot 0 between these operations.
+        async with request_gate():
+            cache_started = time.perf_counter()
+            await restore_or_warm(await build_warmup_bundle())
+            budget.deadline += time.perf_counter() - cache_started
+            return await request()
+    return await request()
 
 
 def _preflight(result, state: dict[str, Any]) -> list[tuple[str, str, str]]:

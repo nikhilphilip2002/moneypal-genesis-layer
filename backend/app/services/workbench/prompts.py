@@ -148,6 +148,11 @@ def build_agent_gold_schema(catalog: Catalog | None = None) -> str:
     return _agent_gold_schema_for_version(cat.version)
 
 
+def build_agent_system_prompt(catalog: Catalog | None = None) -> str:
+    """Return the invariant text at the start of every native-agent request."""
+    return AGENT_SYSTEM_PROMPT + "\n\n" + build_agent_gold_schema(catalog)
+
+
 def warm_agent_gold_schema() -> tuple[str, int]:
     """Build and cache the startup prefix; return version and character count for telemetry."""
     cat = get_catalog()
@@ -578,7 +583,7 @@ def build_agent_prompt(
         "role": "system",
         "content": [{
             "type": "text",
-            "text": AGENT_SYSTEM_PROMPT + "\n\n" + build_agent_gold_schema(catalog) + (
+            "text": build_agent_system_prompt(catalog) + (
                 f"\n\nAUTHORIZED FUNCTIONS\n{available}"
                 if available else ""
             ),
@@ -604,6 +609,7 @@ __all__ = [
     "AgentCatalogContext",
     "agent_catalog_context",
     "build_agent_gold_schema",
+    "build_agent_system_prompt",
     "build_agent_catalog_context",
     "PromptBundle",
     "build_agent_prompt",

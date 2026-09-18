@@ -18,6 +18,7 @@ from app.services.nlq.llm.client import (
     OpenAICompatibleClient,
     _ProviderProfile,
     get_llm_client,
+    request_gate,
 )
 from app.services.nlq.llm.telemetry import collect_calls
 
@@ -391,6 +392,21 @@ class TestThinkingModels:
         await client.aclose()
         ratelimit.reset()
         assert peak == 1
+
+    @pytest.mark.anyio
+    async def test_request_gate_is_reentrant_for_atomic_slot_restore(self, monkeypatch, tmp_path):
+        from app.core.config import settings
+
+        monkeypatch.setattr(settings, "nlq_llm_lock_path", tmp_path / "llama.lock")
+        client = _client(lambda _request: _ok(), max_retries=0)
+        async with request_gate():
+            result = await asyncio.wait_for(
+                client.complete(messages=[{"role": "user", "content": "hi"}]),
+                timeout=1,
+            )
+        await client.aclose()
+
+        assert result.text == "{}"
 
     @pytest.mark.anyio
     async def test_explicit_output_budget_is_sent_as_standard_max_tokens(self):

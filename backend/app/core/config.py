@@ -109,17 +109,13 @@ class Settings:
         self.llm_api_key = get("LLM_API_KEY")
         self.llm_model = get("LLM_MODEL", "qwen3.6-32b-instruct-q4_K_M") or "qwen3.6-32b-instruct-q4_K_M"
         self.llm_timeout_s = float(get("LLM_TIMEOUT", "300") or "300")
-        # llama.cpp slot snapshots are managed explicitly by the deployment CLI. These
-        # values only identify compatibility; normal user requests never restore, save,
-        # erase, or otherwise override a server slot.
+        # llama.cpp slot snapshots hold only the initial Workbench system prompt. The
+        # filename identity is the exact prompt text plus LLM_MODEL.
         self.llama_slot_id = max(0, int(get("LLAMA_SLOT_ID", "0") or "0"))
         self.llama_slot_cache_prefix = (
             get("LLAMA_SLOT_CACHE_PREFIX", "moneypal-workbench")
             or "moneypal-workbench"
         )
-        self.llama_model_sha256 = get("LLAMA_MODEL_SHA256", "") or ""
-        self.llama_server_build_id = get("LLAMA_SERVER_BUILD_ID", "") or ""
-        self.llama_chat_template_id = get("LLAMA_CHAT_TEMPLATE_ID", "") or ""
         self.nlq_llm_max_retries = int(get("NLQ_LLM_MAX_RETRIES", "4") or "4")
         # Every local request is serialized across the API and PostgreSQL MCP containers.
         # Qwen3.5/3.6 use recurrent state and llama-server can invalidate their reusable

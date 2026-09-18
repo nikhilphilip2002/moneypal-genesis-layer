@@ -101,6 +101,7 @@ class WorkbenchState(TypedDict):
     role: str
     turn_id: str
     agent_history_messages: NotRequired[list[dict[str, Any]]]
+    _restore_system_slot: NotRequired[bool]
     agent_private_entities: NotRequired[tuple[str, ...]]
     emit: "asyncio.Queue[str | None]"
     pinned: NotRequired[str | None]
@@ -261,7 +262,9 @@ async def run_workbench(
         role=role, external_sources_enabled=external_sources_enabled,
         pinned_source=pinned,
     )
+    is_new_chat = False
     try:
+        is_new_chat = history.get(conversation_id, user=user) is None
         turn_id = history.begin_turn(
             conversation_id, user, question, pinned=pinned,
             source_policy=source_policy.snapshot(),
@@ -367,6 +370,7 @@ async def run_workbench(
         "question": question, "conversation_id": conversation_id,
         "user": user, "role": role, "turn_id": turn_id,
         "agent_history_messages": agent_history_messages,
+        "_restore_system_slot": is_new_chat,
         "agent_private_entities": agent_private_entities,
         "emit": emit, "pinned": pinned,
         "source_policy": source_policy,

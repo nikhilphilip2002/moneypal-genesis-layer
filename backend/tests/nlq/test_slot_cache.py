@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 
 import httpx
 
@@ -12,18 +13,15 @@ from app.services.nlq.llm.slot_cache import (
     llama_server_root,
     restore_or_warm,
     slot_action,
+    warm_slot,
 )
 
 
 def _bundle() -> WarmupBundle:
     messages = [{"role": "system", "content": "stable"}]
-    tools = [{"type": "function", "function": {"name": "query"}}]
     return WarmupBundle(
         messages=messages,
-        tools=tools,
-        identity=build_identity(
-            messages=messages, tools=tools, catalog_version="catalog-1"
-        ),
+        identity=build_identity(system_prompt="stable"),
     )
 
 
@@ -42,16 +40,12 @@ def test_identity_is_deterministic_and_safe(monkeypatch):
     assert first.filename.startswith("Money-Pal-Workbench-")
     assert "/" not in first.filename
 
-    changed = build_identity(
-        messages=[{"role": "system", "content": "changed"}],
-        tools=_bundle().tools,
-        catalog_version="catalog-1",
-    )
+    changed = build_identity(system_prompt="changed")
     assert changed.fingerprint != first.fingerprint
 
-    monkeypatch.setattr(settings, "llama_model_sha256", "new-model-digest")
-    runtime_changed = _bundle().identity
-    assert runtime_changed.fingerprint != first.fingerprint
+    monkeypatch.setattr(settings, "llm_model", "different-model-id")
+    model_changed = _bundle().identity
+    assert model_changed.fingerprint != first.fingerprint
 
 
 def test_restore_success_skips_warmup():
@@ -114,3 +108,36 @@ def test_slot_action_uses_server_root_and_filename(monkeypatch):
     assert result["n_saved"] == 12
     assert str(seen[0].url) == "http://llama:8080/slots/0?action=save"
     assert seen[0].read() == b'{"filename":"safe.bin"}'
+
+
+def test_warm_slot_applies_template_and_generates_no_tokens(monkeypatch):
+    monkeypatch.setattr(settings, "llm_base_url", "http://llama:8080/v1")
+    monkeypatch.setattr(settings, "llama_slot_id", 0)
+    requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        if request.url.path == "/apply-template":
+            return httpx.Response(200, json={"prompt": "rendered-system-prompt"})
+        return httpx.Response(200, json={"timings": {"prompt_n": 321}})
+
+    async def request():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            return await warm_slot(_bundle(), http_client=client)
+
+    result = asyncio.run(request())
+
+    assert [item.url.path for item in requests] == ["/apply-template", "/completion"]
+    assert json.loads(requests[0].read()) == {"messages": _bundle().messages}
+    completion = json.loads(requests[1].read())
+    assert completion == {
+        "prompt": "rendered-system-prompt",
+        "n_predict": 0,
+        "cache_prompt": True,
+        "id_slot": 0,
+    }
+    assert result == {
+        "generated_tokens": 0,
+        "prompt_tokens": 321,
+        "cached_prompt_tokens": 0,
+    }

@@ -66,27 +66,27 @@ model: qwen3.6-32b-instruct-q4_K_M.gguf
 sha256: <fill in at provisioning>
 ```
 
-### Restore or create the persistent Workbench prompt slot
+### Persistent initial-system-prompt slot
 
-Mount `/var/lib/llama-slots` on persistent, owner-only storage. Set
-`LLAMA_MODEL_SHA256`, `LLAMA_SERVER_BUILD_ID`, and `LLAMA_CHAT_TEMPLATE_ID` in the backend
-environment to the deployed model artifact, llama-server build, and chat-template revision.
-The catalog, full prompt payload, tool schemas, model name, and these runtime identifiers are
-hashed into the snapshot filename, so incompatible changes cannot silently restore an older
-slot.
+Mount `/var/lib/llama-slots` on persistent, owner-only storage. The snapshot filename is
+derived only from `LLM_MODEL` and the exact initial Workbench system-prompt text. The snapshot
+contains no user message, assistant response, conversation history, question-specific context,
+tool definition, or tool result.
 
-After llama-server and PostgreSQL MCP are healthy, but before routing user traffic, run:
+Optional deployment prewarming can run after llama-server is healthy:
 
 ```
 cd backend
 python -m scripts.manage_llama_slot_cache restore-or-warm
 ```
 
-The command first asks llama-server to restore the fingerprinted file into slot `0`. If that
-file is absent or rejected, it erases slot `0`, evaluates a constant non-private Workbench
-request with the real governed prompt and tool definitions, and saves the resulting slot. It
-does not execute a model-selected tool. Normal Workbench requests never call the slot lifecycle
-API and retain the existing model-controlled tool loop.
+The first message of every new chat restores the fingerprinted file into slot `0` before the
+real model request. If that file is absent or rejected, the backend erases slot `0`, evaluates
+only the chat-template-rendered initial system message with `n_predict=0`, saves that slot, and
+then sends the real request. The prefill generates no assistant tokens and is never added to
+conversation history; the slot is never saved after the user request. Existing chats continue
+through the normal model-controlled tool loop without restoring the initial snapshot between
+rounds.
 
 Useful operator commands:
 

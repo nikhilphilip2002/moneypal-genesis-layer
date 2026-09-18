@@ -1,8 +1,4 @@
-"""Explicit lifecycle management for persistent llama.cpp prompt-slot snapshots.
-
-Nothing in this module runs in the request path. Operators invoke it after llama-server
-and PostgreSQL MCP are ready, before exposing the backend to traffic.
-"""
+"""Persistent llama.cpp snapshot of the Workbench's initial system prompt only."""
 
 from __future__ import annotations
 
@@ -16,14 +12,7 @@ from urllib.parse import urlsplit, urlunsplit
 import httpx
 
 from app.core.config import settings
-from app.mcp import postgres_client
-from app.services.nlq.catalog import get_catalog
-from app.services.workbench import models, prompts
-from app.services.workbench.access import build_policy
-from app.services.workbench.agent_tools import native_tool_definitions
-
-
-WARMUP_QUESTION = "Check the governed data tools and prepare to answer a future bank question."
+from app.services.workbench import prompts
 
 
 class SlotCacheError(RuntimeError):
@@ -35,15 +24,12 @@ class SlotCacheIdentity:
     fingerprint: str
     filename: str
     model: str
-    catalog_version: str
-    prompt_sha256: str
-    tools_sha256: str
+    system_prompt_sha256: str
 
 
 @dataclass(frozen=True, slots=True)
 class WarmupBundle:
     messages: list[dict[str, Any]]
-    tools: list[dict[str, Any]]
     identity: SlotCacheIdentity
 
 
@@ -68,23 +54,10 @@ def llama_server_root(base_url: str) -> str:
     return urlunsplit((parsed.scheme, parsed.netloc, path, "", "")).rstrip("/")
 
 
-def build_identity(
-    *, messages: list[dict[str, Any]], tools: list[dict[str, Any]], catalog_version: str
-) -> SlotCacheIdentity:
-    prompt_hash = _sha256(messages)
-    tools_hash = _sha256(tools)
-    material = {
-        "schema": 1,
-        "model": settings.llm_model,
-        "model_sha256": settings.llama_model_sha256,
-        "llama_server_build_id": settings.llama_server_build_id,
-        "chat_template_id": settings.llama_chat_template_id,
-        "catalog_version": catalog_version,
-        "messages_sha256": prompt_hash,
-        "tools_sha256": tools_hash,
-        "tool_choice": "required",
-        "parallel_tool_calls": False,
-    }
+def build_identity(*, system_prompt: str) -> SlotCacheIdentity:
+    """Fingerprint exactly the two approved inputs: model ID and system prompt."""
+    prompt_hash = _sha256(system_prompt)
+    material = {"model": settings.llm_model, "system_prompt": system_prompt}
     fingerprint = _sha256(material)
     prefix = re.sub(
         r"[^A-Za-z0-9_.-]+", "-", settings.llama_slot_cache_prefix
@@ -96,34 +69,24 @@ def build_identity(
         fingerprint=fingerprint,
         filename=filename,
         model=settings.llm_model,
-        catalog_version=catalog_version,
-        prompt_sha256=prompt_hash,
-        tools_sha256=tools_hash,
+        system_prompt_sha256=prompt_hash,
     )
 
 
 async def build_warmup_bundle() -> WarmupBundle:
-    """Build the real admin tool envelope around a constant, non-private question."""
-    catalog = get_catalog()
-    policy = build_policy(role="admin", external_sources_enabled=False)
-    definitions = native_tool_definitions(policy, catalog=catalog)
-    if policy.allows("db"):
-        await postgres_client.discover_model_tools()
-        definitions = [*postgres_client.model_tool_definitions(), *definitions]
-    if not definitions:
-        raise SlotCacheError("no native tools are available for slot warm-up")
-    prompt = prompts.build_agent_prompt(
-        question=WARMUP_QUESTION,
-        tool_names=[definition["function"]["name"] for definition in definitions],
-        catalog=catalog,
-    )
-    messages = list(prompt.messages)
+    """Build a request containing only the invariant system message."""
+    system_prompt = prompts.build_agent_system_prompt()
+    messages = [{
+        "role": "system",
+        "content": [{
+            "type": "text",
+            "text": system_prompt,
+            "prompt_cache_breakpoint": {"mode": "explicit"},
+        }],
+    }]
     return WarmupBundle(
         messages=messages,
-        tools=definitions,
-        identity=build_identity(
-            messages=messages, tools=definitions, catalog_version=catalog.version
-        ),
+        identity=build_identity(system_prompt=system_prompt),
     )
 
 
@@ -163,25 +126,54 @@ async def slot_action(
             await client.aclose()
 
 
-async def warm_slot(bundle: WarmupBundle) -> dict[str, Any]:
-    """Evaluate the stable prefix without executing any model-selected tool."""
-    result = await models.client().complete(
-        messages=bundle.messages,
-        tools=bundle.tools,
-        tool_choice="required",
-        parallel_tool_calls=False,
-        timeout_s=settings.llm_timeout_s,
-        call_purpose="slot_cache_warmup",
-        call_kind="warmup",
-        prompt_version="workbench-agent-slot-v1",
-        catalog_version=bundle.identity.catalog_version,
-        prefix_hash=bundle.identity.prompt_sha256,
-        max_output_tokens=512,
+async def warm_slot(
+    bundle: WarmupBundle, *, http_client: httpx.AsyncClient | None = None
+) -> dict[str, Any]:
+    """Render and evaluate only the system message, generating zero tokens."""
+    headers = (
+        {"Authorization": f"Bearer {settings.llm_api_key}"}
+        if settings.llm_api_key
+        else None
     )
+    root = llama_server_root(settings.llm_base_url)
+    owns_client = http_client is None
+    client = http_client or httpx.AsyncClient(timeout=settings.llm_timeout_s)
+    try:
+        templated = await client.post(
+            f"{root}/apply-template",
+            json={"messages": bundle.messages},
+            headers=headers,
+        )
+        templated.raise_for_status()
+        prompt = templated.json().get("prompt")
+        if not isinstance(prompt, str) or not prompt:
+            raise SlotCacheError("llama-server apply-template returned no prompt")
+        evaluated = await client.post(
+            f"{root}/completion",
+            json={
+                "prompt": prompt,
+                "n_predict": 0,
+                "cache_prompt": True,
+                "id_slot": settings.llama_slot_id,
+            },
+            headers=headers,
+        )
+        evaluated.raise_for_status()
+        payload = evaluated.json()
+        if not isinstance(payload, dict):
+            raise SlotCacheError("llama-server completion returned a non-object response")
+    except SlotCacheError:
+        raise
+    except (httpx.HTTPError, ValueError) as exc:
+        raise SlotCacheError(f"llama-server system-prompt prefill failed: {exc}") from exc
+    finally:
+        if owns_client:
+            await client.aclose()
+    timings = payload.get("timings") if isinstance(payload.get("timings"), dict) else {}
     return {
-        "finish_reason": result.finish_reason,
-        "prompt_tokens": result.prompt_tokens,
-        "cached_prompt_tokens": result.cached_prompt_tokens,
+        "generated_tokens": 0,
+        "prompt_tokens": int(timings.get("prompt_n", 0) or 0),
+        "cached_prompt_tokens": int(timings.get("cache_n", 0) or 0),
     }
 
 

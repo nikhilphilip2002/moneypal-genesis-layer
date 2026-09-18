@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import time
 
@@ -402,6 +403,41 @@ def test_turn_budget_counts_every_request_and_every_attempted_call():
     assert spent.expired
     with pytest.raises(TimeoutError):
         spent.remaining_s(10.0)
+
+
+@pytest.mark.anyio
+async def test_new_chat_restores_system_slot_before_first_model_call(scripted, monkeypatch):
+    order = []
+
+    def response(_kwargs):
+        order.append("model")
+        return _text_response("Ready.")
+
+    client = scripted([response], lambda _call, _ctx: None)
+    state = _run_state("new-chat")
+    state["_restore_system_slot"] = True
+
+    async def build_bundle():
+        return object()
+
+    async def restore(bundle):
+        assert bundle is not None
+        order.append("cache")
+        return {"outcome": "restored"}
+
+    @contextlib.asynccontextmanager
+    async def gate():
+        yield
+
+    monkeypatch.setattr(agent, "build_warmup_bundle", build_bundle)
+    monkeypatch.setattr(agent, "restore_or_warm", restore)
+    monkeypatch.setattr(agent, "request_gate", gate)
+
+    await agent.run(state)
+
+    assert order == ["cache", "model"]
+    assert "_restore_system_slot" not in state
+    assert len(client.requests) == 1
 
 
 @pytest.mark.anyio

@@ -72,6 +72,26 @@ async def test_every_request_enters_native_agent_once(monkeypatch):
 
 
 @pytest.mark.anyio
+async def test_only_first_message_marks_system_slot_for_restore(monkeypatch):
+    flags = []
+
+    async def native_run(state):
+        flags.append(state.get("_restore_system_slot"))
+        await state["emit"].put(graph.sse("answer", {
+            "status": "answered", "text": "done", "sources": [], "citations": [],
+            "unavailable_sources": [], "limitations": [],
+        }))
+
+    from app.services.workbench import agent
+
+    monkeypatch.setattr(agent, "run", native_run)
+    await _run("first")
+    await _run("second")
+
+    assert flags == [True, False]
+
+
+@pytest.mark.anyio
 async def test_native_transcript_overflow_is_recorded_and_visible(monkeypatch):
     def overflow(*_args, **_kwargs):
         raise graph.history.NativeTranscriptOverflow("complete native conversation exceeds")

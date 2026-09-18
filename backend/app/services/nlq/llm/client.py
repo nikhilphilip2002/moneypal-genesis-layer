@@ -13,6 +13,7 @@ import logging
 import os
 import platform
 import re
+from contextvars import ContextVar
 from datetime import UTC, datetime
 from email.utils import parsedate_to_datetime
 from collections.abc import Awaitable, Callable
@@ -47,8 +48,10 @@ from app.services.nlq.llm.telemetry import (
 
 logger = logging.getLogger(__name__)
 
+_request_gate_depth: ContextVar[int] = ContextVar("llm_request_gate_depth", default=0)
+
 @asynccontextmanager
-async def _request_gate():
+async def request_gate():
     """Serialize model work across both application containers.
 
     A normal asyncio lock only coordinates one process. The production API and PostgreSQL
@@ -56,34 +59,47 @@ async def _request_gate():
     model calls from occupying different llama-server slots concurrently. Acquisition is
     non-blocking to the event loop and cancellation always closes the descriptor.
     """
-    from app.services.nlq.ratelimit import llm_semaphore
-
-    if fcntl is None:
-        # Without advisory file locks only this process is serialized. That is sufficient
-        # for single-container development; production runs on Linux where the shared lock
-        # below coordinates the API and MCP containers.
-        _warn_no_file_lock()
-        async with llm_semaphore():
-            yield
-        return
-
-    async with llm_semaphore():
-        path = settings.nlq_llm_lock_path
-        path.parent.mkdir(parents=True, exist_ok=True)
-        descriptor = os.open(path, os.O_CREAT | os.O_RDWR, 0o600)
-        acquired = False
+    depth = _request_gate_depth.get()
+    if depth:
+        token = _request_gate_depth.set(depth + 1)
         try:
-            while not acquired:
-                try:
-                    fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
-                    acquired = True
-                except BlockingIOError:
-                    await asyncio.sleep(0.05)
             yield
         finally:
-            if acquired:
-                fcntl.flock(descriptor, fcntl.LOCK_UN)
-            os.close(descriptor)
+            _request_gate_depth.reset(token)
+        return
+
+    from app.services.nlq.ratelimit import llm_semaphore
+
+    token = _request_gate_depth.set(1)
+    try:
+        if fcntl is None:
+            # Without advisory file locks only this process is serialized. That is sufficient
+            # for single-container development; production runs on Linux where the shared lock
+            # below coordinates the API and MCP containers.
+            _warn_no_file_lock()
+            async with llm_semaphore():
+                yield
+            return
+
+        async with llm_semaphore():
+            path = settings.nlq_llm_lock_path
+            path.parent.mkdir(parents=True, exist_ok=True)
+            descriptor = os.open(path, os.O_CREAT | os.O_RDWR, 0o600)
+            acquired = False
+            try:
+                while not acquired:
+                    try:
+                        fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                        acquired = True
+                    except BlockingIOError:
+                        await asyncio.sleep(0.05)
+                yield
+            finally:
+                if acquired:
+                    fcntl.flock(descriptor, fcntl.LOCK_UN)
+                os.close(descriptor)
+    finally:
+        _request_gate_depth.reset(token)
 
 
 _REASONING_FIELDS = ("reasoning_content", "reasoning")
@@ -600,7 +616,7 @@ class OpenAICompatibleClient:
                 visible_output_emitted = True
                 await on_tool_call(tool_call)
 
-        async with _request_gate():
+        async with request_gate():
             for attempt in range(self.max_retries + 1):
                 attempts_run = attempt + 1
                 try:
