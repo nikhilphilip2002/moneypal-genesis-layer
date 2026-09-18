@@ -37,8 +37,8 @@ SELECT format(
 
 GRANT USAGE ON SCHEMA gold TO nlq_readonly;
 
--- Start closed, then grant only the reviewed friendly views. PostgreSQL treats views as
--- tables for GRANT, so `GRANT ... ON ALL TABLES` would also expose any physical Gold table
+-- Start closed, then grant only the reviewed friendly relations. PostgreSQL treats views and
+-- base tables alike for GRANT, so `GRANT ... ON ALL TABLES` would expose any Gold relation
 -- added later. Keep this allowlist synchronized with catalog/defs/gold/tables.yaml.
 REVOKE ALL ON ALL TABLES IN SCHEMA gold FROM nlq_readonly;
 GRANT SELECT ON
@@ -62,10 +62,6 @@ GRANT SELECT ON
     gold.staff_reporting_structure
 TO nlq_readonly;
 
--- `gold.daily_loan_status` depends on this function in the deployed Gold schema.  The
--- read-only role therefore needs EXECUTE in addition to SELECT on the friendly view;
--- otherwise both EXPLAIN and every portfolio/PAR/NPA query fail during permission checks.
--- Keep PUBLIC closed and grant only the dedicated read-only role.
 -- Older deployments expose daily status through this function; newer warehouse
 -- snapshots materialize gold.daily_loan_status directly. Grant it only when present.
 SELECT 'REVOKE ALL ON FUNCTION gold.portfolio_snapshot_as_of(date) FROM PUBLIC'
@@ -73,7 +69,7 @@ WHERE to_regprocedure('gold.portfolio_snapshot_as_of(date)') IS NOT NULL \gexec
 SELECT 'GRANT EXECUTE ON FUNCTION gold.portfolio_snapshot_as_of(date) TO nlq_readonly'
 WHERE to_regprocedure('gold.portfolio_snapshot_as_of(date)') IS NOT NULL \gexec
 
--- Re-run this script after creating a new governed view. New objects are intentionally
+-- Re-run this script after creating a new governed relation. New objects are intentionally
 -- not auto-granted: adding a source to the LLM surface must be an explicit deployment.
 
 -- Belt and braces. Both schemas already have nspacl = NULL (owner-only, no PUBLIC grant),

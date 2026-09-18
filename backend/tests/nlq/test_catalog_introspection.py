@@ -140,9 +140,13 @@ class TestDocumentedFactsStillHold:
                 drifted.append(f"{table.id}: catalog says {table.row_count}, found {actual}")
         assert not drifted, "row counts in tables.yaml are stale: " + "; ".join(drifted)
 
-    def test_portfolio_as_of_function_is_available(self, warehouse_cursor):
+    def test_portfolio_snapshot_can_be_collapsed_as_of(self, warehouse_cursor):
         warehouse_cursor.execute(
-            "SELECT count(*) FROM gold.portfolio_snapshot_as_of(CURRENT_DATE)"
+            "SELECT count(*) FROM ("
+            "SELECT DISTINCT ON (company_code, loan_account_number) 1 "
+            "FROM gold.daily_loan_status WHERE status_date <= CURRENT_DATE "
+            "ORDER BY company_code, loan_account_number, status_date DESC"
+            ") AS portfolio"
         )
         assert warehouse_cursor.fetchone()[0] > 0
 

@@ -271,6 +271,8 @@
 - {id: loan.loan_purpose_desc, table: gold.loan_accounts, column: loan_purpose, label: Loan purpose desc}
 - {id: loan.sanction_date, table: gold.loan_accounts, column: approved_on, label: Sanction date, unit: date}
 - {id: loan.sanction_amount, table: gold.loan_accounts, column: approved_amount, label: Sanction amount, unit: inr, agg: [sum, avg, max]}
+- {id: loan.sanctioned_by_code, table: gold.loan_accounts, column: sanctioned_by_code, label: Sanctioned By Code, synonyms: [sanctioning authority code, approver code]}
+- {id: loan.sanctioned_by_name, table: gold.loan_accounts, column: sanctioned_by_name, label: Sanctioned By Name, synonyms: [sanctioning authority, approver name], sensitivity: pii}
 - {id: loan.disbursed_amount, table: gold.loan_accounts, column: amount_given, label: Cumulative disbursed amount, unit: inr, agg: [sum, avg, max]}
 - {id: loan.first_disbursement_date, table: gold.loan_accounts, column: first_amount_given_on, label: First disbursement date, unit: date}
 - {id: loan.disbursement_count, table: gold.loan_accounts, column: times_amount_given, label: Disbursement count, unit: count, agg: [sum, avg, max]}

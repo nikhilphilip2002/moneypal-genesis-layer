@@ -96,15 +96,16 @@ class TestExecuteEndpoint:
             json={
                 "query_spec": {
                     "metrics": ["par_30"],
-                    "period": {"start": "2026-01-01", "end": "2026-07-01"},
+                    "period": {"start": "2026-01-01", "end": "2026-08-30"},
                 }
             },
         )
         chart = response.json()
         assert chart["chart_type"] == "kpi"
-        assert round(chart["rows"][0]["par_30"], 3) == 0.090
+        assert round(chart["rows"][0]["par_30"], 3) == 0.426
         assert "par_30" in chart["lineage"]["requires_signoff"]
-        assert "gold.portfolio_snapshot_as_of" in chart["lineage"]["sql"]
+        assert "gold.daily_loan_status" in chart["lineage"]["sql"]
+        assert "DISTINCT ON" in chart["lineage"]["sql"]
         assert chart["lineage"]["formulas"]["par_30"]
 
     async def test_a_refused_spec_returns_422_with_a_readable_reason(self, client):

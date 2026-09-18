@@ -1,7 +1,7 @@
 """Hand-computed metric fixtures — the highest-rigour tests in the module.
 
-Build plan item 15. Every expected value below was computed independently against the live
-database on 2026-07-29 with SQL written by hand, then the compiler was asked to reproduce
+Build plan item 15. Every expected value below is computed independently against the live
+database with SQL written by hand, then the compiler is asked to reproduce
 it. A wrong PAR in front of a CFO ends the project, so these do not check that the pipeline
 runs; they check that it is *right*.
 
@@ -15,7 +15,7 @@ from tests.nlq.conftest import requires_db
 
 pytestmark = requires_db
 
-AS_OF = "2026-07-01"
+AS_OF = "2026-08-30"
 
 
 def run(cursor, spec: QuerySpec):
@@ -41,6 +41,16 @@ def close(actual, expected, tolerance=0.01) -> bool:
     if actual is None or expected is None:
         return actual == expected
     return abs(actual - expected) <= max(tolerance, abs(expected) * 1e-9)
+
+
+def portfolio_snapshot(as_of: str) -> str:
+    """Independent hand-SQL equivalent of the catalog's point-in-time collapse."""
+    return (
+        "(SELECT DISTINCT ON (company_code, loan_account_number) * "
+        "FROM gold.daily_loan_status "
+        f"WHERE status_date <= DATE '{as_of}' "
+        "ORDER BY company_code, loan_account_number, status_date DESC) AS portfolio"
+    )
 
 
 class TestFlowMetrics:
@@ -132,8 +142,9 @@ class TestPointInTimeMetrics:
     def test_par_30(self, warehouse_cursor):
         expected = hand_scalar(
             warehouse_cursor,
-            f"SELECT 100.0 * COALESCE(SUM(principal_outstanding) FILTER (WHERE is_par30), 0) "
-            f"/ NULLIF(SUM(principal_outstanding), 0) FROM gold.portfolio_snapshot_as_of(DATE '{AS_OF}')",
+            f"SELECT 100.0 * COALESCE(SUM(principal_still_due) "
+            f"FILTER (WHERE overdue_over_30_days), 0) "
+            f"/ NULLIF(SUM(principal_still_due), 0) FROM {portfolio_snapshot(AS_OF)}",
         )
         actual = scalar(
             warehouse_cursor,
@@ -141,7 +152,7 @@ class TestPointInTimeMetrics:
         )
         assert close(actual, expected, 0.0001)
 
-    def test_historical_reads_use_the_gold_as_of_function(self, warehouse_cursor):
+    def test_historical_reads_use_the_gold_as_of_collapse(self, warehouse_cursor):
         correct = scalar(
             warehouse_cursor,
             QuerySpec(metrics=["par_30"], period=Period(start="2026-01-01", end=AS_OF)),
@@ -151,7 +162,7 @@ class TestPointInTimeMetrics:
     def test_principal_outstanding_as_of(self, warehouse_cursor):
         expected = hand_scalar(
             warehouse_cursor,
-            f"SELECT SUM(principal_outstanding) FROM gold.portfolio_snapshot_as_of(DATE '{AS_OF}')",
+            f"SELECT SUM(principal_still_due) FROM {portfolio_snapshot(AS_OF)}",
         )
         actual = scalar(
             warehouse_cursor,
@@ -175,9 +186,8 @@ class TestPointInTimeMetrics:
         assert close(actual, expected)
 
     def test_the_two_outstanding_metrics_deliberately_disagree(self, warehouse_cursor):
-        """₹198.5 Cr classified vs ₹275.2 Cr whole book. Both are correct answers to
-        different questions, which is exactly why the catalog carries a coverage warning
-        rather than quietly picking one."""
+        """The classified subset and whole-book derivation answer different questions,
+        which is why the catalog carries a coverage warning rather than quietly picking one."""
         classified = scalar(
             warehouse_cursor,
             QuerySpec(
@@ -194,7 +204,7 @@ class TestPointInTimeMetrics:
                 metrics=["principal_outstanding"], period=Period(start="2026-01-01", end=AS_OF)
             )
         )
-        assert any("5,466" in w for w in compiled.warnings)
+        assert any("5,588" in w for w in compiled.warnings)
 
     def test_delinquent_account_count(self, warehouse_cursor):
         actual = scalar(
@@ -206,32 +216,30 @@ class TestPointInTimeMetrics:
         )
         expected = hand_scalar(
             warehouse_cursor,
-            f"SELECT count(*) FILTER (WHERE dpd_days > 0) "
-            f"FROM gold.portfolio_snapshot_as_of(DATE '{AS_OF}')",
+            f"SELECT count(*) FILTER (WHERE days_past_due > 0) "
+            f"FROM {portfolio_snapshot(AS_OF)}",
         )
         assert actual == expected
 
-    def test_par_90_is_a_real_zero_not_a_null(self, warehouse_cursor):
-        """No account exceeds 75 DPD. The honest answer is 0.00%, and rendering it as
-        "no data" would misreport a clean book as a broken query."""
+    def test_par_90_matches_the_current_snapshot(self, warehouse_cursor):
         actual = scalar(
             warehouse_cursor,
             QuerySpec(metrics=["par_90"], period=Period(start="2026-01-01", end=AS_OF)),
         )
         expected = hand_scalar(
             warehouse_cursor,
-            f"SELECT 100.0 * COALESCE(SUM(principal_outstanding) FILTER (WHERE is_par90), 0) "
-            f"/ NULLIF(SUM(principal_outstanding), 0) "
-            f"FROM gold.portfolio_snapshot_as_of(DATE '{AS_OF}')",
+            f"SELECT 100.0 * COALESCE(SUM(principal_still_due) "
+            f"FILTER (WHERE overdue_over_90_days), 0) "
+            f"/ NULLIF(SUM(principal_still_due), 0) "
+            f"FROM {portfolio_snapshot(AS_OF)}",
         )
         assert actual == expected
 
     def test_max_dpd_in_the_book(self, warehouse_cursor):
-        """Underpins the PAR 90 fixture above — if this ever exceeds 90, that test's
-        premise has changed."""
+        """The snapshot exposes a nonnegative maximum DPD value."""
         actual = hand_scalar(
             warehouse_cursor,
-            f"SELECT MAX(dpd_days) FROM gold.portfolio_snapshot_as_of(DATE '{AS_OF}')",
+            f"SELECT MAX(days_past_due) FROM {portfolio_snapshot(AS_OF)}",
         )
         assert actual is not None and actual >= 0
 

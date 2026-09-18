@@ -28,6 +28,24 @@
   description: Scheme is currently the meaningful product-level reporting breakdown.
   cardinality: 13
 
+- id: sanctioning_authority
+  label: Sanctioning authority
+  table: gold.loan_accounts
+  column: sanctioned_by_name
+  type: categorical
+  synonyms: [sanctioned by, sanctioning authority, approving authority, approver]
+  description: Name of the staff member or authority that sanctioned the loan account.
+  cardinality: 2
+
+- id: sanctioning_authority_code
+  label: Sanctioning authority code
+  table: gold.loan_accounts
+  column: sanctioned_by_code
+  type: categorical
+  synonyms: [sanctioned by code, sanctioning authority code, approver code]
+  description: Staff or authority code that sanctioned the loan account.
+  cardinality: 2
+
 - id: asset_class
   label: Asset classification
   table: gold.daily_loan_status
@@ -161,7 +179,7 @@
   description: >
     Standalone agent directory identity keyed only by agent_code. Use the pre-aggregated
     linked_loan_count for agent loan totals; do not join this table to loans or customers.
-  cardinality: 154
+  cardinality: 159
 
 - id: gl_account
   label: GL account

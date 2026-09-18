@@ -480,7 +480,7 @@ class TestLineage:
     def test_coverage_warnings_reach_the_lineage_panel(self, catalog):
         spec = QuerySpec(metrics=["par_30"], period=Period(relative="today"))
         chart = chart_for(spec, [{"par_30": 0.09}], catalog)
-        assert any("5,466" in w for w in chart.lineage.warnings)
+        assert any("5,588" in w for w in chart.lineage.warnings)
 
 
 class TestDrilldown:

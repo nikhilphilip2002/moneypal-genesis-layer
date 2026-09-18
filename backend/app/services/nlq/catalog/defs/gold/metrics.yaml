@@ -102,8 +102,8 @@
   synonyms: [total outstanding, whole book, total portfolio, loan book size]
   no_time_travel: true
   caveat: >
-    This account-level derivation is ₹213.998 Cr and does not yet reconcile to the Silver
-    loan-master value of ₹213.022 Cr. Treat it as provisional.
+    This account-level derivation is ₹228.490 Cr as of the current Gold load and remains
+    provisional pending reconciliation to the source loan master.
 
 - id: agent_linked_loans
   label: Linked loans
@@ -127,7 +127,7 @@
   expression: SUM({t}.principal_still_due)
   formula: Principal outstanding from each classified account at the requested snapshot
   synonyms: [outstanding, principal outstanding, POS, book size, exposure, AUM]
-  verified: 2045394519.25 across 5466 classified accounts as of 2026-07-31
+  verified: 2078627791.92 across 5588 classified accounts as of 2026-08-30
 
 - id: classified_account_count
   label: Classified loan accounts
@@ -139,7 +139,7 @@
   expression: COUNT(*)
   formula: Count of loan accounts present in the requested classified portfolio snapshot
   synonyms: [classified accounts, accounts by asset class, loan accounts by classification]
-  verified: 5466 classified accounts as of 2026-07-31
+  verified: 5588 classified accounts as of 2026-08-30
 
 - id: overdue_principal
   label: Overdue principal
@@ -151,7 +151,7 @@
   expression: SUM({t}.principal_overdue)
   formula: Principal overdue at the requested portfolio snapshot
   synonyms: [overdue, arrears, past due, principal due, delinquent amount]
-  verified: 1957196.06 as of 2026-07-31
+  verified: 2174899.98 as of 2026-08-30
 
 - id: overdue_total
   label: Total overdue
@@ -205,9 +205,9 @@
   synonyms: [PAR, PAR 30, portfolio at risk, par30, 30+ DPD]
   requires_signoff: true
   signoff_note: >
-    Denominator is principal outstanding on the classified subset, currently 5,466 of
-    5,753 loan accounts. Client must ratify this denominator for board reporting.
-  verified: 0.2685526473% as of 2026-07-31
+    Denominator is principal outstanding on the classified subset, currently 5,588 of
+    6,145 loan accounts. Client must ratify this denominator for board reporting.
+  verified: 0.4262929311% as of 2026-08-30
 
 - id: par_60
   label: PAR 60

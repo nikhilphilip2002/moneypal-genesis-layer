@@ -71,7 +71,7 @@
   label: Agents
   grain: one row per agent
   key: [agent_code]
-  row_count: 154
+  row_count: 159
   contains_pii: true
   synonyms: [agents, agent directory, field agents, staff, sourcing agents, collection agents]
   date_columns: {joined: joined_on}
@@ -143,7 +143,7 @@
   contains_pii: true
   synonyms: [portfolio, outstanding, overdue, past due customers, DPD, PAR, NPA, asset classification, classified loans, delinquent accounts, late loans]
   description: Classified account portfolio snapshot used for exposure and credit-quality measures.
-  coverage_warning: Covers 5,588 of 6,145 loans. History runs only from 2026-05-22.
+  coverage_warning: Covers 5,588 of 6,145 loans in a single snapshot dated 2026-08-30; earlier history is unavailable.
 
 - id: semantic_application
   table: gold.loan_applications

@@ -12,9 +12,8 @@ Validation runs before generation, in the order given in §2.5:
   5. grain check                                               -> metrics.resolve
   6. period resolution against the Indian fiscal calendar      -> periods.resolve_relative
 
-Point-in-time portfolio metrics are read through the governed
-`gold.portfolio_snapshot_as_of(date)` function. That keeps the historical-collapse rule in
-the database semantic layer instead of exposing the underlying classification event log.
+Point-in-time portfolio metrics collapse the governed daily status relation to the latest
+row per account at or before the requested date.
 """
 
 from __future__ import annotations
@@ -308,7 +307,7 @@ def _as_of_source(
     params: dict[str, Any],
     as_of: date,
 ) -> str:
-    """Use the reviewed Gold as-of function, or a legacy catalog collapse definition."""
+    """Use a declared Gold as-of function or the catalog's inline collapse definition."""
     metric = next(m for m in plan.metrics if m.needs_as_of)
     if metric.as_of_function:
         params["as_of"] = as_of

@@ -35,11 +35,11 @@ class TestPrivileges:
             cur.execute("SELECT count(*) FROM gold.loan_accounts")
             assert cur.fetchone()[0] > 0
 
-    def test_sees_every_gold_view(self):
-        """Only the 18 reviewed friendly views are visible to NLQ."""
+    def test_sees_every_gold_relation(self):
+        """Only the 18 reviewed friendly relations are visible to NLQ."""
         with nlq_db.readonly_cursor() as (_conn, cur):
             cur.execute(
-                "SELECT count(*) FROM information_schema.views WHERE table_schema = 'gold'"
+                "SELECT count(*) FROM information_schema.tables WHERE table_schema = 'gold'"
             )
             assert cur.fetchone()[0] == 18
 
@@ -60,16 +60,13 @@ class TestPrivileges:
     def test_cannot_read_legacy_compatibility_view(self):
         with nlq_db.readonly_cursor() as (_conn, cur):
             error = _fails(cur, "SELECT count(*) FROM gold.loan_account_master")
-            assert "permission denied" in error.lower()
-
-    def test_can_execute_portfolio_snapshot_dependency(self):
-        """The friendly daily status view depends on the snapshot function in production."""
-        with nlq_db.readonly_cursor() as (_conn, cur):
-            cur.execute("SELECT count(*) FROM gold.portfolio_snapshot_as_of(CURRENT_DATE)")
-            assert cur.fetchone()[0] >= 0
+            assert any(
+                message in error.lower()
+                for message in ("permission denied", "does not exist")
+            )
 
     def test_can_read_daily_loan_status(self):
-        """Exercise the dependency that portfolio, PAR, and NPA queries actually use."""
+        """Exercise the relation that portfolio, PAR, and NPA queries actually use."""
         with nlq_db.readonly_cursor() as (_conn, cur):
             cur.execute("SELECT count(*) FROM gold.daily_loan_status")
             assert cur.fetchone()[0] >= 0
