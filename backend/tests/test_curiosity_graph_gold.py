@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 
 from app.api.routes import admin
-from app.services.curiosity_graph import BRANCH_SQL, _metrics, _where
+from app.services.curiosity_graph import BRANCH_SQL, _agent_label, _metrics, _where
 
 
 def test_metric_contract_keeps_numeric_values_and_uses_exposure_ratios():
@@ -38,6 +38,12 @@ def test_unassigned_agent_is_a_real_filter_not_an_empty_string_comparison():
 
     assert "NULLIF(BTRIM(l.agent_code::text), '') IS NULL" in where
     assert params == ["1"]
+
+
+def test_missing_agent_name_does_not_hide_an_existing_agent_code():
+    assert _agent_label("AGNT45", None) == "Agent AGNT45"
+    assert _agent_label("AGNT45", "VANITHA") == "VANITHA"
+    assert _agent_label("UNASSIGNED", None) == "Unassigned agent"
 
 
 def test_graph_service_does_not_query_silver_or_bronze_views():

@@ -143,6 +143,13 @@ def _money(value: Any) -> float:
     return round(float(value or 0), 2)
 
 
+def _agent_label(agent_code: Any, agent_name: Any) -> str:
+    """Reserve the unassigned label for records that actually lack an agent code."""
+    code = _text(agent_code) or "UNASSIGNED"
+    name = _text(agent_name)
+    return name or ("Unassigned agent" if code == "UNASSIGNED" else f"Agent {code}")
+
+
 def _metrics(values: Iterable[Any]) -> dict[str, Any]:
     row = dict(zip(METRIC_COLUMNS, values))
     outstanding = _money(row["principal_outstanding"])
@@ -793,7 +800,7 @@ def get_curiosity_graph(
         for r in cust_records:
             account = r["account"]
             agent_code = r["agent_code"] or "UNASSIGNED"
-            agent_name = r["agent_name"] or "Unassigned agent"
+            agent_name = _agent_label(agent_code, r["agent_name"])
             account_nodes.append({
                 "id": f"account:{account}", "type": "account", "code": account,
                 "label": f"Loan {account}",
