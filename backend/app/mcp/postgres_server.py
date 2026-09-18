@@ -76,7 +76,7 @@ def query(sql: str, ctx: Context) -> dict[str, Any]:
     except SqlValidationError as exc:
         return {
             "status": "error",
-            "code": "SQL_VALIDATION_ERROR",
+            "code": "COMPILE_REJECTED",
             "message": str(exc)[:1000],
             "retryable": True,
             "catalog_version": catalog.version,
