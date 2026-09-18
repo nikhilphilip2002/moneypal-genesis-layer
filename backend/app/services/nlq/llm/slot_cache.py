@@ -15,6 +15,9 @@ from app.core.config import settings
 from app.services.workbench import prompts
 
 
+WARMUP_USER_MESSAGE = "Initialize the system prompt cache."
+
+
 class SlotCacheError(RuntimeError):
     """A llama-server slot operation or safe warm-up failed."""
 
@@ -74,16 +77,19 @@ def build_identity(*, system_prompt: str) -> SlotCacheIdentity:
 
 
 async def build_warmup_bundle() -> WarmupBundle:
-    """Build a request containing only the invariant system message."""
+    """Build the system prompt plus the minimal user turn required by Qwen's template."""
     system_prompt = prompts.build_agent_system_prompt()
-    messages = [{
-        "role": "system",
-        "content": [{
-            "type": "text",
-            "text": system_prompt,
-            "prompt_cache_breakpoint": {"mode": "explicit"},
-        }],
-    }]
+    messages = [
+        {
+            "role": "system",
+            "content": [{
+                "type": "text",
+                "text": system_prompt,
+                "prompt_cache_breakpoint": {"mode": "explicit"},
+            }],
+        },
+        {"role": "user", "content": WARMUP_USER_MESSAGE},
+    ]
     return WarmupBundle(
         messages=messages,
         identity=build_identity(system_prompt=system_prompt),
@@ -204,6 +210,7 @@ async def restore_or_warm(
 __all__ = [
     "SlotCacheError",
     "SlotCacheIdentity",
+    "WARMUP_USER_MESSAGE",
     "WarmupBundle",
     "build_identity",
     "build_warmup_bundle",

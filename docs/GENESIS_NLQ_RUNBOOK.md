@@ -69,9 +69,10 @@ sha256: <fill in at provisioning>
 ### Persistent initial-system-prompt slot
 
 Mount `/var/lib/llama-slots` on persistent, owner-only storage. The snapshot filename is
-derived only from `LLM_MODEL` and the exact initial Workbench system-prompt text. The snapshot
-contains no user message, assistant response, conversation history, question-specific context,
-tool definition, or tool result.
+derived only from `LLM_MODEL` and the exact initial Workbench system-prompt text. The prefill
+contains that system prompt and one fixed, non-private user-role message required by the Qwen
+chat template. It contains no real user message, assistant response, conversation history,
+question-specific context, tool definition, or tool result.
 
 Optional deployment prewarming can run after llama-server is healthy:
 
@@ -82,11 +83,11 @@ python -m scripts.manage_llama_slot_cache restore-or-warm
 
 The first message of every new chat restores the fingerprinted file into slot `0` before the
 real model request. If that file is absent or rejected, the backend erases slot `0`, evaluates
-only the chat-template-rendered initial system message with `n_predict=0`, saves that slot, and
-then sends the real request. The prefill generates no assistant tokens and is never added to
-conversation history; the slot is never saved after the user request. Existing chats continue
-through the normal model-controlled tool loop without restoring the initial snapshot between
-rounds.
+only the chat-template-rendered system prompt and fixed warm-up user turn with `n_predict=0`,
+saves that slot, and then sends the real request. The prefill generates no assistant tokens and
+is never added to conversation history; the slot is never saved after the user request.
+Existing chats continue through the normal model-controlled tool loop without restoring the
+initial snapshot between rounds.
 
 Useful operator commands:
 

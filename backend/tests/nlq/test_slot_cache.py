@@ -8,7 +8,9 @@ import httpx
 from app.core.config import settings
 from app.services.nlq.llm.slot_cache import (
     SlotCacheError,
+    WARMUP_USER_MESSAGE,
     WarmupBundle,
+    build_warmup_bundle,
     build_identity,
     llama_server_root,
     restore_or_warm,
@@ -46,6 +48,16 @@ def test_identity_is_deterministic_and_safe(monkeypatch):
     monkeypatch.setattr(settings, "llm_model", "different-model-id")
     model_changed = _bundle().identity
     assert model_changed.fingerprint != first.fingerprint
+
+
+def test_warmup_bundle_has_required_non_private_user_turn():
+    bundle = asyncio.run(build_warmup_bundle())
+
+    assert [message["role"] for message in bundle.messages] == ["system", "user"]
+    assert bundle.messages[1]["content"] == WARMUP_USER_MESSAGE
+    assert bundle.identity == build_identity(
+        system_prompt=bundle.messages[0]["content"][0]["text"]
+    )
 
 
 def test_restore_success_skips_warmup():
