@@ -49,6 +49,7 @@ NLQ_MAX_ROWS=5000
 ```
 llama-server -m qwen3.6-32b-instruct-q4_K_M.gguf \
   -ngl 99 -c 32768 --parallel 1 --cache-prompt --reasoning off \
+  --slot-save-path /var/lib/llama-slots \
   --host 0.0.0.0 --port 8080
 ```
 
@@ -64,6 +65,42 @@ Pin the exact GGUF SHA-256 here when the node is provisioned, so a rebuild is re
 model: qwen3.6-32b-instruct-q4_K_M.gguf
 sha256: <fill in at provisioning>
 ```
+
+### Restore or create the persistent Workbench prompt slot
+
+Mount `/var/lib/llama-slots` on persistent, owner-only storage. Set
+`LLAMA_MODEL_SHA256`, `LLAMA_SERVER_BUILD_ID`, and `LLAMA_CHAT_TEMPLATE_ID` in the backend
+environment to the deployed model artifact, llama-server build, and chat-template revision.
+The catalog, full prompt payload, tool schemas, model name, and these runtime identifiers are
+hashed into the snapshot filename, so incompatible changes cannot silently restore an older
+slot.
+
+After llama-server and PostgreSQL MCP are healthy, but before routing user traffic, run:
+
+```
+cd backend
+python -m scripts.manage_llama_slot_cache restore-or-warm
+```
+
+The command first asks llama-server to restore the fingerprinted file into slot `0`. If that
+file is absent or rejected, it erases slot `0`, evaluates a constant non-private Workbench
+request with the real governed prompt and tool definitions, and saves the resulting slot. It
+does not execute a model-selected tool. Normal Workbench requests never call the slot lifecycle
+API and retain the existing model-controlled tool loop.
+
+Useful operator commands:
+
+```
+python -m scripts.manage_llama_slot_cache fingerprint
+python -m scripts.manage_llama_slot_cache restore
+python -m scripts.manage_llama_slot_cache warm-save
+python -m scripts.manage_llama_slot_cache erase
+```
+
+Treat snapshot files as sensitive operational state even though the warm-up input is synthetic;
+do not expose the slot directory or llama-server port outside the trusted network. Old
+fingerprinted files are not selected after a compatibility change and may be removed during a
+separate retention job.
 
 `NLQ_LLM_THINKING` must stay `false` for any hybrid-reasoning model (the Qwen3 family, and
 anything else llama-server answers with a `reasoning_content` field). The planner fills in a
