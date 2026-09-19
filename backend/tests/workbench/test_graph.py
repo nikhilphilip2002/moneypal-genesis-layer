@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
+import time
 
 import pytest
 
@@ -11,9 +13,11 @@ from app.services.nlq.llm import (
     LLMProtocolError,
     LLMResponseBlocked,
     LLMUnavailable,
+    LLMResult,
 )
 from app.services.workbench import graph
 from app.services.workbench.agent import BudgetExhausted
+from app.services.workbench.results import SourceResult
 
 
 @pytest.fixture(autouse=True)
@@ -132,3 +136,100 @@ async def test_native_failures_emit_one_typed_error(monkeypatch, failure, code, 
     assert errors[0]["code"] == code
     assert errors[0]["retryable"] is retryable
     assert events[-1][0] == "done"
+
+
+def _answer_state(model_text: str, registry: list[dict]):
+    return {
+        "emit": asyncio.Queue(),
+        "conversation_id": "c-answer", "user": "alice", "turn_id": "turn-answer",
+        "timing": {"started_at": time.perf_counter()},
+        "results": [SourceResult(
+            source="db", card_type="chart", payload={"rows": [{"value": 1}]},
+            summary="One row.",
+        )],
+        "query_registry": registry,
+        "agent_final_result": LLMResult(
+            text=model_text, model="m", provider="test",
+            assistant_message={"role": "assistant", "content": model_text},
+        ),
+    }
+
+
+def _successful_query(query_id: str = "turn-answer:q1") -> dict:
+    return {
+        "query_id": query_id, "attempt_id": f"{query_id}:a1",
+        "tool_call_id": "call-1", "tool_name": "query", "status": "success",
+        "purpose": "answer", "row_count": 1, "has_data": True,
+        "visual_available": True, "duration_ms": 1,
+    }
+
+
+@pytest.mark.anyio
+async def test_answer_results_reconciles_structured_query_references():
+    state = _answer_state(json.dumps({
+        "schema_version": 1,
+        "narrative_insights": "The value is one.",
+        "active_query_ids": ["turn-answer:q1", "invented"],
+        "visual_query_ids": ["invented", "turn-answer:q1"],
+        "excluded_queries": [],
+    }), [_successful_query()])
+
+    await graph.answer_results(state)
+
+    frame = state["emit"].get_nowait()
+    assert frame.startswith("event: answer\n")
+    answer = json.loads(frame.split("data: ", 1)[1])
+    assert answer["text"] == "The value is one."
+    assert answer["active_query_ids"] == ["turn-answer:q1"]
+    assert answer["visual_query_ids"] == ["turn-answer:q1"]
+    assert answer["invalid_query_ids"] == ["invented"]
+    assert answer["attribution_fallback_used"] is False
+
+
+@pytest.mark.anyio
+async def test_explicit_empty_structured_attribution_does_not_trigger_fallback():
+    state = _answer_state(json.dumps({
+        "schema_version": 1,
+        "narrative_insights": "No database result was used.",
+        "active_query_ids": [], "visual_query_ids": [], "excluded_queries": [],
+    }), [_successful_query()])
+
+    await graph.answer_results(state)
+    answer = json.loads(state["emit"].get_nowait().split("data: ", 1)[1])
+
+    assert answer["active_query_ids"] == []
+    assert answer["visual_query_ids"] == []
+    assert answer["attribution_fallback_used"] is False
+
+
+@pytest.mark.anyio
+async def test_legacy_plain_text_uses_conservative_single_query_fallback():
+    state = _answer_state("The value is one.", [_successful_query()])
+
+    await graph.answer_results(state)
+    answer = json.loads(state["emit"].get_nowait().split("data: ", 1)[1])
+
+    assert answer["active_query_ids"] == ["turn-answer:q1"]
+    assert answer["visual_query_ids"] == ["turn-answer:q1"]
+    assert answer["attribution_fallback_used"] is True
+
+
+@pytest.mark.anyio
+async def test_structured_conceptual_answer_has_empty_query_references():
+    from app.services.workbench.agent_contracts import FinalSynthesis
+
+    state = _answer_state("unused", [])
+    state["results"] = []
+    state.pop("agent_final_result")
+    state["agent_final_synthesis"] = FinalSynthesis(
+        narrative_insights="PAR means portfolio at risk.",
+        active_query_ids=[], visual_query_ids=[], excluded_queries=[],
+    )
+
+    await graph.answer_results(state)
+    answer = json.loads(state["emit"].get_nowait().split("data: ", 1)[1])
+
+    assert answer["status"] == "answered"
+    assert answer["text"] == "PAR means portfolio at risk."
+    assert answer["active_query_ids"] == []
+    assert answer["visual_query_ids"] == []

@@ -29,6 +29,8 @@ ENV NEXT_TELEMETRY_DISABLED=1
 # /api so every deployed browser uses the same nginx origin instead of a fixed host/IP.
 ARG NEXT_PUBLIC_API_URL=/api
 ENV NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
+ARG NEXT_PUBLIC_WORKBENCH_QUERY_ATTRIBUTION=false
+ENV NEXT_PUBLIC_WORKBENCH_QUERY_ATTRIBUTION=${NEXT_PUBLIC_WORKBENCH_QUERY_ATTRIBUTION}
 
 RUN --mount=type=cache,target=/app/.next/cache \
   npm run build

@@ -124,6 +124,21 @@ def test_route_tools_and_structured_error_round_trip():
     assert turn["events"][2]["payload"]["code"] == "AGENT_TIMEOUT"
 
 
+def test_explicit_empty_query_attribution_survives_history_round_trip():
+    turn_id = history.begin_turn("attribution", "alice", "What does PAR mean?")
+    answer = {
+        "schema_version": 1, "status": "answered", "text": "Portfolio at risk.",
+        "active_query_ids": [], "visual_query_ids": [], "excluded_queries": [],
+        "sources": [], "citations": [], "unavailable_sources": [], "limitations": [],
+    }
+    history.set_answer("attribution", "alice", turn_id, answer)
+
+    stored = history.get("attribution", user="alice").turns[0]["answer"]
+    assert stored["active_query_ids"] == []
+    assert stored["visual_query_ids"] == []
+    assert stored["excluded_queries"] == []
+
+
 def test_legacy_string_error_derives_backward_compatible_event():
     events = history.derive_turn_events({
         "question": "Old question",

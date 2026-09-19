@@ -311,6 +311,21 @@ function stringArray(value: unknown): string[] {
   return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : [];
 }
 
+function excludedQueryArray(value: unknown): NonNullable<WorkbenchAnswer['excluded_queries']> {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((item) => {
+    if (!isRecord(item)) return [];
+    const queryId = stringValue(item.query_id);
+    const reasonCode = stringValue(item.reason_code);
+    if (!queryId || !reasonCode) return [];
+    return [{
+      query_id: queryId,
+      reason_code: reasonCode,
+      reason: optionalString(item.reason),
+    }];
+  });
+}
+
 // Generic API request helper
 async function apiRequest<T = unknown>(
   endpoint: string,
@@ -898,6 +913,24 @@ export type WorkbenchCard = {
     | 'chart' | 'analysis' | 'worklist' | 'briefing' | 'brief' | 'schema' | 'catalog'
     | 'clarify' | 'refusal' | 'error';
   payload: unknown;
+  query_id?: string;
+  attempt_id?: string;
+};
+
+export type WorkbenchQueryExecution = {
+  turn_id?: string;
+  query_id: string;
+  attempt_id: string;
+  tool_call_id: string;
+  tool_name: string;
+  query_fingerprint?: string;
+  status: 'pending' | 'running' | 'success' | 'empty' | 'error' | 'timeout' | 'cancelled';
+  purpose: 'answer' | 'discovery' | 'validation' | 'intermediate';
+  row_count?: number | null;
+  has_data: boolean;
+  visual_available: boolean;
+  duration_ms: number;
+  error_code?: string | null;
 };
 
 export type WorkbenchVerifiedFact = {
@@ -915,6 +948,7 @@ export type WorkbenchVerifiedFact = {
 };
 
 export type WorkbenchAnswer = {
+  schema_version?: number;
   status: 'answered' | 'partial' | 'clarify' | 'refused';
   text: string;
   sources: string[];
@@ -939,6 +973,16 @@ export type WorkbenchAnswer = {
   suggestions?: string[];
   reason?: string | null;
   origin?: string;
+  active_query_ids?: string[];
+  visual_query_ids?: string[];
+  excluded_queries?: {
+    query_id: string;
+    reason_code: string;
+    reason?: string;
+  }[];
+  model_active_query_ids?: string[];
+  invalid_query_ids?: string[];
+  attribution_fallback_used?: boolean;
 };
 
 export type WorkbenchRoute = {
@@ -1001,6 +1045,8 @@ export type WorkbenchStreamEvent =
   | ({ type: 'route' } & WorkbenchRoute)
   | { type: 'source_start'; source: string }
   | { type: 'source_card'; card: WorkbenchCard }
+  | ({ type: 'query_registered' | 'query_started' | 'query_completed' | 'query_failed' }
+      & WorkbenchQueryExecution)
   | { type: 'answer'; answer: WorkbenchAnswer }
   | { type: 'answer_start' }
   | { type: 'answer_delta'; text: string }
@@ -1046,6 +1092,7 @@ export const workbench = {
       route: WorkbenchRoute;
       sources: string[];
       cards: WorkbenchCard[];
+      query_registry?: WorkbenchQueryExecution[];
       answer: WorkbenchAnswer | null;
       synthesis: string | null;
       model_messages?: string[];
@@ -1169,18 +1216,69 @@ export const workbench = {
               break;
             case 'source_start': yield { type: 'source_start', source: stringValue(payload.source) }; break;
             case 'source_card': {
-              const { source, card_type, ...rest } = payload;
+              const { source, card_type, query_id, attempt_id, ...rest } = payload;
               yield {
                 type: 'source_card',
                 card: {
                   source: stringValue(source),
                   card_type: card_type as WorkbenchCard['card_type'],
+                  query_id: optionalString(query_id),
+                  attempt_id: optionalString(attempt_id),
                   payload: rest,
                 },
               };
               break;
             }
-            case 'answer': yield { type: 'answer', answer: payload as unknown as WorkbenchAnswer }; break;
+            case 'query_registered':
+            case 'query_started':
+            case 'query_completed':
+            case 'query_failed':
+              yield {
+                type: event,
+                turn_id: optionalString(payload.turn_id),
+                query_id: stringValue(payload.query_id),
+                attempt_id: stringValue(payload.attempt_id),
+                tool_call_id: stringValue(payload.tool_call_id),
+                tool_name: stringValue(payload.tool_name),
+                status: stringValue(payload.status) as WorkbenchQueryExecution['status'],
+                purpose: stringValue(payload.purpose) as WorkbenchQueryExecution['purpose'],
+                row_count: payload.row_count === null ? null : optionalNumber(payload.row_count),
+                has_data: payload.has_data === true,
+                visual_available: payload.visual_available === true,
+                duration_ms: optionalNumber(payload.duration_ms) ?? 0,
+                error_code: payload.error_code === null ? null : optionalString(payload.error_code),
+              };
+              break;
+            case 'answer': {
+              const answer = payload as unknown as WorkbenchAnswer;
+              yield {
+                type: 'answer',
+                answer: {
+                  ...answer,
+                  schema_version: optionalNumber(payload.schema_version),
+                  active_query_ids: Array.isArray(payload.active_query_ids)
+                    ? stringArray(payload.active_query_ids)
+                    : undefined,
+                  visual_query_ids: Array.isArray(payload.visual_query_ids)
+                    ? stringArray(payload.visual_query_ids)
+                    : undefined,
+                  excluded_queries: Array.isArray(payload.excluded_queries)
+                    ? excludedQueryArray(payload.excluded_queries)
+                    : undefined,
+                  model_active_query_ids: Array.isArray(payload.model_active_query_ids)
+                    ? stringArray(payload.model_active_query_ids)
+                    : undefined,
+                  invalid_query_ids: Array.isArray(payload.invalid_query_ids)
+                    ? stringArray(payload.invalid_query_ids)
+                    : undefined,
+                  attribution_fallback_used:
+                    typeof payload.attribution_fallback_used === 'boolean'
+                      ? payload.attribution_fallback_used
+                      : undefined,
+                },
+              };
+              break;
+            }
             case 'answer_start': yield { type: 'answer_start' }; break;
             case 'answer_delta': yield { type: 'answer_delta', text: stringValue(payload.text) }; break;
             case 'answer_reset': yield { type: 'answer_reset' }; break;

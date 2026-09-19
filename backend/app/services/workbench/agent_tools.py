@@ -17,6 +17,7 @@ from app.services.nlq.catalog import Catalog, get_catalog
 from app.services.workbench.access import SourceAccessDenied, SourceAccessPolicy, source_group
 from app.services.workbench.agent_contracts import (
     FinishWithoutDataArguments,
+    FinalSynthesis,
     SearchCuratedKnowledgeArguments,
     SearchPublicWebArguments,
 )
@@ -103,6 +104,21 @@ AGENT_TOOLS: dict[str, AgentTool] = {
         sensitivity="public",
         timeout_s=1.0,
         max_result_chars=1_000,
+        parallel_safe=False,
+    ),
+    "submit_final_answer": AgentTool(
+        name="submit_final_answer",
+        description=(
+            "Submit the final user-facing narrative and the exact database query IDs that "
+            "support it. Use this instead of returning free text when the request is "
+            "answerable. It must be the only call in the response."
+        ),
+        arguments_model=FinalSynthesis,
+        handler_key="submit_final_answer",
+        source_id=None,
+        sensitivity="internal",
+        timeout_s=1.0,
+        max_result_chars=2_000,
         parallel_safe=False,
     ),
 }

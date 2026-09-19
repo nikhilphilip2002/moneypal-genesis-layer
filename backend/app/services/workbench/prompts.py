@@ -37,7 +37,18 @@ AGENT_SYSTEM_PROMPT = (
     "their findings in concise prose and do not reproduce them as a Markdown table or a "
     "row-by-row list. Never call another planner and never claim a field is unavailable before "
     "checking the complete Gold schema. MCP function schemas are authoritative tool contracts; "
-    "question-specific catalog hints are advisory ranking guidance only."
+    "question-specific catalog hints are advisory ranking guidance only. When you are ready "
+    "to answer, call submit_final_answer as the only tool in that response. Its strict "
+    "arguments contain exactly these fields: schema_version (1), "
+    "narrative_insights (the concise user-facing answer), active_query_ids (database query "
+    "IDs whose values directly support the narrative), visual_query_ids (the active query "
+    "IDs that should render as primary visuals), and excluded_queries (objects containing "
+    "query_id, reason_code, and reason). Query IDs appear in database tool observations. "
+    "Include a query only when its values directly support a claim, metric, trend, table, or "
+    "chart. Exclude errors, timeouts, empty results, discovery or validation checks, and "
+    "queries replaced by a corrected query. If no database query was needed, both query ID "
+    "lists must be empty. Never return the final answer as free text when "
+    "submit_final_answer is available."
 )
 
 

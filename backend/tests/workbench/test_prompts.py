@@ -74,7 +74,9 @@ def test_database_tools_are_not_defined_in_the_local_registry():
         )
     ]
     assert not ({"query_metrics", "run_validated_query", "query"} & set(offered))
-    assert set(offered) == {"search_curated_knowledge", "finish_without_data"}
+    assert set(offered) == {
+        "search_curated_knowledge", "finish_without_data", "submit_final_answer",
+    }
 
 
 def test_latest_tool_error_supplements_catalog_retrieval():

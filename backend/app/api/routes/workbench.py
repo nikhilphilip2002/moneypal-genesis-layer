@@ -153,6 +153,7 @@ def _turn_for_api(turn: dict) -> dict:
         "route": route,
         "sources": sources,
         "cards": list(turn.get("cards", []) or []),
+        "query_registry": list(turn.get("query_registry", []) or []),
         "answer": turn.get("answer") or (
             {"status": "answered", "text": turn.get("synthesis"), "sources": sources,
              "citations": [], "unavailable_sources": []}

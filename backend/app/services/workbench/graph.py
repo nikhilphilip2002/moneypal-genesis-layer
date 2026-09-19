@@ -30,6 +30,66 @@ def sse(event: str, data: Any) -> str:
     return f"event: {event}\ndata: {json.dumps(data, default=str)}\n\n"
 
 
+def _log_query_attribution(
+    state: dict[str, Any], *, active: list[str], visual: list[str],
+    invalid: list[str], proposed: list[str], fallback_used: bool,
+) -> None:
+    """Emit counts only; query rows and model prose never enter attribution telemetry."""
+    registry = list(state.get("query_registry", []))
+    successful = sum(
+        1 for record in registry
+        if record.get("status") == "success" and record.get("has_data") is True
+    )
+    by_id = {
+        str(record.get("query_id")): record
+        for record in registry if record.get("query_id")
+    }
+    filtered_execution_references = sum(
+        1 for query_id in dict.fromkeys(proposed)
+        if query_id in by_id and not (
+            by_id[query_id].get("status") == "success"
+            and by_id[query_id].get("has_data") is True
+        )
+    )
+    active_set = set(active)
+    unused_records = [
+        record for record in registry
+        if record.get("status") == "success" and record.get("has_data") is True
+        and record.get("query_id") not in active_set
+    ]
+    unused_by_purpose: dict[str, int] = {}
+    unused_by_tool: dict[str, int] = {}
+    for record in unused_records:
+        purpose = str(record.get("purpose") or "answer")
+        tool = str(record.get("tool_name") or "unknown")
+        unused_by_purpose[purpose] = unused_by_purpose.get(purpose, 0) + 1
+        unused_by_tool[tool] = unused_by_tool.get(tool, 0) + 1
+    from app.core.logging import log_app_event
+
+    log_app_event(
+        "Workbench query attribution reconciled",
+        event="workbench_query_attribution",
+        data={
+            "turn_id": state.get("turn_id"),
+            "attempted_queries": len(registry),
+            "successful_queries": successful,
+            "active_queries": len(active),
+            "visual_queries": len(visual),
+            "unused_successful_queries": max(0, successful - len(active)),
+            "unused_by_purpose": unused_by_purpose,
+            "unused_by_tool": unused_by_tool,
+            "invalid_model_references": len(invalid),
+            "filtered_execution_references": filtered_execution_references,
+            "structured_output_repairs": int(state.get("attribution_repairs", 0)),
+            "fallback_used": fallback_used,
+            "data_bearing_answer_empty_attribution": successful > 0 and not active,
+            "executed_to_active_ratio": (
+                round(len(registry) / len(active), 3) if active else None
+            ),
+        },
+    )
+
+
 CONTEXT_CAPACITY_CODE = "CONTEXT_CAPACITY"
 CONTEXT_FULL_MESSAGE = (
     "This conversation has grown too long for the model's context window, so earlier "
@@ -111,6 +171,9 @@ class WorkbenchState(TypedDict):
     timing: dict[str, Any]
     trace: NotRequired[list[dict[str, Any]]]
     agent_synthesis_messages: NotRequired[list[dict[str, Any]]]
+    agent_final_synthesis: NotRequired[Any]
+    attribution_repairs: NotRequired[int]
+    query_registry: NotRequired[list[dict[str, Any]]]
 
 
 _ANSWERABLE_CARD_TYPES = frozenset(
@@ -146,15 +209,45 @@ async def answer_results(state: WorkbenchState) -> dict[str, Any]:
         if not r.complete
     ]
 
+    conceptual_synthesis = state.get("agent_final_synthesis")
+    if not results and conceptual_synthesis is not None and not state.get("query_registry"):
+        payload = {
+            "schema_version": 1,
+            "status": "answered",
+            "text": conceptual_synthesis.narrative_insights,
+            "active_query_ids": [], "visual_query_ids": [], "excluded_queries": [],
+            "model_active_query_ids": list(conceptual_synthesis.active_query_ids),
+            "invalid_query_ids": list(conceptual_synthesis.active_query_ids),
+            "attribution_fallback_used": False,
+            "sources": [], "citations": [], "unavailable_sources": [],
+            "limitations": [], "facts": [],
+        }
+        await emit.put(sse("answer", payload))
+        state["timing"].setdefault(
+            "final_answer_ms", int((time.perf_counter() - state["timing"]["started_at"]) * 1000)
+        )
+        _persist(
+            history.set_answer,
+            state["conversation_id"], state["user"], state["turn_id"], payload,
+        )
+        _log_query_attribution(
+            state, active=[], visual=[],
+            invalid=list(conceptual_synthesis.active_query_ids),
+            proposed=list(conceptual_synthesis.active_query_ids), fallback_used=False,
+        )
+        return {}
+
     if not results:
         refusal = next((r for r in all_results if r.card_type == "refusal"), None)
         clarification = next((r for r in all_results if r.card_type == "clarify"), None)
         if clarification is not None:
             payload = {
+                "schema_version": 1,
                 "status": "clarify",
                 "text": str(clarification.payload.get("question") or "Please clarify the request."),
                 "sources": [], "citations": [], "unavailable_sources": unavailable,
                 "limitations": [],
+                "active_query_ids": [], "visual_query_ids": [], "excluded_queries": [],
             }
             await emit.put(sse("answer", payload))
             state["timing"].setdefault(
@@ -163,10 +256,12 @@ async def answer_results(state: WorkbenchState) -> dict[str, Any]:
             _persist(history.set_answer, state["conversation_id"], state["user"], state["turn_id"], payload)
         elif refusal is not None:
             payload = {
+                "schema_version": 1,
                 "status": "refused",
                 "text": str(refusal.payload.get("message") or "That request cannot be answered safely."),
                 "sources": [], "citations": [], "unavailable_sources": unavailable,
                 "limitations": [],
+                "active_query_ids": [], "visual_query_ids": [], "excluded_queries": [],
             }
             await emit.put(sse("answer", payload))
             state["timing"].setdefault(
@@ -198,10 +293,43 @@ async def answer_results(state: WorkbenchState) -> dict[str, Any]:
 
     text = results[0].summary.strip()
     result = state.get("agent_final_result")
+    structured_synthesis = state.get("agent_final_synthesis")
     if result is not None and result.text:
         # Preserve the model's content verbatim. Tool calls and tool results remain
         # separate messages, and the agent loop alone decides whether to continue.
         text = result.text
+        try:
+            from app.services.workbench.agent_contracts import FinalSynthesis
+
+            structured_synthesis = FinalSynthesis.model_validate(result.json())
+            text = structured_synthesis.narrative_insights
+        except Exception:  # noqa: BLE001 - compatibility fallback is reconciled below
+            structured_synthesis = None
+
+    from app.services.workbench.agent_contracts import FinalSynthesis
+    from app.services.workbench.attribution import reconcile_query_attribution
+
+    proposed_synthesis = structured_synthesis or FinalSynthesis(
+        narrative_insights=text,
+    )
+    registry = list(state.get("query_registry", []))
+    attribution = reconcile_query_attribution(
+        registry,
+        proposed_synthesis,
+        allow_single_query_fallback=structured_synthesis is None,
+    )
+    _persist(
+        history.set_query_registry,
+        state["conversation_id"], state["user"], state["turn_id"], registry,
+    )
+    _log_query_attribution(
+        state,
+        active=attribution.active_query_ids,
+        visual=attribution.visual_query_ids,
+        invalid=attribution.invalid_query_ids,
+        proposed=proposed_synthesis.active_query_ids,
+        fallback_used=attribution.fallback_used,
+    )
 
     citations: list[dict[str, Any]] = []
     seen_citations: set[tuple[str, str]] = set()
@@ -215,8 +343,17 @@ async def answer_results(state: WorkbenchState) -> dict[str, Any]:
                 seen_citations.add(key)
                 citations.append(citation)
     payload = {
+        "schema_version": 1,
         "status": "partial" if unavailable or limitations else "answered",
         "text": text,
+        "active_query_ids": attribution.active_query_ids,
+        "visual_query_ids": attribution.visual_query_ids,
+        "excluded_queries": [
+            item.model_dump(mode="json") for item in attribution.excluded_queries
+        ],
+        "model_active_query_ids": proposed_synthesis.active_query_ids,
+        "invalid_query_ids": attribution.invalid_query_ids,
+        "attribution_fallback_used": attribution.fallback_used,
         "sources": [r.source for r in results],
         "citations": citations,
         "unavailable_sources": unavailable,
@@ -381,6 +518,7 @@ async def run_workbench(
             "source_completions": [],
         },
         "trace": [],
+        "query_registry": [],
     }
 
     async def drive() -> None:

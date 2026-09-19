@@ -22,6 +22,7 @@ from app.services.workbench import facts
 from app.services.workbench.access import SourceAccessPolicy
 from app.services.workbench.agent_contracts import (
     FinishWithoutDataArguments,
+    FinalSynthesis,
     SearchCuratedKnowledgeArguments,
     SearchPublicWebArguments,
 )
@@ -53,6 +54,8 @@ class AgentExecutionContext:
     catalog_version: str = ""
     today: date | None = None
     private_entities: tuple[str, ...] = ()
+    query_id: str | None = None
+    attempt_id: str | None = None
     deadline_started_at: float = field(default_factory=time.monotonic)
 
 
@@ -63,14 +66,23 @@ class ExecutedAgentCall:
     terminal: dict[str, Any] | None = None
     error: dict[str, Any] | None = None
     duration_ms: int = 0
+    query_id: str | None = None
+    attempt_id: str | None = None
 
     def replay_payload(self) -> dict[str, Any]:
+        query_reference = (
+            {"query_id": self.query_id, "attempt_id": self.attempt_id}
+            if self.query_id and self.attempt_id else None
+        )
         if self.error is not None:
-            return {"status": "error", **self.error}
+            payload = {"status": "error", **self.error}
+            if query_reference is not None:
+                payload["query_reference"] = query_reference
+            return payload
         if self.terminal is not None:
             return {"status": "terminal", **self.terminal}
         assert self.card is not None
-        return {
+        payload = {
             "status": "ok",
             "source": self.card.source,
             "card_type": self.card.card_type,
@@ -95,6 +107,12 @@ class ExecutedAgentCall:
                 for fact in facts.from_results([self.card], max_per_result=100)
             ],
         }
+        if query_reference is not None:
+            payload["query_reference"] = query_reference
+        row_count = (self.card.lineage or {}).get("row_count")
+        if isinstance(row_count, int):
+            payload["row_count"] = row_count
+        return payload
 
     def replay_message(self) -> dict[str, str]:
         """The complete, durable tool result. Never shaped."""
@@ -230,8 +248,16 @@ async def _execute_postgres_mcp(
             "workbench_turn_id": ctx.turn_id,
             "source_policy_version": ctx.source_policy.version,
             "workbench_effective_sources": list(ctx.source_policy.effective_sources),
+            "workbench_query_id": ctx.query_id,
+            "workbench_attempt_id": ctx.attempt_id,
         },
     )
+    returned_query_id = payload.get("query_id")
+    returned_attempt_id = payload.get("attempt_id")
+    if returned_query_id is not None and str(returned_query_id) != str(ctx.query_id):
+        raise AgentExecutionError("PostgreSQL MCP returned a mismatched query identifier")
+    if returned_attempt_id is not None and str(returned_attempt_id) != str(ctx.attempt_id):
+        raise AgentExecutionError("PostgreSQL MCP returned a mismatched attempt identifier")
     if payload.get("status") == "error":
         message = str(payload.get("message") or "PostgreSQL MCP failed")
         detail = str(payload.get("detail") or "").strip()
@@ -335,7 +361,9 @@ async def execute_agent_call(
                 card = await _execute_postgres_mcp(call, ctx)
         except TimeoutError as exc:
             raise AgentToolTimeout(f"{call.name} exceeded its execution deadline") from exc
-        return ExecutedAgentCall(call=call, card=card)
+        return ExecutedAgentCall(
+            call=call, card=card, query_id=ctx.query_id, attempt_id=ctx.attempt_id,
+        )
 
     catalog = ctx.catalog or get_catalog()
     parsed: BaseModel = validate_agent_arguments(
@@ -345,6 +373,14 @@ async def execute_agent_call(
         return ExecutedAgentCall(
             call=call,
             terminal=parsed.model_dump(mode="json"),
+        )
+    if isinstance(parsed, FinalSynthesis):
+        return ExecutedAgentCall(
+            call=call,
+            terminal={
+                "outcome": "answer",
+                "synthesis": parsed.model_dump(mode="json"),
+            },
         )
 
     tool = get_agent_tool(call.name)

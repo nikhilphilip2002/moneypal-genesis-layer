@@ -46,3 +46,12 @@ def test_workbench_turn_renders_preserved_answer_and_route_metadata():
     assert "turn.error.code" in source
     assert "turn.route.sources" in source
     assert ">Sources</span>" in source
+
+
+def test_query_attribution_ui_is_flagged_and_preserves_legacy_fallback():
+    source = (ROOT / "frontend/components/workbench/WorkbenchTurn.tsx").read_text()
+    assert "NEXT_PUBLIC_WORKBENCH_QUERY_ATTRIBUTION" in source
+    assert "Array.isArray(turn.answer?.visual_query_ids)" in source
+    assert "!card.query_id" in source
+    assert "BackgroundQueryDrawer" in source
+    assert "visualQueryIds" in source

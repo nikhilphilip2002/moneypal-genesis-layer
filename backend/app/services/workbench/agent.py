@@ -10,10 +10,11 @@ nothing fabricates a tool call the model did not emit.
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import logging
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any
 
 from app.core.config import settings
@@ -27,6 +28,7 @@ from app.services.workbench.agent_executor import (
     ExecutedAgentCall,
     execute_agent_call,
 )
+from app.services.workbench.agent_contracts import QueryExecutionRecord
 from app.services.workbench.agent_tools import (
     AgentToolAccessDenied,
     AgentToolArgumentsInvalid,
@@ -285,10 +287,13 @@ async def _select(
 def _preflight(result, state: dict[str, Any]) -> list[tuple[str, str, str]]:
     """Validate and reauthorize every call; one ``(call_id, message, code)`` per failure."""
     failures: list[tuple[str, str, str]] = []
-    terminals = [call for call in result.tool_calls if call.name == "finish_without_data"]
+    terminals = [
+        call for call in result.tool_calls
+        if call.name in {"finish_without_data", "submit_final_answer"}
+    ]
     if terminals and len(result.tool_calls) != 1:
         failures.extend(
-            (call.id, "finish_without_data must be the only call", "INVALID_TOOL_ARGUMENTS")
+            (call.id, f"{call.name} must be the only call", "INVALID_TOOL_ARGUMENTS")
             for call in terminals
         )
     for call in result.tool_calls:
@@ -415,6 +420,146 @@ def _persistable(state) -> bool:
     return all(state.get(key) for key in ("conversation_id", "user", "turn_id"))
 
 
+def _persist_query_registry(state: dict[str, Any]) -> None:
+    if not _persistable(state):
+        return
+    try:
+        history.set_query_registry(
+            state["conversation_id"], state["user"], state["turn_id"],
+            list(state.get("query_registry", [])),
+        )
+    except Exception:  # noqa: BLE001 - execution must survive history outages
+        logger.warning("query registry persistence failed", exc_info=True)
+
+
+def _register_database_queries(state: dict[str, Any], calls) -> dict[str, dict[str, Any]]:
+    """Allocate application-owned IDs before any PostgreSQL call starts."""
+    from app.mcp import postgres_client
+
+    registry = state.setdefault("query_registry", [])
+    registered: dict[str, dict[str, Any]] = {}
+    for call in calls:
+        if not postgres_client.is_model_tool(call.name):
+            continue
+        fingerprint = hashlib.sha256(json.dumps(
+            {"tool": call.name, "arguments": call.arguments},
+            sort_keys=True, separators=(",", ":"), default=str,
+        ).encode()).hexdigest()
+        retry_of = next((
+            record for record in reversed(registry)
+            if record.get("query_fingerprint") == fingerprint
+            and record.get("status") in {"error", "timeout"}
+        ), None)
+        if retry_of is not None:
+            query_id = str(retry_of["query_id"])
+            attempt_number = 1 + sum(
+                1 for record in registry if record.get("query_id") == query_id
+            )
+        else:
+            query_number = 1 + len({
+                str(record.get("query_id")) for record in registry if record.get("query_id")
+            })
+            query_id = f"{state['turn_id']}:q{query_number}"
+            attempt_number = 1
+        record = QueryExecutionRecord(
+            query_id=query_id,
+            attempt_id=f"{query_id}:a{attempt_number}",
+            tool_call_id=call.id,
+            tool_name=call.name,
+            query_fingerprint=fingerprint,
+        ).model_dump(mode="json")
+        registry.append(record)
+        registered[call.id] = record
+    if registered:
+        _persist_query_registry(state)
+    return registered
+
+
+def _query_row_count(item: ExecutedAgentCall) -> int | None:
+    if item.card is None:
+        return None
+    lineage_count = (item.card.lineage or {}).get("row_count")
+    if isinstance(lineage_count, int) and lineage_count >= 0:
+        return lineage_count
+    rows = item.card.payload.get("rows")
+    return len(rows) if isinstance(rows, list) else None
+
+
+async def _emit_query_event(
+    state: dict[str, Any], event: str, record: dict[str, Any],
+) -> None:
+    from app.services.workbench.graph import sse
+
+    await state["emit"].put(sse(event, {
+        "turn_id": state["turn_id"],
+        **{
+            key: record.get(key) for key in (
+                "query_id", "attempt_id", "tool_call_id", "tool_name", "status",
+                "purpose", "row_count", "has_data", "visual_available", "duration_ms",
+                "error_code",
+            )
+        },
+    }))
+
+
+async def _finalize_query_record(
+    state: dict[str, Any], record: dict[str, Any] | None, item: ExecutedAgentCall,
+) -> None:
+    if record is None:
+        return
+    row_count = _query_row_count(item)
+    if item.error is not None:
+        code = str(item.error.get("code") or "SOURCE_UNAVAILABLE")
+        status = "timeout" if code in {"QUERY_TIMEOUT", "TOOL_TIMEOUT"} else "error"
+        record.update({
+            "status": status, "error_code": code, "row_count": row_count,
+            "has_data": False, "visual_available": False,
+            "duration_ms": item.duration_ms,
+        })
+        event = "query_failed"
+    else:
+        has_data = row_count is None or row_count > 0
+        status = "success" if has_data else "empty"
+        record.update({
+            "status": status, "row_count": row_count, "has_data": has_data,
+            "visual_available": bool(
+                has_data and item.card is not None
+                and item.card.card_type in {"chart", "analysis", "worklist", "briefing"}
+            ),
+            "duration_ms": item.duration_ms,
+            "card": (
+                {
+                    "source": item.card.source,
+                    "card_type": item.card.card_type,
+                    "payload": item.card.payload,
+                    "query_id": record["query_id"],
+                    "attempt_id": record["attempt_id"],
+                }
+                if item.card is not None else None
+            ),
+        })
+        event = "query_completed"
+    _persist_query_registry(state)
+    await _emit_query_event(state, event, record)
+
+
+async def _cancel_running_queries(
+    state: dict[str, Any], records: dict[str, dict[str, Any]],
+) -> None:
+    changed = False
+    for record in records.values():
+        if record.get("status") not in {"pending", "running"}:
+            continue
+        record.update({
+            "status": "cancelled", "has_data": False,
+            "visual_available": False, "error_code": "CANCELLED",
+        })
+        changed = True
+        await _emit_query_event(state, "query_failed", record)
+    if changed:
+        _persist_query_registry(state)
+
+
 def _persist_exchange(state, result, failures, executed, *, stage: str = "route") -> None:
     """One write per round: the assistant message, its calls, their complete results,
     and the rendered cards the client was streamed. The ``tool_result`` events carry
@@ -442,6 +587,7 @@ def _persist_exchange(state, result, failures, executed, *, stage: str = "route"
             {
                 "source": item.card.source, "card_type": item.card.card_type,
                 "payload": item.card.payload, "call_id": item.call.id,
+                "query_id": item.query_id, "attempt_id": item.attempt_id,
             }
             for item in executed if item.card is not None
         ],
@@ -574,10 +720,19 @@ async def select_calls(state: dict[str, Any]):
         exchange.extend(_repair_messages(result, failures, state=state))
 
 
-async def _execute_one(state, context: AgentExecutionContext, call) -> ExecutedAgentCall:
+async def _execute_one(
+    state, context: AgentExecutionContext, call, query_record: dict[str, Any] | None = None,
+) -> ExecutedAgentCall:
     started_at = time.perf_counter()
+    execution_context = context
+    if query_record is not None and isinstance(context, AgentExecutionContext):
+        execution_context = replace(
+            context,
+            query_id=str(query_record["query_id"]),
+            attempt_id=str(query_record["attempt_id"]),
+        )
     try:
-        item = await execute_agent_call(call, context)
+        item = await execute_agent_call(call, execution_context)
     except Exception as exc:  # noqa: BLE001 - isolate independent calls
         logger.warning("native tool %s failed: %s", call.name, exc)
         code = getattr(exc, "code", "SOURCE_UNAVAILABLE")
@@ -598,6 +753,9 @@ async def _execute_one(state, context: AgentExecutionContext, call) -> ExecutedA
                 "authorized_tools": _authorized_tool_names(state),
             }
         item = ExecutedAgentCall(call=call, error=error)
+    if query_record is not None:
+        item.query_id = str(query_record["query_id"])
+        item.attempt_id = str(query_record["attempt_id"])
     item.duration_ms = max(0, int((time.perf_counter() - started_at) * 1000))
     return item
 
@@ -638,7 +796,9 @@ async def _stream_item(state: dict[str, Any], item: ExecutedAgentCall) -> None:
     source = item.card.source
     state["timing"]["source_completions"].append(source)
     await state["emit"].put(sse("source_card", {
-        "source": source, "card_type": item.card.card_type, **item.card.payload,
+        "source": source, "card_type": item.card.card_type,
+        "query_id": item.query_id, "attempt_id": item.attempt_id,
+        **item.card.payload,
     }))
     state["timing"].setdefault(
         "first_card_ms", int((time.perf_counter() - state["timing"]["started_at"]) * 1000),
@@ -650,6 +810,9 @@ async def _stream_item(state: dict[str, Any], item: ExecutedAgentCall) -> None:
 async def _execute_batch(state, context: AgentExecutionContext, calls) -> list[ExecutedAgentCall]:
     from app.services.workbench.graph import sse
 
+    query_records = _register_database_queries(state, calls)
+    for record in query_records.values():
+        await _emit_query_event(state, "query_registered", record)
     for call in calls:
         await _emit_trace(state, {
             "id": f"tool-{call.id}", "kind": "tool", "status": "running",
@@ -660,6 +823,11 @@ async def _execute_batch(state, context: AgentExecutionContext, calls) -> list[E
         if source is not None:
             state["timing"]["source_attempts"].append(source)
             await state["emit"].put(sse("source_start", {"source": source, "tool": call.name}))
+        record = query_records.get(call.id)
+        if record is not None:
+            record["status"] = "running"
+            _persist_query_registry(state)
+            await _emit_query_event(state, "query_started", record)
 
     output: list[ExecutedAgentCall | None] = [None] * len(calls)
     from app.mcp import postgres_client
@@ -674,22 +842,37 @@ async def _execute_batch(state, context: AgentExecutionContext, calls) -> list[E
     ]
     if parallel:
         async def indexed(index, call):
-            return index, await _execute_one(state, context, call)
+            return index, await _execute_one(
+                state, context, call, query_records.get(call.id),
+            )
 
         tasks = [asyncio.create_task(indexed(index, call)) for index, call in parallel]
         try:
             for task in asyncio.as_completed(tasks):
                 index, item = await task
                 output[index] = item
+                await _finalize_query_record(
+                    state, query_records.get(item.call.id), item,
+                )
                 await _stream_item(state, item)
+        except asyncio.CancelledError:
+            await _cancel_running_queries(state, query_records)
+            raise
         finally:
             for task in tasks:
                 if not task.done():
                     task.cancel()
             await asyncio.gather(*tasks, return_exceptions=True)
-    for index, call in serial:
-        output[index] = await _execute_one(state, context, call)
-        await _stream_item(state, output[index])
+    try:
+        for index, call in serial:
+            output[index] = await _execute_one(
+                state, context, call, query_records.get(call.id),
+            )
+            await _finalize_query_record(state, query_records.get(call.id), output[index])
+            await _stream_item(state, output[index])
+    except asyncio.CancelledError:
+        await _cancel_running_queries(state, query_records)
+        raise
     return [item for item in output if item is not None]
 
 
@@ -727,12 +910,14 @@ async def _end_without_data(state: dict[str, Any], payload: dict[str, Any], *, o
 
     outcome = payload.get("outcome")
     answer = {
+        "schema_version": 1,
         "status": "clarify" if outcome == "clarify" else "refused",
         "text": payload.get("message", ""),
         "sources": [], "citations": [], "unavailable_sources": [], "limitations": [],
         "suggestions": payload.get("suggestions", []),
         "reason": payload.get("reason_code"),
         "origin": origin,
+        "active_query_ids": [], "visual_query_ids": [], "excluded_queries": [],
     }
     await state["emit"].put(sse("refusal" if outcome == "refuse" else "answer", answer))
     history.set_answer(state["conversation_id"], state["user"], state["turn_id"], answer)
@@ -768,6 +953,11 @@ async def run(state: dict[str, Any]) -> None:
     denial: dict[str, Any] | None = None
     last_error = ""
     while budget.rounds_remaining and not budget.expired:
+        if state.get("attribution_repairs", 0) > settings.workbench_agent_synthesis_repairs:
+            raise LLMProtocolError(
+                "native agent exceeded its final-synthesis repair limit "
+                f"({settings.workbench_agent_synthesis_repairs})"
+            )
         if any(item.terminal is not None for item in executed):
             break
         has_data = any(item.card is not None and item.error is None for item in executed)
@@ -891,6 +1081,11 @@ async def run(state: dict[str, Any]) -> None:
         failures = _preflight(result, state)
         failed_ids = {call_id for call_id, _message, _code in failures}
         calls_by_id = {call.id: call for call in result.tool_calls}
+        state["attribution_repairs"] = state.get("attribution_repairs", 0) + sum(
+            1 for call_id in failed_ids
+            if calls_by_id.get(call_id) is not None
+            and calls_by_id[call_id].name == "submit_final_answer"
+        )
         for call_id, message, code in failures:
             failed_call = calls_by_id.get(call_id)
             await _emit_trace(state, {
@@ -912,7 +1107,16 @@ async def run(state: dict[str, Any]) -> None:
 
     terminal = next((item for item in executed if item.terminal is not None), None)
     if terminal is not None:
-        await _end_without_data(state, terminal.terminal or {}, origin="model")
+        terminal_payload = terminal.terminal or {}
+        if terminal_payload.get("outcome") == "answer":
+            from app.services.workbench.agent_contracts import FinalSynthesis
+
+            structured = FinalSynthesis.model_validate(terminal_payload.get("synthesis"))
+            state["agent_final_synthesis"] = structured
+            state["results"] = [item.card for item in executed if item.card is not None]
+            await answer_results(state)
+        else:
+            await _end_without_data(state, terminal_payload, origin="model")
         return
     cards = [item.card for item in executed if item.card is not None]
     if final is not None:

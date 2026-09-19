@@ -44,6 +44,9 @@ npm run build
 ## Environment Variables
 
 - `NEXT_PUBLIC_API_URL` - Browser API URL (default: `/api`, proxied by nginx on the same origin)
+- `NEXT_PUBLIC_WORKBENCH_QUERY_ATTRIBUTION` - Set to `true` to defer database visuals until
+  final query attribution is reconciled and enable the background-query audit drawer
+  (default: `false` during staged rollout).
 
 Authentication is driven by the Django API's `/api/auth/oidc/config/` endpoint.
 For local development, configure the backend with:

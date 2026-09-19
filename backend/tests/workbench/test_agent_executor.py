@@ -86,6 +86,45 @@ async def test_validated_call_dispatches_and_replay_is_lossless(monkeypatch):
 
 
 @pytest.mark.anyio
+async def test_database_query_reference_reaches_mcp_and_observation(monkeypatch):
+    from app.mcp import postgres_client
+
+    seen_meta = None
+
+    async def call_tool(_name, _arguments, *, meta=None):
+        nonlocal seen_meta
+        seen_meta = meta
+        return {
+            "status": "ok", "rows": [{"value": 1}], "columns": ["value"],
+            "row_count": 1, "duration_ms": 2, "validated_sql": "SELECT 1",
+        }
+
+    monkeypatch.setattr(postgres_client, "call_tool", call_tool)
+    context = _context()
+    context = AgentExecutionContext(
+        user=context.user,
+        role=context.role,
+        conversation_id=context.conversation_id,
+        turn_id=context.turn_id,
+        source_policy=context.source_policy,
+        deadline_s=context.deadline_s,
+        catalog=context.catalog,
+        query_id="t1:q1",
+        attempt_id="t1:q1:a1",
+    )
+    executed = await agent_executor.execute_agent_call(
+        NativeToolCall(id="provider-call", name="query", arguments={"sql": "SELECT 1"}),
+        context,
+    )
+
+    assert seen_meta["workbench_query_id"] == "t1:q1"
+    assert seen_meta["workbench_attempt_id"] == "t1:q1:a1"
+    assert json.loads(executed.observation_message()["content"])["query_reference"] == {
+        "query_id": "t1:q1", "attempt_id": "t1:q1:a1",
+    }
+
+
+@pytest.mark.anyio
 async def test_terminal_call_executes_no_data_handler():
     executed = await agent_executor.execute_agent_call(
         NativeToolCall(
@@ -102,6 +141,28 @@ async def test_terminal_call_executes_no_data_handler():
     )
     assert executed.card is None
     assert executed.terminal["outcome"] == "clarify"
+
+
+@pytest.mark.anyio
+async def test_final_answer_call_is_strict_terminal_contract():
+    executed = await agent_executor.execute_agent_call(
+        NativeToolCall(
+            id="call-final",
+            name="submit_final_answer",
+            arguments={
+                "schema_version": 1,
+                "narrative_insights": "PAR 30 is 4.2%.",
+                "active_query_ids": ["t1:q1"],
+                "visual_query_ids": ["t1:q1"],
+                "excluded_queries": [],
+            },
+        ),
+        _context(),
+    )
+
+    assert executed.card is None
+    assert executed.terminal["outcome"] == "answer"
+    assert executed.terminal["synthesis"]["active_query_ids"] == ["t1:q1"]
 
 
 @pytest.mark.anyio
@@ -153,6 +214,32 @@ async def test_postgres_statement_timeout_keeps_typed_retry_feedback(monkeypatch
     assert caught.value.code == "QUERY_TIMEOUT"
     assert caught.value.retryable is True
     assert "do not repeat the same SQL" in str(caught.value)
+
+
+@pytest.mark.anyio
+async def test_postgres_mcp_rejects_mismatched_returned_query_identity(monkeypatch):
+    from app.mcp import postgres_client
+
+    async def mismatched(*_args, **_kwargs):
+        return {
+            "status": "ok", "rows": [{"value": 1}], "columns": ["value"],
+            "query_id": "another-turn:q9", "attempt_id": "another-turn:q9:a1",
+        }
+
+    monkeypatch.setattr(postgres_client, "call_tool", mismatched)
+    context = _context()
+    context = AgentExecutionContext(
+        user=context.user, role=context.role,
+        conversation_id=context.conversation_id, turn_id=context.turn_id,
+        source_policy=context.source_policy, deadline_s=context.deadline_s,
+        catalog=context.catalog, query_id="t1:q1", attempt_id="t1:q1:a1",
+    )
+
+    with pytest.raises(AgentExecutionError, match="mismatched query identifier"):
+        await agent_executor.execute_agent_call(
+            NativeToolCall(id="call-mismatch", name="query", arguments={"sql": "SELECT 1"}),
+            context,
+        )
 
 
 @pytest.mark.anyio
@@ -284,4 +371,20 @@ def test_shape_observation_caps_facts_and_drops_evidence_before_clipping_summary
     assert shaped["truncated"]["dropped"] == ["evidence", "lineage"]
     assert len(json.dumps(shaped, separators=(",", ":"))) <= 450
     assert shaped["truncated"]["summary_clipped"] is True
+    assert shaped["status"] == "ok"
+
+
+def test_shape_observation_never_drops_query_reference():
+    payload = {
+        "status": "ok",
+        "query_reference": {"query_id": "turn:q1", "attempt_id": "turn:q1:a1"},
+        "payload": {"rows": [{"value": "x" * 2000}]},
+        "summary": "large result",
+    }
+
+    shaped = agent_executor.shape_observation(payload, limit_chars=350)
+
+    assert shaped["query_reference"] == {
+        "query_id": "turn:q1", "attempt_id": "turn:q1:a1",
+    }
     assert shaped["status"] == "ok"

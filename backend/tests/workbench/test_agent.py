@@ -470,6 +470,97 @@ async def test_single_native_db_card_returns_to_the_model_for_final_answer(scrip
 
 
 @pytest.mark.anyio
+async def test_strict_final_answer_tool_drives_reconciled_answer(scripted):
+    def final_response(request):
+        observation = next(
+            json.loads(message["content"])
+            for message in reversed(request["messages"])
+            if message.get("role") == "tool"
+        )
+        query_id = observation["query_reference"]["query_id"]
+        return _tool_response(NativeToolCall(
+            id="final-answer",
+            name="submit_final_answer",
+            arguments={
+                "schema_version": 1,
+                "narrative_insights": "PAR 30 is 4.2%.",
+                "active_query_ids": [query_id],
+                "visual_query_ids": [query_id],
+                "excluded_queries": [],
+            },
+        ))
+
+    from app.services.workbench import agent_executor
+
+    async def execute(call, context):
+        if call.name == "query":
+            return _card(call)
+        return await agent_executor.execute_agent_call(call, context)
+
+    client = scripted([_tool_response(_PAR_30), final_response], execute)
+    state = _run_state("structured-final")
+    await agent.run(state)
+
+    answer_frame = next(frame for frame in _frames(state) if frame.startswith("event: answer\n"))
+    answer = json.loads(answer_frame.split("data: ", 1)[1])
+    assert answer["text"] == "PAR 30 is 4.2%."
+    assert answer["active_query_ids"] == [f"{state['turn_id']}:q1"]
+    assert answer["visual_query_ids"] == [f"{state['turn_id']}:q1"]
+    assert answer["attribution_fallback_used"] is False
+    assert client.requests[-1]["tool_choice"] == "auto"
+
+
+@pytest.mark.anyio
+async def test_invalid_final_answer_contract_is_repaired_once(scripted, monkeypatch):
+    monkeypatch.setattr(agent.settings, "workbench_agent_max_rounds", 3)
+    invalid_final = NativeToolCall(
+        id="invalid-final", name="submit_final_answer",
+        arguments={
+            "schema_version": 1, "active_query_ids": [],
+            "visual_query_ids": [], "excluded_queries": [],
+        },
+    )
+
+    def repaired_final(request):
+        observations = [
+            json.loads(message["content"])
+            for message in request["messages"] if message.get("role") == "tool"
+        ]
+        query_id = next(
+            item["query_reference"]["query_id"]
+            for item in observations if "query_reference" in item
+        )
+        assert any(item.get("code") == "INVALID_TOOL_ARGUMENTS" for item in observations)
+        return _tool_response(NativeToolCall(
+            id="valid-final", name="submit_final_answer",
+            arguments={
+                "schema_version": 1, "narrative_insights": "PAR 30 is 4.2%.",
+                "active_query_ids": [query_id], "visual_query_ids": [query_id],
+                "excluded_queries": [],
+            },
+        ))
+
+    from app.services.workbench import agent_executor
+
+    async def execute(call, context):
+        if call.name == "query":
+            return _card(call)
+        return await agent_executor.execute_agent_call(call, context)
+
+    scripted(
+        [_tool_response(_PAR_30), _tool_response(invalid_final), repaired_final], execute,
+    )
+    state = _run_state("final-repair")
+    await agent.run(state)
+
+    assert state["attribution_repairs"] == 1
+    answer_frame = next(
+        frame for frame in _frames(state) if frame.startswith("event: answer\n")
+    )
+    assert "PAR 30 is 4.2%" in answer_frame
+
+
+@pytest.mark.anyio
 async def test_last_round_result_is_shown_without_forcing_synthesis(
     scripted, monkeypatch,
 ):

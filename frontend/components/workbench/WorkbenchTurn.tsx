@@ -3,7 +3,7 @@
 import { AlertTriangle, Ban, HelpCircle } from 'lucide-react';
 import { nlq, type AnalysisResult, type ChartSpec, type QuerySpec, type Briefing, type Worklist,
   type WorkbenchAnswer, type WorkbenchCard as CardData, type WorkbenchError,
-  type WorkbenchRoute, type WorkbenchTraceStep } from '@/lib/api';
+  type WorkbenchQueryExecution, type WorkbenchRoute, type WorkbenchTraceStep } from '@/lib/api';
 import AnalysisCard from '@/components/nlq/AnalysisCard';
 import ChartRenderer from '@/components/nlq/ChartRenderer';
 import NextQuestions from '@/components/nlq/NextQuestions';
@@ -24,6 +24,9 @@ import {
   SUGGESTION_CHIP,
   sourceLabel,
 } from '@/lib/workbench-ui';
+
+const QUERY_ATTRIBUTION_UI_ENABLED =
+  process.env.NEXT_PUBLIC_WORKBENCH_QUERY_ATTRIBUTION === 'true';
 
 // One conversational turn: the question, the route the orchestrator chose, an optional
 // merged synthesis lead, and a card per source. Cards stream in as each source returns, so
@@ -48,6 +51,7 @@ export type WorkbenchTurnData = {
   partial?: boolean;
   done: boolean;
   executionTrace?: WorkbenchTraceStep[];
+  queryRegistry?: WorkbenchQueryExecution[];
   startedAt?: number;
   totalMs?: number;
 };
@@ -59,11 +63,41 @@ const BRIEF_TITLES: Record<string, string> = {
 
 export default function WorkbenchTurn({ turn, onAsk }: { turn: WorkbenchTurnData; onAsk: (q: string) => void }) {
   const hasFinalAnswer = Boolean(turn.answer || turn.synthesis);
-  const supportingCards = turn.cards.filter((card) =>
-    STREAM_RENDERABLE_CARD_TYPES.has(card.card_type)
-    || (!hasFinalAnswer && turn.done),
+  const hasAttribution = QUERY_ATTRIBUTION_UI_ENABLED
+    && Array.isArray(turn.answer?.visual_query_ids);
+  const visualQueryIds = turn.answer?.visual_query_ids ?? [];
+  const cardsByQueryId = new Map(
+    turn.cards.filter((card) => card.query_id).map((card) => [card.query_id as string, card]),
   );
-  const modelMessages = (turn.modelMessages ?? []).filter(Boolean);
+  const supportingCards = QUERY_ATTRIBUTION_UI_ENABLED && !hasFinalAnswer && !turn.done
+    ? []
+    : hasAttribution
+      ? [
+          ...visualQueryIds
+            .map((queryId) => cardsByQueryId.get(queryId))
+            .filter((card): card is CardData => Boolean(
+              card && STREAM_RENDERABLE_CARD_TYPES.has(card.card_type),
+            )),
+          ...turn.cards.filter((card) =>
+            !card.query_id && STREAM_RENDERABLE_CARD_TYPES.has(card.card_type),
+          ),
+        ]
+      : turn.cards.filter((card) =>
+          STREAM_RENDERABLE_CARD_TYPES.has(card.card_type)
+          || (!hasFinalAnswer && turn.done),
+        );
+  const backgroundQueries = hasAttribution
+    ? (turn.queryRegistry ?? []).filter((record) =>
+        record.status !== 'success' || !visualQueryIds.includes(record.query_id),
+      )
+    : [];
+  // Model deltas are provisional. During generation the execution trace carries progress;
+  // after finalization the reconciled answer is the only user-facing narrative.
+  const modelMessages = QUERY_ATTRIBUTION_UI_ENABLED
+    ? (turn.done && !turn.answer && !turn.synthesis
+        ? (turn.modelMessages ?? []).filter(Boolean)
+        : [])
+    : (turn.modelMessages ?? []).filter(Boolean);
   const answerText = modelMessages.length === 0
     ? (turn.answer?.text || turn.synthesis)
     : undefined;
@@ -158,8 +192,17 @@ export default function WorkbenchTurn({ turn, onAsk }: { turn: WorkbenchTurnData
           )}
 
           {supportingCards.map((card, index) => (
-            <CardBody key={`${card.source}-${index}`} card={card} onAsk={onAsk} />
+            <CardBody key={card.query_id ?? `${card.source}-${index}`} card={card} onAsk={onAsk} />
           ))}
+
+          {backgroundQueries.length > 0 && (
+            <BackgroundQueryDrawer
+              queries={backgroundQueries}
+              cardsByQueryId={cardsByQueryId}
+              exclusions={turn.answer?.excluded_queries ?? []}
+              onAsk={onAsk}
+            />
+          )}
 
           {turn.answer?.status === 'partial' &&
             (turn.answer.unavailable_sources.length > 0 || turn.answer.limitations?.length > 0) && (
@@ -214,6 +257,57 @@ export default function WorkbenchTurn({ turn, onAsk }: { turn: WorkbenchTurnData
         </div>
       </div>
     </section>
+  );
+}
+
+function BackgroundQueryDrawer({
+  queries,
+  cardsByQueryId,
+  exclusions,
+  onAsk,
+}: {
+  queries: NonNullable<WorkbenchTurnData['queryRegistry']>;
+  cardsByQueryId: Map<string, CardData>;
+  exclusions: NonNullable<WorkbenchAnswer['excluded_queries']>;
+  onAsk: (q: string) => void;
+}) {
+  const reasons = new Map(exclusions.map((item) => [item.query_id, item]));
+  return (
+    <details className="rounded-xl border border-border/60 bg-muted/15">
+      <summary className="cursor-pointer select-none px-3 py-2.5 text-xs font-medium text-muted-foreground">
+        View {queries.length} background {queries.length === 1 ? 'query' : 'queries'} explored by assistant
+      </summary>
+      <div className="space-y-3 border-t border-border/60 p-3">
+        {queries.map((query) => {
+          const exclusion = reasons.get(query.query_id);
+          const candidateCard = cardsByQueryId.get(query.query_id);
+          const card = candidateCard?.attempt_id === query.attempt_id
+            ? candidateCard
+            : undefined;
+          return (
+            <div key={query.attempt_id} className="space-y-2 rounded-lg border border-border/50 bg-background/60 p-3">
+              <div className="flex flex-wrap items-center gap-2 text-xs">
+                <code className="text-[11px] text-muted-foreground">{query.query_id}</code>
+                <Badge variant="outline" className={SOURCE_BADGE}>{query.status}</Badge>
+                {query.row_count != null && (
+                  <span className="text-muted-foreground">
+                    {query.row_count} {query.row_count === 1 ? 'row' : 'rows'}
+                  </span>
+                )}
+              </div>
+              <p className="text-xs leading-5 text-muted-foreground">
+                {exclusion?.reason || (
+                  query.status === 'success'
+                    ? 'Supporting result retained outside the primary visual zone.'
+                    : `Query ended with status ${query.status}.`
+                )}
+              </p>
+              {card && <CardBody card={card} onAsk={onAsk} />}
+            </div>
+          );
+        })}
+      </div>
+    </details>
   );
 }
 

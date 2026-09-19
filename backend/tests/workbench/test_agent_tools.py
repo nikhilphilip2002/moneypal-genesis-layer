@@ -48,6 +48,7 @@ def test_registry_exposes_concrete_flat_tools():
         "search_curated_knowledge",
         "search_public_web",
         "finish_without_data",
+        "submit_final_answer",
     ]
     assert "query_loan_book" not in AGENT_TOOLS
 

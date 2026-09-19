@@ -36,7 +36,8 @@ TITLE_MAX = 80
 # v6 added an ordered execution event stream and lossless native tool-result replay.
 # v7 makes that stream the only representation: every turn carries `events`, readers
 # derive everything from them, and older turns are migrated rather than read sideways.
-RECORD_VERSION = 7
+# v8 adds the database-query registry and stable query/attempt identifiers.
+RECORD_VERSION = 8
 # Every version this module can read. A record stamped with anything else was written by
 # a newer backend and must not be overwritten by this one.
 KNOWN_RECORD_VERSIONS = frozenset(range(1, RECORD_VERSION + 1))
@@ -215,8 +216,9 @@ def _save(record: ConversationRecord) -> None:
             f"1..{RECORD_VERSION}"
         )
     record.updated_at = _now()
-    # The version is a schema signal, not a stamp: it says 7 only when every turn carries
-    # its event stream. `_load` migrates older turns in memory, so ordinarily it does.
+    # The version is a schema signal, not a stamp: it says 8 only when every turn carries
+    # its event stream and can carry query attribution fields. `_load` migrates older turns
+    # in memory, so ordinarily it does.
     if all(turn_has_events(turn) for turn in record.turns):
         record.record_version = RECORD_VERSION
     _MEMORY[(record.owner_username, record.conversation_id)] = record
@@ -485,6 +487,7 @@ def begin_turn(
         "route": None,
         "sources": [],  # compatibility with version-1 clients
         "cards": [],
+        "query_registry": [],
         "agent_exchanges": [],
         "events": [{
             "sequence": 0,
@@ -527,6 +530,22 @@ def set_route(
             "tools": list(tools),
         }
         _append_turn_event(turn, "route_decision", dict(turn["route"]))
+
+    _mutate(conversation_id, user, turn_id, apply)
+
+
+def set_query_registry(
+    conversation_id: str,
+    user: str,
+    turn_id: str,
+    registry: list[dict[str, Any]],
+) -> None:
+    """Persist the current authoritative database-query registry for a turn."""
+
+    snapshot = [dict(item) for item in registry if isinstance(item, dict)]
+
+    def apply(turn: dict[str, Any]) -> None:
+        turn["query_registry"] = snapshot
 
     _mutate(conversation_id, user, turn_id, apply)
 

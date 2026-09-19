@@ -21,6 +21,7 @@ import {
   workbench,
   type DemoUser,
   type WorkbenchConversation,
+  type WorkbenchQueryExecution,
   type WorkbenchRoute,
   type WorkbenchTool,
 } from '@/lib/api';
@@ -125,6 +126,7 @@ export default function WorkbenchPage() {
         legacyAnswerUnavailable: turn.legacy_answer_unavailable,
         partial: turn.status === 'partial',
         executionTrace: turn.execution_trace ?? [],
+        queryRegistry: turn.query_registry ?? [],
         totalMs: turn.timing?.total_ms,
       })));
       setConversationId(id);
@@ -161,7 +163,7 @@ export default function WorkbenchPage() {
       ...previous,
       {
         id, question, stage: 'understanding', pending: [], cards: [], done: false,
-        executionTrace: [], startedAt: Date.now(),
+        executionTrace: [], queryRegistry: [], startedAt: Date.now(),
       },
     ]);
 
@@ -241,10 +243,53 @@ export default function WorkbenchPage() {
             patchWith((turn) => ({ ...turn, pending: [...new Set([...turn.pending, event.source])] }));
             break;
           case 'source_card':
-            patchWith((turn) => ({ ...turn, cards: [...turn.cards, event.card] }));
+            patchWith((turn) => {
+              if (!event.card.query_id) {
+                return { ...turn, cards: [...turn.cards, event.card] };
+              }
+              const cards = [...turn.cards];
+              const index = cards.findIndex((card) => card.query_id === event.card.query_id);
+              if (index >= 0) cards[index] = event.card;
+              else cards.push(event.card);
+              return { ...turn, cards };
+            });
+            break;
+          case 'query_registered':
+          case 'query_started':
+          case 'query_completed':
+          case 'query_failed':
+            patchWith((turn) => {
+              const queryRegistry = [...(turn.queryRegistry ?? [])];
+              const index = queryRegistry.findIndex(
+                (item) => item.attempt_id === event.attempt_id,
+              );
+              const record: WorkbenchQueryExecution = {
+                turn_id: event.turn_id,
+                query_id: event.query_id,
+                attempt_id: event.attempt_id,
+                tool_call_id: event.tool_call_id,
+                tool_name: event.tool_name,
+                status: event.status,
+                purpose: event.purpose,
+                row_count: event.row_count,
+                has_data: event.has_data,
+                visual_available: event.visual_available,
+                duration_ms: event.duration_ms,
+                error_code: event.error_code,
+              };
+              if (index >= 0) queryRegistry[index] = record;
+              else queryRegistry.push(record);
+              return { ...turn, queryRegistry };
+            });
             break;
           case 'answer':
-            patch({ answer: event.answer, synthesis: event.answer.text });
+            patch({
+              answer: event.answer,
+              synthesis: event.answer.text,
+              // Streamed model content is provisional. The authoritative answer event
+              // replaces it with the validated narrative rather than exposing JSON.
+              modelMessages: [],
+            });
             break;
           case 'answer_start':
             patchWith((turn) => ({
