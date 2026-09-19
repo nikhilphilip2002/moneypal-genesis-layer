@@ -896,6 +896,29 @@ def get(conversation_id: str, *, user: str = "anonymous") -> ConversationRecord 
     return _load(conversation_id, user)
 
 
+def query_result(
+    conversation_id: str, *, user: str, query_id: str,
+) -> dict[str, Any] | None:
+    """Return a successful stored query record within one user-owned conversation."""
+    record = _load(conversation_id, user)
+    if record is None:
+        return None
+    for turn in reversed(record.turns):
+        registry = turn.get("query_registry")
+        if not isinstance(registry, list):
+            continue
+        for item in reversed(registry):
+            if not isinstance(item, dict) or str(item.get("query_id")) != query_id:
+                continue
+            if item.get("status") != "success" or item.get("has_data") is not True:
+                return None
+            card = item.get("card")
+            if not isinstance(card, dict) or not isinstance(card.get("payload"), dict):
+                return None
+            return dict(item)
+    return None
+
+
 def private_entities(conversation_id: str, *, user: str) -> tuple[str, ...]:
     """Return exact previously selected private entity values for outbound screening."""
     record = _load(conversation_id, user)

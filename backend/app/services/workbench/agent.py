@@ -131,6 +131,8 @@ def _source_for_call(call) -> str | None:
         return "web"
     if call.name == "search_curated_knowledge":
         return _CURATED_SOURCES.get(str(call.arguments.get("domain", "")))
+    if call.name == "visualize_query_result":
+        return "db"
     return None
 
 
@@ -433,19 +435,20 @@ def _persist_query_registry(state: dict[str, Any]) -> None:
 
 
 def _register_database_queries(state: dict[str, Any], calls) -> dict[str, dict[str, Any]]:
-    """Allocate application-owned IDs before any PostgreSQL call starts."""
+    """Allocate IDs before PostgreSQL calls and derived visual creation start."""
     from app.mcp import postgres_client
 
     registry = state.setdefault("query_registry", [])
     registered: dict[str, dict[str, Any]] = {}
     for call in calls:
-        if not postgres_client.is_model_tool(call.name):
+        is_visual = call.name == "visualize_query_result"
+        if not postgres_client.is_model_tool(call.name) and not is_visual:
             continue
         fingerprint = hashlib.sha256(json.dumps(
             {"tool": call.name, "arguments": call.arguments},
             sort_keys=True, separators=(",", ":"), default=str,
         ).encode()).hexdigest()
-        retry_of = next((
+        retry_of = None if is_visual else next((
             record for record in reversed(registry)
             if record.get("query_fingerprint") == fingerprint
             and record.get("status") in {"error", "timeout"}
@@ -456,10 +459,12 @@ def _register_database_queries(state: dict[str, Any], calls) -> dict[str, dict[s
                 1 for record in registry if record.get("query_id") == query_id
             )
         else:
+            prefix = "v" if is_visual else "q"
             query_number = 1 + len({
-                str(record.get("query_id")) for record in registry if record.get("query_id")
+                str(record.get("query_id")) for record in registry
+                if str(record.get("query_id", "")).startswith(f"{state['turn_id']}:{prefix}")
             })
-            query_id = f"{state['turn_id']}:q{query_number}"
+            query_id = f"{state['turn_id']}:{prefix}{query_number}"
             attempt_number = 1
         record = QueryExecutionRecord(
             query_id=query_id,
@@ -467,6 +472,7 @@ def _register_database_queries(state: dict[str, Any], calls) -> dict[str, dict[s
             tool_call_id=call.id,
             tool_name=call.name,
             query_fingerprint=fingerprint,
+            source_query_id=(str(call.arguments.get("query_id")) if is_visual else None),
         ).model_dump(mode="json")
         registry.append(record)
         registered[call.id] = record
@@ -478,6 +484,9 @@ def _register_database_queries(state: dict[str, Any], calls) -> dict[str, dict[s
 def _query_row_count(item: ExecutedAgentCall) -> int | None:
     if item.card is None:
         return None
+    if item.call.name == "visualize_query_result":
+        rows = item.card.payload.get("rows")
+        return len(rows) if isinstance(rows, list) else None
     lineage_count = (item.card.lineage or {}).get("row_count")
     if isinstance(lineage_count, int) and lineage_count >= 0:
         return lineage_count
@@ -496,7 +505,7 @@ async def _emit_query_event(
             key: record.get(key) for key in (
                 "query_id", "attempt_id", "tool_call_id", "tool_name", "status",
                 "purpose", "row_count", "has_data", "visual_available", "duration_ms",
-                "error_code",
+                "error_code", "source_query_id", "result_complete",
             )
         },
     }))
@@ -527,6 +536,7 @@ async def _finalize_query_record(
                 and item.card.card_type in {"chart", "analysis", "worklist", "briefing"}
             ),
             "duration_ms": item.duration_ms,
+            "result_complete": bool(item.card.complete) if item.card is not None else True,
             "card": (
                 {
                     "source": item.card.source,

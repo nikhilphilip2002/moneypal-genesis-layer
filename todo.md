@@ -126,7 +126,7 @@ explicitly marked as parallel-safe.
 - [ ] Stream interruption/reconnect: provisional cards are never promoted accidentally.
 - [x] History API reload preserves the exact reconciled visual/audit partition.
 - [x] Legacy history: successful historic cards remain visible by field-presence fallback.
-- [x] Run `uv run pytest backend/tests/workbench` (314 passed).
+- [x] Run `uv run pytest backend/tests/workbench` (328 passed).
 - [ ] Run `uv run pytest backend/tests/nlq` cleanly. Current result: 1049 passed and 97
   skipped; unrelated golden case `g071` fails because its May history-warning fixture no
   longer matches the catalog's August single-snapshot warning.
@@ -166,3 +166,15 @@ explicitly marked as parallel-safe.
 - [ ] Query identity is unchanged across execution, observation, SSE, storage, and reload.
 - [ ] A conceptual no-query answer renders no visual placeholder.
 - [ ] Rollback has been exercised successfully before general availability.
+
+## 12. Follow-up visualization
+
+- [x] Add the compact strict `visualize_query_result` contract and aggregation guidance.
+- [x] Resolve source results only inside the current user's conversation.
+- [x] Validate fields, chart compatibility, numeric inputs, and complete-result aggregation.
+- [x] Implement `none`, `sum`, `avg`, `min`, `max`, `count`, and `count_distinct` reshaping.
+- [x] Register successful derived visuals as current-turn `<turn_id>:vN` records linked to
+  their historical `source_query_id`.
+- [x] Stream and persist derived cards through the existing attribution path.
+- [x] Tell the model to use the tool for "visualize this" follow-ups and cite its returned ID.
+- [x] Add focused contract, access-control, transformation, and attribution tests.

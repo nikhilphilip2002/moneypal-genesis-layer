@@ -47,6 +47,7 @@ def test_registry_exposes_concrete_flat_tools():
     assert list(AGENT_TOOLS) == [
         "search_curated_knowledge",
         "search_public_web",
+        "visualize_query_result",
         "finish_without_data",
         "submit_final_answer",
     ]
@@ -154,3 +155,19 @@ def test_valid_terminal_tool_is_typed():
         policy=_policy(),
     )
     assert isinstance(parsed, FinishWithoutDataArguments)
+
+
+def test_visualization_schema_is_compact_and_carries_aggregation_guidance():
+    schema = _definitions()["visualize_query_result"]["parameters"]
+    properties = schema["properties"]
+
+    assert properties["chart_type"]["enum"] == [
+        "kpi", "line", "area", "stacked_area", "bar", "grouped_bar", "table",
+        "donut", "scatter", "heatmap",
+    ]
+    assert properties["aggregation"]["description"] == (
+        "Use none when each x/series pair is already aggregated; otherwise choose "
+        "how to combine multiple y values for the same x/series pair."
+    )
+    assert "minItems" not in properties["y"]
+    assert "maxItems" not in properties["y"]

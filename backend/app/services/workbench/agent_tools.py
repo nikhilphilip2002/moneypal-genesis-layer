@@ -20,6 +20,7 @@ from app.services.workbench.agent_contracts import (
     FinalSynthesis,
     SearchCuratedKnowledgeArguments,
     SearchPublicWebArguments,
+    VisualizeQueryResultArguments,
 )
 
 
@@ -91,6 +92,17 @@ AGENT_TOOLS: dict[str, AgentTool] = {
         sensitivity="public",
         timeout_s=30.0,
         max_result_chars=12_000,
+    ),
+    "visualize_query_result": AgentTool(
+        name="visualize_query_result",
+        description="Create a visualization from a successful query result.",
+        arguments_model=VisualizeQueryResultArguments,
+        handler_key="visualize_query_result",
+        source_id="db",
+        sensitivity="internal",
+        timeout_s=5.0,
+        max_result_chars=12_000,
+        parallel_safe=False,
     ),
     "finish_without_data": AgentTool(
         name="finish_without_data",

@@ -20,6 +20,30 @@ references, and conversation history preserves that exact resolved state.
 - Failed, empty, superseded, and unused queries remain available in a compact audit trail.
 - Conceptual answers produce no empty visual placeholders.
 - Old conversation records remain readable.
+- A follow-up such as "visualize this" can turn a successful result from the same
+  conversation into a new, explicitly attributed visual without rerunning SQL.
+
+## Follow-up visualization extension
+
+Add a strict `visualize_query_result` native tool. The model selects one of `kpi`, `line`,
+`area`, `stacked_area`, `bar`, `grouped_bar`, `table`, `donut`, `scatter`, or `heatmap`,
+plus the source fields and aggregation. Its compact arguments are `query_id`, `chart_type`,
+`x`, `y`, `series`, and `aggregation`.
+
+The backend resolves the source only from successful, data-bearing queries stored in the
+same user-owned conversation. It validates field names, types, result completeness, chart
+compatibility, and aggregation before creating a derived visual. The model never supplies
+rows and cannot use a query from another conversation or user.
+
+`aggregation=none` means the source already has one value at the desired `x`/`series`
+grain. Other operations (`sum`, `avg`, `min`, `max`, `count`, `count_distinct`) combine
+multiple source rows for the same `x`/`series` pair. Aggregation is rejected for truncated
+results and invalid numeric inputs.
+
+Each successful derived visual receives a current-turn `<turn_id>:vN` identifier and stores
+its `source_query_id`. The tool observation returns the derived identifier; final synthesis
+cites that identifier so existing current-turn reconciliation, SSE rendering, audit layout,
+and history reload rules continue to apply unchanged.
 
 ## Decisions
 

@@ -25,6 +25,7 @@ from app.services.workbench.agent_contracts import (
     FinalSynthesis,
     SearchCuratedKnowledgeArguments,
     SearchPublicWebArguments,
+    VisualizeQueryResultArguments,
 )
 from app.services.workbench.agent_tools import get_agent_tool, validate_agent_arguments
 from app.services.workbench.results import SourceResult
@@ -311,6 +312,7 @@ async def _execute_postgres_mcp(
         summary=chart.summary,
         sensitive=bool(payload.get("pii_columns")),
         lineage=chart.lineage.model_dump(mode="json"),
+        complete=not result.truncated,
     )
 
 
@@ -340,10 +342,27 @@ async def _search_public_web(
     )
 
 
+async def _visualize_query_result(
+    args: VisualizeQueryResultArguments, ctx: AgentExecutionContext,
+) -> SourceResult:
+    from app.services.workbench import history
+    from app.services.workbench.visualization import VisualizationError, build_visual
+
+    source = history.query_result(
+        ctx.conversation_id, user=ctx.user, query_id=args.query_id,
+    )
+    if source is None:
+        raise VisualizationError(
+            "query_id must reference a successful stored query in this conversation"
+        )
+    return build_visual(source, args)
+
+
 Handler = Callable[[Any, AgentExecutionContext], Awaitable[SourceResult]]
 _HANDLERS: dict[str, Handler] = {
     "search_curated_knowledge": _search_curated,
     "search_public_web": _search_public_web,
+    "visualize_query_result": _visualize_query_result,
 }
 
 

@@ -22,6 +22,13 @@ QueryExclusionReason = Literal[
     "execution_error", "timeout", "cancelled", "empty_result", "superseded",
     "discovery_only", "validation_only", "unused_by_synthesis", "visual_unavailable",
 ]
+VisualizationChartType = Literal[
+    "kpi", "line", "area", "stacked_area", "bar", "grouped_bar", "table",
+    "donut", "scatter", "heatmap",
+]
+VisualizationAggregation = Literal[
+    "none", "sum", "avg", "min", "max", "count", "count_distinct",
+]
 
 
 class QueryReference(BaseModel):
@@ -51,6 +58,8 @@ class QueryExecutionRecord(BaseModel):
     duration_ms: int = Field(default=0, ge=0)
     error_code: str | None = Field(default=None, max_length=200)
     supersedes_query_id: str | None = Field(default=None, max_length=200)
+    source_query_id: str | None = Field(default=None, max_length=200)
+    result_complete: bool = True
     card: dict[str, Any] | None = None
 
 
@@ -81,6 +90,20 @@ class SearchCuratedKnowledgeArguments(AgentArguments):
 
 class SearchPublicWebArguments(AgentArguments):
     search_query: str = Field(min_length=1, max_length=500)
+
+
+class VisualizeQueryResultArguments(AgentArguments):
+    query_id: str
+    chart_type: VisualizationChartType
+    x: str | None
+    y: list[str]
+    series: str | None
+    aggregation: VisualizationAggregation = Field(
+        description=(
+            "Use none when each x/series pair is already aggregated; otherwise choose "
+            "how to combine multiple y values for the same x/series pair."
+        ),
+    )
 
 
 class FinishWithoutDataArguments(AgentArguments):
@@ -115,4 +138,7 @@ __all__ = [
     "QueryReference",
     "SearchCuratedKnowledgeArguments",
     "SearchPublicWebArguments",
+    "VisualizationAggregation",
+    "VisualizationChartType",
+    "VisualizeQueryResultArguments",
 ]

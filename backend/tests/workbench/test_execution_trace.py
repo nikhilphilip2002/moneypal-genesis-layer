@@ -42,6 +42,26 @@ def test_query_ids_distinguish_retry_attempts_from_corrected_sql(monkeypatch):
     assert third["attempt_id"] == "turn-retry:q2:a1"
 
 
+def test_visualization_call_gets_current_turn_derived_id(monkeypatch):
+    from app.mcp import postgres_client
+
+    monkeypatch.setattr(postgres_client, "is_model_tool", lambda _name: False)
+    state = {"turn_id": "turn-visual", "query_registry": []}
+    call = NativeToolCall(
+        id="visual-call", name="visualize_query_result",
+        arguments={
+            "query_id": "older:q1", "chart_type": "bar", "x": "scheme",
+            "y": ["amount"], "series": None, "aggregation": "none",
+        },
+    )
+
+    record = agent._register_database_queries(state, [call])["visual-call"]
+
+    assert record["query_id"] == "turn-visual:v1"
+    assert record["attempt_id"] == "turn-visual:v1:a1"
+    assert record["source_query_id"] == "older:q1"
+
+
 @pytest.mark.anyio
 async def test_tool_trace_streams_running_then_completed_with_arguments(monkeypatch):
     call = NativeToolCall(id="call-1", name="query", arguments={"sql": "SELECT 1"})
