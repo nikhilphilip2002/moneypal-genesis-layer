@@ -1,7 +1,7 @@
-"""Flat argument contracts for provider-native Workbench tools.
+"""Execution-boundary argument contracts for Workbench tools.
 
-Each tool has one ordinary object contract. Provider schemas are a constrained projection of
-these models; these Pydantic models remain the execution-boundary authority.
+FastMCP function signatures own the public schemas. These models provide defense-in-depth
+validation and cross-field business rules immediately before execution.
 """
 
 from __future__ import annotations
@@ -111,12 +111,7 @@ class VisualizeQueryResultArguments(AgentArguments):
     x: str | None
     y: list[str]
     series: str | None
-    aggregation: VisualizationAggregation = Field(
-        description=(
-            "Use none when each x/series pair is already aggregated; otherwise choose "
-            "how to combine multiple y values for the same x/series pair."
-        ),
-    )
+    aggregation: VisualizationAggregation
 
 
 class FinishWithoutDataArguments(AgentArguments):

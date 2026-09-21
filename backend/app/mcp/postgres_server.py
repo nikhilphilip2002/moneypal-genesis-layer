@@ -9,8 +9,9 @@ from __future__ import annotations
 
 from typing import Any
 
-from mcp.server.fastmcp import Context, FastMCP
+from fastmcp import Context, FastMCP
 
+from app.mcp.results import failure, success
 from app.services.nlq import db as nlq_db, pii
 from app.services.nlq.catalog import get_catalog
 from app.services.nlq.executor import ExecutionError, execute_raw
@@ -25,18 +26,13 @@ mcp = FastMCP(
         "Read-only PostgreSQL access to the governed Gold loan-book schema. Every statement "
         "is catalog-validated and executed as nlq_readonly."
     ),
-    host="0.0.0.0",
-    port=8001,
-    streamable_http_path="/mcp",
-    json_response=True,
-    stateless_http=True,
 )
 
 
-@mcp.tool()
-def postgres_health() -> dict[str, Any]:
+@mcp.tool
+async def postgres_health() -> dict[str, Any]:
     """Check the dedicated read-only PostgreSQL role and governed Gold-view availability."""
-    return nlq_db.health()
+    return success(nlq_db.health())
 
 
 def _trusted_meta(ctx: Context) -> dict[str, Any]:
@@ -45,28 +41,18 @@ def _trusted_meta(ctx: Context) -> dict[str, Any]:
     return meta.model_dump(exclude_none=True) if meta is not None else {}
 
 
-@mcp.tool()
-def query(sql: str, ctx: Context) -> dict[str, Any]:
-    """Execute one read-only PostgreSQL SELECT against governed gold.* views.
-
-    Schema-qualify every table, name every selected column, use only columns and joins from
-    the supplied Gold schema, include an appropriate date condition when the question names a
-    period, and include LIMIT 5000 or less. Filter before joining and aggregate one-to-many
-    inputs before joining them. Avoid correlated subqueries. Validation and timeout errors are
-    returned for correction; never repeat identical SQL after a timeout.
-    """
+def _query(sql: str, meta: dict[str, Any]) -> dict[str, Any]:
+    """Synchronous query boundary in the dedicated, serialized MCP service."""
     catalog = get_catalog()
-    meta = _trusted_meta(ctx)
     role = str(meta.get("workbench_role") or "")
     effective_sources = meta.get("workbench_effective_sources")
     if not isinstance(effective_sources, list) or "db" not in effective_sources:
-        return {
-            "status": "error",
-            "code": "POLICY_DENIED",
-            "message": "This request is not authorized to access the loan-book source.",
-            "retryable": False,
-            "catalog_version": catalog.version,
-        }
+        return failure(
+            "POLICY_DENIED",
+            "This request is not authorized to access the loan-book source.",
+            retryable=False,
+            catalog_version=catalog.version,
+        )
     try:
         checked = validate(
             sql,
@@ -74,27 +60,25 @@ def query(sql: str, ctx: Context) -> dict[str, Any]:
             allow_pii=pii.may_see_pii(role),
         )
     except SqlValidationError as exc:
-        return {
-            "status": "error",
-            "code": "COMPILE_REJECTED",
-            "message": str(exc)[:1000],
-            "retryable": True,
-            "catalog_version": catalog.version,
-        }
+        return failure(
+            "COMPILE_REJECTED",
+            str(exc)[:1000],
+            retryable=True,
+            catalog_version=catalog.version,
+        )
 
     try:
         result = execute_raw(checked.sql)
     except ExecutionError as exc:
-        return {
-            "status": "error",
-            "code": exc.code,
-            "message": str(exc)[:500],
-            "detail": exc.detail[:1000],
-            "retryable": exc.retryable,
-            "catalog_version": catalog.version,
-        }
+        return failure(
+            exc.code,
+            str(exc)[:500],
+            retryable=exc.retryable,
+            detail=exc.detail[:1000],
+            catalog_version=catalog.version,
+        )
 
-    return {
+    return success({
         "status": result.status,
         "columns": result.columns,
         "rows": result.rows,
@@ -109,8 +93,29 @@ def query(sql: str, ctx: Context) -> dict[str, Any]:
         "warnings": [*checked.warnings, *result.warnings],
         "column_units": infer_column_units(checked.sql, checked.tables, catalog),
         "catalog_version": catalog.version,
-    }
+    })
+
+
+@mcp.tool
+async def query(sql: str, ctx: Context) -> dict[str, Any]:
+    """Execute one read-only PostgreSQL SELECT against governed gold.* views.
+
+    Schema-qualify every table, name every selected column, use only columns and joins from
+    the supplied Gold schema, include an appropriate date condition when the question names a
+    period, and include LIMIT 5000 or less. Filter before joining and aggregate one-to-many
+    inputs before joining them. Avoid correlated subqueries. Validation and timeout errors are
+    returned for correction; never repeat identical SQL after a timeout.
+    """
+    meta = _trusted_meta(ctx)
+    return _query(sql, meta)
 
 
 if __name__ == "__main__":
-    mcp.run(transport="streamable-http")
+    mcp.run(
+        transport="http",
+        host="0.0.0.0",
+        port=8001,
+        path="/mcp",
+        json_response=True,
+        stateless_http=True,
+    )

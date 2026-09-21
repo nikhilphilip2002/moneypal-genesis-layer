@@ -6,12 +6,12 @@ from typing import Any
 import pytest
 
 from app.services.workbench import access
+from app.mcp import workbench_client
 from app.services.workbench.agent_contracts import FinishWithoutDataArguments
 from app.services.workbench.agent_tools import (
     AGENT_TOOLS,
     AgentToolAccessDenied,
     AgentToolArgumentsInvalid,
-    native_tool_definitions,
     validate_agent_arguments,
 )
 
@@ -26,10 +26,12 @@ def _policy(*, role="admin", external=True):
     return access.build_policy(role=role, external_sources_enabled=external)
 
 
-def _definitions(*, role="admin", external=True):
+async def _definitions(*, role="admin", external=True):
     return {
         item["function"]["name"]: item["function"]
-        for item in native_tool_definitions(_policy(role=role, external=external))
+        for item in await workbench_client.model_tool_definitions(
+            _policy(role=role, external=external)
+        )
     }
 
 
@@ -54,9 +56,10 @@ def test_registry_exposes_concrete_flat_tools():
     assert "query_loan_book" not in AGENT_TOOLS
 
 
-def test_provider_schemas_are_closed_flat_objects_without_polymorphic_keywords():
+@pytest.mark.anyio
+async def test_provider_schemas_are_closed_flat_objects_without_polymorphic_keywords():
     forbidden = {"oneOf", "anyOf", "allOf", "discriminator", "if", "then", "else", "$ref", "$defs"}
-    for definition in _definitions().values():
+    for definition in (await _definitions()).values():
         schema = definition["parameters"]
         assert len(json.dumps(schema, separators=(",", ":"))) < 100_000
         assert definition["strict"] is True
@@ -73,33 +76,34 @@ def test_provider_schemas_are_closed_flat_objects_without_polymorphic_keywords()
                 assert node["required"] == list(node.get("properties", {}))
 
 
-def test_every_authorized_tool_is_offered_with_its_full_schema():
+@pytest.mark.anyio
+async def test_every_authorized_tool_is_offered_with_its_full_schema():
     """Every policy-authorized local tool is offered with its complete schema."""
-    import inspect
-
-    assert "route_only" not in inspect.signature(native_tool_definitions).parameters
-    definitions = _definitions()
+    definitions = await _definitions()
     assert set(definitions) == set(AGENT_TOOLS)
     assert all(definition["parameters"]["properties"] for definition in definitions.values())
 
 
-def test_policy_omits_live_web_and_filters_curated_domains_without_consent():
-    definitions = _definitions(external=False)
+@pytest.mark.anyio
+async def test_policy_omits_live_web_and_filters_curated_domains_without_consent():
+    definitions = await _definitions(external=False)
     assert "search_public_web" not in definitions
     domains = definitions["search_curated_knowledge"]["parameters"]["properties"]["domain"]
     assert domains["enum"] == ["concepts"]
 
 
-def test_role_policy_removes_forbidden_curated_domains():
-    definitions = _definitions(role="gicc_director", external=True)
+@pytest.mark.anyio
+async def test_role_policy_removes_forbidden_curated_domains():
+    definitions = await _definitions(role="gicc_director", external=True)
     domains = definitions["search_curated_knowledge"]["parameters"]["properties"]["domain"]
     assert "macro" in domains["enum"]
     assert "competitive" not in domains["enum"]
     assert "regulatory" not in domains["enum"]
 
 
-def test_canonical_model_fields_match_provider_schema_properties():
-    definitions = _definitions()
+@pytest.mark.anyio
+async def test_canonical_model_fields_match_provider_schema_properties():
+    definitions = await _definitions()
     for name, tool in AGENT_TOOLS.items():
         assert set(tool.arguments_model.model_fields) == set(
             definitions[name]["parameters"]["properties"]
@@ -157,8 +161,9 @@ def test_valid_terminal_tool_is_typed():
     assert isinstance(parsed, FinishWithoutDataArguments)
 
 
-def test_visualization_schema_is_compact_and_carries_aggregation_guidance():
-    schema = _definitions()["visualize_query_result"]["parameters"]
+@pytest.mark.anyio
+async def test_visualization_schema_is_compact_and_carries_aggregation_guidance():
+    schema = (await _definitions())["visualize_query_result"]["parameters"]
     properties = schema["properties"]
 
     assert properties["chart_type"]["enum"] == [

@@ -16,7 +16,10 @@ dependencies = [
     "sqlalchemy>=2.0",
     "sqlglot>=25.0",
     "pyyaml>=6.0",
-    "mcp==1.29.0",
+    # FastMCP owns the high-level server/client lifecycle; the explicit MCP SDK pin
+    # documents the supported protocol generation and prevents an accidental v3 jump.
+    "fastmcp>=4.0.5,<5",
+    "mcp>=2.0.0,<3",
     # Macro ingestion pipeline: bounded crawl of the public macro sources, plus the
     # weekly refresh worker. Embeddings/Qdrant/pypdf come via genesis-core.
     "requests>=2.32.0",

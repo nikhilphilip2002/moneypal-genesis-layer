@@ -30,7 +30,12 @@ async def _lifespan(_app: FastAPI):
         catalog_version, schema_chars,
     )
 
-    from app.mcp import postgres_client
+    from app.mcp import postgres_client, workbench_client
+
+    local_tools = await workbench_client.discover_model_tools()
+    logging.getLogger(__name__).info(
+        "Workbench in-memory MCP initialized tools=%s", local_tools,
+    )
 
     try:
         # Container dependency ordering does not guarantee service readiness. Bound startup
@@ -104,12 +109,13 @@ def create_app() -> FastAPI:
     @app.get("/health")
     def health():
         """Process health plus cached startup state; never performs network I/O."""
-        from app.mcp import postgres_client
+        from app.mcp import postgres_client, workbench_client
 
         return {
             "status": "ok",
             "service": "genesis-intelligence",
             "workbench": {
+                "local_mcp": workbench_client.readiness(),
                 "postgres_mcp": postgres_client.readiness(),
                 "gold_schema": {
                     "status": (

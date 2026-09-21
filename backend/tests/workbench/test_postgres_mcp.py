@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 import asyncio
-from contextlib import asynccontextmanager
 from types import SimpleNamespace
 
 import pytest
+from fastmcp import Client
 
 from app.core.config import settings
 from app.mcp import postgres_client, postgres_server
@@ -22,24 +22,32 @@ async def test_health_tool_is_discoverable_and_returns_structured_content(monkey
         lambda: {"status": "ok", "role": "nlq_readonly", "gold_views": 15},
     )
 
-    tools = await postgres_server.mcp.list_tools()
-    result = await postgres_server.mcp.call_tool("postgres_health", {})
+    async with Client(postgres_server.mcp, mode="legacy") as client:
+        tools = await client.list_tools()
+        result = await client.call_tool("postgres_health", {})
 
     assert "postgres_health" in {tool.name for tool in tools}
-    assert isinstance(result, tuple)
-    _content, payload = result
+    payload = result.data
+    assert payload["success"] is True
+    payload = payload["data"]
     assert payload["status"] == "ok"
     assert payload["role"] == "nlq_readonly"
 
 
 @pytest.mark.anyio
 async def test_client_has_a_whole_operation_timeout(monkeypatch):
-    @asynccontextmanager
-    async def stalled_transport(*args, **kwargs):
-        await asyncio.sleep(1)
-        yield "read", "write", lambda: None  # pragma: no cover
+    class StalledClient:
+        def __init__(self, *args, **kwargs):
+            pass
 
-    monkeypatch.setattr(postgres_client, "streamablehttp_client", stalled_transport)
+        async def __aenter__(self):
+            await asyncio.sleep(1)
+            return self  # pragma: no cover
+
+        async def __aexit__(self, *args):
+            return None
+
+    monkeypatch.setattr(postgres_client, "Client", StalledClient)
     monkeypatch.setattr(settings, "postgres_mcp_timeout_s", 0.001)
     monkeypatch.setattr(postgres_client, "MCP_SHUTDOWN_GRACE_S", 0.0)
 
@@ -48,14 +56,10 @@ async def test_client_has_a_whole_operation_timeout(monkeypatch):
 
 
 def test_query_tool_preserves_statement_timeout_code(monkeypatch):
-    class Meta:
-        def model_dump(self, **_kwargs):
-            return {
-                "workbench_role": "admin",
-                "workbench_effective_sources": ["db"],
-            }
-
-    ctx = SimpleNamespace(request_context=SimpleNamespace(meta=Meta()))
+    meta = {
+        "workbench_role": "admin",
+        "workbench_effective_sources": ["db"],
+    }
     checked = SimpleNamespace(
         sql="SELECT value FROM gold.slow_view LIMIT 1",
         tables=["gold.slow_view"],
@@ -76,22 +80,18 @@ def test_query_tool_preserves_statement_timeout_code(monkeypatch):
 
     monkeypatch.setattr(postgres_server, "execute_raw", timed_out)
 
-    payload = postgres_server.query(checked.sql, ctx)
+    payload = postgres_server._query(checked.sql, meta)
 
-    assert payload["status"] == "error"
-    assert payload["code"] == "QUERY_TIMEOUT"
-    assert payload["retryable"] is True
+    assert payload["success"] is False
+    assert payload["error"]["code"] == "QUERY_TIMEOUT"
+    assert payload["error"]["retryable"] is True
 
 
 def test_query_tool_classifies_sql_validation_as_compile_rejected(monkeypatch):
-    class Meta:
-        def model_dump(self, **_kwargs):
-            return {
-                "workbench_role": "admin",
-                "workbench_effective_sources": ["db"],
-            }
-
-    ctx = SimpleNamespace(request_context=SimpleNamespace(meta=Meta()))
+    meta = {
+        "workbench_role": "admin",
+        "workbench_effective_sources": ["db"],
+    }
     catalog = SimpleNamespace(version="test-catalog")
     monkeypatch.setattr(postgres_server, "get_catalog", lambda: catalog)
     monkeypatch.setattr(postgres_server.pii, "may_see_pii", lambda _role: True)
@@ -101,9 +101,9 @@ def test_query_tool_classifies_sql_validation_as_compile_rejected(monkeypatch):
 
     monkeypatch.setattr(postgres_server, "validate", rejected)
 
-    payload = postgres_server.query("SELECT * FROM gold.agents", ctx)
+    payload = postgres_server._query("SELECT * FROM gold.agents", meta)
 
-    assert payload["status"] == "error"
-    assert payload["code"] == "COMPILE_REJECTED"
-    assert payload["retryable"] is True
-    assert "name the columns explicitly" in payload["message"]
+    assert payload["success"] is False
+    assert payload["error"]["code"] == "COMPILE_REJECTED"
+    assert payload["error"]["retryable"] is True
+    assert "name the columns explicitly" in payload["error"]["message"]

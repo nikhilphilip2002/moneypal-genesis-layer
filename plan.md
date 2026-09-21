@@ -442,3 +442,275 @@ the incompatible build. The frontend compatibility flag is removed rather than r
 - The backend never invokes automatic chart-shape inference on the Workbench PostgreSQL path.
 - History reload produces the same primary/audit partition as the live turn.
 - All required backend and frontend tests pass in off, shadow, canary, and on modes.
+
+---
+
+# FastMCP 4 and MCP SDK v2 Tool Contract Migration
+
+## Purpose
+
+Replace the two current tool-definition paths with one MCP-native contract path. Local
+Workbench tools and the remote PostgreSQL tools must be discovered through MCP, projected
+through one provider-schema adapter, and invoked through FastMCP clients. FastMCP owns tool
+names, descriptions, input schemas, and argument validation; application code continues to
+own authorization, deadlines, observation limits, persistence, and query reconciliation.
+
+Use FastMCP 4 with MCP Python SDK v2:
+
+```toml
+"fastmcp>=4.0.5,<5"
+"mcp>=2.0.0,<3"
+```
+
+The explicit MCP pin documents the supported protocol generation even though FastMCP also
+depends on MCP SDK v2. Regenerate `uv.lock` as part of the same dependency change.
+
+## Target architecture
+
+```text
+FastMCP-decorated typed tools
+  -> MCP list_tools()
+  -> one MCP-schema-to-provider-schema adapter
+  -> policy-filtered model tool definitions
+  -> model tool call
+  -> FastMCP Client
+       -> in-memory Workbench FastMCP server for local tools
+       -> Streamable HTTP PostgreSQL FastMCP server for database tools
+```
+
+The PostgreSQL MCP server remains a separate container and retains its `nlq_readonly`, SQL
+AST validation, cost, row, timeout, PII, and catalog boundaries. In-memory transport is for
+same-process Workbench tools and tests; it must not collapse the PostgreSQL security boundary.
+Exa remains behind the governed `search_public_web` wrapper rather than exposing its hosted
+tools directly to the model.
+
+## Ownership boundaries
+
+FastMCP is the source of truth for:
+
+- tool name and description;
+- typed input fields and generated MCP input schema;
+- argument parsing and validation;
+- tool handler registration;
+- MCP content and structured-result encoding.
+
+Application code remains the source of truth for:
+
+- source-access and consent policy;
+- sensitivity classification;
+- execution and observation timeouts;
+- maximum model-observation size;
+- parallel-safety classification;
+- query and attempt identity;
+- durable result persistence and final reconciliation.
+
+Retain a small runtime-policy registry keyed by discovered tool name. It may contain
+`source_id`, `sensitivity`, `timeout_s`, `max_result_chars`, and `parallel_safe`; it must not
+repeat descriptions, input models, JSON schemas, or handler keys. Startup fails closed if a
+model-visible local tool has no runtime-policy entry.
+
+## Result contract
+
+Do not introduce an application `MCPToolResult` dataclass and do not copy FastMCP result
+fields into another wrapper. Moneypal-owned tools return one small JSON-compatible envelope:
+
+```json
+{
+  "success": true,
+  "data": {
+    "columns": ["customer", "balance"],
+    "rows": []
+  }
+}
+```
+
+Expected failure:
+
+```json
+{
+  "success": false,
+  "error": {
+    "code": "COMPILE_REJECTED",
+    "message": "SELECT * is not allowed",
+    "retryable": true
+  }
+}
+```
+
+FastMCP handlers return the dictionary, not a pre-serialized string. FastMCP supplies the MCP
+content representation; callers consume `result.data`. When a tool result is appended to the
+LLM transcript, the envelope is serialized exactly once into the MCP text content. Do not add
+a nested `text` field or JSON-encode `data` inside JSON.
+
+Use MCP tool errors/exceptions for unexpected transport, server, and infrastructure failures.
+Use `success=false` for expected, model-actionable outcomes such as policy denial, SQL
+validation rejection, rate limiting, or an unavailable requested record. An empty successful
+query remains `success=true` with an empty row list and its existing empty-result status in
+`data`.
+
+Add one small owned-tool helper that requires `result.data` to be an object. Keep Exa-specific
+text/structured-content fallback inside `exa_client.py`, because Exa is a third-party server
+whose result shape is not controlled by Moneypal.
+
+## Workbench FastMCP server
+
+Add `backend/app/mcp/workbench_server.py` with one in-process `FastMCP` instance. Move the
+contracts and handlers for these model tools onto it:
+
+- `search_curated_knowledge`;
+- `search_public_web`;
+- `visualize_query_result`;
+- `finish_without_data`;
+- `submit_final_answer`.
+
+Keep existing public names during this migration to avoid combining a protocol migration
+with prompt-behavior changes. The curated-domain enum may still be narrowed by the policy
+projection layer. Splitting it into separate domain tools is a later product decision, not a
+prerequisite for consistent MCP contracts.
+
+Tool functions accept explicit typed arguments and validate existing cross-field Pydantic
+contracts where required. Trusted user, role, conversation, turn, source-policy, query, and
+attempt context travels as application-supplied MCP metadata or an injected request
+dependency; none of it appears in the model-visible input schema. Every handler reauthorizes
+the request immediately before touching its source.
+
+## Shared clients
+
+Use `fastmcp.Client` for every MCP connection:
+
+- `Client(workbench_mcp)` for in-memory local discovery, execution, and tests;
+- `Client(settings.postgres_mcp_url)` for PostgreSQL Streamable HTTP;
+- a FastMCP Streamable HTTP transport with the existing Exa headers for hosted Exa calls.
+
+Keep the current outer `asyncio.timeout` around connection, execution, and shutdown. Start
+with bounded client context managers instead of a shared global client; only introduce
+connection reuse after concurrent-call and shutdown tests prove its lifecycle safe.
+
+Replace MCP SDK v1 imports and field names throughout the backend. In particular, remove
+`ClientSession`, `streamablehttp_client`, `inputSchema`, `structuredContent`, and `isError`.
+Use SDK v2 snake-case fields and disable FastMCP's camel-case compatibility bridge in CI.
+
+## Provider schema adapter
+
+Create one `backend/app/mcp/provider_schema.py`. Its input is the MCP tool descriptor returned
+by `list_tools()` and its output is the provider-native function definition. It must:
+
+- use the MCP descriptor's name, description, and `input_schema`;
+- resolve local `$defs` and `$ref` references;
+- remove presentation-only titles, schema declarations, and defaults;
+- turn supported nullable/value unions into provider-portable multi-type schemas;
+- reject polymorphic object unions and unsupported conditional schema constructs;
+- set `additionalProperties=false` on every object;
+- list every property in `required` for strict provider mode;
+- preserve descriptions, enums, bounds, and array constraints;
+- report failures with the tool name and JSON path instead of weakening a constraint.
+
+Delete `_portable_schema` from `agent_tools.py` and `_provider_schema` from
+`postgres_client.py` after all callers use this adapter.
+
+## Discovery, policy, and routing
+
+Add an application `ToolCatalog` that discovers canonical MCP descriptors, applies request
+policy, converts allowed tools through the shared provider adapter, and records which server
+owns each name. Cache only canonical descriptors. Never cache a user- or role-filtered tool
+list.
+
+Discovery rules:
+
+1. Discover all local tools through the in-memory client.
+2. Discover the configured PostgreSQL allowlist through the HTTP client.
+3. Keep `postgres_health` backend-only.
+4. Apply source and consent policy before provider projection.
+5. Narrow the curated-domain enum for the effective policy.
+6. Reject duplicate names across servers.
+7. Return tools in deterministic order.
+
+Execution uses the same ownership record. Remove the local `_HANDLERS` dispatch table and
+call the in-memory MCP server for local tools; call the PostgreSQL client for database tools.
+The executor still owns global deadlines, observation shaping, query identity, durable replay,
+and conversion of successful tool data into `SourceResult`, `RawQueryResult`, or terminal
+state.
+
+## PostgreSQL server migration
+
+Move `postgres_server.py` from the MCP SDK v1 embedded `FastMCP` to FastMCP 4. Keep the
+existing tool names and behavior. Move host, port, HTTP path, JSON/stateless behavior, and
+other transport configuration out of the server constructor and into the FastMCP 4 run entry
+point or CLI configuration.
+
+The `query` result uses the common `success/data/error` envelope. Its successful `data`
+retains rows, columns, row count, validated SQL, tables, PII columns, warnings, units, cost,
+duration, truncation, catalog version, and any returned query identifiers. SQL compile and
+execution errors retain their stable codes and retryability.
+
+The Docker topology and `POSTGRES_MCP_URL` remain unchanged unless FastMCP 4 requires a
+documented path spelling change. Container contract and health tests must catch any drift.
+
+## Startup and readiness
+
+During API startup:
+
+1. Discover and validate every local MCP schema.
+2. Verify every local model tool has runtime policy.
+3. Discover the PostgreSQL model-tool allowlist.
+4. Call `postgres_health`.
+5. reject tool-name collisions;
+6. cache canonical descriptors and deterministic schema fingerprints.
+
+Local contract failure is an application startup failure. PostgreSQL connection failure may
+retain the current degraded, visible, retryable readiness behavior. Health output includes
+server ownership, discovered tool names, negotiated protocol version where available, and a
+schema fingerprint without exposing schemas or private data.
+
+## Verification
+
+Add contract tests that use `Client(workbench_mcp)` rather than calling handlers directly.
+For every local tool, assert discovery, schema, valid invocation, invalid arguments, extra
+arguments, cross-field validation, result envelope, and execution-time reauthorization.
+
+Add shared adapter tests covering nested objects, nullable fields, references, enums,
+constraints, unsupported unions, deterministic ordering, and exact strict-provider output.
+Run them against descriptors from both local and PostgreSQL servers.
+
+Add protocol and integration tests for:
+
+- MCP SDK v2 snake-case access with the compatibility bridge disabled;
+- local in-memory discovery and execution;
+- PostgreSQL HTTP discovery, metadata propagation, execution, and shutdown timeout;
+- Exa headers, text fallback, structured results, rate limits, and timeouts;
+- policy-filtered discovery plus forged-call execution denial;
+- duplicate tool-name and missing runtime-policy startup failures;
+- query/attempt identity preservation and all existing Workbench replay behavior;
+- a Docker smoke flow covering local, PostgreSQL, and web tools.
+
+## Implementation order and rollback
+
+1. Upgrade and lock FastMCP 4/MCP SDK v2; convert all MCP field access to snake case.
+2. Add the shared FastMCP client helpers and owned-tool result-envelope validation.
+3. Add the one provider-schema adapter with golden tests against current definitions.
+4. Migrate the PostgreSQL server and client without changing model-visible contracts.
+5. Migrate the Exa client while retaining its third-party result fallback.
+6. Add the in-process Workbench FastMCP server and register the five current local tools.
+7. Add `ToolCatalog`, runtime-policy checks, policy filtering, and ownership routing.
+8. Route local execution through the in-memory FastMCP client.
+9. Remove manual schema generation, duplicate registration, and direct local dispatch.
+10. Update health checks, Docker/runbook documentation, and complete full regression tests.
+
+Keep commits at these boundaries so the server/client migration can be reverted independently
+of local execution routing. A temporary `WORKBENCH_MCP_LOCAL_EXECUTION` rollout flag may select
+old versus in-memory local execution during staging, but both modes must use MCP-discovered
+schemas. Remove the flag and legacy path after one stable release.
+
+## Acceptance criteria
+
+- Every model-visible tool definition originates from MCP `list_tools()`.
+- Tool names, descriptions, argument contracts, and schemas are not manually duplicated.
+- One provider adapter handles local and PostgreSQL MCP schemas.
+- Local Workbench tools execute through the FastMCP in-memory client.
+- PostgreSQL remains a separate HTTP MCP container and read-only boundary.
+- Owned tools use only the `success/data/error` envelope and callers consume `result.data`.
+- No custom result wrapper duplicates FastMCP result fields.
+- Exa normalization is isolated to the Exa client.
+- Policy filters discovery and is rechecked during execution.
+- No MCP SDK v1 imports or camel-case field reads remain.
+- Existing attribution, visualization, replay, timeout, and SQL-safety tests remain green.

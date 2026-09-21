@@ -15,6 +15,7 @@ services:
       # Override any host paths from .env with in-container paths.
       # Workbench reaches PostgreSQL only through the governed MCP boundary.
       POSTGRES_MCP_URL: http://postgres-mcp:8001/mcp
+      FASTMCP_MCP_CAMELCASE_COMPAT: "false"
       LOG_DIR: /srv/backend/data/logs
       REGULATIONS_DIR: /srv/Regulations
       REGISTRY_DIR: /srv/backend/registry/regulations
@@ -33,6 +34,7 @@ services:
       # Do not download/load the 2GB-class embedding stack in the middle of an MCP call.
       # The governed catalog's curated lexical synonyms remain available for SQL fallback.
       NLQ_CATALOG_VECTORS: "false"
+      FASTMCP_MCP_CAMELCASE_COMPAT: "false"
       LOG_DIR: /srv/backend/data/logs
       REGULATIONS_DIR: /srv/Regulations
       REGISTRY_DIR: /srv/backend/registry/regulations

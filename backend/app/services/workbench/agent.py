@@ -35,7 +35,6 @@ from app.services.workbench.agent_tools import (
     AgentToolError,
     AgentToolNotFound,
     get_agent_tool,
-    native_tool_definitions,
     validate_agent_arguments,
     visible_agent_tools,
 )
@@ -227,7 +226,9 @@ async def _select(
     catalog_context = prompts.build_agent_catalog_context(
         state["question"], catalog, supplement=supplement,
     )
-    definitions = native_tool_definitions(state["source_policy"], catalog=catalog)
+    from app.mcp import workbench_client
+
+    definitions = await workbench_client.model_tool_definitions(state["source_policy"])
     if state["source_policy"].allows("db"):
         from app.mcp import postgres_client
 

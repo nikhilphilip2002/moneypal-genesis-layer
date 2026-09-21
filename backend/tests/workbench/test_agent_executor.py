@@ -244,13 +244,15 @@ async def test_postgres_mcp_rejects_mismatched_returned_query_identity(monkeypat
 
 @pytest.mark.anyio
 async def test_web_call_is_reauthorized_before_handler(monkeypatch):
+    from app.mcp import workbench_client
+
     called = False
 
-    async def fake_handler(_args, _ctx):
+    async def fake_call(*_args, **_kwargs):
         nonlocal called
         called = True
 
-    monkeypatch.setitem(agent_executor._HANDLERS, "search_public_web", fake_handler)
+    monkeypatch.setattr(workbench_client, "call_tool", fake_call)
     with pytest.raises(Exception, match="external source consent"):
         await agent_executor.execute_agent_call(
             NativeToolCall(
@@ -275,22 +277,31 @@ async def test_web_call_is_reauthorized_before_handler(monkeypatch):
         ("search_public_web", {"search_query": "latest RBI repo rate"}, "web"),
     ],
 )
-async def test_each_nonterminal_tool_dispatches_to_its_registered_handler(
+async def test_each_nonterminal_tool_dispatches_through_in_memory_mcp(
     monkeypatch, name, arguments, source,
 ):
-    seen = []
+    from app.mcp import workbench_client
 
-    async def handler(parsed, _ctx):
-        seen.append(type(parsed).__name__)
-        return SourceResult(source=source, card_type="brief", payload={}, summary="ok")
+    seen = {}
 
-    monkeypatch.setitem(agent_executor._HANDLERS, name, handler)
+    async def call_tool(tool_name, parsed_arguments, *, context):
+        seen["name"] = tool_name
+        seen["arguments"] = parsed_arguments
+        seen["context"] = context
+        card = SourceResult(
+            source=source, card_type="brief", payload={}, summary="ok"
+        )
+        return {"kind": "card", "card": card.as_dict()}
+
+    monkeypatch.setattr(workbench_client, "call_tool", call_tool)
     result = await agent_executor.execute_agent_call(
         NativeToolCall(id=f"call_{name}", name=name, arguments=arguments),
         _context(),
     )
     assert result.card.summary == "ok"
-    assert seen
+    assert seen["name"] == name
+    assert seen["arguments"] == arguments
+    assert seen["context"].conversation_id == "c1"
 
 
 # --- Observations are bounded; durable replay is not ---------------------------------

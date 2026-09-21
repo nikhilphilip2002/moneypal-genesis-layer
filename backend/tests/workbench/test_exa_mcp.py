@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from contextlib import asynccontextmanager
 from types import SimpleNamespace
 
 import pytest
@@ -15,13 +14,12 @@ from app.mcp import exa_client
 async def test_api_key_is_sent_as_header_not_url(monkeypatch):
     seen = {}
 
-    @asynccontextmanager
-    async def fake_transport(url, **kwargs):
+    def fake_transport(url, **kwargs):
         seen["url"] = url
         seen["headers"] = kwargs["headers"]
-        yield "read", "write", lambda: None
+        return SimpleNamespace()
 
-    class FakeSession:
+    class FakeClient:
         def __init__(self, *args, **kwargs):
             pass
 
@@ -31,20 +29,17 @@ async def test_api_key_is_sent_as_header_not_url(monkeypatch):
         async def __aexit__(self, *args):
             return None
 
-        async def initialize(self):
-            return None
-
         async def call_tool(self, name, arguments, **kwargs):
             seen["tool"] = name
             seen["arguments"] = arguments
             return SimpleNamespace(
-                isError=False,
-                structuredContent={"results": []},
+                is_error=False,
+                structured_content={"results": []},
                 content=[SimpleNamespace(text='{"results": []}')],
             )
 
-    monkeypatch.setattr(exa_client, "streamablehttp_client", fake_transport)
-    monkeypatch.setattr(exa_client, "ClientSession", FakeSession)
+    monkeypatch.setattr(exa_client, "StreamableHttpTransport", fake_transport)
+    monkeypatch.setattr(exa_client, "Client", FakeClient)
     monkeypatch.setattr(settings, "exa_mcp_enabled", True)
     monkeypatch.setattr(settings, "exa_api_key", "test-secret")
     monkeypatch.setattr(
@@ -61,12 +56,17 @@ async def test_api_key_is_sent_as_header_not_url(monkeypatch):
 
 @pytest.mark.anyio
 async def test_remote_rate_limit_gets_a_safe_typed_error(monkeypatch):
-    @asynccontextmanager
-    async def failing_transport(*args, **kwargs):
-        raise RuntimeError("HTTP 429 rate limit")
-        yield  # pragma: no cover
+    class FailingClient:
+        def __init__(self, *args, **kwargs):
+            pass
 
-    monkeypatch.setattr(exa_client, "streamablehttp_client", failing_transport)
+        async def __aenter__(self):
+            raise RuntimeError("HTTP 429 rate limit")
+
+        async def __aexit__(self, *args):
+            return None
+
+    monkeypatch.setattr(exa_client, "Client", FailingClient)
     monkeypatch.setattr(settings, "exa_mcp_enabled", True)
     monkeypatch.setattr(settings, "exa_api_key", "test-secret")
 

@@ -5,11 +5,10 @@ from __future__ import annotations
 import asyncio
 import json
 from dataclasses import dataclass
-from datetime import timedelta
 from typing import Any
 
-from mcp import ClientSession
-from mcp.client.streamable_http import streamablehttp_client
+from fastmcp import Client
+from fastmcp.client.transports import StreamableHttpTransport
 
 from app.core.config import settings
 
@@ -40,26 +39,25 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> ExaToolResult:
     if not settings.exa_api_key:
         raise ExaMCPError("Exa web search is enabled but EXA_API_KEY is missing.")
 
-    timeout = timedelta(seconds=settings.exa_mcp_timeout_s)
     headers = {"x-api-key": settings.exa_api_key, "x-exa-source": "moneypal"}
     try:
         # The outer deadline also covers MCP session shutdown. Some hosted servers can
         # answer the tool and then leave termination waiting; a chat turn must still end.
         async with asyncio.timeout(settings.exa_mcp_timeout_s + 5):
-            async with streamablehttp_client(
+            transport = StreamableHttpTransport(
                 settings.exa_mcp_url,
                 headers=headers,
+            )
+            async with Client(
+                transport,
                 timeout=settings.exa_mcp_timeout_s,
-                sse_read_timeout=settings.exa_mcp_timeout_s,
-                terminate_on_close=False,
-            ) as (read_stream, write_stream, _get_session_id):
-                async with ClientSession(
-                    read_stream, write_stream, read_timeout_seconds=timeout,
-                ) as session:
-                    await session.initialize()
-                    result = await session.call_tool(
-                        name, arguments, read_timeout_seconds=timeout,
-                    )
+            ) as client:
+                result = await client.call_tool(
+                    name,
+                    arguments,
+                    timeout=settings.exa_mcp_timeout_s,
+                    raise_on_error=False,
+                )
     except Exception as exc:  # transport libraries use several provider-specific types
         detail = str(exc)
         if "429" in detail or "rate limit" in detail.lower() or "quota" in detail.lower():
@@ -68,13 +66,13 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> ExaToolResult:
             raise ExaMCPError("Exa MCP request timed out.") from exc
         raise ExaMCPError(f"Exa MCP request failed: {detail[:240]}") from exc
 
-    if result.isError:
+    if result.is_error:
         detail = _error_detail(result) or f"Exa tool {name!r} failed"
         if "429" in detail or "rate limit" in detail.lower() or "quota" in detail.lower():
             raise ExaRateLimitError("Exa's web-search allowance has been reached.")
         raise ExaMCPError(detail[:500])
 
-    structured: dict[str, Any] | list[Any] | None = result.structuredContent
+    structured: dict[str, Any] | list[Any] | None = result.structured_content
     if isinstance(structured, dict) and set(structured) == {"result"}:
         structured = structured["result"]
     text = _error_detail(result)

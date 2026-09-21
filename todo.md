@@ -205,3 +205,95 @@ explicitly marked as parallel-safe.
 - [x] Add focused tests proving query execution emits no card, every supported presentation
   comes from `vN`, invalid visualization requests repair or fail closed, and unsupported old
   record versions are rejected.
+
+## 14. FastMCP 4 and MCP SDK v2 migration
+
+### 14.1 Dependency and protocol baseline
+
+- [x] Replace `mcp==1.29.0` with `fastmcp>=4.0.5,<5` and `mcp>=2.0.0,<3`.
+- [x] Regenerate `uv.lock`, sync the environment, and record the resolved FastMCP/MCP versions.
+- [x] Replace MCP SDK v1 imports, transports, timeout types, and camel-case field reads.
+- [ ] Disable FastMCP's MCP camel-case compatibility bridge in CI and prove there are no
+  compatibility warnings or attribute failures.
+
+### 14.2 Shared result and schema boundaries
+
+- [x] Adopt the owned-tool `success/data/error` JSON-compatible result envelope.
+- [x] Return dictionaries from handlers and consume FastMCP `result.data`; do not add a custom
+  `MCPToolResult` wrapper, nested `text` payload, or double JSON serialization.
+- [x] Add a small helper that requires an object result from Moneypal-owned tools.
+- [x] Keep third-party text/structured-content fallback isolated in `exa_client.py`.
+- [x] Add `backend/app/mcp/provider_schema.py` as the only MCP-to-provider schema adapter.
+- [ ] Cover references, nullable values, nested closed objects, enums, bounds, arrays,
+  unsupported unions, failure paths, and deterministic output in adapter tests.
+
+### 14.3 FastMCP clients and remote servers
+
+- [x] Replace the PostgreSQL `ClientSession`/raw Streamable HTTP stack with `fastmcp.Client`.
+- [x] Migrate `postgres_server.py` to FastMCP 4 without weakening SQL, role, PII, catalog,
+  cost, row, timeout, metadata, or backend-only health boundaries.
+- [x] Move PostgreSQL transport settings from the server constructor to the FastMCP 4 runner.
+- [x] Return PostgreSQL success and expected failure results through the common envelope.
+- [x] Replace the Exa raw MCP session with a FastMCP HTTP client and preserve headers, outer
+  timeout, quota/rate-limit classification, and third-party response fallback.
+- [ ] Verify Docker service startup, `/mcp` routing, health, discovery, and clean shutdown.
+
+### 14.4 In-process Workbench tool server
+
+- [x] Add `backend/app/mcp/workbench_server.py` with one in-process FastMCP server.
+- [x] Register the existing `search_curated_knowledge`, `search_public_web`,
+  `visualize_query_result`, `finish_without_data`, and `submit_final_answer` tools.
+- [ ] Make typed FastMCP functions the only owner of tool names, descriptions, input fields,
+  validation, and handler registration.
+- [x] Pass trusted execution context outside the model-visible schema and reauthorize every
+  source immediately before execution.
+- [x] Test every local tool through `Client(workbench_mcp)` for discovery, valid calls,
+  invalid/extra arguments, cross-field validation, result envelopes, and policy denial.
+
+### 14.5 Runtime policy, catalog, and execution routing
+
+- [ ] Replace `AgentTool` with a runtime-only policy record containing source, sensitivity,
+  timeout, observation limit, and parallel-safety metadata.
+- [ ] Fail startup if a model-visible local tool has no runtime-policy classification.
+- [ ] Add `ToolCatalog` to discover canonical local and PostgreSQL descriptors, reject name
+  collisions, apply per-request policy, and produce deterministic model definitions.
+- [ ] Cache only canonical descriptors; never cache role- or user-filtered definitions.
+- [ ] Keep `postgres_health` and raw Exa tools out of the model-visible catalog.
+- [ ] Preserve policy-specific curated-domain narrowing during provider projection.
+- [x] Route local calls through the in-memory FastMCP client and PostgreSQL calls through the
+  HTTP client using catalog ownership.
+- [x] Remove `_HANDLERS`, direct local dispatch, `_portable_schema`, and the PostgreSQL
+  `_provider_schema` after all callers migrate.
+- [ ] Remove the remaining pre-MCP local argument validation so FastMCP is the single input
+  contract boundary; retain only execution-time business and authorization checks.
+
+### 14.6 Startup, observability, and regression
+
+- [ ] Validate local schemas, runtime-policy coverage, PostgreSQL discovery, health, duplicate
+  names, and schema fingerprints during startup.
+- [ ] Expose bounded readiness for server ownership, tool names, protocol version, and schema
+  fingerprint without logging schemas or result rows.
+- [x] Preserve query/attempt identity, deadlines, observation shaping, durable replay,
+  visualization, final synthesis, and reconciliation behavior.
+- [ ] Add forged-call, duplicate-name, missing-policy, concurrent-call, shutdown-timeout, and
+  Docker local/PostgreSQL/web end-to-end tests.
+- [ ] Run the full Workbench and NLQ backend suites plus available frontend checks.
+- [ ] Update README, environment examples, architecture documentation, and rollout runbook.
+
+### 14.7 Rollout and cleanup
+
+- [ ] Add a temporary `WORKBENCH_MCP_LOCAL_EXECUTION` staging flag while both execution paths
+  consume MCP-discovered schemas.
+- [ ] Compare discovered schema fingerprints and result envelopes in staging.
+- [ ] Enable in-memory local execution, canary it, and verify error/timeout/policy telemetry.
+- [ ] Remove the staging flag, legacy local execution path, and obsolete tests after one
+  stable release.
+
+### FastMCP migration definition of done
+
+- [x] All model-visible definitions originate from MCP discovery and use one provider adapter.
+- [x] Local tools execute in memory; PostgreSQL remains remote and governed.
+- [x] Owned tools use `success/data/error` without a duplicate result wrapper.
+- [x] Policy is enforced during discovery and execution.
+- [x] No MCP SDK v1 import, camel-case MCP field read, or duplicate schema generator remains.
+- [ ] Full regression and Docker smoke verification pass.

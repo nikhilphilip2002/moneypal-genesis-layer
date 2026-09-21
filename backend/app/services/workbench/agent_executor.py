@@ -19,14 +19,12 @@ from app.services.nlq.llm import NativeToolCall
 from app.services.workbench import facts
 from app.services.workbench.access import SourceAccessPolicy
 from app.services.workbench.agent_contracts import (
-    FinishWithoutDataArguments,
-    FinalSynthesis,
     SearchCuratedKnowledgeArguments,
     SearchPublicWebArguments,
     VisualizeQueryResultArguments,
 )
 from app.services.workbench.agent_tools import get_agent_tool, validate_agent_arguments
-from app.services.workbench.results import SourceResult
+from app.services.workbench.results import Evidence, SourceResult
 
 logger = logging.getLogger(__name__)
 
@@ -407,12 +405,25 @@ async def _visualize_query_result(
     return build_visual(source, args)
 
 
-Handler = Callable[[Any, AgentExecutionContext], Awaitable[SourceResult]]
-_HANDLERS: dict[str, Handler] = {
-    "search_curated_knowledge": _search_curated,
-    "search_public_web": _search_public_web,
-    "visualize_query_result": _visualize_query_result,
-}
+def _source_result_from_mcp(data: dict[str, Any]) -> SourceResult:
+    card = data.get("card")
+    if data.get("kind") != "card" or not isinstance(card, dict):
+        raise AgentExecutionError("Workbench MCP tool returned no card")
+    raw_evidence = card.get("evidence") or []
+    if not isinstance(raw_evidence, list):
+        raise AgentExecutionError("Workbench MCP tool returned invalid evidence")
+    return SourceResult(
+        source=str(card.get("source") or ""),
+        card_type=str(card.get("kind") or ""),
+        payload=dict(card.get("payload") or {}),
+        summary=str(card.get("summary") or ""),
+        sources=list(card.get("sources") or []),
+        evidence=[Evidence(**item) for item in raw_evidence if isinstance(item, dict)],
+        complete=bool(card.get("complete", True)),
+        limitation=str(card.get("limitation") or ""),
+        sensitive=bool(card.get("sensitive")),
+        lineage=(dict(card["lineage"]) if isinstance(card.get("lineage"), dict) else None),
+    )
 
 
 async def execute_agent_call(
@@ -438,29 +449,26 @@ async def execute_agent_call(
     parsed: BaseModel = validate_agent_arguments(
         call.name, call.arguments, policy=ctx.source_policy, catalog=catalog,
     )
-    if isinstance(parsed, FinishWithoutDataArguments):
-        return ExecutedAgentCall(
-            call=call,
-            terminal=parsed.model_dump(mode="json"),
-        )
-    if isinstance(parsed, FinalSynthesis):
-        return ExecutedAgentCall(
-            call=call,
-            terminal={
-                "outcome": "answer",
-                "synthesis": parsed.model_dump(mode="json"),
-            },
-        )
-
     tool = get_agent_tool(call.name)
-    handler = _HANDLERS[tool.handler_key]
     remaining = ctx.deadline_s - (time.monotonic() - ctx.deadline_started_at)
     timeout = min(tool.timeout_s, max(0.001, remaining))
     try:
         async with asyncio.timeout(timeout):
-            card = await handler(parsed, ctx)
+            from app.mcp import workbench_client
+
+            data = await workbench_client.call_tool(
+                call.name,
+                parsed.model_dump(mode="json"),
+                context=ctx,
+            )
     except TimeoutError as exc:
         raise AgentToolTimeout(f"{call.name} exceeded its execution deadline") from exc
+    if data.get("kind") == "terminal":
+        terminal = data.get("terminal")
+        if not isinstance(terminal, dict):
+            raise AgentExecutionError("Workbench MCP tool returned an invalid terminal result")
+        return ExecutedAgentCall(call=call, terminal=terminal)
+    card = _source_result_from_mcp(data)
     if card.card_type == "error":
         return ExecutedAgentCall(
             call=call,

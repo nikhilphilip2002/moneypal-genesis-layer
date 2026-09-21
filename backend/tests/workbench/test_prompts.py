@@ -1,3 +1,5 @@
+import pytest
+
 from app.services.workbench import prompts
 
 
@@ -64,12 +66,13 @@ def test_no_time_cue_still_permits_a_month_breakdown():
     assert "- month |" in prompts.build_agent_gold_schema()
 
 
-def test_database_tools_are_not_defined_in_the_local_registry():
+@pytest.mark.anyio
+async def test_database_tools_are_not_defined_in_the_local_registry():
+    from app.mcp import workbench_client
     from app.services.workbench import access
-    from app.services.workbench.agent_tools import native_tool_definitions
 
     offered = [
-        item["function"]["name"] for item in native_tool_definitions(
+        item["function"]["name"] for item in await workbench_client.model_tool_definitions(
             access.build_policy(role="admin", external_sources_enabled=True),
         )
     ]
