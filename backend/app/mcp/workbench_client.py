@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+from copy import deepcopy
 from typing import Any
 
 from fastmcp import Client
+from fastmcp.exceptions import ToolError
 
 from app.mcp.provider_schema import provider_tool_definition
 from app.mcp.results import require_owned_data
@@ -13,6 +15,14 @@ from app.mcp.workbench_server import mcp
 
 _tools: dict[str, Any] = {}
 _initialization_error = "Workbench MCP tools have not been discovered."
+_protocol_version = ""
+
+
+class WorkbenchMCPError(RuntimeError):
+    """A local MCP call failed validation or execution."""
+
+    code = "INVALID_TOOL_ARGUMENTS"
+    retryable = True
 
 
 def execution_meta(ctx: Any) -> dict[str, Any]:
@@ -36,32 +46,20 @@ def execution_meta(ctx: Any) -> dict[str, Any]:
 
 
 async def list_tools():
+    global _protocol_version
     # Legacy mode still uses an in-memory JSON-RPC transport and safely handles handlers
     # that offload blocking retrieval with asyncio.to_thread. Direct-dispatch mode currently
     # waits indefinitely during client shutdown after such a call.
     async with Client(mcp, mode="legacy") as client:
-        return await client.list_tools()
+        tools = await client.list_tools()
+        _protocol_version = str(getattr(client, "protocol_version", "") or "")
+        return tools
 
 
 async def discover_model_tools() -> list[str]:
     global _initialization_error
     tools = await list_tools()
     discovered = {tool.name: tool for tool in tools}
-    from app.services.workbench.agent_tools import AGENT_TOOLS
-
-    missing = sorted(set(AGENT_TOOLS) - set(discovered))
-    unexpected = sorted(set(discovered) - set(AGENT_TOOLS))
-    if missing or unexpected:
-        _tools.clear()
-        details = []
-        if missing:
-            details.append("missing: " + ", ".join(missing))
-        if unexpected:
-            details.append("unclassified: " + ", ".join(unexpected))
-        _initialization_error = (
-            "Workbench MCP tool registry mismatch (" + "; ".join(details) + ")"
-        )
-        raise RuntimeError(_initialization_error)
     _tools.clear()
     _tools.update(discovered)
     # Project every schema at startup so unsupported contracts fail before a model request.
@@ -71,23 +69,12 @@ async def discover_model_tools() -> list[str]:
     return list(_tools)
 
 
-async def model_tool_definitions(policy: Any) -> list[dict[str, Any]]:
-    from app.services.workbench.agent_tools import (
-        _allowed_curated_domains,
-        visible_agent_tools,
-    )
-
+def canonical_model_definitions() -> list[dict[str, Any]]:
     if not _tools:
-        await discover_model_tools()
-    definitions: list[dict[str, Any]] = []
-    for runtime_tool in visible_agent_tools(policy):
-        definition = provider_tool_definition(_tools[runtime_tool.name])
-        if runtime_tool.name == "search_curated_knowledge":
-            definition["function"]["parameters"]["properties"]["domain"]["enum"] = (
-                _allowed_curated_domains(policy)
-            )
-        definitions.append(definition)
-    return definitions
+        raise RuntimeError(_initialization_error)
+    return [
+        deepcopy(provider_tool_definition(_tools[name])) for name in sorted(_tools)
+    ]
 
 
 def readiness() -> dict[str, Any]:
@@ -95,6 +82,7 @@ def readiness() -> dict[str, Any]:
         "status": "ok" if _tools else "unavailable",
         "tools": list(_tools),
         "detail": _initialization_error,
+        "protocol_version": _protocol_version,
     }
 
 
@@ -104,20 +92,24 @@ async def call_tool(
     *,
     context: Any,
 ) -> dict[str, Any]:
-    async with Client(mcp, mode="legacy") as client:
-        result = await client.call_tool(
-            name,
-            arguments,
-            meta=execution_meta(context),
-        )
+    try:
+        async with Client(mcp, mode="legacy") as client:
+            result = await client.call_tool(
+                name,
+                arguments,
+                meta=execution_meta(context),
+            )
+    except ToolError as exc:
+        raise WorkbenchMCPError(str(exc)) from exc
     return require_owned_data(result, tool_name=name)
 
 
 __all__ = [
     "call_tool",
+    "canonical_model_definitions",
     "discover_model_tools",
     "execution_meta",
     "list_tools",
-    "model_tool_definitions",
     "readiness",
+    "WorkbenchMCPError",
 ]

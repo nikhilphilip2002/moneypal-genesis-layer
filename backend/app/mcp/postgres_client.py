@@ -24,6 +24,7 @@ MCP_SHUTDOWN_GRACE_S = 5.0
 _BACKEND_ONLY_TOOLS = frozenset({"postgres_health"})
 _model_tools: dict[str, dict[str, Any]] = {}
 _initialization_error = "PostgreSQL MCP tools have not been discovered."
+_protocol_version = ""
 
 
 async def call_tool(
@@ -76,7 +77,7 @@ async def call_tool(
 
 async def discover_model_tools() -> list[dict[str, Any]]:
     """Discover and authorize the PostgreSQL MCP server's native model-facing tools."""
-    global _initialization_error
+    global _initialization_error, _protocol_version
     forbidden = _BACKEND_ONLY_TOOLS.intersection(settings.postgres_mcp_model_tools)
     if forbidden:
         _model_tools.clear()
@@ -94,6 +95,9 @@ async def discover_model_tools() -> list[dict[str, Any]]:
                 timeout=settings.postgres_mcp_timeout_s,
             ) as client:
                 discovered_tools = await client.list_tools()
+                _protocol_version = str(
+                    getattr(client, "protocol_version", "") or ""
+                )
     except Exception as exc:  # noqa: BLE001 - retained for readiness diagnostics
         _model_tools.clear()
         _initialization_error = f"PostgreSQL MCP discovery failed: {type(exc).__name__}: {exc}"
@@ -155,6 +159,7 @@ def readiness() -> dict[str, Any]:
         "status": "ok" if _model_tools else "unavailable",
         "tools": list(_model_tools),
         "detail": _initialization_error,
+        "protocol_version": _protocol_version,
     }
 
 

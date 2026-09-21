@@ -75,6 +75,33 @@ def assert_required_llm(health: dict[str, Any]) -> None:
     )
 
 
+def assert_mcp_catalog(health: dict[str, Any]) -> None:
+    workbench = health.get("workbench") or {}
+    catalog = workbench.get("tool_catalog") or {}
+    owners = catalog.get("owners") or {}
+    local = set(owners.get("workbench") or [])
+    postgres = set(owners.get("postgres") or [])
+    expected_local = {
+        "search_curated_knowledge",
+        "search_public_web",
+        "visualize_query_result",
+        "finish_without_data",
+        "submit_final_answer",
+    }
+    if catalog.get("status") != "ok":
+        raise AssertionError(f"MCP catalog is not ready: {catalog}")
+    if local != expected_local:
+        raise AssertionError(f"unexpected Workbench MCP tools: {sorted(local)}")
+    if postgres != {"query"}:
+        raise AssertionError(f"unexpected PostgreSQL MCP tools: {sorted(postgres)}")
+    fingerprint = str(catalog.get("schema_fingerprint") or "")
+    if len(fingerprint) != 64:
+        raise AssertionError("MCP schema fingerprint is missing or invalid")
+    protocols = catalog.get("protocol_versions") or {}
+    if not protocols.get("workbench") or not protocols.get("postgres"):
+        raise AssertionError(f"negotiated MCP protocol versions are missing: {protocols}")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--base-url", required=True)
@@ -90,6 +117,9 @@ def main() -> int:
     conversation_id = f"rollout-{uuid.uuid4().hex[:10]}"
     report: dict[str, Any] = {"conversation_id": conversation_id, "cases": []}
 
+    service_health = request_json(f"{base_url}/health", args.token)
+    assert_mcp_catalog(service_health)
+    report["mcp"] = service_health["workbench"]["tool_catalog"]
     health = request_json(f"{base_url}/nlq/health", args.token)
     report["health"] = health
     if args.require_llm:

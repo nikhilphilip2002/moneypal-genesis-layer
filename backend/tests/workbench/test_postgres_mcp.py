@@ -55,6 +55,29 @@ async def test_client_has_a_whole_operation_timeout(monkeypatch):
         await postgres_client.health()
 
 
+@pytest.mark.anyio
+async def test_client_timeout_also_bounds_session_shutdown(monkeypatch):
+    class SlowShutdownClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def call_tool(self, *_args, **_kwargs):
+            return SimpleNamespace(data={"success": True, "data": {"status": "ok"}})
+
+        async def __aexit__(self, *args):
+            await asyncio.sleep(1)
+
+    monkeypatch.setattr(postgres_client, "Client", SlowShutdownClient)
+    monkeypatch.setattr(settings, "postgres_mcp_timeout_s", 0.001)
+    monkeypatch.setattr(postgres_client, "MCP_SHUTDOWN_GRACE_S", 0.0)
+
+    with pytest.raises(postgres_client.PostgresMCPError, match="timed out"):
+        await postgres_client.health()
+
+
 def test_query_tool_preserves_statement_timeout_code(monkeypatch):
     meta = {
         "workbench_role": "admin",

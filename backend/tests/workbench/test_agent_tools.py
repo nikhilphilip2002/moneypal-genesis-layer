@@ -6,13 +6,11 @@ from typing import Any
 import pytest
 
 from app.services.workbench import access
-from app.mcp import workbench_client
-from app.services.workbench.agent_contracts import FinishWithoutDataArguments
+from app.mcp.tool_catalog import ToolCatalog
 from app.services.workbench.agent_tools import (
-    AGENT_TOOLS,
+    RUNTIME_TOOL_POLICIES,
     AgentToolAccessDenied,
-    AgentToolArgumentsInvalid,
-    validate_agent_arguments,
+    authorize_local_tool_call,
 )
 
 
@@ -27,9 +25,11 @@ def _policy(*, role="admin", external=True):
 
 
 async def _definitions(*, role="admin", external=True):
+    catalog = ToolCatalog()
+    await catalog.discover_local()
     return {
         item["function"]["name"]: item["function"]
-        for item in await workbench_client.model_tool_definitions(
+        for item in await catalog.model_tool_definitions(
             _policy(role=role, external=external)
         )
     }
@@ -45,15 +45,19 @@ def _walk(value: Any):
             yield from _walk(child)
 
 
-def test_registry_exposes_concrete_flat_tools():
-    assert list(AGENT_TOOLS) == [
+def test_registry_contains_runtime_policy_only():
+    assert list(RUNTIME_TOOL_POLICIES) == [
         "search_curated_knowledge",
         "search_public_web",
         "visualize_query_result",
         "finish_without_data",
         "submit_final_answer",
     ]
-    assert "query_loan_book" not in AGENT_TOOLS
+    assert "query_loan_book" not in RUNTIME_TOOL_POLICIES
+    for policy in RUNTIME_TOOL_POLICIES.values():
+        assert not hasattr(policy, "arguments_model")
+        assert not hasattr(policy, "description")
+        assert not hasattr(policy, "handler_key")
 
 
 @pytest.mark.anyio
@@ -80,7 +84,7 @@ async def test_provider_schemas_are_closed_flat_objects_without_polymorphic_keyw
 async def test_every_authorized_tool_is_offered_with_its_full_schema():
     """Every policy-authorized local tool is offered with its complete schema."""
     definitions = await _definitions()
-    assert set(definitions) == set(AGENT_TOOLS)
+    assert set(definitions) == set(RUNTIME_TOOL_POLICIES)
     assert all(definition["parameters"]["properties"] for definition in definitions.values())
 
 
@@ -101,64 +105,13 @@ async def test_role_policy_removes_forbidden_curated_domains():
     assert "regulatory" not in domains["enum"]
 
 
-@pytest.mark.anyio
-async def test_canonical_model_fields_match_provider_schema_properties():
-    definitions = await _definitions()
-    for name, tool in AGENT_TOOLS.items():
-        assert set(tool.arguments_model.model_fields) == set(
-            definitions[name]["parameters"]["properties"]
-        )
-
-
 def test_forged_curated_domain_is_reauthorized_at_validation_time():
     with pytest.raises(AgentToolAccessDenied, match="external source consent"):
-        validate_agent_arguments(
+        authorize_local_tool_call(
             "search_curated_knowledge",
             {"domain": "regulatory", "query": "RBI PSL rules"},
             policy=_policy(external=False),
         )
-
-
-@pytest.mark.parametrize(
-    "arguments,error",
-    [
-        (
-            {
-                "outcome": "clarify",
-                "message": "Which period?",
-                "suggestions": [],
-                "reason_code": "out_of_scope",
-            },
-            "clarification cannot include",
-        ),
-        (
-            {
-                "outcome": "refuse",
-                "message": "I cannot do that.",
-                "suggestions": [],
-                "reason_code": None,
-            },
-            "refusal requires",
-        ),
-    ],
-)
-def test_terminal_tool_cross_field_rules(arguments, error):
-    with pytest.raises(AgentToolArgumentsInvalid, match=error):
-        validate_agent_arguments("finish_without_data", arguments, policy=_policy())
-
-
-def test_valid_terminal_tool_is_typed():
-    parsed = validate_agent_arguments(
-        "finish_without_data",
-        {
-            "outcome": "clarify",
-            "message": "Which reporting period should I use?",
-            "suggestions": ["This month", "Last month"],
-            "reason_code": None,
-        },
-        policy=_policy(),
-    )
-    assert isinstance(parsed, FinishWithoutDataArguments)
 
 
 @pytest.mark.anyio

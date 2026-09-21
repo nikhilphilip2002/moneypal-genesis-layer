@@ -697,9 +697,10 @@ Add protocol and integration tests for:
 10. Update health checks, Docker/runbook documentation, and complete full regression tests.
 
 Keep commits at these boundaries so the server/client migration can be reverted independently
-of local execution routing. A temporary `WORKBENCH_MCP_LOCAL_EXECUTION` rollout flag may select
-old versus in-memory local execution during staging, but both modes must use MCP-discovered
-schemas. Remove the flag and legacy path after one stable release.
+of local execution routing. The implementation deliberately has no
+`WORKBENCH_MCP_LOCAL_EXECUTION` flag: the duplicate local dispatch path has been removed, and
+reintroducing it would restore the contract drift this migration is designed to eliminate.
+Rollback rebuilds the API and PostgreSQL MCP containers from the prior commit together.
 
 ## Acceptance criteria
 

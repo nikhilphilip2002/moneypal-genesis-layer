@@ -62,3 +62,8 @@ Qdrant and web handlers return bounded typed evidence. They do not make per-sour
 model calls; one common grounded composer handles all retrieved evidence. The durable
 Workbench record is the only prose transcript. NLQ conversation state contains structured
 query anchors only and is not a second chat history.
+
+Tool contracts are served by FastMCP 4 and discovered through the MCP SDK v2. Local Workbench
+tools execute through an in-memory client; PostgreSQL remains a separate Streamable HTTP MCP
+service. See [`docs/FASTMCP_MIGRATION.md`](../docs/FASTMCP_MIGRATION.md) for ownership, result
+contracts, health fields, tests, and deployment verification.

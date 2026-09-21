@@ -30,9 +30,9 @@ async def _lifespan(_app: FastAPI):
         catalog_version, schema_chars,
     )
 
-    from app.mcp import postgres_client, workbench_client
+    from app.mcp.tool_catalog import catalog as mcp_catalog
 
-    local_tools = await workbench_client.discover_model_tools()
+    local_tools = await mcp_catalog.discover_local()
     logging.getLogger(__name__).info(
         "Workbench in-memory MCP initialized tools=%s", local_tools,
     )
@@ -40,9 +40,11 @@ async def _lifespan(_app: FastAPI):
     try:
         # Container dependency ordering does not guarantee service readiness. Bound startup
         # discovery so unrelated APIs can still start; a later Workbench request retries it.
-        mcp_status = await asyncio.wait_for(postgres_client.initialize(), timeout=10.0)
+        postgres_tools = await asyncio.wait_for(
+            mcp_catalog.discover_postgres(), timeout=10.0
+        )
         logging.getLogger(__name__).info(
-            "PostgreSQL MCP initialized tools=%s", mcp_status["tools"],
+            "PostgreSQL MCP initialized tools=%s", postgres_tools,
         )
     except Exception as exc:  # noqa: BLE001 - readiness remains visible and retryable
         logging.getLogger(__name__).warning(
@@ -110,6 +112,7 @@ def create_app() -> FastAPI:
     def health():
         """Process health plus cached startup state; never performs network I/O."""
         from app.mcp import postgres_client, workbench_client
+        from app.mcp.tool_catalog import catalog as mcp_catalog
 
         return {
             "status": "ok",
@@ -117,6 +120,7 @@ def create_app() -> FastAPI:
             "workbench": {
                 "local_mcp": workbench_client.readiness(),
                 "postgres_mcp": postgres_client.readiness(),
+                "tool_catalog": mcp_catalog.readiness(),
                 "gold_schema": {
                     "status": (
                         "ok" if getattr(app.state, "agent_gold_schema_version", "")

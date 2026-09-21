@@ -10,7 +10,8 @@ pg8000
 sqlalchemy
 sqlglot
 pyyaml
-mcp==1.29.0
+fastmcp>=4.0.5,<5
+mcp>=2.0.0,<3
 # Macro ingestion pipeline: crawl (requests/bs4/lxml) + weekly worker (APScheduler).
 requests
 beautifulsoup4

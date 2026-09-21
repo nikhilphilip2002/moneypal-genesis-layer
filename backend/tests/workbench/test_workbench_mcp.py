@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 from types import SimpleNamespace
 
@@ -10,9 +11,10 @@ from fastmcp import Client
 from fastmcp.exceptions import MCPError, ToolError
 
 from app.mcp import workbench_client, workbench_server
+from app.mcp.tool_catalog import ToolCatalog
 from app.services.workbench import access
 from app.services.workbench import agent_executor
-from app.services.workbench.agent_tools import AGENT_TOOLS
+from app.services.workbench.agent_tools import RUNTIME_TOOL_POLICIES
 from app.services.workbench.results import SourceResult
 
 
@@ -42,12 +44,16 @@ def _context(*, external: bool = True):
 @pytest.mark.anyio
 async def test_discovery_is_the_model_contract_source():
     names = await workbench_client.discover_model_tools()
-    assert names == list(AGENT_TOOLS)
+    assert set(names) == set(RUNTIME_TOOL_POLICIES)
 
-    definitions = await workbench_client.model_tool_definitions(
+    catalog = ToolCatalog()
+    await catalog.discover_local()
+    definitions = await catalog.model_tool_definitions(
         _context().source_policy
     )
-    assert [item["function"]["name"] for item in definitions] == list(AGENT_TOOLS)
+    assert {item["function"]["name"] for item in definitions} == set(
+        RUNTIME_TOOL_POLICIES
+    )
     assert all(item["function"]["strict"] is True for item in definitions)
 
 
@@ -69,6 +75,26 @@ async def test_owned_tool_content_contains_one_json_envelope():
     content_payload = json.loads(result.content[0].text)
     assert content_payload == result.data
     assert "text" not in content_payload
+
+
+@pytest.mark.anyio
+async def test_in_memory_client_supports_concurrent_calls():
+    async def invoke(index: int):
+        return await workbench_client.call_tool(
+            "finish_without_data",
+            {
+                "outcome": "clarify",
+                "message": f"Question {index}?",
+                "suggestions": [],
+                "reason_code": None,
+            },
+            context=_context(),
+        )
+
+    results = await asyncio.gather(*(invoke(index) for index in range(5)))
+    assert [item["terminal"]["message"] for item in results] == [
+        f"Question {index}?" for index in range(5)
+    ]
 
 
 @pytest.mark.anyio

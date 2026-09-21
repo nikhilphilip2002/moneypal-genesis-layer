@@ -28,15 +28,14 @@ from app.services.workbench.agent_executor import (
     ExecutedAgentCall,
     execute_agent_call,
 )
-from app.services.workbench.agent_contracts import FinalSynthesis, QueryExecutionRecord
+from app.services.workbench.agent_contracts import QueryExecutionRecord
 from app.services.workbench.agent_tools import (
     AgentToolAccessDenied,
     AgentToolArgumentsInvalid,
-    AgentToolError,
     AgentToolNotFound,
-    get_agent_tool,
-    validate_agent_arguments,
-    visible_agent_tools,
+    authorize_local_tool_call,
+    get_runtime_tool_policy,
+    visible_runtime_tool_names,
 )
 from app.services.workbench.results import ExecutionDecision, SourceResult
 
@@ -121,10 +120,16 @@ _CURATED_SOURCES = {
 }
 
 
-def _source_for_call(call) -> str | None:
+def _is_postgres_tool(name: str) -> bool:
+    """Use catalog ownership, retaining a discovery fallback for degraded startup."""
     from app.mcp import postgres_client
+    from app.mcp.tool_catalog import catalog as mcp_catalog
 
-    if postgres_client.is_model_tool(call.name):
+    return mcp_catalog.is_postgres(name) or postgres_client.is_model_tool(name)
+
+
+def _source_for_call(call) -> str | None:
+    if _is_postgres_tool(call.name):
         return "db"
     if call.name == "search_public_web":
         return "web"
@@ -226,15 +231,20 @@ async def _select(
     catalog_context = prompts.build_agent_catalog_context(
         state["question"], catalog, supplement=supplement,
     )
-    from app.mcp import workbench_client
+    from app.mcp.tool_catalog import catalog as mcp_catalog
 
-    definitions = await workbench_client.model_tool_definitions(state["source_policy"])
-    if state["source_policy"].allows("db"):
+    if state["source_policy"].allows("db") and not mcp_catalog.names(owner="postgres"):
         from app.mcp import postgres_client
 
-        if not postgres_client.model_tool_definitions():
-            await postgres_client.discover_model_tools()
-        definitions = [*postgres_client.model_tool_definitions(), *definitions]
+        cached_postgres = postgres_client.model_tool_definitions()
+        if cached_postgres:
+            mcp_catalog.register_postgres_definitions(cached_postgres)
+        else:
+            try:
+                await mcp_catalog.discover_postgres(check_health=False)
+            except Exception:
+                pass
+    definitions = await mcp_catalog.model_tool_definitions(state["source_policy"])
     if not definitions:
         raise LLMError("no native tools are authorized for this request")
     prompt = prompts.build_agent_prompt(
@@ -303,25 +313,36 @@ def _preflight(result, state: dict[str, Any]) -> list[tuple[str, str, str]]:
         if terminals and len(result.tool_calls) != 1 and call in terminals:
             continue
         try:
-            from app.mcp import postgres_client
-
-            if postgres_client.is_model_tool(call.name):
+            if _is_postgres_tool(call.name):
                 state["source_policy"].require("db")
                 if not isinstance(call.arguments, dict):
                     raise AgentToolArgumentsInvalid("MCP tool arguments must be a JSON object")
                 continue
-            parsed = validate_agent_arguments(
-                call.name, call.arguments,
-                policy=state["source_policy"], catalog=state.get("_agent_catalog"),
+            authorize_local_tool_call(
+                call.name, call.arguments, policy=state["source_policy"]
             )
-            if isinstance(parsed, FinalSynthesis):
+            if call.name == "submit_final_answer":
+                visual_query_ids = call.arguments.get("visual_query_ids")
+                excluded_queries = call.arguments.get("excluded_queries")
+                # Malformed fields go untouched to FastMCP, the sole input-schema
+                # validator. Reconciliation below is a stateful business rule that the
+                # MCP schema cannot express and runs only when its inputs have the shape
+                # needed for comparison.
+                if not isinstance(visual_query_ids, list) or not isinstance(
+                    excluded_queries, list
+                ):
+                    continue
+                if not all(isinstance(item, str) for item in visual_query_ids):
+                    continue
+                if not all(isinstance(item, dict) for item in excluded_queries):
+                    continue
                 registry = list(state.get("query_registry", []))
                 successful_queries = {
                     str(record.get("query_id"))
                     for record in registry
                     if record.get("status") == "success"
                     and record.get("has_data") is True
-                    and postgres_client.is_model_tool(str(record.get("tool_name") or ""))
+                    and _is_postgres_tool(str(record.get("tool_name") or ""))
                 }
                 presented_sources = {
                     str(record.get("source_query_id"))
@@ -339,8 +360,10 @@ def _preflight(result, state: dict[str, Any]) -> list[tuple[str, str, str]]:
                     and record.get("tool_name") == "visualize_query_result"
                 }
                 deliberately_excluded = {
-                    item.query_id for item in parsed.excluded_queries
-                    if item.reason_code in {
+                    str(item.get("query_id"))
+                    for item in excluded_queries
+                    if isinstance(item.get("query_id"), str)
+                    and item.get("reason_code") in {
                         "superseded", "discovery_only", "validation_only",
                         "unused_by_synthesis",
                     }
@@ -354,7 +377,7 @@ def _preflight(result, state: dict[str, Any]) -> list[tuple[str, str, str]]:
                         f"final synthesis: {', '.join(missing)}"
                     )
                 invalid_visuals = sorted(
-                    set(parsed.visual_query_ids) - successful_visuals
+                    set(visual_query_ids) - successful_visuals
                 )
                 if invalid_visuals:
                     raise AgentToolArgumentsInvalid(
@@ -368,29 +391,13 @@ def _preflight(result, state: dict[str, Any]) -> list[tuple[str, str, str]]:
                     and str(record.get("source_query_id")) not in deliberately_excluded
                 }
                 missing_visuals = sorted(
-                    required_visuals - set(parsed.visual_query_ids)
+                    required_visuals - set(visual_query_ids)
                 )
                 if missing_visuals:
                     raise AgentToolArgumentsInvalid(
                         "successful visualizations used for the answer must be listed in "
                         f"visual_query_ids: {', '.join(missing_visuals)}"
                     )
-            constraints = [
-                *getattr(parsed, "filters", ()),
-                *getattr(parsed, "having", ()),
-            ]
-            dimensions = set(getattr(parsed, "dimensions", ()))
-            grouped_null_fields = list(dict.fromkeys(
-                item.field
-                for item in constraints
-                if item.op == "is_null" and item.field in dimensions
-            ))
-            if grouped_null_fields:
-                fields = ", ".join(grouped_null_fields)
-                raise AgentToolArgumentsInvalid(
-                    f"cannot group by {fields} while filtering the same dimension to null; "
-                    "remove the grouping or the null constraint based on the user's request"
-                )
         except AgentToolAccessDenied as exc:
             failures.append((call.id, str(exc), "POLICY_DENIED"))
         except AgentToolNotFound as exc:
@@ -405,10 +412,14 @@ def _preflight(result, state: dict[str, Any]) -> list[tuple[str, str, str]]:
 
 def _authorized_tool_names(state: dict[str, Any]) -> list[str]:
     from app.mcp import postgres_client
+    from app.mcp.tool_catalog import catalog as mcp_catalog
 
-    names = [tool.name for tool in visible_agent_tools(state["source_policy"])]
+    names = visible_runtime_tool_names(state["source_policy"])
     if state["source_policy"].allows("db"):
-        names = [*postgres_client.readiness()["tools"], *names]
+        postgres_names = mcp_catalog.names(owner="postgres")
+        if not postgres_names:
+            postgres_names = list(postgres_client.readiness()["tools"])
+        names = [*postgres_names, *names]
     return names
 
 
@@ -465,19 +476,7 @@ def _raise_first_failure(failures: list[tuple[str, str, str]]) -> None:
 
 
 def _stored_arguments(state: dict[str, Any], call, failed: bool) -> dict[str, Any]:
-    if failed:
-        return call.arguments
-    from app.mcp import postgres_client
-
-    if postgres_client.is_model_tool(call.name):
-        return call.arguments
-    try:
-        return validate_agent_arguments(
-            call.name, call.arguments,
-            policy=state["source_policy"], catalog=state.get("_agent_catalog"),
-        ).model_dump(mode="json", exclude_none=True)
-    except AgentToolError:
-        return call.arguments
+    return call.arguments
 
 
 def _persistable(state) -> bool:
@@ -498,13 +497,11 @@ def _persist_query_registry(state: dict[str, Any]) -> None:
 
 def _register_database_queries(state: dict[str, Any], calls) -> dict[str, dict[str, Any]]:
     """Allocate IDs before PostgreSQL calls and derived visual creation start."""
-    from app.mcp import postgres_client
-
     registry = state.setdefault("query_registry", [])
     registered: dict[str, dict[str, Any]] = {}
     for call in calls:
         is_visual = call.name == "visualize_query_result"
-        if not postgres_client.is_model_tool(call.name) and not is_visual:
+        if not _is_postgres_tool(call.name) and not is_visual:
             continue
         fingerprint = hashlib.sha256(json.dumps(
             {"tool": call.name, "arguments": call.arguments},
@@ -857,12 +854,10 @@ async def _execute_one(
 async def _stream_item(state: dict[str, Any], item: ExecutedAgentCall) -> None:
     from app.services.workbench.graph import sse
 
-    from app.mcp import postgres_client
-
     if (
         item.card is None and item.error is not None
         and item.error.get("code") != "POLICY_DENIED"
-        and not postgres_client.is_model_tool(item.call.name)
+        and not _is_postgres_tool(item.call.name)
     ):
         source = _source_for_call(item.call)
         if source is not None:
@@ -934,15 +929,15 @@ async def _execute_batch(state, context: AgentExecutionContext, calls) -> list[E
             await _emit_query_event(state, "query_started", record)
 
     output: list[ExecutedAgentCall | None] = [None] * len(calls)
-    from app.mcp import postgres_client
-
     parallel = [
         (i, call) for i, call in enumerate(calls)
-        if not postgres_client.is_model_tool(call.name) and get_agent_tool(call.name).parallel_safe
+        if not _is_postgres_tool(call.name)
+        and get_runtime_tool_policy(call.name).parallel_safe
     ]
     serial = [
         (i, call) for i, call in enumerate(calls)
-        if postgres_client.is_model_tool(call.name) or not get_agent_tool(call.name).parallel_safe
+        if _is_postgres_tool(call.name)
+        or not get_runtime_tool_policy(call.name).parallel_safe
     ]
     if parallel:
         async def indexed(index, call):

@@ -81,7 +81,11 @@ async def test_tool_trace_streams_running_then_completed_with_arguments(monkeypa
         )
 
     monkeypatch.setattr(agent, "execute_agent_call", execute)
-    monkeypatch.setattr(agent, "get_agent_tool", lambda _name: type("Tool", (), {"parallel_safe": False})())
+    monkeypatch.setattr(
+        agent,
+        "get_runtime_tool_policy",
+        lambda _name: type("Tool", (), {"parallel_safe": False})(),
+    )
     from app.mcp import postgres_client
     monkeypatch.setattr(postgres_client, "is_model_tool", lambda name: name == "query")
 
@@ -126,7 +130,7 @@ async def test_cancelled_database_query_is_finalized_in_registry(monkeypatch):
 
     monkeypatch.setattr(agent, "execute_agent_call", execute)
     monkeypatch.setattr(
-        agent, "get_agent_tool",
+        agent, "get_runtime_tool_policy",
         lambda _name: type("Tool", (), {"parallel_safe": False})(),
     )
     from app.mcp import postgres_client

@@ -22,7 +22,8 @@ An advanced regulatory, competitive, and macro-economic intelligence dashboard d
 - **Frontend:** Next.js (TypeScript), Tailwind CSS, Lucide Icons, Radix UI.
 - **Backend:** FastAPI (Python), Uvicorn.
 - **Orchestration:** Plain async Workbench with deterministic-first governed source routing.
-- **MCP:** Python MCP client for internal PostgreSQL access and hosted Exa web search.
+- **MCP:** FastMCP 4/MCP SDK v2 with in-process Workbench tools, governed remote PostgreSQL,
+  and hosted Exa web search. See [FastMCP architecture and operations](docs/FASTMCP_MIGRATION.md).
 - **Vector DB:** Qdrant (Tailscale shared/local container).
 - **Embeddings:** `BAAI/bge-m3` (1024-dimension).
 - **LLM Engine:** One deployment-configured OpenAI-compatible endpoint.
@@ -85,8 +86,8 @@ and streamed usage statistics. Workbench forwards each assistant response throug
 That content remains visible exactly as received even when the same response also
 contains a tool call or the request later fails. Tool results are separate messages,
 and the model decides whether to call another tool or finish with content. Tool
-arguments are assembled and validated before execution; provider reasoning fields
-remain separate from assistant content. Servers that return JSON despite the streaming
+arguments are assembled by the provider and validated by FastMCP at the handler boundary;
+provider reasoning fields remain separate from assistant content. Servers that return JSON despite the streaming
 request remain compatible, but deliver their text all at once.
 
 Run the frontend streaming checks with `cd frontend && npm test`.

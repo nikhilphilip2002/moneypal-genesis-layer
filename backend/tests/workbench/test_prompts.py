@@ -68,11 +68,13 @@ def test_no_time_cue_still_permits_a_month_breakdown():
 
 @pytest.mark.anyio
 async def test_database_tools_are_not_defined_in_the_local_registry():
-    from app.mcp import workbench_client
+    from app.mcp.tool_catalog import ToolCatalog
     from app.services.workbench import access
 
+    catalog = ToolCatalog()
+    await catalog.discover_local()
     offered = [
-        item["function"]["name"] for item in await workbench_client.model_tool_definitions(
+        item["function"]["name"] for item in await catalog.model_tool_definitions(
             access.build_policy(role="admin", external_sources_enabled=True),
         )
     ]

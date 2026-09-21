@@ -10,10 +10,8 @@ from dataclasses import dataclass, field
 from datetime import date
 from typing import Any, Awaitable, Callable
 
-from pydantic import BaseModel
-
 from app.core.config import settings
-from app.services.nlq.catalog import Catalog, get_catalog
+from app.services.nlq.catalog import Catalog
 from app.services.nlq.executor import QueryResult
 from app.services.nlq.llm import NativeToolCall
 from app.services.workbench import facts
@@ -23,7 +21,10 @@ from app.services.workbench.agent_contracts import (
     SearchPublicWebArguments,
     VisualizeQueryResultArguments,
 )
-from app.services.workbench.agent_tools import get_agent_tool, validate_agent_arguments
+from app.services.workbench.agent_tools import (
+    authorize_local_tool_call,
+    get_runtime_tool_policy,
+)
 from app.services.workbench.results import Evidence, SourceResult
 
 logger = logging.getLogger(__name__)
@@ -172,7 +173,7 @@ def observation_limit_chars(tool_name: str | None) -> int:
     limit = settings.workbench_agent_observation_max_chars
     if tool_name:
         try:
-            limit = min(limit, get_agent_tool(tool_name).max_result_chars)
+            limit = min(limit, get_runtime_tool_policy(tool_name).max_result_chars)
         except Exception:  # noqa: BLE001 - unknown tool names keep the default bound
             logger.debug("no observation bound registered for tool %r", tool_name)
     return limit
@@ -432,7 +433,9 @@ async def execute_agent_call(
     """Validate, reauthorize, bound, and execute exactly one native call."""
     from app.mcp import postgres_client
 
-    if postgres_client.is_model_tool(call.name):
+    from app.mcp.tool_catalog import catalog as mcp_catalog
+
+    if mcp_catalog.is_postgres(call.name) or postgres_client.is_model_tool(call.name):
         ctx.source_policy.require("db")
         remaining = ctx.deadline_s - (time.monotonic() - ctx.deadline_started_at)
         try:
@@ -445,11 +448,8 @@ async def execute_agent_call(
             query_id=ctx.query_id, attempt_id=ctx.attempt_id,
         )
 
-    catalog = ctx.catalog or get_catalog()
-    parsed: BaseModel = validate_agent_arguments(
-        call.name, call.arguments, policy=ctx.source_policy, catalog=catalog,
-    )
-    tool = get_agent_tool(call.name)
+    authorize_local_tool_call(call.name, call.arguments, policy=ctx.source_policy)
+    tool = get_runtime_tool_policy(call.name)
     remaining = ctx.deadline_s - (time.monotonic() - ctx.deadline_started_at)
     timeout = min(tool.timeout_s, max(0.001, remaining))
     try:
@@ -458,7 +458,7 @@ async def execute_agent_call(
 
             data = await workbench_client.call_tool(
                 call.name,
-                parsed.model_dump(mode="json"),
+                call.arguments,
                 context=ctx,
             )
     except TimeoutError as exc:

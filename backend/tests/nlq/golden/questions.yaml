@@ -396,8 +396,8 @@
   question: What was PAR 30 in January?
   category: coverage
   route: queryspec
-  expect_warning: History runs only from 2026-05-22
-  note: Classification history starts 2026-05-22, so January has no underlying data.
+  expect_warning: single snapshot dated 2026-08-30
+  note: The source is a 2026-08-30 snapshot, so January has no historical underlying data.
   spec:
     metrics: [par_30]
     period: {start: 2026-01-01, end: 2026-01-31}

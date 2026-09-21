@@ -24,7 +24,8 @@ services:
       - ./Regulations:/srv/Regulations:ro
       - ./backend/data/logs:/srv/backend/data/logs
     depends_on:
-      - postgres-mcp
+      postgres-mcp:
+        condition: service_healthy
 
   postgres-mcp:
     image: moneypal-backend:local
@@ -40,6 +41,18 @@ services:
       REGISTRY_DIR: /srv/backend/registry/regulations
       LOCAL_INDEX_PATH: /srv/backend/vector_store/regulatory_chunks.jsonl
     command: ["python", "-m", "app.mcp.postgres_server"]
+    restart: unless-stopped
+    stop_grace_period: 15s
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import socket; s=socket.create_connection(('127.0.0.1',8001),2); s.close()"
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 10s
     volumes:
       - ./Regulations:/srv/Regulations:ro
       - ./backend/data/logs:/srv/backend/data/logs
