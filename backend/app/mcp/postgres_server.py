@@ -37,8 +37,13 @@ async def postgres_health() -> dict[str, Any]:
 
 def _trusted_meta(ctx: Context) -> dict[str, Any]:
     """MCP request metadata is attached by the backend and is not a model argument."""
-    meta = ctx.request_context.meta
-    return meta.model_dump(exclude_none=True) if meta is not None else {}
+    request_context = ctx.request_context
+    meta = request_context.meta if request_context is not None else None
+    if meta is None:
+        return {}
+    if isinstance(meta, dict):
+        return dict(meta)
+    return meta.model_dump(exclude_none=True)
 
 
 def _query(sql: str, meta: dict[str, Any]) -> dict[str, Any]:

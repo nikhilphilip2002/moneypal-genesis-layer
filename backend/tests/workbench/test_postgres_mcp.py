@@ -14,6 +14,27 @@ from app.services.nlq.executor import QueryTimeoutError
 from app.services.nlq.validator import ValidationError
 
 
+def test_trusted_metadata_accepts_fastmcp_dictionary_shape():
+    meta = {
+        "workbench_role": "admin",
+        "workbench_effective_sources": ["db"],
+    }
+    ctx = SimpleNamespace(request_context=SimpleNamespace(meta=meta))
+
+    assert postgres_server._trusted_meta(ctx) == meta
+    assert postgres_server._trusted_meta(ctx) is not meta
+
+
+def test_trusted_metadata_accepts_model_shape_and_missing_context():
+    model_meta = SimpleNamespace(
+        model_dump=lambda **_kwargs: {"workbench_role": "admin"}
+    )
+    ctx = SimpleNamespace(request_context=SimpleNamespace(meta=model_meta))
+
+    assert postgres_server._trusted_meta(ctx) == {"workbench_role": "admin"}
+    assert postgres_server._trusted_meta(SimpleNamespace(request_context=None)) == {}
+
+
 @pytest.mark.anyio
 async def test_health_tool_is_discoverable_and_returns_structured_content(monkeypatch):
     monkeypatch.setattr(
