@@ -13,9 +13,7 @@ from typing import Any, Awaitable, Callable
 from pydantic import BaseModel
 
 from app.core.config import settings
-from app.services.nlq import charts
 from app.services.nlq.catalog import Catalog, get_catalog
-from app.services.nlq.contracts import Lineage
 from app.services.nlq.executor import QueryResult
 from app.services.nlq.llm import NativeToolCall
 from app.services.workbench import facts
@@ -32,6 +30,16 @@ from app.services.workbench.results import SourceResult
 
 logger = logging.getLogger(__name__)
 
+_CHART_UNITS = frozenset({
+    "inr", "percent", "count", "days", "months", "years", "year", "ratio",
+    "text", "date", "datetime", "boolean",
+})
+
+
+def _chart_unit(value: Any, *, numeric: bool) -> str:
+    unit = str(value or "").lower()
+    return unit if unit in _CHART_UNITS else ("count" if numeric else "text")
+
 
 class AgentExecutionError(RuntimeError):
     code = "SOURCE_UNAVAILABLE"
@@ -40,6 +48,18 @@ class AgentExecutionError(RuntimeError):
 
 class AgentToolTimeout(AgentExecutionError):
     code = "TOOL_TIMEOUT"
+
+
+@dataclass(frozen=True, slots=True)
+class RawQueryResult:
+    """Durable database evidence that is never itself a renderable card."""
+
+    payload: dict[str, Any]
+    summary: str
+    lineage: dict[str, Any]
+    row_count: int
+    complete: bool = True
+    sensitive: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -64,6 +84,7 @@ class AgentExecutionContext:
 class ExecutedAgentCall:
     call: NativeToolCall
     card: SourceResult | None = None
+    raw_result: RawQueryResult | None = None
     terminal: dict[str, Any] | None = None
     error: dict[str, Any] | None = None
     duration_ms: int = 0
@@ -82,6 +103,20 @@ class ExecutedAgentCall:
             return payload
         if self.terminal is not None:
             return {"status": "terminal", **self.terminal}
+        if self.raw_result is not None:
+            payload = {
+                "status": "ok",
+                "source": "db",
+                "result_type": "raw_query",
+                "payload": self.raw_result.payload,
+                "summary": self.raw_result.summary,
+                "complete": self.raw_result.complete,
+                "lineage": self.raw_result.lineage,
+                "row_count": self.raw_result.row_count,
+            }
+            if query_reference is not None:
+                payload["query_reference"] = query_reference
+            return payload
         assert self.card is not None
         payload = {
             "status": "ok",
@@ -236,7 +271,7 @@ def shape_observation_text(content: str, *, tool_name: str | None = None) -> str
 
 async def _execute_postgres_mcp(
     call: NativeToolCall, ctx: AgentExecutionContext,
-) -> SourceResult:
+) -> RawQueryResult:
     from app.mcp import postgres_client
 
     payload = await postgres_client.call_tool(
@@ -284,34 +319,48 @@ async def _execute_postgres_mcp(
         plan_cost=payload.get("plan_cost"),
         warnings=[str(item) for item in payload.get("warnings", [])],
     )
-    lineage = Lineage(
-        path="postgres_mcp",
-        sql=result.sql,
-        display_sql=result.sql,
-        source_tables=[str(item) for item in payload.get("tables", [])],
-        row_count=result.row_count,
-        duration_ms=result.duration_ms,
-        warnings=result.warnings,
-        unverified=True,
-    )
-    chart = charts.build_from_rows(
-        question=ctx.question or "PostgreSQL query",
-        result=result,
-        lineage=lineage,
-        catalog=ctx.catalog,
-        unit_hints={
-            str(key): str(value)
-            for key, value in (payload.get("column_units") or {}).items()
+    unit_hints = {
+        str(key): str(value)
+        for key, value in (payload.get("column_units") or {}).items()
+    }
+    raw_columns = [
+        {
+            "name": column,
+            "label": column.replace("_", " ").title(),
+            "unit": _chart_unit(unit_hints.get(column), numeric=any(
+                isinstance(row.get(column), (int, float))
+                and not isinstance(row.get(column), bool)
+                for row in result.rows
+            )),
+            "sensitivity": "internal",
+        }
+        for column in result.columns
+    ]
+    lineage = {
+        "path": "postgres_mcp",
+        "sql": result.sql,
+        "display_sql": result.sql,
+        "parameters": {},
+        "source_tables": [str(item) for item in payload.get("tables", [])],
+        "formulas": {},
+        "row_count": result.row_count,
+        "duration_ms": result.duration_ms,
+        "as_of": None,
+        "warnings": result.warnings,
+        "unverified": True,
+        "requires_signoff": [],
+    }
+    return RawQueryResult(
+        payload={
+            "title": (ctx.question or "PostgreSQL query").strip().rstrip("?.!")[:120],
+            "columns": raw_columns,
+            "rows": result.rows,
+            "lineage": lineage,
         },
-        description="Executed through the read-only PostgreSQL MCP server.",
-    )
-    return SourceResult(
-        source="db",
-        card_type="chart",
-        payload=chart.model_dump(mode="json"),
-        summary=chart.summary,
+        summary=f"Query returned {result.row_count:,} row(s).",
         sensitive=bool(payload.get("pii_columns")),
-        lineage=chart.lineage.model_dump(mode="json"),
+        lineage=lineage,
+        row_count=result.row_count,
         complete=not result.truncated,
     )
 
@@ -377,11 +426,12 @@ async def execute_agent_call(
         remaining = ctx.deadline_s - (time.monotonic() - ctx.deadline_started_at)
         try:
             async with asyncio.timeout(max(0.001, remaining)):
-                card = await _execute_postgres_mcp(call, ctx)
+                raw_result = await _execute_postgres_mcp(call, ctx)
         except TimeoutError as exc:
             raise AgentToolTimeout(f"{call.name} exceeded its execution deadline") from exc
         return ExecutedAgentCall(
-            call=call, card=card, query_id=ctx.query_id, attempt_id=ctx.attempt_id,
+            call=call, raw_result=raw_result,
+            query_id=ctx.query_id, attempt_id=ctx.attempt_id,
         )
 
     catalog = ctx.catalog or get_catalog()
@@ -437,5 +487,6 @@ __all__ = [
     "AgentExecutionError",
     "AgentToolTimeout",
     "ExecutedAgentCall",
+    "RawQueryResult",
     "execute_agent_call",
 ]

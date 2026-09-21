@@ -13,6 +13,10 @@ def _chart_turn(turn_id: str, question: str, summary: str, *, sources=("db",)):
         "question": question,
         "status": "complete",
         "route": {"sources": list(sources), "intent": "data"},
+        "events": [{
+            "sequence": 0, "type": "user_message",
+            "payload": {"role": "user", "content": question},
+        }],
         "cards": [
             {
                 "source": sources[0],

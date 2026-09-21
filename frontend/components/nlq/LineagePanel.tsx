@@ -21,15 +21,18 @@ import { SECTION_GAP, SOURCE_BADGE } from '@/lib/workbench-ui';
 
 export default function LineagePanel({
   chart,
+  lineage: suppliedLineage,
   sourceLabel,
   className,
 }: {
-  chart: ChartSpec;
+  chart?: ChartSpec;
+  lineage?: ChartSpec['lineage'];
   sourceLabel?: string;
   className?: string;
 }) {
   const [open, setOpen] = useState(false);
-  const { lineage } = chart;
+  const lineage = suppliedLineage ?? chart?.lineage;
+  if (!lineage) return null;
   const displayedSql = lineage.display_sql || lineage.sql;
 
   return (
@@ -138,17 +141,19 @@ export default function LineagePanel({
                   <Copy />
                   Copy runnable SQL
                 </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  title="Export CSV"
-                  onClick={() => downloadCsv(chart)}
-                  className="h-6 gap-1 px-2 text-[11px] font-normal text-muted-foreground hover:text-foreground [&_svg]:size-3"
-                >
-                  <Download />
-                  Export CSV
-                </Button>
+                {chart && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    title="Export CSV"
+                    onClick={() => downloadCsv(chart)}
+                    className="h-6 gap-1 px-2 text-[11px] font-normal text-muted-foreground hover:text-foreground [&_svg]:size-3"
+                  >
+                    <Download />
+                    Export CSV
+                  </Button>
+                )}
               </div>
             }
           >

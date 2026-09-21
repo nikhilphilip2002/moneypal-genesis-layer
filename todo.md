@@ -3,6 +3,9 @@
 This checklist implements [plan.md](./plan.md). Complete tasks in order unless a task is
 explicitly marked as parallel-safe.
 
+> Pre-release cutover: section 13 supersedes every earlier checked compatibility, legacy
+> rendering, rollout-flag, and automatic-card item. Those paths must be deleted, not retained.
+
 ## 0. Baseline and contract lock
 
 - [ ] Capture current SSE fixtures and history payloads for single-query, corrected-query,
@@ -145,16 +148,12 @@ explicitly marked as parallel-safe.
 
 ## 11. Rollout
 
-- [ ] Deploy additive backend contracts, registry, persistence, and telemetry.
-- [ ] Run shadow attribution with current rendering unchanged.
-- [ ] Review shadow mismatches and establish promotion thresholds.
-- [ ] Enable deferred rendering/audit drawer for internal users.
-- [ ] Canary by stable user/conversation bucket.
-- [ ] Verify latency, timeout, repair, and visual-resolution metrics at canary.
-- [ ] Make reconciled rendering the default.
-- [x] Retain and document the frontend filtering kill switch.
-- [ ] Remove compatibility rendering only after all supported clients consume final
-  attribution.
+- [ ] Deploy the raw-result backend and derived-only frontend as one incompatible cutover.
+- [ ] Clear the pre-release Workbench conversation table before enabling the new build.
+- [ ] Remove the frontend filtering kill switch and make derived-only rendering unconditional.
+- [ ] Canary by stable user bucket and verify visualization repair, timeout, and missing-card
+  metrics.
+- [ ] Roll back the deployment and clear incompatible pre-release history if the canary fails.
 - [ ] Update Workbench runbooks and architecture documentation.
 
 ## Definition of done
@@ -178,3 +177,31 @@ explicitly marked as parallel-safe.
 - [x] Stream and persist derived cards through the existing attribution path.
 - [x] Tell the model to use the tool for "visualize this" follow-ups and cite its returned ID.
 - [x] Add focused contract, access-control, transformation, and attribution tests.
+
+## 13. Remove automatic chart inference
+
+- [x] Split raw SQL result storage from renderable `SourceResult` cards.
+- [x] Store rows, columns, units, completeness, and lineage on a non-renderable `qN`
+  `result_payload` used by observations and `visualize_query_result`.
+- [x] Remove `charts.build_from_rows()` from the Workbench PostgreSQL execution path.
+- [x] Mark raw `qN` executions `visual_available=false` and stop emitting `source_card` for
+  them; continue emitting query lifecycle progress.
+- [x] Update `visualize_query_result` to read the raw result payload rather than a generated
+  query card.
+- [x] Require the model to call `visualize_query_result` for every database result that must
+  be presented, using `table` when no graphical form is appropriate.
+- [x] Emit and persist only derived `vN` records as database presentation cards.
+- [x] Keep raw `qN` entries in the audit drawer as status, row count, SQL, and lineage only.
+- [x] Delete legacy automatic-chart rendering branches from history normalization and the
+  frontend; do not support old Workbench turns.
+- [x] Increment the record version and reject any pre-release record that survives deployment
+  cleanup instead of migrating it.
+- [x] Add an explicit deployment step to clear pre-release Workbench conversation records.
+- [x] Remove automatic-inference fallback paths, including budget/error fallbacks that could
+  promote a raw `qN` card.
+- [x] Remove the frontend attribution rollout flag and all render-all-cards fallback behavior.
+- [x] Delete tests and fixtures whose only purpose is automatic-chart or legacy-card
+  compatibility.
+- [x] Add focused tests proving query execution emits no card, every supported presentation
+  comes from `vN`, invalid visualization requests repair or fail closed, and unsupported old
+  record versions are rejected.

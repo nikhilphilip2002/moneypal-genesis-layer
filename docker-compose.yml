@@ -72,7 +72,6 @@ services:
       args:
         # Same-origin API calls: the browser hits nginx at /api/*.
         NEXT_PUBLIC_API_URL: /api
-        NEXT_PUBLIC_WORKBENCH_QUERY_ATTRIBUTION: ${NEXT_PUBLIC_WORKBENCH_QUERY_ATTRIBUTION:-false}
 
   nginx:
     image: nginx:alpine

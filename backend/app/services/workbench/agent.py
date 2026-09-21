@@ -28,7 +28,7 @@ from app.services.workbench.agent_executor import (
     ExecutedAgentCall,
     execute_agent_call,
 )
-from app.services.workbench.agent_contracts import QueryExecutionRecord
+from app.services.workbench.agent_contracts import FinalSynthesis, QueryExecutionRecord
 from app.services.workbench.agent_tools import (
     AgentToolAccessDenied,
     AgentToolArgumentsInvalid,
@@ -313,6 +313,67 @@ def _preflight(result, state: dict[str, Any]) -> list[tuple[str, str, str]]:
                 call.name, call.arguments,
                 policy=state["source_policy"], catalog=state.get("_agent_catalog"),
             )
+            if isinstance(parsed, FinalSynthesis):
+                registry = list(state.get("query_registry", []))
+                successful_queries = {
+                    str(record.get("query_id"))
+                    for record in registry
+                    if record.get("status") == "success"
+                    and record.get("has_data") is True
+                    and postgres_client.is_model_tool(str(record.get("tool_name") or ""))
+                }
+                presented_sources = {
+                    str(record.get("source_query_id"))
+                    for record in registry
+                    if record.get("status") == "success"
+                    and record.get("visual_available") is True
+                    and record.get("tool_name") == "visualize_query_result"
+                }
+                successful_visuals = {
+                    str(record.get("query_id"))
+                    for record in registry
+                    if record.get("status") == "success"
+                    and record.get("has_data") is True
+                    and record.get("visual_available") is True
+                    and record.get("tool_name") == "visualize_query_result"
+                }
+                deliberately_excluded = {
+                    item.query_id for item in parsed.excluded_queries
+                    if item.reason_code in {
+                        "superseded", "discovery_only", "validation_only",
+                        "unused_by_synthesis",
+                    }
+                }
+                missing = sorted(
+                    successful_queries - presented_sources - deliberately_excluded
+                )
+                if missing:
+                    raise AgentToolArgumentsInvalid(
+                        "successful query result(s) require visualize_query_result before "
+                        f"final synthesis: {', '.join(missing)}"
+                    )
+                invalid_visuals = sorted(
+                    set(parsed.visual_query_ids) - successful_visuals
+                )
+                if invalid_visuals:
+                    raise AgentToolArgumentsInvalid(
+                        "visual_query_ids must contain only successful visualization IDs: "
+                        f"{', '.join(invalid_visuals)}"
+                    )
+                required_visuals = {
+                    str(record.get("query_id"))
+                    for record in registry
+                    if record.get("query_id") in successful_visuals
+                    and str(record.get("source_query_id")) not in deliberately_excluded
+                }
+                missing_visuals = sorted(
+                    required_visuals - set(parsed.visual_query_ids)
+                )
+                if missing_visuals:
+                    raise AgentToolArgumentsInvalid(
+                        "successful visualizations used for the answer must be listed in "
+                        f"visual_query_ids: {', '.join(missing_visuals)}"
+                    )
             constraints = [
                 *getattr(parsed, "filters", ()),
                 *getattr(parsed, "having", ()),
@@ -482,6 +543,8 @@ def _register_database_queries(state: dict[str, Any], calls) -> dict[str, dict[s
 
 
 def _query_row_count(item: ExecutedAgentCall) -> int | None:
+    if item.raw_result is not None:
+        return item.raw_result.row_count
     if item.card is None:
         return None
     if item.call.name == "visualize_query_result":
@@ -499,6 +562,12 @@ async def _emit_query_event(
 ) -> None:
     from app.services.workbench.graph import sse
 
+    result_payload = record.get("result_payload")
+    lineage = (
+        result_payload.get("lineage")
+        if isinstance(result_payload, dict) and isinstance(result_payload.get("lineage"), dict)
+        else None
+    )
     await state["emit"].put(sse(event, {
         "turn_id": state["turn_id"],
         **{
@@ -508,6 +577,7 @@ async def _emit_query_event(
                 "error_code", "source_query_id", "result_complete",
             )
         },
+        **({"lineage": lineage} if lineage is not None else {}),
     }))
 
 
@@ -529,14 +599,27 @@ async def _finalize_query_record(
     else:
         has_data = row_count is None or row_count > 0
         status = "success" if has_data else "empty"
+        is_raw_query = item.raw_result is not None
         record.update({
             "status": status, "row_count": row_count, "has_data": has_data,
             "visual_available": bool(
-                has_data and item.card is not None
+                not is_raw_query and has_data and item.card is not None
                 and item.card.card_type in {"chart", "analysis", "worklist", "briefing"}
             ),
             "duration_ms": item.duration_ms,
-            "result_complete": bool(item.card.complete) if item.card is not None else True,
+            "result_complete": (
+                item.raw_result.complete if item.raw_result is not None
+                else bool(item.card.complete) if item.card is not None else True
+            ),
+            "result_payload": (
+                {
+                    **item.raw_result.payload,
+                    "summary": item.raw_result.summary,
+                    "complete": item.raw_result.complete,
+                    "sensitive": item.raw_result.sensitive,
+                }
+                if item.raw_result is not None else None
+            ),
             "card": (
                 {
                     "source": item.card.source,
@@ -773,7 +856,13 @@ async def _execute_one(
 async def _stream_item(state: dict[str, Any], item: ExecutedAgentCall) -> None:
     from app.services.workbench.graph import sse
 
-    if item.card is None and item.error is not None and item.error.get("code") != "POLICY_DENIED":
+    from app.mcp import postgres_client
+
+    if (
+        item.card is None and item.error is not None
+        and item.error.get("code") != "POLICY_DENIED"
+        and not postgres_client.is_model_tool(item.call.name)
+    ):
         source = _source_for_call(item.call)
         if source is not None:
             # The exact failure text goes back to the model; the user sees a stable
@@ -792,6 +881,8 @@ async def _stream_item(state: dict[str, Any], item: ExecutedAgentCall) -> None:
         trace_detail = str(item.error.get("message") or item.error.get("code") or "Tool failed")
     elif item.terminal is not None:
         trace_detail = str(item.terminal.get("message") or "No data action required")
+    elif item.raw_result is not None:
+        trace_detail = item.raw_result.summary
     elif item.card is not None:
         trace_detail = item.card.summary or f"Returned {item.card.card_type} result"
     else:
@@ -801,6 +892,8 @@ async def _stream_item(state: dict[str, Any], item: ExecutedAgentCall) -> None:
         "label": item.call.name, "call_id": item.call.id,
         "detail": trace_detail[:500], "duration_ms": item.duration_ms,
     })
+    if item.raw_result is not None:
+        state["timing"]["source_completions"].append("db")
     if item.card is None:
         return
     source = item.card.source
@@ -970,7 +1063,10 @@ async def run(state: dict[str, Any]) -> None:
             )
         if any(item.terminal is not None for item in executed):
             break
-        has_data = any(item.card is not None and item.error is None for item in executed)
+        has_data = any(
+            (item.card is not None or item.raw_result is not None) and item.error is None
+            for item in executed
+        )
         if not has_data and not budget.calls_remaining:
             break
         # The model decides whether to call a tool or finish with content. Do not force a
@@ -1129,6 +1225,7 @@ async def run(state: dict[str, Any]) -> None:
             await _end_without_data(state, terminal_payload, origin="model")
         return
     cards = [item.card for item in executed if item.card is not None]
+    raw_results = [item.raw_result for item in executed if item.raw_result is not None]
     if final is not None:
         state["agent_final_result"] = final
         # The candidate as the model wrote it; `answer_results` records the final text.
@@ -1136,7 +1233,7 @@ async def run(state: dict[str, Any]) -> None:
             state["conversation_id"], state["user"], state["turn_id"], final.text,
             message=final.assistant_message, stage="synthesize",
         )
-    elif not cards:
+    elif not cards and not raw_results:
         if budget.expired:
             raise TimeoutError("Workbench request deadline exhausted")
         if denial is not None:
@@ -1152,7 +1249,7 @@ async def run(state: dict[str, Any]) -> None:
             }, origin="application")
             return
         raise BudgetExhausted("native agent spent its budget without a usable result")
-    elif any(card.card_type != "error" for card in cards):
+    elif cards and any(card.card_type != "error" for card in cards):
         state["decision"].limitations.append(dict(_BUDGET_LIMITATION))
     state["results"] = cards
     await answer_results(state)

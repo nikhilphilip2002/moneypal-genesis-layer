@@ -160,7 +160,17 @@ def _successful_query(query_id: str = "turn-answer:q1") -> dict:
         "query_id": query_id, "attempt_id": f"{query_id}:a1",
         "tool_call_id": "call-1", "tool_name": "query", "status": "success",
         "purpose": "answer", "row_count": 1, "has_data": True,
-        "visual_available": True, "duration_ms": 1,
+        "visual_available": False, "duration_ms": 1,
+    }
+
+
+def _successful_visual(query_id: str = "turn-answer:v1") -> dict:
+    return {
+        "query_id": query_id, "attempt_id": f"{query_id}:a1",
+        "tool_call_id": "call-v1", "tool_name": "visualize_query_result",
+        "status": "success", "purpose": "answer", "row_count": 1,
+        "has_data": True, "visual_available": True, "duration_ms": 1,
+        "source_query_id": "turn-answer:q1",
     }
 
 
@@ -170,9 +180,9 @@ async def test_answer_results_reconciles_structured_query_references():
         "schema_version": 1,
         "narrative_insights": "The value is one.",
         "active_query_ids": ["turn-answer:q1", "invented"],
-        "visual_query_ids": ["invented", "turn-answer:q1"],
+        "visual_query_ids": ["invented", "turn-answer:v1"],
         "excluded_queries": [],
-    }), [_successful_query()])
+    }), [_successful_query(), _successful_visual()])
 
     await graph.answer_results(state)
 
@@ -181,7 +191,7 @@ async def test_answer_results_reconciles_structured_query_references():
     answer = json.loads(frame.split("data: ", 1)[1])
     assert answer["text"] == "The value is one."
     assert answer["active_query_ids"] == ["turn-answer:q1"]
-    assert answer["visual_query_ids"] == ["turn-answer:q1"]
+    assert answer["visual_query_ids"] == ["turn-answer:v1"]
     assert answer["invalid_query_ids"] == ["invented"]
     assert answer["attribution_fallback_used"] is False
 
@@ -203,15 +213,15 @@ async def test_explicit_empty_structured_attribution_does_not_trigger_fallback()
 
 
 @pytest.mark.anyio
-async def test_legacy_plain_text_uses_conservative_single_query_fallback():
+async def test_plain_text_does_not_infer_query_attribution():
     state = _answer_state("The value is one.", [_successful_query()])
 
     await graph.answer_results(state)
     answer = json.loads(state["emit"].get_nowait().split("data: ", 1)[1])
 
-    assert answer["active_query_ids"] == ["turn-answer:q1"]
-    assert answer["visual_query_ids"] == ["turn-answer:q1"]
-    assert answer["attribution_fallback_used"] is True
+    assert answer["active_query_ids"] == []
+    assert answer["visual_query_ids"] == []
+    assert answer["attribution_fallback_used"] is False
 
 
 @pytest.mark.anyio

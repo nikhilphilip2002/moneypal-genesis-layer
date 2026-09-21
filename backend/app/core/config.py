@@ -244,13 +244,9 @@ class Settings:
         self.workbench_compaction_max_tokens = int(
             get("WORKBENCH_COMPACTION_MAX_TOKENS", "1200") or "1200"
         )
-        # The ordered event stream is the record of a turn. The per-turn
-        # `agent_exchanges` copy is written only for the rollback window of the
-        # version-7 history migration; nothing reads it once records carry events.
         self.workbench_history_write_legacy_exchanges = (
             get("WORKBENCH_HISTORY_WRITE_LEGACY_EXCHANGES", "true") or "true"
         ).lower() in ("1", "true", "yes", "on")
-
         # --- Rotating Logging Subsystem ---------------------------------------------
         self.log_dir = Path(get("LOG_DIR", str(DATA_DIR / "logs")) or DATA_DIR / "logs")
         self.log_raw_traces_enabled = (get("LOG_RAW_TRACES_ENABLED", "true") or "true").lower() in (

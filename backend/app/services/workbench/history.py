@@ -36,11 +36,11 @@ TITLE_MAX = 80
 # v6 added an ordered execution event stream and lossless native tool-result replay.
 # v7 makes that stream the only representation: every turn carries `events`, readers
 # derive everything from them, and older turns are migrated rather than read sideways.
-# v8 adds the database-query registry and stable query/attempt identifiers.
-RECORD_VERSION = 8
-# Every version this module can read. A record stamped with anything else was written by
-# a newer backend and must not be overwritten by this one.
-KNOWN_RECORD_VERSIONS = frozenset(range(1, RECORD_VERSION + 1))
+# v8 stored automatically inferred query cards. v9 stores raw qN evidence and only
+# explicitly requested vN presentation cards. This is a pre-release hard cutover: old
+# records are intentionally unsupported rather than normalized into the new contract.
+RECORD_VERSION = 9
+KNOWN_RECORD_VERSIONS = frozenset({RECORD_VERSION})
 CARD_ROWS_IN_CONTEXT = 20
 # Replay policy: which event kinds of a turn are sent back to the provider. Nudges and
 # other synthetic user messages are stored so the record is the exact transcript, but
@@ -165,27 +165,36 @@ def _load(conversation_id: str, user: str) -> ConversationRecord | None:
             if row is None:
                 return None
             payload = row[1] if isinstance(row[1], dict) else json.loads(row[1])
+            stored_version = row[4] or payload.get("version", 1)
+            if stored_version != RECORD_VERSION:
+                raise UnknownRecordVersion(
+                    f"conversation {conversation_id} is record version {stored_version!r}; "
+                    f"this backend requires version {RECORD_VERSION}"
+                )
             record = ConversationRecord(
                 conversation_id=conversation_id,
                 title=row[0],
                 updated_at=row[2],
                 turns=list(payload.get("turns", [])),
                 owner_username=row[3],
-                record_version=row[4] or payload.get("version", 1),
-                # Absent on v1/v2 rows; those conversations simply have no checkpoint yet.
+                record_version=stored_version,
                 compaction=payload.get("compaction"),
                 external_sources_enabled=bool(payload.get("external_sources_enabled", False)),
             )
-            # Older turns are given their event stream in memory so every reader sees one
-            # representation; the next write persists it and stamps the version.
-            migrate_record(record)
             return record
+        except UnknownRecordVersion:
+            raise
         except Exception as exc:  # noqa: BLE001
             logger.warning("workbench history load failed, using memory: %s", exc)
     for owner in _visible_owners(user):
         record = _MEMORY.get((owner, conversation_id))
         if record is not None:
-            migrate_record(record)
+            if record.record_version != RECORD_VERSION:
+                raise UnknownRecordVersion(
+                    f"conversation {conversation_id} is record version "
+                    f"{record.record_version!r}; this backend requires version "
+                    f"{RECORD_VERSION}"
+                )
             return record
     return None
 
@@ -213,14 +222,9 @@ def _save(record: ConversationRecord) -> None:
         raise UnknownRecordVersion(
             f"conversation {record.conversation_id} is record version "
             f"{record.record_version!r}; this backend understands versions "
-            f"1..{RECORD_VERSION}"
+            f"{RECORD_VERSION}"
         )
     record.updated_at = _now()
-    # The version is a schema signal, not a stamp: it says 8 only when every turn carries
-    # its event stream and can carry query attribution fields. `_load` migrates older turns
-    # in memory, so ordinarily it does.
-    if all(turn_has_events(turn) for turn in record.turns):
-        record.record_version = RECORD_VERSION
     _MEMORY[(record.owner_username, record.conversation_id)] = record
     if not _ensure_table():
         return
@@ -325,10 +329,11 @@ def turn_has_events(turn: dict[str, Any]) -> bool:
 
 
 def turn_events(turn: dict[str, Any]) -> list[dict[str, Any]]:
-    """The ordered event stream of a turn, derived on the fly for a pre-v7 turn dict."""
-    if turn_has_events(turn):
-        return [event for event in turn["events"] if isinstance(event, dict)]
-    return derive_turn_events(turn)
+    """Return the ordered event stream required by the current record contract."""
+    events = turn.get("events")
+    if not isinstance(events, list):
+        raise ValueError("current Workbench turns require an events list")
+    return [event for event in events if isinstance(event, dict)]
 
 
 def _append_native_exchange_events(
@@ -352,107 +357,6 @@ def _append_native_exchange_events(
             "execution_path": "native",
             "message": dict(message),
         }, timestamp=timestamp, derived=derived)
-
-
-def derive_turn_events(turn: dict[str, Any]) -> list[dict[str, Any]]:
-    """Rebuild a turn's event stream from the per-field copies pre-v7 records kept.
-
-    Order follows execution: the question, the route, each native exchange, the rendered
-    cards, the synthesis candidate, the answer or refusal, then the error. The result is
-    what a v7 writer would have recorded, so replay over it equals the replay the old
-    sideways readers produced.
-    """
-    shadow: dict[str, Any] = {"events": []}
-    created = str(turn.get("created_at") or turn.get("at") or "")
-    completed = str(turn.get("completed_at") or created)
-    _append_turn_event(shadow, "user_message", {
-        "role": "user", "content": str(turn.get("question", "")),
-    }, timestamp=created or None, derived=True)
-    route = turn.get("route")
-    if isinstance(route, dict):
-        _append_turn_event(shadow, "route_decision", dict(route), timestamp=created or None, derived=True)
-    for exchange in turn.get("agent_exchanges") or []:
-        if not isinstance(exchange, dict):
-            continue
-        assistant = exchange.get("assistant")
-        tools = exchange.get("tools")
-        if not isinstance(assistant, dict) or not isinstance(tools, list):
-            continue
-        calls = [call for call in exchange.get("calls") or [] if isinstance(call, dict)]
-        _append_native_exchange_events(
-            shadow, assistant=dict(assistant), calls=calls,
-            tool_messages=[dict(item) for item in tools if isinstance(item, dict)],
-            stage="route", timestamp=completed or None, derived=True,
-        )
-    for card in turn.get("cards") or []:
-        if isinstance(card, dict):
-            _append_turn_event(shadow, "tool_result", {
-                "execution_path": "legacy_or_rendered",
-                "card": card,
-            }, timestamp=completed or None, derived=True)
-    answer = turn.get("answer") if isinstance(turn.get("answer"), dict) else None
-    synthesis = turn.get("synthesis")
-    if synthesis and (answer is None or str(answer.get("text", "")) != str(synthesis)):
-        _append_turn_event(shadow, "llm_assistant_message", {
-            "execution_path": "synthesis",
-            "stage": "synthesize",
-            "candidate": True,
-            "message": {"role": "assistant", "content": str(synthesis)},
-        }, timestamp=completed or None, derived=True)
-    if answer is not None:
-        _append_turn_event(shadow, "final_answer", {"answer": answer}, timestamp=completed or None, derived=True)
-    refusal = turn.get("refusal")
-    if isinstance(refusal, dict):
-        _append_turn_event(shadow, "final_answer", {"refusal": refusal}, timestamp=completed or None, derived=True)
-    if turn.get("error"):
-        details = turn.get("error_details")
-        payload = (
-            dict(details)
-            if isinstance(details, dict)
-            else {"message": str(turn["error"])}
-        )
-        _append_turn_event(
-            shadow, "execution_error", payload,
-            timestamp=completed or None, derived=True,
-        )
-    return shadow["events"]
-
-
-def migrate_turn(turn: dict[str, Any]) -> bool:
-    """Give a pre-v7 turn its event stream in place. Returns whether it changed."""
-    if turn_has_events(turn):
-        return False
-    turn["events"] = derive_turn_events(turn)
-    return True
-
-
-def migrate_record(record: ConversationRecord) -> bool:
-    """Derive events for every turn that lacks them. Returns whether anything changed.
-
-    Idempotent and version-agnostic: a v7 record passes through untouched, a v5 record
-    gains events on every turn. The version itself is stamped by ``_save`` once every
-    turn qualifies, so a migrated-in-memory record that is never written keeps saying
-    what is actually on disk.
-    """
-    changed = False
-    for turn in record.turns:
-        if isinstance(turn, dict) and migrate_turn(turn):
-            changed = True
-    return changed
-
-
-def migrate_payload(payload: dict[str, Any]) -> tuple[dict[str, Any], int]:
-    """Migrate a raw stored ``record_json`` payload; returns it and the turns changed.
-
-    Used by the one-off migration script, which works on rows rather than records so a
-    dry run can report without loading every conversation through the owner filter.
-    """
-    turns = [turn for turn in payload.get("turns", []) if isinstance(turn, dict)]
-    changed = sum(1 for turn in turns if migrate_turn(turn))
-    migrated = dict(payload)
-    migrated["turns"] = turns
-    migrated["version"] = RECORD_VERSION
-    return migrated, changed
 
 
 def begin_turn(
@@ -871,8 +775,9 @@ def list_recent(limit: int = 50, *, user: str = "anonymous") -> list[Conversatio
                 cur.execute(
                     f"SELECT conversation_id, title, updated_at, "
                     f"jsonb_array_length(record_json->'turns') FROM {TABLE} "
-                    "WHERE owner_username = ANY(%s) ORDER BY updated_at DESC LIMIT %s",
-                    (list(_visible_owners(user)), limit),
+                    "WHERE owner_username = ANY(%s) AND record_version = %s "
+                    "ORDER BY updated_at DESC LIMIT %s",
+                    (list(_visible_owners(user)), RECORD_VERSION, limit),
                 )
                 return [
                     ConversationSummary(conversation_id=r[0], title=r[1], updated_at=r[2],
@@ -882,7 +787,10 @@ def list_recent(limit: int = 50, *, user: str = "anonymous") -> list[Conversatio
         except Exception as exc:  # noqa: BLE001
             logger.warning("workbench history read failed, using memory: %s", exc)
     ordered = sorted(
-        (record for (owner, _), record in _MEMORY.items() if owner in _visible_owners(user)),
+        (
+            record for (owner, _), record in _MEMORY.items()
+            if owner in _visible_owners(user) and record.record_version == RECORD_VERSION
+        ),
         key=lambda record: record.updated_at,
         reverse=True,
     )[:limit]
@@ -912,8 +820,8 @@ def query_result(
                 continue
             if item.get("status") != "success" or item.get("has_data") is not True:
                 return None
-            card = item.get("card")
-            if not isinstance(card, dict) or not isinstance(card.get("payload"), dict):
+            result_payload = item.get("result_payload")
+            if not isinstance(result_payload, dict):
                 return None
             return dict(item)
     return None

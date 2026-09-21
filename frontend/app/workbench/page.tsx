@@ -123,7 +123,6 @@ export default function WorkbenchPage() {
         ),
         done: turn.status !== 'running',
         route: turn.route,
-        legacyAnswerUnavailable: turn.legacy_answer_unavailable,
         partial: turn.status === 'partial',
         executionTrace: turn.execution_trace ?? [],
         queryRegistry: turn.query_registry ?? [],
@@ -278,6 +277,7 @@ export default function WorkbenchPage() {
                 error_code: event.error_code,
                 source_query_id: event.source_query_id,
                 result_complete: event.result_complete,
+                lineage: event.lineage,
               };
               if (index >= 0) queryRegistry[index] = record;
               else queryRegistry.push(record);

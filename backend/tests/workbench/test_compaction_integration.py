@@ -329,14 +329,15 @@ class TestCheckpoint:
 
 
 class TestRecordVersioning:
-    def test_v2_record_without_compaction_still_loads(self):
+    def test_old_record_version_is_rejected(self):
         _add_turn("c1", "u", "question", "answer")
         record = history.get("c1", user="u")
         record.record_version = 2
         record.compaction = None
         history._MEMORY[("u", "c1")] = record
 
-        assert history.transcript("c1", user="u")
+        with pytest.raises(history.UnknownRecordVersion, match="requires version"):
+            history.transcript("c1", user="u")
 
     def test_unknown_first_kept_pointer_falls_back_to_full_replay(self):
         _add_turn("c1", "u", "question one", "answer one")

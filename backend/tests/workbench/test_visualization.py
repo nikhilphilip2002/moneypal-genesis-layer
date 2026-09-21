@@ -18,22 +18,17 @@ def _source(*, rows=None, complete=True):
     return {
         "query_id": "older:q1", "status": "success", "has_data": True,
         "result_complete": complete,
-        "card": {
-            "source": "db", "card_type": "chart",
-            "payload": {
-                "chart_type": "table", "title": "Weekly collections",
-                "subtitle": None, "x": None, "series_by": None, "series": [],
-                "columns": [
-                    {"name": "week_number", "label": "Week Number", "unit": "count"},
-                    {"name": "scheme_code", "label": "Scheme", "unit": "text"},
-                    {"name": "total_collected", "label": "Collected", "unit": "inr"},
-                ],
-                "rows": rows, "summary": "Returned rows.", "drilldown": None,
-                "next_steps": [],
-                "lineage": {
-                    "path": "postgres_mcp", "sql": "SELECT ...", "display_sql": "",
-                    "row_count": len(rows), "warnings": [], "unverified": True,
-                },
+        "result_payload": {
+            "title": "Weekly collections",
+            "columns": [
+                {"name": "week_number", "label": "Week Number", "unit": "count"},
+                {"name": "scheme_code", "label": "Scheme", "unit": "text"},
+                {"name": "total_collected", "label": "Collected", "unit": "inr"},
+            ],
+            "rows": rows,
+            "lineage": {
+                "path": "postgres_mcp", "sql": "SELECT ...", "display_sql": "",
+                "row_count": len(rows), "warnings": [], "unverified": True,
             },
         },
     }

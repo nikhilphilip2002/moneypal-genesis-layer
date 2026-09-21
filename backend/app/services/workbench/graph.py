@@ -303,7 +303,7 @@ async def answer_results(state: WorkbenchState) -> dict[str, Any]:
 
             structured_synthesis = FinalSynthesis.model_validate(result.json())
             text = structured_synthesis.narrative_insights
-        except Exception:  # noqa: BLE001 - compatibility fallback is reconciled below
+        except Exception:  # noqa: BLE001 - invalid output fails closed below
             structured_synthesis = None
 
     from app.services.workbench.agent_contracts import FinalSynthesis
@@ -313,11 +313,7 @@ async def answer_results(state: WorkbenchState) -> dict[str, Any]:
         narrative_insights=text,
     )
     registry = list(state.get("query_registry", []))
-    attribution = reconcile_query_attribution(
-        registry,
-        proposed_synthesis,
-        allow_single_query_fallback=structured_synthesis is None,
-    )
+    attribution = reconcile_query_attribution(registry, proposed_synthesis)
     _persist(
         history.set_query_registry,
         state["conversation_id"], state["user"], state["turn_id"], registry,

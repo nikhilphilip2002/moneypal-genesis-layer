@@ -139,15 +139,9 @@ def test_explicit_empty_query_attribution_survives_history_round_trip():
     assert stored["excluded_queries"] == []
 
 
-def test_legacy_string_error_derives_backward_compatible_event():
-    events = history.derive_turn_events({
-        "question": "Old question",
-        "error": "Old error",
-        "created_at": "2026-01-01T00:00:00+00:00",
-    })
-
-    error = next(event for event in events if event["type"] == "execution_error")
-    assert error["payload"] == {"message": "Old error"}
+def test_current_turn_without_events_is_rejected():
+    with pytest.raises(ValueError, match="events list"):
+        history.turn_events({"question": "Malformed current turn"})
 
 
 def test_transcript_respects_the_token_budget():
@@ -703,50 +697,11 @@ def _version_5_record() -> history.ConversationRecord:
     )
 
 
-def test_version_5_record_migrates_and_replays_like_the_compatibility_reader():
-    record = _version_5_record()
-    expected = _compat_replay(record.turns)
-    history._MEMORY[("alice", "v5")] = record
+def test_old_record_version_is_rejected_instead_of_migrated():
+    history._MEMORY[("alice", "v5")] = _version_5_record()
 
-    loaded = history.get("v5", user="alice")
-    assert [e["type"] for e in loaded.turns[0]["events"]] == [
-        "user_message", "route_decision",
-        "llm_assistant_message", "tool_call", "tool_result",
-        "tool_result",               # the rendered card
-        "llm_assistant_message",     # the synthesis candidate, which differed
-        "final_answer",
-    ]
-    assert [e["type"] for e in loaded.turns[1]["events"]] == [
-        "user_message", "route_decision", "execution_error",
-    ]
-    assert all(e["derived"] is True for turn in loaded.turns for e in turn["events"])
-    assert loaded.turns[0]["events"][0]["timestamp"] == "2025-01-01T00:00:00+00:00"
-    assert loaded.turns[1]["events"][2]["payload"]["message"] == "The workbench hit an error."
-
-    assert history.build_native_transcript("v5", user="alice") == expected
-    assert history.private_entities("v5", user="alice") == ()
-    assert history.native_tool_calls(loaded.turns[0])[0]["name"] == "query_metrics"
-
-    # The version is a schema signal: it says 7 only once every turn carries events,
-    # which the next write establishes.
-    history.complete_turn("v5", "alice", "t2")
-    assert history.get("v5", user="alice").record_version == history.RECORD_VERSION
-    assert history.build_native_transcript("v5", user="alice") == expected
-
-
-def test_migrate_payload_is_idempotent_and_leaves_v7_turns_alone():
-    raw = history._record_payload(_version_5_record())
-    raw["version"] = 5
-
-    migrated, changed = history.migrate_payload(json.loads(json.dumps(raw)))
-    assert changed == 2 and migrated["version"] == history.RECORD_VERSION
-    assert all(history.turn_has_events(turn) for turn in migrated["turns"])
-    # Sideways fields are kept for the rollback window; nothing is deleted.
-    assert migrated["turns"][0]["agent_exchanges"] == raw["turns"][0]["agent_exchanges"]
-
-    again, changed_again = history.migrate_payload(json.loads(json.dumps(migrated)))
-    assert changed_again == 0
-    assert again["turns"] == migrated["turns"]
+    with pytest.raises(history.UnknownRecordVersion, match="requires version"):
+        history.get("v5", user="alice")
 
 
 def test_save_refuses_a_record_version_it_does_not_understand():
@@ -811,7 +766,7 @@ class _FakeConn:
         self.rolled_back += 1
 
 
-def test_migration_script_reports_on_dry_run_and_writes_only_with_apply(monkeypatch):
+def test_cleanup_script_dry_run_and_apply(monkeypatch):
     import contextlib
     import importlib.util
     import sys
@@ -819,21 +774,25 @@ def test_migration_script_reports_on_dry_run_and_writes_only_with_apply(monkeypa
 
     from app.services import db_schema
 
-    path = Path(__file__).resolve().parents[2] / "scripts" / "migrate_history_events.py"
-    spec = importlib.util.spec_from_file_location("migrate_history_events", path)
+    path = Path(__file__).resolve().parents[2] / "scripts" / "clear_pre_release_workbench_history.py"
+    spec = importlib.util.spec_from_file_location("clear_pre_release_workbench_history", path)
     script = importlib.util.module_from_spec(spec)
     # Registered before execution so the script's dataclass can resolve its
     # postponed annotations through sys.modules, as a normal import would.
     monkeypatch.setitem(sys.modules, spec.name, script)
     spec.loader.exec_module(script)
 
-    raw = history._record_payload(_version_5_record())
-    raw["version"] = 5
-    current = {"version": 7, "title": "x", "turns": [{"id": "z", "question": "q", "events": [
-        {"sequence": 0, "type": "user_message", "payload": {"role": "user", "content": "q"}},
-    ]}]}
-    rows = [("v5", 5, json.dumps(raw)), ("v6-events", 6, current), ("future", 99, {"turns": []})]
-    cursor = _FakeCursor(rows)
+    class CleanupCursor:
+        def __init__(self):
+            self.statements = []
+
+        def execute(self, sql, params=None):
+            self.statements.append((sql, params))
+
+        def fetchone(self):
+            return (3,)
+
+    cursor = CleanupCursor()
     conn = _FakeConn()
 
     @contextlib.contextmanager
@@ -842,21 +801,10 @@ def test_migration_script_reports_on_dry_run_and_writes_only_with_apply(monkeypa
 
     monkeypatch.setattr(db_schema, "db_cursor", fake_db_cursor)
 
-    report = script.migrate(apply=False)
-    assert (report.scanned, report.migrated, report.turns_changed) == (3, 1, 2)
-    assert report.skipped_current == 1
-    assert report.refused_unknown_version == ["future (v99)"]
-    assert cursor.updates == [] and conn.committed == 0 and conn.rolled_back == 1
-    assert "would migrate 1 conversation(s), 2 turn(s)" in report.render(applied=False)
+    assert script.clear(apply=False) == 3
+    assert conn.committed == 0 and conn.rolled_back == 1
+    assert not any(sql.startswith("DELETE") for sql, _ in cursor.statements)
 
-    report = script.migrate(apply=True)
+    assert script.clear(apply=True) == 3
     assert conn.committed == 1
-    assert [(u[0], u[2], u[3]) for u in cursor.updates] == [
-        (history.RECORD_VERSION, "v5", 5), (history.RECORD_VERSION, "v6-events", 6),
-    ]
-    written = json.loads(cursor.updates[0][1])
-    assert written["version"] == history.RECORD_VERSION
-    assert [e["type"] for e in written["turns"][0]["events"]][:3] == [
-        "user_message", "route_decision", "llm_assistant_message",
-    ]
-    assert written["turns"][0]["agent_exchanges"] == raw["turns"][0]["agent_exchanges"]
+    assert any(sql.startswith("DELETE") for sql, _ in cursor.statements)

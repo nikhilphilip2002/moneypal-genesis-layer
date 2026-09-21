@@ -25,9 +25,6 @@ import {
   sourceLabel,
 } from '@/lib/workbench-ui';
 
-const QUERY_ATTRIBUTION_UI_ENABLED =
-  process.env.NEXT_PUBLIC_WORKBENCH_QUERY_ATTRIBUTION === 'true';
-
 // One conversational turn: the question, the route the orchestrator chose, an optional
 // merged synthesis lead, and a card per source. Cards stream in as each source returns, so
 // this renders progressively — a pending source shows a spinner rather than blocking.
@@ -47,7 +44,6 @@ export type WorkbenchTurnData = {
   modelMessages?: string[];
   refusal?: { reason?: string; message: string; origin?: string };
   error?: WorkbenchError;
-  legacyAnswerUnavailable?: boolean;
   partial?: boolean;
   done: boolean;
   executionTrace?: WorkbenchTraceStep[];
@@ -63,13 +59,12 @@ const BRIEF_TITLES: Record<string, string> = {
 
 export default function WorkbenchTurn({ turn, onAsk }: { turn: WorkbenchTurnData; onAsk: (q: string) => void }) {
   const hasFinalAnswer = Boolean(turn.answer || turn.synthesis);
-  const hasAttribution = QUERY_ATTRIBUTION_UI_ENABLED
-    && Array.isArray(turn.answer?.visual_query_ids);
+  const hasAttribution = Array.isArray(turn.answer?.visual_query_ids);
   const visualQueryIds = turn.answer?.visual_query_ids ?? [];
   const cardsByQueryId = new Map(
     turn.cards.filter((card) => card.query_id).map((card) => [card.query_id as string, card]),
   );
-  const supportingCards = QUERY_ATTRIBUTION_UI_ENABLED && !hasFinalAnswer && !turn.done
+  const supportingCards = !hasFinalAnswer && !turn.done
     ? []
     : hasAttribution
       ? [
@@ -82,10 +77,7 @@ export default function WorkbenchTurn({ turn, onAsk }: { turn: WorkbenchTurnData
             !card.query_id && STREAM_RENDERABLE_CARD_TYPES.has(card.card_type),
           ),
         ]
-      : turn.cards.filter((card) =>
-          STREAM_RENDERABLE_CARD_TYPES.has(card.card_type)
-          || (!hasFinalAnswer && turn.done),
-        );
+      : [];
   const backgroundQueries = hasAttribution
     ? (turn.queryRegistry ?? []).filter((record) =>
         record.status !== 'success' || !visualQueryIds.includes(record.query_id),
@@ -93,11 +85,9 @@ export default function WorkbenchTurn({ turn, onAsk }: { turn: WorkbenchTurnData
     : [];
   // Model deltas are provisional. During generation the execution trace carries progress;
   // after finalization the reconciled answer is the only user-facing narrative.
-  const modelMessages = QUERY_ATTRIBUTION_UI_ENABLED
-    ? (turn.done && !turn.answer && !turn.synthesis
-        ? (turn.modelMessages ?? []).filter(Boolean)
-        : [])
-    : (turn.modelMessages ?? []).filter(Boolean);
+  const modelMessages = turn.done && !turn.answer && !turn.synthesis
+    ? (turn.modelMessages ?? []).filter(Boolean)
+    : [];
   const answerText = modelMessages.length === 0
     ? (turn.answer?.text || turn.synthesis)
     : undefined;
@@ -233,12 +223,6 @@ export default function WorkbenchTurn({ turn, onAsk }: { turn: WorkbenchTurnData
             </StatusRow>
           )}
 
-          {turn.legacyAnswerUnavailable && !turn.error && turn.cards.length === 0 && (
-            <StatusRow icon={AlertTriangle} surface>
-              This question was saved before answer history was enabled. Its original answer card was not retained.
-            </StatusRow>
-          )}
-
           {turn.partial && !turn.error && (
             <StatusRow icon={AlertTriangle} tone="warning" surface className="text-muted-foreground">
               This response was interrupted. Completed answer cards were retained.
@@ -317,7 +301,9 @@ function BackgroundQueryDrawer({
                   Visualized as <code>{derivedVisual.query_id}</code> in the primary result.
                 </p>
               )}
-              {card && derivedVisual && card.card_type === 'chart' ? (
+              {query.lineage ? (
+                <LineagePanel lineage={query.lineage} sourceLabel="Loan book" />
+              ) : card && derivedVisual && card.card_type === 'chart' ? (
                 <LineagePanel chart={card.payload as ChartSpec} sourceLabel="Loan book" />
               ) : card ? (
                 <CardBody card={card} onAsk={onAsk} />

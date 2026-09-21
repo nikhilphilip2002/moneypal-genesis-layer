@@ -60,6 +60,7 @@ class QueryExecutionRecord(BaseModel):
     supersedes_query_id: str | None = Field(default=None, max_length=200)
     source_query_id: str | None = Field(default=None, max_length=200)
     result_complete: bool = True
+    result_payload: dict[str, Any] | None = None
     card: dict[str, Any] | None = None
 
 
@@ -81,6 +82,18 @@ class FinalSynthesis(BaseModel):
     active_query_ids: list[str] = Field(default_factory=list, max_length=100)
     visual_query_ids: list[str] = Field(default_factory=list, max_length=100)
     excluded_queries: list[ExcludedQueryReference] = Field(default_factory=list, max_length=100)
+
+    @model_validator(mode="after")
+    def _references_do_not_contradict(self) -> "FinalSynthesis":
+        overlap = set(self.active_query_ids).intersection(
+            item.query_id for item in self.excluded_queries
+        )
+        if overlap:
+            raise ValueError(
+                "a query cannot be both active and excluded: "
+                + ", ".join(sorted(overlap))
+            )
+        return self
 
 
 class SearchCuratedKnowledgeArguments(AgentArguments):

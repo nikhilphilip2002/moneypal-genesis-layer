@@ -8,7 +8,7 @@ renders any full visual cards.
 
 The execution registry is the source of truth. The model may nominate query references, but
 it cannot create, validate, or authorize them. The final answer event carries the reconciled
-references, and conversation history preserves that exact resolved state.
+references, and history written under the new contract preserves that exact resolved state.
 
 ## Outcomes
 
@@ -19,11 +19,14 @@ references, and conversation history preserves that exact resolved state.
 - Only successful, data-bearing, explicitly used results appear in the primary visual zone.
 - Failed, empty, superseded, and unused queries remain available in a compact audit trail.
 - Conceptual answers produce no empty visual placeholders.
-- Old conversation records remain readable.
+- Pre-release records from the automatic-chart implementation are unsupported and removed
+  during deployment; no rendering compatibility path is retained.
 - A follow-up such as "visualize this" can turn a successful result from the same
   conversation into a new, explicitly attributed visual without rerunning SQL.
+- New SQL executions never infer or emit a chart automatically. Every user-facing chart,
+  KPI, or table is created through the validated `visualize_query_result` tool.
 
-## Follow-up visualization extension
+## Model-directed presentation
 
 Add a strict `visualize_query_result` native tool. The model selects one of `kpi`, `line`,
 `area`, `stacked_area`, `bar`, `grouped_bar`, `table`, `donut`, `scatter`, or `heatmap`,
@@ -35,6 +38,12 @@ same user-owned conversation. It validates field names, types, result completene
 compatibility, and aggregation before creating a derived visual. The model never supplies
 rows and cannot use a query from another conversation or user.
 
+This tool is the only presentation boundary for new database results, not merely a
+follow-up feature. After a database query succeeds, the model must call
+`visualize_query_result` before final synthesis whenever the result needs to be shown. It
+chooses a graphical type when the shape and request support one, and chooses `table` when
+rows are the honest presentation. The query executor itself never chooses a chart type.
+
 `aggregation=none` means the source already has one value at the desired `x`/`series`
 grain. Other operations (`sum`, `avg`, `min`, `max`, `count`, `count_distinct`) combine
 multiple source rows for the same `x`/`series` pair. Aggregation is rejected for truncated
@@ -42,8 +51,39 @@ results and invalid numeric inputs.
 
 Each successful derived visual receives a current-turn `<turn_id>:vN` identifier and stores
 its `source_query_id`. The tool observation returns the derived identifier; final synthesis
-cites that identifier so existing current-turn reconciliation, SSE rendering, audit layout,
-and history reload rules continue to apply unchanged.
+cites that identifier so current-turn reconciliation, SSE rendering, audit layout, and
+new-format history reload use the same presentation path.
+
+### Raw query result contract
+
+A `<turn_id>:qN` record is evidence, not presentation. It stores a non-renderable result
+payload containing rows, columns, unit hints, completeness/truncation, SQL lineage, and
+execution metadata. It has `visual_available=false`, does not emit `source_card`, and is
+visible to users only as compact execution progress plus SQL/lineage in the audit drawer.
+
+The model observation still receives bounded rows and the stable `qN` identifier so it can
+choose the correct `visualize_query_result` arguments. The durable registry retains the
+complete authorized result needed by the visualization tool independently of observation
+truncation.
+
+A `<turn_id>:vN` record is presentation. It references `source_query_id`, contains the
+validated `ChartSpec`, has `visual_available=true`, and is the only database card emitted
+to the client. Deleting `qN` is not permitted because `vN`, narrative attribution, SQL
+inspection, and audit history all depend on it.
+
+### Required execution flow
+
+```text
+query call
+  -> q1 raw result stored (no card emitted)
+  -> visualize_query_result(q1, chart_type/fields/aggregation chosen by model)
+  -> v1 validated ChartSpec stored and emitted
+  -> final synthesis cites the reconciled evidence and v1 presentation
+```
+
+If the visualization request is invalid, the tool returns a typed repairable error and the
+model corrects it within the existing turn budget. If no valid presentation is produced,
+the backend must not resurrect automatic inference as a fallback.
 
 ## Decisions
 
@@ -77,9 +117,9 @@ Keep these concepts distinct:
 - `visual_query_ids`: the subset selected for primary visual rendering.
 - `excluded_queries`: the audit view of attempted logical queries that are not active.
 
-The frontend renders a primary card only when its ID is in `visual_query_ids` and the
-registry says that it has a valid visual payload. This prevents a cited scalar or diagnostic
-result from being forced into a chart.
+The frontend renders a primary card only when its ID is in `visual_query_ids`, the registry
+says that it is a successful derived `vN` record, and it has a valid visual payload. Raw
+`qN` records can support narrative claims but can never enter the primary visual zone.
 
 ### Authority boundaries
 
@@ -105,12 +145,16 @@ Introduce a typed backend record, colocated with the native-agent execution cont
   "purpose": "answer",
   "row_count": 14,
   "has_data": true,
-  "visual_available": true,
+  "visual_available": false,
   "supersedes_query_id": "turn_123:q1",
   "duration_ms": 87,
   "error_code": null
 }
 ```
+
+The raw query record additionally owns a durable, non-renderable `result_payload`. A derived
+visual record uses `query_id=<turn_id>:vN`, `tool_name=visualize_query_result`,
+`source_query_id=<source qN>`, and `visual_available=true`.
 
 Allowed execution statuses are `pending`, `running`, `success`, `empty`, `error`,
 `timeout`, and `cancelled`. Allowed purposes initially are `answer`, `discovery`,
@@ -152,7 +196,7 @@ Extend the existing Workbench answer rather than adding a parallel response type
   "status": "answered",
   "text": "Narrative insight...",
   "active_query_ids": ["turn_123:q2"],
-  "visual_query_ids": ["turn_123:q2"],
+  "visual_query_ids": ["turn_123:v1"],
   "excluded_queries": [
     {
       "query_id": "turn_123:q1",
@@ -192,8 +236,8 @@ At finalization:
 3. Reject IDs absent from the current turn's registry and record the anomaly for telemetry.
 4. Remove queries whose final attempt is not `success` or whose result has no data.
 5. Build `active_query_ids` from the remaining valid model references.
-6. Build `visual_query_ids` by intersecting the proposed visual IDs with active IDs and
-   registry entries that contain a valid visual payload.
+6. Build `visual_query_ids` only from successful derived `vN` records with valid visual
+   payloads. A raw `qN` can be active evidence but can never be a visual reference.
 7. Derive deterministic exclusions from the complete registry, supplementing them with
    sanitized model rationale where appropriate.
 8. Persist and emit the same reconciled answer object.
@@ -201,12 +245,11 @@ At finalization:
 ### Fallback rules
 
 - Conceptual/no-tool turn: preserve empty active and visual lists.
-- One-query compatibility fallback: infer the only successful, data-bearing query only if
-  structured attribution is missing or malformed, the query purpose is `answer`, and the
-  answer contains data-derived content. Do not override an explicit valid empty list.
+- Missing or malformed presentation attribution never promotes `qN`. The model receives a
+  bounded repair opportunity; after that the turn fails closed with no visual card.
 - Multiple successful queries with no valid attribution: render no primary visuals, retain
   all results in the audit drawer, and emit an attribution anomaly metric.
-- Missing historic fields: display all successful historic cards, matching current behavior.
+- Missing presentation fields are contract errors, not a signal to render stored query cards.
 
 ## Streaming protocol
 
@@ -229,26 +272,32 @@ done
 - If narrative tokens continue to stream, the UI treats them as provisional until the
   authoritative `answer` event arrives.
 
-For compatibility, `source_card` can continue during the flag-controlled rollout, but the
-client must retain it without mounting the full visualization until final reconciliation.
+`source_card` remains the transport for derived `vN` presentations and non-database source
+cards. Raw `qN` results never use it. All compatibility handling for automatically generated
+database cards is removed.
 
-## Persistence and migration
+## Persistence and pre-release reset
 
 Increment `history.RECORD_VERSION` and store the following in each turn:
 
 - ordered query registry records and attempts;
+- raw, non-renderable result payloads on `qN` records;
 - cards keyed by `query_id` rather than only source/order;
 - raw model attribution for audit telemetry;
 - reconciled `active_query_ids`, `visual_query_ids`, and exclusions inside `answer`;
 - a schema version for the answer contract.
 
-Migration/read behavior:
+Cutover behavior:
 
-- Existing records with no attribution fields are marked legacy at read time.
-- Legacy turns expose all successful stored cards as active and visual.
-- Do not fabricate query IDs into old persisted JSON merely to render it.
+- Increment `history.RECORD_VERSION` for the raw-result/derived-presentation contract.
+- Do not migrate automatically inferred chart cards into the new format.
+- Remove legacy card-display fallbacks and field-presence inference from history readers and
+  the frontend.
+- Clear pre-release Workbench conversation records during deployment, or reject them as an
+  unsupported record version if any remain.
 - New writers never downgrade or overwrite an unknown future record version.
-- Transcript replay retains query references in durable tool observations.
+- Transcript replay retains raw-query and derived-presentation references in durable tool
+  observations.
 
 ## Backend implementation
 
@@ -260,8 +309,9 @@ Primary integration points:
 - `backend/app/services/workbench/agent.py`: maintain the turn registry and lifecycle events.
 - `backend/app/services/workbench/prompts.py`: attribution criteria and no-query directive.
 - `backend/app/services/workbench/graph.py`: structured synthesis, reconciliation, final
-  answer emission, and fallback behavior.
-- `backend/app/services/workbench/history.py`: record-version migration and exact replay.
+  answer emission, and fail-closed behavior.
+- `backend/app/services/workbench/history.py`: new-format persistence, strict version
+  rejection, and exact replay; no automatic-chart migration.
 - `backend/app/services/workbench/streaming.py`: preserve provisional versus authoritative
   answer semantics.
 
@@ -273,7 +323,7 @@ Implementation requirements:
 - Validate all model references against the current turn only.
 - Never permit a model-provided ID to retrieve a result from another user, conversation, or
   turn.
-- Emit counters for reconciliation changes and fallbacks.
+- Emit counters for reconciliation changes, repairs, and rejected references.
 
 ## Prompt and model integration
 
@@ -309,8 +359,8 @@ Rendering rules:
 - Put other executed queries in a collapsed audit drawer with status, row count, reason,
   query reference, and existing lineage/SQL controls where authorized.
 - An empty visual list renders no placeholder.
-- On history load, use stored reconciled lists. Apply the legacy fallback only when the
-  fields are absent, not when they are explicitly empty.
+- On history load, require the new record version and stored reconciled lists. Reject older
+  records rather than inferring visibility from missing fields.
 - Preserve card order from `visual_query_ids`, not network completion order.
 
 ## Verification
@@ -321,10 +371,10 @@ Rendering rules:
 - Identity preservation through MCP metadata, observation shaping, persistence, and replay.
 - Strict synthesis validation and bounded repair.
 - Deduplication, hallucinated-ID removal, error/empty filtering, and visual intersection.
-- Conservative single-query fallback and legitimate zero-query behavior.
+- Fail-closed missing presentation attribution and legitimate zero-query behavior.
 - Parallel queries completing out of order.
 - Timeout followed by retry and failed query followed by corrected logical query.
-- History migration and unknown-version protection.
+- New-format history replay and unsupported old-version rejection.
 - `answer` precedes the one final `done` event.
 
 ### Frontend tests
@@ -335,7 +385,7 @@ Rendering rules:
 - Failed, abandoned, and unused results appear only in the audit drawer.
 - Invalid or missing visual payload does not produce a broken card.
 - Reload reproduces the exact filtered state.
-- Legacy history still displays successful cards.
+- Pre-release automatic-chart history is rejected or deleted rather than rendered.
 - Stream interruption retains progress without promoting provisional visuals.
 
 ### End-to-end scenarios
@@ -354,29 +404,29 @@ Record per turn without logging private result rows:
 - invalid model reference count;
 - error reference filtered count;
 - structured-output repair rate;
-- single-query fallback rate;
+- missing-presentation repair and failure rate;
 - data-bearing answer with empty attribution rate;
 - successful but unused query count, segmented by purpose and tool;
-- history fallback usage by record version.
+- unsupported pre-release record rejection count during cutover.
 
 Alert on any cross-turn/cross-conversation reference, sustained increases in attribution
 repair, or primary-card resolution failures.
 
 ## Rollout
 
-1. Add contracts, registry, persistence fields, reconciliation, and telemetry with rendering
-   behavior unchanged.
-2. Run attribution in shadow mode and compare proposed, reconciled, and currently displayed
-   cards.
-3. Enable deferred visual rendering and audit drawer behind a frontend flag for internal
-   users.
-4. Canary by stable user/conversation bucket and monitor correctness plus latency.
-5. Make reconciled rendering the default while keeping the legacy-history read fallback.
-6. Remove compatibility `source_card` rendering only after supported clients consume query
-   lifecycle and final attribution fields.
+1. Deploy the raw `qN` result contract and visualization reader together so no result becomes
+   unreadable between versions.
+2. Stop emitting database `source_card` events for `qN`, while retaining lifecycle progress.
+3. Require model-directed `vN` presentation and monitor visualization repair, timeout, and
+   missing-presentation rates.
+4. Clear pre-release Workbench history and remove every legacy-card rendering branch before
+   enabling the new build. Run the cleanup as a dry run first, then apply it:
+   `PYTHONPATH=backend python backend/scripts/clear_pre_release_workbench_history.py`, followed
+   by the same command with `--apply` after verifying the count.
+5. Canary by stable user/conversation bucket, then make the no-inference path universal.
 
-Immediate rollback is the frontend filtering flag. Backend IDs and persisted attribution are
-additive and remain safe to collect during rollback.
+Rollback is a deployment rollback plus clearing any pre-release Workbench history written by
+the incompatible build. The frontend compatibility flag is removed rather than retained.
 
 ## Acceptance criteria
 
@@ -385,5 +435,10 @@ additive and remain safe to collect during rollback.
 - The same successful query has the same `query_id` in execution, observations, events,
   storage, final answers, and history reloads.
 - Conceptual turns with no database execution render zero cards.
+- New SQL execution alone renders no chart, KPI, or table and emits no database
+  `source_card`.
+- Every new user-facing database presentation has a `vN` identifier and a valid
+  `source_query_id` pointing to its raw `qN` evidence.
+- The backend never invokes automatic chart-shape inference on the Workbench PostgreSQL path.
 - History reload produces the same primary/audit partition as the live turn.
 - All required backend and frontend tests pass in off, shadow, canary, and on modes.

@@ -141,40 +141,49 @@ async def get_conversation(conversation_id: str, authorization: str | None = Hea
     }
 
 
+def _query_record_for_api(record: dict) -> dict:
+    """Expose execution metadata and SQL lineage without replaying stored result rows."""
+    public = {
+        key: record.get(key) for key in (
+            "query_id", "attempt_id", "tool_call_id", "tool_name", "status", "purpose",
+            "row_count", "has_data", "visual_available", "duration_ms", "error_code",
+            "source_query_id", "result_complete",
+        )
+    }
+    payload = record.get("result_payload")
+    if isinstance(payload, dict) and isinstance(payload.get("lineage"), dict):
+        public["lineage"] = payload["lineage"]
+    return public
+
+
 def _turn_for_api(turn: dict) -> dict:
-    """Normalize version-1 question/source stubs into the renderable v2 contract."""
+    """Serialize one current-format Workbench turn."""
     question = str(turn.get("question", ""))
     sources = list(turn.get("sources", []) or [])
-    route = turn.get("route") or {"sources": sources, "intent": question, "model": "legacy"}
-    legacy = "cards" not in turn
+    route = turn.get("route") or {"sources": sources, "intent": question}
     return {
-        "id": turn.get("id") or f"legacy-{abs(hash((question, turn.get('at', ''))))}",
+        "id": turn.get("id"),
         "question": question,
         "route": route,
         "sources": sources,
         "cards": list(turn.get("cards", []) or []),
-        "query_registry": list(turn.get("query_registry", []) or []),
-        "answer": turn.get("answer") or (
-            {"status": "answered", "text": turn.get("synthesis"), "sources": sources,
-             "citations": [], "unavailable_sources": []}
-            if turn.get("synthesis") else None
-        ),
+        "query_registry": [
+            _query_record_for_api(record)
+            for record in (turn.get("query_registry", []) or [])
+            if isinstance(record, dict)
+        ],
+        "answer": turn.get("answer"),
         "synthesis": turn.get("synthesis"),
         "refusal": turn.get("refusal"),
         "error": turn.get("error"),
         "error_details": turn.get("error_details"),
         "status": turn.get("status", "complete"),
-        "created_at": turn.get("created_at") or turn.get("at"),
+        "created_at": turn.get("created_at"),
         "completed_at": turn.get("completed_at"),
         "usage": turn.get("usage"),
         "timing": turn.get("timing"),
         "execution_trace": list(turn.get("execution_trace", []) or []),
-        "source_policy": turn.get("source_policy") or {
-            "version": "legacy",
-            "external_sources_enabled": False,
-            "effective_sources": sources,
-        },
-        "legacy_answer_unavailable": legacy,
+        "source_policy": turn.get("source_policy"),
     }
 
 

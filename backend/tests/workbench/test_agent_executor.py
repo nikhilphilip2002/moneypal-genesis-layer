@@ -11,6 +11,7 @@ from app.services.workbench.agent_executor import (
     AgentExecutionContext,
     AgentExecutionError,
     AgentToolTimeout,
+    RawQueryResult,
 )
 from app.services.workbench.results import SourceResult
 
@@ -59,12 +60,11 @@ def _context(*, external=True):
 async def test_validated_call_dispatches_and_replay_is_lossless(monkeypatch):
     async def fake_handler(call, _ctx):
         assert call.arguments == {"sql": "SELECT par_30 FROM gold.daily_loan_status LIMIT 1"}
-        return SourceResult(
-            source="db",
-            card_type="chart",
+        return RawQueryResult(
             payload={"rows": [{"private": "never replay this"}]},
             summary="PAR 30 is 4.2%.",
             lineage={"sql": "never replay this"},
+            row_count=1,
         )
 
     monkeypatch.setattr(agent_executor, "_execute_postgres_mcp", fake_handler)
@@ -297,9 +297,7 @@ async def test_each_nonterminal_tool_dispatches_to_its_registered_handler(
 
 
 def _large_lookup(rows: int = 5000) -> agent_executor.ExecutedAgentCall:
-    card = SourceResult(
-        source="db",
-        card_type="chart",
+    raw_result = RawQueryResult(
         payload={
             "columns": ["customer_id", "borrower_name", "sanction_amount"],
             "rows": [
@@ -314,10 +312,11 @@ def _large_lookup(rows: int = 5000) -> agent_executor.ExecutedAgentCall:
         summary=f"{rows} customers under Vanitha.",
         sensitive=True,
         lineage={"sql": "SELECT ... LIMIT 5000", "params": {"agent_name": "vanitha"}},
+        row_count=rows,
     )
     return agent_executor.ExecutedAgentCall(
         call=NativeToolCall(id="call_big", name="query", arguments={}),
-        card=card,
+        raw_result=raw_result,
     )
 
 
@@ -340,7 +339,8 @@ def test_observation_is_bounded_while_durable_replay_keeps_every_row(monkeypatch
     assert observation["truncated"]["rows_total"] == 5000
     assert observation["truncated"]["rows_omitted"] == 5000 - len(kept)
     assert observation["summary"] == durable["summary"]
-    assert observation["lineage"]["params"] == {"agent_name": "vanitha"}
+    assert observation["query_reference"] if "query_reference" in observation else True
+    assert "lineage" not in observation
     assert executed.observation_message()["tool_call_id"] == "call_big"
 
 

@@ -151,8 +151,7 @@ def build_visual(
     source_complete = source_record.get("result_complete", True) is True
     if not source_complete and args.aggregation != "none":
         raise VisualizationError("cannot aggregate a truncated query result; run a bounded query")
-    card = source_record.get("card") or {}
-    payload = card.get("payload") or {}
+    payload = source_record.get("result_payload") or {}
     source_rows = payload.get("rows")
     if not isinstance(source_rows, list) or not source_rows:
         raise VisualizationError("the query has no stored rows to visualize")
@@ -163,12 +162,24 @@ def build_visual(
     _validate_numeric(args, rows)
 
     if args.chart_type == "table":
-        chart = ChartSpec.model_validate({**payload, "chart_type": "table"})
-        chart.subtitle = "Derived from a previous query result"
-        chart.summary = f"Table derived from query {args.query_id}."
+        lineage = Lineage.model_validate(payload.get("lineage") or {})
+        lineage.warnings = [
+            *lineage.warnings,
+            f"Visualization derived from query {args.query_id} using {args.aggregation}.",
+        ]
+        summary = f"Table derived from query {args.query_id}."
+        chart = ChartSpec(
+            chart_type="table",
+            title=str(payload.get("title") or "Query result"),
+            subtitle="Model-selected table",
+            columns=[ColumnSpec.model_validate(column) for column in payload.get("columns", [])],
+            rows=_aggregate(rows, args),
+            summary=summary,
+            lineage=lineage,
+        )
         return SourceResult(
             source="db", card_type="chart", payload=chart.model_dump(mode="json"),
-            summary=chart.summary, lineage=chart.lineage.model_dump(mode="json"),
+            summary=summary, lineage=chart.lineage.model_dump(mode="json"),
             complete=source_complete,
         )
 

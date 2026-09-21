@@ -9,7 +9,19 @@ from app.services.workbench.compaction import budget
 
 
 def _turn(question: str, answer: str, prompt_tokens: int | None = None):
-    turn = {"id": "t", "question": question, "synthesis": answer, "status": "complete"}
+    turn = {
+        "id": "t", "question": question, "synthesis": answer, "status": "complete",
+        "events": [
+            {
+                "sequence": 0, "type": "user_message",
+                "payload": {"role": "user", "content": question},
+            },
+            {
+                "sequence": 1, "type": "final_answer",
+                "payload": {"answer": {"text": answer}},
+            },
+        ],
+    }
     if prompt_tokens is not None:
         turn["usage"] = {"prompt_tokens": prompt_tokens, "completion_tokens": 20}
     return turn

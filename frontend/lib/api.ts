@@ -933,6 +933,7 @@ export type WorkbenchQueryExecution = {
   error_code?: string | null;
   source_query_id?: string | null;
   result_complete?: boolean;
+  lineage?: ChartSpec['lineage'];
 };
 
 export type WorkbenchVerifiedFact = {
@@ -1106,7 +1107,6 @@ export const workbench = {
       completed_at: string | null;
       execution_trace?: WorkbenchTraceStep[];
       timing?: { total_ms?: number } | null;
-      legacy_answer_unavailable: boolean;
     }[];
   }> => apiRequest(`/workbench/conversations/${id}`),
 
@@ -1254,6 +1254,9 @@ export const workbench = {
                   : optionalString(payload.source_query_id),
                 result_complete: typeof payload.result_complete === 'boolean'
                   ? payload.result_complete
+                  : undefined,
+                lineage: isRecord(payload.lineage)
+                  ? payload.lineage as unknown as ChartSpec['lineage']
                   : undefined,
               };
               break;
