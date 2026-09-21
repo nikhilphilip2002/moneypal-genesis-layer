@@ -2,12 +2,16 @@ from app.services.workbench.agent_contracts import FinalSynthesis
 from app.services.workbench.attribution import reconcile_query_attribution
 
 
-def _record(query_id, *, status="success", has_data=True, visual=True, purpose="answer"):
+def _record(
+    query_id, *, status="success", has_data=True, visual=True, purpose="answer",
+    tool_name="query", source_query_id=None,
+):
     return {
         "query_id": query_id, "attempt_id": f"{query_id}:a1",
-        "tool_call_id": f"call-{query_id}", "tool_name": "query",
+        "tool_call_id": f"call-{query_id}", "tool_name": tool_name,
         "status": status, "purpose": purpose, "row_count": 1 if has_data else 0,
         "has_data": has_data, "visual_available": visual, "duration_ms": 1,
+        "source_query_id": source_query_id,
     }
 
 
@@ -127,3 +131,35 @@ def test_successful_unused_query_can_be_declared_superseded():
     )
     assert result.excluded_queries[0].reason_code == "superseded"
     assert result.excluded_queries[0].reason == "Replaced by the corrected period filter."
+
+
+def test_successful_derived_visual_replaces_source_in_primary_visuals():
+    result = reconcile_query_attribution(
+        [
+            _record("t:q1"),
+            _record(
+                "t:v1", tool_name="visualize_query_result", source_query_id="t:q1",
+            ),
+        ],
+        _synthesis(active=["t:q1"], visual=[]),
+    )
+
+    assert result.active_query_ids == ["t:q1", "t:v1"]
+    assert result.visual_query_ids == ["t:v1"]
+    assert result.excluded_queries == []
+    assert result.fallback_used is True
+
+
+def test_historical_source_reference_resolves_to_current_derived_visual():
+    result = reconcile_query_attribution(
+        [_record(
+            "current:v1", tool_name="visualize_query_result",
+            source_query_id="previous:q1",
+        )],
+        _synthesis(active=["previous:q1"], visual=["previous:q1"]),
+    )
+
+    assert result.active_query_ids == ["current:v1"]
+    assert result.visual_query_ids == ["current:v1"]
+    assert result.invalid_query_ids == []
+    assert result.fallback_used is False

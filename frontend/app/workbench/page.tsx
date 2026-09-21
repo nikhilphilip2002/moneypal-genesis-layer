@@ -276,6 +276,8 @@ export default function WorkbenchPage() {
                 visual_available: event.visual_available,
                 duration_ms: event.duration_ms,
                 error_code: event.error_code,
+                source_query_id: event.source_query_id,
+                result_complete: event.result_complete,
               };
               if (index >= 0) queryRegistry[index] = record;
               else queryRegistry.push(record);

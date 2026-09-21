@@ -931,6 +931,8 @@ export type WorkbenchQueryExecution = {
   visual_available: boolean;
   duration_ms: number;
   error_code?: string | null;
+  source_query_id?: string | null;
+  result_complete?: boolean;
 };
 
 export type WorkbenchVerifiedFact = {
@@ -1247,6 +1249,12 @@ export const workbench = {
                 visual_available: payload.visual_available === true,
                 duration_ms: optionalNumber(payload.duration_ms) ?? 0,
                 error_code: payload.error_code === null ? null : optionalString(payload.error_code),
+                source_query_id: payload.source_query_id === null
+                  ? null
+                  : optionalString(payload.source_query_id),
+                result_complete: typeof payload.result_complete === 'boolean'
+                  ? payload.result_complete
+                  : undefined,
               };
               break;
             case 'answer': {

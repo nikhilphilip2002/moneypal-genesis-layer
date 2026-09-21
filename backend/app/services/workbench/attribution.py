@@ -69,12 +69,48 @@ def reconcile_query_attribution(
         if record.get("supersedes_query_id")
     }
     proposed_active = _ordered_unique(synthesis.active_query_ids)
-    invalid = [query_id for query_id in proposed_active if query_id not in records]
     eligible = {
         query_id for query_id, record in records.items()
         if record.get("status") == "success" and record.get("has_data") is True
     }
-    active = [query_id for query_id in proposed_active if query_id in eligible]
+    derived_by_source: dict[str, str] = {}
+    derived_visuals: list[str] = []
+    for query_id, record in records.items():
+        source_query_id = str(record.get("source_query_id") or "")
+        if (
+            query_id in eligible
+            and record.get("tool_name") == "visualize_query_result"
+            and record.get("visual_available") is True
+        ):
+            derived_visuals.append(query_id)
+            if source_query_id:
+                # Registry order is execution order, so a later successful visualization
+                # replaces an earlier rendering of the same source result.
+                derived_by_source[source_query_id] = query_id
+
+    current_derived_visuals = [
+        query_id for query_id in derived_visuals
+        if derived_by_source.get(str(records[query_id].get("source_query_id") or ""))
+        == query_id
+    ]
+
+    invalid = [
+        query_id for query_id in proposed_active
+        if query_id not in records and query_id not in derived_by_source
+    ]
+
+    def resolve(query_id: str, *, prefer_derived: bool = False) -> str | None:
+        if prefer_derived and query_id in derived_by_source:
+            return derived_by_source[query_id]
+        if query_id in eligible:
+            return query_id
+        derived = derived_by_source.get(query_id)
+        return derived if derived in eligible else None
+
+    active = _ordered_unique(
+        resolved for query_id in proposed_active
+        if (resolved := resolve(query_id)) is not None
+    )
 
     fallback_used = False
     if not active and allow_single_query_fallback:
@@ -87,10 +123,26 @@ def reconcile_query_attribution(
             fallback_used = True
 
     proposed_visual = _ordered_unique(synthesis.visual_query_ids)
-    visual = [
-        query_id for query_id in proposed_visual
-        if query_id in active and records[query_id].get("visual_available") is True
-    ]
+    visual = _ordered_unique(
+        resolved for query_id in proposed_visual
+        if (
+            (resolved := resolve(query_id, prefer_derived=True)) is not None
+            and records[resolved].get("visual_available") is True
+        )
+    )
+    selected_derived = any(query_id in current_derived_visuals for query_id in visual)
+    if current_derived_visuals and not selected_derived:
+        # A successful visualization call is an explicit presentation action. If the
+        # synthesis forgets its returned :vN identifier, promote the latest derived card
+        # instead of hiding both the source and the requested visual in the audit drawer.
+        visual = _ordered_unique([
+            *(query_id for query_id in visual if query_id not in derived_visuals),
+            *current_derived_visuals,
+        ])
+        fallback_used = True
+    for query_id in visual:
+        if query_id not in active:
+            active.append(query_id)
     if fallback_used and not visual:
         visual = [
             query_id for query_id in active

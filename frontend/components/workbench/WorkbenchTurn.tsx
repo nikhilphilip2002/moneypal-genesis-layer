@@ -198,8 +198,10 @@ export default function WorkbenchTurn({ turn, onAsk }: { turn: WorkbenchTurnData
           {backgroundQueries.length > 0 && (
             <BackgroundQueryDrawer
               queries={backgroundQueries}
+              allQueries={turn.queryRegistry ?? []}
               cardsByQueryId={cardsByQueryId}
               exclusions={turn.answer?.excluded_queries ?? []}
+              visualQueryIds={visualQueryIds}
               onAsk={onAsk}
             />
           )}
@@ -262,13 +264,17 @@ export default function WorkbenchTurn({ turn, onAsk }: { turn: WorkbenchTurnData
 
 function BackgroundQueryDrawer({
   queries,
+  allQueries,
   cardsByQueryId,
   exclusions,
+  visualQueryIds,
   onAsk,
 }: {
   queries: NonNullable<WorkbenchTurnData['queryRegistry']>;
+  allQueries: NonNullable<WorkbenchTurnData['queryRegistry']>;
   cardsByQueryId: Map<string, CardData>;
   exclusions: NonNullable<WorkbenchAnswer['excluded_queries']>;
+  visualQueryIds: string[];
   onAsk: (q: string) => void;
 }) {
   const reasons = new Map(exclusions.map((item) => [item.query_id, item]));
@@ -284,6 +290,10 @@ function BackgroundQueryDrawer({
           const card = candidateCard?.attempt_id === query.attempt_id
             ? candidateCard
             : undefined;
+          const derivedVisual = allQueries.find((candidate) =>
+            visualQueryIds.includes(candidate.query_id)
+            && candidate.source_query_id === query.query_id
+          );
           return (
             <div key={query.attempt_id} className="space-y-2 rounded-lg border border-border/50 bg-background/60 p-3">
               <div className="flex flex-wrap items-center gap-2 text-xs">
@@ -302,7 +312,16 @@ function BackgroundQueryDrawer({
                     : `Query ended with status ${query.status}.`
                 )}
               </p>
-              {card && <CardBody card={card} onAsk={onAsk} />}
+              {derivedVisual && (
+                <p className="text-[11px] text-muted-foreground">
+                  Visualized as <code>{derivedVisual.query_id}</code> in the primary result.
+                </p>
+              )}
+              {card && derivedVisual && card.card_type === 'chart' ? (
+                <LineagePanel chart={card.payload as ChartSpec} sourceLabel="Loan book" />
+              ) : card ? (
+                <CardBody card={card} onAsk={onAsk} />
+              ) : null}
             </div>
           );
         })}

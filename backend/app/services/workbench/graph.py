@@ -354,7 +354,7 @@ async def answer_results(state: WorkbenchState) -> dict[str, Any]:
         "model_active_query_ids": proposed_synthesis.active_query_ids,
         "invalid_query_ids": attribution.invalid_query_ids,
         "attribution_fallback_used": attribution.fallback_used,
-        "sources": [r.source for r in results],
+        "sources": list(dict.fromkeys(r.source for r in results)),
         "citations": citations,
         "unavailable_sources": unavailable,
         "limitations": limitations,
