@@ -158,6 +158,7 @@ async def test_submit_final_answer_executes_through_in_memory_client():
     terminal = result.data["data"]["terminal"]
     assert terminal["outcome"] == "answer"
     assert terminal["synthesis"] == {"insights": "", "query_id": 1, "view": "table"}
+    assert json.loads(result.content[0].text) == {"success": True}
 
 
 @pytest.mark.anyio

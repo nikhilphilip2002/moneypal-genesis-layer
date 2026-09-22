@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Annotated, Any, Literal
 
 from fastmcp import Context, FastMCP
+from fastmcp.tools import ToolResult
 from pydantic import Field
 
 from app.mcp.results import success
@@ -193,19 +194,23 @@ async def submit_final_answer(
     insights: Annotated[str, Field(max_length=20_000)],
     query_id: Annotated[int, Field(ge=1)],
     view: VisualizationChartType,
-) -> dict[str, Any]:
+) -> ToolResult:
     parsed = FinalSynthesis(
         insights=insights,
         query_id=query_id,
         view=view,
     )
-    return success({
+    structured = success({
         "kind": "terminal",
         "terminal": {
             "outcome": "answer",
             "synthesis": parsed.model_dump(mode="json"),
         },
     })
+    return ToolResult(
+        content={"success": True},
+        structured_content=structured,
+    )
 
 
 __all__ = ["mcp"]

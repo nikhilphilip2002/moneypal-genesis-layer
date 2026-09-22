@@ -159,6 +159,7 @@ async def test_final_answer_call_is_strict_terminal_contract():
     assert executed.terminal["synthesis"] == {
         "insights": "PAR 30 is 4.2%.", "query_id": 1, "view": "kpi",
     }
+    assert json.loads(executed.observation_message()["content"]) == {"success": True}
 
 
 @pytest.mark.anyio
@@ -395,3 +396,20 @@ def test_shape_observation_never_drops_query_reference():
         "query_id": "turn:q1", "attempt_id": "turn:q1:a1",
     }
     assert shaped["status"] == "ok"
+
+
+def test_shape_observation_drops_oversized_scalar_payload():
+    shaped = agent_executor.shape_observation(
+        {
+            "status": "ok",
+            "query_reference": {"query_id": 1, "attempt": 1},
+            "payload": {"document": "x" * 20_000},
+            "summary": "large result",
+        },
+        limit_chars=350,
+    )
+
+    assert len(json.dumps(shaped, separators=(",", ":"))) <= 350
+    assert shaped["query_reference"] == {"query_id": 1, "attempt": 1}
+    assert "payload" not in shaped
+    assert "payload" in shaped["truncated"]["dropped"]

@@ -112,6 +112,8 @@ class ExecutedAgentCall:
                 payload["query_reference"] = query_reference
             return payload
         if self.terminal is not None:
+            if self.call.name == "submit_final_answer":
+                return {"success": True}
             return {"status": "terminal", **self.terminal}
         if self.raw_result is not None:
             payload = {
@@ -263,6 +265,32 @@ def shape_observation(
             shaped["summary"] = summary[:keep] + suffix
         else:
             del truncated["summary_clipped"]
+    if _encoded_size(shaped) <= limit_chars:
+        return shaped
+
+    # Row-oriented results normally fit after the reductions above. This final fallback
+    # also bounds tools that return a very large scalar or nested object instead of rows.
+    if "payload" in shaped:
+        shaped.pop("payload")
+        dropped.append("payload")
+        truncated["dropped"] = list(dict.fromkeys(dropped))
+    for key in ("facts", "citations", "limitation", "card_reference"):
+        if key in shaped and _encoded_size(shaped) > limit_chars:
+            shaped.pop(key)
+            dropped.append(key)
+            truncated["dropped"] = list(dict.fromkeys(dropped))
+    summary = shaped.get("summary")
+    if isinstance(summary, str) and _encoded_size(shaped) > limit_chars:
+        suffix = " [clipped]"
+        low, high = 0, len(summary)
+        while low < high:
+            mid = (low + high + 1) // 2
+            shaped["summary"] = summary[:mid] + suffix
+            if _encoded_size(shaped) <= limit_chars:
+                low = mid
+            else:
+                high = mid - 1
+        shaped["summary"] = summary[:low] + suffix
     return shaped
 
 
