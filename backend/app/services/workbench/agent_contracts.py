@@ -73,27 +73,13 @@ class ExcludedQueryReference(BaseModel):
 
 
 class FinalSynthesis(BaseModel):
-    """Strict model-authored final response before backend reconciliation."""
+    """The deliberately small model-authored contract for a query-backed answer."""
 
     model_config = ConfigDict(extra="forbid")
 
-    schema_version: Literal[1] = 1
-    narrative_insights: str = Field(min_length=1, max_length=20_000)
-    active_query_ids: list[str] = Field(default_factory=list, max_length=100)
-    visual_query_ids: list[str] = Field(default_factory=list, max_length=100)
-    excluded_queries: list[ExcludedQueryReference] = Field(default_factory=list, max_length=100)
-
-    @model_validator(mode="after")
-    def _references_do_not_contradict(self) -> "FinalSynthesis":
-        overlap = set(self.active_query_ids).intersection(
-            item.query_id for item in self.excluded_queries
-        )
-        if overlap:
-            raise ValueError(
-                "a query cannot be both active and excluded: "
-                + ", ".join(sorted(overlap))
-            )
-        return self
+    insights: str = Field(default="", max_length=20_000)
+    query_id: int = Field(ge=1)
+    view: VisualizationChartType
 
 
 class SearchCuratedKnowledgeArguments(AgentArguments):

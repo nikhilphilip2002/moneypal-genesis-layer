@@ -51,8 +51,8 @@ async def test_discovery_is_the_model_contract_source():
     definitions = await catalog.model_tool_definitions(
         _context().source_policy
     )
-    assert {item["function"]["name"] for item in definitions} == set(
-        RUNTIME_TOOL_POLICIES
+    assert {item["function"]["name"] for item in definitions} == (
+        set(RUNTIME_TOOL_POLICIES) - {"visualize_query_result"}
     )
     assert all(item["function"]["strict"] is True for item in definitions)
 
@@ -152,18 +152,12 @@ async def test_submit_final_answer_executes_through_in_memory_client():
     async with Client(workbench_server.mcp, mode="legacy") as client:
         result = await client.call_tool(
             "submit_final_answer",
-            {
-                "schema_version": 1,
-                "narrative_insights": "PAR 30 is 4.2%.",
-                "active_query_ids": ["turn-1:q1"],
-                "visual_query_ids": ["turn-1:v1"],
-                "excluded_queries": [],
-            },
+            {"insights": "", "query_id": 1, "view": "table"},
         )
 
     terminal = result.data["data"]["terminal"]
     assert terminal["outcome"] == "answer"
-    assert terminal["synthesis"]["narrative_insights"] == "PAR 30 is 4.2%."
+    assert terminal["synthesis"] == {"insights": "", "query_id": 1, "view": "table"}
 
 
 @pytest.mark.anyio

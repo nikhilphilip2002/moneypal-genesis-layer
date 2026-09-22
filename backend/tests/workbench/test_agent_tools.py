@@ -84,7 +84,7 @@ async def test_provider_schemas_are_closed_flat_objects_without_polymorphic_keyw
 async def test_every_authorized_tool_is_offered_with_its_full_schema():
     """Every policy-authorized local tool is offered with its complete schema."""
     definitions = await _definitions()
-    assert set(definitions) == set(RUNTIME_TOOL_POLICIES)
+    assert set(definitions) == set(RUNTIME_TOOL_POLICIES) - {"visualize_query_result"}
     assert all(definition["parameters"]["properties"] for definition in definitions.values())
 
 
@@ -115,17 +115,12 @@ def test_forged_curated_domain_is_reauthorized_at_validation_time():
 
 
 @pytest.mark.anyio
-async def test_visualization_schema_is_compact_and_carries_aggregation_guidance():
-    schema = (await _definitions())["visualize_query_result"]["parameters"]
+async def test_final_answer_schema_is_minimal():
+    schema = (await _definitions())["submit_final_answer"]["parameters"]
     properties = schema["properties"]
 
-    assert properties["chart_type"]["enum"] == [
+    assert list(properties) == ["insights", "query_id", "view"]
+    assert properties["view"]["enum"] == [
         "kpi", "line", "area", "stacked_area", "bar", "grouped_bar", "table",
         "donut", "scatter", "heatmap",
     ]
-    assert properties["aggregation"]["description"] == (
-        "Use none when each x/series pair is already aggregated; otherwise choose "
-        "how to combine multiple y values for the same x/series pair."
-    )
-    assert "minItems" not in properties["y"]
-    assert "maxItems" not in properties["y"]

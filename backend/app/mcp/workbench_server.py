@@ -11,7 +11,6 @@ from app.mcp.results import success
 from app.services.nlq.catalog import get_catalog
 from app.services.workbench.access import SourceAccessDenied, build_policy
 from app.services.workbench.agent_contracts import (
-    ExcludedQueryReference,
     FinalSynthesis,
     FinishWithoutDataArguments,
     SearchCuratedKnowledgeArguments,
@@ -185,24 +184,20 @@ async def finish_without_data(
 
 @mcp.tool(
     description=(
-        "Submit the final user-facing narrative and the exact database query IDs that "
-        "support it. Use this instead of returning free text when the request is answerable. "
+        "Select one successful current-turn database query, choose its view, and optionally "
+        "add concise insights. The backend infers the view fields from the query result. "
         "It must be the only call in the response."
     )
 )
 async def submit_final_answer(
-    schema_version: Literal[1],
-    narrative_insights: Annotated[str, Field(min_length=1, max_length=20_000)],
-    active_query_ids: Annotated[list[str], Field(max_length=100)],
-    visual_query_ids: Annotated[list[str], Field(max_length=100)],
-    excluded_queries: Annotated[list[ExcludedQueryReference], Field(max_length=100)],
+    insights: Annotated[str, Field(max_length=20_000)],
+    query_id: Annotated[int, Field(ge=1)],
+    view: VisualizationChartType,
 ) -> dict[str, Any]:
     parsed = FinalSynthesis(
-        schema_version=schema_version,
-        narrative_insights=narrative_insights,
-        active_query_ids=active_query_ids,
-        visual_query_ids=visual_query_ids,
-        excluded_queries=excluded_queries,
+        insights=insights,
+        query_id=query_id,
+        view=view,
     )
     return success({
         "kind": "terminal",

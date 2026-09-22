@@ -342,7 +342,10 @@ def _card(call, **overrides):
 
 
 def _raw(call):
-    lineage = {"sql": "SELECT par_30 FROM gold.daily_loan_status LIMIT 1"}
+    lineage = {
+        "path": "postgres_mcp",
+        "sql": "SELECT par_30 FROM gold.daily_loan_status LIMIT 1",
+    }
     return ExecutedAgentCall(
         call=call,
         raw_result=RawQueryResult(
@@ -463,38 +466,18 @@ async def test_new_chat_restores_system_slot_before_first_model_call(scripted, m
 
 @pytest.mark.anyio
 async def test_strict_final_answer_tool_drives_reconciled_answer(scripted):
-    def visual_response(request):
+    def final_response(request):
         observation = next(
             json.loads(message["content"])
             for message in reversed(request["messages"])
             if message.get("role") == "tool"
         )
-        query_id = observation["query_reference"]["query_id"]
-        return _tool_response(NativeToolCall(
-            id="visual-1", name="visualize_query_result",
-            arguments={
-                "query_id": query_id, "chart_type": "kpi", "x": None,
-                "y": ["value"], "series": None, "aggregation": "none",
-            },
-        ))
-
-    def final_response(request):
-        observations = [
-            json.loads(message["content"])
-            for message in request["messages"]
-            if message.get("role") == "tool"
-        ]
-        query_id = observations[0]["query_reference"]["query_id"]
-        visual_id = observations[-1]["query_reference"]["query_id"]
+        assert observation["query_reference"]["query_id"] == 1
         return _tool_response(NativeToolCall(
             id="final-answer",
             name="submit_final_answer",
             arguments={
-                "schema_version": 1,
-                "narrative_insights": "PAR 30 is 4.2%.",
-                "active_query_ids": [query_id],
-                "visual_query_ids": [visual_id],
-                "excluded_queries": [],
+                "insights": "PAR 30 is 4.2%.", "query_id": 1, "view": "kpi",
             },
         ))
 
@@ -503,13 +486,9 @@ async def test_strict_final_answer_tool_drives_reconciled_answer(scripted):
     async def execute(call, context):
         if call.name == "query":
             return _raw(call)
-        if call.name == "visualize_query_result":
-            return _card(call)
         return await agent_executor.execute_agent_call(call, context)
 
-    client = scripted([
-        _tool_response(_PAR_30), visual_response, final_response,
-    ], execute)
+    client = scripted([_tool_response(_PAR_30), final_response], execute)
     state = _run_state("structured-final")
     await agent.run(state)
 
@@ -517,7 +496,9 @@ async def test_strict_final_answer_tool_drives_reconciled_answer(scripted):
     answer = json.loads(answer_frame.split("data: ", 1)[1])
     assert answer["text"] == "PAR 30 is 4.2%."
     assert answer["active_query_ids"] == [f"{state['turn_id']}:q1"]
-    assert answer["visual_query_ids"] == [f"{state['turn_id']}:v1"]
+    assert answer["visual_query_ids"] == [f"{state['turn_id']}:q1"]
+    assert answer["query_id"] == 1
+    assert answer["view"] == "kpi"
     assert answer["attribution_fallback_used"] is False
     assert client.requests[-1]["tool_choice"] == "auto"
 
@@ -527,45 +508,18 @@ async def test_invalid_final_answer_contract_is_repaired_once(scripted, monkeypa
     monkeypatch.setattr(agent.settings, "workbench_agent_max_rounds", 4)
     invalid_final = NativeToolCall(
         id="invalid-final", name="submit_final_answer",
-        arguments={
-            "schema_version": 1, "active_query_ids": [],
-            "visual_query_ids": [], "excluded_queries": [],
-        },
+        arguments={"insights": "", "query_id": 99, "view": "kpi"},
     )
-
-    def visual_response(request):
-        observation = next(
-            json.loads(message["content"])
-            for message in reversed(request["messages"])
-            if message.get("role") == "tool"
-        )
-        return _tool_response(NativeToolCall(
-            id="visual-1", name="visualize_query_result",
-            arguments={
-                "query_id": observation["query_reference"]["query_id"],
-                "chart_type": "kpi", "x": None, "y": ["value"],
-                "series": None, "aggregation": "none",
-            },
-        ))
 
     def repaired_final(request):
         observations = [
             json.loads(message["content"])
             for message in request["messages"] if message.get("role") == "tool"
         ]
-        references = [
-            item["query_reference"]["query_id"]
-            for item in observations if "query_reference" in item
-        ]
         assert any(item.get("code") == "INVALID_TOOL_ARGUMENTS" for item in observations)
         return _tool_response(NativeToolCall(
             id="valid-final", name="submit_final_answer",
-            arguments={
-                "schema_version": 1, "narrative_insights": "PAR 30 is 4.2%.",
-                "active_query_ids": [references[0]],
-                "visual_query_ids": [references[1]],
-                "excluded_queries": [],
-            },
+            arguments={"insights": "", "query_id": 1, "view": "kpi"},
         ))
 
     from app.services.workbench import agent_executor
@@ -573,14 +527,11 @@ async def test_invalid_final_answer_contract_is_repaired_once(scripted, monkeypa
     async def execute(call, context):
         if call.name == "query":
             return _raw(call)
-        if call.name == "visualize_query_result":
-            return _card(call)
         return await agent_executor.execute_agent_call(call, context)
 
     scripted(
         [
-            _tool_response(_PAR_30), visual_response,
-            _tool_response(invalid_final), repaired_final,
+            _tool_response(_PAR_30), _tool_response(invalid_final), repaired_final,
         ], execute,
     )
     state = _run_state("final-repair")
@@ -590,7 +541,9 @@ async def test_invalid_final_answer_contract_is_repaired_once(scripted, monkeypa
     answer_frame = next(
         frame for frame in _frames(state) if frame.startswith("event: answer\n")
     )
-    assert "PAR 30 is 4.2%" in answer_frame
+    answer = json.loads(answer_frame.split("data: ", 1)[1])
+    assert answer["text"] == ""
+    assert answer["query_id"] == 1
 
 
 @pytest.mark.anyio

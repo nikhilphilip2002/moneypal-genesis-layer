@@ -120,7 +120,7 @@ async def test_database_query_reference_reaches_mcp_and_observation(monkeypatch)
     assert seen_meta["workbench_query_id"] == "t1:q1"
     assert seen_meta["workbench_attempt_id"] == "t1:q1:a1"
     assert json.loads(executed.observation_message()["content"])["query_reference"] == {
-        "query_id": "t1:q1", "attempt_id": "t1:q1:a1",
+        "query_id": 1, "attempt": 1,
     }
 
 
@@ -149,20 +149,16 @@ async def test_final_answer_call_is_strict_terminal_contract():
         NativeToolCall(
             id="call-final",
             name="submit_final_answer",
-            arguments={
-                "schema_version": 1,
-                "narrative_insights": "PAR 30 is 4.2%.",
-                "active_query_ids": ["t1:q1"],
-                "visual_query_ids": ["t1:q1"],
-                "excluded_queries": [],
-            },
+            arguments={"insights": "PAR 30 is 4.2%.", "query_id": 1, "view": "kpi"},
         ),
         _context(),
     )
 
     assert executed.card is None
     assert executed.terminal["outcome"] == "answer"
-    assert executed.terminal["synthesis"]["active_query_ids"] == ["t1:q1"]
+    assert executed.terminal["synthesis"] == {
+        "insights": "PAR 30 is 4.2%.", "query_id": 1, "view": "kpi",
+    }
 
 
 @pytest.mark.anyio

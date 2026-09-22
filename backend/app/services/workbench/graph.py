@@ -209,15 +209,19 @@ async def answer_results(state: WorkbenchState) -> dict[str, Any]:
         if not r.complete
     ]
 
-    conceptual_synthesis = state.get("agent_final_synthesis")
-    if not results and conceptual_synthesis is not None and not state.get("query_registry"):
+    final_result = state.get("agent_final_result")
+    if (
+        not results
+        and final_result is not None
+        and final_result.text.strip()
+        and not state.get("query_registry")
+    ):
         payload = {
             "schema_version": 1,
             "status": "answered",
-            "text": conceptual_synthesis.narrative_insights,
+            "text": final_result.text.strip(),
             "active_query_ids": [], "visual_query_ids": [], "excluded_queries": [],
-            "model_active_query_ids": list(conceptual_synthesis.active_query_ids),
-            "invalid_query_ids": list(conceptual_synthesis.active_query_ids),
+            "model_active_query_ids": [], "invalid_query_ids": [],
             "attribution_fallback_used": False,
             "sources": [], "citations": [], "unavailable_sources": [],
             "limitations": [], "facts": [],
@@ -231,9 +235,7 @@ async def answer_results(state: WorkbenchState) -> dict[str, Any]:
             state["conversation_id"], state["user"], state["turn_id"], payload,
         )
         _log_query_attribution(
-            state, active=[], visual=[],
-            invalid=list(conceptual_synthesis.active_query_ids),
-            proposed=list(conceptual_synthesis.active_query_ids), fallback_used=False,
+            state, active=[], visual=[], invalid=[], proposed=[], fallback_used=False,
         )
         return {}
 
@@ -292,7 +294,7 @@ async def answer_results(state: WorkbenchState) -> dict[str, Any]:
         return {}
 
     text = results[0].summary.strip()
-    result = state.get("agent_final_result")
+    result = final_result
     structured_synthesis = state.get("agent_final_synthesis")
     if result is not None and result.text:
         # Preserve the model's content verbatim. Tool calls and tool results remain
@@ -302,18 +304,26 @@ async def answer_results(state: WorkbenchState) -> dict[str, Any]:
             from app.services.workbench.agent_contracts import FinalSynthesis
 
             structured_synthesis = FinalSynthesis.model_validate(result.json())
-            text = structured_synthesis.narrative_insights
+            text = structured_synthesis.insights or text
         except Exception:  # noqa: BLE001 - invalid output fails closed below
             structured_synthesis = None
 
-    from app.services.workbench.agent_contracts import FinalSynthesis
-    from app.services.workbench.attribution import reconcile_query_attribution
-
-    proposed_synthesis = structured_synthesis or FinalSynthesis(
-        narrative_insights=text,
+    from app.services.workbench.attribution import (
+        ReconciledAttribution,
+        reconcile_query_attribution,
     )
+
     registry = list(state.get("query_registry", []))
-    attribution = reconcile_query_attribution(registry, proposed_synthesis)
+    attribution = (
+        reconcile_query_attribution(registry, structured_synthesis)
+        if structured_synthesis is not None else ReconciledAttribution()
+    )
+    if structured_synthesis is not None:
+        text = structured_synthesis.insights.strip()
+    proposed = (
+        [f"q{structured_synthesis.query_id}"]
+        if structured_synthesis is not None else []
+    )
     _persist(
         history.set_query_registry,
         state["conversation_id"], state["user"], state["turn_id"], registry,
@@ -323,7 +333,7 @@ async def answer_results(state: WorkbenchState) -> dict[str, Any]:
         active=attribution.active_query_ids,
         visual=attribution.visual_query_ids,
         invalid=attribution.invalid_query_ids,
-        proposed=proposed_synthesis.active_query_ids,
+        proposed=proposed,
         fallback_used=attribution.fallback_used,
     )
 
@@ -342,12 +352,19 @@ async def answer_results(state: WorkbenchState) -> dict[str, Any]:
         "schema_version": 1,
         "status": "partial" if unavailable or limitations else "answered",
         "text": text,
+        "insights": text,
+        "query_id": (
+            structured_synthesis.query_id if structured_synthesis is not None else None
+        ),
+        "view": (
+            structured_synthesis.view if structured_synthesis is not None else None
+        ),
         "active_query_ids": attribution.active_query_ids,
         "visual_query_ids": attribution.visual_query_ids,
         "excluded_queries": [
             item.model_dump(mode="json") for item in attribution.excluded_queries
         ],
-        "model_active_query_ids": proposed_synthesis.active_query_ids,
+        "model_active_query_ids": proposed,
         "invalid_query_ids": attribution.invalid_query_ids,
         "attribution_fallback_used": attribution.fallback_used,
         "sources": list(dict.fromkeys(r.source for r in results)),

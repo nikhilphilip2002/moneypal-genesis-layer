@@ -322,81 +322,25 @@ def _preflight(result, state: dict[str, Any]) -> list[tuple[str, str, str]]:
                 call.name, call.arguments, policy=state["source_policy"]
             )
             if call.name == "submit_final_answer":
-                visual_query_ids = call.arguments.get("visual_query_ids")
-                excluded_queries = call.arguments.get("excluded_queries")
-                # Malformed fields go untouched to FastMCP, the sole input-schema
-                # validator. Reconciliation below is a stateful business rule that the
-                # MCP schema cannot express and runs only when its inputs have the shape
-                # needed for comparison.
-                if not isinstance(visual_query_ids, list) or not isinstance(
-                    excluded_queries, list
+                query_number = call.arguments.get("query_id")
+                if not isinstance(query_number, int) or isinstance(query_number, bool):
+                    continue
+                from app.services.workbench.attribution import resolve_current_query
+
+                selected = resolve_current_query(
+                    list(state.get("query_registry", [])), query_number,
+                )
+                if selected is None:
+                    raise AgentToolArgumentsInvalid(
+                        f"query_id {query_number} does not reference a current-turn query"
+                    )
+                if (
+                    selected.get("status") != "success"
+                    or selected.get("has_data") is not True
+                    or not _is_postgres_tool(str(selected.get("tool_name") or ""))
                 ):
-                    continue
-                if not all(isinstance(item, str) for item in visual_query_ids):
-                    continue
-                if not all(isinstance(item, dict) for item in excluded_queries):
-                    continue
-                registry = list(state.get("query_registry", []))
-                successful_queries = {
-                    str(record.get("query_id"))
-                    for record in registry
-                    if record.get("status") == "success"
-                    and record.get("has_data") is True
-                    and _is_postgres_tool(str(record.get("tool_name") or ""))
-                }
-                presented_sources = {
-                    str(record.get("source_query_id"))
-                    for record in registry
-                    if record.get("status") == "success"
-                    and record.get("visual_available") is True
-                    and record.get("tool_name") == "visualize_query_result"
-                }
-                successful_visuals = {
-                    str(record.get("query_id"))
-                    for record in registry
-                    if record.get("status") == "success"
-                    and record.get("has_data") is True
-                    and record.get("visual_available") is True
-                    and record.get("tool_name") == "visualize_query_result"
-                }
-                deliberately_excluded = {
-                    str(item.get("query_id"))
-                    for item in excluded_queries
-                    if isinstance(item.get("query_id"), str)
-                    and item.get("reason_code") in {
-                        "superseded", "discovery_only", "validation_only",
-                        "unused_by_synthesis",
-                    }
-                }
-                missing = sorted(
-                    successful_queries - presented_sources - deliberately_excluded
-                )
-                if missing:
                     raise AgentToolArgumentsInvalid(
-                        "successful query result(s) require visualize_query_result before "
-                        f"final synthesis: {', '.join(missing)}"
-                    )
-                invalid_visuals = sorted(
-                    set(visual_query_ids) - successful_visuals
-                )
-                if invalid_visuals:
-                    raise AgentToolArgumentsInvalid(
-                        "visual_query_ids must contain only successful visualization IDs: "
-                        f"{', '.join(invalid_visuals)}"
-                    )
-                required_visuals = {
-                    str(record.get("query_id"))
-                    for record in registry
-                    if record.get("query_id") in successful_visuals
-                    and str(record.get("source_query_id")) not in deliberately_excluded
-                }
-                missing_visuals = sorted(
-                    required_visuals - set(visual_query_ids)
-                )
-                if missing_visuals:
-                    raise AgentToolArgumentsInvalid(
-                        "successful visualizations used for the answer must be listed in "
-                        f"visual_query_ids: {', '.join(missing_visuals)}"
+                        f"query_id {query_number} must reference a successful database query"
                     )
         except AgentToolAccessDenied as exc:
             failures.append((call.id, str(exc), "POLICY_DENIED"))
@@ -824,6 +768,25 @@ async def _execute_one(
         )
     try:
         item = await execute_agent_call(call, execution_context)
+        if call.name == "submit_final_answer" and item.terminal is not None:
+            from app.services.workbench.agent_contracts import FinalSynthesis
+            from app.services.workbench.attribution import resolve_current_query
+            from app.services.workbench.visualization import build_inferred_visual
+
+            synthesis = FinalSynthesis.model_validate(item.terminal.get("synthesis"))
+            selected = resolve_current_query(
+                list(state.get("query_registry", [])), synthesis.query_id,
+            )
+            if selected is None:
+                raise AgentToolArgumentsInvalid(
+                    f"query_id {synthesis.query_id} does not reference a current-turn query"
+                )
+            internal_query_id = str(selected["query_id"])
+            item.card = build_inferred_visual(
+                selected, query_id=internal_query_id, view=synthesis.view,
+            )
+            item.query_id = internal_query_id
+            item.attempt_id = str(selected["attempt_id"])
     except Exception as exc:  # noqa: BLE001 - isolate independent calls
         logger.warning("native tool %s failed: %s", call.name, exc)
         code = getattr(exc, "code", "SOURCE_UNAVAILABLE")
@@ -876,7 +839,12 @@ async def _stream_item(state: dict[str, Any], item: ExecutedAgentCall) -> None:
     if item.error is not None:
         trace_detail = str(item.error.get("message") or item.error.get("code") or "Tool failed")
     elif item.terminal is not None:
-        trace_detail = str(item.terminal.get("message") or "No data action required")
+        synthesis = item.terminal.get("synthesis")
+        trace_detail = (
+            f"Prepared {synthesis.get('view')} view"
+            if isinstance(synthesis, dict) and synthesis.get("view")
+            else str(item.terminal.get("message") or "No data action required")
+        )
     elif item.raw_result is not None:
         trace_detail = item.raw_result.summary
     elif item.card is not None:

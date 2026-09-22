@@ -6,7 +6,11 @@ from app.services.nlq.llm import NativeToolCall
 from app.services.workbench import access, history
 from app.services.workbench.agent_contracts import VisualizeQueryResultArguments
 from app.services.workbench.agent_executor import AgentExecutionContext, execute_agent_call
-from app.services.workbench.visualization import VisualizationError, build_visual
+from app.services.workbench.visualization import (
+    VisualizationError,
+    build_inferred_visual,
+    build_visual,
+)
 
 
 def _source(*, rows=None, complete=True):
@@ -98,6 +102,33 @@ def test_none_rejects_duplicate_x_series_grain():
 def test_rejects_aggregation_of_a_truncated_result():
     with pytest.raises(VisualizationError, match="truncated"):
         build_visual(_source(complete=False), _args(aggregation="sum"))
+
+
+def test_infers_donut_fields_from_query_result_order_and_types():
+    source = _source(rows=[
+        {"gender": "Male", "loan_count": 229},
+        {"gender": "Female", "loan_count": 159},
+    ])
+    source["result_payload"]["columns"] = [
+        {"name": "gender", "label": "Gender", "unit": "text"},
+        {"name": "loan_count", "label": "Loans", "unit": "count"},
+    ]
+
+    result = build_inferred_visual(source, query_id="turn:q1", view="donut")
+
+    assert result.payload["x"]["field"] == "gender"
+    assert result.payload["series"][0]["field"] == "loan_count"
+
+
+def test_inferred_view_rejects_an_incompatible_result_shape():
+    source = _source(rows=[{"gender": "Male", "scheme": "MSME"}])
+    source["result_payload"]["columns"] = [
+        {"name": "gender", "unit": "text"},
+        {"name": "scheme", "unit": "text"},
+    ]
+
+    with pytest.raises(VisualizationError, match="numeric value"):
+        build_inferred_visual(source, query_id="turn:q1", view="donut")
 
 
 def test_query_result_lookup_is_scoped_to_conversation_owner(monkeypatch):

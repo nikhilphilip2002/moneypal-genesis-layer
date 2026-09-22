@@ -90,9 +90,20 @@ class ExecutedAgentCall:
     query_id: str | None = None
     attempt_id: str | None = None
 
+    @staticmethod
+    def _local_reference(query_id: str, attempt_id: str) -> dict[str, int | str]:
+        query_tail = query_id.rsplit(":q", 1)
+        attempt_tail = attempt_id.rsplit(":a", 1)
+        if len(query_tail) == 2 and query_tail[1].isdigit():
+            reference: dict[str, int | str] = {"query_id": int(query_tail[1])}
+            if len(attempt_tail) == 2 and attempt_tail[1].isdigit():
+                reference["attempt"] = int(attempt_tail[1])
+            return reference
+        return {"query_id": query_id}
+
     def replay_payload(self) -> dict[str, Any]:
         query_reference = (
-            {"query_id": self.query_id, "attempt_id": self.attempt_id}
+            self._local_reference(self.query_id, self.attempt_id)
             if self.query_id and self.attempt_id else None
         )
         if self.error is not None:

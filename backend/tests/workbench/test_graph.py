@@ -177,12 +177,8 @@ def _successful_visual(query_id: str = "turn-answer:v1") -> dict:
 @pytest.mark.anyio
 async def test_answer_results_reconciles_structured_query_references():
     state = _answer_state(json.dumps({
-        "schema_version": 1,
-        "narrative_insights": "The value is one.",
-        "active_query_ids": ["turn-answer:q1", "invented"],
-        "visual_query_ids": ["invented", "turn-answer:v1"],
-        "excluded_queries": [],
-    }), [_successful_query(), _successful_visual()])
+        "insights": "The value is one.", "query_id": 1, "view": "table",
+    }), [_successful_query()])
 
     await graph.answer_results(state)
 
@@ -191,24 +187,10 @@ async def test_answer_results_reconciles_structured_query_references():
     answer = json.loads(frame.split("data: ", 1)[1])
     assert answer["text"] == "The value is one."
     assert answer["active_query_ids"] == ["turn-answer:q1"]
-    assert answer["visual_query_ids"] == ["turn-answer:v1"]
-    assert answer["invalid_query_ids"] == ["invented"]
-    assert answer["attribution_fallback_used"] is False
-
-
-@pytest.mark.anyio
-async def test_explicit_empty_structured_attribution_does_not_trigger_fallback():
-    state = _answer_state(json.dumps({
-        "schema_version": 1,
-        "narrative_insights": "No database result was used.",
-        "active_query_ids": [], "visual_query_ids": [], "excluded_queries": [],
-    }), [_successful_query()])
-
-    await graph.answer_results(state)
-    answer = json.loads(state["emit"].get_nowait().split("data: ", 1)[1])
-
-    assert answer["active_query_ids"] == []
-    assert answer["visual_query_ids"] == []
+    assert answer["visual_query_ids"] == ["turn-answer:q1"]
+    assert answer["query_id"] == 1
+    assert answer["view"] == "table"
+    assert answer["invalid_query_ids"] == []
     assert answer["attribution_fallback_used"] is False
 
 
@@ -225,16 +207,9 @@ async def test_plain_text_does_not_infer_query_attribution():
 
 
 @pytest.mark.anyio
-async def test_structured_conceptual_answer_has_empty_query_references():
-    from app.services.workbench.agent_contracts import FinalSynthesis
-
-    state = _answer_state("unused", [])
+async def test_plain_text_conceptual_answer_needs_no_query():
+    state = _answer_state("PAR means portfolio at risk.", [])
     state["results"] = []
-    state.pop("agent_final_result")
-    state["agent_final_synthesis"] = FinalSynthesis(
-        narrative_insights="PAR means portfolio at risk.",
-        active_query_ids=[], visual_query_ids=[], excluded_queries=[],
-    )
 
     await graph.answer_results(state)
     answer = json.loads(state["emit"].get_nowait().split("data: ", 1)[1])

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Iterable
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -19,8 +19,18 @@ class ReconciledAttribution(BaseModel):
     fallback_used: bool = False
 
 
-def _ordered_unique(values: Iterable[str]) -> list[str]:
-    return list(dict.fromkeys(value for value in values if isinstance(value, str) and value))
+def resolve_current_query(
+    registry: list[dict[str, Any]], query_number: int,
+) -> dict[str, Any] | None:
+    """Resolve the model's local qN counter without exposing the internal turn ID."""
+    suffix = f":q{query_number}"
+    matches = [
+        record for record in registry
+        if isinstance(record, dict)
+        and str(record.get("query_id") or "").endswith(suffix)
+        and record.get("source_query_id") is None
+    ]
+    return matches[-1] if matches else None
 
 
 def _exclusion(
@@ -66,55 +76,28 @@ def reconcile_query_attribution(
         for record in records.values()
         if record.get("supersedes_query_id")
     }
-    proposed_active = _ordered_unique(synthesis.active_query_ids)
-    proposed_visual = _ordered_unique(synthesis.visual_query_ids)
+    selected_record = resolve_current_query(registry, synthesis.query_id)
+    selected_id = (
+        str(selected_record.get("query_id")) if selected_record is not None else ""
+    )
     eligible = {
         query_id for query_id, record in records.items()
         if record.get("status") == "success" and record.get("has_data") is True
     }
-    invalid = [
-        query_id for query_id in _ordered_unique([*proposed_active, *proposed_visual])
-        if query_id not in records
-    ]
-    active = [query_id for query_id in proposed_active if query_id in eligible]
-    visual = [
-        query_id for query_id in proposed_visual
-        if query_id in eligible
-        and records[query_id].get("tool_name") == "visualize_query_result"
-        and records[query_id].get("visual_available") is True
-    ]
+    valid_selection = selected_id in eligible
+    invalid = [] if valid_selection else [f"q{synthesis.query_id}"]
+    active = [selected_id] if valid_selection else []
+    # The final-answer tool creates the single card directly from the selected query.
+    visual = list(active)
 
-    model_exclusions = {item.query_id: item for item in synthesis.excluded_queries}
     excluded: list[ExcludedQueryReference] = []
     for query_id, record in records.items():
         if query_id in active or query_id in visual:
             continue
-        model_item = model_exclusions.get(query_id)
         if record.get("status") == "success" and record.get("has_data") is True:
-            if model_item is not None and model_item.reason_code == "discovery_only":
-                record["purpose"] = "discovery"
-            elif model_item is not None and model_item.reason_code == "validation_only":
-                record["purpose"] = "validation"
-            elif record.get("purpose") == "answer":
+            if record.get("purpose") == "answer":
                 record["purpose"] = "intermediate"
         item = _exclusion(record, superseded=query_id in superseded_ids)
-        if (
-            item.reason_code == "unused_by_synthesis"
-            and model_item is not None
-            and model_item.reason_code == "superseded"
-        ):
-            item.reason_code = "superseded"
-            item.reason = "The query was replaced by a later result."
-        # The backend owns operational reason codes. Model rationale is accepted only for
-        # a successful result the synthesis chose not to use, and Pydantic already bounds it.
-        if (
-            item.reason_code in {
-                "unused_by_synthesis", "discovery_only", "validation_only", "superseded",
-            }
-            and model_item is not None
-            and model_item.reason.strip()
-        ):
-            item.reason = model_item.reason.strip()
         excluded.append(item)
     return ReconciledAttribution(
         active_query_ids=active,

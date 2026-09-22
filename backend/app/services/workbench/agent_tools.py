@@ -100,6 +100,8 @@ def allowed_curated_domains(policy: SourceAccessPolicy) -> list[str]:
 def visible_runtime_tool_names(policy: SourceAccessPolicy) -> list[str]:
     visible: list[str] = []
     for name, runtime_policy in RUNTIME_TOOL_POLICIES.items():
+        if name == "visualize_query_result":
+            continue
         if runtime_policy.source_id is not None and not policy.allows(
             runtime_policy.source_id
         ):

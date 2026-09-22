@@ -6,7 +6,10 @@ from collections import OrderedDict
 from typing import Any
 
 from app.services.nlq.contracts import AxisSpec, ChartSpec, ColumnSpec, Lineage, SeriesSpec
-from app.services.workbench.agent_contracts import VisualizeQueryResultArguments
+from app.services.workbench.agent_contracts import (
+    VisualizationChartType,
+    VisualizeQueryResultArguments,
+)
 from app.services.workbench.results import SourceResult
 
 
@@ -21,6 +24,92 @@ def _label(field: str) -> str:
 
 def _is_number(value: Any) -> bool:
     return isinstance(value, (int, float)) and not isinstance(value, bool)
+
+
+def _result_fields(source_record: dict[str, Any]) -> tuple[list[str], list[str]]:
+    payload = source_record.get("result_payload") or {}
+    rows = [row for row in payload.get("rows", []) if isinstance(row, dict)]
+    declared = [
+        str(column.get("name"))
+        for column in payload.get("columns", [])
+        if isinstance(column, dict) and column.get("name")
+    ]
+    fields = list(dict.fromkeys([
+        *declared,
+        *(str(key) for row in rows for key in row),
+    ]))
+    numeric = [
+        field for field in fields
+        if any(row.get(field) is not None for row in rows)
+        and all(
+            row.get(field) is None or _is_number(row.get(field))
+            for row in rows
+        )
+    ]
+    return fields, numeric
+
+
+def infer_visual_arguments(
+    source_record: dict[str, Any], *, query_id: str, view: VisualizationChartType,
+) -> VisualizeQueryResultArguments:
+    """Derive a deterministic chart mapping from a shaped query result."""
+    payload = source_record.get("result_payload") or {}
+    rows = [row for row in payload.get("rows", []) if isinstance(row, dict)]
+    fields, numeric = _result_fields(source_record)
+
+    if view == "table":
+        return VisualizeQueryResultArguments(
+            query_id=query_id, chart_type=view, x=None, y=[], series=None,
+            aggregation="none",
+        )
+    if view == "kpi":
+        if len(rows) != 1 or not numeric:
+            raise VisualizationError("kpi requires one result row with a numeric value")
+        return VisualizeQueryResultArguments(
+            query_id=query_id, chart_type=view, x=None, y=numeric, series=None,
+            aggregation="none",
+        )
+    if view == "scatter":
+        if len(numeric) != 2:
+            raise VisualizationError("scatter requires exactly two numeric columns")
+        return VisualizeQueryResultArguments(
+            query_id=query_id, chart_type=view, x=numeric[0], y=[numeric[1]],
+            series=None, aggregation="none",
+        )
+    if view in {"grouped_bar", "stacked_area", "heatmap"}:
+        if len(fields) < 3:
+            raise VisualizationError(
+                f"{view} requires an x column, a series column, and a numeric value"
+            )
+        x, series = fields[0], fields[1]
+        measures = [field for field in numeric if field not in {x, series}]
+        if len(measures) != 1:
+            raise VisualizationError(f"{view} requires exactly one numeric value column")
+        return VisualizeQueryResultArguments(
+            query_id=query_id, chart_type=view, x=x, y=measures,
+            series=series, aggregation="none",
+        )
+    if len(fields) < 2:
+        raise VisualizationError(f"{view} requires an x column and a numeric value")
+    x = fields[0]
+    measures = [field for field in numeric if field != x]
+    if not measures:
+        raise VisualizationError(f"{view} requires a numeric value column after x")
+    if view == "donut" and len(measures) != 1:
+        raise VisualizationError("donut requires exactly one numeric column")
+    return VisualizeQueryResultArguments(
+        query_id=query_id, chart_type=view, x=x, y=measures,
+        series=None, aggregation="none",
+    )
+
+
+def build_inferred_visual(
+    source_record: dict[str, Any], *, query_id: str, view: VisualizationChartType,
+) -> SourceResult:
+    return build_visual(
+        source_record,
+        infer_visual_arguments(source_record, query_id=query_id, view=view),
+    )
 
 
 def _column_map(payload: dict[str, Any]) -> dict[str, dict[str, Any]]:
@@ -267,4 +356,7 @@ def build_visual(
     )
 
 
-__all__ = ["VisualizationError", "build_visual"]
+__all__ = [
+    "VisualizationError", "build_inferred_visual", "build_visual",
+    "infer_visual_arguments",
+]
