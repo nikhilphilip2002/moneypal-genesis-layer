@@ -1,19 +1,19 @@
 # Workbench Prompt and Policy Ownership
 
-Each instruction has one enforcement owner. Prompt text may remind the model of a boundary,
-but reminders do not replace application enforcement.
+The chat agent system prompt is built in `workbench/prompts.py`. It contains the stable
+agent instructions and governed Gold schema. Question-specific catalog hints, the user's
+question, and conversation history follow it. Tool names are not appended to system text;
+native tool definitions are supplied through the request's `tools` field.
 
-| Concern | Owner |
-|---|---|
-| Source consent, role intersection, deployment kill switch | `workbench/access.py` |
-| Read-only SQL, tables, columns, PII and row limits | NLQ compiler/validator/executor |
-| Router output shape and allowed source IDs | `route_schema` structured output |
-| DB planning output shape | NLQ planner structured output |
-| Retrieval metadata, citations, failures and limitations | source result/evidence envelope |
-| Grounded answer behavior and citation presentation | minimal composer system prompt |
-| Final answer fields | typed application response contract |
-| Conversation transcript selection and compaction | Workbench history/compaction code |
+The compaction system prompt and its initial/update instructions live in
+`workbench/compaction/summarize.py`. Compaction is a separate model request and has no
+additional tool definitions. The model-based suggestion prompt has been removed.
 
-The router, DB planner, and composer use separate versioned prompt builders. Stable prefix
-bytes are deterministic and logged only by SHA-256 fingerprint. JSON schemas are passed as
-structured-output contracts and are not duplicated verbatim inside native-schema prompts.
+`workbench/access.py` owns role, consent, and deployment source policy. The agent enforces
+that policy again immediately before a tool runs. On a provider verified to support Chat
+Completions `tool_choice.allowed_tools`, the full tool definition list stays stable while
+the allowed subset changes with request policy. Other providers receive a policy-filtered
+tool definition list. The frontend toggle does not authorize a call on its own.
+
+The first chat request contains the real user's message. Disk slot snapshots, when
+enabled, are scoped to a user and conversation and contain private conversation content.

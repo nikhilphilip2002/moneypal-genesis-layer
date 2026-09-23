@@ -76,11 +76,11 @@ async def test_every_request_enters_native_agent_once(monkeypatch):
 
 
 @pytest.mark.anyio
-async def test_only_first_message_marks_system_slot_for_restore(monkeypatch):
+async def test_only_first_message_marks_slot_as_new_chat(monkeypatch):
     flags = []
 
     async def native_run(state):
-        flags.append(state.get("_restore_system_slot"))
+        flags.append(state.get("_slot_new_chat"))
         await state["emit"].put(graph.sse("answer", {
             "status": "answered", "text": "done", "sources": [], "citations": [],
             "unavailable_sources": [], "limitations": [],

@@ -33,7 +33,6 @@ def test_agent_prompt_forbids_wildcard_and_duplicate_queries():
 def test_agent_prompt_retrieves_only_relevant_gold_metadata():
     bundle = prompts.build_agent_prompt(
         question="monthly cash receipts by payment mode",
-        tool_names=["query"],
     )
     content = bundle.messages[-1]["content"]
     assert "gold.payment_receipts" in content

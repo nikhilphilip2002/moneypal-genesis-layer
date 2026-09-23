@@ -392,6 +392,34 @@ def _native_tool_names(tools: list[dict[str, Any]]) -> set[str]:
     return names
 
 
+def _choice_tool_names(
+    tool_choice: str | dict[str, Any] | None, offered_names: set[str],
+) -> set[str]:
+    """Validate an allowed_tools choice and constrain accepted provider tool calls."""
+    if tool_choice == "none":
+        return set()
+    if not isinstance(tool_choice, dict) or tool_choice.get("type") != "allowed_tools":
+        return offered_names
+    allowed = tool_choice.get("allowed_tools")
+    if not isinstance(allowed, dict) or allowed.get("mode") not in {"auto", "required"}:
+        raise LLMError("allowed_tools requires an auto or required mode")
+    entries = allowed.get("tools")
+    if not isinstance(entries, list) or not entries:
+        raise LLMError("allowed_tools requires a nonempty function list")
+    names: set[str] = set()
+    for entry in entries:
+        if not isinstance(entry, dict):
+            raise LLMError("allowed_tools contains an invalid function reference")
+        function = entry.get("function") if isinstance(entry, dict) else None
+        name = function.get("name") if isinstance(function, dict) else None
+        if entry.get("type") != "function" or not isinstance(name, str):
+            raise LLMError("allowed_tools contains an invalid function reference")
+        if name not in offered_names or name in names:
+            raise LLMError(f"allowed_tools contains an unknown or duplicate function {name!r}")
+        names.add(name)
+    return names
+
+
 def _parse_native_tool_calls(
     message: dict[str, Any], *, allowed_names: set[str],
 ) -> list[NativeToolCall]:
@@ -568,7 +596,7 @@ class OpenAICompatibleClient:
         if tools is not None:
             if not self.profile.supports_native_tools:
                 raise LLMError(f"{self.provider} does not support native tools")
-            allowed_tool_names = _native_tool_names(tools)
+            allowed_tool_names = _choice_tool_names(tool_choice, _native_tool_names(tools))
 
         request_started = asyncio.get_event_loop().time()
         prepared_messages = self._prepare_messages(messages, json_schema)

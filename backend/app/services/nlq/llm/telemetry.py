@@ -29,11 +29,10 @@ CallPurpose = Literal[
     "db_plan",
     "vector_compose",
     "final_compose",
-    "suggestions",
     "compaction",
     "unspecified",
 ]
-CallKind = Literal["planned", "repair", "warmup"]
+CallKind = Literal["planned", "repair"]
 
 CALL_PURPOSES: tuple[str, ...] = (
     "agent_select",
@@ -42,7 +41,6 @@ CALL_PURPOSES: tuple[str, ...] = (
     "db_plan",
     "vector_compose",
     "final_compose",
-    "suggestions",
     "compaction",
 )
 

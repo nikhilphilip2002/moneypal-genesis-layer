@@ -66,42 +66,31 @@ model: qwen3.6-32b-instruct-q4_K_M.gguf
 sha256: <fill in at provisioning>
 ```
 
-### Persistent initial-system-prompt slot
+### Conversation slot snapshots
 
-Mount `/var/lib/llama-slots` on persistent, owner-only storage. The snapshot filename is
-derived only from `LLM_MODEL` and the exact initial Workbench system-prompt text. The prefill
-contains that system prompt and one fixed, non-private user-role message required by the Qwen
-chat template. It contains no real user message, assistant response, conversation history,
-question-specific context, tool definition, or tool result.
+The first Workbench model request contains the real user question; no synthetic warm-up
+message, `/apply-template` request, or zero-token `/completion` request is sent. Ordinary
+llama.cpp in-memory prompt reuse continues with `--cache-prompt`.
 
-Optional deployment prewarming can run after llama-server is healthy:
+`LLAMA_SLOT_SNAPSHOTS_ENABLED=false` by default. If enabled after validating the deployed
+model, the backend saves slot 0 after each successful chat-model round and may restore that
+snapshot only for the same user and conversation. Snapshot filenames bind user, conversation,
+model, `LLAMA_SLOT_COMPATIBILITY_ID`, system prompt, and tool schema. Set the compatibility
+ID to a deployment identifier that changes with the GGUF, llama.cpp build, or chat template.
+The files themselves contain private conversation
+content. Mount `--slot-save-path` on owner-only storage with an operational retention policy.
+A snapshot is never reused as a global initial prompt for another chat.
 
-```
-cd backend
-python -m scripts.manage_llama_slot_cache restore-or-warm
-```
+Before enabling disk snapshots, compare a cold request, a repeated in-memory request, and a
+save → erase → restore → repeat sequence on the deployed Qwen build. Inspect tokens actually
+reused and time to first token; `n_saved` and `n_restored` alone are not proof of reuse.
+Current llama.cpp hybrid/recurrent builds may restore a slot successfully but reprocess all
+tokens. Leave disk snapshots off if that occurs.
 
-The first message of every new chat restores the fingerprinted file into slot `0` before the
-real model request. If that file is absent or rejected, the backend erases slot `0`, evaluates
-only the chat-template-rendered system prompt and fixed warm-up user turn with `n_predict=0`,
-saves that slot, and then sends the real request. The prefill generates no assistant tokens and
-is never added to conversation history; the slot is never saved after the user request.
-Existing chats continue through the normal model-controlled tool loop without restoring the
-initial snapshot between rounds.
-
-Useful operator commands:
-
-```
-python -m scripts.manage_llama_slot_cache fingerprint
-python -m scripts.manage_llama_slot_cache restore
-python -m scripts.manage_llama_slot_cache warm-save
-python -m scripts.manage_llama_slot_cache erase
-```
-
-Treat snapshot files as sensitive operational state even though the warm-up input is synthetic;
-do not expose the slot directory or llama-server port outside the trusted network. Old
-fingerprinted files are not selected after a compatibility change and may be removed during a
-separate retention job.
+`LLM_ALLOWED_TOOLS_SUPPORTED=false` by default. OpenAI Chat Completions supports a stable
+`tools` list with a policy-limited `tool_choice.allowed_tools` subset, but the deployed
+llama.cpp build must be tested for enforcement before enabling this switch. With the switch
+off, the backend sends policy-filtered definitions and still checks every call at execution.
 
 `NLQ_LLM_THINKING` must stay `false` for any hybrid-reasoning model (the Qwen3 family, and
 anything else llama-server answers with a `reasoning_content` field). The planner fills in a

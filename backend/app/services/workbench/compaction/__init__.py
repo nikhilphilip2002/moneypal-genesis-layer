@@ -18,11 +18,11 @@ import logging
 
 from app.core.config import settings
 
-from . import budget, prompts, state, summarize
+from . import budget, state, summarize
 
 logger = logging.getLogger(__name__)
 
-__all__ = ["budget", "prompts", "state", "summarize", "maybe_compact", "compact_now"]
+__all__ = ["budget", "state", "summarize", "maybe_compact", "compact_now"]
 
 
 async def maybe_compact(conversation_id: str, user: str) -> bool:

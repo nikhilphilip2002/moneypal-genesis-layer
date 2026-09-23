@@ -554,6 +554,45 @@ class TestResponseFormat:
 
 class TestNativeTools:
     @pytest.mark.anyio
+    async def test_allowed_tools_choice_is_sent_with_full_definitions(self):
+        seen = {}
+        choice = {
+            "type": "allowed_tools",
+            "allowed_tools": {
+                "mode": "required",
+                "tools": [{"type": "function", "function": {"name": "query_metrics"}}],
+            },
+        }
+
+        def handler(request):
+            seen.update(json.loads(request.content))
+            return _tool_ok(_raw_tool_call())
+
+        result = await _client(handler).complete(
+            messages=[{"role": "user", "content": "Show PAR 30"}],
+            tools=TOOLS, tool_choice=choice,
+        )
+
+        assert seen["tools"] == TOOLS
+        assert seen["tool_choice"] == choice
+        assert result.tool_calls[0].name == "query_metrics"
+
+    @pytest.mark.anyio
+    async def test_allowed_tools_choice_rejects_excluded_provider_call(self):
+        choice = {
+            "type": "allowed_tools",
+            "allowed_tools": {
+                "mode": "auto",
+                "tools": [{"type": "function", "function": {"name": "lookup_records"}}],
+            },
+        }
+        with pytest.raises(LLMProtocolError, match="unknown function"):
+            await _client(lambda _: _tool_ok(_raw_tool_call())).complete(
+                messages=[{"role": "user", "content": "hi"}],
+                tools=TOOLS, tool_choice=choice,
+            )
+
+    @pytest.mark.anyio
     async def test_native_tool_fields_are_passed_exactly(self):
         seen = {}
         choice = {"type": "function", "function": {"name": "query_metrics"}}

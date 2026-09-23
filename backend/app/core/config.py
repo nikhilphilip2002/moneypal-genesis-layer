@@ -109,8 +109,21 @@ class Settings:
         self.llm_api_key = get("LLM_API_KEY")
         self.llm_model = get("LLM_MODEL", "qwen3.6-32b-instruct-q4_K_M") or "qwen3.6-32b-instruct-q4_K_M"
         self.llm_timeout_s = float(get("LLM_TIMEOUT", "300") or "300")
-        # llama.cpp slot snapshots hold only the initial Workbench system prompt. The
-        # filename identity is the exact prompt text plus LLM_MODEL.
+        # Explicitly enable only after the deployed OpenAI-compatible server has been
+        # verified to enforce Chat Completions tool_choice.allowed_tools.
+        self.llm_allowed_tools_supported = (
+            get("LLM_ALLOWED_TOOLS_SUPPORTED", "false") or "false"
+        ).lower() in ("1", "true", "yes", "on")
+        # Disk slot snapshots contain real conversation content and stay disabled until
+        # the deployed model/server has demonstrated reuse after save and restore.
+        self.llama_slot_snapshots_enabled = (
+            get("LLAMA_SLOT_SNAPSHOTS_ENABLED", "false") or "false"
+        ).lower() in ("1", "true", "yes", "on")
+        self.llama_slot_compatibility_id = get("LLAMA_SLOT_COMPATIBILITY_ID", "") or ""
+        if self.llama_slot_snapshots_enabled and not self.llama_slot_compatibility_id:
+            raise ValueError(
+                "LLAMA_SLOT_COMPATIBILITY_ID is required when slot snapshots are enabled"
+            )
         self.llama_slot_id = max(0, int(get("LLAMA_SLOT_ID", "0") or "0"))
         self.llama_slot_cache_prefix = (
             get("LLAMA_SLOT_CACHE_PREFIX", "moneypal-workbench")
@@ -192,9 +205,6 @@ class Settings:
         # The Workbench has one execution architecture: provider-native tool calling.
         # Model selection remains purpose-aware for privacy, but there is no behavioral
         # router, legacy orchestrator, rollout mode, or percentage assignment.
-        self.workbench_personalize_suggestions = (
-            get("WORKBENCH_PERSONALIZE_SUGGESTIONS", "false") or "false"
-        ).lower() in ("1", "true", "yes", "on")
         # A round is one LLM request of any kind: selection, continuation, final
         # synthesis, or synthesis repair. The floor of 2 is one selection plus the
         # synthesis round that shows the model what that selection returned.

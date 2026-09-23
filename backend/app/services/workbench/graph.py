@@ -520,7 +520,7 @@ async def run_workbench(
         "question": question, "conversation_id": conversation_id,
         "user": user, "role": role, "turn_id": turn_id,
         "agent_history_messages": agent_history_messages,
-        "_restore_system_slot": is_new_chat,
+        "_slot_new_chat": is_new_chat,
         "agent_private_entities": agent_private_entities,
         "emit": emit, "pinned": pinned,
         "source_policy": source_policy,

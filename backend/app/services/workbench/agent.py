@@ -21,7 +21,7 @@ from app.core.config import settings
 from app.services.nlq.catalog import get_catalog
 from app.services.nlq.llm import LLMError, LLMProtocolError, LLMTimeout
 from app.services.nlq.llm.client import request_gate
-from app.services.nlq.llm.slot_cache import build_warmup_bundle, restore_or_warm
+from app.services.nlq.llm.slot_cache import SlotCacheError, slot_action, snapshot_filename
 from app.services.workbench import history, models, prompts
 from app.services.workbench.agent_executor import (
     AgentExecutionContext,
@@ -220,7 +220,7 @@ async def _select(
     state: dict[str, Any], *, repair_messages=None, tool_choice: str = "required",
     supplement: str = "", trace_id: str | None = None,
 ):
-    """Make exactly one provider request with every authorized tool.
+    """Make one provider request with the policy's permitted tool-call subset.
 
     The catalog context is recomputed from the question plus the latest tool error so a
     dimension or table named in an error can surface as a candidate. Rounds are charged by
@@ -233,7 +233,9 @@ async def _select(
     )
     from app.mcp.tool_catalog import catalog as mcp_catalog
 
-    if state["source_policy"].allows("db") and not mcp_catalog.names(owner="postgres"):
+    if (
+        settings.llm_allowed_tools_supported or state["source_policy"].allows("db")
+    ) and not mcp_catalog.names(owner="postgres"):
         from app.mcp import postgres_client
 
         cached_postgres = postgres_client.model_tool_definitions()
@@ -244,13 +246,29 @@ async def _select(
                 await mcp_catalog.discover_postgres(check_health=False)
             except Exception:
                 pass
-    definitions = await mcp_catalog.model_tool_definitions(state["source_policy"])
-    if not definitions:
+    allowed_definitions = await mcp_catalog.model_tool_definitions(state["source_policy"])
+    if not allowed_definitions:
         raise LLMError("no native tools are authorized for this request")
+    definitions = (
+        await mcp_catalog.all_model_tool_definitions()
+        if settings.llm_allowed_tools_supported else allowed_definitions
+    )
+    allowed_names = [item["function"]["name"] for item in allowed_definitions]
+    request_tool_choice: str | dict[str, Any] = tool_choice
+    if settings.llm_allowed_tools_supported and tool_choice in {"auto", "required"}:
+        request_tool_choice = {
+            "type": "allowed_tools",
+            "allowed_tools": {
+                "mode": tool_choice,
+                "tools": [
+                    {"type": "function", "function": {"name": name}}
+                    for name in allowed_names
+                ],
+            },
+        }
     prompt = prompts.build_agent_prompt(
         question=state["question"],
         history_messages=state.get("agent_history_messages", []),
-        tool_names=[definition["function"]["name"] for definition in definitions],
         catalog=catalog,
         catalog_context=catalog_context,
     )
@@ -276,7 +294,7 @@ async def _select(
         return await complete(
             messages=messages,
             tools=definitions,
-            tool_choice=tool_choice,
+            tool_choice=request_tool_choice,
             parallel_tool_calls=False,
             timeout_s=budget.remaining_s(settings.llm_timeout_s),
             call_purpose=_PURPOSES[tool_choice],
@@ -285,16 +303,34 @@ async def _select(
             **extra,
         )
 
-    if state.pop("_restore_system_slot", False):
-        # Keep restore/warm and the first real completion in one serialized section. The
-        # nested client calls recognize that the gate is already held, so no lock is
-        # reacquired and no other chat can replace slot 0 between these operations.
-        async with request_gate():
-            cache_started = time.perf_counter()
-            await restore_or_warm(await build_warmup_bundle())
-            budget.deadline += time.perf_counter() - cache_started
-            return await request()
-    return await request()
+    if not settings.llama_slot_snapshots_enabled:
+        return await request()
+
+    schema_hash = hashlib.sha256(
+        json.dumps(definitions, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    ).hexdigest()
+    filename = snapshot_filename(
+        user=state["user"],
+        conversation_id=state["conversation_id"],
+        system_prompt=prompts.build_agent_system_prompt(catalog),
+        tool_schema_hash=schema_hash,
+    )
+    # A slot save captures real model input and output. Keep restore, completion, and save
+    # under one gate so another conversation cannot replace this one-slot server's state.
+    async with request_gate():
+        if not state.get("_slot_initialized"):
+            state["_slot_initialized"] = True
+            if not state.get("_slot_new_chat"):
+                try:
+                    await slot_action("restore", filename=filename)
+                except SlotCacheError:
+                    logger.info("No reusable conversation slot snapshot was restored")
+        result = await request()
+        try:
+            await slot_action("save", filename=filename)
+        except SlotCacheError:
+            logger.warning("Conversation slot snapshot save failed", exc_info=True)
+        return result
 
 
 def _preflight(result, state: dict[str, Any]) -> list[tuple[str, str, str]]:

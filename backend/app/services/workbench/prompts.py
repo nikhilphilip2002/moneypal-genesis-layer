@@ -587,18 +587,13 @@ def agent_catalog_context(question: str, catalog: Catalog | None = None) -> str:
 
 def build_agent_prompt(
     *, question: str, history_messages: list[ChatMessage] | None = None,
-    tool_names: list[str] | tuple[str, ...] = (), catalog: Catalog | None = None,
-    catalog_context: AgentCatalogContext | None = None,
+    catalog: Catalog | None = None, catalog_context: AgentCatalogContext | None = None,
 ) -> PromptBundle:
-    available = ", ".join(tool_names)
     stable: list[ChatMessage] = [{
         "role": "system",
         "content": [{
             "type": "text",
-            "text": build_agent_system_prompt(catalog) + (
-                f"\n\nAUTHORIZED FUNCTIONS\n{available}"
-                if available else ""
-            ),
+            "text": build_agent_system_prompt(catalog),
             "prompt_cache_breakpoint": {"mode": "explicit"},
         }],
     }]

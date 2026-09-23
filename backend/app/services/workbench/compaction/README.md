@@ -26,7 +26,7 @@ a turn boundary. None of that machinery is ported.
 **Different summary template.** pi summarizes into `Goal / Progress (Done, In Progress,
 Blocked) / Next Steps` because its conversations converge on a finished task. Ours is an
 analyst investigating — nothing is "blocked", there is no task to complete. See
-`prompts.py`: `Line of Enquiry / Resolved Context / Open Threads / Caveats & Refusals`.
+`summarize.py`: `Line of Enquiry / Resolved Context / Open Threads / Caveats & Refusals`.
 The refusals section has no pi equivalent and is load-bearing: forgetting that a role was
 denied data makes the model re-promise it next turn.
 
@@ -44,8 +44,7 @@ every request, so it cannot drift from what the summary claims.
 |---|---|---|
 | `budget.py` | no | token accounting, `should_compact` |
 | `state.py` | no | figures / sources / metrics / refusals |
-| `prompts.py` | — | the two templates |
-| `summarize.py` | yes | writes the checkpoint |
+| `summarize.py` | yes | owns the checkpoint prompts and writes the checkpoint |
 | `__init__.py` | — | `maybe_compact` / `compact_now` |
 
 ## Token accounting

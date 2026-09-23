@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import contextlib
 import json
 import time
 
@@ -430,7 +429,7 @@ def test_turn_budget_counts_every_request_and_every_attempted_call():
 
 
 @pytest.mark.anyio
-async def test_new_chat_restores_system_slot_before_first_model_call(scripted, monkeypatch):
+async def test_new_chat_calls_model_without_synthetic_warmup(scripted):
     order = []
 
     def response(_kwargs):
@@ -441,27 +440,80 @@ async def test_new_chat_restores_system_slot_before_first_model_call(scripted, m
     state = _run_state("new-chat")
     state["_restore_system_slot"] = True
 
-    async def build_bundle():
-        return object()
-
-    async def restore(bundle):
-        assert bundle is not None
-        order.append("cache")
-        return {"outcome": "restored"}
-
-    @contextlib.asynccontextmanager
-    async def gate():
-        yield
-
-    monkeypatch.setattr(agent, "build_warmup_bundle", build_bundle)
-    monkeypatch.setattr(agent, "restore_or_warm", restore)
-    monkeypatch.setattr(agent, "request_gate", gate)
-
     await agent.run(state)
 
-    assert order == ["cache", "model"]
-    assert "_restore_system_slot" not in state
+    assert order == ["model"]
+    assert all("Initialize the system prompt cache" not in str(request) for request in client.requests)
     assert len(client.requests) == 1
+
+
+@pytest.mark.anyio
+async def test_enabled_snapshot_saves_after_real_request(scripted, monkeypatch):
+    monkeypatch.setattr(agent.settings, "llama_slot_snapshots_enabled", True)
+    order = []
+
+    def response(_kwargs):
+        order.append("model")
+        return _text_response("Ready.")
+
+    scripted([response], lambda *_: None)
+    state = _run_state("new-chat")
+    state["_slot_new_chat"] = True
+    agent._budget(state)
+
+    async def slot_action(action, *, filename):
+        order.append(action)
+        assert filename.endswith(".bin")
+        return {"id_slot": 0}
+
+    monkeypatch.setattr(agent, "slot_action", slot_action)
+    await agent._select(state, tool_choice="auto")
+    assert order == ["model", "save"]
+
+
+@pytest.mark.anyio
+async def test_existing_chat_restores_only_its_own_snapshot(scripted, monkeypatch):
+    monkeypatch.setattr(agent.settings, "llama_slot_snapshots_enabled", True)
+    order = []
+    scripted([lambda _: (order.append("model"), _text_response("Ready."))[1]], lambda *_: None)
+    state = _run_state("existing-chat")
+    state["_slot_new_chat"] = False
+    agent._budget(state)
+    filenames = []
+
+    async def slot_action(action, *, filename):
+        order.append(action)
+        filenames.append(filename)
+        return {"id_slot": 0}
+
+    monkeypatch.setattr(agent, "slot_action", slot_action)
+    await agent._select(state, tool_choice="auto")
+    assert order == ["restore", "model", "save"]
+    assert filenames[0] == filenames[1]
+
+
+@pytest.mark.anyio
+async def test_allowed_tools_keeps_definitions_stable_across_toggle(scripted, monkeypatch):
+    monkeypatch.setattr(agent.settings, "llm_allowed_tools_supported", True)
+    client = scripted([_text_response("Ready."), _text_response("Ready.")], lambda *_: None)
+    off = _run_state("off", external=False)
+    on = _run_state("on", external=True)
+    agent._budget(off)
+    agent._budget(on)
+
+    await agent._select(off, tool_choice="auto")
+    await agent._select(on, tool_choice="auto")
+
+    off_request, on_request = client.requests
+    assert off_request["tools"] == on_request["tools"]
+    off_choice = off_request["tool_choice"]["allowed_tools"]
+    on_choice = on_request["tool_choice"]["allowed_tools"]
+    off_names = {item["function"]["name"] for item in off_choice["tools"]}
+    on_names = {item["function"]["name"] for item in on_choice["tools"]}
+    assert off_choice["mode"] == on_choice["mode"] == "auto"
+    assert "query" in off_names
+    assert "search_public_web" not in off_names
+    assert "search_public_web" in on_names
 
 
 @pytest.mark.anyio
