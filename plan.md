@@ -19,9 +19,8 @@
 - Conversation-scoped disk snapshots are implemented behind
   `LLAMA_SLOT_SNAPSHOTS_ENABLED=false`. When enabled, a successful real model call is
   followed by a slot save, and only the same user's conversation may restore it. The
-  snapshot identity includes the model, system prompt, tool schema, and an operator-set
-  compatibility ID for the GGUF, server build, and chat template. Snapshot files contain
-  private conversation content.
+  snapshot identity includes the model, system prompt, and tool schema. Snapshot files
+  contain private conversation content.
 
 ## Deployment validation before enabling optional features
 
@@ -36,10 +35,10 @@
    deployed Qwen build. Inspect actual reused prompt tokens and first-token latency, not
    just `n_saved` or `n_restored`. Enable snapshots only if restore yields useful reuse
    and the replayed response remains correct.
-3. Before enabling snapshots, set `LLAMA_SLOT_COMPATIBILITY_ID` to a value that changes
-   with the GGUF, llama.cpp build, or chat template. Keep `--slot-save-path` owner-only and
-   configure retention for private per-conversation snapshot files. The app currently has
-   no conversation-delete endpoint, so snapshot file expiry is an operator responsibility.
+3. Before enabling snapshots, keep `--slot-save-path` owner-only and configure retention
+   for private per-conversation snapshot files. Clear old snapshot files after changing the
+   GGUF, llama.cpp build, or chat template. The app currently has no conversation-delete
+   endpoint, so snapshot file expiry is an operator responsibility.
 
 ## Verification
 

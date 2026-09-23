@@ -39,7 +39,6 @@ def snapshot_filename(
         "user": user,
         "conversation_id": conversation_id,
         "model": settings.llm_model,
-        "compatibility_id": settings.llama_slot_compatibility_id,
         "system_prompt": system_prompt,
         "tool_schema_hash": tool_schema_hash,
     }, sort_keys=True, separators=(",", ":"))

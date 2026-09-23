@@ -1,5 +1,3 @@
-import pytest
-
 from app.core.config import Settings
 
 
@@ -15,10 +13,3 @@ def test_native_agent_budget_bounds_values(monkeypatch):
     config = Settings()
     assert config.workbench_agent_max_rounds == 8  # every LLM request is one round since Phase B
     assert config.workbench_agent_max_tool_calls == 1
-
-
-def test_private_slot_snapshots_require_compatibility_id(monkeypatch):
-    monkeypatch.setenv("LLAMA_SLOT_SNAPSHOTS_ENABLED", "true")
-    monkeypatch.delenv("LLAMA_SLOT_COMPATIBILITY_ID", raising=False)
-    with pytest.raises(ValueError, match="LLAMA_SLOT_COMPATIBILITY_ID"):
-        Settings()

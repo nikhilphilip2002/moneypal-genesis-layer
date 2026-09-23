@@ -119,11 +119,6 @@ class Settings:
         self.llama_slot_snapshots_enabled = (
             get("LLAMA_SLOT_SNAPSHOTS_ENABLED", "false") or "false"
         ).lower() in ("1", "true", "yes", "on")
-        self.llama_slot_compatibility_id = get("LLAMA_SLOT_COMPATIBILITY_ID", "") or ""
-        if self.llama_slot_snapshots_enabled and not self.llama_slot_compatibility_id:
-            raise ValueError(
-                "LLAMA_SLOT_COMPATIBILITY_ID is required when slot snapshots are enabled"
-            )
         self.llama_slot_id = max(0, int(get("LLAMA_SLOT_ID", "0") or "0"))
         self.llama_slot_cache_prefix = (
             get("LLAMA_SLOT_CACHE_PREFIX", "moneypal-workbench")

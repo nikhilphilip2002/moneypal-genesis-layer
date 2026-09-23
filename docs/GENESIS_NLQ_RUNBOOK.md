@@ -75,9 +75,7 @@ llama.cpp in-memory prompt reuse continues with `--cache-prompt`.
 `LLAMA_SLOT_SNAPSHOTS_ENABLED=false` by default. If enabled after validating the deployed
 model, the backend saves slot 0 after each successful chat-model round and may restore that
 snapshot only for the same user and conversation. Snapshot filenames bind user, conversation,
-model, `LLAMA_SLOT_COMPATIBILITY_ID`, system prompt, and tool schema. Set the compatibility
-ID to a deployment identifier that changes with the GGUF, llama.cpp build, or chat template.
-The files themselves contain private conversation
+model, system prompt, and tool schema. The files themselves contain private conversation
 content. Mount `--slot-save-path` on owner-only storage with an operational retention policy.
 A snapshot is never reused as a global initial prompt for another chat.
 
