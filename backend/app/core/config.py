@@ -109,11 +109,6 @@ class Settings:
         self.llm_api_key = get("LLM_API_KEY")
         self.llm_model = get("LLM_MODEL", "qwen3.6-32b-instruct-q4_K_M") or "qwen3.6-32b-instruct-q4_K_M"
         self.llm_timeout_s = float(get("LLM_TIMEOUT", "300") or "300")
-        # Explicitly enable only after the deployed OpenAI-compatible server has been
-        # verified to enforce Chat Completions tool_choice.allowed_tools.
-        self.llm_allowed_tools_supported = (
-            get("LLM_ALLOWED_TOOLS_SUPPORTED", "false") or "false"
-        ).lower() in ("1", "true", "yes", "on")
         # Disk slot snapshots contain real conversation content and stay disabled until
         # the deployed model/server has demonstrated reuse after save and restore.
         self.llama_slot_snapshots_enabled = (

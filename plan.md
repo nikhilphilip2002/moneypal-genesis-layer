@@ -11,26 +11,23 @@
 - The first real chat request goes directly to the model. Synthetic user messages,
   `/apply-template` warm-up, zero-token `/completion`, and global initial-slot restore
   were removed.
-- The agent can send a fixed, sorted tool catalog with a policy-specific
-  `tool_choice.allowed_tools` subset. This requires `LLM_ALLOWED_TOOLS_SUPPORTED=true`.
-  The default stays `false` because support has not been verified on the deployed
-  llama.cpp server. In the default mode, policy-filtered tool definitions remain in use.
-  The backend continues to authorize every actual tool call.
+- The agent sends a fixed, sorted tool catalog with a policy-specific
+  `tool_choice.allowed_tools` subset. The backend continues to authorize every actual
+  tool call.
 - Conversation-scoped disk snapshots are implemented behind
   `LLAMA_SLOT_SNAPSHOTS_ENABLED=false`. When enabled, a successful real model call is
   followed by a slot save, and only the same user's conversation may restore it. The
   snapshot identity includes the model, system prompt, and tool schema. Snapshot files
   contain private conversation content.
 
-## Deployment validation before enabling optional features
+## Deployment validation
 
 1. Test the deployed Chat Completions endpoint with a fixed two-tool `tools` list and an
    `allowed_tools` choice naming only one. Confirm the request succeeds and the excluded
    tool cannot be emitted. Compare rendered prefixes and measured cached tokens with the
-   source toggle on and off. Then set `LLM_ALLOWED_TOOLS_SUPPORTED=true`. If the server does
-   not implement the choice, retain the current policy-filtered fallback. The existing
-   `search_curated_knowledge` function spans internal and external domains, so a name-level
-   allowed list still needs backend argument-level source authorization.
+   source toggle on and off. The deployed server must support this choice for chat requests
+   to work. The existing `search_curated_knowledge` function spans internal and external
+   domains, so a name-level allowed list still needs backend argument-level authorization.
 2. Measure cold, immediate-repeat, and save → erase → restore → repeat requests on the
    deployed Qwen build. Inspect actual reused prompt tokens and first-token latency, not
    just `n_saved` or `n_restored`. Enable snapshots only if restore yields useful reuse

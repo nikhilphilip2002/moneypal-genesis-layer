@@ -493,8 +493,7 @@ async def test_existing_chat_restores_only_its_own_snapshot(scripted, monkeypatc
 
 
 @pytest.mark.anyio
-async def test_allowed_tools_keeps_definitions_stable_across_toggle(scripted, monkeypatch):
-    monkeypatch.setattr(agent.settings, "llm_allowed_tools_supported", True)
+async def test_allowed_tools_keeps_definitions_stable_across_toggle(scripted):
     client = scripted([_text_response("Ready."), _text_response("Ready.")], lambda *_: None)
     off = _run_state("off", external=False)
     on = _run_state("on", external=True)

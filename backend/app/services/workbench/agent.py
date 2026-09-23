@@ -233,9 +233,7 @@ async def _select(
     )
     from app.mcp.tool_catalog import catalog as mcp_catalog
 
-    if (
-        settings.llm_allowed_tools_supported or state["source_policy"].allows("db")
-    ) and not mcp_catalog.names(owner="postgres"):
+    if not mcp_catalog.names(owner="postgres"):
         from app.mcp import postgres_client
 
         cached_postgres = postgres_client.model_tool_definitions()
@@ -249,13 +247,10 @@ async def _select(
     allowed_definitions = await mcp_catalog.model_tool_definitions(state["source_policy"])
     if not allowed_definitions:
         raise LLMError("no native tools are authorized for this request")
-    definitions = (
-        await mcp_catalog.all_model_tool_definitions()
-        if settings.llm_allowed_tools_supported else allowed_definitions
-    )
+    definitions = await mcp_catalog.all_model_tool_definitions()
     allowed_names = [item["function"]["name"] for item in allowed_definitions]
     request_tool_choice: str | dict[str, Any] = tool_choice
-    if settings.llm_allowed_tools_supported and tool_choice in {"auto", "required"}:
+    if tool_choice in {"auto", "required"}:
         request_tool_choice = {
             "type": "allowed_tools",
             "allowed_tools": {
