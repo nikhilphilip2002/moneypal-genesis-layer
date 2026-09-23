@@ -295,6 +295,7 @@ async def _search_curated(
 
     handlers: dict[str, Callable[[], Awaitable[SourceResult]]] = {
         "concepts": lambda: nodes.run_knowledge(args.query),
+        "customer": lambda: nodes.run_customer(args.query, policy=ctx.source_policy),
         "macro": lambda: nodes.run_macro(args.query, policy=ctx.source_policy),
         "competitive": lambda: nodes.run_competitive(args.query, policy=ctx.source_policy),
         "regulatory": lambda: nodes.run_regulatory(args.query, policy=ctx.source_policy),

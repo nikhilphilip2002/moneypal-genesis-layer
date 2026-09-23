@@ -30,6 +30,7 @@ def _all_collections() -> list[tuple[str, str, str]]:
         out.append((inst["qdrant_collection"], inst["name"], "Competitive"))
     for reg in rl.load_all():
         out.append((reg["qdrant_collection"], reg["display_name"], "Regulatory"))
+    out.append(("External_customer_details", "External Customer Details", "External Customer"))
     return out
 
 

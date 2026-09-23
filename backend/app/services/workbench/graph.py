@@ -37,6 +37,26 @@ CONTEXT_FULL_MESSAGE = (
     "accuracy."
 )
 
+
+def _parse_end_call(json_text: str) -> dict[str, Any] | None:
+    """Recover a sloppy model's ``finish_without_data`` call written as prose JSON.
+
+    Small models occasionally serialize the tool call instead of emitting it as a
+    structured tool use. Accept that shape so a refusal/clarification still lands in
+    the right SSE frame rather than being printed verbatim as the answer.
+    """
+    stripped = json_text.strip()
+    if not (stripped.startswith("{") and stripped.endswith("}")):
+        return None
+    try:
+        data = json.loads(stripped)
+    except (ValueError, TypeError):
+        return None
+    if not isinstance(data, dict) or data.get("name") != "finish_without_data":
+        return None
+    arguments = data.get("arguments")
+    return arguments if isinstance(arguments, dict) else None
+
 # The transcript budget reserves headroom for the system prompt, catalog grammar and the
 # question, but that reserve is an estimate — a large grammar can still push a request
 # past the window. Providers report it as a 4xx whose body names the context limit, so
@@ -174,6 +194,56 @@ async def answer_results(state: WorkbenchState) -> dict[str, Any]:
             )
             _persist(history.set_answer, state["conversation_id"], state["user"], state["turn_id"], payload)
         else:
+            # The agent can answer a bare message (greeting, chit-chat, a question with
+            # no tool result) by writing text directly; that is a usable reply even
+            # though it produced no intelligence card. Surface it as a normal answer
+            # instead of erroring.
+            direct = state.get("agent_final_result")
+            if direct is not None and (direct.text or "").strip():
+                serialized_end = _parse_end_call(direct.text)
+                if serialized_end is not None:
+                    outcome = serialized_end.get("outcome")
+                    payload = {
+                        "status": "clarify" if outcome == "clarify" else "refused",
+                        "text": serialized_end.get("message", ""),
+                        "sources": [],
+                        "citations": [],
+                        "unavailable_sources": unavailable,
+                        "limitations": [],
+                        "suggestions": serialized_end.get("suggestions", []),
+                        "reason": serialized_end.get("reason_code"),
+                        "origin": "model",
+                    }
+                    await emit.put(
+                        sse("refusal" if outcome == "refuse" else "answer", payload)
+                    )
+                    state["timing"].setdefault(
+                        "final_answer_ms",
+                        int((time.perf_counter() - state["timing"]["started_at"]) * 1000),
+                    )
+                    _persist(history.set_answer,
+                        state["conversation_id"], state["user"], state["turn_id"], payload)
+                    return {}
+                payload = {
+                    "status": "answered",
+                    "text": direct.text,
+                    "sources": [],
+                    "citations": [],
+                    "unavailable_sources": unavailable,
+                    "limitations": [],
+                    "facts": [],
+                }
+                await emit.put(sse("answer", payload))
+                state["timing"].setdefault(
+                    "final_answer_ms", int((time.perf_counter() - state["timing"]["started_at"]) * 1000)
+                )
+                _persist(history.set_answer, state["conversation_id"], state["user"], state["turn_id"], payload)
+                _persist(history.set_usage,
+                    state["conversation_id"], state["user"], state["turn_id"],
+                    prompt_tokens=getattr(direct, "prompt_tokens", 0),
+                    completion_tokens=getattr(direct, "completion_tokens", 0),
+                )
+                return {}
             first_error = next((r for r in all_results if r.card_type == "error"), None)
             if first_error is not None:
                 # The source card already streamed the actionable failure. Do not add a

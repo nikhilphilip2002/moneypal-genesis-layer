@@ -40,6 +40,16 @@ AGENT_SYSTEM_PROMPT = (
     "question-specific catalog hints are advisory ranking guidance only."
 )
 
+DB_UNAVAILABLE_CONTRACT = (
+    "The governed PostgreSQL database connector is UNAVAILABLE, so nothing stored in the "
+    "bank's systems can be read this turn. Any request that needs customer, account, loan, "
+    "transaction, repayment, collection, branch, staff, or other stored records, figures, or "
+    "observables CANNOT be answered. If the user's request depends on the database, call "
+    "finish_without_data with outcome=refuse and a reason_code explaining the database "
+    "connector is unavailable. Never answer record-level or figure questions from memory and "
+    "never invent customer details, balances, or transaction data."
+)
+
 
 @dataclass(frozen=True, slots=True)
 class PromptBundle:
@@ -151,9 +161,26 @@ def build_agent_gold_schema(catalog: Catalog | None = None) -> str:
     return _agent_gold_schema_for_version(cat.version)
 
 
-def build_agent_system_prompt(catalog: Catalog | None = None) -> str:
+def build_agent_system_prompt(
+    catalog: Catalog | None = None, *, db_available: bool = True,
+) -> str:
     """Return the invariant text at the start of every native-agent request."""
-    return AGENT_SYSTEM_PROMPT + "\n\n" + build_agent_gold_schema(catalog)
+    if db_available or catalog is None:
+        text = AGENT_SYSTEM_PROMPT + "\n\n" + build_agent_gold_schema(catalog)
+        if not db_available:
+            text += "\n\n" + DB_UNAVAILABLE_CONTRACT
+        return text
+    # The connector is down, so nothing can be planned against the physical schema this
+    # turn. Skip the full Gold projection (tens of kilobytes of prefill on a local model)
+    # and state the schema exists so the contract stays honest.
+    return (
+        AGENT_SYSTEM_PROMPT
+        + "\n\nGOVERNED GOLD SCHEMA version="
+        + catalog.version
+        + " is registered but the database connector is unavailable this turn, so no "
+        + "table, column, or join is reproduced here and none should be invented.\n\n"
+        + DB_UNAVAILABLE_CONTRACT
+    )
 
 
 def warm_agent_gold_schema() -> tuple[str, int]:
@@ -579,14 +606,14 @@ def agent_catalog_context(question: str, catalog: Catalog | None = None) -> str:
 def build_agent_prompt(
     *, question: str, history_messages: list[ChatMessage] | None = None,
     tool_names: list[str] | tuple[str, ...] = (), catalog: Catalog | None = None,
-    catalog_context: AgentCatalogContext | None = None,
+    catalog_context: AgentCatalogContext | None = None, db_available: bool = True,
 ) -> PromptBundle:
     available = ", ".join(tool_names)
     stable: list[ChatMessage] = [{
         "role": "system",
         "content": [{
             "type": "text",
-            "text": build_agent_system_prompt(catalog) + (
+            "text": build_agent_system_prompt(catalog, db_available=db_available) + (
                 f"\n\nAUTHORIZED FUNCTIONS\n{available}"
                 if available else ""
             ),

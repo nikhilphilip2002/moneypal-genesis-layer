@@ -224,12 +224,25 @@ async def _select(
         state["question"], catalog, supplement=supplement,
     )
     definitions = native_tool_definitions(state["source_policy"], catalog=catalog)
+    db_available = True
     if state["source_policy"].allows("db"):
         from app.mcp import postgres_client
+        from app.mcp.postgres_client import PostgresMCPError
 
-        if not postgres_client.model_tool_definitions():
-            await postgres_client.discover_model_tools()
-        definitions = [*postgres_client.model_tool_definitions(), *definitions]
+        if not state.get("_db_available", True):
+            db_available = False
+        elif not postgres_client.model_tool_definitions():
+            try:
+                await postgres_client.discover_model_tools()
+            except PostgresMCPError as exc:
+                # The governed DB connector is unavailable (e.g. no MCP endpoint yet).
+                # Answer without it rather than failing the whole turn; the missing
+                # source surfaces as an unavailable card instead of a hard error.
+                state["_db_available"] = False
+                db_available = False
+                logger.warning("workbench db connector unavailable; answering without db: %s", exc)
+        if db_available:
+            definitions = [*postgres_client.model_tool_definitions(), *definitions]
     if not definitions:
         raise LLMError("no native tools are authorized for this request")
     prompt = prompts.build_agent_prompt(
@@ -238,6 +251,7 @@ async def _select(
         tool_names=[definition["function"]["name"] for definition in definitions],
         catalog=catalog,
         catalog_context=catalog_context,
+        db_available=db_available,
     )
     messages = [*prompt.messages, *(repair_messages or [])]
     if repair_messages:
@@ -258,19 +272,21 @@ async def _select(
         return await complete_answer(client, state, trace_id=trace_id, **kwargs)
 
     async def request():
+        max_output_tokens = settings.workbench_agent_max_output_tokens or None
         return await complete(
             messages=messages,
             tools=definitions,
             tool_choice=tool_choice,
             parallel_tool_calls=False,
             timeout_s=budget.remaining_s(settings.llm_timeout_s),
+            max_output_tokens=max_output_tokens,
             call_purpose=_PURPOSES[tool_choice],
             call_kind="repair" if repair_messages and selecting else "planned",
             catalog_version=catalog.version,
             **extra,
         )
 
-    if state.pop("_restore_system_slot", False):
+    if state.pop("_restore_system_slot", False) and settings.llama_slot_cache_enabled:
         # Keep restore/warm and the first real completion in one serialized section. The
         # nested client calls recognize that the gate is already held, so no lock is
         # reacquired and no other chat can replace slot 0 between these operations.

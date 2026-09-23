@@ -21,6 +21,7 @@ SOURCE_GROUPS: dict[str, SourceGroup] = {
     "db": SourceGroup.INTERNAL_DATA,
     "knowledge": SourceGroup.LOCAL_KNOWLEDGE,
     "macro": SourceGroup.EXTERNAL_INDEXED,
+    "customer": SourceGroup.EXTERNAL_INDEXED,
     "competitive": SourceGroup.EXTERNAL_INDEXED,
     "regulatory": SourceGroup.EXTERNAL_INDEXED,
     "web": SourceGroup.LIVE_EXTERNAL,

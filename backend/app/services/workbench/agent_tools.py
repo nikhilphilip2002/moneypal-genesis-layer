@@ -43,6 +43,7 @@ CURATED_DOMAIN_SOURCES: dict[str, str] = {
     "macro": "macro",
     "competitive": "competitive",
     "regulatory": "regulatory",
+    "customer": "External_customer_details",
 }
 
 

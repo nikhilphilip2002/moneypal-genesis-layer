@@ -112,6 +112,11 @@ class Settings:
         # llama.cpp slot snapshots hold only the initial Workbench system prompt. The
         # filename identity is the exact prompt text plus LLM_MODEL.
         self.llama_slot_id = max(0, int(get("LLAMA_SLOT_ID", "0") or "0"))
+        # Slots + prompt-cache warm-up are llama.cpp (/slots, /apply-template) APIs.
+        # Providers that cache prompts themselves (e.g. Ollama) must set this false.
+        self.llama_slot_cache_enabled = (get("LLAMA_SLOT_CACHE_ENABLED", "true") or "true").lower() in (
+            "1", "true", "yes", "on",
+        )
         self.llama_slot_cache_prefix = (
             get("LLAMA_SLOT_CACHE_PREFIX", "moneypal-workbench")
             or "moneypal-workbench"
@@ -215,6 +220,13 @@ class Settings:
         self.workbench_agent_observation_max_facts = max(
             0, int(get("WORKBENCH_AGENT_OBSERVATION_MAX_FACTS", "40") or "40")
         )
+        # Ceiling on tokens the provider may generate in one Workbench round. Selection
+        # rounds only ever need a short JSON tool call; synthesis needs a bounded answer.
+        # Small local models ramble when the ceiling is open-ended, so default generous
+        # but finite. 0 disables the cap.
+        self.workbench_agent_max_output_tokens = max(
+            0, int(get("WORKBENCH_AGENT_MAX_OUTPUT_TOKENS", "1100") or "1100")
+        )
         # Provider reasoning fields are stored with the assistant message but only sent
         # back to the provider when explicitly enabled for the served model.
         self.nlq_llm_replay_reasoning = (
@@ -277,3 +289,4 @@ def get_settings() -> Settings:
 settings = get_settings()
 
 MACRO_COLLECTION = settings.macro_collection
+EXTERNAL_CUSTOMER_COLLECTION = "External_customer_details"

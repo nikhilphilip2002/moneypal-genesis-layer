@@ -69,6 +69,23 @@ SOURCES: dict[str, Source] = {
             "Karnataka MSME lending opportunity",
         ),
     ),
+    "customer": Source(
+        id="customer",
+        label="External customer profiles",
+        sensitive=True,
+        roles=None,
+        describes=(
+            "Externally indexed customer profiles — customer ID, name, occupation, city, "
+            "district, channel and contact details — held in the governed vector store and "
+            "retrieved only for a named customer when the consent gate is satisfied. External "
+            "annotations, never the bank's own loan-book figures."
+        ),
+        example_intents=(
+            "show me the profile for customer ID 10455",
+            "what channel does customer 10489 use",
+            "contact details for customer 12202",
+        ),
+    ),
     "competitive": Source(
         id="competitive",
         label="Competitive",

@@ -14,7 +14,7 @@ from typing import TYPE_CHECKING, Any
 
 from genesis_core import rag
 
-from app.core.config import MACRO_COLLECTION
+from app.core.config import MACRO_COLLECTION, EXTERNAL_CUSTOMER_COLLECTION
 from app.services.nlq.catalog import get_catalog
 from app.services.nlq.catalog.retrieval import retrieve
 from app.services.nlq.normalization import normalize_lending_question
@@ -445,3 +445,46 @@ def _chunk_evidence(chunks: list[dict]) -> list[Evidence]:
         for chunk in chunks
         if str(chunk.get("text", "")).strip()
     ]
+
+
+async def run_customer(
+    intent: str, *, policy: "SourceAccessPolicy | None" = None,
+) -> SourceResult:
+    """Retrieve customer evidence from the externally indexed Qdrant store; the native
+    agent owns all prose and the consent gate governs every retrieval."""
+    _require_external(policy, "customer")
+    try:
+        # Qdrant and sentence-transformers are synchronous. Keep them off the event loop so
+        # a slow remote vector store does not freeze every active workbench stream.
+        chunks = await asyncio.to_thread(rag.search_multi, EXTERNAL_CUSTOMER_COLLECTION, [intent])
+    except Exception as exc:  # noqa: BLE001 - external retrieval must degrade per source
+        logger.warning("workbench customer retrieval failed: %s", exc)
+        return SourceResult(
+            source="customer",
+            card_type="error",
+            payload={
+                "message": "Customer intelligence is temporarily unavailable. The vector store did not respond.",
+                "retryable": True,
+            },
+        )
+    if not chunks:
+        return SourceResult(
+            source="customer",
+            card_type="brief",
+            payload={"summary": "No customer sources matched that question.", "sources": []},
+            summary="No customer context available.",
+            complete=False,
+            limitation="No customer sources matched the question.",
+        )
+
+    sources = _source_refs(chunks)
+    evidence = _chunk_evidence(chunks)
+    summary = f"Retrieved {len(evidence)} relevant customer passage{'s' if len(evidence) != 1 else ''}."
+    return SourceResult(
+        source="customer",
+        card_type="brief",
+        payload={"summary": summary, "sources": sources},
+        summary=summary,
+        sources=sources,
+        evidence=evidence,
+    )
