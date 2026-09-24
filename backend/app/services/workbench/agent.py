@@ -244,23 +244,9 @@ async def _select(
                 await mcp_catalog.discover_postgres(check_health=False)
             except Exception:
                 pass
-    allowed_definitions = await mcp_catalog.model_tool_definitions(state["source_policy"])
-    if not allowed_definitions:
+    definitions = await mcp_catalog.model_tool_definitions(state["source_policy"])
+    if not definitions:
         raise LLMError("no native tools are authorized for this request")
-    definitions = await mcp_catalog.all_model_tool_definitions()
-    allowed_names = [item["function"]["name"] for item in allowed_definitions]
-    request_tool_choice: str | dict[str, Any] = tool_choice
-    if tool_choice in {"auto", "required"}:
-        request_tool_choice = {
-            "type": "allowed_tools",
-            "allowed_tools": {
-                "mode": tool_choice,
-                "tools": [
-                    {"type": "function", "function": {"name": name}}
-                    for name in allowed_names
-                ],
-            },
-        }
     prompt = prompts.build_agent_prompt(
         question=state["question"],
         history_messages=state.get("agent_history_messages", []),
@@ -289,7 +275,6 @@ async def _select(
         return await complete(
             messages=messages,
             tools=definitions,
-            tool_choice=request_tool_choice,
             parallel_tool_calls=False,
             timeout_s=budget.remaining_s(settings.llm_timeout_s),
             call_purpose=_PURPOSES[tool_choice],

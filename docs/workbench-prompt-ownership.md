@@ -9,10 +9,9 @@ The compaction system prompt and its initial/update instructions live in
 `workbench/compaction/summarize.py`. Compaction is a separate model request and has no
 additional tool definitions. The model-based suggestion prompt has been removed.
 
-`workbench/access.py` owns role, consent, and deployment source policy. The agent enforces
-that policy again immediately before a tool runs. The full Chat Completions tool definition
-list stays stable while `tool_choice.allowed_tools` changes the permitted subset with
-request policy. The frontend toggle does not authorize a call on its own.
+`workbench/access.py` owns role, consent, and deployment source policy. The agent sends
+only the tool definitions permitted by that policy and enforces the policy again before
+running a tool. The frontend toggle does not authorize a call on its own.
 
 The first chat request contains the real user's message. Disk slot snapshots, when
 enabled, are scoped to a user and conversation and contain private conversation content.

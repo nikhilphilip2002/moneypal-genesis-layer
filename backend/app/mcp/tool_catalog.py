@@ -152,12 +152,6 @@ class ToolCatalog:
             definitions.append(definition)
         return definitions
 
-    async def all_model_tool_definitions(self) -> list[dict[str, Any]]:
-        """Stable, canonical tool definitions for providers with allowed_tools support."""
-        if not self._local_ready:
-            await self.discover_local()
-        return [deepcopy(self._entries[name].definition) for name in sorted(self._entries)]
-
     def owner(self, name: str) -> ToolOwner:
         try:
             return self._entries[name].owner

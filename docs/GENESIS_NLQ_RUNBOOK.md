@@ -85,9 +85,8 @@ reused and time to first token; `n_saved` and `n_restored` alone are not proof o
 Current llama.cpp hybrid/recurrent builds may restore a slot successfully but reprocess all
 tokens. Leave disk snapshots off if that occurs.
 
-Workbench sends a stable `tools` list with a policy-limited
-`tool_choice.allowed_tools` subset on every chat request. Verify that the deployed
-llama.cpp build accepts and enforces this OpenAI Chat Completions choice before rollout.
+Workbench sends only policy-permitted definitions in the `tools` list on each chat
+request. It omits `tool_choice` because the deployed llama-server does not support it.
 The backend also checks every call at execution.
 
 `NLQ_LLM_THINKING` must stay `false` for any hybrid-reasoning model (the Qwen3 family, and
