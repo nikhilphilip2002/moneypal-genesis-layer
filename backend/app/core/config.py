@@ -210,7 +210,7 @@ class Settings:
         # What goes back to the model after a tool call is bounded separately from what
         # is stored: durable history keeps every row, the observation is shaped to fit.
         self.workbench_agent_observation_max_chars = max(
-            2_000, int(get("WORKBENCH_AGENT_OBSERVATION_MAX_CHARS", "12000") or "12000")
+            2_000, int(get("WORKBENCH_AGENT_OBSERVATION_MAX_CHARS", "5000") or "5000")
         )
         self.workbench_agent_observation_max_facts = max(
             0, int(get("WORKBENCH_AGENT_OBSERVATION_MAX_FACTS", "40") or "40")

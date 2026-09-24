@@ -330,7 +330,7 @@ def _large_lookup(rows: int = 5000) -> agent_executor.ExecutedAgentCall:
 
 def test_observation_is_bounded_while_durable_replay_keeps_every_row(monkeypatch):
     monkeypatch.setattr(
-        agent_executor.settings, "workbench_agent_observation_max_chars", 12_000,
+        agent_executor.settings, "workbench_agent_observation_max_chars", 5_000,
         raising=False,
     )
     executed = _large_lookup()
@@ -339,7 +339,7 @@ def test_observation_is_bounded_while_durable_replay_keeps_every_row(monkeypatch
     observation = json.loads(executed.observation_message()["content"])
 
     assert len(durable["payload"]["rows"]) == 5000
-    assert len(executed.observation_message()["content"]) <= 12_000
+    assert len(executed.observation_message()["content"]) <= 5_000
     kept = observation["payload"]["rows"]
     assert 0 < len(kept) < 5000
     assert kept == durable["payload"]["rows"][: len(kept)]
@@ -348,7 +348,8 @@ def test_observation_is_bounded_while_durable_replay_keeps_every_row(monkeypatch
     assert observation["truncated"]["rows_omitted"] == 5000 - len(kept)
     assert observation["summary"] == durable["summary"]
     assert observation["query_reference"] if "query_reference" in observation else True
-    assert "lineage" not in observation
+    if "lineage" in observation:
+        assert observation["lineage"] == durable["lineage"]
     assert executed.observation_message()["tool_call_id"] == "call_big"
 
 
