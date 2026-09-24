@@ -7,6 +7,7 @@ import json
 import time
 
 import pytest
+from starlette.responses import StreamingResponse
 
 from app.services.nlq.llm import (
     LLMIncomplete,
@@ -110,6 +111,88 @@ async def test_closing_stream_cancels_model_and_persists_terminal_trace(monkeypa
         step for step in turn["execution_trace"] if step["id"] == "model-1"
     ]
     assert [step["status"] for step in model_trace] == ["running", "error"]
+
+
+@pytest.mark.anyio
+async def test_explicit_cancel_stops_owned_turn_without_stream_disconnect(monkeypatch):
+    from app.services.workbench import agent
+
+    entered = asyncio.Event()
+
+    async def select(*_args, **_kwargs):
+        entered.set()
+        await asyncio.Event().wait()
+
+    monkeypatch.setattr(agent, "_select", select)
+    monkeypatch.setattr(agent, "get_catalog", lambda: object())
+    stream = graph.run_workbench(
+        question="cancel probe", conversation_id="explicit-cancel",
+        user="alice", role="admin",
+    )
+    try:
+        first = json.loads((await anext(stream)).split("data: ", 1)[1])
+        assert first["conversation_id"] == "explicit-cancel"
+        turn_id = first["turn_id"]
+        while True:
+            frame = await asyncio.wait_for(anext(stream), timeout=5)
+            if '"id": "model-1"' in frame:
+                break
+        await asyncio.wait_for(entered.wait(), timeout=5)
+
+        assert graph.cancel_active_turn("explicit-cancel", "bob", turn_id) is False
+        assert graph.cancel_active_turn("explicit-cancel", "alice", turn_id) is True
+        remaining = [frame async for frame in stream]
+        assert any(frame.startswith("event: done\n") for frame in remaining)
+    finally:
+        await stream.aclose()
+
+    assert graph.cancel_active_turn("explicit-cancel", "alice", turn_id) is False
+    record = graph.history.get("explicit-cancel", user="alice")
+    assert record is not None
+    turn = record.turns[-1]
+    assert turn["status"] == "partial"
+    assert turn["execution_trace"][-1]["status"] == "error"
+
+
+@pytest.mark.anyio
+async def test_asgi_disconnect_cancels_silent_model_request(monkeypatch):
+    from app.services.workbench import agent
+
+    entered = asyncio.Event()
+    disconnected = asyncio.Queue()
+
+    async def select(*_args, **_kwargs):
+        entered.set()
+        await asyncio.Event().wait()
+
+    async def receive():
+        return await disconnected.get()
+
+    async def send(_message):
+        pass
+
+    monkeypatch.setattr(agent, "_select", select)
+    monkeypatch.setattr(agent, "get_catalog", lambda: object())
+    response = StreamingResponse(graph.run_workbench(
+        question="cancel probe", conversation_id="asgi-cancel",
+        user="alice", role="admin",
+    ))
+    scope = {"type": "http", "asgi": {"spec_version": "2.3"}, "method": "POST"}
+    task = asyncio.create_task(response(scope, receive, send))
+    try:
+        await asyncio.wait_for(entered.wait(), timeout=5)
+        await disconnected.put({"type": "http.disconnect"})
+        await asyncio.wait_for(task, timeout=5)
+    finally:
+        if not task.done():
+            task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
+
+    record = graph.history.get("asgi-cancel", user="alice")
+    assert record is not None
+    turn = record.turns[-1]
+    assert turn["status"] == "partial"
+    assert turn["execution_trace"][-1]["status"] == "error"
 
 
 @pytest.mark.anyio

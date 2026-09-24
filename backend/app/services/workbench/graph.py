@@ -16,6 +16,16 @@ from app.services.workbench import access, compaction, history
 from app.services.workbench.results import ExecutionDecision, SourceResult
 
 logger = logging.getLogger(__name__)
+_active_turn_tasks: dict[tuple[str, str, str], asyncio.Task[None]] = {}
+
+
+def cancel_active_turn(conversation_id: str, user: str, turn_id: str) -> bool:
+    """Cancel an active turn owned by this user, independently of stream disconnect."""
+    task = _active_turn_tasks.get((conversation_id, user, turn_id))
+    if task is None or task.done():
+        return False
+    task.cancel()
+    return True
 
 
 def _persist(operation, *args, **kwargs) -> None:
@@ -446,7 +456,9 @@ async def run_workbench(
     # rail onto it.
     first_event_ms = int((time.perf_counter() - started_at) * 1000)
     try:
-        yield sse("conversation", {"conversation_id": conversation_id})
+        yield sse("conversation", {
+            "conversation_id": conversation_id, "turn_id": turn_id,
+        })
         # The native transcript is loaded only after the turn exists and the client has
         # the conversation id, so a transcript that cannot fit becomes a recorded,
         # user-visible error rather than a dropped stream.
@@ -605,6 +617,8 @@ async def run_workbench(
             await emit.put(None)  # sentinel: the graph is done producing frames
 
     task = asyncio.create_task(drive())
+    active_key = (conversation_id, user, turn_id)
+    _active_turn_tasks[active_key] = task
     try:
         while True:
             frame = await emit.get()
@@ -616,4 +630,6 @@ async def run_workbench(
             task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
                 await task
+        if _active_turn_tasks.get(active_key) is task:
+            _active_turn_tasks.pop(active_key, None)
     yield sse("done", {"total_ms": int((time.perf_counter() - started_at) * 1000)})

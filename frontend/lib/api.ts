@@ -1044,7 +1044,7 @@ export type WorkbenchConversation = {
 };
 
 export type WorkbenchStreamEvent =
-  | { type: 'conversation'; conversation_id: string }
+  | { type: 'conversation'; conversation_id: string; turn_id?: string }
   | { type: 'stage'; stage: string }
   | { type: 'trace'; step: WorkbenchTraceStep }
   | ({ type: 'trace_delta' } & WorkbenchTraceDelta)
@@ -1112,6 +1112,12 @@ export const workbench = {
       timing?: { total_ms?: number } | null;
     }[];
   }> => apiRequest(`/workbench/conversations/${id}`),
+
+  cancelTurn: (conversationId: string, turnId: string): Promise<{ cancelled: boolean }> =>
+    apiRequest('/workbench/cancel', {
+      method: 'POST',
+      body: JSON.stringify({ conversation_id: conversationId, turn_id: turnId }),
+    }),
 
   runTool: async (
     toolId: string,
@@ -1190,7 +1196,13 @@ export const workbench = {
           }
 
           switch (event) {
-            case 'conversation': yield { type: 'conversation', conversation_id: stringValue(payload.conversation_id) }; break;
+            case 'conversation':
+              yield {
+                type: 'conversation',
+                conversation_id: stringValue(payload.conversation_id),
+                turn_id: optionalString(payload.turn_id),
+              };
+              break;
             case 'stage': yield { type: 'stage', stage: stringValue(payload.stage) }; break;
             case 'trace': yield { type: 'trace', step: payload as unknown as WorkbenchTraceStep }; break;
             case 'trace_delta':

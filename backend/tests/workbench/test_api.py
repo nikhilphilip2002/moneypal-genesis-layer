@@ -37,6 +37,35 @@ class TestListTools:
         assert "show_schema" not in ids
 
 
+class TestCancelTurn:
+    @pytest.mark.anyio
+    async def test_requires_authentication(self, client):
+        response = await client.post(
+            "/workbench/cancel",
+            json={"conversation_id": "conversation", "turn_id": "turn"},
+        )
+        assert response.status_code == 401
+
+    @pytest.mark.anyio
+    async def test_uses_authenticated_owner(self, client, monkeypatch):
+        from app.api.routes import workbench as route
+
+        seen = []
+
+        def cancel(conversation_id, user, turn_id):
+            seen.append((conversation_id, user, turn_id))
+            return True
+
+        monkeypatch.setattr(route, "cancel_active_turn", cancel)
+        response = await client.post(
+            "/workbench/cancel", headers=_auth("moneypal_admin"),
+            json={"conversation_id": "conversation", "turn_id": "turn"},
+        )
+        assert response.status_code == 200
+        assert response.json() == {"cancelled": True}
+        assert seen == [("conversation", "moneypal_admin", "turn")]
+
+
 class TestCompletions:
     @pytest.fixture(autouse=True)
     def _reset_completion_cooldown(self, monkeypatch):

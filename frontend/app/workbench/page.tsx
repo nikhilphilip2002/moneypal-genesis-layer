@@ -69,6 +69,11 @@ export default function WorkbenchPage() {
   const [workspaceView, setWorkspaceView] = useState<WorkspaceView | null>(null);
   const [completionsHeight, setCompletionsHeight] = useState(0);
   const abortRef = useRef<AbortController | null>(null);
+  const activeTurnRef = useRef<{
+    conversationId: string;
+    turnId: string;
+    controller: AbortController;
+  } | null>(null);
   const transcriptRef = useRef<HTMLDivElement>(null);
   const autoFollowRef = useRef(true);
 
@@ -84,6 +89,15 @@ export default function WorkbenchPage() {
     workbench.conversations().then((result) => setConversations(result.conversations)).catch(() => {});
   }, []);
 
+  const stopActiveTurn = useCallback(() => {
+    const activeTurn = activeTurnRef.current;
+    activeTurnRef.current = null;
+    if (activeTurn) {
+      void workbench.cancelTurn(activeTurn.conversationId, activeTurn.turnId).catch(() => {});
+    }
+    abortRef.current?.abort();
+  }, []);
+
   useEffect(() => {
     auth.me()
       .then((currentUser) => {
@@ -95,17 +109,17 @@ export default function WorkbenchPage() {
   }, [router, refreshHistory]);
 
   const newConversation = useCallback(() => {
-    abortRef.current?.abort();
+    stopActiveTurn();
     autoFollowRef.current = true;
     setTurns([]);
     setConversationId(null);
     setBusy(false);
     setPinned(null);
     setExternalSourcesEnabled(false);
-  }, []);
+  }, [stopActiveTurn]);
 
   const openConversation = useCallback(async (id: string) => {
-    abortRef.current?.abort();
+    stopActiveTurn();
     setBusy(false);
     autoFollowRef.current = true;
     try {
@@ -122,9 +136,10 @@ export default function WorkbenchPage() {
         error: turn.error_details ?? (
           turn.error ? { message: turn.error } : undefined
         ),
-        done: turn.status !== 'running',
+        // Saved turns have no live stream attached to this page.
+        done: true,
         route: turn.route,
-        partial: turn.status === 'partial',
+        partial: turn.status !== 'complete',
         executionTrace: turn.execution_trace ?? [],
         queryRegistry: turn.query_registry ?? [],
         totalMs: turn.timing?.total_ms,
@@ -134,7 +149,7 @@ export default function WorkbenchPage() {
     } catch {
       // Keep the current conversation visible when a saved thread cannot be loaded.
     }
-  }, []);
+  }, [stopActiveTurn]);
 
   useEffect(() => {
     if (!autoFollowRef.current) return;
@@ -177,9 +192,19 @@ export default function WorkbenchPage() {
         for await (const event of workbench.ask(
           question, conversationId, pinned, externalSourcesEnabled, controller.signal,
         )) {
+          if (controller.signal.aborted) {
+            throw new DOMException('Response stopped.', 'AbortError');
+          }
           switch (event.type) {
           case 'conversation':
             setConversationId(event.conversation_id);
+            if (event.turn_id) {
+              activeTurnRef.current = {
+                conversationId: event.conversation_id,
+                turnId: event.turn_id,
+                controller,
+              };
+            }
             break;
           case 'stage':
             patch({ stage: event.stage });
@@ -331,8 +356,13 @@ export default function WorkbenchPage() {
         if (aborted) message = 'Response stopped.';
         patchWith((turn) => finishInterruptedTurn(turn, aborted, message));
       } finally {
-        setBusy(false);
-        abortRef.current = null;
+        if (abortRef.current === controller) {
+          setBusy(false);
+          abortRef.current = null;
+        }
+        if (activeTurnRef.current?.controller === controller) {
+          activeTurnRef.current = null;
+        }
         refreshHistory();
       }
     })();
@@ -408,7 +438,7 @@ export default function WorkbenchPage() {
     <Composer
       onAsk={ask}
       busy={busy}
-      onCancel={() => abortRef.current?.abort()}
+      onCancel={stopActiveTurn}
       pinned={pinned}
       onPin={setPinned}
       onRunTool={runTool}

@@ -11,19 +11,11 @@ import {
 } from 'lucide-react';
 import type { WorkbenchTraceStep } from '@/lib/api';
 import { cn } from '@/lib/utils';
+import { visibleTraceSteps } from '@/lib/workbench-cancellation';
 
 function formatDuration(ms: number) {
   if (ms < 1000) return `${ms} ms`;
   return `${(ms / 1000).toFixed(ms < 10_000 ? 1 : 0)} s`;
-}
-
-function latestSteps(updates: WorkbenchTraceStep[]) {
-  const byId = new Map<string, WorkbenchTraceStep>();
-  for (const update of updates) {
-    const previous = byId.get(update.id);
-    byId.set(update.id, { ...previous, ...update });
-  }
-  return [...byId.values()];
 }
 
 export default function ExecutionTrace({
@@ -39,7 +31,7 @@ export default function ExecutionTrace({
 }) {
   const [open, setOpen] = useState(false);
   const [now, setNow] = useState(() => Date.now());
-  const steps = useMemo(() => latestSteps(updates), [updates]);
+  const steps = useMemo(() => visibleTraceSteps(updates, active), [updates, active]);
 
   useEffect(() => {
     if (!active || !startedAt) return;

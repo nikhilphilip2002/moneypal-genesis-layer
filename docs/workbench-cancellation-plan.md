@@ -27,5 +27,6 @@ The UI and saved history contain no running steps after a stopped turn. The back
 ## Current status
 
 - Implemented local turn finalization, backend finalization of all running trace steps and unfinished query attempts, and cancellation logs. The model client closes its stream on cancellation; a focused test confirms closure without retry.
-- Verified: 418 Workbench and LLM client tests, Ruff, frontend tests, lint, and production build pass.
-- Awaiting deployment check: compare the backend log messages `Workbench stream task cancelled`, `Workbench model request cancelled`, and `LLM request cancelled` with llama-server's slot state after pressing Stop. The deployed server version and its disconnect behavior remain unverified locally.
+- A deployment test still showed animation and prompt processing after Stop. The follow-up adds an explicit authenticated `/workbench/cancel` request, keyed to the server turn ID, so backend cancellation does not depend only on stream disconnection. Saved traces now render unfinished steps as interrupted rather than spinning.
+- Verified locally: 422 Workbench and LLM client tests, including ASGI disconnect and explicit cancellation tests, plus Ruff, frontend tests, lint, and production build pass.
+- Awaiting deployment check: look for `Workbench cancel requested` with `cancelled=True`, then `Workbench stream task cancelled`, `Workbench model request cancelled`, and `LLM request cancelled`. If all appear while llama-server stays busy, the deployed server's disconnect handling must be investigated using its version and slot logs. If the cancel request is absent or reports `cancelled=False`, inspect the browser request and backend process receiving it.

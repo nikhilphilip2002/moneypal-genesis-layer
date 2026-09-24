@@ -21,7 +21,7 @@ from pydantic import BaseModel, Field
 
 from app.api.routes.auth import identity_from_authorization
 from app.services.workbench import access, history, tools
-from app.services.workbench.graph import run_workbench
+from app.services.workbench.graph import cancel_active_turn, run_workbench
 from app.services.workbench.sources import visible_sources
 from app.services.nlq import lookup as record_lookup
 
@@ -281,3 +281,23 @@ async def ask(req: AskRequest, authorization: str | None = Header(default=None))
             "X-Accel-Buffering": "no",
         },
     )
+
+
+class CancelTurnRequest(BaseModel):
+    conversation_id: str = Field(min_length=1)
+    turn_id: str = Field(min_length=1)
+
+
+@router.post("/cancel")
+async def cancel_turn(
+    req: CancelTurnRequest, authorization: str | None = Header(default=None),
+):
+    username, _role = identity_from_authorization(authorization)
+    if username == "anonymous":
+        raise HTTPException(401, "Authentication required.")
+    cancelled = cancel_active_turn(req.conversation_id, username, req.turn_id)
+    logger.info(
+        "Workbench cancel requested: conversation=%s turn=%s cancelled=%s",
+        req.conversation_id, req.turn_id, cancelled,
+    )
+    return {"cancelled": cancelled}

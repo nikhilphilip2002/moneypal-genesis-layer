@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import type { WorkbenchTurnData } from '../components/workbench/WorkbenchTurn';
-import { finishInterruptedTurn } from './workbench-cancellation.ts';
+import { finishInterruptedTurn, visibleTraceSteps } from './workbench-cancellation.ts';
 
 function activeTurn(): WorkbenchTurnData {
   return {
@@ -56,4 +56,13 @@ test('stream failure closes active work as an error', () => {
   assert.equal(finished.queryRegistry?.[1].status, 'error');
   assert.equal(finished.queryRegistry?.[1].error_code, 'STREAM_INTERRUPTED');
   assert.equal(finished.error?.message, 'Connection lost.');
+});
+
+test('saved traces never animate unfinished steps', () => {
+  const updates = activeTurn().executionTrace ?? [];
+
+  assert.equal(visibleTraceSteps(updates, true)[1].status, 'running');
+  assert.equal(visibleTraceSteps(updates, false)[1].status, 'error');
+  assert.equal(visibleTraceSteps(updates, false)[1].detail, 'Interrupted');
+  assert.equal(visibleTraceSteps(updates, false)[0].status, 'complete');
 });
