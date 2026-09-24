@@ -27,6 +27,7 @@ import {
 } from '@/lib/api';
 import { ROLE_LABELS } from '@/lib/useUserRole';
 import { errorMessage, isAbortError } from '@/lib/errors';
+import { finishInterruptedTurn } from '@/lib/workbench-cancellation';
 import Composer from '@/components/workbench/Composer';
 import WorkbenchTurn, { type WorkbenchTurnData } from '@/components/workbench/WorkbenchTurn';
 import HistoryRail from '@/components/workbench/HistoryRail';
@@ -325,14 +326,10 @@ export default function WorkbenchPage() {
           }
         }
       } catch (error: unknown) {
-        patch({
-          error: {
-            message: isAbortError(error)
-              ? 'Response stopped.'
-              : errorMessage(error, 'Something went wrong.'),
-          },
-          done: true,
-        });
+        const aborted = isAbortError(error);
+        let message = errorMessage(error, 'Something went wrong.');
+        if (aborted) message = 'Response stopped.';
+        patchWith((turn) => finishInterruptedTurn(turn, aborted, message));
       } finally {
         setBusy(false);
         abortRef.current = null;

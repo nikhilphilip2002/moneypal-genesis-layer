@@ -270,6 +270,38 @@ async def test_stream_does_not_retry_after_visible_text_and_closes_connection():
 
 
 @pytest.mark.anyio
+async def test_cancelled_stream_closes_connection_without_retry():
+    entered = asyncio.Event()
+    closed = []
+    requests = []
+
+    class Stream(httpx.AsyncByteStream):
+        async def __aiter__(self):
+            entered.set()
+            await asyncio.Event().wait()
+            yield b""
+
+        async def aclose(self):
+            closed.append(True)
+
+    def handler(request):
+        requests.append(request)
+        return httpx.Response(
+            200, headers={"content-type": "text/event-stream"}, stream=Stream(),
+        )
+
+    client = _client(handler)
+    task = asyncio.create_task(client.complete(messages=[]))
+    await asyncio.wait_for(entered.wait(), timeout=5)
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+    assert closed == [True]
+    assert len(requests) == 1
+
+
+@pytest.mark.anyio
 async def test_stream_does_not_retry_after_visible_reasoning():
     requests = []
 

@@ -76,6 +76,43 @@ async def test_every_request_enters_native_agent_once(monkeypatch):
 
 
 @pytest.mark.anyio
+async def test_closing_stream_cancels_model_and_persists_terminal_trace(monkeypatch):
+    from app.services.workbench import agent
+
+    entered = asyncio.Event()
+
+    async def select(*_args, **_kwargs):
+        entered.set()
+        await asyncio.Event().wait()
+
+    monkeypatch.setattr(agent, "_select", select)
+    monkeypatch.setattr(agent, "get_catalog", lambda: object())
+    stream = graph.run_workbench(
+        question="cancel probe", conversation_id="stream-cancel",
+        user="alice", role="admin",
+    )
+    try:
+        frames = []
+        while True:
+            frame = await asyncio.wait_for(anext(stream), timeout=5)
+            frames.append(frame)
+            if '"id": "model-1"' in frame:
+                break
+        await asyncio.wait_for(entered.wait(), timeout=5)
+    finally:
+        await asyncio.wait_for(stream.aclose(), timeout=5)
+
+    record = graph.history.get("stream-cancel", user="alice")
+    assert record is not None
+    turn = record.turns[-1]
+    assert turn["status"] == "partial"
+    model_trace = [
+        step for step in turn["execution_trace"] if step["id"] == "model-1"
+    ]
+    assert [step["status"] for step in model_trace] == ["running", "error"]
+
+
+@pytest.mark.anyio
 async def test_only_first_message_marks_slot_as_new_chat(monkeypatch):
     flags = []
 

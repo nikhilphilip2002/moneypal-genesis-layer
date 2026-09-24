@@ -594,11 +594,10 @@ async def _finalize_query_record(
     await _emit_query_event(state, event, record)
 
 
-async def _cancel_running_queries(
-    state: dict[str, Any], records: dict[str, dict[str, Any]],
-) -> None:
+async def finalize_running_queries(state: dict[str, Any]) -> None:
+    """Cancel every unfinished query attempt recorded for this turn."""
     changed = False
-    for record in records.values():
+    for record in state.get("query_registry", []):
         if record.get("status") not in {"pending", "running"}:
             continue
         record.update({
@@ -609,6 +608,24 @@ async def _cancel_running_queries(
         await _emit_query_event(state, "query_failed", record)
     if changed:
         _persist_query_registry(state)
+
+
+async def finalize_running_traces(state: dict[str, Any]) -> None:
+    """Close every trace step still active when a turn is cancelled."""
+    latest = {}
+    for step in state.get("trace", []):
+        latest[step["id"]] = step
+    for step in latest.values():
+        if step.get("status") != "running":
+            continue
+        terminal = {
+            "id": step["id"], "kind": step["kind"], "status": "error",
+            "label": step["label"], "detail": "Stopped by user",
+            "duration_ms": max(0, _elapsed_ms(state) - step.get("elapsed_ms", 0)),
+        }
+        if "call_id" in step:
+            terminal["call_id"] = step["call_id"]
+        await _emit_trace(state, terminal)
 
 
 def _persist_exchange(state, result, failures, executed, *, stage: str = "route") -> None:
@@ -939,7 +956,8 @@ async def _execute_batch(state, context: AgentExecutionContext, calls) -> list[E
                 )
                 await _stream_item(state, item)
         except asyncio.CancelledError:
-            await _cancel_running_queries(state, query_records)
+            await finalize_running_queries(state)
+            await finalize_running_traces(state)
             raise
         finally:
             for task in tasks:
@@ -954,7 +972,8 @@ async def _execute_batch(state, context: AgentExecutionContext, calls) -> list[E
             await _finalize_query_record(state, query_records.get(call.id), output[index])
             await _stream_item(state, output[index])
     except asyncio.CancelledError:
-        await _cancel_running_queries(state, query_records)
+        await finalize_running_queries(state)
+        await finalize_running_traces(state)
         raise
     return [item for item in output if item is not None]
 
@@ -1069,6 +1088,13 @@ async def run(state: dict[str, Any]) -> None:
                 state, repair_messages=exchange or None, tool_choice=tool_choice,
                 supplement=last_error, trace_id=model_trace_id,
             )
+        except asyncio.CancelledError:
+            logger.info(
+                "Workbench model request cancelled: conversation=%s turn=%s round=%s",
+                state["conversation_id"], state["turn_id"], round_number,
+            )
+            await finalize_running_traces(state)
+            raise
         except (TimeoutError, LLMTimeout):
             await _emit_trace(state, {
                 "id": model_trace_id, "kind": "model", "status": "error",

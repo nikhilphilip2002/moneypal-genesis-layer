@@ -549,6 +549,12 @@ async def run_workbench(
             )
         except asyncio.CancelledError:
             partial = True
+            logger.info(
+                "Workbench stream task cancelled: conversation=%s turn=%s",
+                conversation_id, turn_id,
+            )
+            await agent.finalize_running_queries(state)
+            await agent.finalize_running_traces(state)
             raise
         except Exception as exc:  # noqa: BLE001 - surface as an error frame, never a 500
             partial = True

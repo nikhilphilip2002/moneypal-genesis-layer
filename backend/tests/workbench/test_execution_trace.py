@@ -155,6 +155,95 @@ async def test_cancelled_database_query_is_finalized_in_registry(monkeypatch):
         frames.append(_sse_payload(state["emit"].get_nowait()))
     failed = next(payload for event, payload in frames if event == "query_failed")
     assert failed["error_code"] == "CANCELLED"
+    tool_trace = [
+        payload for event, payload in frames
+        if event == "trace" and payload["id"] == "tool-call-cancel"
+    ]
+    assert [step["status"] for step in tool_trace] == ["running", "error"]
+    assert tool_trace[-1]["detail"] == "Stopped by user"
+
+
+@pytest.mark.anyio
+async def test_cancelled_model_selection_finalizes_trace(monkeypatch):
+    entered = asyncio.Event()
+
+    async def select(*_args, **_kwargs):
+        entered.set()
+        await asyncio.Event().wait()
+
+    monkeypatch.setattr(agent, "_select", select)
+    monkeypatch.setattr(agent, "get_catalog", lambda: object())
+    state = {
+        "question": "cancel probe", "user": "alice", "role": "admin",
+        "conversation_id": "cancel-conversation", "turn_id": "turn-model-cancel",
+        "source_policy": object(), "emit": asyncio.Queue(), "trace": [],
+        "timing": {
+            "started_at": time.perf_counter(), "source_attempts": [],
+            "source_completions": [],
+        },
+    }
+
+    task = asyncio.create_task(agent.run(state))
+    await entered.wait()
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+    model_trace = [step for step in state["trace"] if step["id"] == "model-1"]
+    assert [step["status"] for step in model_trace] == ["running", "error"]
+    assert model_trace[-1]["detail"] == "Stopped by user"
+    assert model_trace[-1]["duration_ms"] >= 0
+
+
+@pytest.mark.anyio
+async def test_cancellation_finalizes_all_running_trace_kinds_once():
+    state = {
+        "emit": asyncio.Queue(),
+        "timing": {"started_at": time.perf_counter()},
+        "trace": [
+            {"id": "model-1", "kind": "model", "status": "running",
+             "label": "Model", "elapsed_ms": 0},
+            {"id": "tool-1", "kind": "tool", "status": "running",
+             "label": "Query", "call_id": "call-1", "elapsed_ms": 0},
+            {"id": "status-1", "kind": "status", "status": "running",
+             "label": "Checking", "elapsed_ms": 0},
+            {"id": "model-0", "kind": "model", "status": "complete",
+             "label": "Earlier model", "elapsed_ms": 0},
+        ],
+    }
+
+    await agent.finalize_running_traces(state)
+    await agent.finalize_running_traces(state)
+
+    terminal = [step for step in state["trace"] if step.get("detail") == "Stopped by user"]
+    assert {step["id"] for step in terminal} == {"model-1", "tool-1", "status-1"}
+    assert len(terminal) == 3
+    assert all(step["status"] == "error" for step in terminal)
+    assert next(step for step in terminal if step["id"] == "tool-1")["call_id"] == "call-1"
+
+
+@pytest.mark.anyio
+async def test_cancellation_finalizes_all_unfinished_queries_once():
+    state = {
+        "emit": asyncio.Queue(), "turn_id": "turn-query-cancel",
+        "query_registry": [
+            {"query_id": "q1", "attempt_id": "q1:a1", "status": "pending"},
+            {"query_id": "q2", "attempt_id": "q2:a1", "status": "running"},
+            {"query_id": "q3", "attempt_id": "q3:a1", "status": "success"},
+        ],
+    }
+
+    await agent.finalize_running_queries(state)
+    await agent.finalize_running_queries(state)
+
+    assert [record["status"] for record in state["query_registry"]] == [
+        "cancelled", "cancelled", "success",
+    ]
+    events = []
+    while not state["emit"].empty():
+        events.append(_sse_payload(state["emit"].get_nowait()))
+    assert [event for event, _payload in events] == ["query_failed", "query_failed"]
+    assert all(payload["error_code"] == "CANCELLED" for _event, payload in events)
 
 
 def test_saved_conversation_returns_execution_trace(monkeypatch):

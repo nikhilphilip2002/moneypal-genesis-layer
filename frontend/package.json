@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start -H 0.0.0.0 -p 3000",
     "lint": "eslint .",
-    "test": "node --test lib/api-stream.test.cjs"
+    "test": "node --test lib/*.test.cjs lib/*.test.ts"
   },
   "dependencies": {
     "@radix-ui/react-avatar": "^1.1.3",

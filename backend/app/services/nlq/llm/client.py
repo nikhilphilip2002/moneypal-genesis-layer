@@ -663,6 +663,12 @@ class OpenAICompatibleClient:
                         raise LLMProtocolError("malformed completion stream") from exc
                     finally:
                         await stream.close()
+                except asyncio.CancelledError:
+                    logger.info(
+                        "LLM request cancelled: purpose=%s provider=%s attempt=%s",
+                        call_purpose, self.provider, attempt + 1,
+                    )
+                    raise
                 except LLMProtocolError as exc:
                     last_exc = exc
                     break
