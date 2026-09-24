@@ -10,6 +10,8 @@ import time
 import uuid
 from typing import Any, AsyncIterator, NotRequired, TypedDict
 
+import anyio
+
 from app.core.config import settings
 from app.services.nlq.llm.telemetry import collect_calls, summarize_calls
 from app.services.workbench import access, compaction, history
@@ -24,7 +26,10 @@ def cancel_active_turn(conversation_id: str, user: str, turn_id: str) -> bool:
     task = _active_turn_tasks.get((conversation_id, user, turn_id))
     if task is None or task.done():
         return False
-    task.cancel()
+    # Stop and HTTP disconnect can both arrive for the same turn. Cancelling again
+    # interrupts the first cancellation's awaited upstream connection cleanup.
+    if not task.cancelling():
+        task.cancel()
     return True
 
 
@@ -612,7 +617,7 @@ async def run_workbench(
             # Checkpoint after the turn, never before it: the summarization call would
             # otherwise sit between the user's question and their first streamed token.
             # Detached and failure-tolerant — the transcript works without it.
-            if settings.workbench_compaction_enabled:
+            if not partial and settings.workbench_compaction_enabled:
                 _spawn_background(compaction.maybe_compact(conversation_id, user))
             await emit.put(None)  # sentinel: the graph is done producing frames
 
@@ -626,10 +631,16 @@ async def run_workbench(
                 break
             yield frame
     finally:
-        if not task.done():
-            task.cancel()
-            with contextlib.suppress(asyncio.CancelledError):
-                await task
-        if _active_turn_tasks.get(active_key) is task:
-            _active_turn_tasks.pop(active_key, None)
+        try:
+            # StreamingResponse runs in an AnyIO cancel scope. A disconnect keeps
+            # cancelling every await in that scope, which would propagate through
+            # `await task` and interrupt the LLM socket close inside drive().
+            with anyio.CancelScope(shield=True):
+                if not task.done() and not task.cancelling():
+                    task.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await task
+        finally:
+            if _active_turn_tasks.get(active_key) is task:
+                _active_turn_tasks.pop(active_key, None)
     yield sse("done", {"total_ms": int((time.perf_counter() - started_at) * 1000)})

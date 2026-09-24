@@ -6,7 +6,9 @@ import asyncio
 import json
 import time
 
+import httpx
 import pytest
+from openai import AsyncOpenAI
 from starlette.responses import StreamingResponse
 
 from app.services.nlq.llm import (
@@ -19,6 +21,192 @@ from app.services.nlq.llm import (
 from app.services.workbench import graph
 from app.services.workbench.agent import BudgetExhausted
 from app.services.workbench.results import SourceResult
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("response_started", [False, True])
+@pytest.mark.parametrize("explicit_stop", [False, True])
+async def test_stop_disconnects_upstream_tcp_connection(
+    monkeypatch, response_started, explicit_stop,
+):
+    """Use the real SDK/HTTP transport, including cancellation before SSE headers."""
+    from app.services.nlq.llm.client import OpenAICompatibleClient, _ProviderProfile
+    from app.services.workbench import agent
+
+    received = asyncio.Event()
+    upstream_closed = asyncio.Event()
+    disconnected = asyncio.Queue()
+    requests = []
+    turn = {}
+    handlers = set()
+
+    async def upstream(reader, writer):
+        handlers.add(asyncio.current_task())
+        try:
+            headers = await reader.readuntil(b"\r\n\r\n")
+            length = next(
+                int(line.split(b":", 1)[1])
+                for line in headers.split(b"\r\n")
+                if line.lower().startswith(b"content-length:")
+            )
+            requests.append(json.loads(await reader.readexactly(length)))
+            if response_started:
+                writer.write(
+                    b"HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\n"
+                    b"Connection: close\r\n\r\n"
+                    b'data: {"choices":[{"index":0,"delta":{"content":"hello"}}]}\n\n'
+                )
+                await writer.drain()
+            received.set()
+            assert await reader.read() == b""
+            upstream_closed.set()
+        finally:
+            writer.close()
+            await writer.wait_closed()
+            handlers.discard(asyncio.current_task())
+
+    server = await asyncio.start_server(upstream, "127.0.0.1", 0)
+    port = server.sockets[0].getsockname()[1]
+    client = OpenAICompatibleClient(
+        profile=_ProviderProfile(
+            name="llamacpp", base_url=f"http://127.0.0.1:{port}/v1", api_key="k",
+            supports_json_schema=True, supports_native_tools=True,
+        ),
+        model="test",
+    )
+
+    async def select(*_args, **_kwargs):
+        return await client.complete(messages=[])
+
+    async def receive():
+        return await disconnected.get()
+
+    async def send(message):
+        body = message.get("body", b"").decode()
+        if body.startswith("event: conversation\n"):
+            turn.update(json.loads(body.split("data: ", 1)[1]))
+
+    monkeypatch.setattr(agent, "_select", select)
+    monkeypatch.setattr(agent, "get_catalog", lambda: object())
+    response = StreamingResponse(graph.run_workbench(
+        question="cancel probe", conversation_id="tcp-cancel", user="alice", role="admin",
+    ))
+    scope = {"type": "http", "asgi": {"spec_version": "2.3"}, "method": "POST"}
+    task = asyncio.create_task(response(scope, receive, send))
+    try:
+        await asyncio.wait_for(received.wait(), 5)
+        if explicit_stop:
+            assert graph.cancel_active_turn("tcp-cancel", "alice", turn["turn_id"])
+        await disconnected.put({"type": "http.disconnect"})
+        await asyncio.wait_for(task, 5)
+        await asyncio.wait_for(upstream_closed.wait(), 5)
+        assert len(requests) == 1
+        assert requests[0]["stream"] is True
+        assert not graph._active_turn_tasks
+    finally:
+        if not task.done():
+            task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
+        await client.aclose()
+        server.close()
+        await server.wait_closed()
+        for handler in list(handlers):
+            handler.cancel()
+        await asyncio.gather(*handlers, return_exceptions=True)
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("explicit_stop", [False, True])
+async def test_disconnect_waits_for_llm_connection_close(monkeypatch, explicit_stop):
+    """Transport cleanup must survive both ASGI cancellation and a preceding Stop."""
+    from app.services.nlq.llm.client import OpenAICompatibleClient, _ProviderProfile
+    from app.services.workbench import agent
+
+    entered = asyncio.Event()
+    closing = asyncio.Event()
+    release_close = asyncio.Event()
+    closed = asyncio.Event()
+    disconnected = asyncio.Queue()
+    turn = {}
+    requests = []
+    compactions = []
+
+    class Stream(httpx.AsyncByteStream):
+        async def __aiter__(self):
+            entered.set()
+            await asyncio.Event().wait()
+            yield b""
+
+        async def aclose(self):
+            closing.set()
+            await release_close.wait()
+            closed.set()
+
+    def handler(request):
+        requests.append(request)
+        return httpx.Response(200, stream=Stream())
+
+    client = OpenAICompatibleClient(
+        profile=_ProviderProfile(
+            name="llamacpp", base_url="http://stub/v1", api_key="k",
+            supports_json_schema=True, supports_native_tools=True,
+        ),
+        model="test",
+    )
+    client._client = AsyncOpenAI(
+        api_key="k", base_url="http://stub/v1", max_retries=0,
+        http_client=httpx.AsyncClient(transport=httpx.MockTransport(handler)),
+    )
+    client._client._platform = "Linux"
+
+    async def select(*_args, **_kwargs):
+        return await client.complete(messages=[])
+
+    async def compact(*args):
+        compactions.append(args)
+
+    async def receive():
+        return await disconnected.get()
+
+    async def send(message):
+        body = message.get("body", b"").decode()
+        if body.startswith("event: conversation\n"):
+            turn.update(json.loads(body.split("data: ", 1)[1]))
+
+    monkeypatch.setattr(agent, "_select", select)
+    monkeypatch.setattr(agent, "get_catalog", lambda: object())
+    monkeypatch.setattr(graph.settings, "workbench_compaction_enabled", True)
+    monkeypatch.setattr(graph.compaction, "maybe_compact", compact)
+    response = StreamingResponse(graph.run_workbench(
+        question="cancel probe", conversation_id="transport-cancel",
+        user="alice", role="admin",
+    ))
+    scope = {"type": "http", "asgi": {"spec_version": "2.3"}, "method": "POST"}
+    task = asyncio.create_task(response(scope, receive, send))
+    try:
+        await asyncio.wait_for(entered.wait(), 5)
+        if explicit_stop:
+            assert graph.cancel_active_turn("transport-cancel", "alice", turn["turn_id"])
+            await asyncio.wait_for(closing.wait(), 5)
+            # A duplicate Stop must not interrupt an in-progress socket close either.
+            assert graph.cancel_active_turn("transport-cancel", "alice", turn["turn_id"])
+        await disconnected.put({"type": "http.disconnect"})
+        await asyncio.wait_for(closing.wait(), 5)
+        # Let the disconnect listener and cancelled response task run during close.
+        for _ in range(10):
+            await asyncio.sleep(0)
+        release_close.set()
+        await asyncio.wait_for(task, 5)
+        assert closed.is_set(), "Cancellation interrupted the upstream connection close"
+        assert len(requests) == 1
+        assert compactions == [], "Stop must not start another model request"
+        assert not graph._active_turn_tasks
+    finally:
+        release_close.set()
+        if not task.done():
+            task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
+        await client.aclose()
 
 
 @pytest.fixture(autouse=True)
