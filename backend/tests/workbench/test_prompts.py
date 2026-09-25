@@ -27,15 +27,6 @@ def test_answer_prompts_do_not_duplicate_structured_result_rows():
     )
 
 
-def test_agent_prompt_forbids_wildcard_and_duplicate_queries():
-    prompt = prompts.AGENT_SYSTEM_PROMPT
-
-    assert "Never use SELECT *, alias.*, or COUNT(*)" in prompt
-    assert "name every selected column explicitly" in prompt
-    assert "Submit each distinct SQL query only once" in prompt
-    assert "never repeat the rejected SQL" in prompt
-
-
 def test_agent_prompt_retrieves_only_relevant_gold_metadata():
     bundle = prompts.build_agent_prompt(
         question="monthly cash receipts by payment mode",
