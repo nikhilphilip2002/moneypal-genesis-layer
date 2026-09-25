@@ -64,9 +64,12 @@ async def test_discovery_is_the_model_contract_source():
         for item in definitions
         if item["function"]["name"] == "submit_final_answer"
     )
-    assert submit["description"] == (
-        "Record a query-backed answer, clarification, or governed refusal as the turn's final result."
+    discovered_submit = next(
+        tool
+        for tool in await workbench_client.list_tools()
+        if tool.name == "submit_final_answer"
     )
+    assert submit["description"] == discovered_submit.description
 
 
 @pytest.mark.anyio

@@ -141,7 +141,12 @@ async def submit_final_answer(
     submission: FinalSubmissionArguments,
     ctx: Context,
 ) -> ToolResult:
-    """Record a query-backed answer, clarification, or governed refusal as the turn's final result."""
+    """Display the selected query result to the user.
+
+    Submit an answer, clarification, or refusal as the only tool in the final response.
+    For answers, use a successful query's numeric query_id from this conversation and choose
+    its view. Keep the message concise; result rows are displayed separately.
+    """
 
     if isinstance(submission, SubmitAnswerArguments):
         _execution_context(ctx).source_policy.require("db")

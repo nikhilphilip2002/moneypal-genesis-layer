@@ -110,13 +110,20 @@ def _query(sql: str, meta: dict[str, Any]) -> dict[str, Any]:
 
 @mcp.tool
 async def query(sql: str, ctx: Context) -> dict[str, Any]:
-    """Execute one read-only PostgreSQL SELECT against governed gold.* views.
+    """Query results are returned to the assistant and are not rendered to the user.
+
+    Execute one read-only PostgreSQL SELECT against governed gold.* views.
+    SELECT * is not allowed; name the columns explicitly.
 
     Schema-qualify every table, name every selected column, use only columns and joins from
     the supplied Gold schema, include an appropriate date condition when the question names a
     period, and include LIMIT 5000 or less. Filter before joining and aggregate one-to-many
     inputs before joining them. Avoid correlated subqueries. Validation and timeout errors are
     returned for correction; never repeat identical SQL after a timeout.
+
+    Select dimensions before measures. For category/time-series charts, aggregate in SQL
+    with GROUP BY as needed to return one row per x/series pair. Final presentation does
+    not aggregate duplicates. KPI needs one row; tables and scatter allow repeated x values.
     """
     meta = _trusted_meta(ctx)
     return _query(sql, meta)
