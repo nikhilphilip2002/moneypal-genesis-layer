@@ -128,7 +128,18 @@ class VisualizeQueryResultArguments(AgentArguments):
     aggregation: VisualizationAggregation
 
 
-class FinishWithoutDataArguments(AgentArguments):
+class SubmitAnswerArguments(AgentArguments):
+    """Submit one successful database query for final presentation."""
+
+    outcome: Literal["answer"]
+    message: str = Field(max_length=20_000)
+    query_id: int = Field(ge=1)
+    view: VisualizationChartType
+
+
+class WithoutDataArguments(AgentArguments):
+    """End the turn with a clarification or governed refusal."""
+
     outcome: Literal["clarify", "refuse"]
     message: str = Field(min_length=1, max_length=500)
     suggestions: list[str] = Field(default_factory=list, max_length=3)
@@ -144,7 +155,7 @@ class FinishWithoutDataArguments(AgentArguments):
     ) = None
 
     @model_validator(mode="after")
-    def _check_outcome_fields(self) -> "FinishWithoutDataArguments":
+    def _check_outcome_fields(self) -> "WithoutDataArguments":
         if self.outcome == "clarify" and self.reason_code is not None:
             raise ValueError(
                 "clarification cannot include a refusal reason_code"
@@ -157,9 +168,14 @@ class FinishWithoutDataArguments(AgentArguments):
         return self
 
 
+FinalSubmissionArguments = SubmitAnswerArguments | WithoutDataArguments
+
+
 __all__ = [
     "AgentArguments",
-    "FinishWithoutDataArguments",
+    "FinalSubmissionArguments",
+    "SubmitAnswerArguments",
+    "WithoutDataArguments",
     "ExcludedQueryReference",
     "FinalSynthesis",
     "QueryExecutionRecord",

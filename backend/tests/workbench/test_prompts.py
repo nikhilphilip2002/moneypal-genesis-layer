@@ -91,7 +91,6 @@ async def test_database_tools_are_not_defined_in_the_local_registry():
     )
     assert set(offered) == {
         "search_curated_knowledge",
-        "finish_without_data",
         "submit_final_answer",
     }
 

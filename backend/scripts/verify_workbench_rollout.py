@@ -95,8 +95,6 @@ def assert_mcp_catalog(health: dict[str, Any]) -> None:
     expected_local = {
         "search_curated_knowledge",
         "search_public_web",
-        "visualize_query_result",
-        "finish_without_data",
         "submit_final_answer",
     }
     if catalog.get("status") != "ok":

@@ -13,12 +13,10 @@ from app.services.nlq.catalog import get_catalog
 from app.services.workbench.access import SourceAccessDenied, build_policy
 from app.services.workbench.agent_contracts import (
     FinalSynthesis,
-    FinishWithoutDataArguments,
+    FinalSubmissionArguments,
     SearchCuratedKnowledgeArguments,
     SearchPublicWebArguments,
-    VisualizationAggregation,
-    VisualizationChartType,
-    VisualizeQueryResultArguments,
+    SubmitAnswerArguments,
 )
 
 
@@ -138,93 +136,27 @@ async def search_public_web(
     return success(_card_data(await _search_public_web(args, execution_ctx)))
 
 
-@mcp.tool(description="Create a visualization from a successful query result.")
-async def visualize_query_result(
-    query_id: str,
-    chart_type: VisualizationChartType,
-    x: str | None,
-    y: list[str],
-    series: str | None,
-    aggregation: Annotated[
-        VisualizationAggregation,
-        Field(
-            description=(
-                "Use none when each x/series pair is already aggregated; otherwise choose "
-                "how to combine multiple y values for the same x/series pair."
-            )
-        ),
-    ],
-    ctx: Context,
-) -> dict[str, Any]:
-    from app.services.workbench.agent_executor import _visualize_query_result
-
-    execution_ctx = _execution_context(ctx)
-    execution_ctx.source_policy.require("db")
-    args = VisualizeQueryResultArguments(
-        query_id=query_id,
-        chart_type=chart_type,
-        x=x,
-        y=y,
-        series=series,
-        aggregation=aggregation,
-    )
-    return success(
-        _card_data(await _visualize_query_result(args, execution_ctx))
-    )
-
-
-@mcp.tool(
-    description=(
-        "End the turn with a clarifying question or governed refusal when no data tool "
-        "should run."
-    )
-)
-async def finish_without_data(
-    outcome: Literal["clarify", "refuse"],
-    message: Annotated[str, Field(min_length=1, max_length=500)],
-    suggestions: Annotated[list[str], Field(max_length=3)],
-    reason_code: Literal[
-        "out_of_scope", "not_in_data", "predictive", "advice", "unsafe"
-    ]
-    | None = None,
-) -> dict[str, Any]:
-    parsed = FinishWithoutDataArguments(
-        outcome=outcome,
-        message=message,
-        suggestions=suggestions,
-        reason_code=reason_code,
-    )
-    return success(
-        {"kind": "terminal", "terminal": parsed.model_dump(mode="json")}
-    )
-
-
-@mcp.tool(
-    description=(
-        "Select one successful database query from this conversation, choose its view, and optionally "
-        "add concise insights. The backend infers the view fields from the query result. "
-        "It must be the only call in the response."
-    )
-)
+@mcp.tool()
 async def submit_final_answer(
-    insights: Annotated[str, Field(max_length=20_000)],
-    query_id: Annotated[int, Field(ge=1)],
-    view: VisualizationChartType,
+    submission: FinalSubmissionArguments,
+    ctx: Context,
 ) -> ToolResult:
-    parsed = FinalSynthesis(
-        insights=insights,
-        query_id=query_id,
-        view=view,
-    )
-    structured = success(
-        {
-            "kind": "terminal",
-            "terminal": {
-                "outcome": "answer",
-                "synthesis": parsed.model_dump(mode="json"),
-            },
+    """Record a query-backed answer, clarification, or governed refusal as the turn's final result."""
+
+    if isinstance(submission, SubmitAnswerArguments):
+        _execution_context(ctx).source_policy.require("db")
+        synthesis = FinalSynthesis(
+            insights=submission.message,
+            query_id=submission.query_id,
+            view=submission.view,
+        )
+        terminal = {
+            "outcome": "answer",
+            "synthesis": synthesis.model_dump(mode="json"),
         }
-    )
+    else:
+        terminal = submission.model_dump(mode="json")
+    structured = success({"kind": "terminal", "terminal": terminal})
     return ToolResult(
         content={"success": True},
         structured_content=structured,

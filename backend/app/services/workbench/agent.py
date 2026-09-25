@@ -143,8 +143,6 @@ def _source_for_call(call) -> str | None:
         return "web"
     if call.name == "search_curated_knowledge":
         return _CURATED_SOURCES.get(str(call.arguments.get("domain", "")))
-    if call.name == "visualize_query_result":
-        return "db"
     return None
 
 
@@ -349,7 +347,7 @@ def _preflight(result, state: dict[str, Any]) -> list[tuple[str, str, str]]:
     terminals = [
         call
         for call in result.tool_calls
-        if call.name in {"finish_without_data", "submit_final_answer"}
+        if call.name == "submit_final_answer"
     ]
     if terminals and len(result.tool_calls) != 1:
         failures.extend(
@@ -374,8 +372,13 @@ def _preflight(result, state: dict[str, Any]) -> list[tuple[str, str, str]]:
             authorize_local_tool_call(
                 call.name, call.arguments, policy=state["source_policy"]
             )
-            if call.name == "submit_final_answer":
-                query_number = call.arguments.get("query_id")
+            submission = call.arguments.get("submission")
+            if (
+                call.name == "submit_final_answer"
+                and isinstance(submission, dict)
+                and submission.get("outcome") == "answer"
+            ):
+                query_number = submission.get("query_id")
                 if not isinstance(query_number, int) or isinstance(
                     query_number, bool
                 ):
@@ -538,12 +541,11 @@ def _persist_query_registry(state: dict[str, Any]) -> None:
 def _register_database_queries(
     state: dict[str, Any], calls
 ) -> dict[str, dict[str, Any]]:
-    """Allocate IDs before PostgreSQL calls and derived visual creation start."""
+    """Allocate IDs before PostgreSQL calls start."""
     registry = state.setdefault("query_registry", [])
     registered: dict[str, dict[str, Any]] = {}
     for call in calls:
-        is_visual = call.name == "visualize_query_result"
-        if not _is_postgres_tool(call.name) and not is_visual:
+        if not _is_postgres_tool(call.name):
             continue
         fingerprint = hashlib.sha256(
             json.dumps(
@@ -553,18 +555,14 @@ def _register_database_queries(
                 default=str,
             ).encode()
         ).hexdigest()
-        retry_of = (
-            None
-            if is_visual
-            else next(
-                (
-                    record
-                    for record in reversed(registry)
-                    if record.get("query_fingerprint") == fingerprint
-                    and record.get("status") in {"error", "timeout"}
-                ),
-                None,
-            )
+        retry_of = next(
+            (
+                record
+                for record in reversed(registry)
+                if record.get("query_fingerprint") == fingerprint
+                and record.get("status") in {"error", "timeout"}
+            ),
+            None,
         )
         if retry_of is not None:
             query_id = str(retry_of["query_id"])
@@ -574,13 +572,9 @@ def _register_database_queries(
         else:
             from app.services.workbench.attribution import next_query_number
 
-            prefix = "v" if is_visual else "q"
-            if is_visual:
-                numbered = registry
-            else:
-                numbered = [*state.get("prior_query_registry", []), *registry]
-            query_number = next_query_number(numbered, prefix=prefix)
-            query_id = f"{state['turn_id']}:{prefix}{query_number}"
+            numbered = [*state.get("prior_query_registry", []), *registry]
+            query_number = next_query_number(numbered, prefix="q")
+            query_id = f"{state['turn_id']}:q{query_number}"
             attempt_number = 1
         record = QueryExecutionRecord(
             query_id=query_id,
@@ -588,9 +582,6 @@ def _register_database_queries(
             tool_call_id=call.id,
             tool_name=call.name,
             query_fingerprint=fingerprint,
-            source_query_id=(
-                str(call.arguments.get("query_id")) if is_visual else None
-            ),
         ).model_dump(mode="json")
         registry.append(record)
         registered[call.id] = record
@@ -604,9 +595,6 @@ def _query_row_count(item: ExecutedAgentCall) -> int | None:
         return item.raw_result.row_count
     if item.card is None:
         return None
-    if item.call.name == "visualize_query_result":
-        rows = item.card.payload.get("rows")
-        return len(rows) if isinstance(rows, list) else None
     lineage_count = (item.card.lineage or {}).get("row_count")
     if isinstance(lineage_count, int) and lineage_count >= 0:
         return lineage_count
@@ -996,7 +984,11 @@ async def _execute_one(
         )
     try:
         item = await execute_agent_call(call, execution_context)
-        if call.name == "submit_final_answer" and item.terminal is not None:
+        if (
+            call.name == "submit_final_answer"
+            and item.terminal is not None
+            and item.terminal.get("outcome") == "answer"
+        ):
             from app.services.workbench.agent_contracts import FinalSynthesis
             from app.services.workbench.attribution import (
                 resolve_current_query,
@@ -1280,7 +1272,7 @@ async def _end_without_data(
     state: dict[str, Any], payload: dict[str, Any], *, origin: str
 ) -> None:
     """Emit a clarification or refusal. ``origin`` says who decided: the model's
-    ``finish_without_data`` call, or the application after a denial the model never
+    ``submit_final_answer`` call, or the application after a denial the model never
     resolved within budget."""
     from app.services.workbench.graph import sse
 
@@ -1554,6 +1546,11 @@ async def run(state: dict[str, Any]) -> None:
             for call_id in failed_ids
             if calls_by_id.get(call_id) is not None
             and calls_by_id[call_id].name == "submit_final_answer"
+            and isinstance(
+                calls_by_id[call_id].arguments.get("submission"), dict
+            )
+            and calls_by_id[call_id].arguments["submission"].get("outcome")
+            == "answer"
         )
         for call_id, message, code in failures:
             failed_call = calls_by_id.get(call_id)

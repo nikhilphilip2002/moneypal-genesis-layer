@@ -51,7 +51,7 @@ async def test_catalog_filters_policy_without_mutating_canonical_definitions():
 async def test_catalog_rejects_duplicate_names_across_servers():
     catalog = ToolCatalog()
     await catalog.discover_local()
-    duplicate = deepcopy(catalog._entries["finish_without_data"].definition)
+    duplicate = deepcopy(catalog._entries["submit_final_answer"].definition)
 
     with pytest.raises(ToolCatalogError, match="duplicate MCP tool name"):
         catalog.register_postgres_definitions([duplicate])

@@ -19,7 +19,6 @@ from app.services.workbench.access import SourceAccessPolicy
 from app.services.workbench.agent_contracts import (
     SearchCuratedKnowledgeArguments,
     SearchPublicWebArguments,
-    VisualizeQueryResultArguments,
 )
 from app.services.workbench.agent_tools import (
     authorize_local_tool_call,
@@ -484,28 +483,6 @@ async def _search_public_web(
         raise_policy_denials=True,
         private_entities=ctx.private_entities,
     )
-
-
-async def _visualize_query_result(
-    args: VisualizeQueryResultArguments,
-    ctx: AgentExecutionContext,
-) -> SourceResult:
-    from app.services.workbench import history
-    from app.services.workbench.visualization import (
-        VisualizationError,
-        build_visual,
-    )
-
-    source = history.query_result(
-        ctx.conversation_id,
-        user=ctx.user,
-        query_id=args.query_id,
-    )
-    if source is None:
-        raise VisualizationError(
-            "query_id must reference a successful stored query in this conversation"
-        )
-    return build_visual(source, args)
 
 
 def _source_result_from_mcp(data: dict[str, Any]) -> SourceResult:

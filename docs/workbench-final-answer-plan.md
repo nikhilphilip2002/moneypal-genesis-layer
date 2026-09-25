@@ -229,7 +229,7 @@ The frontend renders the provided card directly. It does not need `active_query_
 
 ### Visualization
 
-- [ ] Remove `visualize_query_result` from model-visible tools.
+- [x] Remove `visualize_query_result` from model-visible tools and MCP registration.
 - [ ] Create visualization automatically during final submission.
 - [ ] Infer chart fields from stored columns and rows.
 - [ ] Implement shape validation for every supported view.

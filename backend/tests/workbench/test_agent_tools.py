@@ -51,8 +51,6 @@ def test_registry_contains_runtime_policy_only():
     assert list(RUNTIME_TOOL_POLICIES) == [
         "search_curated_knowledge",
         "search_public_web",
-        "visualize_query_result",
-        "finish_without_data",
         "submit_final_answer",
     ]
     assert "query_loan_book" not in RUNTIME_TOOL_POLICIES
@@ -63,10 +61,9 @@ def test_registry_contains_runtime_policy_only():
 
 
 @pytest.mark.anyio
-async def test_provider_schemas_are_closed_flat_objects_without_polymorphic_keywords():
+async def test_provider_schemas_are_closed_objects_without_unsupported_keywords():
     forbidden = {
         "oneOf",
-        "anyOf",
         "allOf",
         "discriminator",
         "if",
@@ -96,9 +93,7 @@ async def test_provider_schemas_are_closed_flat_objects_without_polymorphic_keyw
 async def test_every_authorized_tool_is_offered_with_its_full_schema():
     """Every policy-authorized local tool is offered with its complete schema."""
     definitions = await _definitions()
-    assert set(definitions) == set(RUNTIME_TOOL_POLICIES) - {
-        "visualize_query_result"
-    }
+    assert set(definitions) == set(RUNTIME_TOOL_POLICIES)
     assert all(
         definition["parameters"]["properties"]
         for definition in definitions.values()
@@ -135,13 +130,42 @@ def test_forged_curated_domain_is_reauthorized_at_validation_time():
         )
 
 
-@pytest.mark.anyio
-async def test_final_answer_schema_is_minimal():
-    schema = (await _definitions())["submit_final_answer"]["parameters"]
-    properties = schema["properties"]
+def test_final_answer_requires_database_only_for_query_answer():
+    policy = access.build_policy(
+        role="admin", external_sources_enabled=False, pinned_source="knowledge"
+    )
+    authorize_local_tool_call(
+        "submit_final_answer",
+        {"submission": {"outcome": "clarify", "message": "Which period?"}},
+        policy=policy,
+    )
+    with pytest.raises(
+        AgentToolAccessDenied, match="db: source is unavailable"
+    ):
+        authorize_local_tool_call(
+            "submit_final_answer",
+            {
+                "submission": {
+                    "outcome": "answer",
+                    "message": "",
+                    "query_id": 1,
+                    "view": "table",
+                }
+            },
+            policy=policy,
+        )
 
-    assert list(properties) == ["insights", "query_id", "view"]
-    assert properties["view"]["enum"] == [
+
+@pytest.mark.anyio
+async def test_final_answer_schema_supports_all_terminal_outcomes():
+    schema = (await _definitions())["submit_final_answer"]["parameters"]
+    assert list(schema["properties"]) == ["submission"]
+    variants = schema["properties"]["submission"]["anyOf"]
+    assert len(variants) == 2
+    answer, without_data = (variant["properties"] for variant in variants)
+    assert list(answer) == ["outcome", "message", "query_id", "view"]
+    assert answer["outcome"]["enum"] == ["answer"]
+    assert answer["view"]["enum"] == [
         "kpi",
         "line",
         "area",
@@ -153,3 +177,10 @@ async def test_final_answer_schema_is_minimal():
         "scatter",
         "heatmap",
     ]
+    assert list(without_data) == [
+        "outcome",
+        "message",
+        "suggestions",
+        "reason_code",
+    ]
+    assert without_data["outcome"]["enum"] == ["clarify", "refuse"]

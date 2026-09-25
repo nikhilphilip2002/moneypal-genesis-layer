@@ -622,22 +622,6 @@ def _successful_query(query_id: str = "turn-answer:q1") -> dict:
     }
 
 
-def _successful_visual(query_id: str = "turn-answer:v1") -> dict:
-    return {
-        "query_id": query_id,
-        "attempt_id": f"{query_id}:a1",
-        "tool_call_id": "call-v1",
-        "tool_name": "visualize_query_result",
-        "status": "success",
-        "purpose": "answer",
-        "row_count": 1,
-        "has_data": True,
-        "visual_available": True,
-        "duration_ms": 1,
-        "source_query_id": "turn-answer:q1",
-    }
-
-
 @pytest.mark.anyio
 async def test_answer_results_reconciles_structured_query_references():
     state = _answer_state(

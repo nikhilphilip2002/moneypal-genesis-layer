@@ -147,12 +147,14 @@ async def test_terminal_call_executes_no_data_handler():
     executed = await agent_executor.execute_agent_call(
         NativeToolCall(
             id="call_2",
-            name="finish_without_data",
+            name="submit_final_answer",
             arguments={
-                "outcome": "clarify",
-                "message": "Which period?",
-                "suggestions": ["This month"],
-                "reason_code": None,
+                "submission": {
+                    "outcome": "clarify",
+                    "message": "Which period?",
+                    "suggestions": ["This month"],
+                    "reason_code": None,
+                }
             },
         ),
         _context(),
@@ -168,9 +170,12 @@ async def test_final_answer_call_is_strict_terminal_contract():
             id="call-final",
             name="submit_final_answer",
             arguments={
-                "insights": "PAR 30 is 4.2%.",
-                "query_id": 1,
-                "view": "kpi",
+                "submission": {
+                    "outcome": "answer",
+                    "message": "PAR 30 is 4.2%.",
+                    "query_id": 1,
+                    "view": "kpi",
+                }
             },
         ),
         _context(),

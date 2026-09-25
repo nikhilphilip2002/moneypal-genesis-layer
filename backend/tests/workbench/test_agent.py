@@ -636,9 +636,12 @@ async def test_strict_final_answer_tool_drives_reconciled_answer(scripted):
                 id="final-answer",
                 name="submit_final_answer",
                 arguments={
-                    "insights": "PAR 30 is 4.2%.",
-                    "query_id": 1,
-                    "view": "kpi",
+                    "submission": {
+                        "outcome": "answer",
+                        "message": "PAR 30 is 4.2%.",
+                        "query_id": 1,
+                        "view": "kpi",
+                    }
                 },
             )
         )
@@ -736,9 +739,12 @@ async def test_final_answer_reuses_previous_turn_query_without_sql(
         id="reuse-query",
         name="submit_final_answer",
         arguments={
-            "insights": "PAR 30 is 4.2%.",
-            "query_id": 1,
-            "view": "table",
+            "submission": {
+                "outcome": "answer",
+                "message": "PAR 30 is 4.2%.",
+                "query_id": 1,
+                "view": "table",
+            }
         },
     )
     from app.services.workbench import agent_executor
@@ -800,7 +806,14 @@ async def test_invalid_final_answer_contract_is_repaired_once(
     invalid_final = NativeToolCall(
         id="invalid-final",
         name="submit_final_answer",
-        arguments={"insights": "", "query_id": 99, "view": "kpi"},
+        arguments={
+            "submission": {
+                "outcome": "answer",
+                "message": "",
+                "query_id": 99,
+                "view": "kpi",
+            }
+        },
     )
 
     def repaired_final(request):
@@ -817,7 +830,14 @@ async def test_invalid_final_answer_contract_is_repaired_once(
             NativeToolCall(
                 id="valid-final",
                 name="submit_final_answer",
-                arguments={"insights": "", "query_id": 1, "view": "kpi"},
+                arguments={
+                    "submission": {
+                        "outcome": "answer",
+                        "message": "",
+                        "query_id": 1,
+                        "view": "kpi",
+                    }
+                },
             )
         )
 
@@ -923,7 +943,7 @@ async def test_failure_path_spends_exactly_max_rounds_requests(
         "calls_used": 3,
         "max_calls": 6,
     }
-    assert not any("finish_without_data" in frame for frame in _frames(state))
+    assert not any("submit_final_answer" in frame for frame in _frames(state))
 
 
 @pytest.mark.anyio
@@ -1265,7 +1285,7 @@ async def test_outbound_policy_denial_gets_one_native_repair(
         "source": "web",
         "policy": "outbound_privacy",
     }
-    assert "finish_without_data" in denial["authorized_tools"]
+    assert "submit_final_answer" in denial["authorized_tools"]
     record = history.get("web-repair", user="alice")
     assert len(record.turns[0]["agent_exchanges"]) == 2
     assert "secret-42" not in str(record.turns[0]["agent_exchanges"])
@@ -1283,7 +1303,7 @@ async def test_unresolved_policy_denial_ends_with_an_application_refusal(
     scripted, monkeypatch
 ):
     """B2: the model keeps sending private data; when the budget ends the application
-    refuses in its own name. No finish_without_data call is fabricated."""
+    refuses in its own name. No submit_final_answer call is fabricated."""
     monkeypatch.setattr(agent.settings, "workbench_agent_max_rounds", 3)
 
     counter = 0
@@ -1331,12 +1351,14 @@ async def test_unresolved_policy_denial_ends_with_an_application_refusal(
 async def test_model_refusal_keeps_its_origin(scripted):
     finish = NativeToolCall(
         id="finish",
-        name="finish_without_data",
+        name="submit_final_answer",
         arguments={
-            "outcome": "refuse",
-            "message": "I cannot share that.",
-            "suggestions": [],
-            "reason_code": "unsafe",
+            "submission": {
+                "outcome": "refuse",
+                "message": "I cannot share that.",
+                "suggestions": [],
+                "reason_code": "unsafe",
+            }
         },
     )
 

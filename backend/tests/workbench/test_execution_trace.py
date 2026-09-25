@@ -52,31 +52,6 @@ def test_query_ids_distinguish_retry_attempts_from_corrected_sql(monkeypatch):
     assert third["attempt_id"] == "turn-retry:q2:a1"
 
 
-def test_visualization_call_gets_current_turn_derived_id(monkeypatch):
-    from app.mcp import postgres_client
-
-    monkeypatch.setattr(postgres_client, "is_model_tool", lambda _name: False)
-    state = {"turn_id": "turn-visual", "query_registry": []}
-    call = NativeToolCall(
-        id="visual-call",
-        name="visualize_query_result",
-        arguments={
-            "query_id": "older:q1",
-            "chart_type": "bar",
-            "x": "scheme",
-            "y": ["amount"],
-            "series": None,
-            "aggregation": "none",
-        },
-    )
-
-    record = agent._register_database_queries(state, [call])["visual-call"]
-
-    assert record["query_id"] == "turn-visual:v1"
-    assert record["attempt_id"] == "turn-visual:v1:a1"
-    assert record["source_query_id"] == "older:q1"
-
-
 @pytest.mark.anyio
 async def test_tool_trace_streams_running_then_completed_with_arguments(
     monkeypatch,
@@ -426,7 +401,7 @@ def test_history_api_preserves_exact_reconciled_visual_partition(monkeypatch):
     history._MEMORY.clear()
     monkeypatch.setattr(history, "_ensure_table", lambda: False)
     turn_id = history.begin_turn("visual-history", "alice", "Show the trend")
-    q1, q2, v1 = f"{turn_id}:q1", f"{turn_id}:q2", f"{turn_id}:v1"
+    q1, q2 = f"{turn_id}:q1", f"{turn_id}:q2"
     registry = [
         {
             "query_id": q1,
@@ -459,20 +434,6 @@ def test_history_api_preserves_exact_reconciled_visual_partition(monkeypatch):
             "duration_ms": 1,
             "error_code": "COMPILE_REJECTED",
         },
-        {
-            "query_id": v1,
-            "attempt_id": f"{v1}:a1",
-            "tool_call_id": "c3",
-            "tool_name": "visualize_query_result",
-            "query_fingerprint": "3" * 64,
-            "status": "success",
-            "purpose": "answer",
-            "row_count": 2,
-            "has_data": True,
-            "visual_available": True,
-            "duration_ms": 1,
-            "source_query_id": q1,
-        },
     ]
     history.set_query_registry("visual-history", "alice", turn_id, registry)
     history.add_card(
@@ -482,8 +443,8 @@ def test_history_api_preserves_exact_reconciled_visual_partition(monkeypatch):
         {
             "source": "db",
             "card_type": "chart",
-            "query_id": v1,
-            "attempt_id": f"{v1}:a1",
+            "query_id": q1,
+            "attempt_id": f"{q1}:a1",
             "payload": {"rows": [{"value": 1}]},
         },
     )
@@ -496,7 +457,7 @@ def test_history_api_preserves_exact_reconciled_visual_partition(monkeypatch):
             "status": "answered",
             "text": "The trend increased.",
             "active_query_ids": [q1],
-            "visual_query_ids": [v1],
+            "visual_query_ids": [q1],
             "excluded_queries": [
                 {
                     "query_id": q2,
@@ -514,12 +475,11 @@ def test_history_api_preserves_exact_reconciled_visual_partition(monkeypatch):
 
     record = history.get("visual-history", user="alice")
     restored = _turn_for_api(record.turns[0])
-    assert restored["answer"]["visual_query_ids"] == [v1]
+    assert restored["answer"]["visual_query_ids"] == [q1]
     assert restored["answer"]["excluded_queries"][0]["query_id"] == q2
     assert [item["query_id"] for item in restored["query_registry"]] == [
         q1,
         q2,
-        v1,
     ]
     assert (
         restored["query_registry"][0]["lineage"]["sql"]
@@ -528,7 +488,7 @@ def test_history_api_preserves_exact_reconciled_visual_partition(monkeypatch):
     assert all(
         "result_payload" not in item for item in restored["query_registry"]
     )
-    assert restored["cards"][0]["query_id"] == v1
+    assert restored["cards"][0]["query_id"] == q1
 
 
 def test_public_web_trace_never_exposes_pre_policy_query_text():

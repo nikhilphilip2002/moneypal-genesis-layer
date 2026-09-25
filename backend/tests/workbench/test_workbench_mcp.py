@@ -55,29 +55,40 @@ async def test_discovery_is_the_model_contract_source():
     definitions = await catalog.model_tool_definitions(
         _context().source_policy
     )
-    assert {item["function"]["name"] for item in definitions} == (
-        set(RUNTIME_TOOL_POLICIES) - {"visualize_query_result"}
+    assert {item["function"]["name"] for item in definitions} == set(
+        RUNTIME_TOOL_POLICIES
     )
     assert all(item["function"]["strict"] is True for item in definitions)
+    submit = next(
+        item["function"]
+        for item in definitions
+        if item["function"]["name"] == "submit_final_answer"
+    )
+    assert submit["description"] == (
+        "Record a query-backed answer, clarification, or governed refusal as the turn's final result."
+    )
 
 
 @pytest.mark.anyio
 async def test_owned_tool_content_contains_one_json_envelope():
     async with Client(workbench_server.mcp, mode="legacy") as client:
         result = await client.call_tool(
-            "finish_without_data",
+            "submit_final_answer",
             {
-                "outcome": "clarify",
-                "message": "Which period?",
-                "suggestions": ["This month"],
-                "reason_code": None,
+                "submission": {
+                    "outcome": "clarify",
+                    "message": "Which period?",
+                    "suggestions": ["This month"],
+                    "reason_code": None,
+                }
             },
         )
 
     assert result.data["success"] is True
     assert set(result.data) == {"success", "data"}
     content_payload = json.loads(result.content[0].text)
-    assert content_payload == result.data
+    assert content_payload == {"success": True}
+    assert result.data["data"]["terminal"]["outcome"] == "clarify"
     assert "text" not in content_payload
 
 
@@ -85,12 +96,14 @@ async def test_owned_tool_content_contains_one_json_envelope():
 async def test_in_memory_client_supports_concurrent_calls():
     async def invoke(index: int):
         return await workbench_client.call_tool(
-            "finish_without_data",
+            "submit_final_answer",
             {
-                "outcome": "clarify",
-                "message": f"Question {index}?",
-                "suggestions": [],
-                "reason_code": None,
+                "submission": {
+                    "outcome": "clarify",
+                    "message": f"Question {index}?",
+                    "suggestions": [],
+                    "reason_code": None,
+                }
             },
             context=_context(),
         )
@@ -115,44 +128,20 @@ async def test_curated_tool_executes_through_in_memory_client():
 
 
 @pytest.mark.anyio
-async def test_web_and_visualization_tools_execute_through_in_memory_client(
-    monkeypatch,
-):
+async def test_web_tool_executes_through_in_memory_client(monkeypatch):
     async def web_handler(_args, _ctx):
         return SourceResult(
             source="web", card_type="brief", payload={}, summary="web result"
         )
 
-    async def visual_handler(_args, _ctx):
-        return SourceResult(
-            source="db", card_type="chart", payload={}, summary="visual result"
-        )
-
     monkeypatch.setattr(agent_executor, "_search_public_web", web_handler)
-    monkeypatch.setattr(
-        agent_executor, "_visualize_query_result", visual_handler
-    )
 
     web = await workbench_client.call_tool(
         "search_public_web",
         {"search_query": "latest RBI repo rate"},
         context=_context(),
     )
-    visual = await workbench_client.call_tool(
-        "visualize_query_result",
-        {
-            "query_id": "turn-1:q1",
-            "chart_type": "kpi",
-            "x": None,
-            "y": ["value"],
-            "series": None,
-            "aggregation": "none",
-        },
-        context=_context(),
-    )
-
     assert web["card"]["summary"] == "web result"
-    assert visual["card"]["summary"] == "visual result"
 
 
 @pytest.mark.anyio
@@ -160,7 +149,15 @@ async def test_submit_final_answer_executes_through_in_memory_client():
     async with Client(workbench_server.mcp, mode="legacy") as client:
         result = await client.call_tool(
             "submit_final_answer",
-            {"insights": "", "query_id": 1, "view": "table"},
+            {
+                "submission": {
+                    "outcome": "answer",
+                    "message": "",
+                    "query_id": 1,
+                    "view": "table",
+                }
+            },
+            meta=workbench_client.execution_meta(_context()),
         )
 
     terminal = result.data["data"]["terminal"]
@@ -178,23 +175,67 @@ async def test_fastmcp_rejects_extra_and_cross_field_invalid_arguments():
     async with Client(workbench_server.mcp, mode="legacy") as client:
         with pytest.raises(ToolError):
             await client.call_tool(
-                "finish_without_data",
+                "submit_final_answer",
                 {
-                    "outcome": "clarify",
-                    "message": "Which period?",
-                    "suggestions": [],
-                    "reason_code": None,
-                    "unexpected": True,
+                    "submission": {
+                        "outcome": "clarify",
+                        "message": "Which period?",
+                        "suggestions": [],
+                        "reason_code": None,
+                        "unexpected": True,
+                    }
                 },
             )
         with pytest.raises((ToolError, MCPError)):
             await client.call_tool(
-                "finish_without_data",
+                "submit_final_answer",
                 {
-                    "outcome": "refuse",
-                    "message": "I cannot do that.",
-                    "suggestions": [],
-                    "reason_code": None,
+                    "submission": {
+                        "outcome": "refuse",
+                        "message": "I cannot do that.",
+                        "suggestions": [],
+                        "reason_code": None,
+                    }
+                },
+            )
+        with pytest.raises((ToolError, MCPError)):
+            await client.call_tool(
+                "submit_final_answer",
+                {
+                    "submission": {
+                        "outcome": "clarify",
+                        "message": "Which period?",
+                        "query_id": 1,
+                    }
+                },
+            )
+        with pytest.raises((ToolError, MCPError)):
+            await client.call_tool(
+                "submit_final_answer",
+                {
+                    "submission": {
+                        "outcome": "answer",
+                        "message": "Which period?",
+                        "query_id": 1,
+                        "view": "table",
+                        "suggestions": ["This month"],
+                    }
+                },
+            )
+        with pytest.raises((ToolError, MCPError)):
+            await client.call_tool(
+                "submit_final_answer",
+                {"submission": {"outcome": "clarify", "message": ""}},
+            )
+        with pytest.raises((ToolError, MCPError)):
+            await client.call_tool(
+                "submit_final_answer",
+                {
+                    "submission": {
+                        "outcome": "refuse",
+                        "message": "x" * 501,
+                        "reason_code": "unsafe",
+                    }
                 },
             )
 

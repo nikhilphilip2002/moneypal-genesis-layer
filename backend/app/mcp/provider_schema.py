@@ -103,6 +103,8 @@ def provider_schema(raw_schema: dict[str, Any]) -> dict[str, Any]:
             for key, value in node.items()
             if key not in {"$defs", "default", "title", "$schema"}
         }
+        if "const" in projected:
+            projected["enum"] = [projected.pop("const")]
         if "anyOf" in projected:
             options = projected.pop("anyOf")
             if not isinstance(options, list) or not all(
@@ -111,9 +113,14 @@ def provider_schema(raw_schema: dict[str, Any]) -> dict[str, Any]:
                 raise ProviderSchemaError(
                     f"provider schema contains an invalid anyOf at {path}"
                 )
-            collapsed = _collapse_any_of(options, path=f"{path}.anyOf")
-            collapsed.update(projected)
-            projected = collapsed
+            if options and all(
+                option.get("type") == "object" for option in options
+            ):
+                projected["anyOf"] = options
+            else:
+                collapsed = _collapse_any_of(options, path=f"{path}.anyOf")
+                collapsed.update(projected)
+                projected = collapsed
 
         value_type = projected.get("type")
         if value_type == "object" or (

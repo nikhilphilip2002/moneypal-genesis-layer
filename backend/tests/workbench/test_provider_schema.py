@@ -67,6 +67,47 @@ def test_projects_refs_nullable_nested_objects_and_constraints_deterministically
     assert raw["properties"]["filters"]["items"] == {"$ref": "#/$defs/Filter"}
 
 
+def test_projects_nested_object_union():
+    raw = {
+        "type": "object",
+        "properties": {
+            "submission": {
+                "anyOf": [
+                    {
+                        "type": "object",
+                        "properties": {
+                            "outcome": {"type": "string", "const": "answer"},
+                            "query_id": {"type": "integer", "minimum": 1},
+                        },
+                    },
+                    {
+                        "type": "object",
+                        "properties": {
+                            "outcome": {
+                                "type": "string",
+                                "enum": ["clarify", "refuse"],
+                            },
+                            "message": {"type": "string"},
+                        },
+                    },
+                ]
+            }
+        },
+    }
+
+    projected = provider_schema(raw)
+    variants = projected["properties"]["submission"]["anyOf"]
+    assert [variant["required"] for variant in variants] == [
+        ["outcome", "query_id"],
+        ["outcome", "message"],
+    ]
+    assert all(
+        variant["additionalProperties"] is False for variant in variants
+    )
+    assert variants[0]["properties"]["outcome"]["enum"] == ["answer"]
+    assert "oneOf" not in projected["properties"]["submission"]
+
+
 @pytest.mark.parametrize(
     "schema,message",
     [
@@ -113,6 +154,26 @@ def test_projects_refs_nullable_nested_objects_and_constraints_deterministically
                 },
             },
             "polymorphic object union",
+        ),
+        (
+            {
+                "type": "object",
+                "properties": {
+                    "submission": {
+                        "oneOf": [
+                            {
+                                "type": "object",
+                                "properties": {"outcome": {"const": "answer"}},
+                            },
+                            {
+                                "type": "object",
+                                "properties": {"outcome": {"const": "answer"}},
+                            },
+                        ]
+                    }
+                },
+            },
+            "unsupported keyword",
         ),
         (
             {

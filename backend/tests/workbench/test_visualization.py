@@ -2,14 +2,8 @@ from __future__ import annotations
 
 import pytest
 
-from app.services.nlq.llm import NativeToolCall
-from app.services.workbench import access, history
 from app.services.workbench.agent_contracts import (
     VisualizeQueryResultArguments,
-)
-from app.services.workbench.agent_executor import (
-    AgentExecutionContext,
-    execute_agent_call,
 )
 from app.services.workbench.visualization import (
     VisualizationError,
@@ -166,60 +160,3 @@ def test_inferred_view_rejects_an_incompatible_result_shape():
 
     with pytest.raises(VisualizationError, match="numeric value"):
         build_inferred_visual(source, query_id="turn:q1", view="donut")
-
-
-def test_query_result_lookup_is_scoped_to_conversation_owner(monkeypatch):
-    history._MEMORY.clear()
-    monkeypatch.setattr(history, "_ensure_table", lambda: False)
-    turn_id = history.begin_turn("visual-source", "alice", "Show collections")
-    source = _source()
-    history.set_query_registry("visual-source", "alice", turn_id, [source])
-
-    assert (
-        history.query_result(
-            "visual-source",
-            user="alice",
-            query_id="older:q1",
-        )["query_id"]
-        == "older:q1"
-    )
-    assert (
-        history.query_result(
-            "visual-source",
-            user="bob",
-            query_id="older:q1",
-        )
-        is None
-    )
-
-
-@pytest.mark.anyio
-async def test_native_tool_builds_visual_from_stored_conversation_result(
-    monkeypatch,
-):
-    history._MEMORY.clear()
-    monkeypatch.setattr(history, "_ensure_table", lambda: False)
-    turn_id = history.begin_turn(
-        "visual-execution", "alice", "Show collections"
-    )
-    history.set_query_registry(
-        "visual-execution", "alice", turn_id, [_source()]
-    )
-    call = NativeToolCall(
-        id="visual-call",
-        name="visualize_query_result",
-        arguments=_args().model_dump(mode="json"),
-    )
-    context = AgentExecutionContext(
-        user="alice",
-        role="admin",
-        conversation_id="visual-execution",
-        turn_id="new-turn",
-        source_policy=access.build_policy(role="admin"),
-        deadline_s=5.0,
-    )
-
-    executed = await execute_agent_call(call, context)
-
-    assert executed.card is not None
-    assert executed.card.payload["chart_type"] == "stacked_area"

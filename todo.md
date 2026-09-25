@@ -168,6 +168,9 @@ explicitly marked as parallel-safe.
 
 ## 12. Follow-up visualization
 
+Sections 12 and 13 record earlier implementations. The current flow creates visuals through
+`submit_final_answer`; the standalone visualization tool has been removed.
+
 - [x] Add the compact strict `visualize_query_result` contract and aggregation guidance.
 - [x] Resolve source results only inside the current user's conversation.
 - [x] Validate fields, chart compatibility, numeric inputs, and complete-result aggregation.
@@ -244,8 +247,8 @@ explicitly marked as parallel-safe.
 ### 14.4 In-process Workbench tool server
 
 - [x] Add `backend/app/mcp/workbench_server.py` with one in-process FastMCP server.
-- [x] Register the existing `search_curated_knowledge`, `search_public_web`,
-  `visualize_query_result`, `finish_without_data`, and `submit_final_answer` tools.
+- [x] Register `search_curated_knowledge`, `search_public_web`, and
+  `submit_final_answer` tools. Remove the obsolete `visualize_query_result` tool.
 - [x] Make typed FastMCP functions the only owner of tool names, descriptions, input fields,
   validation, and handler registration.
 - [x] Pass trusted execution context outside the model-visible schema and reauthorize every

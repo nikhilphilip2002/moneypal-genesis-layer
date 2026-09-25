@@ -70,22 +70,8 @@ RUNTIME_TOOL_POLICIES: dict[str, RuntimeToolPolicy] = {
         timeout_s=30.0,
         max_result_chars=12_000,
     ),
-    "visualize_query_result": RuntimeToolPolicy(
-        source_id="db",
-        sensitivity="internal",
-        timeout_s=5.0,
-        max_result_chars=12_000,
-        parallel_safe=False,
-    ),
-    "finish_without_data": RuntimeToolPolicy(
-        source_id=None,
-        sensitivity="public",
-        timeout_s=1.0,
-        max_result_chars=1_000,
-        parallel_safe=False,
-    ),
     "submit_final_answer": RuntimeToolPolicy(
-        source_id="db",
+        source_id=None,
         sensitivity="internal",
         timeout_s=1.0,
         max_result_chars=2_000,
@@ -105,8 +91,6 @@ def allowed_curated_domains(policy: SourceAccessPolicy) -> list[str]:
 def visible_runtime_tool_names(policy: SourceAccessPolicy) -> list[str]:
     visible: list[str] = []
     for name, runtime_policy in RUNTIME_TOOL_POLICIES.items():
-        if name == "visualize_query_result":
-            continue
         if runtime_policy.source_id is not None and not policy.allows(
             runtime_policy.source_id
         ):
@@ -141,6 +125,16 @@ def authorize_local_tool_call(
     if runtime_policy.source_id is not None:
         try:
             policy.require(runtime_policy.source_id)
+        except SourceAccessDenied as exc:
+            raise AgentToolAccessDenied(str(exc)) from exc
+    submission = arguments.get("submission")
+    if (
+        name == "submit_final_answer"
+        and isinstance(submission, dict)
+        and submission.get("outcome") == "answer"
+    ):
+        try:
+            policy.require("db")
         except SourceAccessDenied as exc:
             raise AgentToolAccessDenied(str(exc)) from exc
     if name == "search_curated_knowledge":
