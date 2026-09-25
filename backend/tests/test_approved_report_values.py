@@ -35,7 +35,13 @@ def test_approved_values_cannot_overwrite_template_or_calculated_values():
     with pytest.raises(ApprovedReportValueError, match="cannot overwrite"):
         apply_approved_values(
             wb,
-            [{"sheet_name": "Report", "target_cell": "A1", "value": "replacement"}],
+            [
+                {
+                    "sheet_name": "Report",
+                    "target_cell": "A1",
+                    "value": "replacement",
+                }
+            ],
         )
 
 
@@ -48,7 +54,12 @@ def test_approved_values_reject_unknown_sheets():
 
 
 def test_reference_migration_requires_one_value_and_maker_checker_separation():
-    sql = Path("backend/scripts/sql/regulatory_reference_tables.sql").read_text()
-    assert "num_nonnulls(value_numeric, value_text, value_date, value_boolean) = 1" in sql
+    sql = Path(
+        "backend/scripts/sql/regulatory_reference_tables.sql"
+    ).read_text()
+    assert (
+        "num_nonnulls(value_numeric, value_text, value_date, value_boolean) = 1"
+        in sql
+    )
     assert "checker <> maker" in sql
     assert "approved_at timestamp with time zone NOT NULL" in sql

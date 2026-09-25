@@ -25,7 +25,9 @@ class TestPrivacy:
 
     def test_mixed_internal_public_query_is_rejected_not_rewritten(self):
         with pytest.raises(web.UnsafeWebQuery):
-            web.public_query("Compare our loan growth against the latest RBI bank credit growth")
+            web.public_query(
+                "Compare our loan growth against the latest RBI bank credit growth"
+            )
 
 
 class TestAuthority:
@@ -36,23 +38,39 @@ class TestAuthority:
 
     def test_structured_results_are_normalized_ranked_and_deduplicated(self):
         result = ExaToolResult(
-            structured={"results": [
-                {"title": "Commentary", "url": "https://example.com/a?utm_source=x"},
-                {"title": "RBI release", "url": "https://www.rbi.org.in/release?id=1"},
-                {"title": "Duplicate", "url": "https://www.rbi.org.in/release?id=1"},
-            ]},
+            structured={
+                "results": [
+                    {
+                        "title": "Commentary",
+                        "url": "https://example.com/a?utm_source=x",
+                    },
+                    {
+                        "title": "RBI release",
+                        "url": "https://www.rbi.org.in/release?id=1",
+                    },
+                    {
+                        "title": "Duplicate",
+                        "url": "https://www.rbi.org.in/release?id=1",
+                    },
+                ]
+            },
             text="results",
         )
 
         evidence = web.normalize(result)
 
-        assert [item.title for item in evidence] == ["RBI release", "Commentary"]
+        assert [item.title for item in evidence] == [
+            "RBI release",
+            "Commentary",
+        ]
         assert evidence[0].source_tier == 1
         assert evidence[0].primary is True
         assert "utm_source" not in evidence[1].url
 
     @pytest.mark.parametrize("wrapped", [False, True])
-    def test_json_text_results_do_not_leak_serialized_fields_into_urls(self, wrapped):
+    def test_json_text_results_do_not_leak_serialized_fields_into_urls(
+        self, wrapped
+    ):
         encoded = (
             '{"results":[{"title":"RBI repo announcement",'
             '"url":"https://www.rbi.org.in/Scripts/BS_PressReleaseDisplay.aspx?prid=1",'
@@ -60,7 +78,8 @@ class TestAuthority:
         )
         structured = (
             {"content": [{"type": "text", "text": encoded}]}
-            if wrapped else None
+            if wrapped
+            else None
         )
         result = ExaToolResult(structured=structured, text=encoded)
 
@@ -88,22 +107,39 @@ class TestNode:
     @pytest.mark.anyio
     async def test_web_node_returns_citable_brief(self, monkeypatch):
         item = web.WebEvidence(
-            title="RBI release", url="https://rbi.org.in/release", publisher="RBI",
-            domain="rbi.org.in", excerpt="The policy rate was announced.",
-            published_at="2026-08-01", retrieved_at="2026-09-01T00:00:00+00:00",
-            source_tier=1, primary=True,
+            title="RBI release",
+            url="https://rbi.org.in/release",
+            publisher="RBI",
+            domain="rbi.org.in",
+            excerpt="The policy rate was announced.",
+            published_at="2026-08-01",
+            retrieved_at="2026-09-01T00:00:00+00:00",
+            source_tier=1,
+            primary=True,
         )
 
         async def fake_retrieve(*args, **kwargs):
-            return "latest repo rate", [item], "[RBI release](https://rbi.org.in/release)"
+            return (
+                "latest repo rate",
+                [item],
+                "[RBI release](https://rbi.org.in/release)",
+            )
 
         monkeypatch.setattr(web, "retrieve", fake_retrieve)
-        monkeypatch.setattr(models, "client", lambda: FakeLLM("Grounded answer."))
+        monkeypatch.setattr(
+            models, "client", lambda: FakeLLM("Grounded answer.")
+        )
 
-        monkeypatch.setattr(access.settings, "workbench_external_connectors_enabled", True)
+        monkeypatch.setattr(
+            access.settings, "workbench_external_connectors_enabled", True
+        )
         monkeypatch.setattr(access.settings, "exa_mcp_enabled", True)
-        policy = access.build_policy(role="admin", external_sources_enabled=True)
-        result = await nodes.run_web("latest repo rate", user="alice", policy=policy)
+        policy = access.build_policy(
+            role="admin", external_sources_enabled=True
+        )
+        result = await nodes.run_web(
+            "latest repo rate", user="alice", policy=policy
+        )
 
         assert result.source == "web"
         assert result.card_type == "brief"

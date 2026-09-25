@@ -3,6 +3,7 @@
 Run once per machine at Hour 0:
     python scripts/download_model.py
 """
+
 from sentence_transformers import SentenceTransformer
 
 from genesis_core import settings

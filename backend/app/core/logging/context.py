@@ -5,9 +5,11 @@ from contextlib import contextmanager
 from typing import Any, Iterator
 import uuid
 
-_current_trace: contextvars.ContextVar[dict[str, Any]] = contextvars.ContextVar(
-    "moneypal_trace_context",
-    default={},
+_current_trace: contextvars.ContextVar[dict[str, Any]] = (
+    contextvars.ContextVar(
+        "moneypal_trace_context",
+        default={},
+    )
 )
 
 

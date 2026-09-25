@@ -71,9 +71,41 @@ LEXICAL_WEIGHT = 1.5
 VECTOR_WEIGHT = 1.0
 
 STOPWORDS = {
-    "what", "was", "our", "the", "show", "give", "tell", "how", "much", "many", "did",
-    "we", "is", "are", "for", "and", "with", "by", "in", "of", "to", "me", "a", "an",
-    "this", "that", "last", "each", "per", "which", "have", "has", "do", "does", "on",
+    "what",
+    "was",
+    "our",
+    "the",
+    "show",
+    "give",
+    "tell",
+    "how",
+    "much",
+    "many",
+    "did",
+    "we",
+    "is",
+    "are",
+    "for",
+    "and",
+    "with",
+    "by",
+    "in",
+    "of",
+    "to",
+    "me",
+    "a",
+    "an",
+    "this",
+    "that",
+    "last",
+    "each",
+    "per",
+    "which",
+    "have",
+    "has",
+    "do",
+    "does",
+    "on",
 }
 
 
@@ -149,7 +181,9 @@ def lexical_score(question: str, doc: CatalogDoc, catalog: Catalog) -> float:
         synonyms, label = list(column.synonyms), column.label
     elif doc.kind == "enum_value":
         block = catalog.enums.get(doc.payload["dimension"])
-        value = block.values.get(str(doc.payload["entry_id"])) if block else None
+        value = (
+            block.values.get(str(doc.payload["entry_id"])) if block else None
+        )
         synonyms = list(value.synonyms) if value else []
         label = doc.payload.get("label", "")
 
@@ -165,12 +199,17 @@ def lexical_score(question: str, doc: CatalogDoc, catalog: Catalog) -> float:
     return score + overlap
 
 
-def _vector_hits(question: str, catalog: Catalog, limit: int) -> dict[str, float]:
+def _vector_hits(
+    question: str, catalog: Catalog, limit: int
+) -> dict[str, float]:
     """Cosine scores by doc id, or {} when the vector stack is unavailable."""
     try:
         from genesis_core.rag import embed_text, get_qdrant
     except Exception as exc:  # noqa: BLE001
-        logger.info("NLQ retrieval running lexical-only (embeddings unavailable): %s", exc)
+        logger.info(
+            "NLQ retrieval running lexical-only (embeddings unavailable): %s",
+            exc,
+        )
         return {}
 
     try:
@@ -178,34 +217,52 @@ def _vector_hits(question: str, catalog: Catalog, limit: int) -> dict[str, float
         name = collection_name(catalog)
         query = embed_text(question)
     except Exception as exc:  # noqa: BLE001
-        logger.warning("NLQ vector preparation failed, falling back to lexical: %s", exc)
+        logger.warning(
+            "NLQ vector preparation failed, falling back to lexical: %s", exc
+        )
         return {}
     try:
         found = client.query_points(
-            collection_name=name, query=query, limit=limit, with_payload=True,
+            collection_name=name,
+            query=query,
+            limit=limit,
+            with_payload=True,
         ).points
     except Exception as exc:  # noqa: BLE001 - a ranking aid, never a hard dependency
         # Catalog names are content-addressed, so every catalog edit intentionally points
         # at a new collection. Build that tiny collection on first use rather than leaving
         # deployments in lexical-only mode until somebody remembers a runbook command.
         message = str(exc).lower()
-        if "collection" in message and ("doesn't exist" in message or "not found" in message):
+        if "collection" in message and (
+            "doesn't exist" in message or "not found" in message
+        ):
             try:
                 result = index_catalog(catalog)
-                logger.info("Created missing NLQ catalog collection %s", result["collection"])
+                logger.info(
+                    "Created missing NLQ catalog collection %s",
+                    result["collection"],
+                )
                 found = client.query_points(
-                    collection_name=name, query=query, limit=limit, with_payload=True,
+                    collection_name=name,
+                    query=query,
+                    limit=limit,
+                    with_payload=True,
                 ).points
             except Exception as index_exc:  # noqa: BLE001
                 logger.warning(
-                    "NLQ catalog auto-index failed, falling back to lexical: %s", index_exc
+                    "NLQ catalog auto-index failed, falling back to lexical: %s",
+                    index_exc,
                 )
                 return {}
         else:
-            logger.warning("NLQ vector retrieval failed, falling back to lexical: %s", exc)
+            logger.warning(
+                "NLQ vector retrieval failed, falling back to lexical: %s", exc
+            )
             return {}
 
-    return {p.payload.get("doc_id", ""): float(p.score) for p in found if p.payload}
+    return {
+        p.payload.get("doc_id", ""): float(p.score) for p in found if p.payload
+    }
 
 
 def retrieve(
@@ -242,15 +299,21 @@ def retrieve(
     hits.sort(key=lambda h: h.score, reverse=True)
 
     def take(kind: str, limit: int) -> list[str]:
-        return [h.doc.payload["entry_id"] for h in hits if h.doc.kind == kind][:limit]
+        return [h.doc.payload["entry_id"] for h in hits if h.doc.kind == kind][
+            :limit
+        ]
 
     metrics = take("metric", top_metrics)
     dimensions = take("dimension", top_dimensions)
-    tables = [h.doc.payload["table"] for h in hits if h.doc.kind == "table"][:top_tables]
+    tables = [h.doc.payload["table"] for h in hits if h.doc.kind == "table"][
+        :top_tables
+    ]
 
     # Exact column language such as "security value" or "IFSC code" is stronger table
     # evidence than a generic overlap with an amount metric. Put those tables first.
-    column_tables = [h.doc.payload["table"] for h in hits if h.doc.kind == "column"]
+    column_tables = [
+        h.doc.payload["table"] for h in hits if h.doc.kind == "column"
+    ]
     tables = list(dict.fromkeys([*column_tables, *tables]))[:top_tables]
 
     # A metric is useless without its own table, so pull those in regardless of whether the

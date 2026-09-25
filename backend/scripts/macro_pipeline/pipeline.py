@@ -8,6 +8,7 @@ already sitting in the data directory that the crawl did not return (manually
 placed PDFs, or sources that are auth-gated this week) are re-stamped too, so the
 purge never mistakes them for retired documents.
 """
+
 from __future__ import annotations
 
 import json
@@ -29,7 +30,9 @@ def _read_state() -> dict:
     if not settings.macro_state_file.exists():
         return {"collections": {}, "last_run": None}
     try:
-        return json.loads(settings.macro_state_file.read_text(encoding="utf-8"))
+        return json.loads(
+            settings.macro_state_file.read_text(encoding="utf-8")
+        )
     except Exception:
         log.warning("state file unreadable; starting fresh")
         return {"collections": {}, "last_run": None}
@@ -45,10 +48,14 @@ def _save_state(state: dict) -> None:
 def _files_state(state: dict) -> dict:
     """Per-collection manifest: switching MACRO_COLLECTION must not make the
     pipeline skip files it only ever ingested into a *different* collection."""
-    return state.setdefault("collections", {}).setdefault(settings.macro_collection, {})
+    return state.setdefault("collections", {}).setdefault(
+        settings.macro_collection, {}
+    )
 
 
-def _embed_and_upsert(paths: list[Path], slug: str, run_id: str, source_url: str = "") -> int:
+def _embed_and_upsert(
+    paths: list[Path], slug: str, run_id: str, source_url: str = ""
+) -> int:
     rows = extractor.extract_many(paths)
     for row in rows:
         row["source_url"] = source_url or row.get("source_url", "")
@@ -71,7 +78,11 @@ def _local_slug_dirs() -> dict[str, list[Path]]:
         return grouped
     for path in sorted(root.iterdir()):
         if path.is_dir():
-            files = [p for p in sorted(path.iterdir()) if p.suffix.lower() in collector.DOWNLOAD_EXTENSIONS]
+            files = [
+                p
+                for p in sorted(path.iterdir())
+                if p.suffix.lower() in collector.DOWNLOAD_EXTENSIONS
+            ]
             if files:
                 grouped[path.name] = files
         elif path.suffix.lower() in collector.DOWNLOAD_EXTENSIONS:
@@ -103,13 +114,17 @@ def run(force: bool = False) -> dict:
     }
 
     # Previous-run HTTP validators, keyed by URL, so the crawl can send conditional GETs.
-    known_by_url = {entry["url"]: {**entry, "path": path} for path, entry in files_state.items() if entry.get("url")}
+    known_by_url = {
+        entry["url"]: {**entry, "path": path}
+        for path, entry in files_state.items()
+        if entry.get("url")
+    }
 
     results = collector.collect(known_by_url)
     # A source that errored without yielding anything means we are looking at a partial
     # view of the world — never purge on the strength of that.
     safe_to_purge = not any(result.failed for result in results)
-    handled: set[tuple[str, str]] = set()   # (slug, document) touched this run
+    handled: set[tuple[str, str]] = set()  # (slug, document) touched this run
 
     for result in results:
         meta = {
@@ -129,21 +144,34 @@ def run(force: bool = False) -> dict:
             previous = files_state.get(key)
             handled.add((result.source_slug, record.path.name))
 
-            if previous and previous.get("sha256") == record.sha256 and not force:
+            if (
+                previous
+                and previous.get("sha256") == record.sha256
+                and not force
+            ):
                 # Unchanged: keep the vectors, just move them onto this generation.
-                restamped = ingestor.restamp_document(record.path.name, result.source_slug, run_id)
+                restamped = ingestor.restamp_document(
+                    record.path.name, result.source_slug, run_id
+                )
                 summary["points_restamped"] += restamped
                 meta["unchanged"] += 1
                 summary["files_unchanged"] += 1
                 # Refresh the validators even when the bytes did not move.
-                previous.update({"etag": record.etag, "last_modified": record.last_modified})
+                previous.update(
+                    {
+                        "etag": record.etag,
+                        "last_modified": record.last_modified,
+                    }
+                )
                 _save_state(state)
                 continue
 
             # New or changed: clear the old chunks first so a shorter revision cannot
             # leave an orphaned tail behind, then re-embed.
             ingestor.delete_document(record.path.name, result.source_slug)
-            sent = _embed_and_upsert([record.path], result.source_slug, run_id, record.url)
+            sent = _embed_and_upsert(
+                [record.path], result.source_slug, run_id, record.url
+            )
 
             files_state[key] = {
                 "sha256": record.sha256,
@@ -169,7 +197,10 @@ def run(force: bool = False) -> dict:
             summary["points_upserted"] += sent
             log.info(
                 "[%s] %s (%s) -> %d points",
-                result.source_slug, record.path.name, "changed" if previous else "new", sent,
+                result.source_slug,
+                record.path.name,
+                "changed" if previous else "new",
+                sent,
             )
 
         summary["sources"][result.source_slug] = meta
@@ -186,7 +217,9 @@ def run(force: bool = False) -> dict:
             previous = files_state.get(key)
             digest = _sha256(path)
             if previous and previous.get("sha256") == digest and not force:
-                summary["points_restamped"] += ingestor.restamp_document(path.name, slug, run_id)
+                summary["points_restamped"] += ingestor.restamp_document(
+                    path.name, slug, run_id
+                )
                 summary["files_unchanged"] += 1
                 continue
             ingestor.delete_document(path.name, slug)
@@ -205,7 +238,9 @@ def run(force: bool = False) -> dict:
             log.info("[%s] %s (local) -> %d points", slug, path.name, sent)
 
     stamped = summary["points_upserted"] + summary["points_restamped"]
-    summary["purge"] = ingestor.purge_stale(run_id, stamped, points_before, safe_to_purge)
+    summary["purge"] = ingestor.purge_stale(
+        run_id, stamped, points_before, safe_to_purge
+    )
 
     state["last_run"] = summary["ran_at"]
     state["last_run_id"] = run_id
@@ -232,10 +267,14 @@ def print_summary(summary: dict) -> None:
     print(f"Run id:     {summary['run_id']}")
     print(f"Collection: {summary['collection']}")
     print(f"Duration:   {summary['duration_s']}s")
-    print(f"Files:      new={summary['files_new']} changed={summary['files_changed']} "
-          f"unchanged={summary['files_unchanged']}")
-    print(f"Points:     upserted={summary['points_upserted']} restamped={summary['points_restamped']} "
-          f"(before={summary['points_before']})")
+    print(
+        f"Files:      new={summary['files_new']} changed={summary['files_changed']} "
+        f"unchanged={summary['files_unchanged']}"
+    )
+    print(
+        f"Points:     upserted={summary['points_upserted']} restamped={summary['points_restamped']} "
+        f"(before={summary['points_before']})"
+    )
     if purge.get("ran"):
         print(f"Purge:      deleted {purge['deleted']} stale point(s)")
     else:
@@ -243,6 +282,8 @@ def print_summary(summary: dict) -> None:
     print(f"Errors:     {summary['errors']}")
     print(f"Qdrant:     {summary['qdrant']}")
     for slug, meta in summary["sources"].items():
-        print(f"  [{slug}] pages={meta['pages_seen']} dl={meta['downloaded']} new={meta['new']} "
-              f"chg={meta['changed']} same={meta['unchanged']} blocked={meta['blocked']} pts={meta['points']}")
+        print(
+            f"  [{slug}] pages={meta['pages_seen']} dl={meta['downloaded']} new={meta['new']} "
+            f"chg={meta['changed']} same={meta['unchanged']} blocked={meta['blocked']} pts={meta['points']}"
+        )
     print("===========================================================\n")

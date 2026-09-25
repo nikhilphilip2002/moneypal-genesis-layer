@@ -48,7 +48,10 @@ from app.services.nlq.llm.telemetry import (
 
 logger = logging.getLogger(__name__)
 
-_request_gate_depth: ContextVar[int] = ContextVar("llm_request_gate_depth", default=0)
+_request_gate_depth: ContextVar[int] = ContextVar(
+    "llm_request_gate_depth", default=0
+)
+
 
 @asynccontextmanager
 async def request_gate():
@@ -111,8 +114,12 @@ def _strip_replay_reasoning(messages: list[ChatMessage]) -> list[ChatMessage]:
         return list(messages)
     stripped: list[ChatMessage] = []
     for message in messages:
-        if isinstance(message, dict) and any(key in message for key in _REASONING_FIELDS):
-            message = {k: v for k, v in message.items() if k not in _REASONING_FIELDS}
+        if isinstance(message, dict) and any(
+            key in message for key in _REASONING_FIELDS
+        ):
+            message = {
+                k: v for k, v in message.items() if k not in _REASONING_FIELDS
+            }
         stripped.append(message)
     return stripped
 
@@ -124,7 +131,9 @@ def _warn_no_file_lock() -> None:
     global _NO_FILE_LOCK_WARNED
     if not _NO_FILE_LOCK_WARNED:
         _NO_FILE_LOCK_WARNED = True
-        logger.warning("fcntl is unavailable; LLM requests are serialized per process only")
+        logger.warning(
+            "fcntl is unavailable; LLM requests are serialized per process only"
+        )
 
 
 class LLMError(RuntimeError):
@@ -173,7 +182,10 @@ def _retry_after_s(exc: APIStatusError) -> float | None:
 
 
 def _validate_finish_reason(
-    finish_reason: str, *, tool_calls: list[NativeToolCall], reasoning: str = ""
+    finish_reason: str,
+    *,
+    tool_calls: list[NativeToolCall],
+    reasoning: str = "",
 ) -> None:
     if finish_reason == "length":
         detail = (
@@ -185,9 +197,13 @@ def _validate_finish_reason(
             f"model output was truncated at the configured token limit{detail}"
         )
     if finish_reason == "content_filter":
-        raise LLMResponseBlocked("model response was blocked by the provider content filter")
+        raise LLMResponseBlocked(
+            "model response was blocked by the provider content filter"
+        )
     if finish_reason == "tool_calls" and not tool_calls:
-        raise LLMProtocolError("finish_reason was tool_calls but no tool calls were returned")
+        raise LLMProtocolError(
+            "finish_reason was tool_calls but no tool calls were returned"
+        )
     if finish_reason not in {"stop", "tool_calls"}:
         raise LLMProtocolError(f"unsupported finish_reason {finish_reason!r}")
 
@@ -200,14 +216,18 @@ async def _read_completion_stream(
 ) -> dict[str, Any]:
     """Assemble SDK chunks while forwarding public text and model activity."""
     message: dict[str, Any] = {"role": "assistant", "content": None}
-    body: dict[str, Any] = {"choices": [{"message": message, "finish_reason": ""}]}
+    body: dict[str, Any] = {
+        "choices": [{"message": message, "finish_reason": ""}]
+    }
     calls: dict[int, dict[str, Any]] = {}
     finished = False
     async for event in stream:
         try:
             chunk = event.model_dump(exclude_none=True)
             if chunk.get("error"):
-                raise LLMProtocolError(f"completion stream error: {chunk['error']}")
+                raise LLMProtocolError(
+                    f"completion stream error: {chunk['error']}"
+                )
             if chunk.get("model"):
                 body["model"] = chunk["model"]
             if chunk.get("usage"):
@@ -220,37 +240,54 @@ async def _read_completion_stream(
                     value = delta.get(key)
                     if value is not None:
                         if not isinstance(value, str):
-                            raise LLMProtocolError(f"delta.{key} must be a string")
+                            raise LLMProtocolError(
+                                f"delta.{key} must be a string"
+                            )
                         message[key] = (message.get(key) or "") + value
                         if key == "content" and value and on_text:
                             await on_text(value)
-                        elif key in _REASONING_FIELDS and value and on_reasoning:
+                        elif (
+                            key in _REASONING_FIELDS and value and on_reasoning
+                        ):
                             await on_reasoning(value)
                 for fragment in delta.get("tool_calls") or []:
                     index = fragment["index"]
                     if not isinstance(index, int) or index < 0:
-                        raise LLMProtocolError("tool delta index must be a nonnegative integer")
-                    call = calls.setdefault(index, {
-                        "id": "", "type": "function", "function": {"name": "", "arguments": ""},
-                    })
+                        raise LLMProtocolError(
+                            "tool delta index must be a nonnegative integer"
+                        )
+                    call = calls.setdefault(
+                        index,
+                        {
+                            "id": "",
+                            "type": "function",
+                            "function": {"name": "", "arguments": ""},
+                        },
+                    )
                     if fragment.get("id"):
                         call["id"] += fragment["id"]
                     if fragment.get("type"):
                         call["type"] = fragment["type"]
                     for key in ("name", "arguments"):
-                        call["function"][key] += (fragment.get("function") or {}).get(key) or ""
+                        call["function"][key] += (
+                            fragment.get("function") or {}
+                        ).get(key) or ""
                     if on_tool_call:
                         # Arguments are deliberately not forwarded while incomplete. They
                         # can contain outbound text which must pass the workbench privacy
                         # policy before it is rendered. The completed, sanitized arguments
                         # are emitted by the tool execution trace.
-                        await on_tool_call({
-                            "index": index,
-                            "id": call["id"],
-                            "name": call["function"]["name"],
-                        })
+                        await on_tool_call(
+                            {
+                                "index": index,
+                                "id": call["id"],
+                                "name": call["function"]["name"],
+                            }
+                        )
                 if choice.get("finish_reason"):
-                    body["choices"][0]["finish_reason"] = choice["finish_reason"]
+                    body["choices"][0]["finish_reason"] = choice[
+                        "finish_reason"
+                    ]
                     finished = True
         except (ValueError, TypeError, KeyError, AttributeError) as exc:
             raise LLMProtocolError("malformed completion stream") from exc
@@ -309,7 +346,11 @@ class LLMResult:
             # "the model did not return JSON: ''".
             raise LLMError(
                 "model returned no content"
-                + (f" (finish_reason={self.finish_reason})" if self.finish_reason else "")
+                + (
+                    f" (finish_reason={self.finish_reason})"
+                    if self.finish_reason
+                    else ""
+                )
                 + (
                     f"; it spent the budget on {len(self.reasoning)} chars of reasoning — "
                     "disable thinking for this model (NLQ_LLM_THINKING=false)"
@@ -321,7 +362,9 @@ class LLMResult:
             return json.loads(self.text)
         except json.JSONDecodeError:
             pass
-        stripped = re.sub(r"^\s*```(?:json)?\s*|\s*```\s*$", "", self.text.strip())
+        stripped = re.sub(
+            r"^\s*```(?:json)?\s*|\s*```\s*$", "", self.text.strip()
+        )
         try:
             return json.loads(stripped)
         except json.JSONDecodeError:
@@ -332,7 +375,9 @@ class LLMResult:
                 return json.loads(stripped[start : end + 1])
             except json.JSONDecodeError:
                 pass
-        raise LLMError(f"model did not return JSON (first 200 chars): {self.text[:200]!r}")
+        raise LLMError(
+            f"model did not return JSON (first 200 chars): {self.text[:200]!r}"
+        )
 
 
 @runtime_checkable
@@ -358,7 +403,8 @@ class LLMClient(Protocol):
         max_output_tokens: int | None = None,
         on_text: Callable[[str], Awaitable[None]] | None = None,
         on_reasoning: Callable[[str], Awaitable[None]] | None = None,
-        on_tool_call: Callable[[dict[str, Any]], Awaitable[None]] | None = None,
+        on_tool_call: Callable[[dict[str, Any]], Awaitable[None]]
+        | None = None,
     ) -> LLMResult: ...
 
     async def health(self) -> dict[str, Any]: ...
@@ -384,7 +430,11 @@ def _native_tool_names(tools: list[dict[str, Any]]) -> set[str]:
             raise LLMError(f"invalid native tool definition at index {index}")
         function = tool.get("function")
         name = function.get("name") if isinstance(function, dict) else None
-        if tool.get("type") != "function" or not isinstance(name, str) or not name.strip():
+        if (
+            tool.get("type") != "function"
+            or not isinstance(name, str)
+            or not name.strip()
+        ):
             raise LLMError(f"invalid native tool definition at index {index}")
         if name in names:
             raise LLMError(f"duplicate native tool definition {name!r}")
@@ -393,15 +443,22 @@ def _native_tool_names(tools: list[dict[str, Any]]) -> set[str]:
 
 
 def _choice_tool_names(
-    tool_choice: str | dict[str, Any] | None, offered_names: set[str],
+    tool_choice: str | dict[str, Any] | None,
+    offered_names: set[str],
 ) -> set[str]:
     """Validate an allowed_tools choice and constrain accepted provider tool calls."""
     if tool_choice == "none":
         return set()
-    if not isinstance(tool_choice, dict) or tool_choice.get("type") != "allowed_tools":
+    if (
+        not isinstance(tool_choice, dict)
+        or tool_choice.get("type") != "allowed_tools"
+    ):
         return offered_names
     allowed = tool_choice.get("allowed_tools")
-    if not isinstance(allowed, dict) or allowed.get("mode") not in {"auto", "required"}:
+    if not isinstance(allowed, dict) or allowed.get("mode") not in {
+        "auto",
+        "required",
+    }:
         raise LLMError("allowed_tools requires an auto or required mode")
     entries = allowed.get("tools")
     if not isinstance(entries, list) or not entries:
@@ -409,19 +466,27 @@ def _choice_tool_names(
     names: set[str] = set()
     for entry in entries:
         if not isinstance(entry, dict):
-            raise LLMError("allowed_tools contains an invalid function reference")
+            raise LLMError(
+                "allowed_tools contains an invalid function reference"
+            )
         function = entry.get("function") if isinstance(entry, dict) else None
         name = function.get("name") if isinstance(function, dict) else None
         if entry.get("type") != "function" or not isinstance(name, str):
-            raise LLMError("allowed_tools contains an invalid function reference")
+            raise LLMError(
+                "allowed_tools contains an invalid function reference"
+            )
         if name not in offered_names or name in names:
-            raise LLMError(f"allowed_tools contains an unknown or duplicate function {name!r}")
+            raise LLMError(
+                f"allowed_tools contains an unknown or duplicate function {name!r}"
+            )
         names.add(name)
     return names
 
 
 def _parse_native_tool_calls(
-    message: dict[str, Any], *, allowed_names: set[str],
+    message: dict[str, Any],
+    *,
+    allowed_names: set[str],
 ) -> list[NativeToolCall]:
     raw_calls = message.get("tool_calls")
     if raw_calls is None:
@@ -433,24 +498,36 @@ def _parse_native_tool_calls(
     seen_ids: set[str] = set()
     for index, raw_call in enumerate(raw_calls):
         if not isinstance(raw_call, dict):
-            raise LLMProtocolError(f"tool call at index {index} must be an object")
+            raise LLMProtocolError(
+                f"tool call at index {index} must be an object"
+            )
         call_id = raw_call.get("id")
         if not isinstance(call_id, str) or not call_id.strip():
-            raise LLMProtocolError(f"tool call at index {index} has no call ID")
+            raise LLMProtocolError(
+                f"tool call at index {index} has no call ID"
+            )
         if call_id in seen_ids:
             raise LLMProtocolError(f"duplicate tool call ID {call_id!r}")
         seen_ids.add(call_id)
         if raw_call.get("type") != "function":
-            raise LLMProtocolError(f"tool call {call_id!r} is not type 'function'")
+            raise LLMProtocolError(
+                f"tool call {call_id!r} is not type 'function'"
+            )
 
         function = raw_call.get("function")
         if not isinstance(function, dict):
-            raise LLMProtocolError(f"tool call {call_id!r} has no function object")
+            raise LLMProtocolError(
+                f"tool call {call_id!r} has no function object"
+            )
         name = function.get("name")
         if not isinstance(name, str) or not name.strip():
-            raise LLMProtocolError(f"tool call {call_id!r} has no function name")
+            raise LLMProtocolError(
+                f"tool call {call_id!r} has no function name"
+            )
         if name not in allowed_names:
-            raise LLMProtocolError(f"tool call {call_id!r} names unknown function {name!r}")
+            raise LLMProtocolError(
+                f"tool call {call_id!r} names unknown function {name!r}"
+            )
 
         raw_arguments = function.get("arguments")
         if not isinstance(raw_arguments, str):
@@ -464,8 +541,12 @@ def _parse_native_tool_calls(
                 f"tool call {call_id!r} arguments are not valid JSON"
             ) from exc
         if not isinstance(arguments, dict):
-            raise LLMProtocolError(f"tool call {call_id!r} arguments must decode to an object")
-        parsed.append(NativeToolCall(id=call_id, name=name, arguments=arguments))
+            raise LLMProtocolError(
+                f"tool call {call_id!r} arguments must decode to an object"
+            )
+        parsed.append(
+            NativeToolCall(id=call_id, name=name, arguments=arguments)
+        )
     return parsed
 
 
@@ -525,16 +606,22 @@ class OpenAICompatibleClient:
         remaining = retry_deadline - asyncio.get_event_loop().time()
         if remaining <= 0:
             return False
-        retry_after = _retry_after_s(status_error) if status_error is not None else None
+        retry_after = (
+            _retry_after_s(status_error) if status_error is not None else None
+        )
         delay = (
             retry_after
             if retry_after is not None
-            else self.retry_base_delay_s * (2 ** attempt)
+            else self.retry_base_delay_s * (2**attempt)
         )
-        await asyncio.sleep(min(remaining, self.retry_max_delay_s, max(0.0, delay)))
+        await asyncio.sleep(
+            min(remaining, self.retry_max_delay_s, max(0.0, delay))
+        )
         return True
 
-    def _response_format(self, json_schema: dict[str, Any] | None) -> dict[str, Any] | None:
+    def _response_format(
+        self, json_schema: dict[str, Any] | None
+    ) -> dict[str, Any] | None:
         if json_schema is None:
             return None
         if self.profile.supports_json_schema:
@@ -557,17 +644,19 @@ class OpenAICompatibleClient:
         prepared = coalesce_system_messages(_strip_replay_reasoning(messages))
         if json_schema is None or self.profile.supports_json_schema:
             return prepared
-        return coalesce_system_messages([
-            *prepared,
-            {
-                "role": "system",
-                "content": (
-                    "Respond with a single JSON object and nothing else. It must conform "
-                    "to this JSON schema:\n"
-                    f"{json.dumps(json_schema, separators=(',', ':'))}"
-                ),
-            },
-        ])
+        return coalesce_system_messages(
+            [
+                *prepared,
+                {
+                    "role": "system",
+                    "content": (
+                        "Respond with a single JSON object and nothing else. It must conform "
+                        "to this JSON schema:\n"
+                        f"{json.dumps(json_schema, separators=(',', ':'))}"
+                    ),
+                },
+            ]
+        )
 
     async def complete(
         self,
@@ -586,17 +675,26 @@ class OpenAICompatibleClient:
         max_output_tokens: int | None = None,
         on_text: Callable[[str], Awaitable[None]] | None = None,
         on_reasoning: Callable[[str], Awaitable[None]] | None = None,
-        on_tool_call: Callable[[dict[str, Any]], Awaitable[None]] | None = None,
+        on_tool_call: Callable[[dict[str, Any]], Awaitable[None]]
+        | None = None,
     ) -> LLMResult:
         if tools is not None and json_schema is not None:
-            raise LLMError("tools and json_schema are mutually exclusive request modes")
-        if tools is None and (tool_choice is not None or parallel_tool_calls is not None):
+            raise LLMError(
+                "tools and json_schema are mutually exclusive request modes"
+            )
+        if tools is None and (
+            tool_choice is not None or parallel_tool_calls is not None
+        ):
             raise LLMError("tool_choice and parallel_tool_calls require tools")
         allowed_tool_names: set[str] = set()
         if tools is not None:
             if not self.profile.supports_native_tools:
-                raise LLMError(f"{self.provider} does not support native tools")
-            allowed_tool_names = _choice_tool_names(tool_choice, _native_tool_names(tools))
+                raise LLMError(
+                    f"{self.provider} does not support native tools"
+                )
+            allowed_tool_names = _choice_tool_names(
+                tool_choice, _native_tool_names(tools)
+            )
 
         request_started = asyncio.get_event_loop().time()
         prepared_messages = self._prepare_messages(messages, json_schema)
@@ -621,7 +719,9 @@ class OpenAICompatibleClient:
 
         last_exc: Exception | None = None
         attempts_run = 0
-        effective_timeout_s = timeout_s if timeout_s is not None else self.timeout_s
+        effective_timeout_s = (
+            timeout_s if timeout_s is not None else self.timeout_s
+        )
         retry_deadline = request_started + self.retry_budget_s
         successful_response: tuple[dict[str, Any], int] | None = None
         visible_output_emitted = False
@@ -659,14 +759,24 @@ class OpenAICompatibleClient:
                             on_reasoning=emit_reasoning,
                             on_tool_call=emit_tool_call,
                         )
-                    except (APIError, ValueError, TypeError, KeyError, AttributeError) as exc:
-                        raise LLMProtocolError("malformed completion stream") from exc
+                    except (
+                        APIError,
+                        ValueError,
+                        TypeError,
+                        KeyError,
+                        AttributeError,
+                    ) as exc:
+                        raise LLMProtocolError(
+                            "malformed completion stream"
+                        ) from exc
                     finally:
                         await stream.close()
                 except asyncio.CancelledError:
                     logger.info(
                         "LLM request cancelled: purpose=%s provider=%s attempt=%s",
-                        call_purpose, self.provider, attempt + 1,
+                        call_purpose,
+                        self.provider,
+                        attempt + 1,
                     )
                     raise
                 except LLMProtocolError as exc:
@@ -676,22 +786,32 @@ class OpenAICompatibleClient:
                     last_exc = LLMTimeout(
                         f"{self.provider} timed out after {effective_timeout_s}s"
                     )
-                    logger.warning("NLQ LLM timeout (attempt %d): %s", attempt + 1, exc)
+                    logger.warning(
+                        "NLQ LLM timeout (attempt %d): %s", attempt + 1, exc
+                    )
                     if (
                         visible_output_emitted
-                        or attempt >= min(self.max_retries, self.transport_max_retries)
-                        or not await self._wait_before_retry(attempt, retry_deadline)
+                        or attempt
+                        >= min(self.max_retries, self.transport_max_retries)
+                        or not await self._wait_before_retry(
+                            attempt, retry_deadline
+                        )
                     ):
                         break
                     continue
                 except APIStatusError as exc:
-                    if exc.status_code in _RETRYABLE_STATUS_CODES or exc.status_code >= 500:
+                    if (
+                        exc.status_code in _RETRYABLE_STATUS_CODES
+                        or exc.status_code >= 500
+                    ):
                         last_exc = LLMUnavailable(
                             f"{self.provider} returned retryable HTTP {exc.status_code}: "
                             f"{str(exc)[:200]}"
                         )
                         logger.warning(
-                            "NLQ LLM %s on attempt %d", exc.status_code, attempt + 1
+                            "NLQ LLM %s on attempt %d",
+                            exc.status_code,
+                            attempt + 1,
                         )
                         if (
                             attempt >= self.max_retries
@@ -706,12 +826,21 @@ class OpenAICompatibleClient:
                     )
                     break
                 except (APIConnectionError, httpx.HTTPError) as exc:
-                    last_exc = LLMUnavailable(f"{self.provider} unreachable: {exc}")
-                    logger.warning("NLQ LLM transport error (attempt %d): %s", attempt + 1, exc)
+                    last_exc = LLMUnavailable(
+                        f"{self.provider} unreachable: {exc}"
+                    )
+                    logger.warning(
+                        "NLQ LLM transport error (attempt %d): %s",
+                        attempt + 1,
+                        exc,
+                    )
                     if (
                         visible_output_emitted
-                        or attempt >= min(self.max_retries, self.transport_max_retries)
-                        or not await self._wait_before_retry(attempt, retry_deadline)
+                        or attempt
+                        >= min(self.max_retries, self.transport_max_retries)
+                        or not await self._wait_before_retry(
+                            attempt, retry_deadline
+                        )
                     ):
                         break
                     continue
@@ -732,29 +861,42 @@ class OpenAICompatibleClient:
                 or 0
             )
             prompt_tokens = int(usage.get("prompt_tokens", 0) or 0)
-            cached_prompt_tokens = int(prompt_details.get("cached_tokens", 0) or 0)
+            cached_prompt_tokens = int(
+                prompt_details.get("cached_tokens", 0) or 0
+            )
             message = choice.get("message") or {}
             finish_reason = choice.get("finish_reason", "")
             try:
                 if not isinstance(message, dict):
                     raise LLMProtocolError("choice.message must be an object")
                 if not isinstance(finish_reason, str) or not finish_reason:
-                    raise LLMProtocolError("choice.finish_reason must be a nonempty string")
+                    raise LLMProtocolError(
+                        "choice.finish_reason must be a nonempty string"
+                    )
                 tool_calls = _parse_native_tool_calls(
-                    message, allowed_names=allowed_tool_names,
+                    message,
+                    allowed_names=allowed_tool_names,
                 )
                 content = message.get("content")
                 if content is not None and not isinstance(content, str):
-                    raise LLMProtocolError("message.content must be a string or null")
+                    raise LLMProtocolError(
+                        "message.content must be a string or null"
+                    )
                 reasoning = str(
-                    message.get("reasoning_content") or message.get("reasoning") or ""
+                    message.get("reasoning_content")
+                    or message.get("reasoning")
+                    or ""
                 )
                 _validate_finish_reason(
                     finish_reason,
                     tool_calls=tool_calls,
                     reasoning=reasoning,
                 )
-            except (LLMProtocolError, LLMIncomplete, LLMResponseBlocked) as exc:
+            except (
+                LLMProtocolError,
+                LLMIncomplete,
+                LLMResponseBlocked,
+            ) as exc:
                 duration_ms = int(
                     (asyncio.get_event_loop().time() - request_started) * 1000
                 )
@@ -763,33 +905,40 @@ class OpenAICompatibleClient:
                     if isinstance(exc, (LLMIncomplete, LLMResponseBlocked))
                     else "protocol_error"
                 )
-                record_call(CallRecord(
-                    purpose=str(call_purpose),
-                    call_kind=str(call_kind),
-                    provider=self.provider,
-                    model=str(body.get("model", self.model)),
-                    prompt_version=prompt_version,
-                    catalog_version=catalog_version,
-                    prefix_hash=effective_prefix_hash,
-                    prompt_tokens=prompt_tokens,
-                    cached_prompt_tokens=cached_prompt_tokens,
-                    cache_write_prompt_tokens=cache_write_tokens,
-                    uncached_prompt_tokens=(
-                        prompt_tokens - cached_prompt_tokens
-                        if cached_prompt_tokens <= prompt_tokens
-                        else prompt_tokens
-                    ),
-                    completion_tokens=int(usage.get("completion_tokens", 0) or 0),
-                    duration_ms=duration_ms,
-                    attempts=successful_attempt + 1,
-                    retries=successful_attempt,
-                    finish_reason=recorded_finish_reason,
-                ))
+                record_call(
+                    CallRecord(
+                        purpose=str(call_purpose),
+                        call_kind=str(call_kind),
+                        provider=self.provider,
+                        model=str(body.get("model", self.model)),
+                        prompt_version=prompt_version,
+                        catalog_version=catalog_version,
+                        prefix_hash=effective_prefix_hash,
+                        prompt_tokens=prompt_tokens,
+                        cached_prompt_tokens=cached_prompt_tokens,
+                        cache_write_prompt_tokens=cache_write_tokens,
+                        uncached_prompt_tokens=(
+                            prompt_tokens - cached_prompt_tokens
+                            if cached_prompt_tokens <= prompt_tokens
+                            else prompt_tokens
+                        ),
+                        completion_tokens=int(
+                            usage.get("completion_tokens", 0) or 0
+                        ),
+                        duration_ms=duration_ms,
+                        attempts=successful_attempt + 1,
+                        retries=successful_attempt,
+                        finish_reason=recorded_finish_reason,
+                    )
+                )
                 logger.warning(
                     "LLM completion rejected purpose=%s provider=%s model=%s "
                     "finish_reason=%s: %s",
-                    call_purpose, self.provider, body.get("model", self.model),
-                    recorded_finish_reason, exc,
+                    call_purpose,
+                    self.provider,
+                    body.get("model", self.model),
+                    recorded_finish_reason,
+                    exc,
                 )
                 from app.core.logging import log_raw_trace
 
@@ -840,7 +989,9 @@ class OpenAICompatibleClient:
                     else prompt_tokens
                 ),
                 completion_tokens=int(usage.get("completion_tokens", 0) or 0),
-                duration_ms=int((asyncio.get_event_loop().time() - request_started) * 1000),
+                duration_ms=int(
+                    (asyncio.get_event_loop().time() - request_started) * 1000
+                ),
                 finish_reason=finish_reason,
                 attempts=successful_attempt + 1,
                 retries=successful_attempt,
@@ -855,12 +1006,21 @@ class OpenAICompatibleClient:
                 "cached_prompt_tokens=%s cache_write_prompt_tokens=%s uncached_prompt_tokens=%s "
                 "completion_tokens=%s finish_reason=%s tool_calls=%s tool_names=%s "
                 "duration_ms=%s retries=%s prefix=%s",
-                result.call_purpose, result.call_kind,
-                result.provider, result.model, result.prompt_tokens,
-                result.cached_prompt_tokens, result.cache_write_prompt_tokens,
-                result.uncached_prompt_tokens, result.completion_tokens, result.finish_reason,
-                len(result.tool_calls), [call.name for call in result.tool_calls],
-                result.duration_ms, result.retries, result.prefix_hash,
+                result.call_purpose,
+                result.call_kind,
+                result.provider,
+                result.model,
+                result.prompt_tokens,
+                result.cached_prompt_tokens,
+                result.cache_write_prompt_tokens,
+                result.uncached_prompt_tokens,
+                result.completion_tokens,
+                result.finish_reason,
+                len(result.tool_calls),
+                [call.name for call in result.tool_calls],
+                result.duration_ms,
+                result.retries,
+                result.prefix_hash,
             )
             from app.core.logging import log_raw_trace
 
@@ -891,29 +1051,32 @@ class OpenAICompatibleClient:
                     "cache_write_prompt_tokens": result.cache_write_prompt_tokens,
                     "uncached_prompt_tokens": result.uncached_prompt_tokens,
                     "completion_tokens": result.completion_tokens,
-                    "total_tokens": result.prompt_tokens + result.completion_tokens,
+                    "total_tokens": result.prompt_tokens
+                    + result.completion_tokens,
                 },
             )
-            record_call(CallRecord(
-                purpose=result.call_purpose,
-                call_kind=result.call_kind,
-                provider=result.provider,
-                model=result.model,
-                prompt_version=result.prompt_version,
-                catalog_version=result.catalog_version,
-                prefix_hash=result.prefix_hash,
-                prompt_tokens=result.prompt_tokens,
-                cached_prompt_tokens=result.cached_prompt_tokens,
-                cache_write_prompt_tokens=result.cache_write_prompt_tokens,
-                uncached_prompt_tokens=result.uncached_prompt_tokens,
-                completion_tokens=result.completion_tokens,
-                duration_ms=result.duration_ms,
-                attempts=result.attempts,
-                retries=result.retries,
-                finish_reason=result.finish_reason,
-                tool_call_count=len(result.tool_calls),
-                tool_names=tuple(call.name for call in result.tool_calls),
-            ))
+            record_call(
+                CallRecord(
+                    purpose=result.call_purpose,
+                    call_kind=result.call_kind,
+                    provider=result.provider,
+                    model=result.model,
+                    prompt_version=result.prompt_version,
+                    catalog_version=result.catalog_version,
+                    prefix_hash=result.prefix_hash,
+                    prompt_tokens=result.prompt_tokens,
+                    cached_prompt_tokens=result.cached_prompt_tokens,
+                    cache_write_prompt_tokens=result.cache_write_prompt_tokens,
+                    uncached_prompt_tokens=result.uncached_prompt_tokens,
+                    completion_tokens=result.completion_tokens,
+                    duration_ms=result.duration_ms,
+                    attempts=result.attempts,
+                    retries=result.retries,
+                    finish_reason=result.finish_reason,
+                    tool_call_count=len(result.tool_calls),
+                    tool_names=tuple(call.name for call in result.tool_calls),
+                )
+            )
             return result
         from app.core.logging import log_raw_trace
 
@@ -921,24 +1084,26 @@ class OpenAICompatibleClient:
         failed_duration_ms = int(
             (asyncio.get_event_loop().time() - request_started) * 1000
         )
-        record_call(CallRecord(
-            purpose=str(call_purpose),
-            call_kind=str(call_kind),
-            provider=self.provider,
-            model=self.model,
-            prompt_version=prompt_version,
-            catalog_version=catalog_version,
-            prefix_hash=effective_prefix_hash,
-            prompt_tokens=0,
-            cached_prompt_tokens=0,
-            cache_write_prompt_tokens=0,
-            uncached_prompt_tokens=0,
-            completion_tokens=0,
-            duration_ms=failed_duration_ms,
-            attempts=failed_attempts,
-            retries=max(0, failed_attempts - 1),
-            finish_reason="error",
-        ))
+        record_call(
+            CallRecord(
+                purpose=str(call_purpose),
+                call_kind=str(call_kind),
+                provider=self.provider,
+                model=self.model,
+                prompt_version=prompt_version,
+                catalog_version=catalog_version,
+                prefix_hash=effective_prefix_hash,
+                prompt_tokens=0,
+                cached_prompt_tokens=0,
+                cache_write_prompt_tokens=0,
+                uncached_prompt_tokens=0,
+                completion_tokens=0,
+                duration_ms=failed_duration_ms,
+                attempts=failed_attempts,
+                retries=max(0, failed_attempts - 1),
+                finish_reason="error",
+            )
+        )
         log_raw_trace(
             f"LLM request failed: {last_exc}",
             event="llm_error",
@@ -956,7 +1121,9 @@ class OpenAICompatibleClient:
             error=str(last_exc),
             level=logging.WARNING,
         )
-        raise last_exc or LLMUnavailable(f"{self.provider} failed with no diagnosis")
+        raise last_exc or LLMUnavailable(
+            f"{self.provider} failed with no diagnosis"
+        )
 
     async def health(self) -> dict[str, Any]:
         """Return endpoint readiness from the standard OpenAI models endpoint."""
@@ -964,13 +1131,20 @@ class OpenAICompatibleClient:
             models = await self._openai().models.list(timeout=5.0)
         except APIStatusError as exc:
             return {
-                "status": "degraded", "provider": self.provider, "model": self.model,
-                "detail": f"HTTP {exc.status_code}", "served_models": [],
+                "status": "degraded",
+                "provider": self.provider,
+                "model": self.model,
+                "detail": f"HTTP {exc.status_code}",
+                "served_models": [],
                 "model_match": False,
             }
         except (APIConnectionError, APITimeoutError) as exc:
-            return {"status": "down", "provider": self.provider, "model": self.model,
-                    "detail": str(exc)[:200]}
+            return {
+                "status": "down",
+                "provider": self.provider,
+                "model": self.model,
+                "detail": str(exc)[:200],
+            }
         served_models = [str(item.id) for item in models.data if item.id]
         model_match = not served_models or self.model in served_models
         return {
@@ -978,7 +1152,9 @@ class OpenAICompatibleClient:
             "provider": self.provider,
             "model": self.model,
             "detail": (
-                "" if model_match else f"Configured model {self.model!r} is not served"
+                ""
+                if model_match
+                else f"Configured model {self.model!r} is not served"
             ),
             "served_models": served_models,
             "model_match": model_match,

@@ -22,7 +22,8 @@ async def client():
     ratelimit.reset()
     cache.clear_all()
     async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://test",
+        transport=ASGITransport(app=app),
+        base_url="http://test",
     ) as test_client:
         yield test_client
 
@@ -54,7 +55,11 @@ class TestHealth:
         from app.api.routes import nlq as nlq_route
 
         body = nlq_route.catalog_summary()
-        assert body["metrics"] and body["dimensions"] and body["example_questions"]
+        assert (
+            body["metrics"]
+            and body["dimensions"]
+            and body["example_questions"]
+        )
         serialised = json.dumps(body)
         for internal in ("gnlnac_", "ascd_", "lnrepay_"):
             assert internal not in serialised
@@ -70,7 +75,9 @@ class TestHealth:
 class TestExecuteEndpoint:
     """The LLM-free path: saved questions, drill-downs and dashboards all run through it."""
 
-    async def test_returns_a_rendered_chart(self, client, readonly_via_warehouse):
+    async def test_returns_a_rendered_chart(
+        self, client, readonly_via_warehouse
+    ):
         response = await client.post(
             "/nlq/execute",
             json={
@@ -90,7 +97,9 @@ class TestExecuteEndpoint:
         assert chart["lineage"]["sql"]
         assert chart["summary"]
 
-    async def test_par_30_carries_its_lineage_and_badge(self, client, readonly_via_warehouse):
+    async def test_par_30_carries_its_lineage_and_badge(
+        self, client, readonly_via_warehouse
+    ):
         response = await client.post(
             "/nlq/execute",
             json={
@@ -108,7 +117,9 @@ class TestExecuteEndpoint:
         assert "DISTINCT ON" in chart["lineage"]["sql"]
         assert chart["lineage"]["formulas"]["par_30"]
 
-    async def test_a_refused_spec_returns_422_with_a_readable_reason(self, client):
+    async def test_a_refused_spec_returns_422_with_a_readable_reason(
+        self, client
+    ):
         """The message is written for the user, not copied from a database error."""
         response = await client.post(
             "/nlq/execute",
@@ -125,18 +136,26 @@ class TestExecuteEndpoint:
 
     async def test_a_malformed_spec_is_422(self, client):
         response = await client.post(
-            "/nlq/execute", json={"query_spec": {"metrics": []}},
+            "/nlq/execute",
+            json={"query_spec": {"metrics": []}},
         )
         assert response.status_code == 422
 
-    async def test_repeat_requests_hit_the_result_cache(self, client, readonly_via_warehouse):
+    async def test_repeat_requests_hit_the_result_cache(
+        self, client, readonly_via_warehouse
+    ):
         payload = {
-            "query_spec": {"metrics": ["loan_count"], "period": {"relative": "all_time"}}
+            "query_spec": {
+                "metrics": ["loan_count"],
+                "period": {"relative": "all_time"},
+            }
         }
         first = (await client.post("/nlq/execute", json=payload)).json()
         second = (await client.post("/nlq/execute", json=payload)).json()
         assert first["rows"] == second["rows"]
-        assert second["lineage"]["duration_ms"] <= first["lineage"]["duration_ms"]
+        assert (
+            second["lineage"]["duration_ms"] <= first["lineage"]["duration_ms"]
+        )
 
 
 class TestRemovedAskEndpoint:
@@ -149,8 +168,11 @@ class TestRouteIdentity:
     async def test_known_demo_token_resolves_for_owned_resources(self):
         from app.api.routes.auth import identity_from_authorization
 
-        assert identity_from_authorization("Bearer mock-token-moneypal_admin") == (
-            "moneypal_admin", "admin",
+        assert identity_from_authorization(
+            "Bearer mock-token-moneypal_admin"
+        ) == (
+            "moneypal_admin",
+            "admin",
         )
 
     async def test_missing_token_is_anonymous(self):

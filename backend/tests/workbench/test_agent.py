@@ -7,9 +7,18 @@ import time
 import pytest
 
 from app.services.nlq.llm import LLMProtocolError, LLMResult, NativeToolCall
-from app.services.workbench import access, agent, history, models, outbound_policy
+from app.services.workbench import (
+    access,
+    agent,
+    history,
+    models,
+    outbound_policy,
+)
 from app.services.workbench.agent_tools import AgentToolAccessDenied
-from app.services.workbench.agent_executor import ExecutedAgentCall, RawQueryResult
+from app.services.workbench.agent_executor import (
+    ExecutedAgentCall,
+    RawQueryResult,
+)
 from app.services.workbench.results import SourceResult
 
 
@@ -17,7 +26,9 @@ from app.services.workbench.results import SourceResult
 def _settings(monkeypatch):
     from app.mcp import postgres_client
 
-    monkeypatch.setattr(access.settings, "workbench_external_connectors_enabled", True)
+    monkeypatch.setattr(
+        access.settings, "workbench_external_connectors_enabled", True
+    )
     monkeypatch.setattr(access.settings, "exa_mcp_enabled", True)
     monkeypatch.setattr(agent.settings, "workbench_agent_max_tool_calls", 6)
     monkeypatch.setitem(
@@ -44,23 +55,35 @@ def _state():
     return {
         "question": "Show PAR 30",
         "history_messages": [],
-        "source_policy": access.build_policy(role="admin", external_sources_enabled=True),
+        "source_policy": access.build_policy(
+            role="admin", external_sources_enabled=True
+        ),
     }
 
 
 def _result(call=None, *, content=""):
     calls = [call] if call else []
-    raw = [] if call is None else [{
-        "id": call.id,
-        "type": "function",
-        "function": {"name": call.name, "arguments": "{}"},
-    }]
+    raw = (
+        []
+        if call is None
+        else [
+            {
+                "id": call.id,
+                "type": "function",
+                "function": {"name": call.name, "arguments": "{}"},
+            }
+        ]
+    )
     return LLMResult(
         text=content,
         model="m",
         provider="llamacpp",
         tool_calls=calls,
-        assistant_message={"role": "assistant", "content": content, "tool_calls": raw},
+        assistant_message={
+            "role": "assistant",
+            "content": content,
+            "tool_calls": raw,
+        },
     )
 
 
@@ -77,12 +100,18 @@ async def test_content_only_json_is_not_a_selection(monkeypatch):
 @pytest.mark.anyio
 async def test_invalid_arguments_receive_one_native_repair(monkeypatch):
     responses = [
-        _result(NativeToolCall(id="bad", name="retired_query_tool", arguments={})),
-        _result(NativeToolCall(
-            id="good",
-            name="query",
-            arguments={"sql": "SELECT par_30 FROM gold.daily_loan_status LIMIT 1"},
-        )),
+        _result(
+            NativeToolCall(id="bad", name="retired_query_tool", arguments={})
+        ),
+        _result(
+            NativeToolCall(
+                id="good",
+                name="query",
+                arguments={
+                    "sql": "SELECT par_30 FROM gold.daily_loan_status LIMIT 1"
+                },
+            )
+        ),
     ]
     repair_seen = []
 
@@ -108,7 +137,9 @@ async def test_grouped_null_filter_receives_native_repair(monkeypatch):
     good = NativeToolCall(
         id="good",
         name="query",
-        arguments={"sql": "SELECT agent_code FROM gold.agents WHERE agent_code IS NOT NULL"},
+        arguments={
+            "sql": "SELECT agent_code FROM gold.agents WHERE agent_code IS NOT NULL"
+        },
     )
     responses = [_result(bad), _result(good)]
     repair_seen = []
@@ -130,7 +161,9 @@ def test_explicit_missing_value_request_allows_null_filter():
     call = NativeToolCall(
         id="missing_agent",
         name="query",
-        arguments={"sql": "SELECT agent_code FROM gold.agents WHERE agent_code IS NULL"},
+        arguments={
+            "sql": "SELECT agent_code FROM gold.agents WHERE agent_code IS NULL"
+        },
     )
     state = _state()
     state["question"] = "show customers without an assigned agent"
@@ -139,11 +172,15 @@ def test_explicit_missing_value_request_allows_null_filter():
 
 
 @pytest.mark.anyio
-async def test_invalid_duplicate_period_is_returned_for_native_repair_not_rewritten(monkeypatch):
+async def test_invalid_duplicate_period_is_returned_for_native_repair_not_rewritten(
+    monkeypatch,
+):
     call = NativeToolCall(
         id="year",
         name="query",
-        arguments={"sql": "SELECT approved_on FROM gold.loan_accounts LIMIT 100"},
+        arguments={
+            "sql": "SELECT approved_on FROM gold.loan_accounts LIMIT 100"
+        },
     )
     response = _result(call)
 
@@ -166,11 +203,15 @@ async def test_invalid_duplicate_period_is_returned_for_native_repair_not_rewrit
         "show interest collected by-month",
     ],
 )
-async def test_application_does_not_invent_a_missing_month_dimension(monkeypatch, question):
+async def test_application_does_not_invent_a_missing_month_dimension(
+    monkeypatch, question
+):
     call = NativeToolCall(
         id="monthly",
         name="query",
-        arguments={"sql": "SELECT interest_collected FROM gold.loan_repayments LIMIT 100"},
+        arguments={
+            "sql": "SELECT interest_collected FROM gold.loan_repayments LIMIT 100"
+        },
     )
     response = _result(call)
 
@@ -191,11 +232,15 @@ async def test_application_does_not_invent_a_missing_month_dimension(monkeypatch
 
 
 @pytest.mark.anyio
-async def test_application_does_not_rewrite_a_conflicting_lifetime_period(monkeypatch):
+async def test_application_does_not_rewrite_a_conflicting_lifetime_period(
+    monkeypatch,
+):
     call = NativeToolCall(
         id="lifetime",
         name="query",
-        arguments={"sql": "SELECT amount_given FROM gold.loan_accounts LIMIT 5000"},
+        arguments={
+            "sql": "SELECT amount_given FROM gold.loan_accounts LIMIT 5000"
+        },
     )
     response = _result(call)
 
@@ -209,15 +254,16 @@ async def test_application_does_not_rewrite_a_conflicting_lifetime_period(monkey
     assert result.tool_calls[0].arguments == call.arguments
 
 
-
-
 @pytest.mark.anyio
-async def test_unauthorized_domain_is_a_policy_observation_then_fails(monkeypatch):
+async def test_unauthorized_domain_is_a_policy_observation_then_fails(
+    monkeypatch,
+):
     """A denied tool call is shown to the model once; when the budget ends it is raised."""
     monkeypatch.setattr(agent.settings, "workbench_agent_max_rounds", 2)
     state = _state()
     state["source_policy"] = access.build_policy(
-        role="admin", external_sources_enabled=False,
+        role="admin",
+        external_sources_enabled=False,
     )
     attempts = 0
     observed = []
@@ -228,13 +274,16 @@ async def test_unauthorized_domain_is_a_policy_observation_then_fails(monkeypatc
         if repair_messages is not None:
             observed.extend(
                 json.loads(message["content"])
-                for message in repair_messages if message.get("role") == "tool"
+                for message in repair_messages
+                if message.get("role") == "tool"
             )
-        return _result(NativeToolCall(
-            id="forged",
-            name="search_curated_knowledge",
-            arguments={"domain": "regulatory", "query": "RBI rules"},
-        ))
+        return _result(
+            NativeToolCall(
+                id="forged",
+                name="search_curated_knowledge",
+                arguments={"domain": "regulatory", "query": "RBI rules"},
+            )
+        )
 
     monkeypatch.setattr(agent, "_select", select)
     with pytest.raises(AgentToolAccessDenied, match="external source consent"):
@@ -250,7 +299,9 @@ async def test_unauthorized_domain_is_a_policy_observation_then_fails(monkeypatc
 
 
 @pytest.mark.anyio
-async def test_forged_tool_name_is_a_model_visible_observation_then_fails(monkeypatch):
+async def test_forged_tool_name_is_a_model_visible_observation_then_fails(
+    monkeypatch,
+):
     from app.services.workbench.agent_tools import AgentToolNotFound
 
     monkeypatch.setattr(agent.settings, "workbench_agent_max_rounds", 2)
@@ -264,11 +315,16 @@ async def test_forged_tool_name_is_a_model_visible_observation_then_fails(monkey
         if repair_messages is not None:
             observed.extend(
                 json.loads(message["content"])
-                for message in repair_messages if message.get("role") == "tool"
+                for message in repair_messages
+                if message.get("role") == "tool"
             )
-        return _result(NativeToolCall(
-            id="forged", name="drop_all_tables", arguments={},
-        ))
+        return _result(
+            NativeToolCall(
+                id="forged",
+                name="drop_all_tables",
+                arguments={},
+            )
+        )
 
     monkeypatch.setattr(agent, "_select", select)
     with pytest.raises(AgentToolNotFound):
@@ -285,20 +341,33 @@ async def test_forged_tool_name_is_a_model_visible_observation_then_fails(monkey
 
 def _tool_response(*calls: NativeToolCall) -> LLMResult:
     return LLMResult(
-        text="", model="m", provider="llamacpp", tool_calls=list(calls),
+        text="",
+        model="m",
+        provider="llamacpp",
+        tool_calls=list(calls),
         assistant_message={
-            "role": "assistant", "content": None,
-            "tool_calls": [{
-                "id": call.id, "type": "function",
-                "function": {"name": call.name, "arguments": json.dumps(call.arguments)},
-            } for call in calls],
+            "role": "assistant",
+            "content": None,
+            "tool_calls": [
+                {
+                    "id": call.id,
+                    "type": "function",
+                    "function": {
+                        "name": call.name,
+                        "arguments": json.dumps(call.arguments),
+                    },
+                }
+                for call in calls
+            ],
         },
     )
 
 
 def _text_response(text: str) -> LLMResult:
     return LLMResult(
-        text=text, model="m", provider="llamacpp",
+        text=text,
+        model="m",
+        provider="llamacpp",
         assistant_message={"role": "assistant", "content": text},
     )
 
@@ -320,7 +389,8 @@ class _ScriptedClient:
 
 
 _PAR_30 = NativeToolCall(
-    id="call_1", name="query",
+    id="call_1",
+    name="query",
     arguments={"sql": "SELECT par_30 FROM gold.daily_loan_status LIMIT 1"},
 )
 
@@ -329,13 +399,19 @@ def _card(call, **overrides):
     return ExecutedAgentCall(
         call=call,
         card=SourceResult(
-            source="db", card_type="chart",
+            source="db",
+            card_type="chart",
             payload={
-                "title": "PAR 30", "summary": "PAR 30 is 4.2%.",
-                "columns": [{"name": "value", "label": "PAR 30", "unit": "percent"}],
+                "title": "PAR 30",
+                "summary": "PAR 30 is 4.2%.",
+                "columns": [
+                    {"name": "value", "label": "PAR 30", "unit": "percent"}
+                ],
                 "rows": [{"value": 4.2}],
             },
-            summary="PAR 30 is 4.2%.", sensitive=True, **overrides,
+            summary="PAR 30 is 4.2%.",
+            sensitive=True,
+            **overrides,
         ),
     )
 
@@ -350,10 +426,14 @@ def _raw(call):
         raw_result=RawQueryResult(
             payload={
                 "title": "PAR 30",
-                "columns": [{
-                    "name": "value", "label": "PAR 30", "unit": "percent",
-                    "sensitivity": "internal",
-                }],
+                "columns": [
+                    {
+                        "name": "value",
+                        "label": "PAR 30",
+                        "unit": "percent",
+                        "sensitivity": "internal",
+                    }
+                ],
                 "rows": [{"value": 4.2}],
                 "lineage": lineage,
             },
@@ -364,16 +444,26 @@ def _raw(call):
     )
 
 
-def _run_state(conversation_id: str, question: str = "Show PAR 30", *, external=True):
+def _run_state(
+    conversation_id: str, question: str = "Show PAR 30", *, external=True
+):
     history._MEMORY.clear()
     turn_id = history.begin_turn(conversation_id, "alice", question)
     return {
-        "question": question, "conversation_id": conversation_id, "user": "alice",
-        "role": "admin", "turn_id": turn_id, "history_messages": [],
-        "agent_history_messages": [], "emit": asyncio.Queue(),
-        "source_policy": access.build_policy(role="admin", external_sources_enabled=external),
+        "question": question,
+        "conversation_id": conversation_id,
+        "user": "alice",
+        "role": "admin",
+        "turn_id": turn_id,
+        "history_messages": [],
+        "agent_history_messages": [],
+        "emit": asyncio.Queue(),
+        "source_policy": access.build_policy(
+            role="admin", external_sources_enabled=external
+        ),
         "timing": {
-            "started_at": time.perf_counter(), "source_attempts": [],
+            "started_at": time.perf_counter(),
+            "source_attempts": [],
             "source_completions": [],
         },
     }
@@ -407,7 +497,9 @@ def scripted(monkeypatch):
 
 
 def test_turn_budget_counts_every_request_and_every_attempted_call():
-    budget = agent.TurnBudget(max_rounds=2, max_calls=3, deadline=time.perf_counter() + 60)
+    budget = agent.TurnBudget(
+        max_rounds=2, max_calls=3, deadline=time.perf_counter() + 60
+    )
     budget.charge_round("agent_select")
     budget.charge_call(2)
     assert budget.rounds_remaining == 1
@@ -419,10 +511,15 @@ def test_turn_budget_counts_every_request_and_every_attempted_call():
         budget.charge_call(2)
     # Every attempted call is counted, including the ones that overran the cap.
     assert budget.snapshot() == {
-        "rounds_used": 2, "max_rounds": 2, "calls_used": 4, "max_calls": 3,
+        "rounds_used": 2,
+        "max_rounds": 2,
+        "calls_used": 4,
+        "max_calls": 3,
     }
     assert issubclass(agent.BudgetExhausted, LLMProtocolError)
-    spent = agent.TurnBudget(max_rounds=2, max_calls=3, deadline=time.perf_counter() - 1)
+    spent = agent.TurnBudget(
+        max_rounds=2, max_calls=3, deadline=time.perf_counter() - 1
+    )
     assert spent.expired
     with pytest.raises(TimeoutError):
         spent.remaining_s(10.0)
@@ -443,12 +540,17 @@ async def test_new_chat_calls_model_without_synthetic_warmup(scripted):
     await agent.run(state)
 
     assert order == ["model"]
-    assert all("Initialize the system prompt cache" not in str(request) for request in client.requests)
+    assert all(
+        "Initialize the system prompt cache" not in str(request)
+        for request in client.requests
+    )
     assert len(client.requests) == 1
 
 
 @pytest.mark.anyio
-async def test_enabled_snapshot_saves_after_real_request(scripted, monkeypatch):
+async def test_enabled_snapshot_saves_after_real_request(
+    scripted, monkeypatch
+):
     monkeypatch.setattr(agent.settings, "llama_slot_snapshots_enabled", True)
     order = []
 
@@ -472,10 +574,15 @@ async def test_enabled_snapshot_saves_after_real_request(scripted, monkeypatch):
 
 
 @pytest.mark.anyio
-async def test_existing_chat_restores_only_its_own_snapshot(scripted, monkeypatch):
+async def test_existing_chat_restores_only_its_own_snapshot(
+    scripted, monkeypatch
+):
     monkeypatch.setattr(agent.settings, "llama_slot_snapshots_enabled", True)
     order = []
-    scripted([lambda _: (order.append("model"), _text_response("Ready."))[1]], lambda *_: None)
+    scripted(
+        [lambda _: (order.append("model"), _text_response("Ready."))[1]],
+        lambda *_: None,
+    )
     state = _run_state("existing-chat")
     state["_slot_new_chat"] = False
     agent._budget(state)
@@ -494,7 +601,9 @@ async def test_existing_chat_restores_only_its_own_snapshot(scripted, monkeypatc
 
 @pytest.mark.anyio
 async def test_tools_are_filtered_across_source_toggle(scripted):
-    client = scripted([_text_response("Ready."), _text_response("Ready.")], lambda *_: None)
+    client = scripted(
+        [_text_response("Ready."), _text_response("Ready.")], lambda *_: None
+    )
     off = _run_state("off", external=False)
     on = _run_state("on", external=True)
     agent._budget(off)
@@ -522,13 +631,17 @@ async def test_strict_final_answer_tool_drives_reconciled_answer(scripted):
             if message.get("role") == "tool"
         )
         assert observation["query_reference"]["query_id"] == 1
-        return _tool_response(NativeToolCall(
-            id="final-answer",
-            name="submit_final_answer",
-            arguments={
-                "insights": "PAR 30 is 4.2%.", "query_id": 1, "view": "kpi",
-            },
-        ))
+        return _tool_response(
+            NativeToolCall(
+                id="final-answer",
+                name="submit_final_answer",
+                arguments={
+                    "insights": "PAR 30 is 4.2%.",
+                    "query_id": 1,
+                    "view": "kpi",
+                },
+            )
+        )
 
     from app.services.workbench import agent_executor
 
@@ -541,7 +654,11 @@ async def test_strict_final_answer_tool_drives_reconciled_answer(scripted):
     state = _run_state("structured-final")
     await agent.run(state)
 
-    answer_frame = next(frame for frame in _frames(state) if frame.startswith("event: answer\n"))
+    answer_frame = next(
+        frame
+        for frame in _frames(state)
+        if frame.startswith("event: answer\n")
+    )
     answer = json.loads(answer_frame.split("data: ", 1)[1])
     assert answer["text"] == "PAR 30 is 4.2%."
     assert answer["active_query_ids"] == [f"{state['turn_id']}:q1"]
@@ -555,43 +672,74 @@ async def test_strict_final_answer_tool_drives_reconciled_answer(scripted):
 @pytest.mark.anyio
 @pytest.mark.parametrize("failed_previous_turn", [False, True])
 async def test_final_answer_reuses_previous_turn_query_without_sql(
-    scripted, failed_previous_turn,
+    scripted,
+    failed_previous_turn,
 ):
     state = _run_state("reuse-final", "Show PAR 30")
     prior_id = f"{state['turn_id']}:q1"
-    history.set_query_registry(state["conversation_id"], "alice", state["turn_id"], [{
-        "query_id": prior_id, "attempt_id": f"{prior_id}:a1",
-        "tool_call_id": "prior-query", "tool_name": "query",
-        "status": "success", "has_data": True,
-        "result_payload": _raw(_PAR_30).raw_result.payload,
-    }])
+    history.set_query_registry(
+        state["conversation_id"],
+        "alice",
+        state["turn_id"],
+        [
+            {
+                "query_id": prior_id,
+                "attempt_id": f"{prior_id}:a1",
+                "tool_call_id": "prior-query",
+                "tool_name": "query",
+                "status": "success",
+                "has_data": True,
+                "result_payload": _raw(_PAR_30).raw_result.payload,
+            }
+        ],
+    )
     if failed_previous_turn:
         history.set_error(
-            state["conversation_id"], "alice", state["turn_id"],
-            "Synthesis failed", code="MODEL_ERROR", retryable=True,
+            state["conversation_id"],
+            "alice",
+            state["turn_id"],
+            "Synthesis failed",
+            code="MODEL_ERROR",
+            retryable=True,
         )
     followup_id = history.begin_turn(
-        state["conversation_id"], "alice", "Show that as a table",
+        state["conversation_id"],
+        "alice",
+        "Show that as a table",
     )
     prior_registry = history.previous_query_registry(
-        state["conversation_id"], user="alice", turn_id=followup_id,
+        state["conversation_id"],
+        user="alice",
+        turn_id=followup_id,
     )
-    state.update({
-        "question": "Show that as a table", "turn_id": followup_id,
-        "agent_history_messages": history.build_native_transcript(
-            state["conversation_id"], user="alice",
-        ),
-        "query_registry": [], "prior_query_registry": prior_registry,
-        "results": [], "emit": asyncio.Queue(),
-        "timing": {
-            "started_at": time.perf_counter(), "source_attempts": [],
-            "source_completions": [],
-        },
-    })
+    state.update(
+        {
+            "question": "Show that as a table",
+            "turn_id": followup_id,
+            "agent_history_messages": history.build_native_transcript(
+                state["conversation_id"],
+                user="alice",
+            ),
+            "query_registry": [],
+            "prior_query_registry": prior_registry,
+            "results": [],
+            "emit": asyncio.Queue(),
+            "timing": {
+                "started_at": time.perf_counter(),
+                "source_attempts": [],
+                "source_completions": [],
+            },
+        }
+    )
     state.pop("decision", None)
     final_call = NativeToolCall(
-        id="reuse-query", name="submit_final_answer",
-        arguments={"insights": "PAR 30 is 4.2%.", "query_id": 1, "view": "table"},
+        id="reuse-query",
+        name="submit_final_answer",
+        arguments={
+            "insights": "PAR 30 is 4.2%.",
+            "query_id": 1,
+            "view": "table",
+        },
     )
     from app.services.workbench import agent_executor
 
@@ -602,27 +750,42 @@ async def test_final_answer_reuses_previous_turn_query_without_sql(
     scripted([_tool_response(final_call)], no_sql)
     await agent.run(state)
 
-    answer_frame = next(frame for frame in _frames(state) if frame.startswith("event: answer\n"))
+    answer_frame = next(
+        frame
+        for frame in _frames(state)
+        if frame.startswith("event: answer\n")
+    )
     answer = json.loads(answer_frame.split("data: ", 1)[1])
     assert answer["active_query_ids"] == [prior_id]
     assert answer["visual_query_ids"] == [prior_id]
     assert answer["invalid_query_ids"] == []
     assert answer["view"] == "table"
     assert state["query_registry"] == []
-    assert history.get(state["conversation_id"], user="alice").turns[-1]["query_registry"] == []
+    assert (
+        history.get(state["conversation_id"], user="alice").turns[-1][
+            "query_registry"
+        ]
+        == []
+    )
 
 
 def test_new_query_number_continues_after_previous_turn(monkeypatch):
     from app.mcp import postgres_client
 
-    monkeypatch.setattr(postgres_client, "is_model_tool", lambda name: name == "query")
+    monkeypatch.setattr(
+        postgres_client, "is_model_tool", lambda name: name == "query"
+    )
     state = {
-        "turn_id": "new-turn", "query_registry": [],
+        "turn_id": "new-turn",
+        "query_registry": [],
         "prior_query_registry": [
-            {"query_id": "old-turn:q1"}, {"query_id": "failed-turn:q2"},
+            {"query_id": "old-turn:q1"},
+            {"query_id": "failed-turn:q2"},
         ],
     }
-    call = NativeToolCall(id="new-query", name="query", arguments={"sql": "SELECT 1"})
+    call = NativeToolCall(
+        id="new-query", name="query", arguments={"sql": "SELECT 1"}
+    )
 
     record = agent._register_database_queries(state, [call])[call.id]
 
@@ -630,23 +793,33 @@ def test_new_query_number_continues_after_previous_turn(monkeypatch):
 
 
 @pytest.mark.anyio
-async def test_invalid_final_answer_contract_is_repaired_once(scripted, monkeypatch):
+async def test_invalid_final_answer_contract_is_repaired_once(
+    scripted, monkeypatch
+):
     monkeypatch.setattr(agent.settings, "workbench_agent_max_rounds", 4)
     invalid_final = NativeToolCall(
-        id="invalid-final", name="submit_final_answer",
+        id="invalid-final",
+        name="submit_final_answer",
         arguments={"insights": "", "query_id": 99, "view": "kpi"},
     )
 
     def repaired_final(request):
         observations = [
             json.loads(message["content"])
-            for message in request["messages"] if message.get("role") == "tool"
+            for message in request["messages"]
+            if message.get("role") == "tool"
         ]
-        assert any(item.get("code") == "INVALID_TOOL_ARGUMENTS" for item in observations)
-        return _tool_response(NativeToolCall(
-            id="valid-final", name="submit_final_answer",
-            arguments={"insights": "", "query_id": 1, "view": "kpi"},
-        ))
+        assert any(
+            item.get("code") == "INVALID_TOOL_ARGUMENTS"
+            for item in observations
+        )
+        return _tool_response(
+            NativeToolCall(
+                id="valid-final",
+                name="submit_final_answer",
+                arguments={"insights": "", "query_id": 1, "view": "kpi"},
+            )
+        )
 
     from app.services.workbench import agent_executor
 
@@ -657,15 +830,20 @@ async def test_invalid_final_answer_contract_is_repaired_once(scripted, monkeypa
 
     scripted(
         [
-            _tool_response(_PAR_30), _tool_response(invalid_final), repaired_final,
-        ], execute,
+            _tool_response(_PAR_30),
+            _tool_response(invalid_final),
+            repaired_final,
+        ],
+        execute,
     )
     state = _run_state("final-repair")
     await agent.run(state)
 
     assert state["attribution_repairs"] == 1
     answer_frame = next(
-        frame for frame in _frames(state) if frame.startswith("event: answer\n")
+        frame
+        for frame in _frames(state)
+        if frame.startswith("event: answer\n")
     )
     answer = json.loads(answer_frame.split("data: ", 1)[1])
     assert answer["text"] == ""
@@ -674,12 +852,16 @@ async def test_invalid_final_answer_contract_is_repaired_once(scripted, monkeypa
 
 @pytest.mark.anyio
 async def test_last_round_result_is_shown_without_forcing_synthesis(
-    scripted, monkeypatch,
+    scripted,
+    monkeypatch,
 ):
     """The model sees the tool result and remains free to call a tool or return content."""
     monkeypatch.setattr(agent.settings, "workbench_agent_max_rounds", 2)
     client = scripted(
-        [_tool_response(_PAR_30), _text_response("PAR 30 stands at 4.2% this month.")],
+        [
+            _tool_response(_PAR_30),
+            _text_response("PAR 30 stands at 4.2% this month."),
+        ],
         lambda call, _ctx: _async(_card(call)),
     )
     state = _run_state("min-rounds")
@@ -689,25 +871,33 @@ async def test_last_round_result_is_shown_without_forcing_synthesis(
     assert client.requests[1]["call_purpose"] == "agent_continue"
     synthesis_messages = client.requests[1]["messages"]
     assert any(
-        message.get("role") == "tool" and message.get("tool_call_id") == "call_1"
+        message.get("role") == "tool"
+        and message.get("tool_call_id") == "call_1"
         and "4.2" in message.get("content", "")
         for message in synthesis_messages
     )
-    assert state["agent_final_result"].text == "PAR 30 stands at 4.2% this month."
+    assert (
+        state["agent_final_result"].text == "PAR 30 stands at 4.2% this month."
+    )
     assert any(
-        "event: answer" in frame and "stands at 4.2%" in frame for frame in _frames(state)
+        "event: answer" in frame and "stands at 4.2%" in frame
+        for frame in _frames(state)
     )
     assert state["_agent_budget"].rounds_used == 2
 
 
 @pytest.mark.anyio
-async def test_failure_path_spends_exactly_max_rounds_requests(scripted, monkeypatch):
+async def test_failure_path_spends_exactly_max_rounds_requests(
+    scripted, monkeypatch
+):
     """B1: with max_rounds=3 and a model that never repairs, the model sees exactly
     three requests, each carrying the previous observation, and the turn ends with a
     BudgetExhausted protocol error, never a fabricated call."""
     monkeypatch.setattr(agent.settings, "workbench_agent_max_rounds", 3)
     invalid = NativeToolCall(id="bad", name="retired_query_tool", arguments={})
-    client = scripted([_tool_response(invalid)] * 3, lambda call, _ctx: _async(_card(call)))
+    client = scripted(
+        [_tool_response(invalid)] * 3, lambda call, _ctx: _async(_card(call))
+    )
     state = _run_state("always-invalid")
 
     with pytest.raises(agent.BudgetExhausted):
@@ -715,31 +905,44 @@ async def test_failure_path_spends_exactly_max_rounds_requests(scripted, monkeyp
 
     assert all("tool_choice" not in call for call in client.requests)
     assert [
-        sum(1 for message in request["messages"] if message.get("role") == "tool")
+        sum(
+            1
+            for message in request["messages"]
+            if message.get("role") == "tool"
+        )
         for request in client.requests
     ] == [0, 1, 2]
     assert all(
         "TOOL_NOT_FOUND" in message["content"]
-        for message in client.requests[2]["messages"] if message.get("role") == "tool"
+        for message in client.requests[2]["messages"]
+        if message.get("role") == "tool"
     )
     assert state["_agent_budget"].snapshot() == {
-        "rounds_used": 3, "max_rounds": 3, "calls_used": 3, "max_calls": 6,
+        "rounds_used": 3,
+        "max_rounds": 3,
+        "calls_used": 3,
+        "max_calls": 6,
     }
     assert not any("finish_without_data" in frame for frame in _frames(state))
 
 
 @pytest.mark.anyio
 async def test_execution_error_is_returned_to_llm_for_a_cross_tool_repair(
-    scripted, monkeypatch,
+    scripted,
+    monkeypatch,
 ):
     monkeypatch.setattr(agent.settings, "workbench_agent_max_rounds", 3)
     failed = NativeToolCall(
-        id="failed_metric", name="query",
+        id="failed_metric",
+        name="query",
         arguments={"sql": "SELECT par_30 FROM gold.daily_loan_status LIMIT 1"},
     )
     repaired = NativeToolCall(
-        id="repaired_detail", name="query",
-        arguments={"sql": "SELECT loan_account_number FROM gold.loan_accounts LIMIT 1"},
+        id="repaired_detail",
+        name="query",
+        arguments={
+            "sql": "SELECT loan_account_number FROM gold.loan_accounts LIMIT 1"
+        },
     )
 
     async def execute(call, _ctx):
@@ -748,25 +951,35 @@ async def test_execution_error_is_returned_to_llm_for_a_cross_tool_repair(
         return ExecutedAgentCall(
             call=call,
             card=SourceResult(
-                source="db", card_type="chart",
+                source="db",
+                card_type="chart",
                 payload={"rows": [{"loan_account_number": "L1"}]},
                 summary="One governed loan.",
-                lineage={"sql": "SELECT loan_account_number FROM gold.loan_accounts LIMIT 1"},
+                lineage={
+                    "sql": "SELECT loan_account_number FROM gold.loan_accounts LIMIT 1"
+                },
             ),
         )
 
     client = scripted(
-        [_tool_response(failed), _tool_response(repaired), _text_response("One governed loan.")],
+        [
+            _tool_response(failed),
+            _tool_response(repaired),
+            _text_response("One governed loan."),
+        ],
         execute,
     )
     state = _run_state("execution-repair", "Show the loan details")
     await agent.run(state)
 
     assert [request["call_purpose"] for request in client.requests] == [
-        "agent_continue", "agent_continue", "agent_continue",
+        "agent_continue",
+        "agent_continue",
+        "agent_continue",
     ]
     assert any(
-        message.get("role") == "tool" and "metric execution failed" in message.get("content", "")
+        message.get("role") == "tool"
+        and "metric execution failed" in message.get("content", "")
         for message in client.requests[1]["messages"]
     )
     record = history.get("execution-repair", user="alice")
@@ -777,12 +990,16 @@ async def test_execution_error_is_returned_to_llm_for_a_cross_tool_repair(
     frames = _frames(state)
     assert not any('"card_type": "error"' in frame for frame in frames)
     assert any("event: query_failed" in frame for frame in frames)
-    assert any("event: answer" in frame and "One governed loan" in frame for frame in frames)
+    assert any(
+        "event: answer" in frame and "One governed loan" in frame
+        for frame in frames
+    )
 
 
 @pytest.mark.anyio
 async def test_catalog_context_is_recomputed_from_the_latest_tool_error(
-    scripted, monkeypatch,
+    scripted,
+    monkeypatch,
 ):
     """B4: an error naming an unknown dimension surfaces the governed one next round."""
     monkeypatch.setattr(agent.settings, "workbench_agent_max_rounds", 3)
@@ -795,12 +1012,18 @@ async def test_catalog_context_is_recomputed_from_the_latest_tool_error(
 
     monkeypatch.setattr(agent.prompts, "build_agent_catalog_context", spy)
     bad = NativeToolCall(
-        id="bad", name="query",
-        arguments={"sql": "SELECT schemes FROM gold.loan_repayments LIMIT 100"},
+        id="bad",
+        name="query",
+        arguments={
+            "sql": "SELECT schemes FROM gold.loan_repayments LIMIT 100"
+        },
     )
     good = NativeToolCall(
-        id="good", name="query",
-        arguments={"sql": "SELECT scheme_code FROM gold.loan_accounts LIMIT 100"},
+        id="good",
+        name="query",
+        arguments={
+            "sql": "SELECT scheme_code FROM gold.loan_accounts LIMIT 100"
+        },
     )
 
     async def execute(call, _ctx):
@@ -809,7 +1032,11 @@ async def test_catalog_context_is_recomputed_from_the_latest_tool_error(
         return _card(call)
 
     client = scripted(
-        [_tool_response(bad), _tool_response(good), _text_response("Shown by scheme.")],
+        [
+            _tool_response(bad),
+            _tool_response(good),
+            _text_response("Shown by scheme."),
+        ],
         execute,
     )
     state = _run_state("error-context", "interest collected")
@@ -817,8 +1044,10 @@ async def test_catalog_context_is_recomputed_from_the_latest_tool_error(
 
     def hints(request):
         return next(
-            message["content"] for message in request["messages"]
-            if message.get("role") == "user" and "USER QUESTION" in message.get("content", "")
+            message["content"]
+            for message in request["messages"]
+            if message.get("role") == "user"
+            and "USER QUESTION" in message.get("content", "")
         )
 
     assert seen[0] == ""
@@ -828,7 +1057,8 @@ async def test_catalog_context_is_recomputed_from_the_latest_tool_error(
     assert "must appear in `dimensions`" in hints(client.requests[1])
     # The observation itself carries the governed list, so the model can repair.
     observation = next(
-        json.loads(message["content"]) for message in client.requests[1]["messages"]
+        json.loads(message["content"])
+        for message in client.requests[1]["messages"]
         if message.get("role") == "tool"
     )
     assert observation["code"] == "SOURCE_UNAVAILABLE"
@@ -836,31 +1066,42 @@ async def test_catalog_context_is_recomputed_from_the_latest_tool_error(
 
 
 @pytest.mark.anyio
-async def test_model_can_call_multiple_resource_tools_before_answering(scripted, monkeypatch):
+async def test_model_can_call_multiple_resource_tools_before_answering(
+    scripted, monkeypatch
+):
     monkeypatch.setattr(agent.settings, "workbench_agent_max_rounds", 4)
     concept = NativeToolCall(
-        id="concept", name="search_curated_knowledge",
+        id="concept",
+        name="search_curated_knowledge",
         arguments={"domain": "concepts", "query": "PAR 30 definition"},
     )
 
     async def execute(call, _ctx):
         if call.name == "query":
             result = SourceResult(
-                source="db", card_type="chart", payload={"rows": [{"par_30": 4.2}]},
+                source="db",
+                card_type="chart",
+                payload={"rows": [{"par_30": 4.2}]},
                 summary="PAR 30 is 4.2%.",
             )
         else:
             result = SourceResult(
-                source="knowledge", card_type="brief",
-                payload={"summary": "PAR 30 means principal overdue by more than 30 days."},
+                source="knowledge",
+                card_type="brief",
+                payload={
+                    "summary": "PAR 30 means principal overdue by more than 30 days."
+                },
                 summary="PAR 30 definition.",
             )
         return ExecutedAgentCall(call=call, card=result)
 
     client = scripted(
         [
-            _tool_response(_PAR_30), _tool_response(concept),
-            _text_response("The portfolio result and definition are shown together."),
+            _tool_response(_PAR_30),
+            _tool_response(concept),
+            _text_response(
+                "The portfolio result and definition are shown together."
+            ),
         ],
         execute,
     )
@@ -868,37 +1109,50 @@ async def test_model_can_call_multiple_resource_tools_before_answering(scripted,
     await agent.run(state)
 
     assert [request["call_purpose"] for request in client.requests] == [
-        "agent_continue", "agent_continue", "agent_continue",
+        "agent_continue",
+        "agent_continue",
+        "agent_continue",
     ]
     record = history.get("multi-tool", user="alice")
     assert len(record.turns[0]["agent_exchanges"]) == 2
     assert [
-        exchange["calls"][0]["name"] for exchange in record.turns[0]["agent_exchanges"]
+        exchange["calls"][0]["name"]
+        for exchange in record.turns[0]["agent_exchanges"]
     ] == ["query", "search_curated_knowledge"]
     assert state["agent_final_result"].text.startswith("The portfolio result")
 
 
 @pytest.mark.anyio
 async def test_invalid_continuation_call_is_persisted_and_returned_to_model(
-    scripted, monkeypatch,
+    scripted,
+    monkeypatch,
 ):
     monkeypatch.setattr(agent.settings, "workbench_agent_max_rounds", 4)
     valid = NativeToolCall(
-        id="valid", name="query",
+        id="valid",
+        name="query",
         arguments={"sql": "SELECT par_30 FROM gold.daily_loan_status LIMIT 1"},
     )
     invalid_next = NativeToolCall(
-        id="invalid_next", name="retired_query_tool", arguments={},
+        id="invalid_next",
+        name="retired_query_tool",
+        arguments={},
     )
     client = scripted(
-        [_tool_response(valid), _tool_response(invalid_next), _text_response("PAR 30 is 4.2%.")],
+        [
+            _tool_response(valid),
+            _tool_response(invalid_next),
+            _text_response("PAR 30 is 4.2%."),
+        ],
         lambda call, _ctx: _async(_card(call)),
     )
     state = _run_state("invalid-continuation")
     await agent.run(state)
 
     continuation_requests = [
-        request for request in client.requests if request.get("call_purpose") == "agent_continue"
+        request
+        for request in client.requests
+        if request.get("call_purpose") == "agent_continue"
     ]
     assert len(continuation_requests) == 3
     assert any(
@@ -909,12 +1163,15 @@ async def test_invalid_continuation_call_is_persisted_and_returned_to_model(
     )
     record = history.get("invalid-continuation", user="alice")
     assert [
-        exchange["calls"][0]["id"] for exchange in record.turns[0]["agent_exchanges"]
+        exchange["calls"][0]["id"]
+        for exchange in record.turns[0]["agent_exchanges"]
     ] == ["valid", "invalid_next"]
 
 
 @pytest.mark.anyio
-async def test_partially_invalid_batch_keeps_replay_parity(scripted, monkeypatch):
+async def test_partially_invalid_batch_keeps_replay_parity(
+    scripted, monkeypatch
+):
     """B2: a batch with one valid and one invalid call persists one tool message per
     call; the valid call is executed and gets its real observation."""
     monkeypatch.setattr(agent.settings, "workbench_agent_max_rounds", 3)
@@ -929,25 +1186,39 @@ async def test_partially_invalid_batch_keeps_replay_parity(scripted, monkeypatch
     record = history.get("partial-batch", user="alice")
     exchange = record.turns[0]["agent_exchanges"][0]
     assert [call["id"] for call in exchange["calls"]] == ["call_1", "bad"]
-    assert [message["tool_call_id"] for message in exchange["tools"]] == ["call_1", "bad"]
-    assert json.loads(exchange["tools"][0]["content"])["status"] == "ok"
-    assert json.loads(exchange["tools"][1]["content"])["code"] == "TOOL_NOT_FOUND"
-    observed = [
-        message for message in client.requests[1]["messages"] if message.get("role") == "tool"
+    assert [message["tool_call_id"] for message in exchange["tools"]] == [
+        "call_1",
+        "bad",
     ]
-    assert [message["tool_call_id"] for message in observed] == ["call_1", "bad"]
+    assert json.loads(exchange["tools"][0]["content"])["status"] == "ok"
+    assert (
+        json.loads(exchange["tools"][1]["content"])["code"] == "TOOL_NOT_FOUND"
+    )
+    observed = [
+        message
+        for message in client.requests[1]["messages"]
+        if message.get("role") == "tool"
+    ]
+    assert [message["tool_call_id"] for message in observed] == [
+        "call_1",
+        "bad",
+    ]
     assert state["_agent_budget"].calls_used == 2
 
 
 @pytest.mark.anyio
-async def test_outbound_policy_denial_gets_one_native_repair(scripted, monkeypatch):
+async def test_outbound_policy_denial_gets_one_native_repair(
+    scripted, monkeypatch
+):
     monkeypatch.setattr(agent.settings, "workbench_agent_max_rounds", 3)
     web_bad = NativeToolCall(
-        id="web_bad", name="search_public_web",
+        id="web_bad",
+        name="search_public_web",
         arguments={"search_query": "customer ID secret-42 latest news"},
     )
     web_good = NativeToolCall(
-        id="web_good", name="search_public_web",
+        id="web_good",
+        name="search_public_web",
         arguments={"search_query": "latest RBI repo rate"},
     )
 
@@ -957,12 +1228,19 @@ async def test_outbound_policy_denial_gets_one_native_repair(scripted, monkeypat
         return ExecutedAgentCall(
             call=call,
             card=SourceResult(
-                source="web", card_type="brief", payload={}, summary="RBI evidence retrieved.",
+                source="web",
+                card_type="brief",
+                payload={},
+                summary="RBI evidence retrieved.",
             ),
         )
 
     client = scripted(
-        [_tool_response(web_bad), _tool_response(web_good), _text_response("RBI evidence retrieved.")],
+        [
+            _tool_response(web_bad),
+            _tool_response(web_good),
+            _text_response("RBI evidence retrieved."),
+        ],
         execute,
     )
     real_client = client
@@ -976,11 +1254,17 @@ async def test_outbound_policy_denial_gets_one_native_repair(scripted, monkeypat
 
     assert all("tool_choice" not in request for request in client.requests)
     denial = next(
-        json.loads(message["content"]) for message in client.requests[1]["messages"]
-        if message.get("role") == "tool" and message.get("tool_call_id") == "web_bad"
+        json.loads(message["content"])
+        for message in client.requests[1]["messages"]
+        if message.get("role") == "tool"
+        and message.get("tool_call_id") == "web_bad"
     )
     assert denial["code"] == "POLICY_DENIED"
-    assert denial["denied"] == {"tool": "search_public_web", "source": "web", "policy": "outbound_privacy"}
+    assert denial["denied"] == {
+        "tool": "search_public_web",
+        "source": "web",
+        "policy": "outbound_privacy",
+    }
     assert "finish_without_data" in denial["authorized_tools"]
     record = history.get("web-repair", user="alice")
     assert len(record.turns[0]["agent_exchanges"]) == 2
@@ -988,11 +1272,16 @@ async def test_outbound_policy_denial_gets_one_native_repair(scripted, monkeypat
     # A privacy denial is not an error card the user sees; the repaired search is.
     frames = _frames(state)
     assert not any('"card_type": "error"' in frame for frame in frames)
-    assert any("event: source_card" in frame and '"source": "web"' in frame for frame in frames)
+    assert any(
+        "event: source_card" in frame and '"source": "web"' in frame
+        for frame in frames
+    )
 
 
 @pytest.mark.anyio
-async def test_unresolved_policy_denial_ends_with_an_application_refusal(scripted, monkeypatch):
+async def test_unresolved_policy_denial_ends_with_an_application_refusal(
+    scripted, monkeypatch
+):
     """B2: the model keeps sending private data; when the budget ends the application
     refuses in its own name. No finish_without_data call is fabricated."""
     monkeypatch.setattr(agent.settings, "workbench_agent_max_rounds", 3)
@@ -1002,10 +1291,13 @@ async def test_unresolved_policy_denial_ends_with_an_application_refusal(scripte
     def bad(_kwargs):
         nonlocal counter
         counter += 1
-        return _tool_response(NativeToolCall(
-            id=f"bad_{counter}", name="search_public_web",
-            arguments={"search_query": "customer ID secret-42"},
-        ))
+        return _tool_response(
+            NativeToolCall(
+                id=f"bad_{counter}",
+                name="search_public_web",
+                arguments={"search_query": "customer ID secret-42"},
+            )
+        )
 
     async def deny(_call, _ctx):
         raise outbound_policy.OutboundPolicyDenied("private query denied")
@@ -1018,7 +1310,9 @@ async def test_unresolved_policy_denial_ends_with_an_application_refusal(scripte
     assert len(client.requests) == 3
     assert all("tool_choice" not in request for request in client.requests)
     refusal = next(
-        json.loads(frame.split("data: ", 1)[1]) for frame in frames if "event: refusal" in frame
+        json.loads(frame.split("data: ", 1)[1])
+        for frame in frames
+        if "event: refusal" in frame
     )
     assert "private customer" in refusal["text"]
     assert refusal["origin"] == "application"
@@ -1028,16 +1322,20 @@ async def test_unresolved_policy_denial_ends_with_an_application_refusal(scripte
     assert len(record.turns[0]["agent_exchanges"]) == 3
     assert all(
         call["name"] == "search_public_web"
-        for exchange in record.turns[0]["agent_exchanges"] for call in exchange["calls"]
+        for exchange in record.turns[0]["agent_exchanges"]
+        for call in exchange["calls"]
     )
 
 
 @pytest.mark.anyio
 async def test_model_refusal_keeps_its_origin(scripted):
     finish = NativeToolCall(
-        id="finish", name="finish_without_data",
+        id="finish",
+        name="finish_without_data",
         arguments={
-            "outcome": "refuse", "message": "I cannot share that.", "suggestions": [],
+            "outcome": "refuse",
+            "message": "I cannot share that.",
+            "suggestions": [],
             "reason_code": "unsafe",
         },
     )
@@ -1053,7 +1351,8 @@ async def test_model_refusal_keeps_its_origin(scripted):
 
     refusal = next(
         json.loads(frame.split("data: ", 1)[1])
-        for frame in _frames(state) if "event: refusal" in frame
+        for frame in _frames(state)
+        if "event: refusal" in frame
     )
     assert refusal["origin"] == "model"
     assert refusal["text"] == "I cannot share that."
@@ -1062,7 +1361,8 @@ async def test_model_refusal_keeps_its_origin(scripted):
 
 @pytest.mark.anyio
 async def test_budget_spent_after_data_answers_from_the_result_with_a_limitation(
-    scripted, monkeypatch,
+    scripted,
+    monkeypatch,
 ):
     """Nothing is retrieved until the last round; the result still reaches the user,
     marked as answered without the model's synthesis."""
@@ -1087,9 +1387,13 @@ async def test_budget_spent_after_data_answers_from_the_result_with_a_limitation
 
 
 @pytest.mark.anyio
-async def test_deadline_is_checked_in_the_loop_condition(scripted, monkeypatch):
+async def test_deadline_is_checked_in_the_loop_condition(
+    scripted, monkeypatch
+):
     monkeypatch.setattr(agent.settings, "nlq_request_budget_s", 0.0)
-    client = scripted([_tool_response(_PAR_30)], lambda call, _ctx: _async(_card(call)))
+    client = scripted(
+        [_tool_response(_PAR_30)], lambda call, _ctx: _async(_card(call))
+    )
     state = _run_state("deadline")
     with pytest.raises(TimeoutError):
         await agent.run(state)

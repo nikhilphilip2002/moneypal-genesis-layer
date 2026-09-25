@@ -6,14 +6,30 @@ from pathlib import Path
 import pytest
 
 from app.api.routes import admin
-from app.services.curiosity_graph import BRANCH_SQL, _agent_label, _metrics, _where
+from app.services.curiosity_graph import (
+    BRANCH_SQL,
+    _agent_label,
+    _metrics,
+    _where,
+)
 
 
 def test_metric_contract_keeps_numeric_values_and_uses_exposure_ratios():
-    metrics = _metrics([
-        100, 90, 80, 20_000_000, 18_000_000, 10_000_000, 500_000,
-        1_000_000, 250_000, 95, date(2026, 7, 31),
-    ])
+    metrics = _metrics(
+        [
+            100,
+            90,
+            80,
+            20_000_000,
+            18_000_000,
+            10_000_000,
+            500_000,
+            1_000_000,
+            250_000,
+            95,
+            date(2026, 7, 31),
+        ]
+    )
 
     assert metrics["account_count"] == 100
     assert metrics["borrower_count"] == 80
@@ -65,7 +81,9 @@ def test_admin_route_maps_legacy_level_names_to_the_gold_contract(monkeypatch):
         return {"version": 2}
 
     monkeypatch.setattr(admin, "get_curiosity_graph", fake_graph)
-    response = admin.db_schema(view_level="zonal", zonal_id="product:16", limit=20)
+    response = admin.db_schema(
+        view_level="zonal", zonal_id="product:16", limit=20
+    )
 
     assert response == {"version": 2}
     assert seen["level"] == "product"
@@ -83,16 +101,20 @@ def test_admin_route_preserves_supported_weighting_modes(monkeypatch, weight):
 
 
 def test_where_filters_support_tenure_and_loan_size():
-    where, params = _where({
-        "agent_code": "AGNT45",
-        "scheme_code": "1616",
-        "tenure_band": "tenure_25_36",
-        "loan_size_bucket": "bucket_2l_5l",
-    })
+    where, params = _where(
+        {
+            "agent_code": "AGNT45",
+            "scheme_code": "1616",
+            "tenure_band": "tenure_25_36",
+            "loan_size_bucket": "bucket_2l_5l",
+        }
+    )
 
     assert "l.agent_code::text = %s" in where
     assert "l.total_emi_count > 24 AND l.total_emi_count <= 36" in where
-    assert "l.approved_amount >= 200000 AND l.approved_amount < 500000" in where
+    assert (
+        "l.approved_amount >= 200000 AND l.approved_amount < 500000" in where
+    )
     assert "AGNT45" in params
     assert "1616" in params
 
@@ -123,7 +145,11 @@ def test_admin_customer_details_endpoint(monkeypatch):
     monkeypatch.setattr(
         admin,
         "get_customer_360_details",
-        lambda customer_id: {"profile": {"customer_id": customer_id}, "loans": [], "repayment_history": []},
+        lambda customer_id: {
+            "profile": {"customer_id": customer_id},
+            "loans": [],
+            "repayment_history": [],
+        },
     )
 
     result = admin.customer_details("8")

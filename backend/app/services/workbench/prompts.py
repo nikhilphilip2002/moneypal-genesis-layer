@@ -106,7 +106,11 @@ def _agent_gold_schema_for_version(version: str) -> str:
             if column.is_pii:
                 flags.append("pii")
             label = column.label.strip()
-            suffix = f"={label}" if label and label.lower() != column.column.lower() else ""
+            suffix = (
+                f"={label}"
+                if label and label.lower() != column.column.lower()
+                else ""
+            )
             columns.append(f"{column.column}{suffix}[{','.join(flags)}]")
         structural = {
             *table.key,
@@ -142,7 +146,8 @@ def _agent_gold_schema_for_version(version: str) -> str:
     for dimension in cat.dimensions.values():
         location = (
             f"{dimension.table}.{dimension.column}"
-            if dimension.table and dimension.column else "derived"
+            if dimension.table and dimension.column
+            else "derived"
         )
         lines.append(
             f"- {dimension.id} | {dimension.label} | type={dimension.type} | {location}"
@@ -174,7 +179,9 @@ def warm_agent_gold_schema() -> tuple[str, int]:
     return cat.version, len(block)
 
 
-def _can_group_from(cat: Catalog, base_tables: set[str], dimension_id: str) -> bool:
+def _can_group_from(
+    cat: Catalog, base_tables: set[str], dimension_id: str
+) -> bool:
     """Mirror the compiler's safe, direct dimension traversal rule."""
     dimension = cat.dimensions[dimension_id]
     if dimension.is_time or dimension.table is None:
@@ -206,7 +213,7 @@ def _catalog_phrase_matches(question: str, phrase: str) -> bool:
         return False
     width = len(phrase_tokens)
     return any(
-        question_tokens[index:index + width] == phrase_tokens
+        question_tokens[index : index + width] == phrase_tokens
         for index in range(len(question_tokens) - width + 1)
     )
 
@@ -220,7 +227,10 @@ def _table_phrase_matches(question: str, phrase: str) -> bool:
 
 
 def build_agent_catalog_context(
-    question: str, catalog: Catalog | None = None, *, supplement: str = "",
+    question: str,
+    catalog: Catalog | None = None,
+    *,
+    supplement: str = "",
 ) -> AgentCatalogContext:
     """Rank and annotate the governed catalog for one request.
 
@@ -320,14 +330,19 @@ def build_agent_catalog_context(
             table = payload.get("table")
             column_id = payload.get("entry_id")
             if table and column_id:
-                relevant_columns.setdefault(table, []).append((hit.score, str(column_id)))
+                relevant_columns.setdefault(table, []).append(
+                    (hit.score, str(column_id))
+                )
         if table in cat.allowed_tables():
-            table_scores[table] = max(table_scores.get(table, 0.0), hit.score * weight)
+            table_scores[table] = max(
+                table_scores.get(table, 0.0), hit.score * weight
+            )
 
     direct_table_strength = {
         table.table: max(
             (
-                (2 * len(tokenize(phrase))) + int(phrase_in_text(question, phrase))
+                (2 * len(tokenize(phrase)))
+                + int(phrase_in_text(question, phrase))
                 for phrase in (table.label, *table.synonyms)
                 if _table_phrase_matches(question, phrase)
             ),
@@ -352,18 +367,22 @@ def build_agent_catalog_context(
         matched_concepts = {
             token_sequence(phrase)
             for phrase in (column.label, *column.synonyms)
-            if len(tokenize(phrase)) >= 2 and _catalog_phrase_matches(question, phrase)
+            if len(tokenize(phrase)) >= 2
+            and _catalog_phrase_matches(question, phrase)
         }
         if matched_concepts:
-            directly_named_columns_by_table.setdefault(column.table, []).append(column)
-            matched_column_concepts_by_table.setdefault(column.table, set()).update(
-                matched_concepts
-            )
+            directly_named_columns_by_table.setdefault(
+                column.table, []
+            ).append(column)
+            matched_column_concepts_by_table.setdefault(
+                column.table, set()
+            ).update(matched_concepts)
 
     selected_tables = [
         table
         for table, _score in sorted(
-            table_scores.items(), key=lambda item: (-item[1], item[0]),
+            table_scores.items(),
+            key=lambda item: (-item[1], item[0]),
         )[:2]
     ]
     if not selected_tables:
@@ -393,12 +412,17 @@ def build_agent_catalog_context(
         )
     }
     if has_direct_metrics and not raw_candidate_tables:
-        metric_bases = list(dict.fromkeys(
-            cat.metrics[item].base_table for item in metric_ids
-        ))
-        selected_tables = list(dict.fromkeys([
-            *metric_bases, *selected_tables,
-        ]))[:2]
+        metric_bases = list(
+            dict.fromkeys(cat.metrics[item].base_table for item in metric_ids)
+        )
+        selected_tables = list(
+            dict.fromkeys(
+                [
+                    *metric_bases,
+                    *selected_tables,
+                ]
+            )
+        )[:2]
     elif raw_candidate_tables:
         strongest_raw_table = max(
             raw_candidate_tables,
@@ -409,9 +433,14 @@ def build_agent_catalog_context(
                 table_name,
             ),
         )
-        selected_tables = list(dict.fromkeys([
-            strongest_raw_table, *selected_tables,
-        ]))[:2]
+        selected_tables = list(
+            dict.fromkeys(
+                [
+                    strongest_raw_table,
+                    *selected_tables,
+                ]
+            )
+        )[:2]
 
     lines = [
         "RELEVANT GOVERNED GOLD CATALOG HINTS",
@@ -432,19 +461,24 @@ def build_agent_catalog_context(
         column_ids = [
             column_id
             for _score, column_id in sorted(
-                relevant_columns.get(table_name, []), reverse=True,
+                relevant_columns.get(table_name, []),
+                reverse=True,
             )[:6]
         ]
         if column_ids:
             columns = [cat.columns[column_id] for column_id in column_ids]
             lines.append(
                 "  matching columns: "
-                + ", ".join(f"{column.column} ({column.label})" for column in columns)
+                + ", ".join(
+                    f"{column.column} ({column.label})" for column in columns
+                )
             )
 
     if selected_tables:
         metric_ids.sort(
-            key=lambda metric_id: cat.metrics[metric_id].base_table != selected_tables[0]
+            key=lambda metric_id: (
+                cat.metrics[metric_id].base_table != selected_tables[0]
+            )
         )
     if metric_ids:
         preferred_metric_table = cat.metrics[metric_ids[0]].base_table
@@ -466,12 +500,15 @@ def build_agent_catalog_context(
     }
     if direct_time_dimensions:
         dimension_ids = [
-            item for item in dimension_ids
-            if not cat.dimensions[item].is_time or item in direct_time_dimensions
+            item
+            for item in dimension_ids
+            if not cat.dimensions[item].is_time
+            or item in direct_time_dimensions
         ]
     if context_base_tables:
         dimension_ids = [
-            item for item in dimension_ids
+            item
+            for item in dimension_ids
             if _can_group_from(cat, context_base_tables, item)
         ]
     specific_base_dimensions = [
@@ -495,7 +532,9 @@ def build_agent_catalog_context(
             )
         ]
     if dimension_ids:
-        strongest_dimension = max(dimension_scores.get(item, 0.0) for item in dimension_ids)
+        strongest_dimension = max(
+            dimension_scores.get(item, 0.0) for item in dimension_ids
+        )
         dimension_ids = [
             item
             for item in dimension_ids
@@ -505,7 +544,8 @@ def build_agent_catalog_context(
         if selected_tables:
             dimension_ids.sort(
                 key=lambda item: (
-                    cat.dimensions[item].table not in (None, selected_tables[0]),
+                    cat.dimensions[item].table
+                    not in (None, selected_tables[0]),
                     item not in direct_dimension_ids,
                 )
             )
@@ -524,12 +564,16 @@ def build_agent_catalog_context(
     for dimension_id in dimension_ids:
         dimension = cat.dimensions[dimension_id]
         location = f" | table={dimension.table}" if dimension.table else ""
-        lines.append(f"- {dimension.id} | {dimension.label} | {dimension.type}{location}")
+        lines.append(
+            f"- {dimension.id} | {dimension.label} | {dimension.type}{location}"
+        )
     lines.append(
         "If the question asks for a breakdown, trend, ranking, or grouping, the requested "
         "dimension must appear in `dimensions`"
         + (
-            "; candidates retrieved for this question: " + ", ".join(dimension_ids) + "."
+            "; candidates retrieved for this question: "
+            + ", ".join(dimension_ids)
+            + "."
             if dimension_ids
             else "; no dimension candidate was retrieved for this question, so choose the "
             "physical grouping column from the complete Gold schema."
@@ -543,7 +587,11 @@ def build_agent_catalog_context(
         if hit.doc.kind != "enum_value":
             continue
         block = cat.enums.get(str(hit.doc.payload.get("dimension", "")))
-        value = block.values.get(str(hit.doc.payload.get("entry_id", ""))) if block else None
+        value = (
+            block.values.get(str(hit.doc.payload.get("entry_id", "")))
+            if block
+            else None
+        )
         phrases = [value.label, *value.synonyms] if value else []
         dimension_id = str(hit.doc.payload.get("dimension", ""))
         if (
@@ -553,26 +601,32 @@ def build_agent_catalog_context(
                 or _can_group_from(cat, context_base_tables, dimension_id)
             )
             and any(
-            len(phrase.strip()) > 1 and phrase_in_text(lowered_question, phrase)
-            for phrase in phrases
+                len(phrase.strip()) > 1
+                and phrase_in_text(lowered_question, phrase)
+                for phrase in phrases
             )
         ):
-            exact_enum_values.append({
-                "dimension": hit.doc.payload["dimension"],
-                "code": hit.doc.payload["entry_id"],
-                "label": hit.doc.payload["label"],
-            })
+            exact_enum_values.append(
+                {
+                    "dimension": hit.doc.payload["dimension"],
+                    "code": hit.doc.payload["entry_id"],
+                    "label": hit.doc.payload["label"],
+                }
+            )
     if exact_enum_values:
         lines.append("MATCHING FILTER VALUES")
         for value in exact_enum_values[:6]:
             lines.append(
                 f"- {value['dimension']}={value['code']} means {value['label']}"
             )
-    filter_dimensions = tuple(dict.fromkeys(
-        str(value["dimension"]) for value in exact_enum_values
-        if str(value["dimension"]) in dimension_ids
-        and not cat.dimensions[str(value["dimension"])].is_time
-    ))
+    filter_dimensions = tuple(
+        dict.fromkeys(
+            str(value["dimension"])
+            for value in exact_enum_values
+            if str(value["dimension"]) in dimension_ids
+            and not cat.dimensions[str(value["dimension"])].is_time
+        )
+    )
     return AgentCatalogContext(
         text="\n".join(lines),
         tables=tuple(dict.fromkeys(selected_tables)),
@@ -582,34 +636,45 @@ def build_agent_catalog_context(
     )
 
 
-def agent_catalog_context(question: str, catalog: Catalog | None = None) -> str:
+def agent_catalog_context(
+    question: str, catalog: Catalog | None = None
+) -> str:
     """Return the model-facing text of the relevant Gold catalog projection."""
     return build_agent_catalog_context(question, catalog).text
 
 
 def build_agent_prompt(
-    *, question: str, history_messages: list[ChatMessage] | None = None,
-    catalog: Catalog | None = None, catalog_context: AgentCatalogContext | None = None,
+    *,
+    question: str,
+    history_messages: list[ChatMessage] | None = None,
+    catalog: Catalog | None = None,
+    catalog_context: AgentCatalogContext | None = None,
 ) -> PromptBundle:
-    stable: list[ChatMessage] = [{
-        "role": "system",
-        "content": [{
-            "type": "text",
-            "text": build_agent_system_prompt(catalog),
-            "prompt_cache_breakpoint": {"mode": "explicit"},
-        }],
-    }]
-    messages = coalesce_system_messages([
-        *stable,
-        *(history_messages or []),
+    stable: list[ChatMessage] = [
         {
-            "role": "user",
-            "content": (
-                f"{(catalog_context or build_agent_catalog_context(question, catalog)).text}"
-                f"\n\nUSER QUESTION\n{question}"
-            ),
-        },
-    ])
+            "role": "system",
+            "content": [
+                {
+                    "type": "text",
+                    "text": build_agent_system_prompt(catalog),
+                    "prompt_cache_breakpoint": {"mode": "explicit"},
+                }
+            ],
+        }
+    ]
+    messages = coalesce_system_messages(
+        [
+            *stable,
+            *(history_messages or []),
+            {
+                "role": "user",
+                "content": (
+                    f"{(catalog_context or build_agent_catalog_context(question, catalog)).text}"
+                    f"\n\nUSER QUESTION\n{question}"
+                ),
+            },
+        ]
+    )
     return PromptBundle(messages)
 
 

@@ -50,9 +50,8 @@ class QueryTimeoutError(ExecutionError):
 def _is_statement_timeout(exc: BaseException) -> bool:
     sqlstate = getattr(exc, "sqlstate", None) or getattr(exc, "pgcode", None)
     detail = f"{type(exc).__name__}: {exc}".lower()
-    return (
-        "statement timeout" in detail
-        and (sqlstate in {None, "57014"} or "querycanceled" in detail)
+    return "statement timeout" in detail and (
+        sqlstate in {None, "57014"} or "querycanceled" in detail
     )
 
 
@@ -81,7 +80,10 @@ class QueryResult:
 
 
 def execute(
-    compiled: CompiledQuery, *, explain_gate: bool = True, use_cache: bool = True
+    compiled: CompiledQuery,
+    *,
+    explain_gate: bool = True,
+    use_cache: bool = True,
 ) -> QueryResult:
     """Execute a compiled query on the read-only pool."""
     sql, params = bind(compiled.sql, compiled.params)
@@ -98,7 +100,9 @@ def execute(
 
     try:
         with nlq_db.readonly_cursor() as (conn, cur):
-            plan_cost = _explain(conn, cur, sql, params) if explain_gate else None
+            plan_cost = (
+                _explain(conn, cur, sql, params) if explain_gate else None
+            )
             if plan_cost is not None and plan_cost > MAX_PLAN_COST:
                 raise ExecutionError(
                     "That question is too broad to answer quickly. Try narrowing the "
@@ -106,7 +110,9 @@ def execute(
                     detail=f"estimated plan cost {plan_cost:,.0f} exceeds {MAX_PLAN_COST:,.0f}",
                 )
             cur.execute(sql, params)
-            columns = [d[0] for d in cur.description] if cur.description else []
+            columns = (
+                [d[0] for d in cur.description] if cur.description else []
+            )
             raw_rows = cur.fetchall()
             conn.rollback()  # read-only: end the transaction without holding locks
     except ExecutionError:
@@ -131,7 +137,10 @@ def execute(
 
     duration_ms = int((time.perf_counter() - started) * 1000)
     rows = [dict(zip(columns, _coerce_row(row))) for row in raw_rows]
-    limit = min(compiled.params.get("row_limit", settings.nlq_max_rows), settings.nlq_max_rows)
+    limit = min(
+        compiled.params.get("row_limit", settings.nlq_max_rows),
+        settings.nlq_max_rows,
+    )
 
     # An aggregate over zero rows returns one row of NULLs, not zero rows. Reporting that
     # as a successful result renders "no data" inside a KPI tile as though it were a value;
@@ -172,7 +181,9 @@ def execute_raw(sql: str, *, explain_gate: bool = True) -> QueryResult:
                     detail=f"estimated plan cost {plan_cost:,.0f}",
                 )
             cur.execute(sql)
-            columns = [d[0] for d in cur.description] if cur.description else []
+            columns = (
+                [d[0] for d in cur.description] if cur.description else []
+            )
             raw_rows = cur.fetchall()
             conn.rollback()
     except ExecutionError:
@@ -220,13 +231,17 @@ def _explain(conn: Any, cur: Any, sql: str, params: list[Any]) -> float | None:
             cur.execute(f"EXPLAIN {sql}")
         text = " ".join(str(r[0]) for r in cur.fetchall())
     except Exception as exc:  # noqa: BLE001
-        logger.warning("NLQ EXPLAIN failed, proceeding without the cost gate: %s", exc)
+        logger.warning(
+            "NLQ EXPLAIN failed, proceeding without the cost gate: %s", exc
+        )
         # PostgreSQL marks the transaction failed after any statement error. Clear that
         # state before the caller executes the actual statement on the same connection.
         try:
             conn.rollback()
         except Exception:  # noqa: BLE001 - the subsequent execute will surface the outage
-            logger.warning("NLQ rollback after failed EXPLAIN also failed", exc_info=True)
+            logger.warning(
+                "NLQ rollback after failed EXPLAIN also failed", exc_info=True
+            )
         return None
     match = re.search(r"cost=[\d.]+\.\.([\d.]+)", text)
     return float(match.group(1)) if match else None

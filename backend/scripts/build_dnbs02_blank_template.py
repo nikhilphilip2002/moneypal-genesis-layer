@@ -23,7 +23,9 @@ import openpyxl
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_SRC = REPO_ROOT / "backend" / "app" / "assets" / "DNBS02_Template.xlsx"
-DEFAULT_DST = REPO_ROOT / "backend" / "app" / "assets" / "DNBS02_Blank_Template.xlsx"
+DEFAULT_DST = (
+    REPO_ROOT / "backend" / "app" / "assets" / "DNBS02_Blank_Template.xlsx"
+)
 
 # Data rows begin immediately below the column-header row, which sits at row 12 on every
 # tabular sheet in this workbook.
@@ -41,7 +43,9 @@ PAN_RE = re.compile(r"\b[A-Z]{5}\d{4}[A-Z]\b")
 EMAIL_RE = re.compile(r"[\w.+-]+@[\w-]+\.[\w.]+")
 
 
-def _clear(sheet, min_row: int, min_col: int, keep_text_subheaders: bool = False) -> int:
+def _clear(
+    sheet, min_row: int, min_col: int, keep_text_subheaders: bool = False
+) -> int:
     """Blank every non-merged cell at or beyond (min_row, min_col). Returns cells cleared.
 
     `keep_text_subheaders` preserves text in the first data row. Several Part sheets carry
@@ -52,7 +56,10 @@ def _clear(sheet, min_row: int, min_col: int, keep_text_subheaders: bool = False
     """
     cleared = 0
     for row in sheet.iter_rows(
-        min_row=min_row, max_row=sheet.max_row, min_col=min_col, max_col=sheet.max_column
+        min_row=min_row,
+        max_row=sheet.max_row,
+        min_col=min_col,
+        max_col=sheet.max_column,
     ):
         for cell in row:
             if type(cell).__name__ == "MergedCell":
@@ -84,7 +91,12 @@ def build_blank(src: Path, dst: Path) -> None:
         elif name.startswith(PART_SHEET_PREFIX):
             # Keep the RBI line-item taxonomy in column B, and any second-tier column
             # headers sitting in the first data row.
-            cleared = _clear(sheet, min_row=FIRST_DATA_ROW, min_col=3, keep_text_subheaders=True)
+            cleared = _clear(
+                sheet,
+                min_row=FIRST_DATA_ROW,
+                min_col=3,
+                keep_text_subheaders=True,
+            )
         else:
             # Annex sheets: every column from B is reported data.
             cleared = _clear(sheet, min_row=FIRST_DATA_ROW, min_col=2)
@@ -111,12 +123,21 @@ def verify(path: Path) -> None:
                     continue
                 text = str(cell.value)
                 if PAN_RE.search(text):
-                    problems.append(f"{name}!{cell.coordinate}: PAN-like value {text!r}")
+                    problems.append(
+                        f"{name}!{cell.coordinate}: PAN-like value {text!r}"
+                    )
                 if EMAIL_RE.search(text):
-                    problems.append(f"{name}!{cell.coordinate}: email {text!r}")
+                    problems.append(
+                        f"{name}!{cell.coordinate}: email {text!r}"
+                    )
                 # Any bare number below the header row is a leftover reported figure.
-                if isinstance(cell.value, (int, float)) and cell.row >= FIRST_DATA_ROW:
-                    problems.append(f"{name}!{cell.coordinate}: residual number {cell.value!r}")
+                if (
+                    isinstance(cell.value, (int, float))
+                    and cell.row >= FIRST_DATA_ROW
+                ):
+                    problems.append(
+                        f"{name}!{cell.coordinate}: residual number {cell.value!r}"
+                    )
 
     if problems:
         print(f"\nVERIFY FAILED - {len(problems)} residual value(s):")

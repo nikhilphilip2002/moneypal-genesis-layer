@@ -53,7 +53,8 @@ def run(
     now = datetime.now(timezone.utc)
 
     wanted = [
-        scope for scope_id, scope in cat.signals.scopes.items()
+        scope
+        for scope_id, scope in cat.signals.scopes.items()
         if scopes is None or scope_id in scopes
     ]
 
@@ -64,7 +65,8 @@ def run(
     if warehouse.get("status") != "ok":
         logger.warning(
             "signal scan skipped: warehouse is %s (%s)",
-            warehouse.get("status"), warehouse.get("detail", ""),
+            warehouse.get("status"),
+            warehouse.get("detail", ""),
         )
         return ScanReport(
             started_at=now,
@@ -100,12 +102,18 @@ def run(
             if _is_connection_failure(exc):
                 if not lost.is_set():
                     lost.set()
-                    logger.warning("signal scan abandoned: the warehouse went away mid-scan")
+                    logger.warning(
+                        "signal scan abandoned: the warehouse went away mid-scan"
+                    )
                 return [], "", scope.id
-            logger.warning("signal scope %s failed: %s", scope.id, exc.detail or exc)
+            logger.warning(
+                "signal scope %s failed: %s", scope.id, exc.detail or exc
+            )
             return [], f"{scope.label} could not be scanned.", ""
         except CompileError as exc:
-            logger.warning("signal scope %s failed to compile: %s", scope.id, exc)
+            logger.warning(
+                "signal scope %s failed to compile: %s", scope.id, exc
+            )
             return [], f"{scope.label} could not be scanned.", ""
 
     workers = min(MAX_WORKERS, max(len(wanted), 1))
@@ -149,9 +157,13 @@ def run(
 # --------------------------------------------------------------------------------------
 
 
-def _scan_scope(scope: SignalScope, cat: Catalog, today: date | None) -> list[Signal]:
+def _scan_scope(
+    scope: SignalScope, cat: Catalog, today: date | None
+) -> list[Signal]:
     metric = cat.metrics.get(scope.metric)
-    if metric is None:  # pragma: no cover - the catalog validator rejects these
+    if (
+        metric is None
+    ):  # pragma: no cover - the catalog validator rejects these
         return []
 
     spec = _series_spec(scope, cat)
@@ -182,7 +194,9 @@ def _series_spec(scope: SignalScope, cat: Catalog) -> QuerySpec:
         dimensions=dimensions,
         period=Period(
             grain=config.grain,  # type: ignore[arg-type]
-            relative="today" if structural else _window(config.periods, config.grain),
+            relative="today"
+            if structural
+            else _window(config.periods, config.grain),
         ),
         limit=scope.max_members or config.max_members,
     )
@@ -198,7 +212,11 @@ def _window(count: int, grain: str) -> str:
 
 
 def _scan_total(
-    scope: SignalScope, metric, spec: QuerySpec, rows: list[dict[str, Any]], cat: Catalog
+    scope: SignalScope,
+    metric,
+    spec: QuerySpec,
+    rows: list[dict[str, Any]],
+    cat: Catalog,
 ) -> list[Signal]:
     grain = cat.signals.grain
     ordered = sorted(rows, key=lambda r: str(r.get(grain, "")))
@@ -207,12 +225,20 @@ def _scan_total(
 
     found = []
     for detection in _detect(scope, series, latest):
-        found.append(_signal(scope, metric, detection, spec, cat, member="", value=latest))
+        found.append(
+            _signal(
+                scope, metric, detection, spec, cat, member="", value=latest
+            )
+        )
     return found
 
 
 def _scan_by_member(
-    scope: SignalScope, metric, spec: QuerySpec, rows: list[dict[str, Any]], cat: Catalog
+    scope: SignalScope,
+    metric,
+    spec: QuerySpec,
+    rows: list[dict[str, Any]],
+    cat: Catalog,
 ) -> list[Signal]:
     grain = cat.signals.grain
     structural = "concentration" in scope.detectors
@@ -227,7 +253,17 @@ def _scan_by_member(
         )
         if detection is None:
             return []
-        return [_signal(scope, metric, detection, spec, cat, member="", value=detection.magnitude)]
+        return [
+            _signal(
+                scope,
+                metric,
+                detection,
+                spec,
+                cat,
+                member="",
+                value=detection.magnitude,
+            )
+        ]
 
     # Rows arrive as (period, member, value). Regroup into one series per member.
     #
@@ -243,7 +279,9 @@ def _scan_by_member(
             continue
         key = canonical_enum_code(raw)
         labels.setdefault(key, _label_for(dimension, raw, cat))
-        by_member.setdefault(key, {})[str(row.get(grain, ""))] = _number(row.get(metric.id))
+        by_member.setdefault(key, {})[str(row.get(grain, ""))] = _number(
+            row.get(metric.id)
+        )
 
     stamps = sorted({s for series in by_member.values() for s in series})
     if not stamps:
@@ -256,8 +294,15 @@ def _scan_by_member(
         member_spec = _member_spec(spec, dimension, key, cat)
         for detection in _detect(scope, values, latest):
             found.append(
-                _signal(scope, metric, detection, member_spec, cat,
-                        member=labels[key], value=latest)
+                _signal(
+                    scope,
+                    metric,
+                    detection,
+                    member_spec,
+                    cat,
+                    member=labels[key],
+                    value=latest,
+                )
             )
 
     if "rank_movement" in scope.detectors and len(stamps) >= 2:
@@ -265,8 +310,15 @@ def _scan_by_member(
         prior = {k: s.get(stamps[-2]) for k, s in by_member.items()}
         for key, detection in detectors.rank_movement(current, prior):
             found.append(
-                _signal(scope, metric, detection, _member_spec(spec, dimension, key, cat), cat,
-                        member=labels.get(key) or key, value=current.get(key))
+                _signal(
+                    scope,
+                    metric,
+                    detection,
+                    _member_spec(spec, dimension, key, cat),
+                    cat,
+                    member=labels.get(key) or key,
+                    value=current.get(key),
+                )
             )
     return found
 
@@ -291,15 +343,19 @@ def _detect(
     if "threshold" in scope.detectors:
         detection = detectors.threshold_breach(
             latest,
-            watch_above=scope.watch_above, alert_above=scope.alert_above,
-            watch_below=scope.watch_below, alert_below=scope.alert_below,
+            watch_above=scope.watch_above,
+            alert_above=scope.alert_above,
+            watch_below=scope.watch_below,
+            alert_below=scope.alert_below,
         )
         if detection:
             out.append(detection)
     return out
 
 
-def _member_spec(spec: QuerySpec, dimension: str, member: str, cat: Catalog) -> QuerySpec:
+def _member_spec(
+    spec: QuerySpec, dimension: str, member: str, cat: Catalog
+) -> QuerySpec:
     """The signal's evidence: the same series, filtered to the member that fired.
 
     Filtered on the raw code rather than the decoded label — the label is a display value,
@@ -329,7 +385,9 @@ def _signal(
     subject = f"{humanize_label(metric.label)}"
     if member:
         subject = f"{subject} for {member}"
-    reading = f" is {format_value(value, metric.unit)}" if value is not None else ""
+    reading = (
+        f" is {format_value(value, metric.unit)}" if value is not None else ""
+    )
 
     return Signal(
         scope=scope.id,
@@ -370,12 +428,18 @@ def _scan_data_health(cat: Catalog) -> tuple[list[Signal], list[str]]:
 
     for check in cat.signals.data_health:
         table = cat.tables.get(check.table)
-        if table is None:  # pragma: no cover - the catalog validator rejects these
+        if (
+            table is None
+        ):  # pragma: no cover - the catalog validator rejects these
             continue
         try:
-            rows = execute(_freshness_query(table.table, check.date_column)).rows
+            rows = execute(
+                _freshness_query(table.table, check.date_column)
+            ).rows
         except ExecutionError as exc:
-            logger.warning("freshness check on %s failed: %s", check.table, exc)
+            logger.warning(
+                "freshness check on %s failed: %s", check.table, exc
+            )
             warnings.append(f"Could not check how fresh {table.label} is.")
             continue
 
@@ -398,7 +462,7 @@ def _scan_data_health(cat: Catalog) -> tuple[list[Signal], list[str]]:
                 baseline=detection.baseline,
                 unit="days",
                 text=f"{table.label}: {detection.detail}."
-                     + (f" {check.note}" if check.note else ""),
+                + (f" {check.note}" if check.note else ""),
                 # No spec: this is a finding about a table, not about a measure, and
                 # attaching a plausible-looking query would send the reader to a chart that
                 # cannot show them the problem.
@@ -432,7 +496,11 @@ def _notability(signal: Signal) -> tuple[int, float]:
     return (_SEVERITY_RANK.get(signal.severity, 2), -abs(signal.magnitude))
 
 
-_CONNECTION_FAILURES = ("OperationalError", "InterfaceError", "ReadOnlyNotConfigured")
+_CONNECTION_FAILURES = (
+    "OperationalError",
+    "InterfaceError",
+    "ReadOnlyNotConfigured",
+)
 
 
 def _is_connection_failure(exc: ExecutionError) -> bool:

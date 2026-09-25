@@ -12,10 +12,17 @@ from datetime import date
 
 from app.services.nlq import charts, pii
 from app.services.nlq.catalog import Catalog, get_catalog
-from app.services.nlq.compiler import CompileError, compile_comparison, compile_spec
+from app.services.nlq.compiler import (
+    CompileError,
+    compile_comparison,
+    compile_spec,
+)
 from app.services.nlq.contracts import ChartSpec, QuerySpec
 from app.services.nlq.executor import ExecutionError, QueryResult, execute
-from app.services.nlq.sql_execution import ValidatedSql, lineage_for_validated_sql
+from app.services.nlq.sql_execution import (
+    ValidatedSql,
+    lineage_for_validated_sql,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -64,13 +71,17 @@ def run_validated_sql(
 
     cat = catalog or get_catalog()
     if not statement.validated:
-        raise AssertionError("refusing to execute SQL that did not pass the validator")
+        raise AssertionError(
+            "refusing to execute SQL that did not pass the validator"
+        )
 
     result = execute_raw(statement.sql)
     chart = charts.build_from_rows(
         question=question,
         result=result,
-        lineage=lineage_for_validated_sql(statement, result.row_count, result.duration_ms),
+        lineage=lineage_for_validated_sql(
+            statement, result.row_count, result.duration_ms
+        ),
         catalog=cat,
         unit_hints=statement.column_units,
         description=statement.explanation,
@@ -80,7 +91,9 @@ def run_validated_sql(
 
 def _mask(chart: ChartSpec, role: str | None, catalog: Catalog) -> ChartSpec:
     """Mask PII unless the caller's role permits it (§7.4)."""
-    rows, masked = pii.mask_rows(chart.rows, chart.columns, role=role, catalog=catalog)
+    rows, masked = pii.mask_rows(
+        chart.rows, chart.columns, role=role, catalog=catalog
+    )
     if masked:
         chart.rows = rows
         chart.lineage.warnings.append(

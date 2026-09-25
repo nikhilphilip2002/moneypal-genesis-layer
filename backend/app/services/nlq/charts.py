@@ -17,7 +17,11 @@ from app.services.nlq import drilldown, drivers
 from app.services.nlq.catalog import Catalog, get_catalog
 from app.services.nlq.catalog import lookups
 from app.services.nlq.catalog.loader import canonical_enum_code
-from app.services.nlq.compiler import CompiledQuery, describe_parameters, render_sql_for_display
+from app.services.nlq.compiler import (
+    CompiledQuery,
+    describe_parameters,
+    render_sql_for_display,
+)
 from app.services.nlq.contracts import (
     AxisSpec,
     ChartSpec,
@@ -33,8 +37,8 @@ from app.services.nlq.periods import format_bucket
 
 MAX_BAR_CATEGORIES = 12
 MAX_LINE_SERIES = 6
-MAX_DONUT_SLICES = 6      # past six, slices are thinner than the eye can compare
-MAX_DUMBBELL_ITEMS = 20   # one row per item, so the limit is vertical space
+MAX_DONUT_SLICES = 6  # past six, slices are thinner than the eye can compare
+MAX_DUMBBELL_ITEMS = 20  # one row per item, so the limit is vertical space
 
 
 def build(
@@ -77,7 +81,9 @@ def build(
     x_axis, series = _axes(spec, compiled, chart_type, cat)
     series_by = _series_by(spec, chart_type, x_axis, cat)
 
-    from app.services.nlq.narrator import narrate  # local: narrator imports chart vocabulary
+    from app.services.nlq.narrator import (
+        narrate,
+    )  # local: narrator imports chart vocabulary
 
     if decomposition is not None:
         summary = drivers.narrate(decomposition, cat)
@@ -150,7 +156,11 @@ def choose_chart_type(
     # per-item before/after is a dumbbell (two dots and the gap between them), while a
     # bare delta reads as a diverging bar around zero.
     if spec.compare_to is not None:
-        if len(cat_dims) == 1 and not time_dims and n_rows <= MAX_DUMBBELL_ITEMS:
+        if (
+            len(cat_dims) == 1
+            and not time_dims
+            and n_rows <= MAX_DUMBBELL_ITEMS
+        ):
             return "dumbbell"
         return "variance"
 
@@ -251,10 +261,14 @@ def _decode_rows(
             raw = decoded[dim_id]
             decoded[f"{dim_id}__raw"] = raw
             if dim.is_time:
-                decoded[dim_id] = format_bucket(dim.grain or "month", _as_date(raw))
+                decoded[dim_id] = format_bucket(
+                    dim.grain or "month", _as_date(raw)
+                )
             elif dim.decode:
                 decoded[dim_id] = (
-                    "Not recorded" if raw in (None, "") else lookups.label_for(cat, dim.decode, raw)
+                    "Not recorded"
+                    if raw in (None, "")
+                    else lookups.label_for(cat, dim.decode, raw)
                 )
             elif raw in (None, ""):
                 decoded[dim_id] = "Not recorded"
@@ -283,7 +297,9 @@ def _disambiguate_decoded_dimensions(
             label = str(row.get(dimension_id, ""))
             code = canonical_enum_code(row[f"{dimension_id}__raw"])
             codes_by_label.setdefault(label, set()).add(code)
-        collisions = {label for label, codes in codes_by_label.items() if len(codes) > 1}
+        collisions = {
+            label for label, codes in codes_by_label.items() if len(codes) > 1
+        }
         for row in rows:
             label = str(row.get(dimension_id, ""))
             if label not in collisions:
@@ -304,15 +320,24 @@ def _as_date(value: Any) -> Any:
     return value
 
 
-def _columns(spec: QuerySpec, compiled: CompiledQuery, cat: Catalog) -> list[ColumnSpec]:
+def _columns(
+    spec: QuerySpec, compiled: CompiledQuery, cat: Catalog
+) -> list[ColumnSpec]:
     columns: list[ColumnSpec] = []
     for dim_id in spec.dimensions:
         dim = cat.dimensions[dim_id]
         sensitivity = (
-            "pii" if (dim.table, dim.column) in cat.pii_columns() else "internal"
+            "pii"
+            if (dim.table, dim.column) in cat.pii_columns()
+            else "internal"
         )
         columns.append(
-            ColumnSpec(name=dim_id, label=dim.label, unit="text", sensitivity=sensitivity)
+            ColumnSpec(
+                name=dim_id,
+                label=dim.label,
+                unit="text",
+                sensitivity=sensitivity,
+            )
         )
     for metric_id in spec.metrics:
         metric = cat.metrics[metric_id]
@@ -330,9 +355,9 @@ def _columns(spec: QuerySpec, compiled: CompiledQuery, cat: Catalog) -> list[Col
 
 def _format_hint(unit: str) -> str | None:
     return {
-        "inr": "inr_compact",   # ₹1.23 Cr / ₹4.56 L
-        "percent": "percent_1", # 12.3%
-        "count": "integer",     # 13,510
+        "inr": "inr_compact",  # ₹1.23 Cr / ₹4.56 L
+        "percent": "percent_1",  # 12.3%
+        "count": "integer",  # 13,510
         "days": "integer",
         "months": "integer",
         "years": "integer",
@@ -345,7 +370,9 @@ def _axes(
 ) -> tuple[AxisSpec | None, list[SeriesSpec]]:
     if chart_type == "kpi":
         return None, [
-            SeriesSpec(field=m, label=cat.metrics[m].label, unit=cat.metrics[m].unit)
+            SeriesSpec(
+                field=m, label=cat.metrics[m].label, unit=cat.metrics[m].unit
+            )
             for m in spec.metrics
         ]
 
@@ -368,8 +395,16 @@ def _axes(
     if chart_type == "waterfall":
         metric = cat.metrics[spec.metrics[0]]
         return (
-            AxisSpec(field="step", label=axis_dim.label if axis_dim else "Driver", unit="text"),
-            [SeriesSpec(field="value", label="Contribution", unit=metric.unit)],
+            AxisSpec(
+                field="step",
+                label=axis_dim.label if axis_dim else "Driver",
+                unit="text",
+            ),
+            [
+                SeriesSpec(
+                    field="value", label="Contribution", unit=metric.unit
+                )
+            ],
         )
 
     # The comparison forms read `_variance_rows` output, whose columns are `previous`,
@@ -378,12 +413,20 @@ def _axes(
     if chart_type in ("variance", "dumbbell"):
         metric = cat.metrics[spec.metrics[0]]
         if chart_type == "variance":
-            return x_axis, [SeriesSpec(field="delta", label="Change", unit=metric.unit)]
+            return x_axis, [
+                SeriesSpec(field="delta", label="Change", unit=metric.unit)
+            ]
         return x_axis, [
-            SeriesSpec(field="previous", label=compiled.compare_label or "Before",
-                       unit=metric.unit),
-            SeriesSpec(field="current", label=compiled.period_label or "After",
-                       unit=metric.unit),
+            SeriesSpec(
+                field="previous",
+                label=compiled.compare_label or "Before",
+                unit=metric.unit,
+            ),
+            SeriesSpec(
+                field="current",
+                label=compiled.period_label or "After",
+                unit=metric.unit,
+            ),
         ]
 
     # Always one axis. A second y-scale lets the reader infer a crossing or a correlation
@@ -412,11 +455,17 @@ def _series_by(
     """
     if chart_type in ("kpi", "table", "variance", "dumbbell", "waterfall"):
         return None
-    extra = [cat.dimensions[d] for d in spec.dimensions if not x_axis or d != x_axis.field]
+    extra = [
+        cat.dimensions[d]
+        for d in spec.dimensions
+        if not x_axis or d != x_axis.field
+    ]
     if not extra:
         return None
     dim = extra[0]
-    return AxisSpec(field=dim.id, label=dim.label, grain=dim.grain if dim.is_time else None)
+    return AxisSpec(
+        field=dim.id, label=dim.label, grain=dim.grain if dim.is_time else None
+    )
 
 
 def _variance_rows(
@@ -447,12 +496,18 @@ def _variance_rows(
 
     rows: list[dict[str, Any]] = []
     for row in current_rows:
-        prior_row = prior.rows[0] if singleton_time_pair else prior_by_key.get(key_of(row), {})
+        prior_row = (
+            prior.rows[0]
+            if singleton_time_pair
+            else prior_by_key.get(key_of(row), {})
+        )
         before = prior_row.get(metric_id)
         after = row.get(metric_id)
         delta = None
         delta_pct = None
-        if isinstance(after, (int, float)) and isinstance(before, (int, float)):
+        if isinstance(after, (int, float)) and isinstance(
+            before, (int, float)
+        ):
             delta = after - before
             delta_pct = (delta / before * 100) if before else None
         merged = {k: row[k] for k in key_fields if k in row}
@@ -461,22 +516,42 @@ def _variance_rows(
                 "current": after,
                 "previous": before,
                 "delta": delta,
-                "delta_pct": round(delta_pct, 1) if delta_pct is not None else None,
+                "delta_pct": round(delta_pct, 1)
+                if delta_pct is not None
+                else None,
             }
         )
         rows.append(merged)
 
     metric = cat.metrics[metric_id]
     columns = [
-        ColumnSpec(name=k, label=cat.dimensions[k].label, unit="text") for k in key_fields
+        ColumnSpec(name=k, label=cat.dimensions[k].label, unit="text")
+        for k in key_fields
     ] + [
-        ColumnSpec(name="current", label=f"{metric.label} ({compiled.period_label})",
-                   unit=metric.unit, format=_format_hint(metric.unit)),
-        ColumnSpec(name="previous", label=f"{metric.label} ({compiled.compare_label})",
-                   unit=metric.unit, format=_format_hint(metric.unit)),
-        ColumnSpec(name="delta", label="Change", unit=metric.unit,
-                   format=_format_hint(metric.unit)),
-        ColumnSpec(name="delta_pct", label="Change %", unit="percent", format="percent_1"),
+        ColumnSpec(
+            name="current",
+            label=f"{metric.label} ({compiled.period_label})",
+            unit=metric.unit,
+            format=_format_hint(metric.unit),
+        ),
+        ColumnSpec(
+            name="previous",
+            label=f"{metric.label} ({compiled.compare_label})",
+            unit=metric.unit,
+            format=_format_hint(metric.unit),
+        ),
+        ColumnSpec(
+            name="delta",
+            label="Change",
+            unit=metric.unit,
+            format=_format_hint(metric.unit),
+        ),
+        ColumnSpec(
+            name="delta_pct",
+            label="Change %",
+            unit="percent",
+            format="percent_1",
+        ),
     ]
     return rows, columns
 
@@ -512,7 +587,8 @@ def build_from_rows(
             elif isinstance(value, int) and not isinstance(value, bool):
                 row[column] = str(value)
     numeric = [
-        c for c in columns
+        c
+        for c in columns
         if unit_hints.get(c) not in {"text", "date", "datetime", "boolean"}
         and _column_is_numeric(rows, c)
         and not _generated_dimension_column(c, columns, unit_hints)
@@ -534,7 +610,8 @@ def build_from_rows(
         title=(clean_title[:1].upper() + clean_title[1:])[:120],
         subtitle=(
             "Generated query — not a reviewed metric"
-            if lineage.unverified else "Governed read-only record lookup"
+            if lineage.unverified
+            else "Governed read-only record lookup"
         ),
         x=AxisSpec(
             field=labels[0],
@@ -556,14 +633,20 @@ def build_from_rows(
                 name=c,
                 label=c.replace("_", " ").title(),
                 unit=unit_hints.get(c, "count" if c in numeric else "text"),
-                format=_format_hint(unit_hints[c]) if c in unit_hints else None,
+                format=_format_hint(unit_hints[c])
+                if c in unit_hints
+                else None,
                 sensitivity="internal",
             )
             for c in columns
         ],
         rows=rows,
         summary=_generated_summary(
-            rows, columns, numeric, labels, unit_hints,
+            rows,
+            columns,
+            numeric,
+            labels,
+            unit_hints,
             description=description,
             unverified=lineage.unverified,
         ),
@@ -581,10 +664,22 @@ def _column_is_numeric(rows: list[dict[str, Any]], column: str) -> bool:
     return False
 
 
-_DIMENSION_LIKE_GENERATED_COLUMNS = frozenset({
-    "interest_rate", "year", "month", "quarter", "fy", "product_code", "scheme_code",
-    "branch_code", "loan_status", "account_status", "asset_code", "dpd_bucket",
-})
+_DIMENSION_LIKE_GENERATED_COLUMNS = frozenset(
+    {
+        "interest_rate",
+        "year",
+        "month",
+        "quarter",
+        "fy",
+        "product_code",
+        "scheme_code",
+        "branch_code",
+        "loan_status",
+        "account_status",
+        "asset_code",
+        "dpd_bucket",
+    }
+)
 
 
 def _generated_dimension_column(
@@ -600,8 +695,11 @@ def _generated_dimension_column(
         len(columns) > 1
         and column == columns[0]
         and column.lower() in _DIMENSION_LIKE_GENERATED_COLUMNS
-        and any(other != column and unit_hints.get(other) in {"count", "inr", "percent"}
-                for other in columns)
+        and any(
+            other != column
+            and unit_hints.get(other) in {"count", "inr", "percent"}
+            for other in columns
+        )
     )
 
 
@@ -613,7 +711,11 @@ def _decode_generated_rows(
     for column in columns:
         lowered = column.lower()
         for dimension_id, enum in catalog.enums.items():
-            if lowered in {dimension_id.lower(), enum.column.lower(), f"{dimension_id.lower()}_code"}:
+            if lowered in {
+                dimension_id.lower(),
+                enum.column.lower(),
+                f"{dimension_id.lower()}_code",
+            }:
                 decoders[column] = dimension_id
                 break
 
@@ -636,7 +738,9 @@ def _decode_generated_rows(
                 codes_by_label.setdefault(str(row[column]), set()).add(
                     canonical_enum_code(row[raw_key])
                 )
-        collisions = {label for label, codes in codes_by_label.items() if len(codes) > 1}
+        collisions = {
+            label for label, codes in codes_by_label.items() if len(codes) > 1
+        }
         for row in decoded_rows:
             if str(row.get(column)) not in collisions:
                 continue
@@ -666,11 +770,20 @@ def _generated_summary(
         ]
         base = "; ".join(values) + "."
     elif {
-        "agent_code", "customer_name", "borrower_count", "principal_collected",
+        "agent_code",
+        "customer_name",
+        "borrower_count",
+        "principal_collected",
     }.issubset(columns):
         top = max(rows, key=lambda row: row.get("borrower_count") or 0)
-        agent = top.get("agent_name") or top.get("agent_code") or "The leading agent"
-        agent_count = len({row.get("agent_code") for row in rows if row.get("agent_code")})
+        agent = (
+            top.get("agent_name")
+            or top.get("agent_code")
+            or "The leading agent"
+        )
+        agent_count = len(
+            {row.get("agent_code") for row in rows if row.get("agent_code")}
+        )
         base = (
             f"{agent} has the highest borrower count at "
             f"{format_value(top.get('borrower_count'), 'count')}. Returned {len(rows):,} "
@@ -679,11 +792,16 @@ def _generated_summary(
         )
     elif labels and numeric:
         label, metric = labels[0], numeric[0]
-        ranked = [row for row in rows if isinstance(row.get(metric), (int, float))]
+        ranked = [
+            row for row in rows if isinstance(row.get(metric), (int, float))
+        ]
         if ranked:
             top = max(ranked, key=lambda row: row[metric])
             label_value = top.get(label)
-            if isinstance(label_value, (int, float)) and unit_hints.get(label, "text") != "text":
+            if (
+                isinstance(label_value, (int, float))
+                and unit_hints.get(label, "text") != "text"
+            ):
                 label_value = format_value(label_value, unit_hints[label])
             base = (
                 f"{label_value} has the highest {metric.replace('_', ' ')} at "
@@ -693,7 +811,9 @@ def _generated_summary(
         else:
             base = f"The query returned {len(rows):,} row(s)."
     else:
-        readable = ", ".join(column.replace("_", " ") for column in columns[:5])
+        readable = ", ".join(
+            column.replace("_", " ") for column in columns[:5]
+        )
         base = f"The query returned {len(rows):,} row(s) covering {readable}."
 
     detail = " ".join(description.split()).strip()
@@ -722,7 +842,9 @@ def _subtitle(compiled: CompiledQuery, result: QueryResult) -> str | None:
     return compiled.period_label or None
 
 
-def _lineage_warnings(compiled: CompiledQuery, result: QueryResult) -> list[str]:
+def _lineage_warnings(
+    compiled: CompiledQuery, result: QueryResult
+) -> list[str]:
     warnings = list(compiled.warnings)
     if result.truncated:
         warnings.append(
@@ -732,14 +854,21 @@ def _lineage_warnings(compiled: CompiledQuery, result: QueryResult) -> list[str]
 
 
 def _decompose(
-    spec: QuerySpec, rows: list[dict[str, Any]], prior: QueryResult, cat: Catalog
+    spec: QuerySpec,
+    rows: list[dict[str, Any]],
+    prior: QueryResult,
+    cat: Catalog,
 ) -> drivers.Decomposition:
     """Attribute the change to the members of the spec's categorical dimension."""
-    dimension = next(d for d in spec.dimensions if not cat.dimensions[d].is_time)
+    dimension = next(
+        d for d in spec.dimensions if not cat.dimensions[d].is_time
+    )
     metric = cat.metrics[spec.metrics[0]]
     # The weight only counts if the query actually carried it — a ratio explained without
     # its denominator is reported as indicative rather than silently treated as exact.
-    weight = metric.weight_metric if metric.weight_metric in spec.metrics else None
+    weight = (
+        metric.weight_metric if metric.weight_metric in spec.metrics else None
+    )
     return drivers.decompose(
         metric.id, dimension, rows, prior.rows, cat, weight_metric=weight
     )
@@ -758,7 +887,7 @@ def _waterfall_rows(
     rows: list[dict[str, Any]] = [
         {"step": f"{d.label} before", "value": d.prior_total, "kind": "total"}
     ]
-    for contribution in (*d.contributions, *( (d.other,) if d.other else () )):
+    for contribution in (*d.contributions, *((d.other,) if d.other else ())):
         row = {
             "step": contribution.label,
             "value": contribution.delta,
@@ -767,18 +896,29 @@ def _waterfall_rows(
             # everywhere else in the product — both `narrator.format_value` and the
             # frontend's. Passing the raw 0.62 fraction rendered a 62% driver as "0.62%" in
             # the table, directly under a summary sentence that said 62%.
-            "share": None if contribution.share is None else contribution.share * 100,
+            "share": None
+            if contribution.share is None
+            else contribution.share * 100,
         }
         if d.is_ratio and d.exact:
             row["rate_effect"] = contribution.rate_effect
             row["mix_effect"] = contribution.mix_effect
         rows.append(row)
-    rows.append({"step": f"{d.label} after", "value": d.current_total, "kind": "total"})
+    rows.append(
+        {"step": f"{d.label} after", "value": d.current_total, "kind": "total"}
+    )
 
     columns = [
-        ColumnSpec(name="step", label=d.dimension_label, unit="text", sensitivity="public"),
+        ColumnSpec(
+            name="step",
+            label=d.dimension_label,
+            unit="text",
+            sensitivity="public",
+        ),
         ColumnSpec(name="value", label=f"{d.label} contribution", unit=unit),  # type: ignore[arg-type]
-        ColumnSpec(name="kind", label="Kind", unit="text", sensitivity="public"),
+        ColumnSpec(
+            name="kind", label="Kind", unit="text", sensitivity="public"
+        ),
         ColumnSpec(name="share", label="Share of change", unit="percent"),
     ]
     if d.is_ratio and d.exact:

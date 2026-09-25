@@ -19,7 +19,9 @@ class ApprovedReportValueError(ValueError):
     pass
 
 
-def load_approved_values(cur, report_id: str, reporting_date: str) -> List[Dict[str, Any]]:
+def load_approved_values(
+    cur, report_id: str, reporting_date: str
+) -> List[Dict[str, Any]]:
     cur.execute("SELECT to_regclass('silver.regulatory_report_values')")
     if not cur.fetchone()[0]:
         return []
@@ -42,7 +44,9 @@ def load_approved_values(cur, report_id: str, reporting_date: str) -> List[Dict[
     for row in cur.fetchall():
         numeric, text, date_value, boolean = row[2:6]
         value = next(
-            value for value in (numeric, text, date_value, boolean) if value is not None
+            value
+            for value in (numeric, text, date_value, boolean)
+            if value is not None
         )
         if isinstance(value, Decimal):
             value = float(value)
@@ -61,7 +65,9 @@ def load_approved_values(cur, report_id: str, reporting_date: str) -> List[Dict[
     return rows
 
 
-def load_approved_declaration(cur, report_id: str, reporting_date: str) -> Optional[Dict[str, Any]]:
+def load_approved_declaration(
+    cur, report_id: str, reporting_date: str
+) -> Optional[Dict[str, Any]]:
     cur.execute("SELECT to_regclass('silver.regulatory_report_declarations')")
     if not cur.fetchone()[0]:
         return None
@@ -98,7 +104,9 @@ def apply_approved_values(wb, values: List[Dict[str, Any]]) -> int:
         sheet_name = item["sheet_name"]
         target_cell = item["target_cell"].upper()
         if sheet_name not in wb.sheetnames:
-            raise ApprovedReportValueError(f"Approved value names unknown sheet {sheet_name!r}")
+            raise ApprovedReportValueError(
+                f"Approved value names unknown sheet {sheet_name!r}"
+            )
         sheet = wb[sheet_name]
         row, column = coordinate_to_tuple(target_cell)
         if row > sheet.max_row or column > sheet.max_column:

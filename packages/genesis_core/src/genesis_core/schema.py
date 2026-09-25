@@ -1,4 +1,5 @@
 """Shared response contract. Every intelligence endpoint returns IntelligenceResponse."""
+
 from __future__ import annotations
 
 from datetime import date
@@ -10,17 +11,17 @@ Confidence = Literal["high", "medium", "low"]
 
 
 class SourceRef(BaseModel):
-    document: str                 # e.g. "RBI NBFC Master Directions 2016"
-    url: str                      # link back to the original source
-    page: Optional[str] = None    # page/section reference if available
+    document: str  # e.g. "RBI NBFC Master Directions 2016"
+    url: str  # link back to the original source
+    page: Optional[str] = None  # page/section reference if available
 
 
 class IntelligenceResponse(BaseModel):
     title: str
-    summary: str                                          # AI-generated executive summary
-    key_points: list[str] = Field(default_factory=list)   # 3-5 bullets
+    summary: str  # AI-generated executive summary
+    key_points: list[str] = Field(default_factory=list)  # 3-5 bullets
     source: SourceRef
-    ai_note: str                                          # separates fact from AI interpretation
+    ai_note: str  # separates fact from AI interpretation
     last_updated: str = Field(default_factory=lambda: date.today().isoformat())
     confidence: Confidence = "medium"
 

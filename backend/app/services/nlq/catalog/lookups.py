@@ -14,7 +14,11 @@ import logging
 import threading
 from typing import Any
 
-from app.services.nlq.catalog.loader import Catalog, EnumBlock, canonical_enum_code
+from app.services.nlq.catalog.loader import (
+    Catalog,
+    EnumBlock,
+    canonical_enum_code,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -65,7 +69,9 @@ def _fetch(enum: EnumBlock) -> dict[str, str]:
             rows = cur.fetchall()
             conn.rollback()
     except Exception as exc:  # noqa: BLE001 - cosmetic labels must not break an answer
-        logger.warning("NLQ dynamic label lookup failed for %s: %s", enum.dimension, exc)
+        logger.warning(
+            "NLQ dynamic label lookup failed for %s: %s", enum.dimension, exc
+        )
         return {}
 
     return {

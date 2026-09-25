@@ -46,7 +46,15 @@ CREATE TABLE IF NOT EXISTS {TABLE} (
 );
 """
 
-STATUSES = ("open", "in_progress", "contacted", "promised", "paid", "escalated", "closed")
+STATUSES = (
+    "open",
+    "in_progress",
+    "contacted",
+    "promised",
+    "paid",
+    "escalated",
+    "closed",
+)
 """The states a collections officer actually moves an account through. `promised` is separate
 from `contacted` on purpose — a promise to pay is the thing worth chasing tomorrow, and
 collapsing it into "we spoke to them" loses the only follow-up date the list has."""
@@ -63,8 +71,12 @@ class SavedWorklist:
     owner: str
     worklist: Worklist
     statuses: dict[str, dict[str, Any]] = field(default_factory=dict)
-    created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
-    updated_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    created_at: datetime = field(
+        default_factory=lambda: datetime.now(timezone.utc)
+    )
+    updated_at: datetime = field(
+        default_factory=lambda: datetime.now(timezone.utc)
+    )
 
 
 @dataclass(slots=True)
@@ -94,7 +106,9 @@ def _ensure_table() -> bool:
         _table_ready = True
         return True
     except Exception as exc:  # noqa: BLE001
-        logger.warning("saved worklist table unavailable, using memory: %s", exc)
+        logger.warning(
+            "saved worklist table unavailable, using memory: %s", exc
+        )
         return False
 
 
@@ -129,7 +143,9 @@ def save(worklist: Worklist, *, owner: str = "anonymous") -> SavedWorklist:
                 conn.commit()
             return saved
         except Exception as exc:  # noqa: BLE001
-            logger.warning("saved worklist write failed, keeping in memory: %s", exc)
+            logger.warning(
+                "saved worklist write failed, keeping in memory: %s", exc
+            )
 
     _MEMORY[saved.worklist_id] = saved
     return saved
@@ -162,13 +178,17 @@ def get(worklist_id: str, *, owner: str = "anonymous") -> SavedWorklist | None:
                 updated_at=updated_at,
             )
         except Exception as exc:  # noqa: BLE001
-            logger.warning("saved worklist read failed, falling back to memory: %s", exc)
+            logger.warning(
+                "saved worklist read failed, falling back to memory: %s", exc
+            )
 
     saved = _MEMORY.get(worklist_id)
     return saved if saved and saved.owner == owner else None
 
 
-def list_recent(*, owner: str = "anonymous", limit: int = 20) -> list[SavedWorklistSummary]:
+def list_recent(
+    *, owner: str = "anonymous", limit: int = 20
+) -> list[SavedWorklistSummary]:
     records: list[SavedWorklist] = []
 
     if _ensure_table():
@@ -191,14 +211,18 @@ def list_recent(*, owner: str = "anonymous", limit: int = 20) -> list[SavedWorkl
                     created_at=row[5],
                     item_count=len((_json(row[3]) or {}).get("items", [])),
                     open_count=sum(
-                        1 for s in (_json(row[4]) or {}).values()
+                        1
+                        for s in (_json(row[4]) or {}).values()
                         if s.get("status") == "open"
                     ),
                 )
                 for row in rows
             ]
         except Exception as exc:  # noqa: BLE001
-            logger.warning("saved worklist listing failed, falling back to memory: %s", exc)
+            logger.warning(
+                "saved worklist listing failed, falling back to memory: %s",
+                exc,
+            )
 
     records = [s for s in _MEMORY.values() if s.owner == owner]
     records.sort(key=lambda s: s.created_at, reverse=True)
@@ -209,7 +233,9 @@ def list_recent(*, owner: str = "anonymous", limit: int = 20) -> list[SavedWorkl
             title=s.title,
             created_at=s.created_at,
             item_count=len(s.worklist.items),
-            open_count=sum(1 for v in s.statuses.values() if v.get("status") == "open"),
+            open_count=sum(
+                1 for v in s.statuses.values() if v.get("status") == "open"
+            ),
         )
         for s in records[:limit]
     ]
@@ -235,7 +261,10 @@ def set_status(
     if account not in saved.statuses:
         raise WorklistStoreError(f"account {account!r} is not on this list")
 
-    entry: dict[str, Any] = {"status": status, "updated_at": _now().isoformat()}
+    entry: dict[str, Any] = {
+        "status": status,
+        "updated_at": _now().isoformat(),
+    }
     if note:
         entry["note"] = note
     if assigned_to:

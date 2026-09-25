@@ -9,7 +9,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from app.services.workbench.access import SourceAccessDenied, SourceAccessPolicy, source_group
+from app.services.workbench.access import (
+    SourceAccessDenied,
+    SourceAccessPolicy,
+    source_group,
+)
 
 
 class AgentToolError(ValueError):
@@ -48,7 +52,8 @@ class RuntimeToolPolicy:
     def requires_external_consent(self) -> bool:
         return bool(
             self.source_id
-            and source_group(self.source_id).value in {"external_indexed", "live_external"}
+            and source_group(self.source_id).value
+            in {"external_indexed", "live_external"}
         )
 
 
@@ -106,7 +111,9 @@ def visible_runtime_tool_names(policy: SourceAccessPolicy) -> list[str]:
             runtime_policy.source_id
         ):
             continue
-        if name == "search_curated_knowledge" and not allowed_curated_domains(policy):
+        if name == "search_curated_knowledge" and not allowed_curated_domains(
+            policy
+        ):
             continue
         visible.append(name)
     return visible
@@ -128,7 +135,9 @@ def authorize_local_tool_call(
     """Apply policy only; FastMCP remains the sole argument-validation boundary."""
     runtime_policy = get_runtime_tool_policy(name)
     if not isinstance(arguments, dict):
-        raise AgentToolArgumentsInvalid("MCP tool arguments must be a JSON object")
+        raise AgentToolArgumentsInvalid(
+            "MCP tool arguments must be a JSON object"
+        )
     if runtime_policy.source_id is not None:
         try:
             policy.require(runtime_policy.source_id)

@@ -19,6 +19,7 @@ the collection is never empty while a refresh is in flight:
 The payload shape mirrors ``backend/scripts/ingest.py`` so ``genesis_core.rag.search``
 resolves ``source``/``page`` into real citations.
 """
+
 from __future__ import annotations
 
 import logging
@@ -61,17 +62,32 @@ def ensure_collection() -> None:
             pass
 
 
-def point_id(source_slug: str, document: str, page: int | None, chunk_index: int) -> str:
-    return str(uuid.uuid5(uuid.NAMESPACE_URL, f"{source_slug}:{document}:{page}:{chunk_index}"))
+def point_id(
+    source_slug: str, document: str, page: int | None, chunk_index: int
+) -> str:
+    return str(
+        uuid.uuid5(
+            uuid.NAMESPACE_URL,
+            f"{source_slug}:{document}:{page}:{chunk_index}",
+        )
+    )
 
 
 def _macro_filter(**kwargs):
     """Filter over this module's points. Keyword args become equality conditions."""
     from qdrant_client.http import models
 
-    must = [models.FieldCondition(key="module", match=models.MatchValue(value="macro"))]
+    must = [
+        models.FieldCondition(
+            key="module", match=models.MatchValue(value="macro")
+        )
+    ]
     for key, value in kwargs.items():
-        must.append(models.FieldCondition(key=key, match=models.MatchValue(value=value)))
+        must.append(
+            models.FieldCondition(
+                key=key, match=models.MatchValue(value=value)
+            )
+        )
     return models.Filter(must=must)
 
 
@@ -103,7 +119,9 @@ def restamp_document(document: str, source_slug: str, run_id: str) -> int:
     return count(document=document, source_slug=source_slug)
 
 
-def upsert_rows(rows: Iterable[tuple[dict, list[float]]], source_slug: str, run_id: str) -> int:
+def upsert_rows(
+    rows: Iterable[tuple[dict, list[float]]], source_slug: str, run_id: str
+) -> int:
     """Upsert (row, vector) pairs in batches. Returns the number of points written."""
     from qdrant_client.http import models
 
@@ -113,14 +131,21 @@ def upsert_rows(rows: Iterable[tuple[dict, list[float]]], source_slug: str, run_
     def flush() -> None:
         nonlocal sent, points
         if points:
-            client().upsert(collection_name=collection(), points=points, wait=True)
+            client().upsert(
+                collection_name=collection(), points=points, wait=True
+            )
             sent += len(points)
             points = []
 
     for row, vector in rows:
         points.append(
             models.PointStruct(
-                id=point_id(source_slug, row["document"], row.get("page"), row["chunk_index"]),
+                id=point_id(
+                    source_slug,
+                    row["document"],
+                    row.get("page"),
+                    row["chunk_index"],
+                ),
                 vector=vector,
                 payload={
                     "module": "macro",
@@ -149,9 +174,15 @@ def count(**kwargs) -> int:
     """Count this module's points, optionally narrowed by payload equality."""
     if not client().collection_exists(collection()):
         return 0
-    return client().count(
-        collection_name=collection(), count_filter=_macro_filter(**kwargs), exact=True
-    ).count
+    return (
+        client()
+        .count(
+            collection_name=collection(),
+            count_filter=_macro_filter(**kwargs),
+            exact=True,
+        )
+        .count
+    )
 
 
 def total_points() -> int:
@@ -172,9 +203,17 @@ def _stale_filter(run_id: str):
     """
     from qdrant_client.http import models
 
-    conditions = [models.FieldCondition(key="ingest_run", match=models.MatchValue(value=run_id))]
+    conditions = [
+        models.FieldCondition(
+            key="ingest_run", match=models.MatchValue(value=run_id)
+        )
+    ]
     if not settings.macro_purge_legacy:
-        conditions.append(models.IsEmptyCondition(is_empty=models.PayloadField(key="ingest_run")))
+        conditions.append(
+            models.IsEmptyCondition(
+                is_empty=models.PayloadField(key="ingest_run")
+            )
+        )
     return models.Filter(must_not=conditions)
 
 
@@ -208,7 +247,11 @@ def purge_stale(run_id: str, stamped: int, before: int, safe: bool) -> dict:
     from qdrant_client.http import models
 
     stale = _stale_filter(run_id)
-    doomed = client().count(collection_name=collection(), count_filter=stale, exact=True).count
+    doomed = (
+        client()
+        .count(collection_name=collection(), count_filter=stale, exact=True)
+        .count
+    )
     if doomed:
         client().delete(
             collection_name=collection(),
@@ -232,16 +275,26 @@ def _unstamped_filter():
     from qdrant_client.http import models
 
     return models.Filter(
-        must=[models.IsEmptyCondition(is_empty=models.PayloadField(key="ingest_run"))]
+        must=[
+            models.IsEmptyCondition(
+                is_empty=models.PayloadField(key="ingest_run")
+            )
+        ]
     )
 
 
 def count_unstamped() -> int:
     if not client().collection_exists(collection()):
         return 0
-    return client().count(
-        collection_name=collection(), count_filter=_unstamped_filter(), exact=True
-    ).count
+    return (
+        client()
+        .count(
+            collection_name=collection(),
+            count_filter=_unstamped_filter(),
+            exact=True,
+        )
+        .count
+    )
 
 
 def delete_unstamped() -> int:
@@ -260,7 +313,12 @@ def delete_unstamped() -> int:
 
 def stats() -> dict:
     if not client().collection_exists(collection()):
-        return {"collection": collection(), "exists": False, "points": 0, "macro_points": 0}
+        return {
+            "collection": collection(),
+            "exists": False,
+            "points": 0,
+            "macro_points": 0,
+        }
     return {
         "collection": collection(),
         "exists": True,

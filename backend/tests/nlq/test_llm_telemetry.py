@@ -36,16 +36,23 @@ def test_message_serialization_and_hash_are_byte_stable():
     messages = [{"role": "system", "content": "fixed"}]
     assert serialize_messages(messages) == serialize_messages(list(messages))
     assert prefix_hash(messages) == prefix_hash(list(messages))
-    assert prefix_hash(messages) != prefix_hash([{"role": "system", "content": "changed"}])
+    assert prefix_hash(messages) != prefix_hash(
+        [{"role": "system", "content": "changed"}]
+    )
 
 
 def test_turn_summary_separates_context_size_from_additive_cost():
     records = [
         _record(),
         _record(
-            purpose="final_compose", prompt_tokens=60, cached_prompt_tokens=10,
-            uncached_prompt_tokens=50, completion_tokens=20, duration_ms=400,
-            attempts=2, retries=1,
+            purpose="final_compose",
+            prompt_tokens=60,
+            cached_prompt_tokens=10,
+            uncached_prompt_tokens=50,
+            completion_tokens=20,
+            duration_ms=400,
+            attempts=2,
+            retries=1,
         ),
     ]
     summary = summarize_calls(records)
@@ -57,7 +64,10 @@ def test_turn_summary_separates_context_size_from_additive_cost():
     assert summary["completion_tokens"] == 30
     assert summary["model_duration_ms"] == 650
     assert summary["retry_count"] == 1
-    assert [call["purpose"] for call in summary["calls"]] == ["route", "final_compose"]
+    assert [call["purpose"] for call in summary["calls"]] == [
+        "route",
+        "final_compose",
+    ]
 
 
 def test_collectors_are_scoped():

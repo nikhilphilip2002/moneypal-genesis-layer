@@ -16,7 +16,9 @@ from app.services.workbench.agent_tools import (
 
 @pytest.fixture(autouse=True)
 def _connector_settings(monkeypatch):
-    monkeypatch.setattr(access.settings, "workbench_external_connectors_enabled", True)
+    monkeypatch.setattr(
+        access.settings, "workbench_external_connectors_enabled", True
+    )
     monkeypatch.setattr(access.settings, "exa_mcp_enabled", True)
 
 
@@ -62,7 +64,17 @@ def test_registry_contains_runtime_policy_only():
 
 @pytest.mark.anyio
 async def test_provider_schemas_are_closed_flat_objects_without_polymorphic_keywords():
-    forbidden = {"oneOf", "anyOf", "allOf", "discriminator", "if", "then", "else", "$ref", "$defs"}
+    forbidden = {
+        "oneOf",
+        "anyOf",
+        "allOf",
+        "discriminator",
+        "if",
+        "then",
+        "else",
+        "$ref",
+        "$defs",
+    }
     for definition in (await _definitions()).values():
         schema = definition["parameters"]
         assert len(json.dumps(schema, separators=(",", ":"))) < 100_000
@@ -84,22 +96,31 @@ async def test_provider_schemas_are_closed_flat_objects_without_polymorphic_keyw
 async def test_every_authorized_tool_is_offered_with_its_full_schema():
     """Every policy-authorized local tool is offered with its complete schema."""
     definitions = await _definitions()
-    assert set(definitions) == set(RUNTIME_TOOL_POLICIES) - {"visualize_query_result"}
-    assert all(definition["parameters"]["properties"] for definition in definitions.values())
+    assert set(definitions) == set(RUNTIME_TOOL_POLICIES) - {
+        "visualize_query_result"
+    }
+    assert all(
+        definition["parameters"]["properties"]
+        for definition in definitions.values()
+    )
 
 
 @pytest.mark.anyio
 async def test_policy_omits_live_web_and_filters_curated_domains_without_consent():
     definitions = await _definitions(external=False)
     assert "search_public_web" not in definitions
-    domains = definitions["search_curated_knowledge"]["parameters"]["properties"]["domain"]
+    domains = definitions["search_curated_knowledge"]["parameters"][
+        "properties"
+    ]["domain"]
     assert domains["enum"] == ["concepts"]
 
 
 @pytest.mark.anyio
 async def test_role_policy_removes_forbidden_curated_domains():
     definitions = await _definitions(role="gicc_director", external=True)
-    domains = definitions["search_curated_knowledge"]["parameters"]["properties"]["domain"]
+    domains = definitions["search_curated_knowledge"]["parameters"][
+        "properties"
+    ]["domain"]
     assert "macro" in domains["enum"]
     assert "competitive" not in domains["enum"]
     assert "regulatory" not in domains["enum"]
@@ -121,6 +142,14 @@ async def test_final_answer_schema_is_minimal():
 
     assert list(properties) == ["insights", "query_id", "view"]
     assert properties["view"]["enum"] == [
-        "kpi", "line", "area", "stacked_area", "bar", "grouped_bar", "table",
-        "donut", "scatter", "heatmap",
+        "kpi",
+        "line",
+        "area",
+        "stacked_area",
+        "bar",
+        "grouped_bar",
+        "table",
+        "donut",
+        "scatter",
+        "heatmap",
     ]

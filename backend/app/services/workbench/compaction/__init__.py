@@ -53,7 +53,9 @@ async def maybe_compact(conversation_id: str, user: str) -> bool:
             logger.warning(
                 "workbench compaction cannot help %s: newest turn replays at %d tokens "
                 "against a budget of %d (single_turn_exceeds_budget)",
-                conversation_id, measure.newest_turn_tokens, limit,
+                conversation_id,
+                measure.newest_turn_tokens,
+                limit,
             )
             return False
         if measure.tokens <= limit:
@@ -72,14 +74,20 @@ async def compact_now(conversation_id: str, user: str) -> bool:
     if record is None:
         return False
 
-    complete = [turn for turn in record.turns if turn.get("status") != "running"]
+    complete = [
+        turn for turn in record.turns if turn.get("status") != "running"
+    ]
     keep = max(1, settings.workbench_keep_recent_turns)
     if len(complete) <= keep:
         return False
 
-    previous = record.compaction if isinstance(record.compaction, dict) else None
+    previous = (
+        record.compaction if isinstance(record.compaction, dict) else None
+    )
     previous_summary = str(previous.get("summary", "")) if previous else ""
-    previous_first_kept = str(previous.get("first_kept_turn_id", "")) if previous else ""
+    previous_first_kept = (
+        str(previous.get("first_kept_turn_id", "")) if previous else ""
+    )
 
     to_summarize = complete[:-keep]
     first_kept_turn_id = str(complete[-keep].get("id", ""))
@@ -121,6 +129,8 @@ async def compact_now(conversation_id: str, user: str) -> bool:
     )
     logger.info(
         "workbench compaction: %s summarized %d turn(s), tokens_before=%d",
-        conversation_id, len(to_summarize), tokens_before,
+        conversation_id,
+        len(to_summarize),
+        tokens_before,
     )
     return True

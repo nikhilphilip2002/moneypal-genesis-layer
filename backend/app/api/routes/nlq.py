@@ -61,7 +61,8 @@ async def health():
         "db": database,
         "catalog": catalog_state,
         "capabilities": {
-            "execute": database.get("status") == "ok" and catalog_state["status"] == "ok",
+            "execute": database.get("status") == "ok"
+            and catalog_state["status"] == "ok",
         },
     }
 
@@ -139,12 +140,17 @@ class WorklistRequest(BaseModel):
 
 
 @router.post("/worklist", response_model=Worklist)
-def generate_worklist(req: WorklistRequest, authorization: str | None = Header(default=None)):
+def generate_worklist(
+    req: WorklistRequest, authorization: str | None = Header(default=None)
+):
     """Run a worklist preset. No LLM involved — the rules and the score are catalog config."""
     user, role = identity_from_authorization(authorization)
     try:
         result = worklists.build(
-            req.worklist_id, filters=list(req.filters), limit=req.limit, role=role
+            req.worklist_id,
+            filters=list(req.filters),
+            limit=req.limit,
+            role=role,
         )
     except worklists.WorklistError as exc:
         raise HTTPException(422, str(exc)) from exc
@@ -169,8 +175,11 @@ def list_worklists(authorization: str | None = Header(default=None)):
                 "id": preset.id,
                 "title": preset.title,
                 "description": preset.description,
-                "rules": [catalog.worklists.rules[r].label for r in preset.rules
-                          if r in catalog.worklists.rules],
+                "rules": [
+                    catalog.worklists.rules[r].label
+                    for r in preset.rules
+                    if r in catalog.worklists.rules
+                ],
             }
             for preset in catalog.worklists.presets.values()
         ],
@@ -195,7 +204,9 @@ def list_worklists(authorization: str | None = Header(default=None)):
 
 
 @router.get("/worklists/{worklist_id}/export")
-def export_worklist(worklist_id: str, authorization: str | None = Header(default=None)):
+def export_worklist(
+    worklist_id: str, authorization: str | None = Header(default=None)
+):
     """The saved list as CSV, because that is how it reaches a branch.
 
     Re-exports the frozen snapshot rather than re-running the rules: a list half-worked
@@ -255,7 +266,10 @@ def list_signals(
         # Named rather than implied. A reader who does not know variance-to-plan is missing
         # will read an empty feed as a clean book.
         "unavailable": [
-            {"detector": entry.get("detector", ""), "needs": entry.get("needs", "")}
+            {
+                "detector": entry.get("detector", ""),
+                "needs": entry.get("needs", ""),
+            }
             for entry in catalog.signals.unavailable
         ],
     }
@@ -317,7 +331,9 @@ def get_briefing(
     """One desk's morning read: what is notable, where the book stands, who to call."""
     _user, role = identity_from_authorization(authorization)
     try:
-        return signals.briefing(persona_id, role=role, include_worklists=include_worklists)
+        return signals.briefing(
+            persona_id, role=role, include_worklists=include_worklists
+        )
     except signals.BriefingError as exc:
         raise HTTPException(404, str(exc)) from exc
     except ExecutionError as exc:

@@ -13,7 +13,14 @@ from qdrant_client import QdrantClient
 from qdrant_client.http import models
 from sentence_transformers import SentenceTransformer
 
-from pipeline_common import BASE_DIR, DEFAULT_CONFIG_DIR, DEFAULT_CONFIG_PATH, DEFAULT_STRUCTURED_ROOT, Institution, load_institutions
+from pipeline_common import (
+    BASE_DIR,
+    DEFAULT_CONFIG_DIR,
+    DEFAULT_CONFIG_PATH,
+    DEFAULT_STRUCTURED_ROOT,
+    Institution,
+    load_institutions,
+)
 
 
 load_dotenv(BASE_DIR.parent / ".env")
@@ -24,6 +31,7 @@ QDRANT_PORT = int(os.getenv("QDRANT_PORT", "6333"))
 EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "BAAI/bge-m3")
 VECTOR_DISTANCE = models.Distance.COSINE
 
+
 def configured_institutions() -> list[Institution]:
     if DEFAULT_CONFIG_DIR.exists():
         return load_institutions(DEFAULT_CONFIG_DIR)
@@ -31,7 +39,10 @@ def configured_institutions() -> list[Institution]:
 
 
 def collection_by_slug() -> dict[str, str]:
-    return {institution.slug: institution.collection or f"comp_{institution.slug}" for institution in configured_institutions()}
+    return {
+        institution.slug: institution.collection or f"comp_{institution.slug}"
+        for institution in configured_institutions()
+    }
 
 
 COLLECTION_BY_SLUG = collection_by_slug()
@@ -61,7 +72,9 @@ _model: SentenceTransformer | None = None
 
 
 def get_client() -> QdrantClient:
-    return QdrantClient(host=QDRANT_HOST, port=QDRANT_PORT, check_compatibility=False)
+    return QdrantClient(
+        host=QDRANT_HOST, port=QDRANT_PORT, check_compatibility=False
+    )
 
 
 def get_model() -> SentenceTransformer:
@@ -78,7 +91,9 @@ def vector_size() -> int:
     return int(model.get_sentence_embedding_dimension())
 
 
-def structured_file_for(institution: Institution, structured_root: Path) -> Path:
+def structured_file_for(
+    institution: Institution, structured_root: Path
+) -> Path:
     primary = structured_root / f"{institution.slug}.md"
     if primary.exists() or not institution.legacy_slug:
         return primary
@@ -93,24 +108,39 @@ def document_metadata(institution: Institution) -> dict:
         "category": category,
         "institution_url": institution.start_url,
         "source_doc": f"{institution.slug}.md",
-        "qdrant_collection": institution.collection or f"comp_{institution.slug}",
-        "applicability": APPLICABILITY_BY_CATEGORY.get(category, "Competitive intelligence for financial services benchmarking"),
+        "qdrant_collection": institution.collection
+        or f"comp_{institution.slug}",
+        "applicability": APPLICABILITY_BY_CATEGORY.get(
+            category,
+            "Competitive intelligence for financial services benchmarking",
+        ),
         "effective_date": None,
-        "priority": "high" if institution.slug in {"kinara_capital", "sidbi"} else "medium",
+        "priority": "high"
+        if institution.slug in {"kinara_capital", "sidbi"}
+        else "medium",
         "description": institution.description,
     }
 
 
 def document_registry(slugs: Iterable[str] | None = None) -> list[dict]:
-    return [document_metadata(institution) for institution in load_selected_institutions(slugs)]
+    return [
+        document_metadata(institution)
+        for institution in load_selected_institutions(slugs)
+    ]
 
 
-def load_selected_institutions(slugs: Iterable[str] | None = None) -> list[Institution]:
+def load_selected_institutions(
+    slugs: Iterable[str] | None = None,
+) -> list[Institution]:
     institutions = configured_institutions()
     wanted = {slug for slug in slugs or []}
     if not wanted:
         return institutions
-    return [institution for institution in institutions if institution.slug in wanted]
+    return [
+        institution
+        for institution in institutions
+        if institution.slug in wanted
+    ]
 
 
 def split_sections(markdown: str) -> list[tuple[str, str]]:
@@ -122,14 +152,20 @@ def split_sections(markdown: str) -> list[tuple[str, str]]:
     for index, match in enumerate(matches):
         section = match.group(1).strip()
         start = match.end()
-        end = matches[index + 1].start() if index + 1 < len(matches) else len(markdown)
+        end = (
+            matches[index + 1].start()
+            if index + 1 < len(matches)
+            else len(markdown)
+        )
         body = markdown[start:end].strip()
         if body:
             sections.append((section, body))
     return sections
 
 
-def chunk_text(text: str, chunk_chars: int = 1800, overlap_chars: int = 250) -> list[str]:
+def chunk_text(
+    text: str, chunk_chars: int = 1800, overlap_chars: int = 250
+) -> list[str]:
     text = re.sub(r"\n{3,}", "\n\n", text).strip()
     if len(text) <= chunk_chars:
         return [text] if text else []
@@ -155,28 +191,40 @@ def chunks_from_markdown(markdown: str) -> list[Chunk]:
     chunks = []
     for section, body in split_sections(markdown):
         for text in chunk_text(body):
-            chunks.append(Chunk(text=text, section=section, chunk_index=len(chunks)))
+            chunks.append(
+                Chunk(text=text, section=section, chunk_index=len(chunks))
+            )
     return chunks
 
 
-def point_id(institution_slug: str, section: str, chunk_index: int, text: str) -> str:
-    digest = hashlib.sha1(f"{institution_slug}:{section}:{chunk_index}:{text}".encode("utf-8")).hexdigest()
+def point_id(
+    institution_slug: str, section: str, chunk_index: int, text: str
+) -> str:
+    digest = hashlib.sha1(
+        f"{institution_slug}:{section}:{chunk_index}:{text}".encode("utf-8")
+    ).hexdigest()
     return str(uuid.UUID(digest[:32]))
 
 
-def ensure_collection(client: QdrantClient, collection_name: str, size: int) -> str:
+def ensure_collection(
+    client: QdrantClient, collection_name: str, size: int
+) -> str:
     if client.collection_exists(collection_name):
         return "exists"
 
     client.create_collection(
         collection_name=collection_name,
-        vectors_config=models.VectorParams(size=size, distance=VECTOR_DISTANCE),
+        vectors_config=models.VectorParams(
+            size=size, distance=VECTOR_DISTANCE
+        ),
     )
     return "created"
 
 
 def embed_texts(texts: list[str]) -> list[list[float]]:
-    vectors = get_model().encode(texts, normalize_embeddings=True, show_progress_bar=False)
+    vectors = get_model().encode(
+        texts, normalize_embeddings=True, show_progress_bar=False
+    )
     return [vector.tolist() for vector in vectors]
 
 
@@ -201,11 +249,13 @@ def ingest_institution(
 
     markdown = source_path.read_text(encoding="utf-8")
     chunks = chunks_from_markdown(markdown)
-    collection_status = ensure_collection(client, collection_name, vector_size())
+    collection_status = ensure_collection(
+        client, collection_name, vector_size()
+    )
 
     total = 0
     for start in range(0, len(chunks), batch_size):
-        batch = chunks[start:start + batch_size]
+        batch = chunks[start : start + batch_size]
         vectors = embed_texts([chunk.text for chunk in batch])
         points = []
 
@@ -213,7 +263,12 @@ def ingest_institution(
             metadata = document_metadata(institution)
             points.append(
                 models.PointStruct(
-                    id=point_id(institution.slug, chunk.section, chunk.chunk_index, chunk.text),
+                    id=point_id(
+                        institution.slug,
+                        chunk.section,
+                        chunk.chunk_index,
+                        chunk.text,
+                    ),
                     vector=vector,
                     payload={
                         **metadata,
@@ -227,7 +282,9 @@ def ingest_institution(
                 )
             )
 
-        client.upsert(collection_name=collection_name, points=points, wait=True)
+        client.upsert(
+            collection_name=collection_name, points=points, wait=True
+        )
         total += len(points)
 
     return {
@@ -245,13 +302,17 @@ def ingest_institution(
 def ingest_all(slugs: Iterable[str] | None = None) -> dict:
     client = get_client()
     institutions = load_selected_institutions(slugs)
-    results = [ingest_institution(institution, client) for institution in institutions]
+    results = [
+        ingest_institution(institution, client) for institution in institutions
+    ]
     return {
         "qdrant_host": QDRANT_HOST,
         "qdrant_port": QDRANT_PORT,
         "embedding_model": EMBEDDING_MODEL,
         "institutions_processed": len(results),
-        "total_points_upserted": sum(item.get("points_upserted", 0) for item in results),
+        "total_points_upserted": sum(
+            item.get("points_upserted", 0) for item in results
+        ),
         "results": results,
     }
 
@@ -263,8 +324,22 @@ def collection_counts() -> list[dict]:
         slug = institution.slug
         collection = institution.collection or f"comp_{slug}"
         if not client.collection_exists(collection):
-            counts.append({"slug": slug, "collection": collection, "exists": False, "points_count": 0})
+            counts.append(
+                {
+                    "slug": slug,
+                    "collection": collection,
+                    "exists": False,
+                    "points_count": 0,
+                }
+            )
             continue
         count = client.count(collection_name=collection, exact=True).count
-        counts.append({"slug": slug, "collection": collection, "exists": True, "points_count": count})
+        counts.append(
+            {
+                "slug": slug,
+                "collection": collection,
+                "exists": True,
+                "points_count": count,
+            }
+        )
     return counts

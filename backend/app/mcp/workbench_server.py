@@ -58,10 +58,14 @@ def _execution_context(ctx: Context):
     )
     supplied_sources = tuple(meta.get("workbench_effective_sources") or ())
     if supplied_sources != policy.effective_sources:
-        raise SourceAccessDenied("source policy metadata does not match current policy")
+        raise SourceAccessDenied(
+            "source policy metadata does not match current policy"
+        )
     supplied_version = str(meta.get("source_policy_version") or "")
     if supplied_version != policy.version:
-        raise SourceAccessDenied("source policy version does not match current policy")
+        raise SourceAccessDenied(
+            "source policy version does not match current policy"
+        )
     return AgentExecutionContext(
         user=str(meta.get("workbench_user") or ""),
         role=role,
@@ -73,10 +77,15 @@ def _execution_context(ctx: Context):
         catalog=get_catalog(),
         catalog_version=str(meta.get("workbench_catalog_version") or ""),
         private_entities=tuple(meta.get("workbench_private_entities") or ()),
-        query_id=(str(meta["workbench_query_id"]) if meta.get("workbench_query_id") else None),
+        query_id=(
+            str(meta["workbench_query_id"])
+            if meta.get("workbench_query_id")
+            else None
+        ),
         attempt_id=(
             str(meta["workbench_attempt_id"])
-            if meta.get("workbench_attempt_id") else None
+            if meta.get("workbench_attempt_id")
+            else None
         ),
     )
 
@@ -103,12 +112,14 @@ async def search_curated_knowledge(
 
     execution_ctx = _execution_context(ctx)
     args = SearchCuratedKnowledgeArguments(domain=domain, query=query)
-    execution_ctx.source_policy.require({
-        "concepts": "knowledge",
-        "macro": "macro",
-        "competitive": "competitive",
-        "regulatory": "regulatory",
-    }[domain])
+    execution_ctx.source_policy.require(
+        {
+            "concepts": "knowledge",
+            "macro": "macro",
+            "competitive": "competitive",
+            "regulatory": "regulatory",
+        }[domain]
+    )
     return success(_card_data(await _search_curated(args, execution_ctx)))
 
 
@@ -157,7 +168,9 @@ async def visualize_query_result(
         series=series,
         aggregation=aggregation,
     )
-    return success(_card_data(await _visualize_query_result(args, execution_ctx)))
+    return success(
+        _card_data(await _visualize_query_result(args, execution_ctx))
+    )
 
 
 @mcp.tool(
@@ -172,7 +185,8 @@ async def finish_without_data(
     suggestions: Annotated[list[str], Field(max_length=3)],
     reason_code: Literal[
         "out_of_scope", "not_in_data", "predictive", "advice", "unsafe"
-    ] | None = None,
+    ]
+    | None = None,
 ) -> dict[str, Any]:
     parsed = FinishWithoutDataArguments(
         outcome=outcome,
@@ -180,7 +194,9 @@ async def finish_without_data(
         suggestions=suggestions,
         reason_code=reason_code,
     )
-    return success({"kind": "terminal", "terminal": parsed.model_dump(mode="json")})
+    return success(
+        {"kind": "terminal", "terminal": parsed.model_dump(mode="json")}
+    )
 
 
 @mcp.tool(
@@ -200,13 +216,15 @@ async def submit_final_answer(
         query_id=query_id,
         view=view,
     )
-    structured = success({
-        "kind": "terminal",
-        "terminal": {
-            "outcome": "answer",
-            "synthesis": parsed.model_dump(mode="json"),
-        },
-    })
+    structured = success(
+        {
+            "kind": "terminal",
+            "terminal": {
+                "outcome": "answer",
+                "synthesis": parsed.model_dump(mode="json"),
+            },
+        }
+    )
     return ToolResult(
         content={"success": True},
         structured_content=structured,

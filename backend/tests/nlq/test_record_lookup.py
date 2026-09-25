@@ -33,123 +33,185 @@ from app.services.nlq.lookup import (
     [
         (
             "what is the loan amount and date of customer id 128",
-            "customer_id", "128", "loan_details",
+            "customer_id",
+            "128",
+            "loan_details",
         ),
         (
             "show loan date and amount for borrower number 1,028.00",
-            "customer_id", "1028", "loan_details",
+            "customer_id",
+            "1028",
+            "loan_details",
         ),
         (
             "what is SHEELAVATHI MK repayment history",
-            "borrower_name", "SHEELAVATHI MK", "repayment_history",
+            "borrower_name",
+            "SHEELAVATHI MK",
+            "repayment_history",
         ),
         (
             "repayment history of SHEELAVATHI M K",
-            "borrower_name", "SHEELAVATHI M K", "repayment_history",
+            "borrower_name",
+            "SHEELAVATHI M K",
+            "repayment_history",
         ),
         (
             "SHEELAVATHI M K's loan repayment history",
-            "borrower_name", "SHEELAVATHI M K", "repayment_history",
+            "borrower_name",
+            "SHEELAVATHI M K",
+            "repayment_history",
         ),
         (
             "payment history for loan account number 1000400001520.00",
-            "loan_account", "1000400001520", "repayment_history",
+            "loan_account",
+            "1000400001520",
+            "repayment_history",
         ),
         (
             "show one male and female account number",
-            "gender", "male,female", "account_sample",
+            "gender",
+            "male,female",
+            "account_sample",
         ),
         (
             "details of agnt45",
-            "agent_code", "AGNT45", "agent_details",
+            "agent_code",
+            "AGNT45",
+            "agent_details",
         ),
         (
             "AGENT-106",
-            "agent_code", "AGNT106", "agent_details",
+            "agent_code",
+            "AGNT106",
+            "agent_details",
         ),
         (
             "how many agents is there",
-            "agent_code", "all", "agent_count",
+            "agent_code",
+            "all",
+            "agent_count",
         ),
         (
             "show me the agent 45 inforamtion",
-            "agent_code", "AGNT45", "agent_details",
+            "agent_code",
+            "AGNT45",
+            "agent_details",
         ),
         (
             "show me the agent 45 phone number",
-            "agent_code", "AGNT45", "agent_details",
+            "agent_code",
+            "AGNT45",
+            "agent_details",
         ),
         (
             "how me the agent 45 account number",
-            "agent_code", "AGNT45", "agent_accounts",
+            "agent_code",
+            "AGNT45",
+            "agent_accounts",
         ),
         (
             "show me the agent 45 linked account numbers along with names",
-            "agent_code", "AGNT45", "agent_accounts",
+            "agent_code",
+            "AGNT45",
+            "agent_accounts",
         ),
         (
             "show me customers under vanitha",
-            "agent_name", "vanitha", "agent_customers",
+            "agent_name",
+            "vanitha",
+            "agent_customers",
         ),
         (
             "borrowers under agent 45",
-            "agent_code", "AGNT45", "agent_customers",
+            "agent_code",
+            "AGNT45",
+            "agent_customers",
         ),
         (
             "what are the branches is there",
-            "branch", "all", "branch_directory",
+            "branch",
+            "all",
+            "branch_directory",
         ),
         (
             "what is the disbursment date of customer SHEELAVATHI M K",
-            "borrower_name", "SHEELAVATHI M K", "loan_details",
+            "borrower_name",
+            "SHEELAVATHI M K",
+            "loan_details",
         ),
         (
             "show me the customer id 128 detail",
-            "customer_id", "128", "customer_summary",
+            "customer_id",
+            "128",
+            "customer_summary",
         ),
         (
             "loan details of MAHABALA GOWDA",
-            "borrower_name", "MAHABALA GOWDA", "loan_details",
+            "borrower_name",
+            "MAHABALA GOWDA",
+            "loan_details",
         ),
         (
             "show me Mahabala Gowda's loan account information",
-            "borrower_name", "Mahabala Gowda", "loan_details",
+            "borrower_name",
+            "Mahabala Gowda",
+            "loan_details",
         ),
         (
             "SHEELAVATHI M K's details",
-            "borrower_name", "SHEELAVATHI M K", "customer_summary",
+            "borrower_name",
+            "SHEELAVATHI M K",
+            "customer_summary",
         ),
         (
             "show me the SHEELAVATHI M K sanctioned amount?",
-            "borrower_name", "SHEELAVATHI M K", "loan_details",
+            "borrower_name",
+            "SHEELAVATHI M K",
+            "loan_details",
         ),
         (
             "sanction amount for borrower SHEELAVATHI M K",
-            "borrower_name", "SHEELAVATHI M K", "loan_details",
+            "borrower_name",
+            "SHEELAVATHI M K",
+            "loan_details",
         ),
         (
             "9loan sanctioned amount sheelavathi mk",
-            "borrower_name", "sheelavathi mk", "loan_details",
+            "borrower_name",
+            "sheelavathi mk",
+            "loan_details",
         ),
         (
             "show customer profile for Sheelavathi M K",
-            "borrower_name", "Sheelavathi M K", "customer_summary",
+            "borrower_name",
+            "Sheelavathi M K",
+            "customer_summary",
         ),
         (
             "gshow me the borrower id 128 repayment histoy",
-            "customer_id", "128", "repayment_history",
+            "customer_id",
+            "128",
+            "repayment_history",
         ),
         (
             "what is the name of product code 16 in loan book",
-            "product_code", "16", "product_details",
+            "product_code",
+            "16",
+            "product_details",
         ),
     ],
 )
-def test_lookup_intent_is_phrase_independent(question, selector, value, detail):
+def test_lookup_intent_is_phrase_independent(
+    question, selector, value, detail
+):
     result = detect(question)
 
     assert result is not None
-    assert (result.selector, result.value, result.detail) == (selector, value, detail)
+    assert (result.selector, result.value, result.detail) == (
+        selector,
+        value,
+        detail,
+    )
 
 
 @pytest.mark.parametrize(
@@ -160,14 +222,18 @@ def test_lookup_intent_is_phrase_independent(question, selector, value, detail):
         "loan amount last quarter",
     ],
 )
-def test_bare_field_suffix_does_not_treat_period_or_dimension_as_a_name(question):
+def test_bare_field_suffix_does_not_treat_period_or_dimension_as_a_name(
+    question,
+):
     assert detect(question) is None
 
 
 def test_customer_details_query_returns_both_sanction_and_disbursement_fields():
     attempt = _loan_details(
         LookupPlan(
-            selector="customer_id", value="128", detail="loan_details",
+            selector="customer_id",
+            value="128",
+            detail="loan_details",
             reasoning="test",
         ),
         get_catalog(),
@@ -198,23 +264,36 @@ def test_single_loan_result_displays_only_the_requested_fact():
     chart = build_from_rows(
         question="loan amount",
         result=QueryResult(
-            rows=[{
-                "customer_id": "129", "loan_account_number": "1000400000075",
-                "sanction_amount": 700000,
-            }],
+            rows=[
+                {
+                    "customer_id": "129",
+                    "loan_account_number": "1000400000075",
+                    "sanction_amount": 700000,
+                }
+            ],
             columns=["customer_id", "loan_account_number", "sanction_amount"],
-            status="ok", duration_ms=1, sql="SELECT 1", row_count=1,
+            status="ok",
+            duration_ms=1,
+            sql="SELECT 1",
+            row_count=1,
         ),
-        lineage=Lineage(path="validated_sql", sql="SELECT 1", unverified=False),
+        lineage=Lineage(
+            path="validated_sql", sql="SELECT 1", unverified=False
+        ),
         unit_hints={
-            "customer_id": "text", "loan_account_number": "text", "sanction_amount": "inr",
+            "customer_id": "text",
+            "loan_account_number": "text",
+            "sanction_amount": "inr",
         },
     )
     _shape_loan_details(
         chart,
         LookupPlan(
-            selector="customer_id", value="129", detail="loan_details",
-            requested_fields=["sanction_amount"], reasoning="test",
+            selector="customer_id",
+            value="129",
+            detail="loan_details",
+            requested_fields=["sanction_amount"],
+            reasoning="test",
         ),
     )
 
@@ -227,7 +306,9 @@ def test_single_loan_result_displays_only_the_requested_fact():
 def test_customer_summary_returns_only_the_requested_profile_fields():
     attempt = _customer_summary(
         LookupPlan(
-            selector="customer_id", value="128", detail="customer_summary",
+            selector="customer_id",
+            value="128",
+            detail="customer_summary",
             reasoning="test",
         ),
         get_catalog(),
@@ -237,7 +318,10 @@ def test_customer_summary_returns_only_the_requested_profile_fields():
     assert "FROM gold.customers AS customer" in attempt.sql
     assert "LEFT JOIN gold.loan_accounts AS loan" in attempt.sql
     assert "customer.full_name AS customer_name" in attempt.sql
-    assert "CAST(loan.loan_account_number AS TEXT) AS loan_account_number" in attempt.sql
+    assert (
+        "CAST(loan.loan_account_number AS TEXT) AS loan_account_number"
+        in attempt.sql
+    )
     assert "loan.approved_amount AS sanction_amount" in attempt.sql
     assert "loan.approved_on AS sanction_date" in attempt.sql
     assert "AS address" in attempt.sql
@@ -245,14 +329,21 @@ def test_customer_summary_returns_only_the_requested_profile_fields():
     assert "customer.home_branch_code" in attempt.sql
     assert "customer.agency_code" in attempt.sql
     assert "customer.agency_name" in attempt.sql
-    for excluded in ("date_of_birth", "yearly_income", "kyc_doc_count", "risk_rating"):
+    for excluded in (
+        "date_of_birth",
+        "yearly_income",
+        "kyc_doc_count",
+        "risk_rating",
+    ):
         assert excluded not in attempt.sql
 
 
 def test_repayment_history_is_newest_first_and_totals_before_limiting():
     attempt = _repayment_history(
         LookupPlan(
-            selector="customer_id", value="128", detail="repayment_history",
+            selector="customer_id",
+            value="128",
+            detail="repayment_history",
             reasoning="test",
         ),
         get_catalog(),
@@ -278,7 +369,9 @@ def test_gender_sample_uses_compound_join_and_stable_one_per_gender():
 def test_agent_details_use_the_governed_directory_and_exact_code():
     attempt = _agent_details(
         LookupPlan(
-            selector="agent_code", value="AGNT45", detail="agent_details",
+            selector="agent_code",
+            value="AGNT45",
+            detail="agent_details",
             reasoning="test",
         ),
         get_catalog(),
@@ -309,21 +402,32 @@ def test_missing_agent_phone_is_reported_as_unavailable_not_as_an_unrelated_metr
         result=QueryResult(
             rows=[{"agent_code": "AGNT45", "mobile": None}],
             columns=["agent_code", "mobile"],
-            status="ok", duration_ms=1, sql="SELECT 1", row_count=1,
+            status="ok",
+            duration_ms=1,
+            sql="SELECT 1",
+            row_count=1,
         ),
-        lineage=Lineage(path="validated_sql", sql="SELECT 1", unverified=False),
+        lineage=Lineage(
+            path="validated_sql", sql="SELECT 1", unverified=False
+        ),
         unit_hints={"agent_code": "text", "mobile": "text"},
     )
     _shape_agent_details(
         chart,
         LookupPlan(
-            selector="agent_code", value="AGNT45", detail="agent_details",
-            requested_fields=["mobile"], reasoning="test",
+            selector="agent_code",
+            value="AGNT45",
+            detail="agent_details",
+            requested_fields=["mobile"],
+            reasoning="test",
         ),
     )
 
     assert chart.rows == [{"agent_code": "AGNT45", "mobile": None}]
-    assert chart.summary == "Phone number is unavailable in the governed agent directory."
+    assert (
+        chart.summary
+        == "Phone number is unavailable in the governed agent directory."
+    )
     assert "highest" not in chart.summary
 
 
@@ -338,7 +442,9 @@ def test_agent_count_uses_the_governed_agent_directory():
 def test_agent_accounts_use_exact_code_and_return_only_linked_account_numbers():
     attempt = _agent_accounts(
         LookupPlan(
-            selector="agent_code", value="AGNT45", detail="agent_accounts",
+            selector="agent_code",
+            value="AGNT45",
+            detail="agent_accounts",
             reasoning="test",
         ),
         get_catalog(),
@@ -355,7 +461,9 @@ def test_agent_accounts_use_exact_code_and_return_only_linked_account_numbers():
 def test_agent_customers_are_distinct_and_use_the_governed_loan_relation():
     attempt = _agent_customers(
         LookupPlan(
-            selector="agent_code", value="AGNT45", detail="agent_customers",
+            selector="agent_code",
+            value="AGNT45",
+            detail="agent_customers",
             reasoning="test",
         ),
         get_catalog(),
@@ -365,11 +473,16 @@ def test_agent_customers_are_distinct_and_use_the_governed_loan_relation():
     assert "FROM gold.loan_accounts AS reporting" in attempt.sql
     assert "LOWER(reporting.agent_code) = 'agnt45'" in attempt.sql
     assert "GROUP BY" in attempt.sql and "reporting.customer_id" in attempt.sql
-    assert "COUNT(DISTINCT reporting.loan_account_number) AS linked_loan_count" in attempt.sql
+    assert (
+        "COUNT(DISTINCT reporting.loan_account_number) AS linked_loan_count"
+        in attempt.sql
+    )
 
 
 def test_agent_account_names_use_the_governed_linked_loan_row_when_requested():
-    plan_result = detect("show agent 45 account numbers along with borrower names")
+    plan_result = detect(
+        "show agent 45 account numbers along with borrower names"
+    )
 
     assert plan_result is not None
     assert plan_result.requested_fields == ["borrower_name"]
@@ -387,7 +500,10 @@ def test_agent_account_projection_preserves_every_explicitly_requested_field():
     assert plan_result.detail == "agent_accounts"
     assert plan_result.value == "AGNT45"
     assert plan_result.requested_fields == [
-        "borrower_name", "sanction_amount", "scheme_name", "number_of_emis",
+        "borrower_name",
+        "sanction_amount",
+        "scheme_name",
+        "number_of_emis",
     ]
     attempt = _agent_accounts(plan_result, get_catalog())
     assert "reporting.customer_name AS borrower_name" in attempt.sql
@@ -401,7 +517,10 @@ def test_named_agent_customer_table_can_be_refined_with_disbursed_amount_and_ten
         "also and the disbursed loan amount and tenure along with the above table",
         [
             {"role": "user", "content": "show me customers under Vanitha"},
-            {"role": "assistant", "content": "Showing 338 of 338 linked customers."},
+            {
+                "role": "assistant",
+                "content": "Showing 338 of 338 linked customers.",
+            },
         ],
     )
 
@@ -412,7 +531,9 @@ def test_named_agent_customer_table_can_be_refined_with_disbursed_amount_and_ten
     assert plan_result.value == "Vanitha"
     assert plan_result.detail == "agent_accounts"
     assert plan_result.requested_fields == [
-        "borrower_name", "disbursed_amount", "number_of_emis",
+        "borrower_name",
+        "disbursed_amount",
+        "number_of_emis",
     ]
     attempt = _agent_accounts(plan_result, get_catalog())
     assert "reporting.amount_given" in attempt.sql
@@ -432,12 +553,16 @@ def test_agent_customer_table_accepts_add_and_misspelled_and_refinement():
     assert plan_result.value == "vanitha"
     assert plan_result.detail == "agent_accounts"
     assert plan_result.requested_fields == [
-        "borrower_name", "scheme_name", "number_of_emis",
+        "borrower_name",
+        "scheme_name",
+        "number_of_emis",
     ]
 
 
 def test_agent_name_account_lookup_preserves_requested_fields_for_resolution():
-    plan_result = detect("borrowers name,sanctioned amount under agent vanitha")
+    plan_result = detect(
+        "borrowers name,sanctioned amount under agent vanitha"
+    )
 
     assert plan_result is not None
     assert plan_result.selector == "agent_name"
@@ -450,10 +575,21 @@ def test_agent_name_candidates_use_the_governed_agent_directory(monkeypatch):
     from app.services.nlq import lookup
 
     captured = {}
-    monkeypatch.setattr(lookup, "execute_raw", lambda sql: (
-        captured.setdefault("sql", sql),
-        QueryResult(rows=[], columns=[], status="ok", duration_ms=1, sql=sql, row_count=0),
-    )[1])
+    monkeypatch.setattr(
+        lookup,
+        "execute_raw",
+        lambda sql: (
+            captured.setdefault("sql", sql),
+            QueryResult(
+                rows=[],
+                columns=[],
+                status="ok",
+                duration_ms=1,
+                sql=sql,
+                row_count=0,
+            ),
+        )[1],
+    )
 
     assert _candidate_agents("Vanitha", get_catalog()) == []
     assert "FROM gold.agents" in captured["sql"]
@@ -461,34 +597,59 @@ def test_agent_name_candidates_use_the_governed_agent_directory(monkeypatch):
     assert "= 'vanitha'" in captured["sql"]
 
 
-def test_unique_agent_name_is_resolved_to_code_before_account_query(monkeypatch):
+def test_unique_agent_name_is_resolved_to_code_before_account_query(
+    monkeypatch,
+):
     from app.services.nlq import executor, lookup
 
-    monkeypatch.setattr(lookup, "execute_raw", lambda sql: QueryResult(
-        rows=[{"agent_code": "AGNT45", "agent_name": "VANITHA", "branch_code": "101"}],
-        columns=["agent_code", "agent_name", "branch_code"],
-        status="ok", duration_ms=1, sql=sql, row_count=1,
-    ))
+    monkeypatch.setattr(
+        lookup,
+        "execute_raw",
+        lambda sql: QueryResult(
+            rows=[
+                {
+                    "agent_code": "AGNT45",
+                    "agent_name": "VANITHA",
+                    "branch_code": "101",
+                }
+            ],
+            columns=["agent_code", "agent_name", "branch_code"],
+            status="ok",
+            duration_ms=1,
+            sql=sql,
+            row_count=1,
+        ),
+    )
     captured = {}
 
     def execute_accounts(sql):
         captured["sql"] = sql
         return QueryResult(
-            rows=[{
-                "loan_account_number": "1000400000007", "borrower_name": "PRAMILA D",
-                "sanction_amount": 700000, "total_linked_account_count": 1,
-            }],
+            rows=[
+                {
+                    "loan_account_number": "1000400000007",
+                    "borrower_name": "PRAMILA D",
+                    "sanction_amount": 700000,
+                    "total_linked_account_count": 1,
+                }
+            ],
             columns=[
-                "loan_account_number", "borrower_name", "sanction_amount",
+                "loan_account_number",
+                "borrower_name",
+                "sanction_amount",
                 "total_linked_account_count",
             ],
-            status="ok", duration_ms=1, sql=sql, row_count=1,
+            status="ok",
+            duration_ms=1,
+            sql=sql,
+            row_count=1,
         )
 
     monkeypatch.setattr(executor, "execute_raw", execute_accounts)
     result = run(
         detect("borrowers name,sanctioned amount under agent vanitha"),
-        role="admin", catalog=get_catalog(),
+        role="admin",
+        catalog=get_catalog(),
     )
 
     assert result.chart is not None
@@ -497,21 +658,39 @@ def test_unique_agent_name_is_resolved_to_code_before_account_query(monkeypatch)
     assert result.chart.rows[0]["sanction_amount"] == 700000
 
 
-def test_ambiguous_agent_name_asks_for_the_code_instead_of_combining_agents(monkeypatch):
+def test_ambiguous_agent_name_asks_for_the_code_instead_of_combining_agents(
+    monkeypatch,
+):
     from app.services.nlq import lookup
 
-    monkeypatch.setattr(lookup, "execute_raw", lambda sql: QueryResult(
-        rows=[
-            {"agent_code": "AGNT45", "agent_name": "VANITHA", "branch_code": "101"},
-            {"agent_code": "AGNT91", "agent_name": "VANITHA R", "branch_code": "205"},
-        ],
-        columns=["agent_code", "agent_name", "branch_code"],
-        status="ok", duration_ms=1, sql=sql, row_count=2,
-    ))
+    monkeypatch.setattr(
+        lookup,
+        "execute_raw",
+        lambda sql: QueryResult(
+            rows=[
+                {
+                    "agent_code": "AGNT45",
+                    "agent_name": "VANITHA",
+                    "branch_code": "101",
+                },
+                {
+                    "agent_code": "AGNT91",
+                    "agent_name": "VANITHA R",
+                    "branch_code": "205",
+                },
+            ],
+            columns=["agent_code", "agent_name", "branch_code"],
+            status="ok",
+            duration_ms=1,
+            sql=sql,
+            row_count=2,
+        ),
+    )
 
     result = run(
         detect("borrowers name,sanctioned amount under agent vanitha"),
-        role="admin", catalog=get_catalog(),
+        role="admin",
+        catalog=get_catalog(),
     )
 
     assert result.chart is None
@@ -528,36 +707,66 @@ def test_ambiguous_agent_name_asks_for_the_code_instead_of_combining_agents(monk
 def test_agent_account_projection_is_retained_in_the_table(monkeypatch):
     from app.services.nlq import executor
 
-    monkeypatch.setattr(executor, "execute_raw", lambda _sql: QueryResult(
-        rows=[{
-            "loan_account_number": "1000400000007", "borrower_name": "PRAMILA D",
-            "sanction_amount": 700000, "scheme_name": "MSME Term Loan",
-            "number_of_emis": 36, "total_linked_account_count": 1,
-        }],
-        columns=[
-            "loan_account_number", "borrower_name", "sanction_amount", "scheme_name",
-            "number_of_emis", "total_linked_account_count",
-        ],
-        status="ok", duration_ms=1, sql="SELECT 1", row_count=1,
-    ))
+    monkeypatch.setattr(
+        executor,
+        "execute_raw",
+        lambda _sql: QueryResult(
+            rows=[
+                {
+                    "loan_account_number": "1000400000007",
+                    "borrower_name": "PRAMILA D",
+                    "sanction_amount": 700000,
+                    "scheme_name": "MSME Term Loan",
+                    "number_of_emis": 36,
+                    "total_linked_account_count": 1,
+                }
+            ],
+            columns=[
+                "loan_account_number",
+                "borrower_name",
+                "sanction_amount",
+                "scheme_name",
+                "number_of_emis",
+                "total_linked_account_count",
+            ],
+            status="ok",
+            duration_ms=1,
+            sql="SELECT 1",
+            row_count=1,
+        ),
+    )
     result = run(
         LookupPlan(
-            selector="agent_code", value="AGNT45", detail="agent_accounts",
+            selector="agent_code",
+            value="AGNT45",
+            detail="agent_accounts",
             requested_fields=[
-                "borrower_name", "sanction_amount", "scheme_name", "number_of_emis",
+                "borrower_name",
+                "sanction_amount",
+                "scheme_name",
+                "number_of_emis",
             ],
             reasoning="test",
         ),
-        role="admin", catalog=get_catalog(),
+        role="admin",
+        catalog=get_catalog(),
     )
 
     assert result.chart is not None
-    assert result.chart.rows == [{
-        "loan_account_number": "1000400000007", "borrower_name": "PRAMILA D",
-        "sanction_amount": 700000, "scheme_name": "MSME Term Loan", "number_of_emis": 36,
-    }]
+    assert result.chart.rows == [
+        {
+            "loan_account_number": "1000400000007",
+            "borrower_name": "PRAMILA D",
+            "sanction_amount": 700000,
+            "scheme_name": "MSME Term Loan",
+            "number_of_emis": 36,
+        }
+    ]
     assert [column.label for column in result.chart.columns] == [
-        "Loan Account Number", "Borrower Name", "Sanction Amount", "Scheme name",
+        "Loan Account Number",
+        "Borrower Name",
+        "Sanction Amount",
+        "Scheme name",
         "Tenure (EMIs)",
     ]
 
@@ -565,37 +774,61 @@ def test_agent_account_projection_is_retained_in_the_table(monkeypatch):
 def test_agent_account_record_list_is_always_a_table(monkeypatch):
     from app.services.nlq import executor
 
-    monkeypatch.setattr(executor, "execute_raw", lambda _sql: QueryResult(
-        rows=[{
-            "loan_account_number": "1000400000007",
-            "borrower_name": "CUSTOMER ONE",
-            "total_linked_account_count": 1,
-        }],
-        columns=["loan_account_number", "borrower_name", "total_linked_account_count"],
-        status="ok", duration_ms=1, sql="SELECT 1", row_count=1,
-    ))
+    monkeypatch.setattr(
+        executor,
+        "execute_raw",
+        lambda _sql: QueryResult(
+            rows=[
+                {
+                    "loan_account_number": "1000400000007",
+                    "borrower_name": "CUSTOMER ONE",
+                    "total_linked_account_count": 1,
+                }
+            ],
+            columns=[
+                "loan_account_number",
+                "borrower_name",
+                "total_linked_account_count",
+            ],
+            status="ok",
+            duration_ms=1,
+            sql="SELECT 1",
+            row_count=1,
+        ),
+    )
     result = run(
         LookupPlan(
-            selector="agent_code", value="AGNT45", detail="agent_accounts",
-            requested_fields=["borrower_name"], reasoning="test",
+            selector="agent_code",
+            value="AGNT45",
+            detail="agent_accounts",
+            requested_fields=["borrower_name"],
+            reasoning="test",
         ),
-        role="admin", catalog=get_catalog(),
+        role="admin",
+        catalog=get_catalog(),
     )
 
     assert result.chart is not None
     assert result.chart.chart_type == "table"
     assert result.chart.x is None
     assert result.chart.series == []
-    assert result.chart.rows == [{
-        "loan_account_number": "1000400000007", "borrower_name": "CUSTOMER ONE",
-    }]
+    assert result.chart.rows == [
+        {
+            "loan_account_number": "1000400000007",
+            "borrower_name": "CUSTOMER ONE",
+        }
+    ]
     assert "with borrower names" in result.chart.summary
 
 
 def test_branch_directory_uses_the_governed_branch_master():
     attempt = _branch_directory(
-        LookupPlan(selector="branch", value="all", detail="branch_directory",
-                   reasoning="test"),
+        LookupPlan(
+            selector="branch",
+            value="all",
+            detail="branch_directory",
+            reasoning="test",
+        ),
         get_catalog(),
     )
 
@@ -617,7 +850,9 @@ def test_named_branch_customer_list_uses_governed_branch_and_loan_relations():
     attempt = _branch_customers(plan_result, get_catalog())
     assert "FROM gold.loan_accounts AS reporting" in attempt.sql
     assert "JOIN gold.branches AS branch" in attempt.sql
-    assert "branch.branch_code = reporting.application_branch_code" in attempt.sql
+    assert (
+        "branch.branch_code = reporting.application_branch_code" in attempt.sql
+    )
     assert "LOWER(TRIM(branch.branch_name)) = 'ujire'" in attempt.sql
     assert "GROUP BY" in attempt.sql and "reporting.customer_id" in attempt.sql
 
@@ -625,7 +860,9 @@ def test_named_branch_customer_list_uses_governed_branch_and_loan_relations():
 def test_product_code_name_uses_the_governed_product_master():
     attempt = _product_details(
         LookupPlan(
-            selector="product_code", value="16", detail="product_details",
+            selector="product_code",
+            value="16",
+            detail="product_details",
             reasoning="test",
         ),
         get_catalog(),
@@ -647,41 +884,70 @@ def test_numeric_identifiers_follow_text_units_in_rows_and_summary():
     chart = build_from_rows(
         question="account for customer",
         result=QueryResult(
-            rows=[{"customer_id": 128.0, "loan_account_number": 1000400001520.0}],
+            rows=[
+                {"customer_id": 128.0, "loan_account_number": 1000400001520.0}
+            ],
             columns=["customer_id", "loan_account_number"],
-            status="ok", duration_ms=1, sql="SELECT 1", row_count=1,
+            status="ok",
+            duration_ms=1,
+            sql="SELECT 1",
+            row_count=1,
         ),
-        lineage=Lineage(path="validated_sql", sql="SELECT 1", unverified=False),
+        lineage=Lineage(
+            path="validated_sql", sql="SELECT 1", unverified=False
+        ),
         unit_hints={"customer_id": "text", "loan_account_number": "text"},
     )
 
-    assert chart.rows == [{
-        "customer_id": "128",
-        "loan_account_number": "1000400001520",
-    }]
+    assert chart.rows == [
+        {
+            "customer_id": "128",
+            "loan_account_number": "1000400001520",
+        }
+    ]
     assert "128.00" not in chart.summary
     assert "1,000,400,001,520.00" not in chart.summary
     assert chart.subtitle == "Governed read-only record lookup"
 
 
-def test_ambiguous_name_returns_customer_choices_instead_of_guessing(monkeypatch):
+def test_ambiguous_name_returns_customer_choices_instead_of_guessing(
+    monkeypatch,
+):
     from app.services.nlq import lookup
 
-    monkeypatch.setattr(lookup, "execute_raw", lambda _sql: QueryResult(
-        rows=[
-            {"borrower_name": "ANITHA K", "customer_id": "41", "account_number": "100001"},
-            {"borrower_name": "ANITHA K R", "customer_id": "42", "account_number": "100099"},
-        ],
-        columns=["borrower_name", "customer_id", "account_number"],
-        status="ok", duration_ms=1, sql="SELECT 1", row_count=2,
-    ))
+    monkeypatch.setattr(
+        lookup,
+        "execute_raw",
+        lambda _sql: QueryResult(
+            rows=[
+                {
+                    "borrower_name": "ANITHA K",
+                    "customer_id": "41",
+                    "account_number": "100001",
+                },
+                {
+                    "borrower_name": "ANITHA K R",
+                    "customer_id": "42",
+                    "account_number": "100099",
+                },
+            ],
+            columns=["borrower_name", "customer_id", "account_number"],
+            status="ok",
+            duration_ms=1,
+            sql="SELECT 1",
+            row_count=2,
+        ),
+    )
 
     result = run(
         LookupPlan(
-            selector="borrower_name", value="Anitha K", detail="repayment_history",
+            selector="borrower_name",
+            value="Anitha K",
+            detail="repayment_history",
             reasoning="test",
         ),
-        role="anonymous", catalog=get_catalog(),
+        role="anonymous",
+        catalog=get_catalog(),
     )
 
     assert result.chart is None
@@ -691,37 +957,65 @@ def test_ambiguous_name_returns_customer_choices_instead_of_guessing(monkeypatch
     assert "account ending 0001" in result.clarification.suggestions[0]
 
 
-def test_borrower_chat_completion_returns_insertable_name_and_context(monkeypatch):
+def test_borrower_chat_completion_returns_insertable_name_and_context(
+    monkeypatch,
+):
     from app.services.nlq import lookup
 
-    monkeypatch.setattr(lookup, "execute_raw", lambda _sql: QueryResult(
-        rows=[{
-            "borrower_name": "SHEELAVATHI M K",
-            "customer_id": "128",
-            "account_number": "1000400001520",
-        }],
-        columns=["borrower_name", "customer_id", "account_number"],
-        status="ok", duration_ms=1, sql="SELECT 1", row_count=1,
-    ))
+    monkeypatch.setattr(
+        lookup,
+        "execute_raw",
+        lambda _sql: QueryResult(
+            rows=[
+                {
+                    "borrower_name": "SHEELAVATHI M K",
+                    "customer_id": "128",
+                    "account_number": "1000400001520",
+                }
+            ],
+            columns=["borrower_name", "customer_id", "account_number"],
+            status="ok",
+            duration_ms=1,
+            sql="SELECT 1",
+            row_count=1,
+        ),
+    )
 
-    assert completions("sheel", "borrower") == [{
-        "kind": "borrower",
-        "value": "SHEELAVATHI M K",
-        "label": "SHEELAVATHI M K",
-        "detail": "Customer 128 · Account ending 1520",
-    }]
+    assert completions("sheel", "borrower") == [
+        {
+            "kind": "borrower",
+            "value": "SHEELAVATHI M K",
+            "label": "SHEELAVATHI M K",
+            "detail": "Customer 128 · Account ending 1520",
+        }
+    ]
 
 
 def test_agent_chat_completion_returns_code_for_safe_insertion(monkeypatch):
     from app.services.nlq import lookup
 
-    monkeypatch.setattr(lookup, "execute_raw", lambda _sql: QueryResult(
-        rows=[{"agent_code": "AGNT45", "agent_name": "Agent Name", "designation": "Officer"}],
-        columns=["agent_code", "agent_name", "designation"],
-        status="ok", duration_ms=1, sql="SELECT 1", row_count=1,
-    ))
+    monkeypatch.setattr(
+        lookup,
+        "execute_raw",
+        lambda _sql: QueryResult(
+            rows=[
+                {
+                    "agent_code": "AGNT45",
+                    "agent_name": "Agent Name",
+                    "designation": "Officer",
+                }
+            ],
+            columns=["agent_code", "agent_name", "designation"],
+            status="ok",
+            duration_ms=1,
+            sql="SELECT 1",
+            row_count=1,
+        ),
+    )
 
     assert completions("AGNT4", "agent")[0] == {
-        "kind": "agent", "value": "AGNT45", "label": "Agent Name",
+        "kind": "agent",
+        "value": "AGNT45",
+        "label": "Agent Name",
         "detail": "AGNT45 · Officer",
     }

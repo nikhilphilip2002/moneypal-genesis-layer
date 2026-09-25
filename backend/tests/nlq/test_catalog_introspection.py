@@ -33,15 +33,21 @@ def live_columns(warehouse_cursor):
 
 class TestTablesExist:
     def test_every_catalog_table_exists(self, catalog, live_columns):
-        missing = [t for t in catalog.allowed_tables() if t not in live_columns]
-        assert not missing, f"catalog references tables that do not exist: {missing}"
+        missing = [
+            t for t in catalog.allowed_tables() if t not in live_columns
+        ]
+        assert not missing, (
+            f"catalog references tables that do not exist: {missing}"
+        )
 
     def test_no_catalog_table_is_outside_gold(self, catalog):
         """Only governed Gold relations may enter the LLM SQL allowlist."""
         for table in catalog.allowed_tables():
             assert table.startswith("gold."), table
 
-    def test_every_friendly_gold_relation_is_cataloged(self, catalog, live_columns):
+    def test_every_friendly_gold_relation_is_cataloged(
+        self, catalog, live_columns
+    ):
         """Every assistant-facing friendly table or view must be cataloged.
 
         Gold also contains implementation and compatibility relations that are deliberately
@@ -49,20 +55,37 @@ class TestTablesExist:
         helper are not selectable business relations.
         """
         friendly_relations = {
-            "gold.agents", "gold.branches", "gold.business_loan_leads",
-            "gold.collection_activities", "gold.customer_kyc_documents", "gold.customers",
-            "gold.daily_loan_status", "gold.emi_schedule", "gold.general_ledger_balances",
-            "gold.loan_account_entries", "gold.loan_accounts", "gold.loan_applications",
-            "gold.loan_disbursements", "gold.loan_products", "gold.loan_repayments",
-            "gold.loan_vintage_performance", "gold.payment_receipts",
+            "gold.agents",
+            "gold.branches",
+            "gold.business_loan_leads",
+            "gold.collection_activities",
+            "gold.customer_kyc_documents",
+            "gold.customers",
+            "gold.daily_loan_status",
+            "gold.emi_schedule",
+            "gold.general_ledger_balances",
+            "gold.loan_account_entries",
+            "gold.loan_accounts",
+            "gold.loan_applications",
+            "gold.loan_disbursements",
+            "gold.loan_products",
+            "gold.loan_repayments",
+            "gold.loan_vintage_performance",
+            "gold.payment_receipts",
             "gold.staff_reporting_structure",
         }
         uncataloged = sorted(friendly_relations - catalog.allowed_tables())
-        assert not uncataloged, f"Gold relations missing from tables.yaml: {uncataloged}"
+        assert not uncataloged, (
+            f"Gold relations missing from tables.yaml: {uncataloged}"
+        )
         unexpected = sorted(catalog.allowed_tables() - friendly_relations)
-        assert not unexpected, f"non-friendly relations exposed by tables.yaml: {unexpected}"
+        assert not unexpected, (
+            f"non-friendly relations exposed by tables.yaml: {unexpected}"
+        )
         missing_in_database = sorted(friendly_relations - live_columns.keys())
-        assert not missing_in_database, f"friendly Gold relations missing in PostgreSQL: {missing_in_database}"
+        assert not missing_in_database, (
+            f"friendly Gold relations missing in PostgreSQL: {missing_in_database}"
+        )
 
 
 class TestColumnsExist:
@@ -72,7 +95,9 @@ class TestColumnsExist:
             for c in catalog.columns.values()
             if c.column not in live_columns.get(c.table, set())
         ]
-        assert not missing, f"columns.yaml references missing columns: {missing}"
+        assert not missing, (
+            f"columns.yaml references missing columns: {missing}"
+        )
 
     def test_every_live_column_is_cataloged(self, catalog, live_columns):
         """The Gold catalog is complete, not a partial sample of each governed view."""
@@ -82,17 +107,24 @@ class TestColumnsExist:
 
         missing = []
         for table in sorted(catalog.allowed_tables()):
-            for column in sorted(live_columns.get(table, set()) - cataloged.get(table, set())):
+            for column in sorted(
+                live_columns.get(table, set()) - cataloged.get(table, set())
+            ):
                 missing.append(f"{table}.{column}")
-        assert not missing, f"live Gold columns missing from columns.yaml: {missing}"
+        assert not missing, (
+            f"live Gold columns missing from columns.yaml: {missing}"
+        )
 
     def test_dimension_columns_exist(self, catalog, live_columns):
         missing = [
             f"{d.table}.{d.column}"
             for d in catalog.dimensions.values()
-            if not d.is_time and d.column not in live_columns.get(d.table, set())
+            if not d.is_time
+            and d.column not in live_columns.get(d.table, set())
         ]
-        assert not missing, f"dimensions.yaml references missing columns: {missing}"
+        assert not missing, (
+            f"dimensions.yaml references missing columns: {missing}"
+        )
 
     def test_join_columns_exist(self, catalog, live_columns):
         missing = []
@@ -104,7 +136,9 @@ class TestColumnsExist:
                     missing.append(f"{join.id}: {join.right}.{right_col}")
         assert not missing, f"joins.yaml references missing columns: {missing}"
 
-    def test_metric_expressions_reference_real_columns(self, catalog, live_columns):
+    def test_metric_expressions_reference_real_columns(
+        self, catalog, live_columns
+    ):
         """Parses the identifiers out of each metric's SQL and checks them against the
         warehouse — the check that would have caught `glbbal_bal_date`, a column that
         sounds obvious and does not exist."""
@@ -116,14 +150,26 @@ class TestColumnsExist:
             expression = metric.sql("{t}")
             for candidate in re.findall(r"\{t\}\.(\w+)", expression):
                 if candidate not in available:
-                    problems.append(f"{metric.id}: {metric.base_table}.{candidate}")
-            for column in (metric.date_column, metric.as_of_column, metric.year_column):
+                    problems.append(
+                        f"{metric.id}: {metric.base_table}.{candidate}"
+                    )
+            for column in (
+                metric.date_column,
+                metric.as_of_column,
+                metric.year_column,
+            ):
                 if column and column not in available:
-                    problems.append(f"{metric.id}: {metric.base_table}.{column}")
+                    problems.append(
+                        f"{metric.id}: {metric.base_table}.{column}"
+                    )
             for key in metric.as_of_key:
                 if key not in available:
-                    problems.append(f"{metric.id}: as_of_key {metric.base_table}.{key}")
-        assert not problems, f"metrics.yaml references missing columns: {problems}"
+                    problems.append(
+                        f"{metric.id}: as_of_key {metric.base_table}.{key}"
+                    )
+        assert not problems, (
+            f"metrics.yaml references missing columns: {problems}"
+        )
 
 
 class TestDocumentedFactsStillHold:
@@ -137,8 +183,12 @@ class TestDocumentedFactsStillHold:
             warehouse_cursor.execute(f"SELECT count(*) FROM {table.table}")
             actual = warehouse_cursor.fetchone()[0]
             if actual != table.row_count:
-                drifted.append(f"{table.id}: catalog says {table.row_count}, found {actual}")
-        assert not drifted, "row counts in tables.yaml are stale: " + "; ".join(drifted)
+                drifted.append(
+                    f"{table.id}: catalog says {table.row_count}, found {actual}"
+                )
+        assert not drifted, (
+            "row counts in tables.yaml are stale: " + "; ".join(drifted)
+        )
 
     def test_portfolio_snapshot_can_be_collapsed_as_of(self, warehouse_cursor):
         warehouse_cursor.execute(
@@ -150,7 +200,9 @@ class TestDocumentedFactsStillHold:
         )
         assert warehouse_cursor.fetchone()[0] > 0
 
-    def test_enum_codes_are_all_present_in_the_data(self, catalog, warehouse_cursor):
+    def test_enum_codes_are_all_present_in_the_data(
+        self, catalog, warehouse_cursor
+    ):
         """A code documented but absent is fine (NPA is). A code in the data but missing
         from the enum renders as a bare number in a chart, which is what this catches."""
         warehouse_cursor.execute(
@@ -158,7 +210,9 @@ class TestDocumentedFactsStillHold:
         )
         live = {str(r[0]) for r in warehouse_cursor.fetchall()}
         documented = set(catalog.enums["product"].values)
-        assert not (live - documented), f"undocumented product codes in use: {live - documented}"
+        assert not (live - documented), (
+            f"undocumented product codes in use: {live - documented}"
+        )
 
     def test_branch_codes_are_all_documented(self, catalog, warehouse_cursor):
         warehouse_cursor.execute(
@@ -166,4 +220,6 @@ class TestDocumentedFactsStillHold:
         )
         live = {str(r[0]) for r in warehouse_cursor.fetchall()}
         documented = set(catalog.enums["branch"].values)
-        assert not (live - documented), f"undocumented branch codes in use: {live - documented}"
+        assert not (live - documented), (
+            f"undocumented branch codes in use: {live - documented}"
+        )

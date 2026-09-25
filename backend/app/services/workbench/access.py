@@ -25,7 +25,9 @@ SOURCE_GROUPS: dict[str, SourceGroup] = {
     "regulatory": SourceGroup.EXTERNAL_INDEXED,
     "web": SourceGroup.LIVE_EXTERNAL,
 }
-EXTERNAL_GROUPS = frozenset({SourceGroup.EXTERNAL_INDEXED, SourceGroup.LIVE_EXTERNAL})
+EXTERNAL_GROUPS = frozenset(
+    {SourceGroup.EXTERNAL_INDEXED, SourceGroup.LIVE_EXTERNAL}
+)
 POLICY_VERSION = "source-access-v1"
 
 
@@ -62,7 +64,11 @@ class SourceAccessPolicy:
 
     def require(self, source_id: str) -> None:
         if not self.allows(source_id):
-            reason = "external source consent is required" if is_external(source_id) else "source is unavailable"
+            reason = (
+                "external source consent is required"
+                if is_external(source_id)
+                else "source is unavailable"
+            )
             raise SourceAccessDenied(f"{source_id}: {reason}")
 
     def snapshot(self) -> dict[str, Any]:
@@ -76,10 +82,17 @@ class SourceAccessPolicy:
 
 
 def build_policy(
-    *, role: str, external_sources_enabled: bool = False, pinned_source: str | None = None,
+    *,
+    role: str,
+    external_sources_enabled: bool = False,
+    pinned_source: str | None = None,
 ) -> SourceAccessPolicy:
     ordered_ids = tuple(SOURCES)
-    role_sources = tuple(source_id for source_id in ordered_ids if SOURCES[source_id].visible_to(role))
+    role_sources = tuple(
+        source_id
+        for source_id in ordered_ids
+        if SOURCES[source_id].visible_to(role)
+    )
     deployment_sources = tuple(
         source_id
         for source_id in ordered_ids
@@ -115,15 +128,17 @@ def source_metadata(role: str) -> list[dict[str, Any]]:
     for source_id in policy.role_sources:
         source = SOURCES[source_id]
         group = source_group(source_id)
-        metadata.append({
-            "id": source.id,
-            "label": source.label,
-            "describes": source.describes,
-            "sensitive": source.sensitive,
-            "group": group.value,
-            "requires_external_consent": group in EXTERNAL_GROUPS,
-            "deployment_available": source_id in policy.deployment_sources,
-        })
+        metadata.append(
+            {
+                "id": source.id,
+                "label": source.label,
+                "describes": source.describes,
+                "sensitive": source.sensitive,
+                "group": group.value,
+                "requires_external_consent": group in EXTERNAL_GROUPS,
+                "deployment_available": source_id in policy.deployment_sources,
+            }
+        )
     return metadata
 
 

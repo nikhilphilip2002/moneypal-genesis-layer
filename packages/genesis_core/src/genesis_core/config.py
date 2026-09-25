@@ -3,6 +3,7 @@
 Reads environment variables and a `.env` file. Services running from their own
 directory will pick up the repo-root `.env` via the relative fallbacks below.
 """
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 

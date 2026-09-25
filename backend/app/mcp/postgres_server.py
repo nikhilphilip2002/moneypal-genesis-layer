@@ -51,7 +51,10 @@ def _query(sql: str, meta: dict[str, Any]) -> dict[str, Any]:
     catalog = get_catalog()
     role = str(meta.get("workbench_role") or "")
     effective_sources = meta.get("workbench_effective_sources")
-    if not isinstance(effective_sources, list) or "db" not in effective_sources:
+    if (
+        not isinstance(effective_sources, list)
+        or "db" not in effective_sources
+    ):
         return failure(
             "POLICY_DENIED",
             "This request is not authorized to access the loan-book source.",
@@ -83,22 +86,26 @@ def _query(sql: str, meta: dict[str, Any]) -> dict[str, Any]:
             catalog_version=catalog.version,
         )
 
-    return success({
-        "status": result.status,
-        "columns": result.columns,
-        "rows": result.rows,
-        "row_count": result.row_count,
-        "truncated": result.truncated,
-        "duration_ms": result.duration_ms,
-        "plan_cost": result.plan_cost,
-        "validated_sql": result.sql,
-        "tables": checked.tables,
-        "pii_columns": checked.pii_columns,
-        "limit_injected": checked.limit_injected,
-        "warnings": [*checked.warnings, *result.warnings],
-        "column_units": infer_column_units(checked.sql, checked.tables, catalog),
-        "catalog_version": catalog.version,
-    })
+    return success(
+        {
+            "status": result.status,
+            "columns": result.columns,
+            "rows": result.rows,
+            "row_count": result.row_count,
+            "truncated": result.truncated,
+            "duration_ms": result.duration_ms,
+            "plan_cost": result.plan_cost,
+            "validated_sql": result.sql,
+            "tables": checked.tables,
+            "pii_columns": checked.pii_columns,
+            "limit_injected": checked.limit_injected,
+            "warnings": [*checked.warnings, *result.warnings],
+            "column_units": infer_column_units(
+                checked.sql, checked.tables, catalog
+            ),
+            "catalog_version": catalog.version,
+        }
+    )
 
 
 @mcp.tool

@@ -14,9 +14,26 @@ DEFAULT_RAW_ROOT = BASE_DIR / "data"
 DEFAULT_STRUCTURED_ROOT = BASE_DIR / "output_structured"
 
 SKIP_EXTENSIONS = (
-    ".jpg", ".jpeg", ".png", ".gif", ".svg", ".bmp", ".webp",
-    ".css", ".js", ".pdf", ".zip", ".rar", ".doc", ".docx",
-    ".xls", ".xlsx", ".ppt", ".pptx", ".ico", ".xml",
+    ".jpg",
+    ".jpeg",
+    ".png",
+    ".gif",
+    ".svg",
+    ".bmp",
+    ".webp",
+    ".css",
+    ".js",
+    ".pdf",
+    ".zip",
+    ".rar",
+    ".doc",
+    ".docx",
+    ".xls",
+    ".xlsx",
+    ".ppt",
+    ".pptx",
+    ".ico",
+    ".xml",
 )
 
 
@@ -43,7 +60,9 @@ def _institution_from_row(row: dict) -> Institution:
     start_url = row["start_url"].strip()
     slug = row.get("id") or row.get("slug") or slugify(name)
     slug = slugify(slug)
-    collection = row.get("collection") or row.get("qdrant_collection") or f"comp_{slug}"
+    collection = (
+        row.get("collection") or row.get("qdrant_collection") or f"comp_{slug}"
+    )
 
     return Institution(
         name=name,
@@ -51,7 +70,9 @@ def _institution_from_row(row: dict) -> Institution:
         slug=slug,
         category=row.get("category", "financial_institution"),
         collection=collection,
-        legacy_slug=slugify(row["legacy_slug"]) if row.get("legacy_slug") else None,
+        legacy_slug=slugify(row["legacy_slug"])
+        if row.get("legacy_slug")
+        else None,
         description=row.get("description", ""),
         max_pages=row.get("max_pages"),
     )
@@ -72,7 +93,9 @@ def load_institutions(config_path: Path | None = None) -> list[Institution]:
     return [_institution_from_row(row) for row in rows]
 
 
-def select_institutions(institutions: list[Institution], only: list[str]) -> list[Institution]:
+def select_institutions(
+    institutions: list[Institution], only: list[str]
+) -> list[Institution]:
     if not only:
         return institutions
 
@@ -94,7 +117,9 @@ def normalize_url(url: str) -> str:
 def same_domain(url: str, start_url: str) -> bool:
     parsed = urlparse(url)
     start = urlparse(start_url)
-    return parsed.netloc.lower().removeprefix("www.") == start.netloc.lower().removeprefix("www.")
+    return parsed.netloc.lower().removeprefix(
+        "www."
+    ) == start.netloc.lower().removeprefix("www.")
 
 
 def safe_filename(url: str) -> str:

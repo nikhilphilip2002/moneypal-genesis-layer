@@ -147,7 +147,9 @@ def collection_name(catalog: Catalog | None = None) -> str:
     return f"{COLLECTION}_{cat.version}"
 
 
-def index(catalog: Catalog | None = None, *, batch_size: int = 64) -> dict[str, Any]:
+def index(
+    catalog: Catalog | None = None, *, batch_size: int = 64
+) -> dict[str, Any]:
     """Embed and upsert every catalog document. Idempotent per catalog version."""
     from genesis_core.rag import embed_batch, ensure_collection, get_qdrant
     from qdrant_client.models import PointStruct
@@ -168,7 +170,12 @@ def index(catalog: Catalog | None = None, *, batch_size: int = 64) -> dict[str, 
                 PointStruct(
                     id=abs(hash(doc.id)) % (2**63),
                     vector=vector,
-                    payload={"doc_id": doc.id, "kind": doc.kind, "text": doc.text, **doc.payload},
+                    payload={
+                        "doc_id": doc.id,
+                        "kind": doc.kind,
+                        "text": doc.text,
+                        **doc.payload,
+                    },
                 )
                 for doc, vector in zip(batch, vectors)
             ],
@@ -176,13 +183,19 @@ def index(catalog: Catalog | None = None, *, batch_size: int = 64) -> dict[str, 
         written += len(batch)
 
     logger.info("Indexed %d catalog documents into %s", written, name)
-    return {"collection": name, "documents": written, "catalog_version": cat.version}
+    return {
+        "collection": name,
+        "documents": written,
+        "catalog_version": cat.version,
+    }
 
 
 def main() -> None:
     logging.basicConfig(level=logging.INFO)
     result = index()
-    print(f"Indexed {result['documents']} documents into {result['collection']}")
+    print(
+        f"Indexed {result['documents']} documents into {result['collection']}"
+    )
 
 
 if __name__ == "__main__":

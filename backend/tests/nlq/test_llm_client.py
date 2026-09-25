@@ -22,7 +22,11 @@ from app.services.nlq.llm.client import (
 )
 from app.services.nlq.llm.telemetry import collect_calls
 
-SCHEMA = {"title": "PlanResult", "type": "object", "properties": {"route": {"type": "string"}}}
+SCHEMA = {
+    "title": "PlanResult",
+    "type": "object",
+    "properties": {"route": {"type": "string"}},
+}
 TOOLS = [
     {
         "type": "function",
@@ -90,7 +94,9 @@ def _client(
 def _completion_body(content="{}"):
     return {
         "model": "m",
-        "choices": [{"message": {"content": content}, "finish_reason": "stop"}],
+        "choices": [
+            {"message": {"content": content}, "finish_reason": "stop"}
+        ],
         "usage": {"prompt_tokens": 10, "completion_tokens": 3},
     }
 
@@ -100,14 +106,25 @@ def _stream_response(body):
     message = choice["message"]
     delta = {key: value for key, value in message.items() if value is not None}
     if "tool_calls" in delta:
-        delta["tool_calls"] = [call | {"index": index} for index, call in enumerate(delta["tool_calls"])]
+        delta["tool_calls"] = [
+            call | {"index": index}
+            for index, call in enumerate(delta["tool_calls"])
+        ]
     frames = [
-        _sse_chunk(delta, finish_reason=choice["finish_reason"], model=body.get("model", "m")),
-        "data: " + json.dumps({"choices": [], "usage": body.get("usage", {})}) + "\n\n",
+        _sse_chunk(
+            delta,
+            finish_reason=choice["finish_reason"],
+            model=body.get("model", "m"),
+        ),
+        "data: "
+        + json.dumps({"choices": [], "usage": body.get("usage", {})})
+        + "\n\n",
         "data: [DONE]\n\n",
     ]
     return httpx.Response(
-        200, headers={"content-type": "text/event-stream"}, content="".join(frames)
+        200,
+        headers={"content-type": "text/event-stream"},
+        content="".join(frames),
     )
 
 
@@ -136,7 +153,9 @@ def _tool_ok(*calls, content=None):
     return _stream_response(_tool_body(*calls, content=content))
 
 
-def _raw_tool_call(call_id="call_1", name="query_metrics", arguments='{"metric":"par_30"}'):
+def _raw_tool_call(
+    call_id="call_1", name="query_metrics", arguments='{"metric":"par_30"}'
+):
     return {
         "id": call_id,
         "type": "function",
@@ -145,10 +164,22 @@ def _raw_tool_call(call_id="call_1", name="query_metrics", arguments='{"metric":
 
 
 def _sse_chunk(delta=None, finish_reason=None, **extra):
-    return 'data: ' + json.dumps({
-        'choices': [{'index': 0, 'delta': delta or {}, 'finish_reason': finish_reason}],
-        **extra,
-    }) + '\r\n\r\n'
+    return (
+        "data: "
+        + json.dumps(
+            {
+                "choices": [
+                    {
+                        "index": 0,
+                        "delta": delta or {},
+                        "finish_reason": finish_reason,
+                    }
+                ],
+                **extra,
+            }
+        )
+        + "\r\n\r\n"
+    )
 
 
 @pytest.mark.anyio
@@ -159,16 +190,30 @@ async def test_stream_delivers_text_before_completion_and_preserves_usage():
     class Stream(httpx.AsyncByteStream):
         async def __aiter__(self):
             # Split inside UTF-8 and SSE framing, as real network reads can.
-            first = _sse_chunk({'content': '₹ '}).encode()
+            first = _sse_chunk({"content": "₹ "}).encode()
             for byte in first:
                 yield bytes([byte])
-            assert received == ['₹ ']
-            yield _sse_chunk({'reasoning_content': 'private', 'content': '42'}).encode()
-            yield _sse_chunk(finish_reason='stop', model='stream-model').encode()
-            yield ('data: ' + json.dumps({'choices': [], 'usage': {
-                'prompt_tokens': 12, 'completion_tokens': 4,
-                'prompt_tokens_details': {'cached_tokens': 8},
-            }}) + '\n\ndata: [DONE]\n\n').encode()
+            assert received == ["₹ "]
+            yield _sse_chunk(
+                {"reasoning_content": "private", "content": "42"}
+            ).encode()
+            yield _sse_chunk(
+                finish_reason="stop", model="stream-model"
+            ).encode()
+            yield (
+                "data: "
+                + json.dumps(
+                    {
+                        "choices": [],
+                        "usage": {
+                            "prompt_tokens": 12,
+                            "completion_tokens": 4,
+                            "prompt_tokens_details": {"cached_tokens": 8},
+                        },
+                    }
+                )
+                + "\n\ndata: [DONE]\n\n"
+            ).encode()
 
     async def on_text(text):
         received.append(text)
@@ -176,18 +221,24 @@ async def test_stream_delivers_text_before_completion_and_preserves_usage():
     async def on_reasoning(text):
         reasoning.append(text)
 
-    client = _client(lambda _: httpx.Response(
-        200, headers={'content-type': 'text/event-stream'}, stream=Stream(),
-    ))
+    client = _client(
+        lambda _: httpx.Response(
+            200,
+            headers={"content-type": "text/event-stream"},
+            stream=Stream(),
+        )
+    )
     with collect_calls() as records:
         result = await client.complete(
-            messages=[], on_text=on_text, on_reasoning=on_reasoning,
+            messages=[],
+            on_text=on_text,
+            on_reasoning=on_reasoning,
         )
-    assert received == ['₹ ', '42']
-    assert reasoning == ['private']
-    assert result.text == '₹ 42'
-    assert result.reasoning == 'private'
-    assert result.model == 'stream-model'
+    assert received == ["₹ ", "42"]
+    assert reasoning == ["private"]
+    assert result.text == "₹ 42"
+    assert result.reasoning == "private"
+    assert result.model == "stream-model"
     assert result.cached_prompt_tokens == 8
     assert records[0].completion_tokens == 4
 
@@ -200,45 +251,92 @@ async def test_stream_assembles_interleaved_tool_arguments():
         streamed_calls.append(call)
 
     frames = [
-        _sse_chunk({'tool_calls': [
-            {'index': 0, 'id': 'a', 'type': 'function', 'function': {'name': 'query_', 'arguments': '{"metric":'}},
-            {'index': 1, 'id': 'b', 'type': 'function', 'function': {'name': 'lookup_records', 'arguments': '{"customer_name":'}},
-        ]}),
-        _sse_chunk({'tool_calls': [
-            {'index': 1, 'function': {'arguments': '"A"}'}},
-            {'index': 0, 'function': {'name': 'metrics', 'arguments': '"par_30"}'}},
-        ]}),
-        _sse_chunk(finish_reason='tool_calls'), 'data: [DONE]\n\n',
+        _sse_chunk(
+            {
+                "tool_calls": [
+                    {
+                        "index": 0,
+                        "id": "a",
+                        "type": "function",
+                        "function": {
+                            "name": "query_",
+                            "arguments": '{"metric":',
+                        },
+                    },
+                    {
+                        "index": 1,
+                        "id": "b",
+                        "type": "function",
+                        "function": {
+                            "name": "lookup_records",
+                            "arguments": '{"customer_name":',
+                        },
+                    },
+                ]
+            }
+        ),
+        _sse_chunk(
+            {
+                "tool_calls": [
+                    {"index": 1, "function": {"arguments": '"A"}'}},
+                    {
+                        "index": 0,
+                        "function": {
+                            "name": "metrics",
+                            "arguments": '"par_30"}',
+                        },
+                    },
+                ]
+            }
+        ),
+        _sse_chunk(finish_reason="tool_calls"),
+        "data: [DONE]\n\n",
     ]
-    client = _client(lambda _: httpx.Response(
-        200, headers={'content-type': 'text/event-stream'}, content=''.join(frames),
-    ))
-    result = await client.complete(
-        messages=[], tools=TOOLS, tool_choice='auto', on_tool_call=on_tool_call,
+    client = _client(
+        lambda _: httpx.Response(
+            200,
+            headers={"content-type": "text/event-stream"},
+            content="".join(frames),
+        )
     )
-    assert [(call.id, call.name, call.arguments) for call in result.tool_calls] == [
-        ('a', 'query_metrics', {'metric': 'par_30'}),
-        ('b', 'lookup_records', {'customer_name': 'A'}),
+    result = await client.complete(
+        messages=[],
+        tools=TOOLS,
+        tool_choice="auto",
+        on_tool_call=on_tool_call,
+    )
+    assert [
+        (call.id, call.name, call.arguments) for call in result.tool_calls
+    ] == [
+        ("a", "query_metrics", {"metric": "par_30"}),
+        ("b", "lookup_records", {"customer_name": "A"}),
     ]
     assert streamed_calls == [
-        {'index': 0, 'id': 'a', 'name': 'query_'},
-        {'index': 1, 'id': 'b', 'name': 'lookup_records'},
-        {'index': 1, 'id': 'b', 'name': 'lookup_records'},
-        {'index': 0, 'id': 'a', 'name': 'query_metrics'},
+        {"index": 0, "id": "a", "name": "query_"},
+        {"index": 1, "id": "b", "name": "lookup_records"},
+        {"index": 1, "id": "b", "name": "lookup_records"},
+        {"index": 0, "id": "a", "name": "query_metrics"},
     ]
 
 
 @pytest.mark.anyio
-@pytest.mark.parametrize('content', [
-    _sse_chunk({'content': 'partial'}),
-    _sse_chunk({'content': 'partial'}) + 'data: [DONE]\n\n',
-    'data: invalid\n\n',
-    'data: {"error": {"message": "failed"}}\n\n',
-])
+@pytest.mark.parametrize(
+    "content",
+    [
+        _sse_chunk({"content": "partial"}),
+        _sse_chunk({"content": "partial"}) + "data: [DONE]\n\n",
+        "data: invalid\n\n",
+        'data: {"error": {"message": "failed"}}\n\n',
+    ],
+)
 async def test_stream_rejects_truncated_and_invalid_responses(content):
-    client = _client(lambda _: httpx.Response(
-        200, headers={'content-type': 'text/event-stream'}, content=content,
-    ))
+    client = _client(
+        lambda _: httpx.Response(
+            200,
+            headers={"content-type": "text/event-stream"},
+            content=content,
+        )
+    )
     with pytest.raises(LLMProtocolError):
         await client.complete(messages=[])
 
@@ -250,15 +348,17 @@ async def test_stream_does_not_retry_after_visible_text_and_closes_connection():
 
     class Stream(httpx.AsyncByteStream):
         async def __aiter__(self):
-            yield _sse_chunk({'content': 'partial'}).encode()
-            raise httpx.ReadTimeout('connection stalled')
+            yield _sse_chunk({"content": "partial"}).encode()
+            raise httpx.ReadTimeout("connection stalled")
 
         async def aclose(self):
             closed.append(True)
 
     def handler(request):
         requests.append(request)
-        return httpx.Response(200, headers={'content-type': 'text/event-stream'}, stream=Stream())
+        return httpx.Response(
+            200, headers={"content-type": "text/event-stream"}, stream=Stream()
+        )
 
     async def on_text(_text):
         pass
@@ -287,7 +387,9 @@ async def test_cancelled_stream_closes_connection_without_retry():
     def handler(request):
         requests.append(request)
         return httpx.Response(
-            200, headers={"content-type": "text/event-stream"}, stream=Stream(),
+            200,
+            headers={"content-type": "text/event-stream"},
+            stream=Stream(),
         )
 
     client = _client(handler)
@@ -307,13 +409,15 @@ async def test_stream_does_not_retry_after_visible_reasoning():
 
     class Stream(httpx.AsyncByteStream):
         async def __aiter__(self):
-            yield _sse_chunk({'reasoning_content': 'working'}).encode()
-            raise httpx.ReadTimeout('connection stalled')
+            yield _sse_chunk({"reasoning_content": "working"}).encode()
+            raise httpx.ReadTimeout("connection stalled")
 
     def handler(request):
         requests.append(request)
         return httpx.Response(
-            200, headers={'content-type': 'text/event-stream'}, stream=Stream(),
+            200,
+            headers={"content-type": "text/event-stream"},
+            stream=Stream(),
         )
 
     async def on_reasoning(_text):
@@ -341,7 +445,9 @@ class TestJsonSalvage:
 
     def test_raises_on_prose(self):
         with pytest.raises(LLMError):
-            LLMResult(text="I cannot help with that.", model="m", provider="p").json()
+            LLMResult(
+                text="I cannot help with that.", model="m", provider="p"
+            ).json()
 
 
 class TestThinkingModels:
@@ -365,14 +471,19 @@ class TestThinkingModels:
         assert "length" in message
 
     @pytest.mark.anyio
-    async def test_reasoning_only_length_response_is_rejected_with_diagnostics(self):
+    async def test_reasoning_only_length_response_is_rejected_with_diagnostics(
+        self,
+    ):
         def handler(request):
             return _stream_response(
                 {
                     "model": "m",
                     "choices": [
                         {
-                            "message": {"content": "", "reasoning_content": "thinking..."},
+                            "message": {
+                                "content": "",
+                                "reasoning_content": "thinking...",
+                            },
                             "finish_reason": "length",
                         }
                     ],
@@ -381,7 +492,9 @@ class TestThinkingModels:
             )
 
         with pytest.raises(LLMIncomplete, match="11 chars of reasoning"):
-            await _client(handler).complete(messages=[{"role": "user", "content": "hi"}])
+            await _client(handler).complete(
+                messages=[{"role": "user", "content": "hi"}]
+            )
 
     @pytest.mark.anyio
     async def test_request_has_no_server_specific_extensions(self):
@@ -391,7 +504,9 @@ class TestThinkingModels:
             seen.update(json.loads(request.content))
             return _ok('{"route":"refuse"}')
 
-        await _client(handler).complete(messages=[{"role": "user", "content": "hi"}])
+        await _client(handler).complete(
+            messages=[{"role": "user", "content": "hi"}]
+        )
         assert "chat_template_kwargs" not in seen
         assert "cache_prompt" not in seen
         assert "n_cache_reuse" not in seen
@@ -404,7 +519,9 @@ class TestThinkingModels:
         from app.services.nlq import ratelimit
 
         ratelimit.reset()
-        monkeypatch.setattr(settings, "nlq_llm_lock_path", tmp_path / "llama.lock")
+        monkeypatch.setattr(
+            settings, "nlq_llm_lock_path", tmp_path / "llama.lock"
+        )
         active = 0
         peak = 0
 
@@ -417,19 +534,27 @@ class TestThinkingModels:
             return _ok()
 
         client = _client(handler, max_retries=0)
-        await asyncio.gather(*(
-            client.complete(messages=[{"role": "user", "content": str(index)}])
-            for index in range(2)
-        ))
+        await asyncio.gather(
+            *(
+                client.complete(
+                    messages=[{"role": "user", "content": str(index)}]
+                )
+                for index in range(2)
+            )
+        )
         await client.aclose()
         ratelimit.reset()
         assert peak == 1
 
     @pytest.mark.anyio
-    async def test_request_gate_is_reentrant_for_atomic_slot_restore(self, monkeypatch, tmp_path):
+    async def test_request_gate_is_reentrant_for_atomic_slot_restore(
+        self, monkeypatch, tmp_path
+    ):
         from app.core.config import settings
 
-        monkeypatch.setattr(settings, "nlq_llm_lock_path", tmp_path / "llama.lock")
+        monkeypatch.setattr(
+            settings, "nlq_llm_lock_path", tmp_path / "llama.lock"
+        )
         client = _client(lambda _request: _ok(), max_retries=0)
         async with request_gate():
             result = await asyncio.wait_for(
@@ -449,7 +574,8 @@ class TestThinkingModels:
             return _ok()
 
         await _client(handler).complete(
-            messages=[{"role": "user", "content": "hi"}], max_output_tokens=300,
+            messages=[{"role": "user", "content": "hi"}],
+            max_output_tokens=300,
         )
         assert seen["max_tokens"] == 300
 
@@ -460,7 +586,9 @@ class TestThinkingModels:
             body["usage"]["prompt_tokens_details"] = {"cached_tokens": 9000}
             return _stream_response(body)
 
-        result = await _client(handler).complete(messages=[{"role": "user", "content": "hi"}])
+        result = await _client(handler).complete(
+            messages=[{"role": "user", "content": "hi"}]
+        )
         assert result.prompt_tokens == 10
         assert result.cached_prompt_tokens == 9000
         assert result.uncached_prompt_tokens == 10
@@ -501,7 +629,9 @@ class TestResponseFormat:
             return _ok('{"route":"refuse"}')
 
         client = _client(handler, supports_json_schema=True)
-        await client.complete(messages=[{"role": "user", "content": "hi"}], json_schema=SCHEMA)
+        await client.complete(
+            messages=[{"role": "user", "content": "hi"}], json_schema=SCHEMA
+        )
         assert seen["response_format"]["type"] == "json_schema"
         assert seen["response_format"]["json_schema"]["schema"] == SCHEMA
         assert seen["response_format"]["json_schema"]["strict"] is True
@@ -515,10 +645,17 @@ class TestResponseFormat:
             return _ok('{"route":"refuse"}')
 
         client = _client(handler, supports_json_schema=False, name="json-mode")
-        await client.complete(messages=[{"role": "user", "content": "hi"}], json_schema=SCHEMA)
+        await client.complete(
+            messages=[{"role": "user", "content": "hi"}], json_schema=SCHEMA
+        )
         assert seen["response_format"] == {"type": "json_object"}
-        assert [message["role"] for message in seen["messages"]] == ["system", "user"]
-        assert seen["messages"][0]["content"].startswith("Respond with a single JSON object")
+        assert [message["role"] for message in seen["messages"]] == [
+            "system",
+            "user",
+        ]
+        assert seen["messages"][0]["content"].startswith(
+            "Respond with a single JSON object"
+        )
 
     @pytest.mark.anyio
     async def test_system_context_and_schema_are_merged_in_stable_order(self):
@@ -538,13 +675,22 @@ class TestResponseFormat:
             json_schema=SCHEMA,
         )
 
-        assert [message["role"] for message in seen["messages"]] == ["system", "user"]
+        assert [message["role"] for message in seen["messages"]] == [
+            "system",
+            "user",
+        ]
         system = seen["messages"][0]["content"]
-        assert system.index("Primary instructions") < system.index("Conversation checkpoint")
-        assert system.index("Conversation checkpoint") < system.index("Respond with a single JSON")
+        assert system.index("Primary instructions") < system.index(
+            "Conversation checkpoint"
+        )
+        assert system.index("Conversation checkpoint") < system.index(
+            "Respond with a single JSON"
+        )
 
     @pytest.mark.anyio
-    async def test_native_schema_provider_still_coalesces_system_messages(self):
+    async def test_native_schema_provider_still_coalesces_system_messages(
+        self,
+    ):
         seen = {}
 
         def handler(request):
@@ -563,9 +709,14 @@ class TestResponseFormat:
         )
 
         assert [message["role"] for message in seen["messages"]] == [
-            "system", "user", "assistant",
+            "system",
+            "user",
+            "assistant",
         ]
-        assert seen["messages"][0]["content"] == "Primary instructions\n\nSession state"
+        assert (
+            seen["messages"][0]["content"]
+            == "Primary instructions\n\nSession state"
+        )
 
     @pytest.mark.anyio
     async def test_temperature_and_max_tokens_omitted_from_payload(self):
@@ -592,7 +743,9 @@ class TestNativeTools:
             "type": "allowed_tools",
             "allowed_tools": {
                 "mode": "required",
-                "tools": [{"type": "function", "function": {"name": "query_metrics"}}],
+                "tools": [
+                    {"type": "function", "function": {"name": "query_metrics"}}
+                ],
             },
         }
 
@@ -602,7 +755,8 @@ class TestNativeTools:
 
         result = await _client(handler).complete(
             messages=[{"role": "user", "content": "Show PAR 30"}],
-            tools=TOOLS, tool_choice=choice,
+            tools=TOOLS,
+            tool_choice=choice,
         )
 
         assert seen["tools"] == TOOLS
@@ -615,13 +769,19 @@ class TestNativeTools:
             "type": "allowed_tools",
             "allowed_tools": {
                 "mode": "auto",
-                "tools": [{"type": "function", "function": {"name": "lookup_records"}}],
+                "tools": [
+                    {
+                        "type": "function",
+                        "function": {"name": "lookup_records"},
+                    }
+                ],
             },
         }
         with pytest.raises(LLMProtocolError, match="unknown function"):
             await _client(lambda _: _tool_ok(_raw_tool_call())).complete(
                 messages=[{"role": "user", "content": "hi"}],
-                tools=TOOLS, tool_choice=choice,
+                tools=TOOLS,
+                tool_choice=choice,
             )
 
     @pytest.mark.anyio
@@ -675,7 +835,8 @@ class TestNativeTools:
     async def test_provider_without_native_support_is_rejected(self):
         with pytest.raises(LLMError, match="does not support native tools"):
             await _client(
-                lambda _request: _ok(), supports_native_tools=False,
+                lambda _request: _ok(),
+                supports_native_tools=False,
             ).complete(
                 messages=[{"role": "user", "content": "hi"}],
                 tools=TOOLS,
@@ -697,7 +858,9 @@ class TestNativeTools:
             tools=TOOLS,
         )
 
-        assert [(call.id, call.name, call.arguments) for call in result.tool_calls] == [
+        assert [
+            (call.id, call.name, call.arguments) for call in result.tool_calls
+        ] == [
             ("call_1", "query_metrics", {"metric": "par_30"}),
             ("call_2", "lookup_records", {"customer_name": "Asha"}),
         ]
@@ -716,7 +879,9 @@ class TestNativeTools:
         }
 
     @pytest.mark.anyio
-    async def test_native_assistant_and_tool_result_replay_without_coalescing(self):
+    async def test_native_assistant_and_tool_result_replay_without_coalescing(
+        self,
+    ):
         requests = []
 
         def handler(request):
@@ -727,52 +892,73 @@ class TestNativeTools:
 
         client = _client(handler)
         first = await client.complete(
-            messages=[{"role": "user", "content": "Show PAR 30"}], tools=TOOLS,
+            messages=[{"role": "user", "content": "Show PAR 30"}],
+            tools=TOOLS,
         )
         await client.complete(
             messages=[
                 {"role": "system", "content": "Use governed results."},
                 {"role": "user", "content": "Show PAR 30"},
                 first.assistant_message,
-                {"role": "tool", "tool_call_id": "call_1", "content": '{"value":4.2}'},
+                {
+                    "role": "tool",
+                    "tool_call_id": "call_1",
+                    "content": '{"value":4.2}',
+                },
             ],
         )
 
         replay = requests[1]["messages"]
         assert [message["role"] for message in replay] == [
-            "system", "user", "assistant", "tool",
+            "system",
+            "user",
+            "assistant",
+            "tool",
         ]
         assert replay[2]["tool_calls"] == [_raw_tool_call()]
         assert replay[3]["tool_call_id"] == "call_1"
 
     @pytest.mark.anyio
-    async def test_provider_reasoning_is_stored_but_not_replayed_by_default(self, monkeypatch):
+    async def test_provider_reasoning_is_stored_but_not_replayed_by_default(
+        self, monkeypatch
+    ):
         from app.services.nlq.llm import client as client_module
 
-        monkeypatch.setattr(client_module.settings, "nlq_llm_replay_reasoning", False)
+        monkeypatch.setattr(
+            client_module.settings, "nlq_llm_replay_reasoning", False
+        )
         requests = []
 
         def handler(request):
             requests.append(json.loads(request.content))
             if len(requests) == 1:
                 body = _tool_body(_raw_tool_call())
-                body["choices"][0]["message"]["reasoning_content"] = "hidden reasoning"
+                body["choices"][0]["message"]["reasoning_content"] = (
+                    "hidden reasoning"
+                )
                 return _stream_response(body)
             return _ok("PAR 30 is available.")
 
         client = _client(handler)
         first = await client.complete(
-            messages=[{"role": "user", "content": "Show PAR 30"}], tools=TOOLS,
+            messages=[{"role": "user", "content": "Show PAR 30"}],
+            tools=TOOLS,
         )
         # The durable assistant message keeps what the provider returned.
-        assert first.assistant_message["reasoning_content"] == "hidden reasoning"
+        assert (
+            first.assistant_message["reasoning_content"] == "hidden reasoning"
+        )
         assert first.reasoning == "hidden reasoning"
 
         await client.complete(
             messages=[
                 {"role": "user", "content": "Show PAR 30"},
                 first.assistant_message,
-                {"role": "tool", "tool_call_id": "call_1", "content": '{"value":4.2}'},
+                {
+                    "role": "tool",
+                    "tool_call_id": "call_1",
+                    "content": '{"value":4.2}',
+                },
             ],
         )
         replayed = requests[1]["messages"][1]
@@ -780,10 +966,14 @@ class TestNativeTools:
         assert "reasoning_content" not in replayed
 
     @pytest.mark.anyio
-    async def test_provider_reasoning_is_replayed_when_enabled(self, monkeypatch):
+    async def test_provider_reasoning_is_replayed_when_enabled(
+        self, monkeypatch
+    ):
         from app.services.nlq.llm import client as client_module
 
-        monkeypatch.setattr(client_module.settings, "nlq_llm_replay_reasoning", True)
+        monkeypatch.setattr(
+            client_module.settings, "nlq_llm_replay_reasoning", True
+        )
         requests = []
 
         def handler(request):
@@ -793,21 +983,32 @@ class TestNativeTools:
         await _client(handler).complete(
             messages=[
                 {"role": "user", "content": "Show PAR 30"},
-                {"role": "assistant", "content": None, "reasoning_content": "kept",
-                 "tool_calls": [_raw_tool_call()]},
-                {"role": "tool", "tool_call_id": "call_1", "content": '{"value":4.2}'},
+                {
+                    "role": "assistant",
+                    "content": None,
+                    "reasoning_content": "kept",
+                    "tool_calls": [_raw_tool_call()],
+                },
+                {
+                    "role": "tool",
+                    "tool_call_id": "call_1",
+                    "content": '{"value":4.2}',
+                },
             ],
         )
         assert requests[0]["messages"][1]["reasoning_content"] == "kept"
 
     @pytest.mark.anyio
-    async def test_content_only_json_is_never_reconstructed_as_a_tool_call(self):
+    async def test_content_only_json_is_never_reconstructed_as_a_tool_call(
+        self,
+    ):
         result = await _client(
             lambda _request: _ok(
                 '{"name":"query_metrics","arguments":{"metric":"par_30"}}'
             )
         ).complete(
-            messages=[{"role": "user", "content": "Show PAR 30"}], tools=TOOLS,
+            messages=[{"role": "user", "content": "Show PAR 30"}],
+            tools=TOOLS,
         )
 
         assert result.tool_calls == []
@@ -818,16 +1019,44 @@ class TestNativeTools:
         ("raw_calls", "error"),
         [
             ({"not": "an array"}, "malformed completion stream"),
-            ([{"type": "function", "function": {"name": "query_metrics", "arguments": "{}"}}], "no call ID"),
-            ([_raw_tool_call(call_id="same"), _raw_tool_call(call_id="same")], "duplicate tool call ID"),
+            (
+                [
+                    {
+                        "type": "function",
+                        "function": {
+                            "name": "query_metrics",
+                            "arguments": "{}",
+                        },
+                    }
+                ],
+                "no call ID",
+            ),
+            (
+                [
+                    _raw_tool_call(call_id="same"),
+                    _raw_tool_call(call_id="same"),
+                ],
+                "duplicate tool call ID",
+            ),
             ([_raw_tool_call() | {"type": "custom"}], "not type 'function'"),
             ([_raw_tool_call(name="not_registered")], "unknown function"),
             ([_raw_tool_call(arguments="not-json")], "not valid JSON"),
             ([_raw_tool_call(arguments="[]")], "decode to an object"),
-            ([{"id": "call_1", "type": "function", "function": {"name": "query_metrics", "arguments": {}}}], "valid JSON|JSON-encoded string|malformed completion stream"),
+            (
+                [
+                    {
+                        "id": "call_1",
+                        "type": "function",
+                        "function": {"name": "query_metrics", "arguments": {}},
+                    }
+                ],
+                "valid JSON|JSON-encoded string|malformed completion stream",
+            ),
         ],
     )
-    async def test_malformed_native_calls_are_protocol_errors(self, raw_calls, error):
+    async def test_malformed_native_calls_are_protocol_errors(
+        self, raw_calls, error
+    ):
         def handler(_request):
             if isinstance(raw_calls, list):
                 return _tool_ok(*raw_calls)
@@ -835,14 +1064,17 @@ class TestNativeTools:
                 200,
                 headers={"content-type": "text/event-stream"},
                 content=(
-                    _sse_chunk({"tool_calls": raw_calls}, finish_reason="tool_calls")
+                    _sse_chunk(
+                        {"tool_calls": raw_calls}, finish_reason="tool_calls"
+                    )
                     + "data: [DONE]\n\n"
                 ),
             )
 
         with pytest.raises(LLMProtocolError, match=error):
             await _client(handler).complete(
-                messages=[{"role": "user", "content": "hi"}], tools=TOOLS,
+                messages=[{"role": "user", "content": "hi"}],
+                tools=TOOLS,
             )
 
     @pytest.mark.anyio
@@ -865,7 +1097,9 @@ class TestNativeTools:
         with collect_calls() as calls:
             with pytest.raises(LLMProtocolError):
                 await _client(
-                    lambda _request: _tool_ok(_raw_tool_call(arguments="not-json"))
+                    lambda _request: _tool_ok(
+                        _raw_tool_call(arguments="not-json")
+                    )
                 ).complete(
                     messages=[{"role": "user", "content": "Show PAR 30"}],
                     tools=TOOLS,
@@ -904,10 +1138,16 @@ class TestFailureHandling:
 
         def handler(_request):
             calls["n"] += 1
-            return httpx.Response(503) if calls["n"] < 5 else _ok('{"ready":true}')
+            return (
+                httpx.Response(503)
+                if calls["n"] < 5
+                else _ok('{"ready":true}')
+            )
 
         client = _client(handler, max_retries=4)
-        result = await client.complete(messages=[{"role": "user", "content": "hi"}])
+        result = await client.complete(
+            messages=[{"role": "user", "content": "hi"}]
+        )
 
         assert calls["n"] == 5
         assert result.attempts == 5
@@ -943,9 +1183,9 @@ class TestFailureHandling:
 
         monkeypatch.setattr(asyncio, "sleep", fake_sleep)
         with pytest.raises(LLMUnavailable):
-            await _client(lambda _: httpx.Response(503), max_retries=0).complete(
-                messages=[{"role": "user", "content": "hi"}]
-            )
+            await _client(
+                lambda _: httpx.Response(503), max_retries=0
+            ).complete(messages=[{"role": "user", "content": "hi"}])
 
         assert delays == []
 
@@ -1021,7 +1261,8 @@ class TestFinishReasons:
 
         with pytest.raises(LLMProtocolError, match="no tool calls"):
             await _client(lambda _: _stream_response(body)).complete(
-                messages=[{"role": "user", "content": "hi"}], tools=TOOLS,
+                messages=[{"role": "user", "content": "hi"}],
+                tools=TOOLS,
             )
 
 
@@ -1030,9 +1271,14 @@ class TestHealth:
 
     @pytest.mark.anyio
     async def test_ok(self):
-        assert (await _client(lambda r: httpx.Response(
-            200, json={"object": "list", "data": []},
-        )).health())["status"] == "ok"
+        assert (
+            await _client(
+                lambda r: httpx.Response(
+                    200,
+                    json={"object": "list", "data": []},
+                )
+            ).health()
+        )["status"] == "ok"
 
     @pytest.mark.anyio
     async def test_unreachable_is_down_not_an_exception(self):
@@ -1043,13 +1289,17 @@ class TestHealth:
 
     @pytest.mark.anyio
     async def test_error_status_is_degraded(self):
-        assert (await _client(lambda r: httpx.Response(500)).health())["status"] == "degraded"
+        assert (await _client(lambda r: httpx.Response(500)).health())[
+            "status"
+        ] == "degraded"
 
     @pytest.mark.anyio
     async def test_endpoint_reports_a_different_served_model_as_degraded(self):
         def handler(request):
             if request.url.path == "/v1/models":
-                return httpx.Response(200, json={"data": [{"id": "actual-35b"}]})
+                return httpx.Response(
+                    200, json={"data": [{"id": "actual-35b"}]}
+                )
             return httpx.Response(200, json={"object": "list", "data": []})
 
         health = await _client(handler).health()

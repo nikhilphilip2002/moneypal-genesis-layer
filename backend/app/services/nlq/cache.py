@@ -30,7 +30,9 @@ from typing import Any, Generic, TypeVar
 
 logger = logging.getLogger(__name__)
 
-RESULT_TTL_S = 900.0    # 15 minutes: a safety net under the data-version key, not the key
+RESULT_TTL_S = (
+    900.0  # 15 minutes: a safety net under the data-version key, not the key
+)
 PLAN_TTL_S = 3600.0
 RESULT_CAPACITY = 256
 PLAN_CAPACITY = 512
@@ -113,7 +115,9 @@ def bump_data_version(version: str | None = None) -> str:
     global _data_version
     with _version_lock:
         _data_version = version or str(int(time.time()))
-    logger.info("NLQ result cache invalidated, data version now %s", _data_version)
+    logger.info(
+        "NLQ result cache invalidated, data version now %s", _data_version
+    )
     return _data_version
 
 

@@ -41,7 +41,9 @@ def _audit(outcome: str, *, reason: str = "", query: str = "") -> None:
         outcome=outcome,
         data={
             "reason": reason,
-            "query_hash": hashlib.sha256(query.encode()).hexdigest() if query else "",
+            "query_hash": hashlib.sha256(query.encode()).hexdigest()
+            if query
+            else "",
         },
     )
 
@@ -61,8 +63,10 @@ def _strings(value: Any) -> Iterable[str]:
 def _normalize(value: str) -> str:
     value = unicodedata.normalize("NFKC", value)
     value = "".join(
-        " " if unicodedata.category(character) in {"Cf", "Zs"}
-        else "-" if unicodedata.category(character) == "Pd"
+        " "
+        if unicodedata.category(character) in {"Cf", "Zs"}
+        else "-"
+        if unicodedata.category(character) == "Pd"
         else character
         for character in value
     )
@@ -78,7 +82,11 @@ def authorize_public_search(
     """Fail closed before network I/O and return the sanitized public-only query."""
     policy.require("web")
     values = [_normalize(value) for value in _strings(arguments)]
-    entities = {_normalize(value).casefold() for value in private_entities if value.strip()}
+    entities = {
+        _normalize(value).casefold()
+        for value in private_entities
+        if value.strip()
+    }
     for value in values:
         if (
             _PAN.search(value)
@@ -118,7 +126,9 @@ async def retrieve_public(
     private_entities: Iterable[str] = (),
 ):
     decision = authorize_public_search(
-        {"search_query": search_query}, policy=policy, private_entities=private_entities,
+        {"search_query": search_query},
+        policy=policy,
+        private_entities=private_entities,
     )
     from app.services.workbench import web
 

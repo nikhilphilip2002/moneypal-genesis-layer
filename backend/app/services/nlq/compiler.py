@@ -104,7 +104,9 @@ def compile_spec(
     params: dict[str, Any] = {}
 
     period = _resolve_period(spec.period, today)
-    compare = _resolve_period(spec.compare_to, today) if spec.compare_to else None
+    compare = (
+        _resolve_period(spec.compare_to, today) if spec.compare_to else None
+    )
 
     dims = [cat.dimensions[d] for d in spec.dimensions]
     joins = _join_plan(cat, base_table, dims, spec.filters, plan)
@@ -127,7 +129,9 @@ def compile_spec(
         )
     elif plan.needs_as_of:
         as_of_date = period.end
-        source_sql = _as_of_source(plan, base_table, base_alias, params, as_of_date)
+        source_sql = _as_of_source(
+            plan, base_table, base_alias, params, as_of_date
+        )
     else:
         source_sql = f"{base_table} AS {base_alias}"
 
@@ -135,7 +139,11 @@ def compile_spec(
     for join, right_table in joins:
         right_alias = _alias(right_table)
         traversal_left = join.left if join.right == right_table else join.right
-        left_alias = base_alias if traversal_left == base_table else _alias(traversal_left)
+        left_alias = (
+            base_alias
+            if traversal_left == base_table
+            else _alias(traversal_left)
+        )
         conditions = []
         for left_col, right_col in join.on:
             # Column order in joins.yaml follows (left table, right table); flip when the
@@ -152,7 +160,8 @@ def compile_spec(
             conditions.append(f"{left_expr} = {right_expr}")
         keyword = "LEFT JOIN" if join.join_type == "left" else "JOIN"
         from_parts.append(
-            f"{keyword} {right_table} AS {right_alias} ON " + " AND ".join(conditions)
+            f"{keyword} {right_table} AS {right_alias} ON "
+            + " AND ".join(conditions)
         )
 
     # ---- SELECT ------------------------------------------------------------------------
@@ -195,7 +204,9 @@ def compile_spec(
     # ---- WHERE -------------------------------------------------------------------------
     where_parts: list[str] = []
     if date_column and not plan.needs_as_of:
-        where_parts.append(f"{date_column} BETWEEN :period_start AND :period_end")
+        where_parts.append(
+            f"{date_column} BETWEEN :period_start AND :period_end"
+        )
         params["period_start"] = period.start
         params["period_end"] = period.end
     elif plan.metrics[0].year_column:
@@ -211,14 +222,18 @@ def compile_spec(
         where_parts.append(clause)
 
     # ---- assemble ----------------------------------------------------------------------
-    sql_lines = ["SELECT " + ",\n       ".join(select_parts), "FROM " + "\n     ".join(from_parts)]
+    sql_lines = [
+        "SELECT " + ",\n       ".join(select_parts),
+        "FROM " + "\n     ".join(from_parts),
+    ]
     if where_parts:
         sql_lines.append("WHERE " + "\n  AND ".join(where_parts))
     if group_parts:
         sql_lines.append("GROUP BY " + ", ".join(dict.fromkeys(group_parts)))
     if spec.having:
         sql_lines.append(
-            "HAVING " + "\n  AND ".join(
+            "HAVING "
+            + "\n  AND ".join(
                 _metric_filter_sql(cat, condition, base_alias, params, index)
                 for index, condition in enumerate(spec.having)
             )
@@ -268,7 +283,9 @@ def compile_comparison(
     if spec.compare_to is None:
         raise CompileError("compile_comparison requires compare_to")
     current = compile_spec(spec, catalog, today)
-    prior_spec = spec.model_copy(update={"period": spec.compare_to, "compare_to": None})
+    prior_spec = spec.model_copy(
+        update={"period": spec.compare_to, "compare_to": None}
+    )
     prior = compile_spec(prior_spec, catalog, today)
     return current, prior
 
@@ -278,14 +295,20 @@ def compile_comparison(
 # --------------------------------------------------------------------------------------
 
 
-def _resolve_period(period: Period | None, today: date | None) -> periods.DateRange:
+def _resolve_period(
+    period: Period | None, today: date | None
+) -> periods.DateRange:
     if period is None:
         raise CompileError("a period is required")
     if period.relative:
         return periods.resolve_relative(period.relative, today)
     if period.start and period.end:
-        return periods.DateRange(period.start, period.end, f"{period.start} to {period.end}")
-    raise CompileError("period must carry either a relative token or both start and end")
+        return periods.DateRange(
+            period.start, period.end, f"{period.start} to {period.end}"
+        )
+    raise CompileError(
+        "period must carry either a relative token or both start and end"
+    )
 
 
 def _date_column(plan: metric_rules.MetricPlan, alias: str) -> str | None:
@@ -353,7 +376,9 @@ def _as_of_series_source(
     metric = next(m for m in plan.metrics if m.needs_as_of)
     interval = _GRAIN_INTERVAL.get(time_dim.grain or "")
     if interval is None:
-        raise CompileError(f"cannot build a point-in-time series at {time_dim.grain!r} grain")
+        raise CompileError(
+            f"cannot build a point-in-time series at {time_dim.grain!r} grain"
+        )
 
     # Anchor on the truncated period start so buckets align to real month/quarter/FY edges
     # rather than to whatever day the period happens to begin on.
@@ -421,11 +446,20 @@ def _join_plan(
     """Which tables to join, in order. Rules 3 and 4 of §2.5 live here."""
     needed: list[str] = []
     for dim in dims:
-        if not dim.is_time and dim.table != base_table and dim.table not in needed:
+        if (
+            not dim.is_time
+            and dim.table != base_table
+            and dim.table not in needed
+        ):
             needed.append(dim.table)
     for flt in filters:
         dim = cat.dimensions.get(flt.field)
-        if dim and not dim.is_time and dim.table != base_table and dim.table not in needed:
+        if (
+            dim
+            and not dim.is_time
+            and dim.table != base_table
+            and dim.table not in needed
+        ):
             needed.append(dim.table)
 
     out: list[tuple[Join, str]] = []
@@ -504,7 +538,14 @@ def _filter_sql(
         params[key] = f"%{value}%"
         return f"{column}::text ILIKE :{key}"
 
-    operators = {"eq": "=", "ne": "<>", "gt": ">", "gte": ">=", "lt": "<", "lte": "<="}
+    operators = {
+        "eq": "=",
+        "ne": "<>",
+        "gt": ">",
+        "gte": ">=",
+        "lt": "<",
+        "lte": "<=",
+    }
     if dim.id == "agent" and flt.op in ("eq", "ne"):
         params[key] = str(value).lower()
         return f"LOWER({column}::text) {operators[flt.op]} :{key}"
@@ -536,7 +577,9 @@ def _metric_filter_sql(
 ) -> str:
     metric = cat.metrics.get(condition.field)
     if metric is None:
-        raise CompileError(f"unknown aggregate metric condition {condition.field!r}")
+        raise CompileError(
+            f"unknown aggregate metric condition {condition.field!r}"
+        )
     expression = metric.sql(base_alias)
     key = f"h{index}"
     if condition.op == "is_null":
@@ -544,12 +587,23 @@ def _metric_filter_sql(
     if condition.op == "between":
         values = condition.value
         if not isinstance(values, list) or len(values) != 2:
-            raise CompileError(f"between on {condition.field!r} needs two values")
+            raise CompileError(
+                f"between on {condition.field!r} needs two values"
+            )
         params[f"{key}_lo"], params[f"{key}_hi"] = values
         return f"{expression} BETWEEN :{key}_lo AND :{key}_hi"
-    operators = {"eq": "=", "ne": "<>", "gt": ">", "gte": ">=", "lt": "<", "lte": "<="}
+    operators = {
+        "eq": "=",
+        "ne": "<>",
+        "gt": ">",
+        "gte": ">=",
+        "lt": "<",
+        "lte": "<=",
+    }
     if condition.op not in operators:
-        raise CompileError(f"{condition.op!r} is not supported for aggregate conditions")
+        raise CompileError(
+            f"{condition.op!r} is not supported for aggregate conditions"
+        )
     params[key] = condition.value
     return f"{expression} {operators[condition.op]} :{key}"
 
@@ -645,7 +699,11 @@ def _postgres_literal(value: Any) -> str:
     if isinstance(value, (list, tuple)):
         if not value:
             return "ARRAY[]::text[]"
-        return "ARRAY[" + ", ".join(_postgres_literal(item) for item in value) + "]"
+        return (
+            "ARRAY["
+            + ", ".join(_postgres_literal(item) for item in value)
+            + "]"
+        )
     return "'" + str(value).replace("'", "''") + "'"
 
 

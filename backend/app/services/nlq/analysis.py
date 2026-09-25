@@ -33,7 +33,11 @@ from typing import Any, Iterable, Sequence
 
 from app.services.nlq import drilldown
 from app.services.nlq.catalog import Catalog, get_catalog
-from app.services.nlq.catalog.loader import AnalysisDef, AnalysisStepDef, canonical_enum_code
+from app.services.nlq.catalog.loader import (
+    AnalysisDef,
+    AnalysisStepDef,
+    canonical_enum_code,
+)
 from app.services.nlq.contracts import (
     AnalysisResult,
     AnalysisSpec,
@@ -133,11 +137,14 @@ def _default_period(definition: AnalysisDef) -> Period:
     return Period.model_validate(raw)
 
 
-def _step_spec(step: AnalysisStepDef, period: Period, filters: Sequence[Filter]) -> QuerySpec:
+def _step_spec(
+    step: AnalysisStepDef, period: Period, filters: Sequence[Filter]
+) -> QuerySpec:
     order_by = None
     if step.order_by:
         order_by = OrderBy(
-            field=step.order_by["field"], direction=step.order_by.get("direction", "desc")
+            field=step.order_by["field"],
+            direction=step.order_by.get("direction", "desc"),
         )
     return QuerySpec(
         metrics=list(step.metrics),
@@ -190,8 +197,12 @@ def run(
     def one(step: AnalysisStep) -> StepResult:
         try:
             with _STEP_SLOTS:
-                return StepResult(step=step, chart=run_spec(step.spec, catalog=cat, today=today,
-                                                            role=role))
+                return StepResult(
+                    step=step,
+                    chart=run_spec(
+                        step.spec, catalog=cat, today=today, role=role
+                    ),
+                )
         except Exception as exc:  # noqa: BLE001 - one bad step must not lose the other seven
             logger.warning("analysis step %s failed: %s", step.id, exc)
             return StepResult(step=step, error=str(exc))
@@ -208,7 +219,9 @@ def run(
 
 
 def compose(
-    spec: AnalysisSpec, results: Sequence[StepResult], catalog: Catalog | None = None
+    spec: AnalysisSpec,
+    results: Sequence[StepResult],
+    catalog: Catalog | None = None,
 ) -> AnalysisResult:
     """Turn step results into findings, a headline and charts. Pure and deterministic."""
     cat = catalog or get_catalog()
@@ -217,7 +230,9 @@ def compose(
         "concentration": _compose_concentration,
         "quadrant": _compose_quadrant,
     }.get(spec.compose)
-    if composer is None:  # pragma: no cover - the catalog validator rejects these
+    if (
+        composer is None
+    ):  # pragma: no cover - the catalog validator rejects these
         raise AnalysisError(f"unknown composer {spec.compose!r}")
 
     result = composer(spec, results, cat)
@@ -298,9 +313,12 @@ def _finding_for(result: StepResult, cat: Catalog) -> Finding | None:
     )
 
 
-def _breakdown_finding(step: AnalysisStep, chart: ChartSpec, metric, cat: Catalog) -> Finding | None:
+def _breakdown_finding(
+    step: AnalysisStep, chart: ChartSpec, metric, cat: Catalog
+) -> Finding | None:
     dimension = next(
-        (d for d in step.spec.dimensions if not cat.dimensions[d].is_time), None
+        (d for d in step.spec.dimensions if not cat.dimensions[d].is_time),
+        None,
     )
     if dimension is None:
         return None
@@ -310,13 +328,21 @@ def _breakdown_finding(step: AnalysisStep, chart: ChartSpec, metric, cat: Catalo
         return None
     # A ratio's "largest member" is only meaningful the way the question asks for it, so
     # respect the step's own ordering when it declared one.
-    reverse = not (step.spec.order_by and step.spec.order_by.direction == "asc")
-    ranked.sort(key=lambda r: _number(r.get(metric.id)) or 0.0, reverse=reverse)
+    reverse = not (
+        step.spec.order_by and step.spec.order_by.direction == "asc"
+    )
+    ranked.sort(
+        key=lambda r: _number(r.get(metric.id)) or 0.0, reverse=reverse
+    )
     top = ranked[0]
     value = _number(top.get(metric.id)) or 0.0
     label = _member_label(top, dimension)
     total = sum(_number(r.get(metric.id)) or 0.0 for r in ranked)
-    share = f" — {value / total * 100:.0f}% of the total" if total and metric.grain != "ratio" else ""
+    share = (
+        f" — {value / total * 100:.0f}% of the total"
+        if total and metric.grain != "ratio"
+        else ""
+    )
 
     return Finding(
         step_id=step.id,
@@ -354,16 +380,22 @@ def _severity(value: float, step: AnalysisStep) -> str:
     return "info"
 
 
-def _threshold_clause(severity: str, value: float, step: AnalysisStep, unit: str) -> str:
+def _threshold_clause(
+    severity: str, value: float, step: AnalysisStep, unit: str
+) -> str:
     """Name the bound that actually fired, so the reader can see why it was flagged."""
     if severity == "info":
         return ""
     upper = step.alert_above if severity == "alert" else step.watch_above
     if upper is not None and value > upper:
-        return f", above the {severity} threshold of {format_value(upper, unit)}"
+        return (
+            f", above the {severity} threshold of {format_value(upper, unit)}"
+        )
     lower = step.alert_below if severity == "alert" else step.watch_below
     if lower is not None and value < lower:
-        return f", below the {severity} threshold of {format_value(lower, unit)}"
+        return (
+            f", below the {severity} threshold of {format_value(lower, unit)}"
+        )
     return ""
 
 
@@ -383,13 +415,20 @@ def _compose_concentration(
     metric = cat.metrics[step.spec.metrics[0]]
 
     rows = step_result.chart.rows if step_result and step_result.chart else []
-    values = [v for v in (_number(r.get(metric.id)) for r in rows) if v and v > 0]
+    values = [
+        v for v in (_number(r.get(metric.id)) for r in rows) if v and v > 0
+    ]
     total = sum(values)
     if not values or total <= 0:
         return AnalysisResult(
-            id=spec.id, title=spec.title, subtitle=spec.subtitle, compose=spec.compose,
+            id=spec.id,
+            title=spec.title,
+            subtitle=spec.subtitle,
+            compose=spec.compose,
             headline="No exposure was returned for this period.",
-            charts=[step_result.chart] if step_result and step_result.chart else [],
+            charts=[step_result.chart]
+            if step_result and step_result.chart
+            else [],
         )
 
     shares = sorted((v / total for v in values), reverse=True)
@@ -431,9 +470,13 @@ def _compose_concentration(
         compose=spec.compose,
         headline=findings[0].text,
         findings=findings,
-        charts=[step_result.chart] if step_result and step_result.chart else [],
+        charts=[step_result.chart]
+        if step_result and step_result.chart
+        else [],
         warnings=(
-            [f"Measured over the largest {len(values)} borrowers returned by the query."]
+            [
+                f"Measured over the largest {len(values)} borrowers returned by the query."
+            ]
             if len(values) >= step.spec.limit
             else []
         ),
@@ -471,7 +514,10 @@ def _compose_quadrant(
     # on the grid — a failed query would read as a clean book.
     if any(r.chart is None for r in results[:2]):
         return AnalysisResult(
-            id=spec.id, title=spec.title, subtitle=spec.subtitle, compose=spec.compose,
+            id=spec.id,
+            title=spec.title,
+            subtitle=spec.subtitle,
+            compose=spec.compose,
             headline=f"{spec.title} needs both measures, and one of them could not be read.",
             charts=[r.chart for r in results if r.chart],
         )
@@ -484,7 +530,10 @@ def _compose_quadrant(
         rows.append({**row, x_metric.id: x, y_metric.id: y})
     if not rows:
         return AnalysisResult(
-            id=spec.id, title=spec.title, subtitle=spec.subtitle, compose=spec.compose,
+            id=spec.id,
+            title=spec.title,
+            subtitle=spec.subtitle,
+            compose=spec.compose,
             headline="Not enough members to compare.",
             charts=[r.chart for r in results if r.chart],
         )
@@ -512,7 +561,9 @@ def _compose_quadrant(
             spec=x_step.spec,
             question=drilldown.describe(x_step.spec, cat),
         )
-        chart = _quadrant_chart(spec, results, rows, dimension, x_metric, y_metric, cat)
+        chart = _quadrant_chart(
+            spec, results, rows, dimension, x_metric, y_metric, cat
+        )
         return AnalysisResult(
             id=spec.id,
             title=spec.title,
@@ -577,7 +628,9 @@ def _compose_quadrant(
             )
         )
 
-    chart = _quadrant_chart(spec, results, rows, dimension, x_metric, y_metric, cat)
+    chart = _quadrant_chart(
+        spec, results, rows, dimension, x_metric, y_metric, cat
+    )
     return AnalysisResult(
         id=spec.id,
         title=spec.title,
@@ -612,7 +665,9 @@ def _merge_on_dimension(
             if raw is None:
                 continue
             key = canonical_enum_code(raw)
-            entry = merged.setdefault(key, {dimension: row.get(dimension, key)})
+            entry = merged.setdefault(
+                key, {dimension: row.get(dimension, key)}
+            )
             for name, value in row.items():
                 entry.setdefault(name, value)
     # Only members present in *both* steps can be placed on two axes.
@@ -639,25 +694,50 @@ def _quadrant_chart(
     merged_lineage = Lineage(
         path="queryspec",
         sql="\n\n-- and --\n\n".join(lin.sql for lin in lineages),
-        display_sql="\n\n-- and --\n\n".join(lin.display_sql for lin in lineages if lin.display_sql),
-        source_tables=sorted({t for lin in lineages for t in lin.source_tables}),
+        display_sql="\n\n-- and --\n\n".join(
+            lin.display_sql for lin in lineages if lin.display_sql
+        ),
+        source_tables=sorted(
+            {t for lin in lineages for t in lin.source_tables}
+        ),
         formulas={k: v for lin in lineages for k, v in lin.formulas.items()},
         row_count=len(rows),
         duration_ms=sum(lin.duration_ms for lin in lineages),
         warnings=[w for lin in lineages for w in lin.warnings],
-        requires_signoff=sorted({m for lin in lineages for m in lin.requires_signoff}),
+        requires_signoff=sorted(
+            {m for lin in lineages for m in lin.requires_signoff}
+        ),
     )
     return ChartSpec(
         chart_type="scatter",
         title=spec.title,
         subtitle=spec.subtitle or None,
-        x=AxisSpec(field=x_metric.id, label=x_metric.label, unit=x_metric.unit),
-        series=[SeriesSpec(field=y_metric.id, label=y_metric.label, unit=y_metric.unit)],
+        x=AxisSpec(
+            field=x_metric.id, label=x_metric.label, unit=x_metric.unit
+        ),
+        series=[
+            SeriesSpec(
+                field=y_metric.id, label=y_metric.label, unit=y_metric.unit
+            )
+        ],
         columns=[
-            ColumnSpec(name=dimension, label=cat.dimensions[dimension].label, unit="text"),
-            ColumnSpec(name=x_metric.id, label=x_metric.label, unit=x_metric.unit),
-            ColumnSpec(name=y_metric.id, label=y_metric.label, unit=y_metric.unit),
-            ColumnSpec(name="quadrant", label="Quadrant", unit="text", sensitivity="public"),
+            ColumnSpec(
+                name=dimension,
+                label=cat.dimensions[dimension].label,
+                unit="text",
+            ),
+            ColumnSpec(
+                name=x_metric.id, label=x_metric.label, unit=x_metric.unit
+            ),
+            ColumnSpec(
+                name=y_metric.id, label=y_metric.label, unit=y_metric.unit
+            ),
+            ColumnSpec(
+                name="quadrant",
+                label="Quadrant",
+                unit="text",
+                sensitivity="public",
+            ),
         ],
         rows=rows,
         lineage=merged_lineage,

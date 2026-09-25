@@ -153,15 +153,21 @@ def threshold_breach(
     for bound, severity in ((alert_above, "alert"), (watch_above, "watch")):
         if bound is not None and value > bound:
             return Detection(
-                kind="threshold", severity=severity, direction="up",
-                magnitude=round(value - bound, 4), baseline=bound,
+                kind="threshold",
+                severity=severity,
+                direction="up",
+                magnitude=round(value - bound, 4),
+                baseline=bound,
                 detail=f"above the {severity} threshold of {bound}",
             )
     for bound, severity in ((alert_below, "alert"), (watch_below, "watch")):
         if bound is not None and value < bound:
             return Detection(
-                kind="threshold", severity=severity, direction="down",
-                magnitude=round(bound - value, 4), baseline=bound,
+                kind="threshold",
+                severity=severity,
+                direction="down",
+                magnitude=round(bound - value, 4),
+                baseline=bound,
                 detail=f"below the {severity} threshold of {bound}",
             )
     return None
@@ -204,7 +210,8 @@ def rank_movement(
     rather than treated as last: an account that did not exist has no rank to have moved from.
     """
     shared = [
-        m for m in current
+        m
+        for m in current
         if m in prior and current[m] is not None and prior[m] is not None
     ]
     if len(shared) < RANK_MOVE + 1:
@@ -220,21 +227,25 @@ def rank_movement(
         move = before[member] - now[member]
         if abs(move) < RANK_MOVE:
             continue
-        out.append((
-            member,
-            Detection(
-                kind="rank_movement",
-                severity="watch",
-                direction="up" if move > 0 else "down",
-                magnitude=float(abs(move)),
-                baseline=float(before[member]),
-                detail=f"moved from #{before[member]} to #{now[member]}",
-            ),
-        ))
+        out.append(
+            (
+                member,
+                Detection(
+                    kind="rank_movement",
+                    severity="watch",
+                    direction="up" if move > 0 else "down",
+                    magnitude=float(abs(move)),
+                    baseline=float(before[member]),
+                    detail=f"moved from #{before[member]} to #{now[member]}",
+                ),
+            )
+        )
     return out
 
 
-def staleness(days_since: int | None, *, watch_days: int, alert_days: int) -> Detection | None:
+def staleness(
+    days_since: int | None, *, watch_days: int, alert_days: int
+) -> Detection | None:
     """How old the freshest row in a table is.
 
     This is the honest answer to "which data issues are affecting performance": a metric
@@ -244,7 +255,10 @@ def staleness(days_since: int | None, *, watch_days: int, alert_days: int) -> De
     """
     if days_since is None:
         return Detection(
-            kind="data_health", severity="alert", direction="flat", magnitude=0.0,
+            kind="data_health",
+            severity="alert",
+            direction="flat",
+            magnitude=0.0,
             detail="no dated rows at all",
         )
     if days_since < watch_days:

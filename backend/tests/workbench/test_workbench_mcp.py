@@ -20,12 +20,16 @@ from app.services.workbench.results import SourceResult
 
 @pytest.fixture(autouse=True)
 def _connector_settings(monkeypatch):
-    monkeypatch.setattr(access.settings, "workbench_external_connectors_enabled", True)
+    monkeypatch.setattr(
+        access.settings, "workbench_external_connectors_enabled", True
+    )
     monkeypatch.setattr(access.settings, "exa_mcp_enabled", True)
 
 
 def _context(*, external: bool = True):
-    policy = access.build_policy(role="admin", external_sources_enabled=external)
+    policy = access.build_policy(
+        role="admin", external_sources_enabled=external
+    )
     return SimpleNamespace(
         user="alice",
         role="admin",
@@ -111,7 +115,9 @@ async def test_curated_tool_executes_through_in_memory_client():
 
 
 @pytest.mark.anyio
-async def test_web_and_visualization_tools_execute_through_in_memory_client(monkeypatch):
+async def test_web_and_visualization_tools_execute_through_in_memory_client(
+    monkeypatch,
+):
     async def web_handler(_args, _ctx):
         return SourceResult(
             source="web", card_type="brief", payload={}, summary="web result"
@@ -123,7 +129,9 @@ async def test_web_and_visualization_tools_execute_through_in_memory_client(monk
         )
 
     monkeypatch.setattr(agent_executor, "_search_public_web", web_handler)
-    monkeypatch.setattr(agent_executor, "_visualize_query_result", visual_handler)
+    monkeypatch.setattr(
+        agent_executor, "_visualize_query_result", visual_handler
+    )
 
     web = await workbench_client.call_tool(
         "search_public_web",
@@ -157,7 +165,11 @@ async def test_submit_final_answer_executes_through_in_memory_client():
 
     terminal = result.data["data"]["terminal"]
     assert terminal["outcome"] == "answer"
-    assert terminal["synthesis"] == {"insights": "", "query_id": 1, "view": "table"}
+    assert terminal["synthesis"] == {
+        "insights": "",
+        "query_id": 1,
+        "view": "table",
+    }
     assert json.loads(result.content[0].text) == {"success": True}
 
 

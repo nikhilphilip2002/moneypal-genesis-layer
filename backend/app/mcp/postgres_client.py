@@ -9,7 +9,10 @@ from typing import Any
 from fastmcp import Client
 
 from app.core.config import settings
-from app.mcp.provider_schema import ProviderSchemaError, provider_tool_definition
+from app.mcp.provider_schema import (
+    ProviderSchemaError,
+    provider_tool_definition,
+)
 from app.mcp.results import OwnedToolResultError, require_owned_data
 
 
@@ -78,7 +81,9 @@ async def call_tool(
 async def discover_model_tools() -> list[dict[str, Any]]:
     """Discover and authorize the PostgreSQL MCP server's native model-facing tools."""
     global _initialization_error, _protocol_version
-    forbidden = _BACKEND_ONLY_TOOLS.intersection(settings.postgres_mcp_model_tools)
+    forbidden = _BACKEND_ONLY_TOOLS.intersection(
+        settings.postgres_mcp_model_tools
+    )
     if forbidden:
         _model_tools.clear()
         _initialization_error = (
@@ -100,17 +105,22 @@ async def discover_model_tools() -> list[dict[str, Any]]:
                 )
     except Exception as exc:  # noqa: BLE001 - retained for readiness diagnostics
         _model_tools.clear()
-        _initialization_error = f"PostgreSQL MCP discovery failed: {type(exc).__name__}: {exc}"
+        _initialization_error = (
+            f"PostgreSQL MCP discovery failed: {type(exc).__name__}: {exc}"
+        )
         raise PostgresMCPError(_initialization_error) from exc
 
     discovered = {tool.name: tool for tool in discovered_tools}
     missing = [
-        name for name in settings.postgres_mcp_model_tools if name not in discovered
+        name
+        for name in settings.postgres_mcp_model_tools
+        if name not in discovered
     ]
     if missing:
         _model_tools.clear()
         _initialization_error = (
-            "PostgreSQL MCP is missing authorized tool(s): " + ", ".join(missing)
+            "PostgreSQL MCP is missing authorized tool(s): "
+            + ", ".join(missing)
         )
         raise PostgresMCPError(_initialization_error)
 
@@ -121,9 +131,7 @@ async def discover_model_tools() -> list[dict[str, Any]]:
             definition = provider_tool_definition(tool)
         except ProviderSchemaError as exc:
             _model_tools.clear()
-            _initialization_error = (
-                f"PostgreSQL MCP tool {name!r} has an invalid input schema: {exc}"
-            )
+            _initialization_error = f"PostgreSQL MCP tool {name!r} has an invalid input schema: {exc}"
             raise PostgresMCPError(_initialization_error)
         _model_tools[name] = definition
     _initialization_error = ""
@@ -137,7 +145,8 @@ async def initialize() -> dict[str, Any]:
     if health_payload.get("status") not in {"ok", "healthy"}:
         _model_tools.clear()
         _initialization_error = str(
-            health_payload.get("detail") or "PostgreSQL MCP health check failed"
+            health_payload.get("detail")
+            or "PostgreSQL MCP health check failed"
         )
         raise PostgresMCPError(_initialization_error)
     return {

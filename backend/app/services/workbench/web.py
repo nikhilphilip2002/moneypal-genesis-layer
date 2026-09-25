@@ -26,9 +26,18 @@ class UnsafeWebQuery(ValueError):
 
 
 _PRIVATE_PATTERNS = (
-    re.compile(r"\b(?:customer|borrower)\s*(?:id|number|no\.?|#)\s*[:#-]?\s*[a-z0-9-]+", re.I),
-    re.compile(r"\b(?:loan|account)\s*(?:id|number|no\.?|#)\s*[:#-]?\s*[a-z0-9-]+", re.I),
-    re.compile(r"\b(?:phone|mobile|aadhaar|pan)\s*(?:number|no\.?|#)?\s*[:#-]?\s*[a-z0-9-]+", re.I),
+    re.compile(
+        r"\b(?:customer|borrower)\s*(?:id|number|no\.?|#)\s*[:#-]?\s*[a-z0-9-]+",
+        re.I,
+    ),
+    re.compile(
+        r"\b(?:loan|account)\s*(?:id|number|no\.?|#)\s*[:#-]?\s*[a-z0-9-]+",
+        re.I,
+    ),
+    re.compile(
+        r"\b(?:phone|mobile|aadhaar|pan)\s*(?:number|no\.?|#)?\s*[:#-]?\s*[a-z0-9-]+",
+        re.I,
+    ),
     re.compile(r"\brepayment history (?:for|of)\b", re.I),
     re.compile(
         r"\b(?:named\s+)?(?:borrower|customer)\s+"
@@ -42,6 +51,8 @@ _INTERNAL_GENERIC = re.compile(
     r"collections?|outstanding|disbursements?|sanctions?)\b",
     re.I,
 )
+
+
 def public_query(question: str) -> str:
     """Return a public-only query or reject content that must stay inside the bank."""
     text = " ".join(question.split()).strip()
@@ -49,7 +60,9 @@ def public_query(question: str) -> str:
         raise UnsafeWebQuery("A public web-search question is required.")
     for pattern in _PRIVATE_PATTERNS:
         if pattern.search(text):
-            raise UnsafeWebQuery("Private customer or account details cannot be sent to web search.")
+            raise UnsafeWebQuery(
+                "Private customer or account details cannot be sent to web search."
+            )
 
     if _INTERNAL_GENERIC.search(text):
         raise UnsafeWebQuery(
@@ -98,8 +111,11 @@ def _load_authorities() -> tuple[Authority, ...]:
     raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
     return tuple(
         Authority(
-            id=str(item["id"]), label=str(item["label"]), tier=int(item["tier"]),
-            domains=tuple(item.get("domains", [])), topics=tuple(item.get("topics", [])),
+            id=str(item["id"]),
+            label=str(item["label"]),
+            tier=int(item["tier"]),
+            domains=tuple(item.get("domains", [])),
+            topics=tuple(item.get("topics", [])),
         )
         for item in raw.get("sources", [])
     )
@@ -107,27 +123,47 @@ def _load_authorities() -> tuple[Authority, ...]:
 
 AUTHORITIES = _load_authorities()
 _BY_DOMAIN = {
-    domain.lower(): authority for authority in AUTHORITIES for domain in authority.domains
+    domain.lower(): authority
+    for authority in AUTHORITIES
+    for domain in authority.domains
 }
 
 _TOPIC_CUES: dict[str, re.Pattern[str]] = {
-    "gdp": re.compile(r"\b(?:gdp|gva|national accounts?|economic growth)\b", re.I),
+    "gdp": re.compile(
+        r"\b(?:gdp|gva|national accounts?|economic growth)\b", re.I
+    ),
     "inflation": re.compile(r"\b(?:inflation|cpi|wpi|price index)\b", re.I),
-    "employment": re.compile(r"\b(?:employment|unemployment|plfs|labou?r)\b", re.I),
-    "monetary_policy": re.compile(r"\b(?:repo|reverse repo|monetary policy|policy rate)\b", re.I),
-    "banking": re.compile(r"\b(?:banking|bank credit|deposits?|npa|nbfc)\b", re.I),
-    "budget": re.compile(r"\b(?:budget|government receipts?|government expenditure)\b", re.I),
+    "employment": re.compile(
+        r"\b(?:employment|unemployment|plfs|labou?r)\b", re.I
+    ),
+    "monetary_policy": re.compile(
+        r"\b(?:repo|reverse repo|monetary policy|policy rate)\b", re.I
+    ),
+    "banking": re.compile(
+        r"\b(?:banking|bank credit|deposits?|npa|nbfc)\b", re.I
+    ),
+    "budget": re.compile(
+        r"\b(?:budget|government receipts?|government expenditure)\b", re.I
+    ),
     "fiscal": re.compile(r"\b(?:fiscal|deficit|public debt)\b", re.I),
-    "trade": re.compile(r"\b(?:trade|exports?|imports?|dgft|balance of payments)\b", re.I),
+    "trade": re.compile(
+        r"\b(?:trade|exports?|imports?|dgft|balance of payments)\b", re.I
+    ),
     "fdi": re.compile(r"\b(?:fdi|foreign direct investment)\b", re.I),
     "tax": re.compile(r"\b(?:tax|gst|income tax)\b", re.I),
-    "policy": re.compile(r"\b(?:policy|scheme|bill|legislation|parliament)\b", re.I),
-    "news": re.compile(r"\b(?:news|announcement|latest|recent|today|current)\b", re.I),
+    "policy": re.compile(
+        r"\b(?:policy|scheme|bill|legislation|parliament)\b", re.I
+    ),
+    "news": re.compile(
+        r"\b(?:news|announcement|latest|recent|today|current)\b", re.I
+    ),
 }
 
 
 def _topics(query: str) -> set[str]:
-    matched = {topic for topic, cue in _TOPIC_CUES.items() if cue.search(query)}
+    matched = {
+        topic for topic, cue in _TOPIC_CUES.items() if cue.search(query)
+    }
     return matched or {"macro"}
 
 
@@ -149,7 +185,9 @@ def _canonical_url(value: str) -> str | None:
     raw = value.strip()
     # Quotes/backslashes here mean a regex captured across serialized JSON fields, not a
     # real URL. Reject instead of percent-encoding the injected `,"url":...` fragment.
-    if not raw or any(character in raw for character in ('"', "'", "\\", "<", ">")):
+    if not raw or any(
+        character in raw for character in ('"', "'", "\\", "<", ">")
+    ):
         return None
     try:
         parsed = urlsplit(raw.rstrip(".,);]"))
@@ -157,17 +195,27 @@ def _canonical_url(value: str) -> str | None:
         return None
     if parsed.scheme not in {"http", "https"} or not parsed.netloc:
         return None
-    query = urlencode([
-        (key, val) for key, val in parse_qsl(parsed.query, keep_blank_values=True)
-        if not key.lower().startswith("utm_") and key.lower() not in _TRACKING_KEYS
-    ])
-    return urlunsplit((parsed.scheme, parsed.netloc.lower(), parsed.path, query, ""))
+    query = urlencode(
+        [
+            (key, val)
+            for key, val in parse_qsl(parsed.query, keep_blank_values=True)
+            if not key.lower().startswith("utm_")
+            and key.lower() not in _TRACKING_KEYS
+        ]
+    )
+    return urlunsplit(
+        (parsed.scheme, parsed.netloc.lower(), parsed.path, query, "")
+    )
 
 
 def _authority(domain: str) -> Authority | None:
     host = domain.lower().removeprefix("www.")
     return next(
-        (authority for key, authority in _BY_DOMAIN.items() if host == key or host.endswith(f".{key}")),
+        (
+            authority
+            for key, authority in _BY_DOMAIN.items()
+            if host == key or host.endswith(f".{key}")
+        ),
         None,
     )
 
@@ -181,11 +229,13 @@ def _decode_json_text(value: str) -> Any | None:
     except (TypeError, ValueError):
         pass
     # Some MCP servers prefix a JSON result with one explanatory line.
-    starts = [position for token in ("{", "[") if (position := text.find(token)) >= 0]
+    starts = [
+        position for token in ("{", "[") if (position := text.find(token)) >= 0
+    ]
     if not starts:
         return None
     try:
-        decoded, _end = json.JSONDecoder().raw_decode(text[min(starts):])
+        decoded, _end = json.JSONDecoder().raw_decode(text[min(starts) :])
         return decoded
     except ValueError:
         return None
@@ -197,7 +247,8 @@ def _candidate_results(structured: Any) -> list[dict[str, Any]]:
         return _candidate_results(decoded) if decoded is not None else []
     if isinstance(structured, list):
         direct = [
-            item for item in structured
+            item
+            for item in structured
             if isinstance(item, dict) and (item.get("url") or item.get("id"))
         ]
         if direct:
@@ -229,7 +280,9 @@ _BARE_URL = re.compile(r"https?://[^\s<>\]})]+")
 def normalize(result: exa_client.ExaToolResult) -> list[WebEvidence]:
     retrieved = datetime.now(UTC).isoformat()
     evidence: list[WebEvidence] = []
-    candidates = _candidate_results(result.structured) or _candidate_results(result.text)
+    candidates = _candidate_results(result.structured) or _candidate_results(
+        result.text
+    )
     for item in candidates:
         raw_url = str(item.get("url") or item.get("id") or "")
         url = _canonical_url(raw_url)
@@ -239,34 +292,55 @@ def normalize(result: exa_client.ExaToolResult) -> list[WebEvidence]:
         authority = _authority(host)
         title = str(item.get("title") or item.get("name") or host)[:300]
         excerpt = str(
-            item.get("summary") or item.get("text") or item.get("highlight")
-            or item.get("snippet") or ""
+            item.get("summary")
+            or item.get("text")
+            or item.get("highlight")
+            or item.get("snippet")
+            or ""
         )[:4000]
-        evidence.append(WebEvidence(
-            title=title, url=url, publisher=authority.label if authority else host,
-            domain=host, excerpt=excerpt,
-            published_at=str(item.get("publishedDate") or item.get("published_at") or "") or None,
-            retrieved_at=retrieved, source_tier=authority.tier if authority else 5,
-            primary=bool(authority and authority.tier <= 2),
-        ))
+        evidence.append(
+            WebEvidence(
+                title=title,
+                url=url,
+                publisher=authority.label if authority else host,
+                domain=host,
+                excerpt=excerpt,
+                published_at=str(
+                    item.get("publishedDate") or item.get("published_at") or ""
+                )
+                or None,
+                retrieved_at=retrieved,
+                source_tier=authority.tier if authority else 5,
+                primary=bool(authority and authority.tier <= 2),
+            )
+        )
 
     if not evidence:
         links = _MARKDOWN_LINK.findall(result.text)
         if not links:
-            links = [(urlsplit(url).netloc, url) for url in _BARE_URL.findall(result.text)]
+            links = [
+                (urlsplit(url).netloc, url)
+                for url in _BARE_URL.findall(result.text)
+            ]
         for title, raw_url in links:
             url = _canonical_url(raw_url)
             if not url:
                 continue
             host = urlsplit(url).netloc.removeprefix("www.")
             authority = _authority(host)
-            evidence.append(WebEvidence(
-                title=title.strip() or host, url=url,
-                publisher=authority.label if authority else host, domain=host,
-                excerpt="", published_at=None, retrieved_at=retrieved,
-                source_tier=authority.tier if authority else 5,
-                primary=bool(authority and authority.tier <= 2),
-            ))
+            evidence.append(
+                WebEvidence(
+                    title=title.strip() or host,
+                    url=url,
+                    publisher=authority.label if authority else host,
+                    domain=host,
+                    excerpt="",
+                    published_at=None,
+                    retrieved_at=retrieved,
+                    source_tier=authority.tier if authority else 5,
+                    primary=bool(authority and authority.tier <= 2),
+                )
+            )
 
     unique: dict[str, WebEvidence] = {}
     for item in evidence:
@@ -274,18 +348,24 @@ def normalize(result: exa_client.ExaToolResult) -> list[WebEvidence]:
     return sorted(unique.values(), key=lambda item: item.source_tier)
 
 
-_cache: dict[str, tuple[float, exa_client.ExaToolResult, list[WebEvidence]]] = {}
+_cache: dict[
+    str, tuple[float, exa_client.ExaToolResult, list[WebEvidence]]
+] = {}
 _daily: dict[tuple[str, str], int] = {}
 
 
 def _consume_search(user: str, today: str) -> None:
     usage_key = (user, today)
     if _daily.get(usage_key, 0) >= settings.exa_daily_user_limit:
-        raise exa_client.ExaRateLimitError("Your daily live-web search allowance has been reached.")
+        raise exa_client.ExaRateLimitError(
+            "Your daily live-web search allowance has been reached."
+        )
     _daily[usage_key] = _daily.get(usage_key, 0) + 1
 
 
-async def retrieve(question: str, *, user: str) -> tuple[str, list[WebEvidence], str]:
+async def retrieve(
+    question: str, *, user: str
+) -> tuple[str, list[WebEvidence], str]:
     query = public_query(question)
     cache_key = query.casefold()
     cached = _cache.get(cache_key)
@@ -303,14 +383,18 @@ async def retrieve(question: str, *, user: str) -> tuple[str, list[WebEvidence],
             continue
         _consume_search(user, today)
         result = await exa_client.search(
-            query, num_results=settings.exa_search_max_results, include_domains=domains,
+            query,
+            num_results=settings.exa_search_max_results,
+            include_domains=domains,
         )
         evidence = normalize(result)[: settings.exa_search_max_results]
         if evidence:
             break
     if result is None:
         _consume_search(user, today)
-        result = await exa_client.search(query, num_results=settings.exa_search_max_results)
+        result = await exa_client.search(
+            query, num_results=settings.exa_search_max_results
+        )
         evidence = normalize(result)[: settings.exa_search_max_results]
     if not evidence:
         raise exa_client.ExaMCPError("Exa returned no citable web results.")
@@ -319,5 +403,7 @@ async def retrieve(question: str, *, user: str) -> tuple[str, list[WebEvidence],
 
 
 def context(raw_text: str, evidence: list[WebEvidence]) -> str:
-    header = json.dumps([asdict(item) for item in evidence], ensure_ascii=False, default=str)
+    header = json.dumps(
+        [asdict(item) for item in evidence], ensure_ascii=False, default=str
+    )
     return f"NORMALIZED SOURCES:\n{header}\n\nUNTRUSTED SEARCH CONTENT:\n{raw_text[:16000]}"

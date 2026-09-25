@@ -19,7 +19,9 @@ def catalog():
 class TestLoads:
     def test_catalog_loads_and_validates(self, catalog):
         assert catalog.metrics and catalog.dimensions and catalog.tables
-        assert catalog.metrics["agent_linked_loans"].base_table == "gold.agents"
+        assert (
+            catalog.metrics["agent_linked_loans"].base_table == "gold.agents"
+        )
         assert catalog.dimensions["agent"].table == "gold.loan_accounts"
         assert catalog.dimensions["loan_agent"].decode == "agent_identity"
         assert catalog.dimensions["agent_profile"].column == "agent_code"
@@ -28,9 +30,15 @@ class TestLoads:
         loans = catalog.table_by_name("gold.loan_accounts")
         agents = catalog.table_by_name("gold.agents")
 
-        assert loans is not None and "no populated agent_code" in loans.coverage_warning
+        assert (
+            loans is not None
+            and "no populated agent_code" in loans.coverage_warning
+        )
         assert "Do not use this table" in loans.restrictions
-        assert agents is not None and "linked customer counts are zero" in agents.coverage_warning
+        assert (
+            agents is not None
+            and "linked customer counts are zero" in agents.coverage_warning
+        )
         assert "it has no company_code" in agents.restrictions
         assert "entirely null" in catalog.dimensions["agent"].description
 
@@ -46,26 +54,46 @@ class TestLoads:
         checks. Flattening any of them into a list would lose the distinction between the
         parts."""
         documents = {"drill.yaml", "worklists.yaml", "signals.yaml"}
-        for path in (*DEFS_DIR.glob("*.yaml"), *ACTIVE_DEFS_DIR.glob("*.yaml")):
+        for path in (
+            *DEFS_DIR.glob("*.yaml"),
+            *ACTIVE_DEFS_DIR.glob("*.yaml"),
+        ):
             if path.name in documents:
-                assert isinstance(yaml.safe_load(path.read_text()), dict), path.name
+                assert isinstance(yaml.safe_load(path.read_text()), dict), (
+                    path.name
+                )
                 continue
-            assert isinstance(yaml.safe_load(path.read_text()), list), path.name
+            assert isinstance(yaml.safe_load(path.read_text()), list), (
+                path.name
+            )
 
-    def test_every_gold_relation_has_a_complete_unique_column_section(self, catalog):
+    def test_every_gold_relation_has_a_complete_unique_column_section(
+        self, catalog
+    ):
         raw = yaml.safe_load((ACTIVE_DEFS_DIR / "columns.yaml").read_text())
         pairs = [(entry["table"], entry["column"]) for entry in raw]
-        assert len(catalog.columns) == len(raw), "duplicate column ids are not allowed"
-        assert len(set(pairs)) == len(pairs), "a Gold column is cataloged more than once"
-        assert {column.table for column in catalog.columns.values()} == catalog.allowed_tables()
+        assert len(catalog.columns) == len(raw), (
+            "duplicate column ids are not allowed"
+        )
+        assert len(set(pairs)) == len(pairs), (
+            "a Gold column is cataloged more than once"
+        )
+        assert {
+            column.table for column in catalog.columns.values()
+        } == catalog.allowed_tables()
 
     def test_joins_yaml_avoids_the_yaml_boolean_trap(self):
         """A bare `on:` key parses as the boolean True under YAML 1.1, which would silently
         drop every join condition and turn joins into cross products."""
         raw = yaml.safe_load((ACTIVE_DEFS_DIR / "joins.yaml").read_text())
         for entry in raw:
-            assert "on_columns" in entry, f"{entry.get('id')} lost its join condition"
-            assert True not in entry, f"{entry.get('id')} has a YAML-boolean key"
+            assert "on_columns" in entry, (
+                f"{entry.get('id')} lost its join condition"
+            )
+            assert True not in entry, (
+                f"{entry.get('id')} has a YAML-boolean key"
+            )
+
 
 class TestReferentialIntegrity:
     def test_metric_base_tables_exist(self, catalog):
@@ -74,7 +102,9 @@ class TestReferentialIntegrity:
 
     def test_active_allowlist_contains_only_gold_relations(self, catalog):
         assert catalog.allowed_tables()
-        assert all(table.startswith("gold.") for table in catalog.allowed_tables())
+        assert all(
+            table.startswith("gold.") for table in catalog.allowed_tables()
+        )
 
     def test_dimension_tables_exist(self, catalog):
         for dim in catalog.dimensions.values():
@@ -96,7 +126,9 @@ class TestReferentialIntegrity:
         seen = set()
         for join in catalog.joins:
             pair = frozenset((join.left, join.right))
-            assert pair not in seen, f"two declared paths between {tuple(pair)}"
+            assert pair not in seen, (
+                f"two declared paths between {tuple(pair)}"
+            )
             seen.add(pair)
 
 
@@ -146,7 +178,11 @@ class TestGrainDiscipline:
 class TestSafetyMetadata:
     def test_pii_columns_are_tagged(self, catalog):
         pii = {c.id for c in catalog.columns.values() if c.is_pii}
-        for expected in ("customer.full_name", "customer.dob", "loan.customer_name"):
+        for expected in (
+            "customer.full_name",
+            "customer.dob",
+            "loan.customer_name",
+        ):
             assert expected in pii
 
     def test_gold_joins_do_not_fan_out_reviewed_metrics(self, catalog):
@@ -154,9 +190,12 @@ class TestSafetyMetadata:
 
     def test_gl_is_isolated_from_the_loan_book(self, catalog):
         """No join path — a GL-by-product question must be refusable, not answerable."""
-        assert catalog.join_between(
-            "gold.general_ledger_balances", "gold.loan_accounts"
-        ) is None
+        assert (
+            catalog.join_between(
+                "gold.general_ledger_balances", "gold.loan_accounts"
+            )
+            is None
+        )
 
     def test_unratified_metrics_are_flagged(self, catalog):
         """PAR's denominator is the classified subset, not the whole book. Until the client
@@ -185,8 +224,12 @@ class TestEnums:
         assert catalog.enums["product"].code_for("gld") is None
         assert catalog.enums["product"].code_for("loans") is None
 
-    def test_ambiguous_scheme_name_is_not_silently_mapped_to_one_code(self, catalog):
-        assert catalog.enums["scheme"].code_for("Loan Against Property") is None
+    def test_ambiguous_scheme_name_is_not_silently_mapped_to_one_code(
+        self, catalog
+    ):
+        assert (
+            catalog.enums["scheme"].code_for("Loan Against Property") is None
+        )
 
 
 class TestSearch:
@@ -198,7 +241,9 @@ class TestSearch:
             ("how much did we disburse", "disbursement_total"),
         ],
     )
-    def test_acronyms_and_phrases_match_lexically(self, catalog, question, expected):
+    def test_acronyms_and_phrases_match_lexically(
+        self, catalog, question, expected
+    ):
         """Short acronyms embed poorly; lexical matching is what makes PAR findable."""
         assert expected in {m.id for m in catalog.search_metrics(question)}
 

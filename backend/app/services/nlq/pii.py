@@ -24,7 +24,9 @@ from app.services.nlq.catalog import Catalog, get_catalog
 # Auth exposes the platform administrator as role="admin" (the login username is
 # "moneypal_admin"). Keep the username spelling for backwards compatibility with older
 # tokens, but authorize the role value that current requests actually carry.
-PII_ROLES = frozenset({"admin", "gicc_admin", "gicc_director", "moneypal_admin"})
+PII_ROLES = frozenset(
+    {"admin", "gicc_admin", "gicc_director", "moneypal_admin"}
+)
 
 
 def may_see_pii(role: str | None) -> bool:
@@ -63,7 +65,18 @@ def mask_value(value: Any, column_name: str) -> Any:
     lowered = column_name.lower()
     if any(token in lowered for token in ("dob", "birth", "doi", "doe")):
         return mask_date(value)
-    if any(token in lowered for token in ("pincode", "pin_code", "number", "num", "card", "aadhaar", "pan")):
+    if any(
+        token in lowered
+        for token in (
+            "pincode",
+            "pin_code",
+            "number",
+            "num",
+            "card",
+            "aadhaar",
+            "pan",
+        )
+    ):
         return mask_identifier(value)
     if any(token in lowered for token in ("income", "salary")):
         return "***"
@@ -88,7 +101,9 @@ def mask_rows(
         return rows, []
 
     pii_column_names = {column for _table, column in cat.pii_columns()}
-    catalog_ids = {c.id.split(".")[-1]: c for c in cat.columns.values() if c.is_pii}
+    catalog_ids = {
+        c.id.split(".")[-1]: c for c in cat.columns.values() if c.is_pii
+    }
 
     masked_fields: list[str] = []
     for column in columns:
@@ -111,7 +126,9 @@ def mask_rows(
     return out, masked_fields
 
 
-def touches_pii(source_tables: list[str], catalog: Catalog | None = None) -> bool:
+def touches_pii(
+    source_tables: list[str], catalog: Catalog | None = None
+) -> bool:
     """Whether a query read any PII-bearing table — drives the audit flag."""
     cat = catalog or get_catalog()
     for table_name in source_tables:

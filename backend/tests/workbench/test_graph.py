@@ -29,9 +29,18 @@ async def test_stream_loads_previous_queries_into_turn_state(monkeypatch):
 
     monkeypatch.setattr(history, "_ensure_table", lambda: False)
     prior_turn = history.begin_turn("stream-reuse", "alice", "First question")
-    history.set_query_registry("stream-reuse", "alice", prior_turn, [{
-        "query_id": f"{prior_turn}:q1", "status": "success", "has_data": True,
-    }])
+    history.set_query_registry(
+        "stream-reuse",
+        "alice",
+        prior_turn,
+        [
+            {
+                "query_id": f"{prior_turn}:q1",
+                "status": "success",
+                "has_data": True,
+            }
+        ],
+    )
     seen = []
 
     async def capture(state):
@@ -39,26 +48,43 @@ async def test_stream_loads_previous_queries_into_turn_state(monkeypatch):
 
     monkeypatch.setattr(agent, "run", capture)
     events = [
-        frame async for frame in graph.run_workbench(
-            question="Show it as a table", conversation_id="stream-reuse",
-            user="alice", role="admin",
+        frame
+        async for frame in graph.run_workbench(
+            question="Show it as a table",
+            conversation_id="stream-reuse",
+            user="alice",
+            role="admin",
         )
     ]
 
     assert events[-1].startswith("event: done\n")
-    assert seen == [([], [{
-        "query_id": f"{prior_turn}:q1", "status": "success", "has_data": True,
-    }])]
+    assert seen == [
+        (
+            [],
+            [
+                {
+                    "query_id": f"{prior_turn}:q1",
+                    "status": "success",
+                    "has_data": True,
+                }
+            ],
+        )
+    ]
 
 
 @pytest.mark.anyio
 @pytest.mark.parametrize("response_started", [False, True])
 @pytest.mark.parametrize("explicit_stop", [False, True])
 async def test_stop_disconnects_upstream_tcp_connection(
-    monkeypatch, response_started, explicit_stop,
+    monkeypatch,
+    response_started,
+    explicit_stop,
 ):
     """Use the real SDK/HTTP transport, including cancellation before SSE headers."""
-    from app.services.nlq.llm.client import OpenAICompatibleClient, _ProviderProfile
+    from app.services.nlq.llm.client import (
+        OpenAICompatibleClient,
+        _ProviderProfile,
+    )
     from app.services.workbench import agent
 
     received = asyncio.Event()
@@ -97,8 +123,11 @@ async def test_stop_disconnects_upstream_tcp_connection(
     port = server.sockets[0].getsockname()[1]
     client = OpenAICompatibleClient(
         profile=_ProviderProfile(
-            name="llamacpp", base_url=f"http://127.0.0.1:{port}/v1", api_key="k",
-            supports_json_schema=True, supports_native_tools=True,
+            name="llamacpp",
+            base_url=f"http://127.0.0.1:{port}/v1",
+            api_key="k",
+            supports_json_schema=True,
+            supports_native_tools=True,
         ),
         model="test",
     )
@@ -116,15 +145,22 @@ async def test_stop_disconnects_upstream_tcp_connection(
 
     monkeypatch.setattr(agent, "_select", select)
     monkeypatch.setattr(agent, "get_catalog", lambda: object())
-    response = StreamingResponse(graph.run_workbench(
-        question="cancel probe", conversation_id="tcp-cancel", user="alice", role="admin",
-    ))
+    response = StreamingResponse(
+        graph.run_workbench(
+            question="cancel probe",
+            conversation_id="tcp-cancel",
+            user="alice",
+            role="admin",
+        )
+    )
     scope = {"type": "http", "asgi": {"spec_version": "2.3"}, "method": "POST"}
     task = asyncio.create_task(response(scope, receive, send))
     try:
         await asyncio.wait_for(received.wait(), 5)
         if explicit_stop:
-            assert graph.cancel_active_turn("tcp-cancel", "alice", turn["turn_id"])
+            assert graph.cancel_active_turn(
+                "tcp-cancel", "alice", turn["turn_id"]
+            )
         await disconnected.put({"type": "http.disconnect"})
         await asyncio.wait_for(task, 5)
         await asyncio.wait_for(upstream_closed.wait(), 5)
@@ -145,9 +181,14 @@ async def test_stop_disconnects_upstream_tcp_connection(
 
 @pytest.mark.anyio
 @pytest.mark.parametrize("explicit_stop", [False, True])
-async def test_disconnect_waits_for_llm_connection_close(monkeypatch, explicit_stop):
+async def test_disconnect_waits_for_llm_connection_close(
+    monkeypatch, explicit_stop
+):
     """Transport cleanup must survive both ASGI cancellation and a preceding Stop."""
-    from app.services.nlq.llm.client import OpenAICompatibleClient, _ProviderProfile
+    from app.services.nlq.llm.client import (
+        OpenAICompatibleClient,
+        _ProviderProfile,
+    )
     from app.services.workbench import agent
 
     entered = asyncio.Event()
@@ -176,13 +217,18 @@ async def test_disconnect_waits_for_llm_connection_close(monkeypatch, explicit_s
 
     client = OpenAICompatibleClient(
         profile=_ProviderProfile(
-            name="llamacpp", base_url="http://stub/v1", api_key="k",
-            supports_json_schema=True, supports_native_tools=True,
+            name="llamacpp",
+            base_url="http://stub/v1",
+            api_key="k",
+            supports_json_schema=True,
+            supports_native_tools=True,
         ),
         model="test",
     )
     client._client = AsyncOpenAI(
-        api_key="k", base_url="http://stub/v1", max_retries=0,
+        api_key="k",
+        base_url="http://stub/v1",
+        max_retries=0,
         http_client=httpx.AsyncClient(transport=httpx.MockTransport(handler)),
     )
     client._client._platform = "Linux"
@@ -205,19 +251,27 @@ async def test_disconnect_waits_for_llm_connection_close(monkeypatch, explicit_s
     monkeypatch.setattr(agent, "get_catalog", lambda: object())
     monkeypatch.setattr(graph.settings, "workbench_compaction_enabled", True)
     monkeypatch.setattr(graph.compaction, "maybe_compact", compact)
-    response = StreamingResponse(graph.run_workbench(
-        question="cancel probe", conversation_id="transport-cancel",
-        user="alice", role="admin",
-    ))
+    response = StreamingResponse(
+        graph.run_workbench(
+            question="cancel probe",
+            conversation_id="transport-cancel",
+            user="alice",
+            role="admin",
+        )
+    )
     scope = {"type": "http", "asgi": {"spec_version": "2.3"}, "method": "POST"}
     task = asyncio.create_task(response(scope, receive, send))
     try:
         await asyncio.wait_for(entered.wait(), 5)
         if explicit_stop:
-            assert graph.cancel_active_turn("transport-cancel", "alice", turn["turn_id"])
+            assert graph.cancel_active_turn(
+                "transport-cancel", "alice", turn["turn_id"]
+            )
             await asyncio.wait_for(closing.wait(), 5)
             # A duplicate Stop must not interrupt an in-progress socket close either.
-            assert graph.cancel_active_turn("transport-cancel", "alice", turn["turn_id"])
+            assert graph.cancel_active_turn(
+                "transport-cancel", "alice", turn["turn_id"]
+            )
         await disconnected.put({"type": "http.disconnect"})
         await asyncio.wait_for(closing.wait(), 5)
         # Let the disconnect listener and cancelled response task run during close.
@@ -225,7 +279,9 @@ async def test_disconnect_waits_for_llm_connection_close(monkeypatch, explicit_s
             await asyncio.sleep(0)
         release_close.set()
         await asyncio.wait_for(task, 5)
-        assert closed.is_set(), "Cancellation interrupted the upstream connection close"
+        assert closed.is_set(), (
+            "Cancellation interrupted the upstream connection close"
+        )
         assert len(requests) == 1
         assert compactions == [], "Stop must not start another model request"
         assert not graph._active_turn_tasks
@@ -276,10 +332,19 @@ async def test_every_request_enters_native_agent_once(monkeypatch):
 
     async def native_run(state):
         calls.append(state["question"])
-        await state["emit"].put(graph.sse("answer", {
-            "status": "answered", "text": "done", "sources": [], "citations": [],
-            "unavailable_sources": [], "limitations": [],
-        }))
+        await state["emit"].put(
+            graph.sse(
+                "answer",
+                {
+                    "status": "answered",
+                    "text": "done",
+                    "sources": [],
+                    "citations": [],
+                    "unavailable_sources": [],
+                    "limitations": [],
+                },
+            )
+        )
 
     from app.services.workbench import agent
 
@@ -288,12 +353,17 @@ async def test_every_request_enters_native_agent_once(monkeypatch):
 
     assert calls == ["show portfolio"]
     assert [name for name, _data in events] == [
-        "conversation", "stage", "answer", "done",
+        "conversation",
+        "stage",
+        "answer",
+        "done",
     ]
 
 
 @pytest.mark.anyio
-async def test_closing_stream_cancels_model_and_persists_terminal_trace(monkeypatch):
+async def test_closing_stream_cancels_model_and_persists_terminal_trace(
+    monkeypatch,
+):
     from app.services.workbench import agent
 
     entered = asyncio.Event()
@@ -305,8 +375,10 @@ async def test_closing_stream_cancels_model_and_persists_terminal_trace(monkeypa
     monkeypatch.setattr(agent, "_select", select)
     monkeypatch.setattr(agent, "get_catalog", lambda: object())
     stream = graph.run_workbench(
-        question="cancel probe", conversation_id="stream-cancel",
-        user="alice", role="admin",
+        question="cancel probe",
+        conversation_id="stream-cancel",
+        user="alice",
+        role="admin",
     )
     try:
         frames = []
@@ -330,7 +402,9 @@ async def test_closing_stream_cancels_model_and_persists_terminal_trace(monkeypa
 
 
 @pytest.mark.anyio
-async def test_explicit_cancel_stops_owned_turn_without_stream_disconnect(monkeypatch):
+async def test_explicit_cancel_stops_owned_turn_without_stream_disconnect(
+    monkeypatch,
+):
     from app.services.workbench import agent
 
     entered = asyncio.Event()
@@ -342,8 +416,10 @@ async def test_explicit_cancel_stops_owned_turn_without_stream_disconnect(monkey
     monkeypatch.setattr(agent, "_select", select)
     monkeypatch.setattr(agent, "get_catalog", lambda: object())
     stream = graph.run_workbench(
-        question="cancel probe", conversation_id="explicit-cancel",
-        user="alice", role="admin",
+        question="cancel probe",
+        conversation_id="explicit-cancel",
+        user="alice",
+        role="admin",
     )
     try:
         first = json.loads((await anext(stream)).split("data: ", 1)[1])
@@ -355,14 +431,22 @@ async def test_explicit_cancel_stops_owned_turn_without_stream_disconnect(monkey
                 break
         await asyncio.wait_for(entered.wait(), timeout=5)
 
-        assert graph.cancel_active_turn("explicit-cancel", "bob", turn_id) is False
-        assert graph.cancel_active_turn("explicit-cancel", "alice", turn_id) is True
+        assert (
+            graph.cancel_active_turn("explicit-cancel", "bob", turn_id)
+            is False
+        )
+        assert (
+            graph.cancel_active_turn("explicit-cancel", "alice", turn_id)
+            is True
+        )
         remaining = [frame async for frame in stream]
         assert any(frame.startswith("event: done\n") for frame in remaining)
     finally:
         await stream.aclose()
 
-    assert graph.cancel_active_turn("explicit-cancel", "alice", turn_id) is False
+    assert (
+        graph.cancel_active_turn("explicit-cancel", "alice", turn_id) is False
+    )
     record = graph.history.get("explicit-cancel", user="alice")
     assert record is not None
     turn = record.turns[-1]
@@ -389,10 +473,14 @@ async def test_asgi_disconnect_cancels_silent_model_request(monkeypatch):
 
     monkeypatch.setattr(agent, "_select", select)
     monkeypatch.setattr(agent, "get_catalog", lambda: object())
-    response = StreamingResponse(graph.run_workbench(
-        question="cancel probe", conversation_id="asgi-cancel",
-        user="alice", role="admin",
-    ))
+    response = StreamingResponse(
+        graph.run_workbench(
+            question="cancel probe",
+            conversation_id="asgi-cancel",
+            user="alice",
+            role="admin",
+        )
+    )
     scope = {"type": "http", "asgi": {"spec_version": "2.3"}, "method": "POST"}
     task = asyncio.create_task(response(scope, receive, send))
     try:
@@ -417,10 +505,19 @@ async def test_only_first_message_marks_slot_as_new_chat(monkeypatch):
 
     async def native_run(state):
         flags.append(state.get("_slot_new_chat"))
-        await state["emit"].put(graph.sse("answer", {
-            "status": "answered", "text": "done", "sources": [], "citations": [],
-            "unavailable_sources": [], "limitations": [],
-        }))
+        await state["emit"].put(
+            graph.sse(
+                "answer",
+                {
+                    "status": "answered",
+                    "text": "done",
+                    "sources": [],
+                    "citations": [],
+                    "unavailable_sources": [],
+                    "limitations": [],
+                },
+            )
+        )
 
     from app.services.workbench import agent
 
@@ -434,12 +531,18 @@ async def test_only_first_message_marks_slot_as_new_chat(monkeypatch):
 @pytest.mark.anyio
 async def test_native_transcript_overflow_is_recorded_and_visible(monkeypatch):
     def overflow(*_args, **_kwargs):
-        raise graph.history.NativeTranscriptOverflow("complete native conversation exceeds")
+        raise graph.history.NativeTranscriptOverflow(
+            "complete native conversation exceeds"
+        )
 
     monkeypatch.setattr(graph.history, "build_native_transcript", overflow)
     events = await _run("and by scheme?")
 
-    assert [name for name, _data in events] == ["conversation", "error", "done"]
+    assert [name for name, _data in events] == [
+        "conversation",
+        "error",
+        "done",
+    ]
     error = events[1][1]
     assert error["message"] == graph.CONTEXT_FULL_MESSAGE
     assert error["retryable"] is False
@@ -450,15 +553,20 @@ async def test_native_transcript_overflow_is_recorded_and_visible(monkeypatch):
 
 
 @pytest.mark.anyio
-@pytest.mark.parametrize(("failure", "code", "retryable"), [
-    (BudgetExhausted("spent"), "AGENT_BUDGET_EXHAUSTED", False),
-    (TimeoutError("late"), "AGENT_TIMEOUT", True),
-    (LLMUnavailable("offline"), "MODEL_UNAVAILABLE", True),
-    (LLMIncomplete("truncated"), "MODEL_INCOMPLETE", True),
-    (LLMResponseBlocked("filtered"), "MODEL_RESPONSE_BLOCKED", False),
-    (LLMProtocolError("invalid"), "MODEL_PROTOCOL_ERROR", True),
-])
-async def test_native_failures_emit_one_typed_error(monkeypatch, failure, code, retryable):
+@pytest.mark.parametrize(
+    ("failure", "code", "retryable"),
+    [
+        (BudgetExhausted("spent"), "AGENT_BUDGET_EXHAUSTED", False),
+        (TimeoutError("late"), "AGENT_TIMEOUT", True),
+        (LLMUnavailable("offline"), "MODEL_UNAVAILABLE", True),
+        (LLMIncomplete("truncated"), "MODEL_INCOMPLETE", True),
+        (LLMResponseBlocked("filtered"), "MODEL_RESPONSE_BLOCKED", False),
+        (LLMProtocolError("invalid"), "MODEL_PROTOCOL_ERROR", True),
+    ],
+)
+async def test_native_failures_emit_one_typed_error(
+    monkeypatch, failure, code, retryable
+):
     from app.services.workbench import agent
 
     async def native_run(_state):
@@ -477,15 +585,23 @@ async def test_native_failures_emit_one_typed_error(monkeypatch, failure, code, 
 def _answer_state(model_text: str, registry: list[dict]):
     return {
         "emit": asyncio.Queue(),
-        "conversation_id": "c-answer", "user": "alice", "turn_id": "turn-answer",
+        "conversation_id": "c-answer",
+        "user": "alice",
+        "turn_id": "turn-answer",
         "timing": {"started_at": time.perf_counter()},
-        "results": [SourceResult(
-            source="db", card_type="chart", payload={"rows": [{"value": 1}]},
-            summary="One row.",
-        )],
+        "results": [
+            SourceResult(
+                source="db",
+                card_type="chart",
+                payload={"rows": [{"value": 1}]},
+                summary="One row.",
+            )
+        ],
         "query_registry": registry,
         "agent_final_result": LLMResult(
-            text=model_text, model="m", provider="test",
+            text=model_text,
+            model="m",
+            provider="test",
             assistant_message={"role": "assistant", "content": model_text},
         ),
     }
@@ -493,28 +609,47 @@ def _answer_state(model_text: str, registry: list[dict]):
 
 def _successful_query(query_id: str = "turn-answer:q1") -> dict:
     return {
-        "query_id": query_id, "attempt_id": f"{query_id}:a1",
-        "tool_call_id": "call-1", "tool_name": "query", "status": "success",
-        "purpose": "answer", "row_count": 1, "has_data": True,
-        "visual_available": False, "duration_ms": 1,
+        "query_id": query_id,
+        "attempt_id": f"{query_id}:a1",
+        "tool_call_id": "call-1",
+        "tool_name": "query",
+        "status": "success",
+        "purpose": "answer",
+        "row_count": 1,
+        "has_data": True,
+        "visual_available": False,
+        "duration_ms": 1,
     }
 
 
 def _successful_visual(query_id: str = "turn-answer:v1") -> dict:
     return {
-        "query_id": query_id, "attempt_id": f"{query_id}:a1",
-        "tool_call_id": "call-v1", "tool_name": "visualize_query_result",
-        "status": "success", "purpose": "answer", "row_count": 1,
-        "has_data": True, "visual_available": True, "duration_ms": 1,
+        "query_id": query_id,
+        "attempt_id": f"{query_id}:a1",
+        "tool_call_id": "call-v1",
+        "tool_name": "visualize_query_result",
+        "status": "success",
+        "purpose": "answer",
+        "row_count": 1,
+        "has_data": True,
+        "visual_available": True,
+        "duration_ms": 1,
         "source_query_id": "turn-answer:q1",
     }
 
 
 @pytest.mark.anyio
 async def test_answer_results_reconciles_structured_query_references():
-    state = _answer_state(json.dumps({
-        "insights": "The value is one.", "query_id": 1, "view": "table",
-    }), [_successful_query()])
+    state = _answer_state(
+        json.dumps(
+            {
+                "insights": "The value is one.",
+                "query_id": 1,
+                "view": "table",
+            }
+        ),
+        [_successful_query()],
+    )
 
     await graph.answer_results(state)
 

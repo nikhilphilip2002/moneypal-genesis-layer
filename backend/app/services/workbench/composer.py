@@ -22,16 +22,28 @@ _DATE_LIKE = re.compile(
     re.IGNORECASE,
 )
 _SCALES = {
-    "cr": 10_000_000, "crore": 10_000_000, "crores": 10_000_000,
-    "l": 100_000, "lakh": 100_000, "lakhs": 100_000, "lac": 100_000, "lacs": 100_000,
-    "k": 1_000, "thousand": 1_000,
-    "mn": 1_000_000, "million": 1_000_000,
-    "bn": 1_000_000_000, "billion": 1_000_000_000,
+    "cr": 10_000_000,
+    "crore": 10_000_000,
+    "crores": 10_000_000,
+    "l": 100_000,
+    "lakh": 100_000,
+    "lakhs": 100_000,
+    "lac": 100_000,
+    "lacs": 100_000,
+    "k": 1_000,
+    "thousand": 1_000,
+    "mn": 1_000_000,
+    "million": 1_000_000,
+    "bn": 1_000_000_000,
+    "billion": 1_000_000_000,
 }
 _SCALE_SUFFIX = re.compile(
-    r"\s*(cr|crores?|l|lakhs?|lacs?|k|thousand|mn|million|bn|billion)\b", re.IGNORECASE,
+    r"\s*(cr|crores?|l|lakhs?|lacs?|k|thousand|mn|million|bn|billion)\b",
+    re.IGNORECASE,
 )
-_INR_SCALES = frozenset({"cr", "crore", "crores", "l", "lakh", "lakhs", "lac", "lacs"})
+_INR_SCALES = frozenset(
+    {"cr", "crore", "crores", "l", "lakh", "lakhs", "lac", "lacs"}
+)
 # Fact units each claim unit may be checked against. ``number`` is the unknown default
 # for governed columns without a declared unit, so it never contradicts a claim.
 _COMPATIBLE_UNITS = {
@@ -58,12 +70,16 @@ def evidence_text(results: Iterable[ToolResult]) -> str:
         if remaining <= 0:
             break
         if result.summary:
-            trusted_summary = json.dumps({
-                "source": result.source,
-                "kind": "governed_summary",
-                "text": result.summary,
-                "untrusted": False,
-            }, ensure_ascii=False, sort_keys=True)
+            trusted_summary = json.dumps(
+                {
+                    "source": result.source,
+                    "kind": "governed_summary",
+                    "text": result.summary,
+                    "untrusted": False,
+                },
+                ensure_ascii=False,
+                sort_keys=True,
+            )
             blocks.append(trusted_summary[:remaining])
             remaining -= len(blocks[-1])
         for item in result.evidence:
@@ -84,12 +100,17 @@ def extractive_fallback(results: Iterable[ToolResult]) -> str:
     """Return bounded source excerpts if composition is unavailable or ungrounded."""
     parts: list[str] = []
     for result in results:
-        excerpts = [item.excerpt for item in result.evidence[:2] if item.excerpt]
+        excerpts = [
+            item.excerpt for item in result.evidence[:2] if item.excerpt
+        ]
         if excerpts:
             parts.append(f"{result.source.title()}: {' '.join(excerpts)}")
         elif result.summary:
             parts.append(result.summary)
-    return "\n\n".join(parts)[:4_000] or "The selected sources returned no usable evidence."
+    return (
+        "\n\n".join(parts)[:4_000]
+        or "The selected sources returned no usable evidence."
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -149,15 +170,24 @@ def numeric_claims(text: str) -> list[NumericClaim]:
         digits = len(mantissa.rsplit(".", 1)[1]) if "." in mantissa else 0
         # Half a unit in the last rendered digit, at the claim's magnitude.
         tolerance = Decimal(5) * (Decimal(10) ** (-digits - 1)) * scale
-        claims.append(NumericClaim(
-            text=text[start:end], value=base * scale, unit=unit,
-            period=_claim_period(text, start), start=start, end=end, tolerance=tolerance,
-        ))
+        claims.append(
+            NumericClaim(
+                text=text[start:end],
+                value=base * scale,
+                unit=unit,
+                period=_claim_period(text, start),
+                start=start,
+                end=end,
+                tolerance=tolerance,
+            )
+        )
     return claims
 
 
 def validate_claims(
-    text: str, evidence: str = "", facts: Iterable[Fact] = (),
+    text: str,
+    evidence: str = "",
+    facts: Iterable[Fact] = (),
 ) -> ClaimValidation:
     """Map every numeric claim to a verified fact, a derived fact, or quoted evidence."""
     candidates = [fact for fact in facts if fact.verified]
@@ -165,7 +195,9 @@ def validate_claims(
     supported: list[tuple[NumericClaim, Fact]] = []
     unsupported: list[NumericClaim] = []
     for claim in numeric_claims(text):
-        match = next((fact for fact in candidates if _supports(claim, fact)), None)
+        match = next(
+            (fact for fact in candidates if _supports(claim, fact)), None
+        )
         if match is None:
             unsupported.append(claim)
         else:
@@ -174,14 +206,18 @@ def validate_claims(
 
 
 def unsupported_numbers(
-    text: str, evidence: str, facts: Iterable[Fact] = (),
+    text: str,
+    evidence: str,
+    facts: Iterable[Fact] = (),
 ) -> list[str]:
     """Return numeric claims not present in evidence or the verified fact ledger."""
     return validate_claims(text, evidence, facts).unsupported_texts
 
 
 def numbers_are_grounded(
-    text: str, evidence: str, facts: Iterable[Fact] = (),
+    text: str,
+    evidence: str,
+    facts: Iterable[Fact] = (),
 ) -> bool:
     """Compatibility predicate backed by claim-level validation."""
     return validate_claims(text, evidence, facts).ok
@@ -192,7 +228,9 @@ def _supports(claim: NumericClaim, fact: Fact) -> bool:
     if allowed is not None and fact.unit not in allowed:
         return False
     if claim.period and fact.period:
-        periods = {_normalize_period(part) for part in fact.period.split(" vs ")}
+        periods = {
+            _normalize_period(part) for part in fact.period.split(" vs ")
+        }
         if claim.period not in periods:
             return False
     values = [fact.value]
@@ -213,11 +251,20 @@ def _evidence_facts(evidence: str) -> list[Fact]:
     """Numbers quoted in governed evidence excerpts count as support for external sources."""
     facts: list[Fact] = []
     for index, claim in enumerate(numeric_claims(evidence)):
-        facts.append(Fact(
-            id=f"evidence:{index}", label="evidence", value=claim.value,
-            display_value=claim.text, unit=claim.unit or "number", source="evidence",
-            card_type="evidence", row=index, field="excerpt", period=claim.period,
-        ))
+        facts.append(
+            Fact(
+                id=f"evidence:{index}",
+                label="evidence",
+                value=claim.value,
+                display_value=claim.text,
+                unit=claim.unit or "number",
+                source="evidence",
+                card_type="evidence",
+                row=index,
+                field="excerpt",
+                period=claim.period,
+            )
+        )
     return facts
 
 
@@ -242,8 +289,8 @@ def _canonical_number(value: str) -> str:
 def _claim_unit(text: str, start: int, end: int) -> tuple[str, Decimal, int]:
     """Unit, magnitude scale and the extended end of the claim including its suffix."""
     value = text[start:end]
-    around_before = text[max(0, start - 5):start].casefold()
-    after = text[end:end + 12]
+    around_before = text[max(0, start - 5) : start].casefold()
+    after = text[end : end + 12]
     around_after = after.casefold()
     scale = Decimal(1)
     suffix = _SCALE_SUFFIX.match(after)
@@ -251,7 +298,9 @@ def _claim_unit(text: str, start: int, end: int) -> tuple[str, Decimal, int]:
     if suffix is not None:
         scale = Decimal(_SCALES[scale_word])
         end = end + suffix.end()
-    currency = "₹" in around_before or bool(re.search(r"\b(?:rs\.?|inr)\s*$", around_before))
+    currency = "₹" in around_before or bool(
+        re.search(r"\b(?:rs\.?|inr)\s*$", around_before)
+    )
     if value.endswith("%") or re.match(r"\s*per\s*cent\b", around_after):
         return "percent", scale, end
     if currency or scale_word in _INR_SCALES:
@@ -265,7 +314,9 @@ def _claim_unit(text: str, start: int, end: int) -> tuple[str, Decimal, int]:
 def _claim_period(text: str, start: int) -> str:
     line_start = text.rfind("\n", 0, start) + 1
     line_end = text.find("\n", start)
-    match = _PERIOD.search(text[line_start:line_end if line_end >= 0 else len(text)])
+    match = _PERIOD.search(
+        text[line_start : line_end if line_end >= 0 else len(text)]
+    )
     return _normalize_period(match.group(0) if match else "")
 
 
@@ -276,12 +327,13 @@ def _normalize_period(value: str) -> str:
 def _ordered_list_marker(text: str, start: int, end: int) -> bool:
     line_start = text.rfind("\n", 0, start) + 1
     prefix = text[line_start:start]
-    suffix = text[end:end + 2]
+    suffix = text[end : end + 2]
     return not prefix.strip() and suffix.startswith((". ", ") "))
 
 
 def remove_unsupported_claims(
-    text: str, unsupported: Iterable[NumericClaim | str],
+    text: str,
+    unsupported: Iterable[NumericClaim | str],
 ) -> tuple[str, list[str]]:
     """Drop only the sentences carrying unsupported claims; return the text and what went.
 
@@ -307,10 +359,17 @@ def remove_unsupported_claims(
     removed: list[str] = []
     for index in range(0, len(boundaries) - 1, 2):
         piece_start, piece_end = boundaries[index], boundaries[index + 1]
-        separator = text[piece_end:boundaries[index + 2]] if index + 2 < len(boundaries) else ""
+        separator = (
+            text[piece_end : boundaries[index + 2]]
+            if index + 2 < len(boundaries)
+            else ""
+        )
         piece = text[piece_start:piece_end]
-        hit = any(piece_start <= lo and hi <= piece_end for lo, hi in spans) or bool(
-            canonical & {
+        hit = any(
+            piece_start <= lo and hi <= piece_end for lo, hi in spans
+        ) or bool(
+            canonical
+            & {
                 _canonical_number(m.group(0))
                 for m in _NUMBER.finditer(piece)
                 if not _ordered_list_marker(piece, m.start(), m.end())
@@ -328,7 +387,9 @@ def remove_unsupported_claims(
     return cleaned.strip(), removed
 
 
-def remove_unsupported_numeric_sentences(text: str, unsupported: Iterable[str]) -> str:
+def remove_unsupported_numeric_sentences(
+    text: str, unsupported: Iterable[str]
+) -> str:
     """Compatibility wrapper around :func:`remove_unsupported_claims`."""
     return remove_unsupported_claims(text, unsupported)[0]
 
@@ -385,9 +446,14 @@ def facts_message(facts_block: str) -> str:
     )
 
 
-def repair_message(unsupported: Iterable[NumericClaim | str], facts_block: str) -> str:
+def repair_message(
+    unsupported: Iterable[NumericClaim | str], facts_block: str
+) -> str:
     """One focused repair request naming the exact unsupported claims."""
-    names = [item.text if isinstance(item, NumericClaim) else str(item) for item in unsupported]
+    names = [
+        item.text if isinstance(item, NumericClaim) else str(item)
+        for item in unsupported
+    ]
     quoted = "; ".join('"' + name + '"' for name in names)
     return (
         "The answer contains numeric claims that the retrieved results do not support: "
@@ -396,7 +462,11 @@ def repair_message(unsupported: Iterable[NumericClaim | str], facts_block: str) 
         "observation. Remove or correct only the unsupported claims, using the verified "
         "facts below or numbers quoted in the retrieved evidence. Do not introduce any "
         "other figure.\n\n"
-        + (facts_message(facts_block) if facts_block else "No verified facts are available.")
+        + (
+            facts_message(facts_block)
+            if facts_block
+            else "No verified facts are available."
+        )
     )
 
 

@@ -26,7 +26,9 @@ if TYPE_CHECKING:
     from app.services.workbench.access import SourceAccessPolicy
 
 
-def _require_external(policy: "SourceAccessPolicy | None", source_id: str) -> None:
+def _require_external(
+    policy: "SourceAccessPolicy | None", source_id: str
+) -> None:
     if policy is not None:
         policy.require(source_id)
 
@@ -48,26 +50,38 @@ def _answer_limitation(answer: str) -> str:
     if not _INCOMPLETE_ANSWER_RE.search(answer):
         return ""
     sentences = re.split(r"(?<=[.!?])\s+", " ".join(answer.split()))
-    return next((sentence for sentence in sentences if _INCOMPLETE_ANSWER_RE.search(sentence)),
-                "The requested evidence is incomplete.")[:320]
+    return next(
+        (
+            sentence
+            for sentence in sentences
+            if _INCOMPLETE_ANSWER_RE.search(sentence)
+        ),
+        "The requested evidence is incomplete.",
+    )[:320]
 
 
 def _strip_unsupported_page_citations(answer: str, sources: list[dict]) -> str:
     """Do not display page numbers invented for chunks that carry no page metadata."""
     if any(source.get("page") not in (None, "") for source in sources):
         return answer
-    return re.sub(r",\s*p\.?\s*\d+(?:\s*[-–]\s*\d+)?", "", answer, flags=re.IGNORECASE)
+    return re.sub(
+        r",\s*p\.?\s*\d+(?:\s*[-–]\s*\d+)?", "", answer, flags=re.IGNORECASE
+    )
 
 
 async def run_macro(
-    intent: str, *, policy: "SourceAccessPolicy | None" = None,
+    intent: str,
+    *,
+    policy: "SourceAccessPolicy | None" = None,
 ) -> SourceResult:
     """Retrieve published macro evidence; the native agent owns all prose."""
     _require_external(policy, "macro")
     try:
         # Qdrant and sentence-transformers are synchronous. Keep them off the event loop so
         # a slow remote vector store does not freeze every active workbench stream.
-        chunks = await asyncio.to_thread(rag.search_multi, MACRO_COLLECTION, [intent])
+        chunks = await asyncio.to_thread(
+            rag.search_multi, MACRO_COLLECTION, [intent]
+        )
     except Exception as exc:  # noqa: BLE001 - external retrieval must degrade per source
         logger.warning("workbench macro retrieval failed: %s", exc)
         return SourceResult(
@@ -82,7 +96,10 @@ async def run_macro(
         return SourceResult(
             source="macro",
             card_type="brief",
-            payload={"summary": "No macro sources matched that question.", "sources": []},
+            payload={
+                "summary": "No macro sources matched that question.",
+                "sources": [],
+            },
             summary="No macro context available.",
             complete=False,
             limitation="No macro sources matched the question.",
@@ -102,7 +119,10 @@ async def run_macro(
 
 
 async def run_web(
-    intent: str, *, user: str, policy: "SourceAccessPolicy",
+    intent: str,
+    *,
+    user: str,
+    policy: "SourceAccessPolicy",
     raise_policy_denials: bool = False,
     private_entities: tuple[str, ...] = (),
 ) -> SourceResult:
@@ -113,7 +133,10 @@ async def run_web(
 
     try:
         query, web_evidence, _raw_text = await outbound_policy.retrieve_public(
-            intent, user=user, policy=policy, private_entities=private_entities,
+            intent,
+            user=user,
+            policy=policy,
+            private_entities=private_entities,
         )
     except (web.UnsafeWebQuery, outbound_policy.OutboundPolicyDenied) as exc:
         if raise_policy_denials:
@@ -121,19 +144,29 @@ async def run_web(
                 raise
             raise outbound_policy.OutboundPolicyDenied(str(exc)) from exc
         return SourceResult(
-            source="web", card_type="refusal",
-            payload={"message": str(exc), "reason": "private_external_query", "examples": []},
+            source="web",
+            card_type="refusal",
+            payload={
+                "message": str(exc),
+                "reason": "private_external_query",
+                "examples": [],
+            },
         )
     except exa_client.ExaRateLimitError as exc:
         return SourceResult(
-            source="web", card_type="error",
+            source="web",
+            card_type="error",
             payload={"message": str(exc), "retryable": False},
         )
     except Exception as exc:  # external failure is isolated to its source card
         logger.warning("workbench web retrieval failed: %s", exc)
         return SourceResult(
-            source="web", card_type="error",
-            payload={"message": "Live web intelligence is temporarily unavailable.", "retryable": True},
+            source="web",
+            card_type="error",
+            payload={
+                "message": "Live web intelligence is temporarily unavailable.",
+                "retryable": True,
+            },
         )
 
     citations = [item.citation() for item in web_evidence]
@@ -150,7 +183,8 @@ async def run_web(
     ]
     summary = f"Retrieved {len(citations)} citable web result{'s' if len(citations) != 1 else ''} for: {query}"
     return SourceResult(
-        source="web", card_type="brief",
+        source="web",
+        card_type="brief",
         payload={
             "summary": summary,
             "sources": citations,
@@ -161,7 +195,9 @@ async def run_web(
         sources=citations,
         evidence=evidence,
         complete=bool(evidence),
-        limitation="" if evidence else "The web results contained no usable excerpt.",
+        limitation=""
+        if evidence
+        else "The web results contained no usable excerpt.",
     )
 
 
@@ -181,14 +217,21 @@ async def run_knowledge(
     for dimension_id in matched.dimensions[:3]:
         dimension = cat.dimensions[dimension_id]
         if dimension.description:
-            context_lines.append(f"- {dimension.label}: {dimension.description}")
+            context_lines.append(
+                f"- {dimension.label}: {dimension.description}"
+            )
     answer = _catalog_definition_fallback(matched.metrics, cat)
     if not answer and context_lines:
-        answer = " ".join(line.removeprefix("- ") for line in context_lines[:2])
+        answer = " ".join(
+            line.removeprefix("- ") for line in context_lines[:2]
+        )
     if not answer:
         return SourceResult(
-            source="knowledge", card_type="clarify",
-            payload={"question": "Which governed lending or banking concept should I explain?"},
+            source="knowledge",
+            card_type="clarify",
+            payload={
+                "question": "Which governed lending or banking concept should I explain?"
+            },
             complete=False,
         )
 
@@ -197,8 +240,14 @@ async def run_knowledge(
         card_type="brief",
         payload={"summary": answer, "sources": []},
         summary=answer,
-        evidence=[Evidence(excerpt=line.removeprefix("- "), document="Governed catalog", untrusted=False)
-                  for line in context_lines],
+        evidence=[
+            Evidence(
+                excerpt=line.removeprefix("- "),
+                document="Governed catalog",
+                untrusted=False,
+            )
+            for line in context_lines
+        ],
     )
 
 
@@ -206,14 +255,18 @@ def _catalog_definition_fallback(metric_ids: list[str], catalog) -> str:
     if not metric_ids:
         return ""
     metric = catalog.metrics[metric_ids[0]]
-    answer = f"{metric.label} is measured as {metric.formula.rstrip('.').lower()}."
+    answer = (
+        f"{metric.label} is measured as {metric.formula.rstrip('.').lower()}."
+    )
     if metric.caveat:
         answer += " " + " ".join(metric.caveat.split())
     return answer
 
 
 async def run_competitive(
-    intent: str, *, policy: "SourceAccessPolicy | None" = None,
+    intent: str,
+    *,
+    policy: "SourceAccessPolicy | None" = None,
 ) -> SourceResult:
     """Retrieve question-specific competitor evidence without per-source synthesis."""
     _require_external(policy, "competitive")
@@ -230,16 +283,28 @@ async def run_competitive(
                 continue
             try:
                 hits = rag.search_multi(
-                    collection, [intent], top_k=3, min_score=0.25, max_chunks=3,
+                    collection,
+                    [intent],
+                    top_k=3,
+                    min_score=0.25,
+                    max_chunks=3,
                 )
                 for hit in hits:
                     enriched = dict(hit)
-                    enriched.setdefault("document", institution.get("name", collection))
-                    enriched["institution"] = institution.get("name", collection)
+                    enriched.setdefault(
+                        "document", institution.get("name", collection)
+                    )
+                    enriched["institution"] = institution.get(
+                        "name", collection
+                    )
                     chunks.append(enriched)
             except Exception as exc:  # noqa: BLE001 - one bad collection must not erase peers
-                logger.warning("competitive collection %s failed: %s", collection, exc)
-        chunks.sort(key=lambda item: float(item.get("score", 0.0)), reverse=True)
+                logger.warning(
+                    "competitive collection %s failed: %s", collection, exc
+                )
+        chunks.sort(
+            key=lambda item: float(item.get("score", 0.0)), reverse=True
+        )
         return chunks[:14]
 
     try:
@@ -250,22 +315,38 @@ async def run_competitive(
 
     if not chunks:
         # Registry metadata is governed and remains useful when semantic retrieval is down.
-        names = ", ".join(str(item.get("name", "")) for item in selected[:8] if item.get("name"))
+        names = ", ".join(
+            str(item.get("name", ""))
+            for item in selected[:8]
+            if item.get("name")
+        )
         if names:
             answer = (
                 f"The competitor registry identifies {names}. Detailed product, pricing, "
                 "and performance evidence is currently unavailable from the indexed sources."
             )
             return SourceResult(
-                source="competitive", card_type="brief",
-                payload={"summary": answer, "sources": [], "degraded": True}, summary=answer,
-                evidence=[Evidence(excerpt=answer, document="Competitor registry", untrusted=False)],
+                source="competitive",
+                card_type="brief",
+                payload={"summary": answer, "sources": [], "degraded": True},
+                summary=answer,
+                evidence=[
+                    Evidence(
+                        excerpt=answer,
+                        document="Competitor registry",
+                        untrusted=False,
+                    )
+                ],
                 complete=False,
                 limitation="Detailed competitive evidence is unavailable from indexed sources.",
             )
         return SourceResult(
-            source="competitive", card_type="error",
-            payload={"message": "Competitive intelligence is unavailable.", "retryable": True},
+            source="competitive",
+            card_type="error",
+            payload={
+                "message": "Competitive intelligence is unavailable.",
+                "retryable": True,
+            },
         )
 
     sources = _source_refs(chunks)
@@ -275,13 +356,18 @@ async def run_competitive(
         f"across {len({item.get('institution') for item in chunks if item.get('institution')})} institution(s)."
     )
     return SourceResult(
-        source="competitive", card_type="brief",
+        source="competitive",
+        card_type="brief",
         payload={"summary": summary, "sources": sources},
-        summary=summary, sources=sources, evidence=evidence,
+        summary=summary,
+        sources=sources,
+        evidence=evidence,
     )
 
 
-def _matching_institutions(intent: str, institutions: list[dict]) -> list[dict]:
+def _matching_institutions(
+    intent: str, institutions: list[dict]
+) -> list[dict]:
     normalized = re.sub(r"[^a-z0-9]+", " ", intent.lower()).strip()
     words = set(normalized.split())
     matched: list[dict] = []
@@ -289,12 +375,32 @@ def _matching_institutions(intent: str, institutions: list[dict]) -> list[dict]:
         identity = " ".join(
             str(institution.get(field, "")) for field in ("id", "name", "type")
         ).lower()
-        tokens = {token for token in re.findall(r"[a-z0-9]+", identity) if len(token) > 2}
-        distinctive = {token for token in tokens if token not in {
-            "bank", "cooperative", "urban", "state", "financial", "capital", "karnataka",
-            "national",
-        }}
-        if distinctive and (distinctive & words or any(token in normalized for token in distinctive if len(token) > 4)):
+        tokens = {
+            token
+            for token in re.findall(r"[a-z0-9]+", identity)
+            if len(token) > 2
+        }
+        distinctive = {
+            token
+            for token in tokens
+            if token
+            not in {
+                "bank",
+                "cooperative",
+                "urban",
+                "state",
+                "financial",
+                "capital",
+                "karnataka",
+                "national",
+            }
+        }
+        if distinctive and (
+            distinctive & words
+            or any(
+                token in normalized for token in distinctive if len(token) > 4
+            )
+        ):
             matched.append(institution)
     return matched
 
@@ -305,11 +411,17 @@ def _extractive_fallback(chunks: list[dict], *, prefix: str) -> str:
         text = " ".join(str(chunk.get("text", "")).split())
         if text:
             excerpts.append(text[:320].rstrip())
-    return f"{prefix}: " + " ".join(excerpts) if excerpts else f"{prefix} is unavailable."
+    return (
+        f"{prefix}: " + " ".join(excerpts)
+        if excerpts
+        else f"{prefix} is unavailable."
+    )
 
 
 async def run_regulatory(
-    intent: str, *, policy: "SourceAccessPolicy | None" = None,
+    intent: str,
+    *,
+    policy: "SourceAccessPolicy | None" = None,
 ) -> SourceResult:
     """Answer from regulatory intelligence. The question is matched to a regulation category
     and that category's grounded detail is returned; an unmatched question falls to the
@@ -321,24 +433,38 @@ async def run_regulatory(
     try:
         categories = regulatory.list_categories()
         if not categories:
-            return SourceResult(source="regulatory", card_type="error",
-                                payload={"message": "No regulatory categories are loaded."})
+            return SourceResult(
+                source="regulatory",
+                card_type="error",
+                payload={"message": "No regulatory categories are loaded."},
+            )
         chosen = _best_category(intent, categories)
         hits = await asyncio.to_thread(
-            regulatory_rag.search, chosen.qdrant_collection, intent, 8,
+            regulatory_rag.search,
+            chosen.qdrant_collection,
+            intent,
+            8,
         )
     except Exception as exc:  # noqa: BLE001
         logger.warning("workbench regulatory node failed: %s", exc)
-        return SourceResult(source="regulatory", card_type="error",
-                            payload={"message": "Regulatory intelligence is unavailable."})
+        return SourceResult(
+            source="regulatory",
+            card_type="error",
+            payload={"message": "Regulatory intelligence is unavailable."},
+        )
     if not hits:
         # The existing service has an extractive fallback based on the registry config.
         try:
-            return _intel_card("regulatory", regulatory.regulation_detail(chosen.id))
+            return _intel_card(
+                "regulatory", regulatory.regulation_detail(chosen.id)
+            )
         except Exception as exc:  # noqa: BLE001
             logger.warning("workbench regulatory fallback failed: %s", exc)
-            return SourceResult(source="regulatory", card_type="error",
-                                payload={"message": "Regulatory intelligence is unavailable."})
+            return SourceResult(
+                source="regulatory",
+                card_type="error",
+                payload={"message": "Regulatory intelligence is unavailable."},
+            )
 
     sources = _source_refs(hits)
     evidence = _chunk_evidence(hits)
@@ -346,14 +472,22 @@ async def run_regulatory(
         f"Category: {chosen.display_name}. Applicability: {chosen.applicability}. "
         f"Effective date: {chosen.effective_date}."
     )
-    evidence.insert(0, Evidence(
-        excerpt=applicability, document="Regulatory registry", untrusted=False,
-    ))
+    evidence.insert(
+        0,
+        Evidence(
+            excerpt=applicability,
+            document="Regulatory registry",
+            untrusted=False,
+        ),
+    )
     summary = f"Retrieved {len(hits)} relevant {chosen.display_name} regulatory passage(s)."
     return SourceResult(
-        source="regulatory", card_type="brief",
+        source="regulatory",
+        card_type="brief",
         payload={"summary": summary, "sources": sources},
-        summary=summary, sources=sources, evidence=evidence,
+        summary=summary,
+        sources=sources,
+        evidence=evidence,
     )
 
 
@@ -364,23 +498,36 @@ def _intel_card(source: str, resp) -> SourceResult:
     ref = getattr(resp, "source", None)
     sources = []
     if ref is not None:
-        sources = [{
-            "document": getattr(ref, "document", None) or getattr(resp, "title", source),
-            "page": getattr(ref, "page", None),
-        }]
+        sources = [
+            {
+                "document": getattr(ref, "document", None)
+                or getattr(resp, "title", source),
+                "page": getattr(ref, "page", None),
+            }
+        ]
     limitation = _answer_limitation(summary)
     return SourceResult(
         source=source,
         card_type="brief",
-        payload={"summary": summary, "key_points": key_points, "sources": sources},
+        payload={
+            "summary": summary,
+            "key_points": key_points,
+            "sources": sources,
+        },
         summary=summary,
         sources=sources,
-        evidence=[Evidence(
-            excerpt=" ".join([summary, *key_points]),
-            document=str(sources[0].get("document", "Regulatory registry")) if sources else "Regulatory registry",
-            page=sources[0].get("page") if sources else None,
-            untrusted=False,
-        )] if summary or key_points else [],
+        evidence=[
+            Evidence(
+                excerpt=" ".join([summary, *key_points]),
+                document=str(sources[0].get("document", "Regulatory registry"))
+                if sources
+                else "Regulatory registry",
+                page=sources[0].get("page") if sources else None,
+                untrusted=False,
+            )
+        ]
+        if summary or key_points
+        else [],
         complete=not limitation,
         limitation=limitation,
     )
@@ -394,19 +541,44 @@ def _best_category(intent: str, categories: list):
     words = {w for w in normalized.split() if len(w) > 2}
     aliases = {
         "prudential_norms": {
-            "prudential", "exposure", "single borrower", "group borrower", "concentration",
-            "npa", "non performing", "asset classification", "provisioning", "capital adequacy",
+            "prudential",
+            "exposure",
+            "single borrower",
+            "group borrower",
+            "concentration",
+            "npa",
+            "non performing",
+            "asset classification",
+            "provisioning",
+            "capital adequacy",
         },
         "master_directions": {
-            "priority sector", "psl", "msme target", "gold loan", "secured lending",
+            "priority sector",
+            "psl",
+            "msme target",
+            "gold loan",
+            "secured lending",
         },
         "fair_practices_code": {
-            "fair practices", "grievance", "recovery conduct", "customer protection",
+            "fair practices",
+            "grievance",
+            "recovery conduct",
+            "customer protection",
         },
         "digital_lending": {"digital lending", "lsp", "dla", "fintech"},
-        "kyc_aml": {"kyc", "aml", "money laundering", "customer due diligence"},
+        "kyc_aml": {
+            "kyc",
+            "aml",
+            "money laundering",
+            "customer due diligence",
+        },
         "outsourcing": {"outsourcing", "vendor", "service provider"},
-        "information_security": {"cyber", "information security", "incident", "technology risk"},
+        "information_security": {
+            "cyber",
+            "information security",
+            "incident",
+            "technology risk",
+        },
         "governance": {"governance", "board oversight", "director"},
     }
     best = categories[0]
@@ -425,11 +597,15 @@ def _best_category(intent: str, categories: list):
 def _source_refs(chunks: list[dict]) -> list[dict]:
     refs = []
     for chunk in chunks[:6]:
-        refs.append({
-            "document": chunk.get("document") or chunk.get("source") or "source",
-            "page": chunk.get("page"),
-            "score": round(float(chunk.get("score", 0.0)), 3),
-        })
+        refs.append(
+            {
+                "document": chunk.get("document")
+                or chunk.get("source")
+                or "source",
+                "page": chunk.get("page"),
+                "score": round(float(chunk.get("score", 0.0)), 3),
+            }
+        )
     return refs
 
 
@@ -437,7 +613,9 @@ def _chunk_evidence(chunks: list[dict]) -> list[Evidence]:
     return [
         Evidence(
             excerpt=str(chunk.get("text", "")),
-            document=str(chunk.get("document") or chunk.get("source") or "source"),
+            document=str(
+                chunk.get("document") or chunk.get("source") or "source"
+            ),
             page=chunk.get("page"),
             score=float(chunk.get("score", 0.0)),
             untrusted=True,

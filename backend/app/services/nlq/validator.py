@@ -31,13 +31,29 @@ DIALECT = "postgres"
 # Functions that read files, open sockets, or burn wall-clock. None has any legitimate use
 # in a reporting query, and each is a documented exfiltration or DoS primitive.
 BANNED_FUNCTIONS = {
-    "pg_read_file", "pg_read_binary_file", "pg_ls_dir", "pg_stat_file",
-    "lo_import", "lo_export", "dblink", "dblink_exec", "dblink_connect",
-    "pg_sleep", "pg_sleep_for", "pg_sleep_until",
-    "pg_terminate_backend", "pg_cancel_backend", "pg_reload_conf",
-    "query_to_xml", "xmlparse", "copy",
-    "pg_read_server_files", "set_config", "current_setting",
-    "pg_logical_emit_message", "pg_create_physical_replication_slot",
+    "pg_read_file",
+    "pg_read_binary_file",
+    "pg_ls_dir",
+    "pg_stat_file",
+    "lo_import",
+    "lo_export",
+    "dblink",
+    "dblink_exec",
+    "dblink_connect",
+    "pg_sleep",
+    "pg_sleep_for",
+    "pg_sleep_until",
+    "pg_terminate_backend",
+    "pg_cancel_backend",
+    "pg_reload_conf",
+    "query_to_xml",
+    "xmlparse",
+    "copy",
+    "pg_read_server_files",
+    "set_config",
+    "current_setting",
+    "pg_logical_emit_message",
+    "pg_create_physical_replication_slot",
 }
 
 # Functions a reporting query legitimately needs, named as PostgreSQL spells them. In
@@ -47,33 +63,123 @@ BANNED_FUNCTIONS = {
 # the lookup module and the validator's own tests already emit.
 ALLOWED_FUNCTIONS = {
     # aggregates and window functions
-    "count", "sum", "avg", "min", "max", "string_agg", "array_agg", "bool_and", "bool_or",
-    "every", "stddev", "stddev_pop", "stddev_samp", "variance", "var_pop", "var_samp", "corr",
-    "percentile_cont", "percentile_disc", "row_number", "rank", "dense_rank", "percent_rank",
-    "ntile", "lag", "lead", "first_value", "last_value", "nth_value",
+    "count",
+    "sum",
+    "avg",
+    "min",
+    "max",
+    "string_agg",
+    "array_agg",
+    "bool_and",
+    "bool_or",
+    "every",
+    "stddev",
+    "stddev_pop",
+    "stddev_samp",
+    "variance",
+    "var_pop",
+    "var_samp",
+    "corr",
+    "percentile_cont",
+    "percentile_disc",
+    "row_number",
+    "rank",
+    "dense_rank",
+    "percent_rank",
+    "ntile",
+    "lag",
+    "lead",
+    "first_value",
+    "last_value",
+    "nth_value",
     # null handling, conditionals, casts ("if" is how sqlglot models a CASE ... WHEN arm)
-    "coalesce", "nullif", "greatest", "least", "case", "if", "cast", "exists", "array",
+    "coalesce",
+    "nullif",
+    "greatest",
+    "least",
+    "case",
+    "if",
+    "cast",
+    "exists",
+    "array",
     # arithmetic
-    "round", "trunc", "abs", "floor", "ceil", "ceiling", "sign", "mod", "div", "power",
-    "sqrt", "ln", "log", "exp", "width_bucket",
+    "round",
+    "trunc",
+    "abs",
+    "floor",
+    "ceil",
+    "ceiling",
+    "sign",
+    "mod",
+    "div",
+    "power",
+    "sqrt",
+    "ln",
+    "log",
+    "exp",
+    "width_bucket",
     # dates
-    "date_trunc", "date_part", "extract", "to_char", "to_date", "to_timestamp", "make_date",
-    "make_interval", "age", "now", "current_date", "current_timestamp", "current_time",
-    "localtimestamp", "date_bin", "justify_days", "justify_interval", "isfinite",
+    "date_trunc",
+    "date_part",
+    "extract",
+    "to_char",
+    "to_date",
+    "to_timestamp",
+    "make_date",
+    "make_interval",
+    "age",
+    "now",
+    "current_date",
+    "current_timestamp",
+    "current_time",
+    "localtimestamp",
+    "date_bin",
+    "justify_days",
+    "justify_interval",
+    "isfinite",
     "generate_series",
     # strings
-    "lower", "upper", "trim", "ltrim", "rtrim", "btrim", "initcap", "concat", "concat_ws",
-    "substring", "substr", "left", "right", "length", "char_length", "replace", "split_part",
-    "strpos", "position", "lpad", "rpad", "regexp_replace", "regexp_matches", "to_number",
+    "lower",
+    "upper",
+    "trim",
+    "ltrim",
+    "rtrim",
+    "btrim",
+    "initcap",
+    "concat",
+    "concat_ws",
+    "substring",
+    "substr",
+    "left",
+    "right",
+    "length",
+    "char_length",
+    "replace",
+    "split_part",
+    "strpos",
+    "position",
+    "lpad",
+    "rpad",
+    "regexp_replace",
+    "regexp_matches",
+    "to_number",
     # arrays
-    "unnest", "array_to_string", "array_length", "cardinality",
+    "unnest",
+    "array_to_string",
+    "array_length",
+    "cardinality",
 }
 
 FUNCTION_MODES = ("denylist", "allowlist")
 
 # Schemas whose mere presence in a query is a probe.
 BANNED_SCHEMAS = {
-    "pg_catalog", "information_schema", "pg_toast", "bronze", "public", "silver"
+    "pg_catalog",
+    "information_schema",
+    "pg_toast",
+    "bronze",
+    "public",
+    "silver",
 }
 
 
@@ -107,9 +213,13 @@ def validate(
     `settings.nlq_sql_function_mode`.
     """
     cat = catalog or get_catalog()
-    mode = (function_mode or settings.nlq_sql_function_mode or "denylist").lower()
+    mode = (
+        function_mode or settings.nlq_sql_function_mode or "denylist"
+    ).lower()
     if mode not in FUNCTION_MODES:
-        raise ValueError(f"unknown function mode {mode!r}; expected one of {FUNCTION_MODES}")
+        raise ValueError(
+            f"unknown function mode {mode!r}; expected one of {FUNCTION_MODES}"
+        )
 
     statements = _parse(sql)
     _check_single_statement(statements)
@@ -145,7 +255,9 @@ def _parse(sql: str) -> list[exp.Expression]:
     try:
         parsed = sqlglot.parse(sql, read=DIALECT)
     except Exception as exc:  # noqa: BLE001 - sqlglot raises several types
-        raise ValidationError(f"could not be parsed as PostgreSQL: {exc}") from exc
+        raise ValidationError(
+            f"could not be parsed as PostgreSQL: {exc}"
+        ) from exc
     statements = [s for s in parsed if s is not None]
     if not statements:
         raise ValidationError("no statement found")
@@ -166,7 +278,9 @@ def _check_is_select(tree: exp.Expression) -> None:
         return
     if isinstance(tree, exp.Subquery):
         return
-    if isinstance(tree, exp.With) and isinstance(tree.this, (exp.Select, exp.Union)):
+    if isinstance(tree, exp.With) and isinstance(
+        tree.this, (exp.Select, exp.Union)
+    ):
         return
     raise ValidationError(
         f"root node is {type(tree).__name__}; only SELECT statements are allowed"
@@ -182,8 +296,16 @@ def _check_no_write_ctes(tree: exp.Expression) -> None:
     for node in tree.walk():
         if isinstance(
             node,
-            (exp.Insert, exp.Update, exp.Delete, exp.Merge, exp.Create, exp.Drop,
-             exp.Alter, exp.TruncateTable),
+            (
+                exp.Insert,
+                exp.Update,
+                exp.Delete,
+                exp.Merge,
+                exp.Create,
+                exp.Drop,
+                exp.Alter,
+                exp.TruncateTable,
+            ),
         ):
             raise ValidationError(
                 f"contains a {type(node).__name__.upper()} operation; the NLQ path is read-only"
@@ -193,10 +315,14 @@ def _check_no_write_ctes(tree: exp.Expression) -> None:
 def _check_no_star(tree: exp.Expression) -> None:
     """`SELECT *` is uncontrolled PII egress — a customer table has 56 columns."""
     for node in tree.find_all(exp.Star):
-        raise ValidationError("SELECT * is not allowed; name the columns explicitly")
+        raise ValidationError(
+            "SELECT * is not allowed; name the columns explicitly"
+        )
     for node in tree.find_all(exp.Column):
         if isinstance(node.this, exp.Star):
-            raise ValidationError("table.* is not allowed; name the columns explicitly")
+            raise ValidationError(
+                "table.* is not allowed; name the columns explicitly"
+            )
 
 
 _FUNCTION_CALL_NAME = re.compile(r"^\s*([A-Za-z_][A-Za-z0-9_.]*)\s*\(")
@@ -247,8 +373,13 @@ def _check_functions(tree: exp.Expression, mode: str = "denylist") -> None:
             if names & ALLOWED_FUNCTIONS:
                 continue
             if mode == "allowlist":
-                raise ValidationError(f"function {display}() is not on the allowlist")
-            logger.info("NLQ validator saw function %s() outside the allowlist", display)
+                raise ValidationError(
+                    f"function {display}() is not on the allowlist"
+                )
+            logger.info(
+                "NLQ validator saw function %s() outside the allowlist",
+                display,
+            )
             continue
         # Non-function nodes sqlglot models explicitly, e.g. COPY.
         key = getattr(node, "key", "")
@@ -284,7 +415,9 @@ def _check_tables(tree: exp.Expression, catalog: Catalog) -> set[str]:
 
         qualified = f"{schema}.{name}"
         if qualified not in allowed:
-            raise ValidationError(f"table {qualified!r} is not in the allowlist")
+            raise ValidationError(
+                f"table {qualified!r} is not in the allowlist"
+            )
         found.add(qualified)
 
     if not found:
@@ -299,7 +432,9 @@ def _physical_columns(catalog: Catalog) -> dict[str, set[str]]:
     declared join endpoints are also real columns exposed in the prompt's join paths.
     Anything else is an invention and must be rejected before EXPLAIN reaches Postgres.
     """
-    allowed = {table.table: set(table.key) for table in catalog.tables.values()}
+    allowed = {
+        table.table: set(table.key) for table in catalog.tables.values()
+    }
     for table in catalog.tables.values():
         allowed[table.table].update(table.date_columns.values())
         if table.as_of_column:
@@ -315,7 +450,10 @@ def _physical_columns(catalog: Catalog) -> dict[str, set[str]]:
         for left_column, right_column in join.on:
             allowed.setdefault(join.left, set()).add(left_column)
             allowed.setdefault(join.right, set()).add(right_column)
-    return {table: {column.lower() for column in columns} for table, columns in allowed.items()}
+    return {
+        table: {column.lower() for column in columns}
+        for table, columns in allowed.items()
+    }
 
 
 def _check_columns(tree: exp.Expression, catalog: Catalog) -> None:
@@ -341,7 +479,9 @@ def _check_columns(tree: exp.Expression, catalog: Catalog) -> None:
     try:
         scopes = traverse_scope(root)
     except Exception as exc:  # noqa: BLE001 - sqlglot raises several types
-        raise ValidationError(f"could not resolve query scopes: {exc}") from exc
+        raise ValidationError(
+            f"could not resolve query scopes: {exc}"
+        ) from exc
     if not scopes:
         raise ValidationError("no query scope found")
     scope_by_expression = {id(scope.expression): scope for scope in scopes}
@@ -358,7 +498,9 @@ def _check_columns(tree: exp.Expression, catalog: Catalog) -> None:
             _resolve_unqualified(name, scope, allowed)
 
 
-def _owning_scope(column: exp.Column, scope_by_expression: dict[int, Scope]) -> Scope | None:
+def _owning_scope(
+    column: exp.Column, scope_by_expression: dict[int, Scope]
+) -> Scope | None:
     node = column.parent
     while node is not None:
         scope = scope_by_expression.get(id(node))
@@ -384,7 +526,9 @@ def _projected_columns(
         alias = source.args.get("alias")
         if alias is not None and alias.columns:
             return {(c.name or "").lower() for c in alias.columns}
-        qualified = f"{(source.db or '').lower()}.{(source.name or '').lower()}"
+        qualified = (
+            f"{(source.db or '').lower()}.{(source.name or '').lower()}"
+        )
         return allowed.get(qualified)
 
     expression = source.expression
@@ -415,7 +559,9 @@ def _describe_scope(scope: Scope) -> str:
         return f"CTE {alias!r}" if alias else "a CTE"
     if kind == ScopeType.DERIVED_TABLE:
         parent = expression.parent
-        alias = parent.alias_or_name if isinstance(parent, exp.Subquery) else ""
+        alias = (
+            parent.alias_or_name if isinstance(parent, exp.Subquery) else ""
+        )
         return f"derived table {alias!r}" if alias else "a derived table"
     if kind == ScopeType.UNION:
         return "a UNION branch"
@@ -456,13 +602,17 @@ def _resolve_qualified(
     )
 
 
-def _resolve_unqualified(name: str, scope: Scope, allowed: dict[str, set[str]]) -> None:
+def _resolve_unqualified(
+    name: str, scope: Scope, allowed: dict[str, set[str]]
+) -> None:
     expression = scope.expression
     # A select-list alias may be referenced from GROUP BY / ORDER BY of the same SELECT,
     # and a set operation's ORDER BY names the union's output columns.
     if isinstance(expression, exp.Select):
         output_aliases = {
-            (a.alias or "").lower() for a in expression.expressions if isinstance(a, exp.Alias)
+            (a.alias or "").lower()
+            for a in expression.expressions
+            if isinstance(a, exp.Alias)
         }
         if name in output_aliases:
             return
@@ -491,7 +641,9 @@ def _resolve_unqualified(name: str, scope: Scope, allowed: dict[str, set[str]]) 
     )
 
 
-def _check_no_set_operations_on_forbidden_tables(tree: exp.Expression, catalog: Catalog) -> None:
+def _check_no_set_operations_on_forbidden_tables(
+    tree: exp.Expression, catalog: Catalog
+) -> None:
     """A UNION arm is a whole second query and gets the same scrutiny as the first —
     `SELECT a FROM gold.x UNION SELECT rolpassword FROM pg_authid` must not slip past a
     check that only looked at the leading SELECT."""
@@ -510,7 +662,9 @@ def _check_joins_have_conditions(tree: exp.Expression) -> None:
         # sqlglot puts CROSS in `kind`, not `side` — reading only `side` would reject the
         # compiler's own point-in-time series, which is a legitimate correlated lateral.
         kind = (join.kind or join.side or "").upper()
-        if kind == "CROSS" and isinstance(join.this, (exp.Lateral, exp.Subquery)):
+        if kind == "CROSS" and isinstance(
+            join.this, (exp.Lateral, exp.Subquery)
+        ):
             continue  # correlated by construction, not a cartesian product
         raise ValidationError(
             "a join has no ON condition, which would produce a cartesian product"
@@ -546,7 +700,9 @@ def _check_pii(
     return referenced
 
 
-def _enforce_limit(tree: exp.Expression, max_limit: int) -> tuple[exp.Expression, bool]:
+def _enforce_limit(
+    tree: exp.Expression, max_limit: int
+) -> tuple[exp.Expression, bool]:
     """Ensure a bounded result set, injecting a LIMIT when one is absent."""
     select = tree.this if isinstance(tree, exp.With) else tree
     if not isinstance(select, (exp.Select, exp.Union)):
@@ -562,7 +718,9 @@ def _enforce_limit(tree: exp.Expression, max_limit: int) -> tuple[exp.Expression
         raise ValidationError("LIMIT must be a literal integer") from None
 
     if value > max_limit:
-        raise ValidationError(f"LIMIT {value} exceeds the maximum of {max_limit}")
+        raise ValidationError(
+            f"LIMIT {value} exceeds the maximum of {max_limit}"
+        )
     return tree, False
 
 

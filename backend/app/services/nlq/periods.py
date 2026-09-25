@@ -30,7 +30,9 @@ class DateRange:
 
     def __post_init__(self) -> None:
         if self.start > self.end:
-            raise PeriodError(f"{self.label}: start {self.start} is after end {self.end}")
+            raise PeriodError(
+                f"{self.label}: start {self.start} is after end {self.end}"
+            )
 
     @property
     def days(self) -> int:
@@ -52,7 +54,11 @@ def fy_of(day: date) -> int:
 
 def fy_bounds(fy: int) -> DateRange:
     """FY26 -> 2025-04-01 .. 2026-03-31."""
-    return DateRange(date(fy - 1, FY_START_MONTH, 1), date(fy, FY_START_MONTH - 1, 31), f"FY{fy % 100:02d}")
+    return DateRange(
+        date(fy - 1, FY_START_MONTH, 1),
+        date(fy, FY_START_MONTH - 1, 31),
+        f"FY{fy % 100:02d}",
+    )
 
 
 def fy_quarter_of(day: date) -> tuple[int, int]:
@@ -92,7 +98,9 @@ def _add_months(day: date, months: int) -> date:
 def month_bounds(day: date) -> DateRange:
     last = calendar.monthrange(day.year, day.month)[1]
     return DateRange(
-        date(day.year, day.month, 1), date(day.year, day.month, last), day.strftime("%b %Y")
+        date(day.year, day.month, 1),
+        date(day.year, day.month, last),
+        day.strftime("%b %Y"),
     )
 
 
@@ -106,7 +114,9 @@ def quarter_bounds(day: date) -> DateRange:
 
 def week_bounds(day: date) -> DateRange:
     start = day - timedelta(days=day.weekday())
-    return DateRange(start, start + timedelta(days=6), f"week of {start.isoformat()}")
+    return DateRange(
+        start, start + timedelta(days=6), f"week of {start.isoformat()}"
+    )
 
 
 # --------------------------------------------------------------------------------------
@@ -145,7 +155,9 @@ def resolve_relative(relative: str, today: date | None = None) -> DateRange:
     if relative == "ytd":
         return DateRange(date(now.year, 1, 1), now, f"{now.year} to date")
     if relative == "last_12_months":
-        return DateRange(_add_months(now, -12) + timedelta(days=1), now, "last 12 months")
+        return DateRange(
+            _add_months(now, -12) + timedelta(days=1), now, "last 12 months"
+        )
     if relative == "last_30_days":
         return DateRange(now - timedelta(days=29), now, "last 30 days")
     if relative == "last_90_days":
@@ -158,7 +170,9 @@ def resolve_relative(relative: str, today: date | None = None) -> DateRange:
     raise PeriodError(f"unknown relative period {relative!r}")
 
 
-def previous_period(current: DateRange, today: date | None = None) -> DateRange:
+def previous_period(
+    current: DateRange, today: date | None = None
+) -> DateRange:
     """The comparable prior period, for `compare_to` when the user says "vs last year".
 
     Aligned to the same calendar shape where one is recognisable (a whole month compares to
@@ -178,7 +192,11 @@ def previous_period(current: DateRange, today: date | None = None) -> DateRange:
         return DateRange(prior_start, prior_end, "previous period")
 
     span = current.days
-    return DateRange(start - timedelta(days=span), start - timedelta(days=1), "previous period")
+    return DateRange(
+        start - timedelta(days=span),
+        start - timedelta(days=1),
+        "previous period",
+    )
 
 
 # --------------------------------------------------------------------------------------

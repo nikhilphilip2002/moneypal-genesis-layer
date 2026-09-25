@@ -29,7 +29,9 @@ class ExaToolResult:
 
 def _error_detail(result: Any) -> str:
     return " ".join(
-        getattr(item, "text", "") for item in result.content if getattr(item, "text", "")
+        getattr(item, "text", "")
+        for item in result.content
+        if getattr(item, "text", "")
     ).strip()
 
 
@@ -37,7 +39,9 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> ExaToolResult:
     if not settings.exa_mcp_enabled:
         raise ExaMCPError("Exa web search is disabled.")
     if not settings.exa_api_key:
-        raise ExaMCPError("Exa web search is enabled but EXA_API_KEY is missing.")
+        raise ExaMCPError(
+            "Exa web search is enabled but EXA_API_KEY is missing."
+        )
 
     headers = {"x-api-key": settings.exa_api_key, "x-exa-source": "moneypal"}
     try:
@@ -58,18 +62,32 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> ExaToolResult:
                     timeout=settings.exa_mcp_timeout_s,
                     raise_on_error=False,
                 )
-    except Exception as exc:  # transport libraries use several provider-specific types
+    except (
+        Exception
+    ) as exc:  # transport libraries use several provider-specific types
         detail = str(exc)
-        if "429" in detail or "rate limit" in detail.lower() or "quota" in detail.lower():
-            raise ExaRateLimitError("Exa's web-search allowance has been reached.") from exc
+        if (
+            "429" in detail
+            or "rate limit" in detail.lower()
+            or "quota" in detail.lower()
+        ):
+            raise ExaRateLimitError(
+                "Exa's web-search allowance has been reached."
+            ) from exc
         if isinstance(exc, TimeoutError):
             raise ExaMCPError("Exa MCP request timed out.") from exc
         raise ExaMCPError(f"Exa MCP request failed: {detail[:240]}") from exc
 
     if result.is_error:
         detail = _error_detail(result) or f"Exa tool {name!r} failed"
-        if "429" in detail or "rate limit" in detail.lower() or "quota" in detail.lower():
-            raise ExaRateLimitError("Exa's web-search allowance has been reached.")
+        if (
+            "429" in detail
+            or "rate limit" in detail.lower()
+            or "quota" in detail.lower()
+        ):
+            raise ExaRateLimitError(
+                "Exa's web-search allowance has been reached."
+            )
         raise ExaMCPError(detail[:500])
 
     structured: dict[str, Any] | list[Any] | None = result.structured_content
@@ -91,7 +109,9 @@ async def search(
 ) -> ExaToolResult:
     arguments: dict[str, Any] = {
         "query": query,
-        "numResults": max(1, min(settings.exa_search_max_results, num_results)),
+        "numResults": max(
+            1, min(settings.exa_search_max_results, num_results)
+        ),
     }
     if include_domains:
         arguments["includeDomains"] = include_domains

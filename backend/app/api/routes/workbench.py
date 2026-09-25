@@ -65,12 +65,16 @@ async def _completion_results(q: str, kind: str) -> list[dict]:
     loop = asyncio.get_running_loop()
     future: asyncio.Future[list[dict]] = loop.create_future()
 
-    def deliver(results: list[dict] | None, error: BaseException | None) -> None:
+    def deliver(
+        results: list[dict] | None, error: BaseException | None
+    ) -> None:
         global _completion_db_retry_after, _completion_in_flight
 
         _completion_in_flight = False
         if error is not None:
-            _completion_db_retry_after = time.monotonic() + COMPLETION_DB_RETRY_S
+            _completion_db_retry_after = (
+                time.monotonic() + COMPLETION_DB_RETRY_S
+            )
             logger.warning(
                 "Workbench completion lookup unavailable; suppressing retries for %.0fs: %s",
                 COMPLETION_DB_RETRY_S,
@@ -91,7 +95,9 @@ async def _completion_results(q: str, kind: str) -> list[dict]:
         else:
             loop.call_soon_threadsafe(deliver, results, None)
 
-    threading.Thread(target=query, name="workbench-completion", daemon=True).start()
+    threading.Thread(
+        target=query, name="workbench-completion", daemon=True
+    ).start()
     return await future
 
 
@@ -113,20 +119,28 @@ async def sources(authorization: str | None = Header(default=None)):
 
 
 @router.get("/conversations")
-async def list_conversations(limit: int = 50, authorization: str | None = Header(default=None)):
+async def list_conversations(
+    limit: int = 50, authorization: str | None = Header(default=None)
+):
     """Recent conversations for the History rail, most-recent first."""
     username, _ = identity_from_authorization(authorization)
     return {
         "conversations": [
-            {"conversation_id": c.conversation_id, "title": c.title,
-             "updated_at": c.updated_at.isoformat(), "turn_count": c.turn_count}
+            {
+                "conversation_id": c.conversation_id,
+                "title": c.title,
+                "updated_at": c.updated_at.isoformat(),
+                "turn_count": c.turn_count,
+            }
             for c in history.list_recent(limit=limit, user=username)
         ],
     }
 
 
 @router.get("/conversations/{conversation_id}")
-async def get_conversation(conversation_id: str, authorization: str | None = Header(default=None)):
+async def get_conversation(
+    conversation_id: str, authorization: str | None = Header(default=None)
+):
     username, _ = identity_from_authorization(authorization)
     rec = history.get(conversation_id, user=username)
     if rec is None:
@@ -144,10 +158,21 @@ async def get_conversation(conversation_id: str, authorization: str | None = Hea
 def _query_record_for_api(record: dict) -> dict:
     """Expose execution metadata and SQL lineage without replaying stored result rows."""
     public = {
-        key: record.get(key) for key in (
-            "query_id", "attempt_id", "tool_call_id", "tool_name", "status", "purpose",
-            "row_count", "has_data", "visual_available", "duration_ms", "error_code",
-            "source_query_id", "result_complete",
+        key: record.get(key)
+        for key in (
+            "query_id",
+            "attempt_id",
+            "tool_call_id",
+            "tool_name",
+            "status",
+            "purpose",
+            "row_count",
+            "has_data",
+            "visual_available",
+            "duration_ms",
+            "error_code",
+            "source_query_id",
+            "result_complete",
         )
     }
     payload = record.get("result_payload")
@@ -193,8 +218,14 @@ async def list_tools(authorization: str | None = Header(default=None)):
     _, role = identity_from_authorization(authorization)
     return {
         "tools": [
-            {"id": t.id, "label": t.label, "description": t.description,
-             "kind": t.kind, "params": t.params, "source_id": t.source_id}
+            {
+                "id": t.id,
+                "label": t.label,
+                "description": t.description,
+                "kind": t.kind,
+                "params": t.params,
+                "source_id": t.source_id,
+            }
             for t in tools.visible_tools(role)
         ],
     }
@@ -210,10 +241,9 @@ async def chat_completions(
     global _completion_db_retry_after, _completion_in_flight
 
     _username, role = identity_from_authorization(authorization)
-    if (
-        "db" not in {source.id for source in visible_sources(role)}
-        or not _completion_query_allowed(q, kind)
-    ):
+    if "db" not in {
+        source.id for source in visible_sources(role)
+    } or not _completion_query_allowed(q, kind):
         return {"query": q, "kind": kind, "results": []}
 
     # Completion is optional UI assistance. Never let a dead database turn it into a
@@ -235,25 +265,40 @@ class ToolRequest(BaseModel):
 
 
 @router.post("/tool/{tool_id}")
-async def run_tool(tool_id: str, req: ToolRequest | None = None,
-                   authorization: str | None = Header(default=None)):
+async def run_tool(
+    tool_id: str,
+    req: ToolRequest | None = None,
+    authorization: str | None = Header(default=None),
+):
     """Run a '+' tool. Access is enforced here, not just hidden in the menu."""
     _, role = identity_from_authorization(authorization)
     params = req.params if req else {}
     try:
         result = await tools.run_tool(
-            tool_id, role=role, params=params,
-            external_sources_enabled=bool(req and req.external_sources_enabled),
+            tool_id,
+            role=role,
+            params=params,
+            external_sources_enabled=bool(
+                req and req.external_sources_enabled
+            ),
         )
     except tools.ToolNotFound as exc:
         raise HTTPException(404, f"Unknown tool: {tool_id}") from exc
     except tools.ToolAccessError as exc:
-        raise HTTPException(403, "You do not have access to that tool.") from exc
-    return {"source": result.source, "card_type": result.card_type, **result.payload}
+        raise HTTPException(
+            403, "You do not have access to that tool."
+        ) from exc
+    return {
+        "source": result.source,
+        "card_type": result.card_type,
+        **result.payload,
+    }
 
 
 @router.post("/ask")
-async def ask(req: AskRequest, authorization: str | None = Header(default=None)):
+async def ask(
+    req: AskRequest, authorization: str | None = Header(default=None)
+):
     """Ask anything. The model selects authorized native tools and streams cards back."""
     username, role = identity_from_authorization(authorization)
     if (
@@ -290,7 +335,8 @@ class CancelTurnRequest(BaseModel):
 
 @router.post("/cancel")
 async def cancel_turn(
-    req: CancelTurnRequest, authorization: str | None = Header(default=None),
+    req: CancelTurnRequest,
+    authorization: str | None = Header(default=None),
 ):
     username, _role = identity_from_authorization(authorization)
     if username == "anonymous":
@@ -298,6 +344,8 @@ async def cancel_turn(
     cancelled = cancel_active_turn(req.conversation_id, username, req.turn_id)
     logger.info(
         "Workbench cancel requested: conversation=%s turn=%s cancelled=%s",
-        req.conversation_id, req.turn_id, cancelled,
+        req.conversation_id,
+        req.turn_id,
+        cancelled,
     )
     return {"cancelled": cancelled}

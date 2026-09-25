@@ -110,9 +110,14 @@ def record(signals: list[Signal]) -> int:
                         "  last_seen_at = EXCLUDED.last_seen_at "
                         "RETURNING (xmax = 0) AS inserted",
                         (
-                            signal.fingerprint, signal.scope, signal.kind, signal.member,
-                            signal.severity, json.dumps(signal.model_dump(mode="json")),
-                            now, now,
+                            signal.fingerprint,
+                            signal.scope,
+                            signal.kind,
+                            signal.member,
+                            signal.severity,
+                            json.dumps(signal.model_dump(mode="json")),
+                            now,
+                            now,
                         ),
                     )
                     row = cur.fetchone()
@@ -137,7 +142,10 @@ def record(signals: list[Signal]) -> int:
 
 
 def open_signals(
-    *, scopes: list[str] | None = None, severities: list[str] | None = None, limit: int = 20
+    *,
+    scopes: list[str] | None = None,
+    severities: list[str] | None = None,
+    limit: int = 20,
 ) -> list[StoredSignal]:
     """The current findings, most notable first.
 
@@ -167,7 +175,7 @@ def open_signals(
                     f"COALESCE(acknowledged_by, '') FROM {TABLE} WHERE "
                     + " AND ".join(clauses)
                     + " ORDER BY CASE severity WHEN 'alert' THEN 0 WHEN 'watch' THEN 1 "
-                      "ELSE 2 END, last_seen_at DESC LIMIT %s",
+                    "ELSE 2 END, last_seen_at DESC LIMIT %s",
                     params,
                 )
                 rows = cur.fetchall()
@@ -175,13 +183,17 @@ def open_signals(
             return [
                 StoredSignal(
                     signal=Signal.model_validate(_json(row[0])),
-                    status=row[1], first_seen_at=row[2], last_seen_at=row[3],
+                    status=row[1],
+                    first_seen_at=row[2],
+                    last_seen_at=row[3],
                     acknowledged_by=row[4],
                 )
                 for row in rows
             ]
         except Exception as exc:  # noqa: BLE001
-            logger.warning("signal read failed, falling back to memory: %s", exc)
+            logger.warning(
+                "signal read failed, falling back to memory: %s", exc
+            )
 
     records = [s for s in _MEMORY.values() if s.status != "resolved"]
     if scopes:
@@ -189,14 +201,23 @@ def open_signals(
     if severities:
         records = [s for s in records if s.signal.severity in severities]
     rank = {"alert": 0, "watch": 1, "info": 2}
-    records.sort(key=lambda s: (rank.get(s.signal.severity, 2), -s.last_seen_at.timestamp()))
+    records.sort(
+        key=lambda s: (
+            rank.get(s.signal.severity, 2),
+            -s.last_seen_at.timestamp(),
+        )
+    )
     return records[:limit]
 
 
-def set_status(fingerprint: str, status: str, *, user: str = "") -> StoredSignal:
+def set_status(
+    fingerprint: str, status: str, *, user: str = ""
+) -> StoredSignal:
     """Acknowledge or resolve one finding. Only a person calls this."""
     if status not in STATUSES:
-        raise SignalStoreError(f"unknown status {status!r} — one of {', '.join(STATUSES)}")
+        raise SignalStoreError(
+            f"unknown status {status!r} — one of {', '.join(STATUSES)}"
+        )
 
     if _ensure_table():
         try:
@@ -216,7 +237,9 @@ def set_status(fingerprint: str, status: str, *, user: str = "") -> StoredSignal
                 raise SignalStoreError(f"unknown signal {fingerprint!r}")
             return StoredSignal(
                 signal=Signal.model_validate(_json(row[0])),
-                status=row[1], first_seen_at=row[2], last_seen_at=row[3],
+                status=row[1],
+                first_seen_at=row[2],
+                last_seen_at=row[3],
                 acknowledged_by=row[4],
             )
         except SignalStoreError:

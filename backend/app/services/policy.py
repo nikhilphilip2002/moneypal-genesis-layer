@@ -3,6 +3,7 @@
 Synthesises a policy brief across the selected regulation and institution
 collections — one grounded generation over multi-collection retrieval.
 """
+
 from genesis_core import rag, make_response
 
 from app.services import institution_loader as il
@@ -16,7 +17,10 @@ def brief(regulation_ids: list[str], institution_ids: list[str], focus: str):
         return None
 
     # Retrieve grounded context from every selected collection.
-    query = focus or "policy implications for a Karnataka MSME lender under Rs 500 crore"
+    query = (
+        focus
+        or "policy implications for a Karnataka MSME lender under Rs 500 crore"
+    )
     chunks: list[dict] = []
     for reg in regs:
         chunks += rag.search(reg["qdrant_collection"], query, top_k=3)
@@ -39,8 +43,12 @@ def brief(regulation_ids: list[str], institution_ids: list[str], focus: str):
     )
     answer = rag.generate(prompt, chunks)
 
-    docs = [r["display_name"] for r in regs] + [f"{i['name']} public disclosures" for i in insts]
-    url = (regs[0].get("rbi_url") if regs else None) or (insts[0].get("website") if insts else "#")
+    docs = [r["display_name"] for r in regs] + [
+        f"{i['name']} public disclosures" for i in insts
+    ]
+    url = (regs[0].get("rbi_url") if regs else None) or (
+        insts[0].get("website") if insts else "#"
+    )
     return make_response(
         title=f"Policy Brief — {query[:80]}",
         summary=answer,
@@ -49,7 +57,9 @@ def brief(regulation_ids: list[str], institution_ids: list[str], focus: str):
             f"Competitive inputs: {inst_names}",
             "Recommendations are draft positions pending board review",
         ],
-        document="; ".join(docs) if docs else "Genesis intelligence collections",
+        document="; ".join(docs)
+        if docs
+        else "Genesis intelligence collections",
         url=url or "#",
         ai_note="",
         confidence="medium",

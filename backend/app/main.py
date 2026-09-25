@@ -4,6 +4,7 @@ One app, three domain routers (macro, competitive, regulatory) mounted together.
 
 Run (from backend/):  uvicorn app.main:app --port 8000 --reload
 """
+
 import asyncio
 import logging
 import contextlib
@@ -12,7 +13,17 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api.routes import admin, auth, competitive, macro, nlq, policy, regulatory, review, workbench
+from app.api.routes import (
+    admin,
+    auth,
+    competitive,
+    macro,
+    nlq,
+    policy,
+    regulatory,
+    review,
+    workbench,
+)
 from app.core.config import settings
 from app.core.logging import bind_trace, start_logging, stop_logging
 
@@ -27,14 +38,16 @@ async def _lifespan(_app: FastAPI):
     _app.state.agent_gold_schema_chars = schema_chars
     logging.getLogger(__name__).info(
         "workbench Gold schema prefix initialized version=%s chars=%d",
-        catalog_version, schema_chars,
+        catalog_version,
+        schema_chars,
     )
 
     from app.mcp.tool_catalog import catalog as mcp_catalog
 
     local_tools = await mcp_catalog.discover_local()
     logging.getLogger(__name__).info(
-        "Workbench in-memory MCP initialized tools=%s", local_tools,
+        "Workbench in-memory MCP initialized tools=%s",
+        local_tools,
     )
 
     try:
@@ -44,19 +57,23 @@ async def _lifespan(_app: FastAPI):
             mcp_catalog.discover_postgres(), timeout=10.0
         )
         logging.getLogger(__name__).info(
-            "PostgreSQL MCP initialized tools=%s", postgres_tools,
+            "PostgreSQL MCP initialized tools=%s",
+            postgres_tools,
         )
     except Exception as exc:  # noqa: BLE001 - readiness remains visible and retryable
         logging.getLogger(__name__).warning(
-            "PostgreSQL MCP startup initialization unavailable: %s", exc,
+            "PostgreSQL MCP startup initialization unavailable: %s",
+            exc,
         )
     # Workbench execution is intentionally not a rollout switch: every request uses the
     # provider-native tool loop.
     logging.getLogger(__name__).info(
         "workbench execution=native_only context_window=%d "
         "compaction_enabled=%s observation_max_chars=%d llm_model=%s",
-        settings.workbench_context_window, settings.workbench_compaction_enabled,
-        settings.workbench_agent_observation_max_chars, settings.llm_model,
+        settings.workbench_context_window,
+        settings.workbench_compaction_enabled,
+        settings.workbench_agent_observation_max_chars,
+        settings.llm_model,
     )
     # The signal scan runs on a schedule rather than on a question: "what are the emerging
     # issues?" has no answer at request time, because there is no baseline to compare against
@@ -66,7 +83,10 @@ async def _lifespan(_app: FastAPI):
     scan_task = signal_scheduler.start(_app.state)
 
     from app.services.curiosity_graph import warm_curiosity_graph
-    warm_graph_task = asyncio.create_task(asyncio.to_thread(warm_curiosity_graph))
+
+    warm_graph_task = asyncio.create_task(
+        asyncio.to_thread(warm_curiosity_graph)
+    )
 
     yield
 
@@ -82,7 +102,9 @@ async def _lifespan(_app: FastAPI):
 
 
 def create_app() -> FastAPI:
-    app = FastAPI(title="Moneypal Genesis Intelligence API", lifespan=_lifespan)
+    app = FastAPI(
+        title="Moneypal Genesis Intelligence API", lifespan=_lifespan
+    )
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_origins,
@@ -93,7 +115,9 @@ def create_app() -> FastAPI:
 
     @app.middleware("http")
     async def trace_context_middleware(request, call_next):
-        trace_id = request.headers.get("x-trace-id") or request.headers.get("x-request-id")
+        trace_id = request.headers.get("x-trace-id") or request.headers.get(
+            "x-request-id"
+        )
         with bind_trace(trace_id=trace_id):
             response = await call_next(request)
             return response
@@ -123,11 +147,16 @@ def create_app() -> FastAPI:
                 "tool_catalog": mcp_catalog.readiness(),
                 "gold_schema": {
                     "status": (
-                        "ok" if getattr(app.state, "agent_gold_schema_version", "")
+                        "ok"
+                        if getattr(app.state, "agent_gold_schema_version", "")
                         else "unavailable"
                     ),
-                    "version": getattr(app.state, "agent_gold_schema_version", ""),
-                    "characters": getattr(app.state, "agent_gold_schema_chars", 0),
+                    "version": getattr(
+                        app.state, "agent_gold_schema_version", ""
+                    ),
+                    "characters": getattr(
+                        app.state, "agent_gold_schema_chars", 0
+                    ),
                 },
             },
         }

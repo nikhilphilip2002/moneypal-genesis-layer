@@ -4,6 +4,7 @@ Every AI-generated intelligence item on the platform can be marked
 Pending / Reviewed / Flagged with a reviewer note. Statuses persist in a
 small JSON file — no database needed for the buildathon.
 """
+
 import json
 from datetime import datetime, timezone
 
@@ -40,17 +41,21 @@ def list_items() -> list[dict]:
         for id_, title, module in STATIC_ITEMS
     ]
     for inst in il.load_all():
-        items.append({
-            "id": f"competitive:{inst['id']}",
-            "title": f"{inst['name']} — profile & SWOT",
-            "module": "Competitive",
-        })
+        items.append(
+            {
+                "id": f"competitive:{inst['id']}",
+                "title": f"{inst['name']} — profile & SWOT",
+                "module": "Competitive",
+            }
+        )
     for reg in rl.load_all():
-        items.append({
-            "id": f"regulatory:{reg['id']}",
-            "title": reg["display_name"],
-            "module": "Regulatory",
-        })
+        items.append(
+            {
+                "id": f"regulatory:{reg['id']}",
+                "title": reg["display_name"],
+                "module": "Regulatory",
+            }
+        )
 
     store = _load_store()
     for item in items:

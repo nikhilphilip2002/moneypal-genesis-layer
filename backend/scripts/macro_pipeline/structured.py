@@ -9,6 +9,7 @@ Every chunk downstream gets two enrichments:
 Figures are mined with regex for per-cent / rupee(xx crore / lakh) / bps / pp
 amounts, each tagged with the topic it belongs to based on nearby keywords.
 """
+
 from __future__ import annotations
 
 import re
@@ -59,7 +60,9 @@ def _sentence_around(text: str, match_start: int) -> str:
     return " ".join(text[window : match_start + 120].split())
 
 
-def _figure(kind: str, value: float, unit: str, about: str, sentence: str) -> dict:
+def _figure(
+    kind: str, value: float, unit: str, about: str, sentence: str
+) -> dict:
     return {
         "kind": kind,
         "value": round(value, 2),

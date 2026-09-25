@@ -53,13 +53,19 @@ def _connect_kwargs() -> dict[str, Any]:
         "password": settings.nlq_db_password,
     }
     # psycopg2 and pg8000 spell the connect timeout differently (mirrors db_schema.py).
-    kwargs["connect_timeout" if _pg_driver.__name__.startswith("psycopg2") else "timeout"] = 5
+    kwargs[
+        "connect_timeout"
+        if _pg_driver.__name__.startswith("psycopg2")
+        else "timeout"
+    ] = 5
     return kwargs
 
 
 def _new_connection():
     if _pg_driver is None:
-        raise RuntimeError("No PostgreSQL driver available (psycopg2-binary or pg8000).")
+        raise RuntimeError(
+            "No PostgreSQL driver available (psycopg2-binary or pg8000)."
+        )
     conn = _pg_driver.connect(**_connect_kwargs())
     _apply_session_guards(conn)
     return conn
@@ -68,10 +74,14 @@ def _new_connection():
 def _apply_session_guards(conn: Any) -> None:
     cur = conn.cursor()
     try:
-        cur.execute(f"SET statement_timeout = {int(settings.nlq_statement_timeout_ms)}")
+        cur.execute(
+            f"SET statement_timeout = {int(settings.nlq_statement_timeout_ms)}"
+        )
         cur.execute("SET idle_in_transaction_session_timeout = 10000")
         cur.execute("SET default_transaction_read_only = on")
-        cur.execute("SET search_path = gold")  # unqualified names stay inside governed views
+        cur.execute(
+            "SET search_path = gold"
+        )  # unqualified names stay inside governed views
         conn.commit()
     finally:
         with contextlib.suppress(Exception):
@@ -105,7 +115,9 @@ class _ReadOnlyPool:
                         with self._lock:
                             self._created -= 1
                         raise
-                return self._idle.get(timeout=timeout)  # all in use — wait for a return
+                return self._idle.get(
+                    timeout=timeout
+                )  # all in use — wait for a return
             if self._is_alive(conn):
                 return conn
             with contextlib.suppress(Exception):
@@ -176,7 +188,9 @@ def health() -> dict[str, Any]:
     """Never raises — `/nlq/health` degrades the UI on this rather than erroring."""
     try:
         with readonly_cursor() as (_conn, cur):
-            cur.execute("SELECT current_user, current_setting('statement_timeout')")
+            cur.execute(
+                "SELECT current_user, current_setting('statement_timeout')"
+            )
             user, timeout = cur.fetchone()
             cur.execute(
                 "SELECT count(*) FROM information_schema.views WHERE table_schema = 'gold'"
@@ -192,7 +206,10 @@ def health() -> dict[str, Any]:
         return {"status": "unconfigured", "detail": str(exc)}
     except Exception as exc:  # noqa: BLE001 - health must always answer
         logger.warning("NLQ read-only DB health check failed: %s", exc)
-        return {"status": "down", "detail": f"{type(exc).__name__}: {exc}"[:200]}
+        return {
+            "status": "down",
+            "detail": f"{type(exc).__name__}: {exc}"[:200],
+        }
 
 
 def close_pool() -> None:

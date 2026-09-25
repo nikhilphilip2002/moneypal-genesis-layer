@@ -21,9 +21,23 @@ from app.services.db_schema import (
 )
 
 # Real customers that were hardcoded as fallback data, lifted from a filed DNBS-02 return.
-HARDCODED_PII = ["SUBRAMANYA", "MEGHARAJ", "DIVYA B C", "PRAKASH H R", "RAMESH KUMAR"]
+HARDCODED_PII = [
+    "SUBRAMANYA",
+    "MEGHARAJ",
+    "DIVYA B C",
+    "PRAKASH H R",
+    "RAMESH KUMAR",
+]
 # Invented geography from the old district map.
-INVENTED_GEOGRAPHY = ["Udupi", "Mandya", "Shimoga", "Chikmagalur", "Hassan", "Mysore", "District Lead"]
+INVENTED_GEOGRAPHY = [
+    "Udupi",
+    "Mandya",
+    "Shimoga",
+    "Chikmagalur",
+    "Hassan",
+    "Mysore",
+    "District Lead",
+]
 
 
 def _db_available() -> bool:
@@ -35,7 +49,9 @@ def _db_available() -> bool:
         return False
 
 
-requires_db = pytest.mark.skipif(not _db_available(), reason="PostgreSQL warehouse not reachable")
+requires_db = pytest.mark.skipif(
+    not _db_available(), reason="PostgreSQL warehouse not reachable"
+)
 
 
 def parse_currency(val: str) -> float:
@@ -49,20 +65,24 @@ class TestLabelling:
         for code in ["1", "4", "1002", "9999", "", None]:
             label = branch_label(code)
             for word in INVENTED_GEOGRAPHY:
-                assert word.lower() not in label.lower(), f"{label!r} invents geography"
+                assert word.lower() not in label.lower(), (
+                    f"{label!r} invents geography"
+                )
 
     def test_unknown_scheme_keeps_its_code(self):
         """45 scheme codes have no master row; they must not get an invented category."""
         assert scheme_title("9999", {}) == "Scheme #9999"
-        assert scheme_title("1610", {"1610": "BUSINESS/ SERVICE/INDUSTRY"}) == (
-            "BUSINESS/ SERVICE/INDUSTRY (Scheme #1610)"
-        )
+        assert scheme_title(
+            "1610", {"1610": "BUSINESS/ SERVICE/INDUSTRY"}
+        ) == ("BUSINESS/ SERVICE/INDUSTRY (Scheme #1610)")
 
     def test_no_module_level_fallback_data(self):
         """The fabricated product/branch/cohort matrices must be gone."""
         source = open(svc.__file__, encoding="utf-8").read()
         for marker in HARDCODED_PII:
-            assert marker not in source, f"hardcoded PII {marker!r} still in db_schema.py"
+            assert marker not in source, (
+                f"hardcoded PII {marker!r} still in db_schema.py"
+            )
         assert "Peak All-Time High" not in source
         assert "38.2" not in source
 
@@ -89,15 +109,18 @@ class TestExecutiveView:
             )
             assert metrics["total_registered_customers"] == cur.fetchone()[0]
         node = next(n for n in graph["nodes"] if n["type"] == "executive")
-        assert parse_currency(node["details"]["Total Disbursed"]) == pytest.approx(
-            float(disbursed), rel=1e-6
-        )
+        assert parse_currency(
+            node["details"]["Total Disbursed"]
+        ) == pytest.approx(float(disbursed), rel=1e-6)
 
     def test_describes_itself_as_postgres(self):
         """The module reads PostgreSQL; it used to label every node Oracle."""
         graph = get_db_schema_graph(view_level="executive")
         node = next(n for n in graph["nodes"] if n["type"] == "executive")
-        blob = " ".join(str(v) for v in node["details"].values()) + node["subtitle"]
+        blob = (
+            " ".join(str(v) for v in node["details"].values())
+            + node["subtitle"]
+        )
         assert "Oracle" not in blob
         assert "silver" in blob
 
@@ -109,7 +132,10 @@ class TestExecutiveView:
                 "WHERE gnlnac_prod_code IS NOT NULL"
             )
             expected = cur.fetchone()[0]
-        assert len({n["id"] for n in graph["nodes"] if n["type"] == "zonal"}) == expected
+        assert (
+            len({n["id"] for n in graph["nodes"] if n["type"] == "zonal"})
+            == expected
+        )
 
 
 @requires_db
@@ -128,12 +154,18 @@ class TestBranchProductRelationship:
                    WHERE gnlnac_appl_brn_code IS NOT NULL AND gnlnac_prod_code IS NOT NULL
                    GROUP BY 1,2"""
             )
-            expected = {(svc._code(b), svc._code(p), int(n)) for b, p, n in cur.fetchall()}
+            expected = {
+                (svc._code(b), svc._code(p), int(n))
+                for b, p, n in cur.fetchall()
+            }
         assert actual == expected
 
     def test_branch_product_links_are_not_duplicated(self):
         graph = get_db_schema_graph(view_level="executive")
-        pairs = [(l["branch_code"], l["product_code"]) for l in graph["branch_product_links"]]
+        pairs = [
+            (l["branch_code"], l["product_code"])
+            for l in graph["branch_product_links"]
+        ]
         assert len(pairs) == len(set(pairs))
 
     def test_branch_names_come_from_silver_master(self):
@@ -144,12 +176,17 @@ class TestBranchProductRelationship:
                 "WHERE NULLIF(BTRIM(mbrn_name), '') IS NOT NULL LIMIT 1"
             )
             code, name = cur.fetchone()
-        branch = next((b for b in graph["branches"] if b["code"] == svc._code(code)), None)
+        branch = next(
+            (b for b in graph["branches"] if b["code"] == svc._code(code)),
+            None,
+        )
         if branch:
             assert name in branch["display_title"]
 
     def test_product_drilldown_only_shows_originating_branches(self):
-        graph = get_db_schema_graph(view_level="zonal", zonal_id="ZONE-PROD-16")
+        graph = get_db_schema_graph(
+            view_level="zonal", zonal_id="ZONE-PROD-16"
+        )
         shown = {n["id"] for n in graph["nodes"] if n["type"] == "manager"}
         with db_cursor() as (_c, cur):
             cur.execute(
@@ -186,7 +223,9 @@ class TestExactMatching:
         1001-1021 appeared here.
         """
         graph = get_db_schema_graph(view_level="agent", agent_id="SCHM-1-")
-        cust_ids = [n["customer_id"] for n in graph["nodes"] if n["type"] == "customer"]
+        cust_ids = [
+            n["customer_id"] for n in graph["nodes"] if n["type"] == "customer"
+        ]
         if not cust_ids:
             pytest.skip("no borrowers returned for branch 1")
         with db_cursor() as (_c, cur):
@@ -212,7 +251,9 @@ class TestSchemeDesk:
 
     def test_borrowers_actually_hold_that_scheme(self):
         graph = get_db_schema_graph(view_level="agent", agent_id="SCHM-4-1615")
-        cust_ids = [n["customer_id"] for n in graph["nodes"] if n["type"] == "customer"]
+        cust_ids = [
+            n["customer_id"] for n in graph["nodes"] if n["type"] == "customer"
+        ]
         with db_cursor() as (_c, cur):
             cur.execute(
                 """SELECT COUNT(DISTINCT gnlnac_cust_id) FROM silver.loan_account_master
@@ -298,9 +339,13 @@ class TestBorrowerDetail:
         graph = get_db_schema_graph(view_level="customer", customer_id=cust)
         for node in graph["nodes"]:
             if node["type"] == "repayment":
-                assert re.fullmatch(r"\d{4}-\d{2}-\d{2}", node["details"]["Repayment Date"])
+                assert re.fullmatch(
+                    r"\d{4}-\d{2}-\d{2}", node["details"]["Repayment Date"]
+                )
             if node["type"] == "disbursement":
-                assert re.fullmatch(r"\d{4}-\d{2}-\d{2}", node["details"]["Disbursement Date"])
+                assert re.fullmatch(
+                    r"\d{4}-\d{2}-\d{2}", node["details"]["Disbursement Date"]
+                )
 
     def test_unknown_customer_yields_no_invented_borrower(self):
         """This used to fall back to a hardcoded 'S V SUBRAMANYA BHAT' at Rs 15,00,000."""
@@ -329,7 +374,9 @@ class TestMetrics:
             due, paid = cur.fetchone()
         assert result["amount_due"] == pytest.approx(float(due), rel=1e-6)
         assert result["amount_paid"] == pytest.approx(float(paid), rel=1e-6)
-        assert result["efficiency_pct"] == pytest.approx(float(paid) / float(due) * 100, abs=0.1)
+        assert result["efficiency_pct"] == pytest.approx(
+            float(paid) / float(due) * 100, abs=0.1
+        )
 
 
 @requires_db
@@ -371,15 +418,21 @@ class TestProvenance:
     def test_is_live_reflects_query_outcomes(self):
         graph = get_db_schema_graph(view_level="executive")
         meta = graph["metadata"]
-        assert meta["is_live"] is (bool(meta["live_sections"]) and not meta["degraded_sections"])
+        assert meta["is_live"] is (
+            bool(meta["live_sections"]) and not meta["degraded_sections"]
+        )
 
     def test_every_section_reports_a_status(self):
         graph = get_db_schema_graph(view_level="executive")
         assert graph["provenance"]
         for name, entry in graph["provenance"].items():
-            assert entry["status"] in {"ok", "empty", "error", "no_source"}, name
+            assert entry["status"] in {"ok", "empty", "error", "no_source"}, (
+                name
+            )
 
     def test_graph_is_fully_connected(self):
         graph = get_db_schema_graph(view_level="executive")
-        connected = {e["source"] for e in graph["edges"]} | {e["target"] for e in graph["edges"]}
+        connected = {e["source"] for e in graph["edges"]} | {
+            e["target"] for e in graph["edges"]
+        }
         assert {n["id"] for n in graph["nodes"]} <= connected

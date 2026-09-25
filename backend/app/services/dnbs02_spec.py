@@ -414,8 +414,15 @@ SOURCES: Dict[str, Source] = {
         grain="one row per open account on the snapshot date, aggregated to a single row",
     ),
     "coverage": Source(
-        tables=("silver.loan_account_master", "silver.loan_daily_snapshot_summary"),
-        columns=("gnlnac_lndisb_amt", "gnlnac_sanc_amt", "gnlnac_pri_repay_amt"),
+        tables=(
+            "silver.loan_account_master",
+            "silver.loan_daily_snapshot_summary",
+        ),
+        columns=(
+            "gnlnac_lndisb_amt",
+            "gnlnac_sanc_amt",
+            "gnlnac_pri_repay_amt",
+        ),
         sql=COVERAGE_SQL,
         filters="gnlnac_closure_date IS NULL AND NOT EXISTS (matching row in genln_rpt_day)",
         grain="one row: the open accounts that have no dated snapshot at all",
@@ -427,7 +434,12 @@ SOURCES: Dict[str, Source] = {
     ),
     "part1_capital": Source(
         tables=("silver.gl_balance_history", "silver.external_gl_master"),
-        columns=("glbalh_bc_bal", "glbalh_glacc_code", "extgl_access_code", "extgl_ext_head_descn"),
+        columns=(
+            "glbalh_bc_bal",
+            "glbalh_glacc_code",
+            "extgl_access_code",
+            "extgl_ext_head_descn",
+        ),
         sql=PART1_SQL,
         binds=("end_date", "GL_SHARE_CAPITAL", "GL_RESERVES", "GL_BORROWINGS"),
         filters=(
@@ -440,8 +452,16 @@ SOURCES: Dict[str, Source] = {
         ),
     ),
     "part2_loans": Source(
-        tables=("silver.loan_daily_snapshot_summary", "silver.loan_product_scheme_master"),
-        columns=("gnlnr_princ_os", "gnlnr_schm_code", "gnlnr_prod_code", "lnschm_schm_name"),
+        tables=(
+            "silver.loan_daily_snapshot_summary",
+            "silver.loan_product_scheme_master",
+        ),
+        columns=(
+            "gnlnr_princ_os",
+            "gnlnr_schm_code",
+            "gnlnr_prod_code",
+            "lnschm_schm_name",
+        ),
         sql=PART2_SQL,
         binds=("snapshot_date",),
         filters="gnlnr_report_date = {snapshot_date} AND gnlnr_closed_date IS NULL",
@@ -496,7 +516,10 @@ SOURCES: Dict[str, Source] = {
         ),
     ),
     "part8a_msme": Source(
-        tables=("silver.loan_account_master", "silver.msme_sector_classification_mapping"),
+        tables=(
+            "silver.loan_account_master",
+            "silver.msme_sector_classification_mapping",
+        ),
         columns=(
             "gnlnac_ln_intrate",
             "gnlnac_lndisb_amt",
@@ -516,7 +539,12 @@ SOURCES: Dict[str, Source] = {
     ),
     "annex2_shareholders": Source(
         tables=("silver.migrated_shareholder_details",),
-        columns=("prosper_customer_name", "share_no_of_units", "share_face_value", "share_amount"),
+        columns=(
+            "prosper_customer_name",
+            "share_no_of_units",
+            "share_face_value",
+            "share_amount",
+        ),
         sql=ANNEX2_SQL,
         filters="valid migrated share-register rows aggregated by customer; top 10 by units",
         grain="one row per shareholder",
@@ -555,7 +583,10 @@ SOURCES: Dict[str, Source] = {
         grain="top 25 investment GL heads by book value",
     ),
     "annex11_top_npas": Source(
-        tables=("silver.loan_daily_snapshot_summary", "silver.loan_account_master"),
+        tables=(
+            "silver.loan_daily_snapshot_summary",
+            "silver.loan_account_master",
+        ),
         columns=(
             "gnlnr_asset_cd",
             "gnlnr_cust_name",
@@ -666,7 +697,13 @@ class LineItem:
 
     __slots__ = ("sheet", "label", "column", "within")
 
-    def __init__(self, sheet: str, label: str, column: str, within: Optional[Tuple[int, int]] = None):
+    def __init__(
+        self,
+        sheet: str,
+        label: str,
+        column: str,
+        within: Optional[Tuple[int, int]] = None,
+    ):
         self.sheet = sheet
         self.label = label
         self.column = column
@@ -686,8 +723,14 @@ class TableBlock:
     """A repeating annexure table, with each column pinned to its expected header."""
 
     __slots__ = (
-        "sheet", "source_key", "section", "header_row", "first_row", "max_rows",
-        "columns", "serial_column",
+        "sheet",
+        "source_key",
+        "section",
+        "header_row",
+        "first_row",
+        "max_rows",
+        "columns",
+        "serial_column",
     )
 
     def __init__(
@@ -715,7 +758,9 @@ class TableBlock:
         self.serial_column = serial_column
 
 
-LABEL_COLUMN = 2  # column B carries the RBI line-item taxonomy on every Part sheet
+LABEL_COLUMN = (
+    2  # column B carries the RBI line-item taxonomy on every Part sheet
+)
 
 TABLE_BLOCKS: List[TableBlock] = [
     TableBlock(
@@ -729,7 +774,9 @@ TABLE_BLOCKS: List[TableBlock] = [
             TableColumn("F", "sanctioned_amt", "Total Sanctioned"),
             TableColumn("G", "disbursed_amt", "Disbursed Loan Amount"),
             TableColumn("H", "undisbursed_amt", "Un-disbursed Loan Amount"),
-            TableColumn("I", "principal_outstanding", "Total Principal Outstanding"),
+            TableColumn(
+                "I", "principal_outstanding", "Total Principal Outstanding"
+            ),
             TableColumn("J", "accrued_interest", "Total Accrued Interest"),
             TableColumn("K", "account_status", "Status of Account"),
             TableColumn("L", "total_outstanding", "Amount Outstanding"),
@@ -745,7 +792,9 @@ TABLE_BLOCKS: List[TableBlock] = [
             TableColumn("D", "investment_type", "Type of Investment"),
             TableColumn("E", "pan", "PAN"),
             TableColumn("F", "book_value", "Book Value"),
-            TableColumn("G", "is_group_company", "Whether it is Group Company?"),
+            TableColumn(
+                "G", "is_group_company", "Whether it is Group Company?"
+            ),
             TableColumn("H", "amt_outstanding", "Amount Outstanding"),
         ],
     ),
@@ -776,7 +825,11 @@ TABLE_BLOCKS: List[TableBlock] = [
             TableColumn("H", "opening_date", "Opening Date"),
             TableColumn("I", "closing_date", "Closing Date"),
             TableColumn("K", "account_count", "Number of loan accounts"),
-            TableColumn("L", "total_outstanding", "Amount of loans & advances outstanding"),
+            TableColumn(
+                "L",
+                "total_outstanding",
+                "Amount of loans & advances outstanding",
+            ),
         ],
     ),
     TableBlock(
@@ -867,14 +920,24 @@ def _sum_mapped(rows, key: str, mapping: Dict[str, str], target: str):
 
 def part1_line(target: str) -> Callable[[Dict[str, Any]], Any]:
     def fn(data):
-        return _sum_mapped(data.get("part1_capital") or [], "particulars", GL_DESC_TO_PART1_LINE, target)
+        return _sum_mapped(
+            data.get("part1_capital") or [],
+            "particulars",
+            GL_DESC_TO_PART1_LINE,
+            target,
+        )
 
     return fn
 
 
 def part3_line(target: str) -> Callable[[Dict[str, Any]], Any]:
     def fn(data):
-        return _sum_mapped(data.get("part3_income") or [], "head", GL_DESC_TO_PART3_LINE, target)
+        return _sum_mapped(
+            data.get("part3_income") or [],
+            "head",
+            GL_DESC_TO_PART3_LINE,
+            target,
+        )
 
     return fn
 
@@ -882,7 +945,10 @@ def part3_line(target: str) -> Callable[[Dict[str, Any]], Any]:
 def part1_total(particulars: str) -> Callable[[Dict[str, Any]], Any]:
     def fn(data):
         for row in data.get("part1_capital") or []:
-            if row.get("gl_group") == "TOTAL" and row.get("particulars") == particulars:
+            if (
+                row.get("gl_group") == "TOTAL"
+                and row.get("particulars") == particulars
+            ):
                 return row["amount_lakhs"]
         return 0.0
 
@@ -899,7 +965,9 @@ def part2_maturity_line(bucket: str) -> Callable[[Dict[str, Any]], Any]:
     return fn
 
 
-def part8c_buckets(data: Dict[str, Any]) -> Tuple[Dict[str, float], Dict[str, float], List[str]]:
+def part8c_buckets(
+    data: Dict[str, Any],
+) -> Tuple[Dict[str, float], Dict[str, float], List[str]]:
     """Roll IRACP asset codes up into the four RBI Part 8C classes.
 
     Returns (amounts, provisions, unmapped_codes). SMA-0/1/2 are standard assets; an
@@ -994,7 +1062,9 @@ class FieldSpec:
     unit: str = ""
     no_source_reason: str = ""
     table_field: str = ""  # KIND_TABLE only
-    data_key: str = ""  # report dict key holding the rows, when it differs from `section`
+    data_key: str = (
+        ""  # report dict key holding the rows, when it differs from `section`
+    )
 
     @property
     def target(self) -> str:
@@ -1029,7 +1099,8 @@ def _part1_specs() -> List[FieldSpec]:
                 column="C",
                 section="part1_capital",
                 derivation=(
-                    "SUM(glbbal_bc_bal)/100000 for GL head(s) " + ", ".join(repr(h) for h in heads)
+                    "SUM(glbbal_bc_bal)/100000 for GL head(s) "
+                    + ", ".join(repr(h) for h in heads)
                     + "; blank if no such head carries a balance"
                 ),
                 value=part1_line(target),
@@ -1041,7 +1112,9 @@ def _part1_specs() -> List[FieldSpec]:
         ("2 Share Capital", "Share Capital"),
         ("3 Reserves and Surplus", "Reserves and Surplus"),
     ):
-        group = GL_SHARE_CAPITAL if particulars == "Share Capital" else GL_RESERVES
+        group = (
+            GL_SHARE_CAPITAL if particulars == "Share Capital" else GL_RESERVES
+        )
         specs.append(
             FieldSpec(
                 sheet="DNBS02_PART1",
@@ -1068,7 +1141,11 @@ def _part3_specs() -> List[FieldSpec]:
             continue
         seen.append(target)
         heads = [k for k, v in GL_DESC_TO_PART3_LINE.items() if v == target]
-        scope = PART3_INVESTMENT_SCOPE if target in ("(a) Interest", "(b) Dividends") else None
+        scope = (
+            PART3_INVESTMENT_SCOPE
+            if target in ("(a) Interest", "(b) Dividends")
+            else None
+        )
         specs.append(
             FieldSpec(
                 sheet="DNBS02_PART3",
@@ -1077,7 +1154,8 @@ def _part3_specs() -> List[FieldSpec]:
                 within=scope,
                 section="part3_income",
                 derivation=(
-                    "SUM(glbbal_bc_bal)/100000 for GL head(s) " + ", ".join(repr(h) for h in heads)
+                    "SUM(glbbal_bc_bal)/100000 for GL head(s) "
+                    + ", ".join(repr(h) for h in heads)
                     + (
                         f"; label resolved within rows {scope[0]}-{scope[1]} because "
                         "Part 3 repeats this label under Investment Income"
@@ -1225,7 +1303,9 @@ FIELD_SPECS: List[FieldSpec] = (
                     else ""
                 )
             ),
-            value=(part8c_amount(key) if col == "C" else part8c_provision(key)),
+            value=(
+                part8c_amount(key) if col == "C" else part8c_provision(key)
+            ),
             gate="part8_asset_quality",
             unit=LAKHS,
         )
@@ -1259,7 +1339,8 @@ FIELD_SPECS: List[FieldSpec] = (
             column="C",
             section="part8_asset_quality",
             derivation=(
-                "SUM(gnlnr_princ_os)/100000 for asset codes " + ", ".join(NPA_ASSET_CODES)
+                "SUM(gnlnr_princ_os)/100000 for asset codes "
+                + ", ".join(NPA_ASSET_CODES)
                 + "; SMA-0/1/2 are excluded, they are standard assets"
             ),
             value=summary_field("gross_npa_amount"),
@@ -1289,9 +1370,17 @@ FIELD_SPECS: List[FieldSpec] = (
             gate="part8a_msme",
             unit=unit,
         )
-        for label in ("A Micro, Small and Medium Enterprises", "A.1 Direct Exposure")
+        for label in (
+            "A Micro, Small and Medium Enterprises",
+            "A.1 Direct Exposure",
+        )
         for col, fieldname, unit, derivation in (
-            ("C", "account_count", COUNT, "COUNT(*) of open accounts present in nsecmsmemap"),
+            (
+                "C",
+                "account_count",
+                COUNT,
+                "COUNT(*) of open accounts present in nsecmsmemap",
+            ),
             (
                 "D",
                 "amount_lakhs",
@@ -1312,8 +1401,16 @@ FIELD_SPECS: List[FieldSpec] = (
             unit=PCT,
         )
         for col, fieldname, derivation in (
-            ("G", "min_interest_rate", "MIN(gnlnac_ln_intrate) over MSME-mapped open accounts"),
-            ("H", "max_interest_rate", "MAX(gnlnac_ln_intrate) over MSME-mapped open accounts"),
+            (
+                "G",
+                "min_interest_rate",
+                "MIN(gnlnac_ln_intrate) over MSME-mapped open accounts",
+            ),
+            (
+                "H",
+                "max_interest_rate",
+                "MAX(gnlnac_ln_intrate) over MSME-mapped open accounts",
+            ),
             (
                 "I",
                 "weighted_avg_interest_rate",

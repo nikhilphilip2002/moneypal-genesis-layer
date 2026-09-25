@@ -122,16 +122,24 @@ class Dimension:
     def sql(self, alias: str) -> str:
         """The grouping expression for this dimension, qualified by table alias."""
         if self.is_time:
-            raise CatalogError(f"time dimension {self.id!r} is resolved by the compiler, not here")
+            raise CatalogError(
+                f"time dimension {self.id!r} is resolved by the compiler, not here"
+            )
         qualified = f'{alias}."{self.column}"'
         if self.expression:
-            return " ".join(self.expression.replace("{col}", qualified).split())
+            return " ".join(
+                self.expression.replace("{col}", qualified).split()
+            )
         return qualified
 
     def sort_sql(self, alias: str) -> str | None:
         if not self.sort_expression:
             return None
-        return " ".join(self.sort_expression.replace("{col}", f'{alias}."{self.column}"').split())
+        return " ".join(
+            self.sort_expression.replace(
+                "{col}", f'{alias}."{self.column}"'
+            ).split()
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -176,7 +184,9 @@ class Metric:
     def needs_as_of(self) -> bool:
         """True when the metric reads an event log that must be collapsed to one row per
         account before aggregation. This is the guard against the classification-event trap."""
-        return bool(self.as_of_function or (self.as_of_column and self.as_of_key))
+        return bool(
+            self.as_of_function or (self.as_of_column and self.as_of_key)
+        )
 
     def sql(self, alias: str) -> str:
         """Aggregate expression for this metric, qualified by table alias."""
@@ -196,7 +206,9 @@ class Metric:
     @staticmethod
     def _sub(expr: str | None, alias: str) -> str:
         if not expr:
-            raise CatalogError("metric has neither an expression nor a numerator")
+            raise CatalogError(
+                "metric has neither an expression nor a numerator"
+            )
         return " ".join(expr.replace("{t}", alias).split())
 
 
@@ -206,7 +218,9 @@ class Join:
     left: str
     right: str
     on: tuple[tuple[str, str], ...]
-    cardinality: Literal["many_to_one", "one_to_many", "one_to_one", "many_to_many"]
+    cardinality: Literal[
+        "many_to_one", "one_to_many", "one_to_one", "many_to_many"
+    ]
     join_type: Literal["inner", "left"] = "inner"
     contains_pii: bool = False
     description: str = ""
@@ -280,7 +294,11 @@ class DrillPath:
         position = self.index_of(level)
         if position is None:
             return None
-        return self.levels[position + 1] if position + 1 < len(self.levels) else None
+        return (
+            self.levels[position + 1]
+            if position + 1 < len(self.levels)
+            else None
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -293,11 +311,14 @@ class DrillGraph:
     offers: tuple[str, ...] = ()
 
     def path_for(self, level: str) -> DrillPath | None:
-        return next((p for p in self.paths if p.index_of(level) is not None), None)
+        return next(
+            (p for p in self.paths if p.index_of(level) is not None), None
+        )
 
     def heads(self, *, primary_only: bool = False) -> tuple[str, ...]:
         return tuple(
-            p.levels[0] for p in self.paths
+            p.levels[0]
+            for p in self.paths
             if p.levels and (p.primary or not primary_only)
         )
 
@@ -357,7 +378,10 @@ class Playbook:
     dpd_max: int | None = None
 
     def matches(self, asset_class: Any, dpd: Any) -> bool:
-        if self.asset_class and canonical_enum_code(asset_class) not in self.asset_class:
+        if (
+            self.asset_class
+            and canonical_enum_code(asset_class) not in self.asset_class
+        ):
             return False
         if self.dpd_min is not None or self.dpd_max is not None:
             if dpd is None:
@@ -404,7 +428,9 @@ class WorklistConfig:
         return next((c for c in self.columns if c.id == column_id), None)
 
     def playbook_for(self, asset_class: Any, dpd: Any) -> Playbook | None:
-        return next((p for p in self.playbooks if p.matches(asset_class, dpd)), None)
+        return next(
+            (p for p in self.playbooks if p.matches(asset_class, dpd)), None
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -505,7 +531,8 @@ class EnumBlock:
         matches = [
             code
             for code, value in self.values.items()
-            if value.label.lower() == needle or needle in (s.lower() for s in value.synonyms)
+            if value.label.lower() == needle
+            or needle in (s.lower() for s in value.synonyms)
         ]
         return matches[0] if len(matches) == 1 else None
 
@@ -533,7 +560,9 @@ class Catalog:
     # -- lookup helpers ------------------------------------------------------------------
 
     def table_by_name(self, qualified: str) -> Table | None:
-        return next((t for t in self.tables.values() if t.table == qualified), None)
+        return next(
+            (t for t in self.tables.values() if t.table == qualified), None
+        )
 
     def columns_for(self, qualified_table: str) -> list[Column]:
         return [c for c in self.columns.values() if c.table == qualified_table]
@@ -551,12 +580,11 @@ class Catalog:
         Returns None when there is no path — the compiler turns that into a refusal rather
         than inventing a join condition.
         """
-        matches = [
-            j for j in self.joins
-            if {j.left, j.right} == {left, right}
-        ]
+        matches = [j for j in self.joins if {j.left, j.right} == {left, right}]
         if len(matches) > 1:
-            raise CatalogError(f"ambiguous join path between {left} and {right}")
+            raise CatalogError(
+                f"ambiguous join path between {left} and {right}"
+            )
         return matches[0] if matches else None
 
     def enum_for_dimension(self, dimension_id: str) -> EnumBlock | None:
@@ -577,7 +605,8 @@ class Catalog:
             # should reach the "disbursement" synonym. Requiring a 4-character shared
             # prefix keeps "loan" from matching everything.
             if any(
-                term.lower().startswith(token) or token.startswith(term.lower())
+                term.lower().startswith(token)
+                or token.startswith(term.lower())
                 for term in haystack
                 for token in tokens
                 if len(term) >= 4
@@ -594,7 +623,9 @@ def _read(name: str) -> list[dict[str, Any]]:
         raise CatalogError(f"catalog file missing: {path}")
     data = yaml.safe_load(path.read_text(encoding="utf-8"))
     if not isinstance(data, list):
-        raise CatalogError(f"{name} must contain a YAML list, got {type(data).__name__}")
+        raise CatalogError(
+            f"{name} must contain a YAML list, got {type(data).__name__}"
+        )
     return data
 
 
@@ -604,7 +635,9 @@ def _read_mapping(name: str) -> dict[str, Any]:
         raise CatalogError(f"catalog file missing: {path}")
     data = yaml.safe_load(path.read_text(encoding="utf-8"))
     if not isinstance(data, dict):
-        raise CatalogError(f"{name} must contain a YAML mapping, got {type(data).__name__}")
+        raise CatalogError(
+            f"{name} must contain a YAML mapping, got {type(data).__name__}"
+        )
     return data
 
 
@@ -619,7 +652,9 @@ def _tuple(value: Any) -> tuple:
 def _require(entry: dict[str, Any], *keys: str, where: str) -> None:
     missing = [k for k in keys if entry.get(k) in (None, "")]
     if missing:
-        raise CatalogError(f"{where}: entry {entry.get('id', '?')!r} is missing {missing}")
+        raise CatalogError(
+            f"{where}: entry {entry.get('id', '?')!r} is missing {missing}"
+        )
 
 
 def _load_tables() -> dict[str, Table]:
@@ -646,7 +681,9 @@ def _load_tables() -> dict[str, Table]:
             restrictions=raw.get("restrictions", ""),
         )
     if not any(t.is_hub for t in out.values()):
-        raise CatalogError("no hub table declared — the join graph would have no centre")
+        raise CatalogError(
+            "no hub table declared — the join graph would have no centre"
+        )
     return out
 
 
@@ -675,7 +712,9 @@ def _load_dimensions() -> dict[str, Dimension]:
         _require(raw, "id", "label", "type", where="dimensions.yaml")
         kind = raw["type"]
         if kind not in ("categorical", "time"):
-            raise CatalogError(f"dimension {raw['id']!r} has unknown type {kind!r}")
+            raise CatalogError(
+                f"dimension {raw['id']!r} has unknown type {kind!r}"
+            )
         if kind == "categorical":
             _require(raw, "table", "column", where="dimensions.yaml")
         else:
@@ -701,8 +740,16 @@ def _load_dimensions() -> dict[str, Dimension]:
 def _load_metrics() -> dict[str, Metric]:
     out: dict[str, Metric] = {}
     for raw in _read("metrics.yaml"):
-        _require(raw, "id", "label", "unit", "grain", "base_table", "formula",
-                 where="metrics.yaml")
+        _require(
+            raw,
+            "id",
+            "label",
+            "unit",
+            "grain",
+            "base_table",
+            "formula",
+            where="metrics.yaml",
+        )
         has_expr = bool(raw.get("expression"))
         has_ratio = bool(raw.get("numerator")) and bool(raw.get("denominator"))
         if has_expr == has_ratio:
@@ -711,7 +758,9 @@ def _load_metrics() -> dict[str, Metric]:
                 "`numerator` and `denominator`, not neither and not both"
             )
         if raw["grain"] not in ("flow", "point_in_time", "ratio"):
-            raise CatalogError(f"metric {raw['id']!r} has unknown grain {raw['grain']!r}")
+            raise CatalogError(
+                f"metric {raw['id']!r} has unknown grain {raw['grain']!r}"
+            )
         out[raw["id"]] = Metric(
             id=raw["id"],
             label=raw["label"],
@@ -748,7 +797,13 @@ def _load_analyses() -> dict[str, AnalysisDef]:
         _require(raw, "id", "title", "compose", "steps", where="analyses.yaml")
         steps = []
         for entry in raw["steps"]:
-            _require(entry, "id", "label", "metrics", where=f"analyses.yaml/{raw['id']}")
+            _require(
+                entry,
+                "id",
+                "label",
+                "metrics",
+                where=f"analyses.yaml/{raw['id']}",
+            )
             steps.append(
                 AnalysisStepDef(
                     id=entry["id"],
@@ -781,11 +836,15 @@ def _load_worklists() -> WorklistConfig:
     raw = _read_mapping("worklists.yaml")
     base = raw.get("base") or {}
     if not base.get("from"):
-        raise CatalogError("worklists.yaml must declare base.from — a worklist needs a relation")
+        raise CatalogError(
+            "worklists.yaml must declare base.from — a worklist needs a relation"
+        )
 
     columns = []
     for entry in base.get("columns") or []:
-        _require(entry, "id", "sql", "label", where="worklists.yaml/base.columns")
+        _require(
+            entry, "id", "sql", "label", where="worklists.yaml/base.columns"
+        )
         columns.append(
             WorklistColumn(
                 id=entry["id"],
@@ -799,7 +858,14 @@ def _load_worklists() -> WorklistConfig:
 
     rules: dict[str, EwsRule] = {}
     for entry in raw.get("rules") or []:
-        _require(entry, "id", "label", "severity", "predicate", where="worklists.yaml/rules")
+        _require(
+            entry,
+            "id",
+            "label",
+            "severity",
+            "predicate",
+            where="worklists.yaml/rules",
+        )
         rules[entry["id"]] = EwsRule(
             id=entry["id"],
             label=entry["label"],
@@ -812,7 +878,9 @@ def _load_worklists() -> WorklistConfig:
     score = ScoreModel(
         method=score_raw.get("method", "percentile_rank"),
         components=tuple(
-            ScoreComponent(id=c["id"], label=c["label"], weight=float(c["weight"]))
+            ScoreComponent(
+                id=c["id"], label=c["label"], weight=float(c["weight"])
+            )
             for c in score_raw.get("components") or []
         ),
     )
@@ -826,7 +894,9 @@ def _load_worklists() -> WorklistConfig:
                 id=entry["id"],
                 action=" ".join(entry["action"].split()),
                 owner=entry.get("owner", ""),
-                asset_class=tuple(str(v) for v in _tuple(when.get("asset_class"))),
+                asset_class=tuple(
+                    str(v) for v in _tuple(when.get("asset_class"))
+                ),
                 dpd_min=when.get("dpd_min"),
                 dpd_max=when.get("dpd_max"),
             )
@@ -850,7 +920,10 @@ def _load_worklists() -> WorklistConfig:
         joins=tuple(" ".join(j.split()) for j in base.get("joins") or []),
         tables=_tuple(base.get("tables")),
         columns=tuple(columns),
-        expressions={k: " ".join(v.split()) for k, v in (raw.get("expressions") or {}).items()},
+        expressions={
+            k: " ".join(v.split())
+            for k, v in (raw.get("expressions") or {}).items()
+        },
         rules=rules,
         score=score,
         playbooks=tuple(playbooks),
@@ -865,7 +938,14 @@ def _load_signals() -> SignalConfig:
 
     scopes: dict[str, SignalScope] = {}
     for entry in raw.get("scopes") or []:
-        _require(entry, "id", "label", "metric", "detectors", where="signals.yaml/scopes")
+        _require(
+            entry,
+            "id",
+            "label",
+            "metric",
+            "detectors",
+            where="signals.yaml/scopes",
+        )
         scopes[entry["id"]] = SignalScope(
             id=entry["id"],
             label=entry["label"],
@@ -884,8 +964,14 @@ def _load_signals() -> SignalConfig:
 
     checks = []
     for entry in raw.get("data_health") or []:
-        _require(entry, "table", "date_column", "watch_days", "alert_days",
-                 where="signals.yaml/data_health")
+        _require(
+            entry,
+            "table",
+            "date_column",
+            "watch_days",
+            "alert_days",
+            where="signals.yaml/data_health",
+        )
         checks.append(
             DataHealthCheck(
                 table=entry["table"],
@@ -939,7 +1025,9 @@ def _load_drill() -> DrillGraph:
         )
     terminal = raw.get("terminal") or {}
     if not terminal.get("entity"):
-        raise CatalogError("drill.yaml must declare terminal.entity — a chain needs an end")
+        raise CatalogError(
+            "drill.yaml must declare terminal.entity — a chain needs an end"
+        )
     return DrillGraph(
         paths=tuple(paths),
         entity=terminal["entity"],
@@ -953,10 +1041,20 @@ def _load_joins() -> tuple[Join, ...]:
     for raw in _read("joins.yaml"):
         # `on_columns`, not `on`: YAML 1.1 parses a bare `on:` key as the boolean True,
         # so the obvious spelling silently loses the join condition.
-        _require(raw, "id", "left", "right", "on_columns", "cardinality", where="joins.yaml")
+        _require(
+            raw,
+            "id",
+            "left",
+            "right",
+            "on_columns",
+            "cardinality",
+            where="joins.yaml",
+        )
         pairs = tuple((a, b) for a, b in raw["on_columns"])
         if not pairs:
-            raise CatalogError(f"join {raw['id']!r} has no ON columns — that is a cross join")
+            raise CatalogError(
+                f"join {raw['id']!r} has no ON columns — that is a cross join"
+            )
         joins.append(
             Join(
                 id=raw["id"],
@@ -1010,11 +1108,15 @@ def _drill_problems(catalog: Catalog) -> list[str]:
             problems.append(f"drill path {path.id!r} has no active levels")
         for level in path.levels:
             if level not in catalog.dimensions:
-                problems.append(f"drill path {path.id!r} names unknown level {level!r}")
+                problems.append(
+                    f"drill path {path.id!r} names unknown level {level!r}"
+                )
             elif catalog.dimensions[level].is_time:
                 # Time is orthogonal to drilling: every level keeps whatever time grain the
                 # question already had, so a time dimension as a rung would fight it.
-                problems.append(f"drill path {path.id!r} uses time dimension {level!r} as a rung")
+                problems.append(
+                    f"drill path {path.id!r} uses time dimension {level!r} as a rung"
+                )
             if level in seen:
                 problems.append(
                     f"level {level!r} appears in both {seen[level]!r} and {path.id!r} — "
@@ -1029,11 +1131,15 @@ def _drill_problems(catalog: Catalog) -> list[str]:
                 )
 
     if graph.entity not in catalog.dimensions:
-        problems.append(f"drill terminal entity {graph.entity!r} is not a dimension")
+        problems.append(
+            f"drill terminal entity {graph.entity!r} is not a dimension"
+        )
 
     unknown = set(graph.offers) - {"explain", "act"}
     if unknown:
-        problems.append(f"drill.yaml offers unknown step kinds {sorted(unknown)}")
+        problems.append(
+            f"drill.yaml offers unknown step kinds {sorted(unknown)}"
+        )
 
     return problems
 
@@ -1044,8 +1150,18 @@ _COMPOSERS = {"briefing", "quadrant", "concentration"}
 # meaningless answer. Pin the shape each one requires at load time instead.
 # (step count, metrics per step, dimensions per step, description)
 _COMPOSER_SHAPES = {
-    "quadrant": (2, 1, 1, "two steps of one metric over the same one dimension"),
-    "concentration": (1, 1, 1, "exactly one step with one metric and one dimension"),
+    "quadrant": (
+        2,
+        1,
+        1,
+        "two steps of one metric over the same one dimension",
+    ),
+    "concentration": (
+        1,
+        1,
+        1,
+        "exactly one step with one metric and one dimension",
+    ),
 }
 
 
@@ -1054,15 +1170,21 @@ def _analysis_problems(catalog: Catalog) -> list[str]:
     for analysis in catalog.analyses.values():
         where = f"analysis {analysis.id!r}"
         if analysis.compose not in _COMPOSERS:
-            problems.append(f"{where} uses unknown composer {analysis.compose!r}")
+            problems.append(
+                f"{where} uses unknown composer {analysis.compose!r}"
+            )
 
         for step in analysis.steps:
             for metric in step.metrics:
                 if metric not in catalog.metrics:
-                    problems.append(f"{where} step {step.id!r} names unknown metric {metric!r}")
+                    problems.append(
+                        f"{where} step {step.id!r} names unknown metric {metric!r}"
+                    )
             for dim in step.dimensions:
                 if dim not in catalog.dimensions:
-                    problems.append(f"{where} step {step.id!r} names unknown dimension {dim!r}")
+                    problems.append(
+                        f"{where} step {step.id!r} names unknown dimension {dim!r}"
+                    )
             if step.order_by:
                 field_name = step.order_by.get("field")
                 if field_name not in {*step.metrics, *step.dimensions}:
@@ -1118,7 +1240,9 @@ def _worklist_problems(catalog: Catalog) -> list[str]:
 
     for table in (config.base_from, *config.tables):
         if table not in known_tables:
-            problems.append(f"worklists.yaml base reads {table!r}, which is not a catalog table")
+            problems.append(
+                f"worklists.yaml base reads {table!r}, which is not a catalog table"
+            )
 
     for column in config.columns:
         if column.decode and column.decode not in catalog.enums:
@@ -1135,7 +1259,9 @@ def _worklist_problems(catalog: Catalog) -> list[str]:
                 problems.append(f"{where} predicate contains {token!r}")
         for name in _ROW_FIELD.findall(rule.predicate):
             if name not in config.expressions:
-                problems.append(f"{where} predicate uses undefined expression {{{name}}}")
+                problems.append(
+                    f"{where} predicate uses undefined expression {{{name}}}"
+                )
         for name in _ROW_FIELD.findall(rule.reason):
             if name not in column_ids:
                 problems.append(
@@ -1144,9 +1270,13 @@ def _worklist_problems(catalog: Catalog) -> list[str]:
                 )
         # A predicate may only reach outside the base relation for the tables named here;
         # anything else is a silent widening of what the worklist reads.
-        for match in re.findall(r"\bFROM\s+([a-z_]+\.[a-z_]+)", rule.predicate, re.IGNORECASE):
+        for match in re.findall(
+            r"\bFROM\s+([a-z_]+\.[a-z_]+)", rule.predicate, re.IGNORECASE
+        ):
             if match not in _ALLOWED_SUBQUERY_TABLES:
-                problems.append(f"{where} predicate reads {match!r}, outside the base relation")
+                problems.append(
+                    f"{where} predicate reads {match!r}, outside the base relation"
+                )
 
     weights = sum(c.weight for c in config.score.components)
     if config.score.components and abs(weights - 1.0) > 1e-6:
@@ -1164,22 +1294,31 @@ def _worklist_problems(catalog: Catalog) -> list[str]:
             "no recommended action at all"
         )
     if config.playbooks and (
-        config.playbooks[-1].dpd_min is not None or config.playbooks[-1].dpd_max is not None
+        config.playbooks[-1].dpd_min is not None
+        or config.playbooks[-1].dpd_max is not None
     ):
         problems.append("the last playbook must match anything — see above")
 
     for preset in config.presets.values():
         for rule_id in preset.rules:
             if rule_id not in config.rules:
-                problems.append(f"worklist {preset.id!r} names unknown rule {rule_id!r}")
+                problems.append(
+                    f"worklist {preset.id!r} names unknown rule {rule_id!r}"
+                )
         if not preset.rules:
-            problems.append(f"worklist {preset.id!r} has no rules, so it would list the book")
+            problems.append(
+                f"worklist {preset.id!r} has no rules, so it would list the book"
+            )
 
     return problems
 
 
 _DETECTORS = {
-    "level_shift", "trend_break", "threshold", "concentration", "rank_movement",
+    "level_shift",
+    "trend_break",
+    "threshold",
+    "concentration",
+    "rank_movement",
 }
 
 
@@ -1198,14 +1337,23 @@ def _signal_problems(catalog: Catalog) -> list[str]:
         if scope.metric not in catalog.metrics:
             problems.append(f"{where} names unknown metric {scope.metric!r}")
         if scope.dimension and scope.dimension not in catalog.dimensions:
-            problems.append(f"{where} names unknown dimension {scope.dimension!r}")
+            problems.append(
+                f"{where} names unknown dimension {scope.dimension!r}"
+            )
 
         unknown = set(scope.detectors) - _DETECTORS
         if unknown:
-            problems.append(f"{where} names unknown detectors {sorted(unknown)}")
+            problems.append(
+                f"{where} names unknown detectors {sorted(unknown)}"
+            )
 
         if "threshold" in scope.detectors and not any(
-            (scope.watch_above, scope.alert_above, scope.watch_below, scope.alert_below)
+            (
+                scope.watch_above,
+                scope.alert_above,
+                scope.watch_below,
+                scope.alert_below,
+            )
         ):
             problems.append(
                 f"{where} runs the threshold detector with no threshold — it would report "
@@ -1214,15 +1362,23 @@ def _signal_problems(catalog: Catalog) -> list[str]:
         if "concentration" in scope.detectors and (
             scope.watch_hhi is None or scope.alert_hhi is None
         ):
-            problems.append(f"{where} runs the concentration detector with no HHI bounds")
+            problems.append(
+                f"{where} runs the concentration detector with no HHI bounds"
+            )
         if "concentration" in scope.detectors and not scope.dimension:
-            problems.append(f"{where} concentrates over nothing — it needs a dimension")
+            problems.append(
+                f"{where} concentrates over nothing — it needs a dimension"
+            )
         if "rank_movement" in scope.detectors and not scope.dimension:
-            problems.append(f"{where} ranks nothing — rank_movement needs a dimension")
+            problems.append(
+                f"{where} ranks nothing — rank_movement needs a dimension"
+            )
 
     for check in config.data_health:
         if check.table not in catalog.tables:
-            problems.append(f"data-health check names unknown table {check.table!r}")
+            problems.append(
+                f"data-health check names unknown table {check.table!r}"
+            )
         elif check.watch_days > check.alert_days:
             problems.append(
                 f"data-health check on {check.table!r} watches later than it alerts"
@@ -1243,15 +1399,23 @@ def _persona_problems(catalog: Catalog) -> list[str]:
         where = f"persona {persona.id!r}"
         for analysis_id in persona.analyses:
             if analysis_id not in catalog.analyses:
-                problems.append(f"{where} names unknown analysis {analysis_id!r}")
+                problems.append(
+                    f"{where} names unknown analysis {analysis_id!r}"
+                )
         for scope_id in persona.signal_scopes:
             if scope_id not in catalog.signals.scopes:
-                problems.append(f"{where} names unknown signal scope {scope_id!r}")
+                problems.append(
+                    f"{where} names unknown signal scope {scope_id!r}"
+                )
         for worklist_id in persona.worklists:
             if worklist_id not in catalog.worklists.presets:
-                problems.append(f"{where} names unknown worklist {worklist_id!r}")
+                problems.append(
+                    f"{where} names unknown worklist {worklist_id!r}"
+                )
         if not persona.analyses:
-            problems.append(f"{where} leads with nothing — its briefing would be empty")
+            problems.append(
+                f"{where} leads with nothing — its briefing would be empty"
+            )
     return problems
 
 
@@ -1263,32 +1427,50 @@ def _cross_validate(catalog: Catalog) -> None:
 
     for column in catalog.columns.values():
         if column.table not in known_tables:
-            problems.append(f"column {column.id!r} references unknown table {column.table!r}")
+            problems.append(
+                f"column {column.id!r} references unknown table {column.table!r}"
+            )
         if column.decode and column.decode not in catalog.enums:
-            problems.append(f"column {column.id!r} decodes with unknown enum {column.decode!r}")
+            problems.append(
+                f"column {column.id!r} decodes with unknown enum {column.decode!r}"
+            )
 
     for dim in catalog.dimensions.values():
         if dim.is_time:
             continue
         if dim.table not in known_tables:
-            problems.append(f"dimension {dim.id!r} references unknown table {dim.table!r}")
+            problems.append(
+                f"dimension {dim.id!r} references unknown table {dim.table!r}"
+            )
         if dim.decode and dim.decode not in catalog.enums:
-            problems.append(f"dimension {dim.id!r} decodes with unknown enum {dim.decode!r}")
+            problems.append(
+                f"dimension {dim.id!r} decodes with unknown enum {dim.decode!r}"
+            )
         if dim.sort_expression and not dim.expression:
-            problems.append(f"dimension {dim.id!r} has a sort expression but no expression")
+            problems.append(
+                f"dimension {dim.id!r} has a sort expression but no expression"
+            )
 
     for metric in catalog.metrics.values():
         if metric.base_table not in known_tables:
-            problems.append(f"metric {metric.id!r} has unknown base table {metric.base_table!r}")
+            problems.append(
+                f"metric {metric.id!r} has unknown base table {metric.base_table!r}"
+            )
         if metric.grain == "point_in_time" and not (
-            metric.as_of_column or metric.as_of_function or metric.no_time_travel
+            metric.as_of_column
+            or metric.as_of_function
+            or metric.no_time_travel
             or metric.year_column
         ):
             problems.append(
                 f"metric {metric.id!r} is point_in_time but declares no as_of_column — the "
                 "compiler could not pin it to a date and would silently average it"
             )
-        if metric.as_of_column and not metric.as_of_key and not metric.as_of_function:
+        if (
+            metric.as_of_column
+            and not metric.as_of_key
+            and not metric.as_of_function
+        ):
             problems.append(
                 f"metric {metric.id!r} has an as_of_column but no as_of_key, so the "
                 "compiler cannot collapse the event log to one row per entity"
@@ -1304,7 +1486,9 @@ def _cross_validate(catalog: Catalog) -> None:
                 "is nothing for a weight to weight"
             )
         elif weight not in catalog.metrics:
-            problems.append(f"metric {metric.id!r} weights by unknown metric {weight!r}")
+            problems.append(
+                f"metric {metric.id!r} weights by unknown metric {weight!r}"
+            )
         elif catalog.metrics[weight].base_table != metric.base_table:
             # A weight drawn from a different table is a different population, so the mix
             # and rate effects would stop summing to the change they claim to explain.
@@ -1322,7 +1506,9 @@ def _cross_validate(catalog: Catalog) -> None:
     for join in catalog.joins:
         for side in (join.left, join.right):
             if side not in known_tables:
-                problems.append(f"join {join.id!r} references unknown table {side!r}")
+                problems.append(
+                    f"join {join.id!r} references unknown table {side!r}"
+                )
 
     # Every non-hub fact table a metric reads must be able to reach the hub, or its metrics
     # can never be grouped by product/branch/scheme.
@@ -1340,7 +1526,9 @@ def _cross_validate(catalog: Catalog) -> None:
             )
 
     if problems:
-        raise CatalogError("catalog validation failed:\n  - " + "\n  - ".join(problems))
+        raise CatalogError(
+            "catalog validation failed:\n  - " + "\n  - ".join(problems)
+        )
 
 
 def _version(paths: Iterable[Path]) -> str:
@@ -1357,9 +1545,17 @@ def get_catalog() -> Catalog:
     version_paths = [
         ACTIVE_DEFS_DIR / name
         for name in (
-            "tables.yaml", "columns.yaml", "dimensions.yaml", "metrics.yaml",
-            "joins.yaml", "enums.yaml", "drill.yaml", "analyses.yaml",
-            "worklists.yaml", "signals.yaml", "personas.yaml",
+            "tables.yaml",
+            "columns.yaml",
+            "dimensions.yaml",
+            "metrics.yaml",
+            "joins.yaml",
+            "enums.yaml",
+            "drill.yaml",
+            "analyses.yaml",
+            "worklists.yaml",
+            "signals.yaml",
+            "personas.yaml",
         )
     ]
     catalog = Catalog(

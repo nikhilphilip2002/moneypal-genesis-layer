@@ -12,6 +12,7 @@ Spreadsheets and CSVs have no page concept and carry ``page=None``.
 Output rows:
     {"path", "document", "source_url", "page", "chunk_index", "text"}
 """
+
 from __future__ import annotations
 
 import csv
@@ -90,7 +91,12 @@ def extract(path: Path) -> list[dict]:
     try:
         pages = extract_pages(path)
     except Exception as exc:  # noqa: BLE001 - a bad file is data, not a program error
-        log.warning("[extract] unreadable, skipped: %s (%s: %s)", path.name, type(exc).__name__, exc)
+        log.warning(
+            "[extract] unreadable, skipped: %s (%s: %s)",
+            path.name,
+            type(exc).__name__,
+            exc,
+        )
         return []
     for page, text in pages:
         if not text.strip():

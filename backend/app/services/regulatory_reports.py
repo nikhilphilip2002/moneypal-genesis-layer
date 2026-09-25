@@ -40,24 +40,49 @@ class ReportDefinition:
 
 REPORTS: Dict[str, ReportDefinition] = {
     "dnbs02": ReportDefinition(
-        "dnbs02", "R039", "DNBS02 — Important Financial Parameters", "quarterly",
-        "DNBS02_Blank_Template.xlsx", "dnbs02", "Capital, assets, income, asset quality and annexures.",
+        "dnbs02",
+        "R039",
+        "DNBS02 — Important Financial Parameters",
+        "quarterly",
+        "DNBS02_Blank_Template.xlsx",
+        "dnbs02",
+        "Capital, assets, income, asset quality and annexures.",
     ),
     "dnbs13": ReportDefinition(
-        "dnbs13", "R233", "DNBS13 — Overseas Investment Details", "quarterly",
-        "DNBS13_Blank_Template.xlsx", "dnbs13", "Overseas JV/WOS investment and supervision details.",
+        "dnbs13",
+        "R233",
+        "DNBS13 — Overseas Investment Details",
+        "quarterly",
+        "DNBS13_Blank_Template.xlsx",
+        "dnbs13",
+        "Overseas JV/WOS investment and supervision details.",
     ),
     "dnbs4a": ReportDefinition(
-        "dnbs4a", "R234", "DNBS4A — Short-Term Dynamic Liquidity", "quarterly",
-        "DNBS4A_Blank_Template.xlsx", "dnbs4a", "Quarterly short-term inflows, outflows and mismatch.",
+        "dnbs4a",
+        "R234",
+        "DNBS4A — Short-Term Dynamic Liquidity",
+        "quarterly",
+        "DNBS4A_Blank_Template.xlsx",
+        "dnbs4a",
+        "Quarterly short-term inflows, outflows and mismatch.",
     ),
     "dnbs4b_structural": ReportDefinition(
-        "dnbs4b_structural", "R228", "DNBS4B — Structural Liquidity", "monthly",
-        "DNBS4B_Blank_Template.xlsx", "dnbs4b", "Monthly structural-liquidity maturity ladder.",
+        "dnbs4b_structural",
+        "R228",
+        "DNBS4B — Structural Liquidity",
+        "monthly",
+        "DNBS4B_Blank_Template.xlsx",
+        "dnbs4b",
+        "Monthly structural-liquidity maturity ladder.",
     ),
     "dnbs4b_irs": ReportDefinition(
-        "dnbs4b_irs", "R228", "DNBS4B — Interest Rate Sensitivity", "monthly",
-        "DNBS4B_Blank_Template.xlsx", "dnbs4b", "Monthly interest-rate sensitivity statement.",
+        "dnbs4b_irs",
+        "R228",
+        "DNBS4B — Interest Rate Sensitivity",
+        "monthly",
+        "DNBS4B_Blank_Template.xlsx",
+        "dnbs4b",
+        "Monthly interest-rate sensitivity statement.",
     ),
 }
 
@@ -80,11 +105,14 @@ def _find_row(ws, label: str, within: Optional[Tuple[int, int]] = None) -> int:
     target = _norm(label)
     lo, hi = within or (1, ws.max_row)
     matches = [
-        row for row in range(lo, min(hi, ws.max_row) + 1)
+        row
+        for row in range(lo, min(hi, ws.max_row) + 1)
         if _norm(ws.cell(row, 2).value).startswith(target)
     ]
     if len(matches) != 1:
-        raise ReportError(f"{ws.title}: label {label!r} matched rows {matches}")
+        raise ReportError(
+            f"{ws.title}: label {label!r} matched rows {matches}"
+        )
     return matches[0]
 
 
@@ -100,7 +128,8 @@ def _set_label_value(ws, label: str, value: Any) -> bool:
 def _bucket_columns(ws, header_row: int, expected: int) -> List[int]:
     columns: List[int] = []
     total_candidates = [
-        col for col in range(3, ws.max_column + 1)
+        col
+        for col in range(3, ws.max_column + 1)
         if _norm(ws.cell(header_row, col).value) == "total"
     ]
     last_col = total_candidates[0] if total_candidates else ws.max_column + 1
@@ -120,11 +149,14 @@ def _bucket_columns(ws, header_row: int, expected: int) -> List[int]:
 def _header_column(ws, header_row: int, label: str) -> int:
     target = _norm(label)
     matches = [
-        col for col in range(3, ws.max_column + 1)
+        col
+        for col in range(3, ws.max_column + 1)
         if _norm(ws.cell(header_row, col).value).startswith(target)
     ]
     if len(matches) != 1:
-        raise ReportError(f"{ws.title}: header {label!r} matched columns {matches}")
+        raise ReportError(
+            f"{ws.title}: header {label!r} matched columns {matches}"
+        )
     return matches[0]
 
 
@@ -142,11 +174,20 @@ def _write_vector(
     for col, value in zip(columns, values):
         ws.cell(row, col).value = round(value, 2)
     if total:
-        ws.cell(row, _header_column(ws, header_row, "Total")).value = round(sum(values), 2)
+        ws.cell(row, _header_column(ws, header_row, "Total")).value = round(
+            sum(values), 2
+        )
     return row
 
 
-def _write_cumulative(ws, label: str, values: Sequence[float], *, header_row: int, within: Tuple[int, int]) -> None:
+def _write_cumulative(
+    ws,
+    label: str,
+    values: Sequence[float],
+    *,
+    header_row: int,
+    within: Tuple[int, int],
+) -> None:
     running = 0.0
     cumulative: List[float] = []
     for value in values:
@@ -157,7 +198,9 @@ def _write_cumulative(ws, label: str, values: Sequence[float], *, header_row: in
 
 def _stamp_report_sheet(ws, end_date: str, *, quarter: bool = False) -> None:
     display = dt.date.fromisoformat(end_date).strftime("%d-%b-%Y").upper()
-    ws["B5"] = f"Reporting {'Quarter' if quarter else 'Period'} End Date :{display}"
+    ws["B5"] = (
+        f"Reporting {'Quarter' if quarter else 'Period'} End Date :{display}"
+    )
 
 
 def _fill_common_workbook_metadata(
@@ -168,13 +211,17 @@ def _fill_common_workbook_metadata(
     report_mode: str = "regulatory",
 ) -> None:
     frequency_label = (
-        "Custom (Internal)" if report_mode == "custom" else definition.frequency.capitalize()
+        "Custom (Internal)"
+        if report_mode == "custom"
+        else definition.frequency.capitalize()
     )
     for name in ("FilingInfo", "Filing Info"):
         if name not in wb.sheetnames:
             continue
         ws = wb[name]
-        _set_label_value(ws, "Return Name", definition.name.split("—", 1)[-1].strip())
+        _set_label_value(
+            ws, "Return Name", definition.name.split("—", 1)[-1].strip()
+        )
         _set_label_value(ws, "Return Code", definition.return_code)
         _set_label_value(ws, "Reporting frequency", frequency_label)
         _set_label_value(ws, "Return Reporting Frequency", frequency_label)
@@ -192,7 +239,9 @@ def _parse_request(
     end_date: Optional[str],
 ) -> Tuple[str, str]:
     if bool(start_date) != bool(end_date):
-        raise ReportError("Custom reports require both start_date and end_date.")
+        raise ReportError(
+            "Custom reports require both start_date and end_date."
+        )
     if start_date and end_date:
         try:
             start = dt.date.fromisoformat(start_date)
@@ -202,7 +251,9 @@ def _parse_request(
                 f"Dates must be ISO YYYY-MM-DD (got {start_date!r}..{end_date!r})."
             ) from exc
         if end < start:
-            raise ReportError(f"Period end {end_date} precedes period start {start_date}.")
+            raise ReportError(
+                f"Period end {end_date} precedes period start {start_date}."
+            )
         return start.isoformat(), end.isoformat()
     requested_frequency = (frequency or definition.frequency).lower()
     if requested_frequency != definition.frequency:
@@ -231,7 +282,13 @@ def _monthly_periods(dates: Iterable[str]) -> List[Dict[str, str]]:
         next_day = date + dt.timedelta(days=1)
         if next_day.month == date.month:
             continue
-        out.append({"value": date.strftime("%Y-%m"), "label": date.strftime("%B %Y"), "end_date": value})
+        out.append(
+            {
+                "value": date.strftime("%Y-%m"),
+                "label": date.strftime("%B %Y"),
+                "end_date": value,
+            }
+        )
     return list(reversed(out))
 
 
@@ -249,7 +306,13 @@ def _quarterly_periods(dates: Iterable[str]) -> List[Dict[str, str]]:
             fy, quarter = date.year, "Q3"
         else:
             fy, quarter = date.year - 1, "Q4"
-        out.append({"value": f"{fy}-{quarter}", "label": f"{quarter} FY{str(fy + 1)[-2:]}", "end_date": value})
+        out.append(
+            {
+                "value": f"{fy}-{quarter}",
+                "label": f"{quarter} FY{str(fy + 1)[-2:]}",
+                "end_date": value,
+            }
+        )
     return list(reversed(out))
 
 
@@ -275,7 +338,11 @@ def get_periods(report_id: str) -> Dict[str, Any]:
         return dnbs02_service.get_reportable_periods()
     with db_cursor() as (_conn, cur):
         dates = _available_alm_dates(cur)
-    periods = _monthly_periods(dates) if definition.frequency == "monthly" else _quarterly_periods(dates)
+    periods = (
+        _monthly_periods(dates)
+        if definition.frequency == "monthly"
+        else _quarterly_periods(dates)
+    )
     return {
         definition.frequency: periods,
         "source_dates": dates,
@@ -323,14 +390,18 @@ def _require_alm_date(cur, end_date: str) -> None:
         (end_date,),
     )
     if not cur.fetchone()[0]:
-        cur.execute("SELECT MAX(nbfc_ason_date)::date FROM silver.nbfc_alm_main_detail_ii")
+        cur.execute(
+            "SELECT MAX(nbfc_ason_date)::date FROM silver.nbfc_alm_main_detail_ii"
+        )
         latest = cur.fetchone()[0]
         raise ReportError(
             f"No ALM snapshot exists for period end {end_date}; latest is {_date_only(latest) if latest else 'none'}."
         )
 
 
-def _report_envelope(definition: ReportDefinition, start: str, end: str) -> Dict[str, Any]:
+def _report_envelope(
+    definition: ReportDefinition, start: str, end: str
+) -> Dict[str, Any]:
     return {
         "report_id": definition.id,
         "return_code": definition.return_code,
@@ -346,7 +417,9 @@ def _report_envelope(definition: ReportDefinition, start: str, end: str) -> Dict
     }
 
 
-def _build_dnbs13(definition: ReportDefinition, start: str, end: str) -> Dict[str, Any]:
+def _build_dnbs13(
+    definition: ReportDefinition, start: str, end: str
+) -> Dict[str, Any]:
     data = _report_envelope(definition, start, end)
     with db_cursor() as (_conn, cur):
         approved_values = load_approved_values(cur, definition.id, end)
@@ -401,11 +474,16 @@ def _build_dnbs13(definition: ReportDefinition, start: str, end: str) -> Dict[st
             ),
         }
     }
-    data["summary"] = {"populated_rows": 0, "message": "Awaiting approved DNBS13 applicability data."}
+    data["summary"] = {
+        "populated_rows": 0,
+        "message": "Awaiting approved DNBS13 applicability data.",
+    }
     return data
 
 
-def _build_alm_report(definition: ReportDefinition, start: str, end: str) -> Dict[str, Any]:
+def _build_alm_report(
+    definition: ReportDefinition, start: str, end: str
+) -> Dict[str, Any]:
     data = _report_envelope(definition, start, end)
     with db_cursor() as (_conn, cur):
         _require_alm_date(cur, end)
@@ -430,12 +508,16 @@ def _build_alm_report(definition: ReportDefinition, start: str, end: str) -> Dic
             "status": "ok" if approved_values else "no_source",
             "row_count": len(approved_values),
             **(
-                {"note": "Approved supplemental PostgreSQL values populate unsupported cells."}
+                {
+                    "note": "Approved supplemental PostgreSQL values populate unsupported cells."
+                }
                 if approved_values
-                else {"error": (
-                    "The populated ALM fact contains loan receivables only. Unsupported liability, "
-                    "investment and OBS lines remain blank."
-                )}
+                else {
+                    "error": (
+                        "The populated ALM fact contains loan receivables only. Unsupported liability, "
+                        "investment and OBS lines remain blank."
+                    )
+                }
             ),
         },
     }
@@ -465,13 +547,19 @@ def get_report_data(
     definition = REPORTS.get(report_id)
     if not definition:
         raise ReportError(f"Unknown report {report_id!r}")
-    custom_request = bool(start_date or end_date) or frequency.lower().strip() == "custom"
+    custom_request = (
+        bool(start_date or end_date) or frequency.lower().strip() == "custom"
+    )
     if report_id == "dnbs02":
         return dnbs02_service.get_dnbs02_report_data(
-            frequency=frequency or "quarterly", period=period,
-            start_date=start_date, end_date=end_date,
+            frequency=frequency or "quarterly",
+            period=period,
+            start_date=start_date,
+            end_date=end_date,
         )
-    start, end = _parse_request(definition, frequency, period, start_date, end_date)
+    start, end = _parse_request(
+        definition, frequency, period, start_date, end_date
+    )
     if report_id == "dnbs13":
         data = _build_dnbs13(definition, start, end)
     else:
@@ -488,42 +576,96 @@ def get_report_data(
     return data
 
 
-def _write_dnbs13(wb, definition: ReportDefinition, data: Dict[str, Any]) -> None:
+def _write_dnbs13(
+    wb, definition: ReportDefinition, data: Dict[str, Any]
+) -> None:
     _fill_common_workbook_metadata(
-        wb, definition, data["start_date"], data["end_date"], data.get("report_mode", "regulatory")
+        wb,
+        definition,
+        data["start_date"],
+        data["end_date"],
+        data.get("report_mode", "regulatory"),
     )
     _stamp_report_sheet(wb["DNBS13"], data["end_date"])
 
 
-def _write_dnbs4a(wb, definition: ReportDefinition, data: Dict[str, Any]) -> None:
+def _write_dnbs4a(
+    wb, definition: ReportDefinition, data: Dict[str, Any]
+) -> None:
     _fill_common_workbook_metadata(
-        wb, definition, data["start_date"], data["end_date"], data.get("report_mode", "regulatory")
+        wb,
+        definition,
+        data["start_date"],
+        data["end_date"],
+        data.get("report_mode", "regulatory"),
     )
     ws = wb["DNBS4AShortTermDynamicLiquidity"]
     _stamp_report_sheet(ws, data["end_date"], quarter=True)
     flows = data["cashflows_thousands"]
     # DNBS4A collapses the fourth and fifth structural buckets into 1-3 months.
-    interest = [flows["I"][0], flows["I"][1], flows["I"][2], flows["I"][3] + flows["I"][4], flows["I"][5]]
-    _write_vector(ws, "6 Interest inflow on performing Advances", interest, header_row=10, within=(38, 88))
-    _write_vector(ws, "TOTAL INFLOWS", interest, header_row=10, within=(38, 88))
+    interest = [
+        flows["I"][0],
+        flows["I"][1],
+        flows["I"][2],
+        flows["I"][3] + flows["I"][4],
+        flows["I"][5],
+    ]
+    _write_vector(
+        ws,
+        "6 Interest inflow on performing Advances",
+        interest,
+        header_row=10,
+        within=(38, 88),
+    )
+    _write_vector(
+        ws, "TOTAL INFLOWS", interest, header_row=10, within=(38, 88)
+    )
     _write_vector(ws, "C Mismatch", interest, header_row=10, within=(80, 88))
-    _write_cumulative(ws, "D Cumulative mismatch", interest, header_row=10, within=(80, 88))
+    _write_cumulative(
+        ws, "D Cumulative mismatch", interest, header_row=10, within=(80, 88)
+    )
 
 
-def _write_dnbs4b(wb, definition: ReportDefinition, data: Dict[str, Any]) -> None:
+def _write_dnbs4b(
+    wb, definition: ReportDefinition, data: Dict[str, Any]
+) -> None:
     _fill_common_workbook_metadata(
-        wb, definition, data["start_date"], data["end_date"], data.get("report_mode", "regulatory")
+        wb,
+        definition,
+        data["start_date"],
+        data["end_date"],
+        data.get("report_mode", "regulatory"),
     )
     flows = data["cashflows_thousands"]
     total = flows["total"]
 
     structural = wb["DNBS4BStructuralLiquidity"]
     _stamp_report_sheet(structural, data["end_date"])
-    for label in ("Advances (Performing)", "(ii)  Term Loans", "(a)  Through Regular Payment Schedule"):
-        _write_vector(structural, label, total, header_row=10, within=(139, 194))
-    _write_vector(structural, "B.  TOTAL INFLOWS", total, header_row=10, within=(190, 194))
-    _write_vector(structural, "C.  Mismatch", total, header_row=10, within=(194, 198))
-    _write_cumulative(structural, "D.  Cumulative Mismatch", total, header_row=10, within=(194, 198))
+    for label in (
+        "Advances (Performing)",
+        "(ii)  Term Loans",
+        "(a)  Through Regular Payment Schedule",
+    ):
+        _write_vector(
+            structural, label, total, header_row=10, within=(139, 194)
+        )
+    _write_vector(
+        structural,
+        "B.  TOTAL INFLOWS",
+        total,
+        header_row=10,
+        within=(190, 194),
+    )
+    _write_vector(
+        structural, "C.  Mismatch", total, header_row=10, within=(194, 198)
+    )
+    _write_cumulative(
+        structural,
+        "D.  Cumulative Mismatch",
+        total,
+        header_row=10,
+        within=(194, 198),
+    )
 
     irs = wb["DNBS4BIRS"]
     _stamp_report_sheet(irs, data["end_date"])
@@ -531,9 +673,13 @@ def _write_dnbs4b(wb, definition: ReportDefinition, data: Dict[str, Any]) -> Non
     # repricing flag for product 16. Populate the provable parent rows only.
     for label in ("5 Advances (Performing)", "(ii) Term loans"):
         _write_vector(irs, label, total, header_row=10, within=(135, 188))
-    _write_vector(irs, "B TOTAL INFLOWS", total, header_row=10, within=(185, 192))
+    _write_vector(
+        irs, "B TOTAL INFLOWS", total, header_row=10, within=(185, 192)
+    )
     _write_vector(irs, "C Mismatch", total, header_row=10, within=(185, 192))
-    _write_cumulative(irs, "D Cumulative mismatch", total, header_row=10, within=(185, 192))
+    _write_cumulative(
+        irs, "D Cumulative mismatch", total, header_row=10, within=(185, 192)
+    )
 
 
 def generate_report_excel(
@@ -548,8 +694,10 @@ def generate_report_excel(
         raise ReportError(f"Unknown report {report_id!r}")
     if report_id == "dnbs02":
         return dnbs02_service.generate_dnbs02_excel(
-            frequency=frequency or "quarterly", period=period,
-            start_date=start_date, end_date=end_date,
+            frequency=frequency or "quarterly",
+            period=period,
+            start_date=start_date,
+            end_date=end_date,
         )
     data = get_report_data(report_id, frequency, period, start_date, end_date)
     path = ASSET_DIR / definition.template

@@ -17,15 +17,27 @@ async def complete_answer(
 
     async def on_reasoning(text: str) -> None:
         if trace_id is not None:
-            await emit.put(sse("trace_delta", {
-                "id": trace_id, "reasoning_delta": text,
-            }))
+            await emit.put(
+                sse(
+                    "trace_delta",
+                    {
+                        "id": trace_id,
+                        "reasoning_delta": text,
+                    },
+                )
+            )
 
     async def on_tool_call(tool_call: dict[str, Any]) -> None:
         if trace_id is not None:
-            await emit.put(sse("trace_delta", {
-                "id": trace_id, "tool_call": tool_call,
-            }))
+            await emit.put(
+                sse(
+                    "trace_delta",
+                    {
+                        "id": trace_id,
+                        "tool_call": tool_call,
+                    },
+                )
+            )
 
     # A model response is a permanent message, even when it also contains a native tool
     # call. The client reports the boundary so the UI can preserve separate messages; it

@@ -59,7 +59,9 @@ class TestPrivileges:
 
     def test_cannot_read_legacy_compatibility_view(self):
         with nlq_db.readonly_cursor() as (_conn, cur):
-            error = _fails(cur, "SELECT count(*) FROM gold.loan_account_master")
+            error = _fails(
+                cur, "SELECT count(*) FROM gold.loan_account_master"
+            )
             assert any(
                 message in error.lower()
                 for message in ("permission denied", "does not exist")
@@ -96,7 +98,11 @@ class TestWritesAreRejected:
             error = _fails(cur, sql)
             conn.rollback()
         lowered = error.lower()
-        assert "denied" in lowered or "read-only" in lowered or "cannot " in lowered
+        assert (
+            "denied" in lowered
+            or "read-only" in lowered
+            or "cannot " in lowered
+        )
 
     def test_write_denied_even_in_an_explicit_read_write_transaction(self):
         """`default_transaction_read_only` is only a default — a session can turn it off.
@@ -125,7 +131,9 @@ class TestSchemaIsolation:
 
     def test_silver_is_unreachable(self):
         with nlq_db.readonly_cursor() as (conn, cur):
-            error = _fails(cur, "SELECT count(*) FROM silver.loan_account_master")
+            error = _fails(
+                cur, "SELECT count(*) FROM silver.loan_account_master"
+            )
             conn.rollback()
         assert "denied" in error.lower() or "does not exist" in error.lower()
 

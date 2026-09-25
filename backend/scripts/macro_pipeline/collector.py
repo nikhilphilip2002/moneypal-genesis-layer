@@ -9,6 +9,7 @@ the User-Agent identifies the crawler honestly, and conditional GETs (ETag /
 Last-Modified) mean an unchanged weekly refresh costs a handful of 304s instead of
 re-downloading tens of megabytes.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -32,13 +33,37 @@ USER_AGENT = "MoneypalGenesisBot/1.0 (macro intelligence ingest; +contact via re
 # File kinds the collector treats as macro intelligence data.
 DOWNLOAD_EXTENSIONS = {".pdf", ".csv", ".xlsx", ".xls", ".txt"}
 SKIP_EXTENSIONS = {
-    ".jpg", ".jpeg", ".png", ".gif", ".svg", ".bmp", ".webp", ".zip", ".rar",
-    ".doc", ".docx", ".ppt", ".pptx", ".xml", ".js", ".css", ".woff", ".woff2",
+    ".jpg",
+    ".jpeg",
+    ".png",
+    ".gif",
+    ".svg",
+    ".bmp",
+    ".webp",
+    ".zip",
+    ".rar",
+    ".doc",
+    ".docx",
+    ".ppt",
+    ".pptx",
+    ".xml",
+    ".js",
+    ".css",
+    ".woff",
+    ".woff2",
 }
 # URL path segments that mark a listing page worth descending into on a big portal.
 DISCOVERY_PATH_HINTS = (
-    "statistics", "press-release", "publication", "data", "download",
-    "reports", "economic-survey", "annual-report", "dashboard", "releases",
+    "statistics",
+    "press-release",
+    "publication",
+    "data",
+    "download",
+    "reports",
+    "economic-survey",
+    "annual-report",
+    "dashboard",
+    "releases",
 )
 
 
@@ -51,7 +76,9 @@ class DownloadRecord:
     content_type: str
     etag: str = ""
     last_modified: str = ""
-    unchanged: bool = False   # server answered 304, or bytes matched the previous run
+    unchanged: bool = (
+        False  # server answered 304, or bytes matched the previous run
+    )
 
 
 @dataclass
@@ -74,14 +101,19 @@ def load_sources() -> list[dict]:
     seen: dict[str, int] = {}
 
     def slug_for(host: str) -> str:
-        base = "".join(c if c.isalnum() else "_" for c in host.lower().removeprefix("www."))
+        base = "".join(
+            c if c.isalnum() else "_"
+            for c in host.lower().removeprefix("www.")
+        )
         base = base.strip("_") or "source"
         index = seen.get(base, 0) + 1
         seen[base] = index
         return f"{base}_{index}" if index > 1 else base
 
     sources: list[dict] = []
-    for line in settings.macro_sources_file.read_text(encoding="utf-8").splitlines():
+    for line in settings.macro_sources_file.read_text(
+        encoding="utf-8"
+    ).splitlines():
         url = line.split("#", 1)[0].strip()
         if not url:
             continue
@@ -112,7 +144,9 @@ def get_session() -> requests.Session:
 
 def _throttle() -> None:
     global _last_request_at
-    wait = settings.macro_request_delay_s - (time.monotonic() - _last_request_at)
+    wait = settings.macro_request_delay_s - (
+        time.monotonic() - _last_request_at
+    )
     if wait > 0:
         time.sleep(wait)
     _last_request_at = time.monotonic()
@@ -151,17 +185,25 @@ def _suffix(url: str) -> str:
 def _safe_filename(url: str) -> str:
     """Filesystem-safe name; hash-prefixed when the source name is generic."""
     parsed = urllib.parse.urlparse(url)
-    name = re.sub(r"[\\/*?:\"<>|]", "_", Path(urllib.parse.unquote(parsed.path)).name or "")
+    name = re.sub(
+        r"[\\/*?:\"<>|]",
+        "_",
+        Path(urllib.parse.unquote(parsed.path)).name or "",
+    )
     name = name.strip(" ._") or "document.txt"
     if Path(name).suffix.lower() not in DOWNLOAD_EXTENSIONS:
         name = f"{Path(name).stem if '.' in name else name}.txt"
-    if re.fullmatch(r"(index|report|download|document|news|pub|lr)[.\w]*", name, re.I):
+    if re.fullmatch(
+        r"(index|report|download|document|news|pub|lr)[.\w]*", name, re.I
+    ):
         name = f"{hashlib.sha1(url.encode()).hexdigest()[:10]}__{name}"
     return name
 
 
 # --- HTTP -------------------------------------------------------------------------
-def _fetch(url: str, stream: bool = False, headers: dict | None = None) -> requests.Response:
+def _fetch(
+    url: str, stream: bool = False, headers: dict | None = None
+) -> requests.Response:
     _throttle()
     response = get_session().get(
         url,
@@ -175,7 +217,9 @@ def _fetch(url: str, stream: bool = False, headers: dict | None = None) -> reque
     return response
 
 
-def _download(url: str, output_dir: Path, previous: dict | None) -> DownloadRecord:
+def _download(
+    url: str, output_dir: Path, previous: dict | None
+) -> DownloadRecord:
     """Fetch one file, using a conditional GET when we have validators from last run."""
     conditional: dict[str, str] = {}
     if previous:
@@ -185,11 +229,15 @@ def _download(url: str, output_dir: Path, previous: dict | None) -> DownloadReco
             conditional["If-Modified-Since"] = previous["last_modified"]
 
     response = _fetch(url, stream=True, headers=conditional)
-    content_type = response.headers.get("content-type", "").split(";")[0].lower()
+    content_type = (
+        response.headers.get("content-type", "").split(";")[0].lower()
+    )
 
     if response.status_code == 304 and previous:
         response.close()
-        log.info("[collector] unchanged (304): %s", Path(previous["path"]).name)
+        log.info(
+            "[collector] unchanged (304): %s", Path(previous["path"]).name
+        )
         return DownloadRecord(
             url=url,
             path=Path(previous["path"]),
@@ -204,13 +252,17 @@ def _download(url: str, output_dir: Path, previous: dict | None) -> DownloadReco
     # Some portals answer a direct file URL with a login page or an HTML error.
     if content_type in {"text/html", "application/xhtml+xml"}:
         response.close()
-        raise PermissionError(f"expected a file, got HTML (auth wall?): {response.url}")
+        raise PermissionError(
+            f"expected a file, got HTML (auth wall?): {response.url}"
+        )
 
     declared = int(response.headers.get("content-length") or 0)
     cap = settings.macro_max_download_mb * 1024 * 1024
     if declared > cap:
         response.close()
-        raise ValueError(f"exceeds {settings.macro_max_download_mb} MB cap ({declared} bytes)")
+        raise ValueError(
+            f"exceeds {settings.macro_max_download_mb} MB cap ({declared} bytes)"
+        )
 
     # Stream with a running cap so a chunked response without content-length cannot
     # blow up memory on a mislabelled endpoint.
@@ -219,7 +271,9 @@ def _download(url: str, output_dir: Path, previous: dict | None) -> DownloadReco
         buffer.extend(block)
         if len(buffer) > cap:
             response.close()
-            raise ValueError(f"exceeds {settings.macro_max_download_mb} MB cap while streaming")
+            raise ValueError(
+                f"exceeds {settings.macro_max_download_mb} MB cap while streaming"
+            )
     raw = bytes(buffer)
 
     path = output_dir / _safe_filename(response.url or url)
@@ -239,9 +293,13 @@ def _download(url: str, output_dir: Path, previous: dict | None) -> DownloadReco
 
 
 # --- Crawl ------------------------------------------------------------------------
-def _crawl_site(source: dict, seen_urls: set[str], known: dict[str, dict]) -> CollectResult:
+def _crawl_site(
+    source: dict, seen_urls: set[str], known: dict[str, dict]
+) -> CollectResult:
     """BFS one source. ``known`` maps download URL -> previous-run state entry."""
-    result = CollectResult(source_slug=source["slug"], source_url=source["url"])
+    result = CollectResult(
+        source_slug=source["slug"], source_url=source["url"]
+    )
     output_dir = settings.macro_data_dir / source["slug"]
     output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -249,7 +307,10 @@ def _crawl_site(source: dict, seen_urls: set[str], known: dict[str, dict]) -> Co
     pages_seen = 0
 
     def try_download(target: str) -> None:
-        if target in seen_urls or len(result.downloaded) >= settings.macro_max_files_per_site:
+        if (
+            target in seen_urls
+            or len(result.downloaded) >= settings.macro_max_files_per_site
+        ):
             return
         seen_urls.add(target)
         if not _robots_allows(target):
@@ -260,7 +321,12 @@ def _crawl_site(source: dict, seen_urls: set[str], known: dict[str, dict]) -> Co
             record = _download(target, output_dir, known.get(target))
             result.downloaded.append(record)
             if not record.unchanged:
-                log.info("[%s] downloaded %s (%d bytes)", source["slug"], record.path.name, record.size)
+                log.info(
+                    "[%s] downloaded %s (%d bytes)",
+                    source["slug"],
+                    record.path.name,
+                    record.size,
+                )
         except PermissionError as exc:
             result.blocked.append(target)
             log.warning("[%s] blocked: %s (%s)", source["slug"], target, exc)
@@ -270,7 +336,11 @@ def _crawl_site(source: dict, seen_urls: set[str], known: dict[str, dict]) -> Co
 
     while queue and pages_seen < settings.macro_max_pages_per_site:
         url, depth = queue.pop(0)
-        if url in seen_urls or not _same_domain(url, source["url"]) or _suffix(url) in SKIP_EXTENSIONS:
+        if (
+            url in seen_urls
+            or not _same_domain(url, source["url"])
+            or _suffix(url) in SKIP_EXTENSIONS
+        ):
             continue
 
         if _suffix(url) in DOWNLOAD_EXTENSIONS:
@@ -294,7 +364,9 @@ def _crawl_site(source: dict, seen_urls: set[str], known: dict[str, dict]) -> Co
             continue
         pages_seen += 1
 
-        for anchor in BeautifulSoup(response.text, "lxml").find_all("a", href=True):
+        for anchor in BeautifulSoup(response.text, "lxml").find_all(
+            "a", href=True
+        ):
             href = anchor["href"].strip()
             if href.startswith(("mailto:", "javascript:", "tel:", "#")):
                 continue
@@ -327,7 +399,9 @@ def collect(known: dict[str, dict] | None = None) -> list[CollectResult]:
             result = _crawl_site(source, seen_urls, known)
         except Exception as exc:
             log.exception("collector failed for %s", source["url"])
-            result = CollectResult(source["slug"], source["url"], errors=[str(exc)])
+            result = CollectResult(
+                source["slug"], source["url"], errors=[str(exc)]
+            )
         results.append(result)
         log.info(
             "[%s] %d pages, %d files (%d unchanged), %d blocked, %d errors in %.1fs",

@@ -41,13 +41,18 @@ class TestGeneratedSql:
     def test_group_by_joins_through_the_hub(self):
         out = sql_for(metrics=["disbursement_total"], dimensions=["branch"])
         assert "JOIN gold.loan_accounts AS loan" in out
-        assert 'disbursement."company_code"::text = loan."company_code"::text' in out
+        assert (
+            'disbursement."company_code"::text = loan."company_code"::text'
+            in out
+        )
         assert 'loan."application_branch_code"' in out
 
     def test_company_code_is_always_in_the_join(self):
         """company_code takes two values; omitting it merges two entities' accounts that
         share an account number."""
-        out = sql_for(metrics=["collection_efficiency"], dimensions=["product"])
+        out = sql_for(
+            metrics=["collection_efficiency"], dimensions=["product"]
+        )
         assert "company_code" in out
 
     def test_every_value_is_a_bound_parameter(self):
@@ -62,7 +67,9 @@ class TestGeneratedSql:
         assert compiled.params["f0"] == "1"  # decoded to the product code
 
     def test_limit_is_capped_at_the_hard_ceiling(self):
-        compiled = compile_spec(spec(metrics=["loan_count"], limit=5000), today=TODAY)
+        compiled = compile_spec(
+            spec(metrics=["loan_count"], limit=5000), today=TODAY
+        )
         assert compiled.params["row_limit"] == 5000
 
     def test_time_grain_truncates_the_metrics_own_date_column(self):
@@ -75,11 +82,15 @@ class TestGeneratedSql:
 
     def test_dpd_bucket_sorts_by_band_not_alphabetically(self):
         """'1-30' must not sort before '0 (current)'."""
-        out = sql_for(metrics=["principal_outstanding"], dimensions=["dpd_bucket"])
+        out = sql_for(
+            metrics=["principal_outstanding"], dimensions=["dpd_bucket"]
+        )
         assert "CASE WHEN" in out and "THEN 0" in out
 
     def test_application_conversion_uses_folded_outcome_column(self):
-        out = sql_for(metrics=["application_count"], dimensions=["application_outcome"])
+        out = sql_for(
+            metrics=["application_count"], dimensions=["application_outcome"]
+        )
         assert "FROM gold.loan_applications AS application" in out
         assert "JOIN gold.loan_applications" not in out
         assert 'application."application_outcome_status"' in out
@@ -90,7 +101,11 @@ class TestGeneratedSql:
             sql_for(
                 metrics=["loan_count"],
                 dimensions=["month", "loan_agent"],
-                filters=[Filter(field="application_outcome", op="eq", value="disbursed")],
+                filters=[
+                    Filter(
+                        field="application_outcome", op="eq", value="disbursed"
+                    )
+                ],
             )
 
     def test_receipts_can_use_governed_loan_product(self):
@@ -100,7 +115,9 @@ class TestGeneratedSql:
         assert "SUM(payment_receipt.receipt_amount)" in out
 
     def test_vintage_metric_stays_at_aggregate_grain(self):
-        out = sql_for(metrics=["vintage_par30_rate"], dimensions=["months_on_book"])
+        out = sql_for(
+            metrics=["vintage_par30_rate"], dimensions=["months_on_book"]
+        )
         assert "FROM gold.loan_vintage_performance AS loan_vintage" in out
         assert "gold.loan_accounts" not in out
         assert "SUM(loan_vintage.accounts_overdue_over_30_days)" in out
@@ -135,7 +152,10 @@ class TestPointInTimeCollapse:
 
     def test_as_of_date_is_the_period_end(self):
         compiled = compile_spec(
-            spec(metrics=["par_30"], period=Period(start=date(2026, 1, 1), end=date(2026, 7, 1))),
+            spec(
+                metrics=["par_30"],
+                period=Period(start=date(2026, 1, 1), end=date(2026, 7, 1)),
+            ),
             today=TODAY,
         )
         assert compiled.as_of == date(2026, 7, 1)
@@ -149,28 +169,38 @@ class TestValidationGates:
 
     def test_unknown_dimension(self):
         with pytest.raises(CompileError, match="unknown dimension"):
-            compile_spec(spec(metrics=["loan_count"], dimensions=["salesperson"]), today=TODAY)
+            compile_spec(
+                spec(metrics=["loan_count"], dimensions=["salesperson"]),
+                today=TODAY,
+            )
 
     def test_metrics_from_different_fact_tables_are_refused(self):
         """Joining two fact tables to satisfy one query multiplies money."""
         with pytest.raises(CompileError, match="different source tables"):
             compile_spec(
-                spec(metrics=["disbursement_total", "collection_efficiency"]), today=TODAY
+                spec(metrics=["disbursement_total", "collection_efficiency"]),
+                today=TODAY,
             )
 
     def test_gl_cannot_be_grouped_by_loan_dimension(self):
         """No join path exists; GL branch codes are a different coding system."""
         with pytest.raises(CompileError):
             compile_spec(
-                spec(metrics=["gl_balance"], dimensions=["product"],
-                     period=Period(relative="this_fy")),
+                spec(
+                    metrics=["gl_balance"],
+                    dimensions=["product"],
+                    period=Period(relative="this_fy"),
+                ),
                 today=TODAY,
             )
 
     def test_whole_book_metric_cannot_be_back_dated(self):
         with pytest.raises(CompileError, match="cannot be back-dated"):
             compile_spec(
-                spec(metrics=["principal_outstanding_book"], period=Period(relative="last_fy")),
+                spec(
+                    metrics=["principal_outstanding_book"],
+                    period=Period(relative="last_fy"),
+                ),
                 today=TODAY,
             )
 
@@ -202,12 +232,19 @@ class TestFilters:
             spec(
                 metrics=["principal_outstanding_book"],
                 dimensions=["borrower"],
-                having=[Filter(field="principal_outstanding_book", op="eq", value=0)],
+                having=[
+                    Filter(
+                        field="principal_outstanding_book", op="eq", value=0
+                    )
+                ],
                 period=Period(relative="today"),
             ),
             today=TODAY,
         )
-        assert "HAVING SUM(loan.amount_given - loan.principal_paid_so_far) = :h0" in compiled.sql
+        assert (
+            "HAVING SUM(loan.amount_given - loan.principal_paid_so_far) = :h0"
+            in compiled.sql
+        )
         assert compiled.params["h0"] == 0
 
     def test_having_rejects_a_metric_not_selected(self):
@@ -215,42 +252,65 @@ class TestFilters:
             compile_spec(
                 spec(
                     metrics=["loan_count"],
-                    having=[Filter(field="sanctioned_amount", op="gt", value=0)],
+                    having=[
+                        Filter(field="sanctioned_amount", op="gt", value=0)
+                    ],
                 ),
                 today=TODAY,
             )
 
     def test_enum_synonym_decodes_to_a_code(self):
         compiled = compile_spec(
-            spec(metrics=["loan_count"],
-                 filters=[Filter(field="product", op="eq", value="microfinance")]),
+            spec(
+                metrics=["loan_count"],
+                filters=[
+                    Filter(field="product", op="eq", value="microfinance")
+                ],
+            ),
             today=TODAY,
         )
         assert compiled.params["f0"] == "13"
 
     def test_unknown_enum_text_is_passed_through_not_guessed(self):
         compiled = compile_spec(
-            spec(metrics=["loan_count"],
-                 filters=[Filter(field="product", op="eq", value="platinum")]),
+            spec(
+                metrics=["loan_count"],
+                filters=[Filter(field="product", op="eq", value="platinum")],
+            ),
             today=TODAY,
         )
-        assert compiled.params["f0"] == "platinum"  # will match nothing, and says so
+        assert (
+            compiled.params["f0"] == "platinum"
+        )  # will match nothing, and says so
 
     def test_in_filter_binds_a_list(self):
         compiled = compile_spec(
-            spec(metrics=["loan_count"],
-                 filters=[Filter(field="product", op="in", value=["gold loans", "MSME"])]),
+            spec(
+                metrics=["loan_count"],
+                filters=[
+                    Filter(
+                        field="product", op="in", value=["gold loans", "MSME"]
+                    )
+                ],
+            ),
             today=TODAY,
         )
         assert compiled.params["f0"] == ["1", "16"]
 
     def test_between_binds_two_parameters(self):
         compiled = compile_spec(
-            spec(metrics=["loan_count"],
-                 filters=[Filter(field="branch", op="between", value=[1000, 1100])]),
+            spec(
+                metrics=["loan_count"],
+                filters=[
+                    Filter(field="branch", op="between", value=[1000, 1100])
+                ],
+            ),
             today=TODAY,
         )
-        assert compiled.params["f0_lo"] == "1000" and compiled.params["f0_hi"] == "1100"
+        assert (
+            compiled.params["f0_lo"] == "1000"
+            and compiled.params["f0_hi"] == "1100"
+        )
 
 
 class TestBinding:

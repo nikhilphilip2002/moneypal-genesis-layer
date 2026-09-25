@@ -34,7 +34,9 @@ def add_category(req: NewRegulation):
     if not slug:
         raise HTTPException(400, "Display name must contain letters or digits")
     if rl.load_one(slug):
-        raise HTTPException(409, f"Regulation category '{slug}' already exists")
+        raise HTTPException(
+            409, f"Regulation category '{slug}' already exists"
+        )
     record = {
         "id": slug,
         "display_name": req.display_name,
@@ -71,7 +73,10 @@ def get_dnbs02_report(
     """Retrieve RBI DNBS-02 Return metrics for specified date frequency (monthly/quarterly/yearly) or custom date range."""
     try:
         return dnbs02_service.get_dnbs02_report_data(
-            frequency=frequency, period=period, start_date=start_date, end_date=end_date
+            frequency=frequency,
+            period=period,
+            start_date=start_date,
+            end_date=end_date,
         )
     except dnbs02_service.PeriodError as exc:
         # A period we cannot back with data is a client error, not a reason to invent one.
@@ -93,19 +98,29 @@ def export_dnbs02_excel(
     alongside it. It is a separate workbook so the filed return stays untouched.
     """
     if format not in ("filing", "lineage"):
-        raise HTTPException(400, f"Unknown format {format!r}; expected 'filing' or 'lineage'.")
+        raise HTTPException(
+            400, f"Unknown format {format!r}; expected 'filing' or 'lineage'."
+        )
     try:
         if format == "lineage":
             excel_bytes = dnbs02_lineage.generate_dnbs02_lineage_excel(
-                frequency=frequency, period=period, start_date=start_date, end_date=end_date
+                frequency=frequency,
+                period=period,
+                start_date=start_date,
+                end_date=end_date,
             )
         else:
             excel_bytes = dnbs02_service.generate_dnbs02_excel(
-                frequency=frequency, period=period, start_date=start_date, end_date=end_date
+                frequency=frequency,
+                period=period,
+                start_date=start_date,
+                end_date=end_date,
             )
     except dnbs02_service.PeriodError as exc:
         raise HTTPException(400, str(exc)) from exc
-    fn_period = f"{start_date}_to_{end_date}" if (start_date and end_date) else period
+    fn_period = (
+        f"{start_date}_to_{end_date}" if (start_date and end_date) else period
+    )
     stem = "RBI_DNBS02_Return" if format == "filing" else "RBI_DNBS02_Lineage"
     filename = f"{stem}_{fn_period}_{frequency}.xlsx"
     return Response(
@@ -160,7 +175,9 @@ def export_regulatory_report(
     except (regulatory_reports.ReportError, dnbs02_service.PeriodError) as exc:
         raise HTTPException(400, str(exc)) from exc
     selected_period = (
-        f"{start_date}_to_{end_date}" if start_date and end_date else (period or "report")
+        f"{start_date}_to_{end_date}"
+        if start_date and end_date
+        else (period or "report")
     )
     safe_period = selected_period.replace("/", "-")
     filename = f"RBI_{report_id.upper()}_{safe_period}.xlsx"
@@ -171,9 +188,10 @@ def export_regulatory_report(
     )
 
 
-
 @router.get("/{category_id}", response_model=IntelligenceResponse)
 def get_regulation_detail(category_id: str, refresh: bool = False):
     return brief_cache.cached(
-        f"regulatory:detail:{category_id}", lambda: regulatory.regulation_detail(category_id), refresh
+        f"regulatory:detail:{category_id}",
+        lambda: regulatory.regulation_detail(category_id),
+        refresh,
     )

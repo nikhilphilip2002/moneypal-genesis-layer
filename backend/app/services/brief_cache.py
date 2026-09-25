@@ -5,6 +5,7 @@ non-deterministic — an executive dashboard should not change content on every
 tab switch. Each brief is cached by key with a TTL; `?refresh=1` on the route
 forces regeneration.
 """
+
 from __future__ import annotations
 
 import json
@@ -36,7 +37,8 @@ def _conn() -> sqlite3.Connection:
 def get(cache_key: str, ttl: float = DEFAULT_TTL) -> Any | None:
     with _conn() as conn:
         row = conn.execute(
-            "SELECT payload, generated_at FROM briefs WHERE cache_key = ?", (cache_key,)
+            "SELECT payload, generated_at FROM briefs WHERE cache_key = ?",
+            (cache_key,),
         ).fetchone()
     if not row or time.time() - row[1] > ttl:
         return None

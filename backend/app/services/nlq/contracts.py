@@ -23,7 +23,17 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 # --------------------------------------------------------------------------------------
 
 FilterOp = Literal[
-    "eq", "ne", "in", "not_in", "gt", "gte", "lt", "lte", "between", "contains", "is_null"
+    "eq",
+    "ne",
+    "in",
+    "not_in",
+    "gt",
+    "gte",
+    "lt",
+    "lte",
+    "between",
+    "contains",
+    "is_null",
 ]
 """Operators the compiler knows how to bind. Anything else is a catalog/planner bug."""
 
@@ -51,8 +61,18 @@ Deliberately a closed set: an open-ended string would let the LLM invent periods
 compiler cannot honour, and "last year" is ambiguous enough here to be a `clarify`."""
 
 Unit = Literal[
-    "inr", "percent", "count", "days", "months", "years", "year", "ratio",
-    "text", "date", "datetime", "boolean",
+    "inr",
+    "percent",
+    "count",
+    "days",
+    "months",
+    "years",
+    "year",
+    "ratio",
+    "text",
+    "date",
+    "datetime",
+    "boolean",
 ]
 
 Sensitivity = Literal["public", "internal", "pii"]
@@ -107,15 +127,23 @@ class Filter(_Model):
         if self.op == "is_null":
             return self  # value is meaningless and ignored
         if self.value is None:
-            raise ValueError(f"filter on {self.field!r} with op {self.op!r} needs a value")
+            raise ValueError(
+                f"filter on {self.field!r} with op {self.op!r} needs a value"
+            )
         if self.op in ("in", "not_in"):
             if not isinstance(self.value, list) or not self.value:
-                raise ValueError(f"{self.op!r} on {self.field!r} needs a non-empty list")
+                raise ValueError(
+                    f"{self.op!r} on {self.field!r} needs a non-empty list"
+                )
         elif self.op == "between":
             if not isinstance(self.value, list) or len(self.value) != 2:
-                raise ValueError(f"'between' on {self.field!r} needs exactly two values")
+                raise ValueError(
+                    f"'between' on {self.field!r} needs exactly two values"
+                )
         elif isinstance(self.value, list):
-            raise ValueError(f"{self.op!r} on {self.field!r} takes a scalar, not a list")
+            raise ValueError(
+                f"{self.op!r} on {self.field!r} takes a scalar, not a list"
+            )
         return self
 
 
@@ -137,9 +165,15 @@ class Period(_Model):
     @model_validator(mode="after")
     def _check_bounds(self) -> "Period":
         if self.relative is None and self.start is None and self.end is None:
-            raise ValueError("period needs either `relative` or an explicit start/end")
-        if self.relative is not None and (self.start is not None or self.end is not None):
-            raise ValueError("period cannot combine `relative` with explicit start/end")
+            raise ValueError(
+                "period needs either `relative` or an explicit start/end"
+            )
+        if self.relative is not None and (
+            self.start is not None or self.end is not None
+        ):
+            raise ValueError(
+                "period cannot combine `relative` with explicit start/end"
+            )
         if self.relative is None and (self.start is None or self.end is None):
             raise ValueError("an explicit period needs both `start` and `end`")
         if self.start and self.end and self.start > self.end:
@@ -153,15 +187,21 @@ class Period(_Model):
 
 
 class OrderBy(_Model):
-    field: str = Field(description="A metric id or dimension id also present in the spec.")
+    field: str = Field(
+        description="A metric id or dimension id also present in the spec."
+    )
     direction: Literal["asc", "desc"] = "desc"
 
 
 class QuerySpec(_Model):
     """A question reduced to structure. Compiles to SQL with no LLM in the loop."""
 
-    metrics: list[str] = Field(min_length=1, description="Metric ids from metrics.yaml.")
-    dimensions: list[str] = Field(default_factory=list, description="Dimension ids to group by.")
+    metrics: list[str] = Field(
+        min_length=1, description="Metric ids from metrics.yaml."
+    )
+    dimensions: list[str] = Field(
+        default_factory=list, description="Dimension ids to group by."
+    )
     filters: list[Filter] = Field(default_factory=list)
     having: list[Filter] = Field(
         default_factory=list,
@@ -200,19 +240,28 @@ class QuerySpec(_Model):
         if not self.explain:
             return self
         if self.compare_to is None:
-            raise ValueError("explain needs `compare_to` — there is no change without one")
+            raise ValueError(
+                "explain needs `compare_to` — there is no change without one"
+            )
         if not self.dimensions:
-            raise ValueError("explain needs a dimension to attribute the change across")
+            raise ValueError(
+                "explain needs a dimension to attribute the change across"
+            )
         # `metrics[0]` is the subject. A ratio carries its denominator as a second metric so
         # the mix/rate split stays exact; anything beyond that is a multi-metric question
         # wearing an explanation's clothes.
         if len(self.metrics) > 2:
-            raise ValueError("explain decomposes one metric, optionally carrying its weight")
+            raise ValueError(
+                "explain decomposes one metric, optionally carrying its weight"
+            )
         return self
 
     @model_validator(mode="after")
     def _check_no_duplicates(self) -> "QuerySpec":
-        for name, ids in (("metrics", self.metrics), ("dimensions", self.dimensions)):
+        for name, ids in (
+            ("metrics", self.metrics),
+            ("dimensions", self.dimensions),
+        ):
             if len(set(ids)) != len(ids):
                 raise ValueError(f"duplicate entries in {name}")
         return self
@@ -221,7 +270,9 @@ class QuerySpec(_Model):
         """Stable hash for the plan/result cache. Key ordering is normalised so two
         semantically identical specs collide as intended."""
         payload = json.dumps(
-            self.model_dump(mode="json", exclude_none=True), sort_keys=True, separators=(",", ":")
+            self.model_dump(mode="json", exclude_none=True),
+            sort_keys=True,
+            separators=(",", ":"),
         )
         return hashlib.sha256(payload.encode()).hexdigest()
 
@@ -243,21 +294,51 @@ class LookupPlan(_Model):
 
     route: Literal["lookup"] = "lookup"
     selector: Literal[
-        "borrower_name", "customer_id", "loan_account", "agent_code", "agent_name",
-        "product_code", "branch", "gender"
+        "borrower_name",
+        "customer_id",
+        "loan_account",
+        "agent_code",
+        "agent_name",
+        "product_code",
+        "branch",
+        "gender",
     ]
     value: str
     detail: Literal[
-        "customer_summary", "loan_details", "repayment_history", "agent_details", "agent_count",
-        "agent_accounts", "agent_customers", "agent_directory", "branch_directory",
-        "branch_customers", "product_details", "account_sample",
+        "customer_summary",
+        "loan_details",
+        "repayment_history",
+        "agent_details",
+        "agent_count",
+        "agent_accounts",
+        "agent_customers",
+        "agent_directory",
+        "branch_directory",
+        "branch_customers",
+        "product_details",
+        "account_sample",
     ]
-    requested_fields: list[Literal[
-        "sanction_amount", "sanction_date", "disbursed_amount", "first_disbursement_date",
-        "agent_name", "agent_type", "designation", "mobile", "email", "branch_code",
-        "role_code", "joined_on", "linked_customer_count", "linked_loan_count",
-        "borrower_name", "scheme_name", "number_of_emis",
-    ]] = Field(default_factory=list)
+    requested_fields: list[
+        Literal[
+            "sanction_amount",
+            "sanction_date",
+            "disbursed_amount",
+            "first_disbursement_date",
+            "agent_name",
+            "agent_type",
+            "designation",
+            "mobile",
+            "email",
+            "branch_code",
+            "role_code",
+            "joined_on",
+            "linked_customer_count",
+            "linked_loan_count",
+            "borrower_name",
+            "scheme_name",
+            "number_of_emis",
+        ]
+    ] = Field(default_factory=list)
     confidence: float = Field(default=1.0, ge=0.0, le=1.0)
     reasoning: str = Field(default="", max_length=500)
 
@@ -273,7 +354,8 @@ class AnalysisPlan(_Model):
     route: Literal["analysis"] = "analysis"
     analysis_id: str = Field(description="Preset id from analyses.yaml.")
     period: Period | None = Field(
-        default=None, description="Overrides the preset's default period when the user named one."
+        default=None,
+        description="Overrides the preset's default period when the user named one.",
     )
     filters: list[Filter] = Field(default_factory=list)
     confidence: float = Field(ge=0.0, le=1.0)
@@ -281,7 +363,7 @@ class AnalysisPlan(_Model):
 
 
 class WorklistPlan(_Model):
-    """"Create today's collection priority list." — a preset, bound to a slice."""
+    """ "Create today's collection priority list." — a preset, bound to a slice."""
 
     route: Literal["worklist"] = "worklist"
     worklist_id: str = Field(description="Preset id from worklists.yaml.")
@@ -292,7 +374,7 @@ class WorklistPlan(_Model):
 
 
 class BriefingPlan(_Model):
-    """"What do I need to know this morning?" — one desk's read, answered in the thread.
+    """ "What do I need to know this morning?" — one desk's read, answered in the thread.
 
     Persona-scoped rather than user-scoped on purpose: the same person asks as a CEO on
     Monday and as a collections manager on Thursday, and the desk they are asking from is in
@@ -312,14 +394,21 @@ class ClarifyPlan(_Model):
 
 class RefusalPlan(_Model):
     route: Literal["refuse"] = "refuse"
-    reason: Literal["out_of_scope", "not_in_data", "predictive", "advice", "unsafe"]
+    reason: Literal[
+        "out_of_scope", "not_in_data", "predictive", "advice", "unsafe"
+    ]
     message: str = ""
     examples: list[str] = Field(default_factory=list, max_length=3)
 
 
 PlanResult = Annotated[
     Union[
-        QuerySpecPlan, AnalysisPlan, WorklistPlan, BriefingPlan, LookupPlan, ClarifyPlan,
+        QuerySpecPlan,
+        AnalysisPlan,
+        WorklistPlan,
+        BriefingPlan,
+        LookupPlan,
+        ClarifyPlan,
         RefusalPlan,
     ],
     Field(discriminator="route"),
@@ -346,7 +435,9 @@ class Lineage(_Model):
         description="Named values used by the read-only execution query.",
     )
     source_tables: list[str] = Field(default_factory=list)
-    formulas: dict[str, str] = Field(default_factory=dict, description="metric id → formula text")
+    formulas: dict[str, str] = Field(
+        default_factory=dict, description="metric id → formula text"
+    )
     row_count: int = 0
     duration_ms: int = 0
     as_of: date | None = None
@@ -356,7 +447,8 @@ class Lineage(_Model):
         description="True for model-authored PostgreSQL MCP results that need user review.",
     )
     requires_signoff: list[str] = Field(
-        default_factory=list, description="Metric ids whose definition is not yet client-ratified."
+        default_factory=list,
+        description="Metric ids whose definition is not yet client-ratified.",
     )
 
 
@@ -366,7 +458,9 @@ class ColumnSpec(_Model):
     unit: Unit = "text"
     format: str | None = None
     sensitivity: Sensitivity = "internal"
-    masked: bool = Field(default=False, description="Values were masked for the caller's role.")
+    masked: bool = Field(
+        default=False, description="Values were masked for the caller's role."
+    )
 
 
 class AxisSpec(_Model):
@@ -393,11 +487,16 @@ class DrillStep(_Model):
     that makes structural follow-ups trustworthy."""
 
     kind: Literal["deeper", "sideways", "explain", "act"]
-    id: str = Field(description="Stable within one answer, so the UI can key on it.")
+    id: str = Field(
+        description="Stable within one answer, so the UI can key on it."
+    )
     label: str = Field(description="Chip text, e.g. 'By agent'.")
-    question: str = Field(description="Standalone phrasing, for the audit log and history.")
+    question: str = Field(
+        description="Standalone phrasing, for the audit log and history."
+    )
     dimension: str | None = Field(
-        default=None, description="The dimension this step moves to, where it moves to one."
+        default=None,
+        description="The dimension this step moves to, where it moves to one.",
     )
     spec: QuerySpec
 
@@ -419,7 +518,9 @@ class ChartSpec(_Model):
     series: list[SeriesSpec] = Field(default_factory=list)
     columns: list[ColumnSpec] = Field(default_factory=list)
     rows: list[dict[str, Any]] = Field(default_factory=list)
-    summary: str = Field(default="", description="Deterministic narration, templated from rows.")
+    summary: str = Field(
+        default="", description="Deterministic narration, templated from rows."
+    )
     drilldown: QuerySpec | None = None
     next_steps: list[DrillStep] = Field(
         default_factory=list,
@@ -448,11 +549,15 @@ class AnalysisStep(_Model):
     watch_below: float | None = None
     alert_above: float | None = None
     alert_below: float | None = None
-    note: str = Field(default="", description="Why this step is in the analysis.")
+    note: str = Field(
+        default="", description="Why this step is in the analysis."
+    )
 
 
 class AnalysisSpec(_Model):
-    id: str = Field(default="", description="Preset id, when it came from one.")
+    id: str = Field(
+        default="", description="Preset id, when it came from one."
+    )
     title: str
     compose: Literal["briefing", "quadrant", "concentration"]
     steps: list[AnalysisStep] = Field(min_length=1, max_length=12)
@@ -464,7 +569,9 @@ class Finding(_Model):
 
     step_id: str
     label: str
-    text: str = Field(description="Deterministic sentence, templated from the step's rows.")
+    text: str = Field(
+        description="Deterministic sentence, templated from the step's rows."
+    )
     question: str = Field(
         default="",
         description="How to re-ask this finding in words. The workbench routes every turn "
@@ -475,7 +582,9 @@ class Finding(_Model):
     value: float | None = None
     unit: Unit = "count"
     severity: Severity = "info"
-    spec: QuerySpec = Field(description="One click from the finding to its evidence.")
+    spec: QuerySpec = Field(
+        description="One click from the finding to its evidence."
+    )
 
 
 class AnalysisResult(_Model):
@@ -486,16 +595,20 @@ class AnalysisResult(_Model):
     subtitle: str = ""
     compose: str
     headline: str = Field(
-        default="", description="Deterministic lead sentence — never model-written."
+        default="",
+        description="Deterministic lead sentence — never model-written.",
     )
     narrative: str = Field(
         default="",
         description="Optional prose tying the findings together. Written over the findings "
         "below and never over raw rows, so it can restate but cannot introduce a number.",
     )
-    findings: list[Finding] = Field(default_factory=list, description="Most notable first.")
+    findings: list[Finding] = Field(
+        default_factory=list, description="Most notable first."
+    )
     charts: list[ChartSpec] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
+
 
 # --------------------------------------------------------------------------------------
 # Worklists — where a chain ends in something a team does
@@ -512,9 +625,15 @@ class ScoreWeight(_Model):
 
     id: str
     label: str
-    weight: float = Field(description="From the catalog, identical for every row.")
-    value: float = Field(description="This row's normalised component, 0 to 1.")
-    contribution: float = Field(description="weight x value — the term's share of the score.")
+    weight: float = Field(
+        description="From the catalog, identical for every row."
+    )
+    value: float = Field(
+        description="This row's normalised component, 0 to 1."
+    )
+    contribution: float = Field(
+        description="weight x value — the term's share of the score."
+    )
 
 
 class WorklistItem(_Model):
@@ -527,12 +646,18 @@ class WorklistItem(_Model):
         description="Why this account is on the list, one sentence per rule it triggered. "
         "A worklist without them gets worked from the top until the officer loses patience.",
     )
-    triggered: list[str] = Field(default_factory=list, description="Rule ids, for filtering.")
-    action: str = Field(default="", description="From the bank's ratified playbook, never composed.")
+    triggered: list[str] = Field(
+        default_factory=list, description="Rule ids, for filtering."
+    )
+    action: str = Field(
+        default="",
+        description="From the bank's ratified playbook, never composed.",
+    )
     owner: str = ""
     weights: list[ScoreWeight] = Field(default_factory=list)
     fields: dict[str, Any] = Field(
-        default_factory=dict, description="The decoded row, keyed by the catalog's column ids."
+        default_factory=dict,
+        description="The decoded row, keyed by the catalog's column ids.",
     )
 
 
@@ -547,11 +672,14 @@ class Worklist(_Model):
     title: str
     subtitle: str = ""
     as_of: date | None = None
-    method: str = Field(default="", description="How the score was normalised.")
+    method: str = Field(
+        default="", description="How the score was normalised."
+    )
     columns: list[ColumnSpec] = Field(default_factory=list)
     items: list[WorklistItem] = Field(default_factory=list)
     candidate_count: int = Field(
-        default=0, description="Accounts that triggered a rule, before the list was cut."
+        default=0,
+        description="Accounts that triggered a rule, before the list was cut.",
     )
     lineage: Lineage
     warnings: list[str] = Field(default_factory=list)
@@ -580,17 +708,23 @@ class Signal(_Model):
     detected_at: datetime | None = None
     scope: str = Field(description="Signal scope id from signals.yaml.")
     label: str
-    kind: str = Field(description="Which detector fired: level_shift, threshold, …")
+    kind: str = Field(
+        description="Which detector fired: level_shift, threshold, …"
+    )
     metric: str = ""
     dimension: str = ""
-    member: str = Field(default="", description="Decoded member label, or blank for a total.")
+    member: str = Field(
+        default="", description="Decoded member label, or blank for a total."
+    )
     severity: Severity = "watch"
     direction: Literal["up", "down", "flat"] = "flat"
     magnitude: float = 0.0
     baseline: float | None = None
     value: float | None = None
     unit: Unit = "count"
-    text: str = Field(description="Deterministic sentence, templated from the detection.")
+    text: str = Field(
+        description="Deterministic sentence, templated from the detection."
+    )
     spec: QuerySpec | None = Field(
         default=None,
         description="One click from the signal to its evidence. None only for a data-health "

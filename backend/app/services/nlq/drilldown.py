@@ -20,7 +20,13 @@ from datetime import date
 from app.services.nlq import periods
 from app.services.nlq.catalog import Catalog, get_catalog
 from app.services.nlq.compiler import CompileError, compile_spec
-from app.services.nlq.contracts import DrillStep, Filter, OrderBy, Period, QuerySpec
+from app.services.nlq.contracts import (
+    DrillStep,
+    Filter,
+    OrderBy,
+    Period,
+    QuerySpec,
+)
 from app.services.nlq.narrator import humanize_label
 
 DEFAULT_LIMIT = 5
@@ -128,8 +134,10 @@ def _sideways_steps(spec: QuerySpec, cat: Catalog) -> list[DrillStep]:
     return steps
 
 
-def _explain_step(spec: QuerySpec, cat: Catalog, today: date | None) -> DrillStep | None:
-    """"Why did that change?" — the same metric, decomposed across its drivers."""
+def _explain_step(
+    spec: QuerySpec, cat: Catalog, today: date | None
+) -> DrillStep | None:
+    """ "Why did that change?" — the same metric, decomposed across its drivers."""
     if spec.explain:
         return None
     metric = cat.metrics.get(spec.metrics[0])
@@ -139,7 +147,11 @@ def _explain_step(spec: QuerySpec, cat: Catalog, today: date | None) -> DrillSte
     dimension = _current_level(spec, cat)
     if dimension is None:
         # A change has to be attributed to something. Fall back to the first primary head.
-        heads = [h for h in cat.drill.heads(primary_only=True) if h in cat.dimensions]
+        heads = [
+            h
+            for h in cat.drill.heads(primary_only=True)
+            if h in cat.dimensions
+        ]
         if not heads:
             return None
         dimension = heads[0]
@@ -206,9 +218,14 @@ def _act_step(spec: QuerySpec, cat: Catalog) -> DrillStep | None:
     )
 
 
-def _split_step(kind: str, spec: QuerySpec, dimension: str, cat: Catalog) -> DrillStep:
+def _split_step(
+    kind: str, spec: QuerySpec, dimension: str, cat: Catalog
+) -> DrillStep:
     drilled = spec.model_copy(
-        update={"dimensions": _replace_categorical(spec, dimension, cat), "order_by": None}
+        update={
+            "dimensions": _replace_categorical(spec, dimension, cat),
+            "order_by": None,
+        }
     )
     label = cat.dimensions[dimension].label
     return DrillStep(
@@ -231,8 +248,14 @@ def describe(spec: QuerySpec, catalog: Catalog | None = None) -> str:
     sitting under a card about gold loans in Q2.
     """
     cat = catalog or get_catalog()
-    labels = [cat.dimensions[d].label for d in spec.dimensions if d in cat.dimensions]
-    by = f" by {' and '.join(humanize_label(label) for label in labels)}" if labels else ""
+    labels = [
+        cat.dimensions[d].label for d in spec.dimensions if d in cat.dimensions
+    ]
+    by = (
+        f" by {' and '.join(humanize_label(label) for label in labels)}"
+        if labels
+        else ""
+    )
     return f"{_subject(spec, cat)}{by}{_qualifiers(spec, cat)}"
 
 
@@ -260,7 +283,9 @@ def _qualifiers(spec: QuerySpec, cat: Catalog) -> str:
         parts.append(f"for {humanize_label(dim.label)} {value}")
 
     period = spec.period.relative or (
-        f"{spec.period.start} to {spec.period.end}" if spec.period.start else ""
+        f"{spec.period.start} to {spec.period.end}"
+        if spec.period.start
+        else ""
     )
     if period:
         parts.append(f"in {str(period).replace('_', ' ')}")
@@ -272,7 +297,9 @@ def _qualifiers(spec: QuerySpec, cat: Catalog) -> str:
 # --------------------------------------------------------------------------------------
 
 
-def append_level(spec: QuerySpec, catalog: Catalog | None = None) -> QuerySpec | None:
+def append_level(
+    spec: QuerySpec, catalog: Catalog | None = None
+) -> QuerySpec | None:
     """The next level *added* to the current split, rather than swapping it.
 
     This is what a click on a bar re-runs. It differs from the `deeper` chip on purpose: the
@@ -288,7 +315,11 @@ def append_level(spec: QuerySpec, catalog: Catalog | None = None) -> QuerySpec |
         return None
     current = _current_level(spec, cat)
     if current is None:
-        heads = [h for h in cat.drill.heads(primary_only=True) if h in cat.dimensions]
+        heads = [
+            h
+            for h in cat.drill.heads(primary_only=True)
+            if h in cat.dimensions
+        ]
         nxt = heads[0] if heads else None
     else:
         path = cat.drill.path_for(current)
@@ -300,7 +331,10 @@ def append_level(spec: QuerySpec, catalog: Catalog | None = None) -> QuerySpec |
 
 
 def drill_into(
-    spec: QuerySpec, dimension: str, member: str, catalog: Catalog | None = None
+    spec: QuerySpec,
+    dimension: str,
+    member: str,
+    catalog: Catalog | None = None,
 ) -> QuerySpec:
     """Clicking a bar: filter to that member, then split by the next level down.
 
@@ -335,7 +369,11 @@ def drill_into(
 
 
 def _categorical_levels(spec: QuerySpec, cat: Catalog) -> list[str]:
-    return [d for d in spec.dimensions if (e := cat.dimensions.get(d)) and not e.is_time]
+    return [
+        d
+        for d in spec.dimensions
+        if (e := cat.dimensions.get(d)) and not e.is_time
+    ]
 
 
 def _is_ambiguous(spec: QuerySpec, cat: Catalog) -> bool:
@@ -351,13 +389,19 @@ def _current_level(spec: QuerySpec, cat: Catalog) -> str | None:
     return levels[0] if len(levels) == 1 else None
 
 
-def _replace_categorical(spec: QuerySpec, dimension: str, cat: Catalog) -> list[str]:
+def _replace_categorical(
+    spec: QuerySpec, dimension: str, cat: Catalog
+) -> list[str]:
     """Swap the categorical split, keep the time grain.
 
     Stacking branch x agent yields a two-dimensional grid nobody asked for; dropping the
     month from a trend loses the shape the question was about. Same rule the conversation
     layer applies to "and by branch?"."""
-    time_dims = [d for d in spec.dimensions if (e := cat.dimensions.get(d)) and e.is_time]
+    time_dims = [
+        d
+        for d in spec.dimensions
+        if (e := cat.dimensions.get(d)) and e.is_time
+    ]
     return [*time_dims, dimension]
 
 
@@ -402,7 +446,9 @@ def _previous_period(period: Period, today: date | None) -> Period | None:
         if period.relative:
             current = periods.resolve_relative(period.relative, today)
         elif period.start and period.end:
-            current = periods.DateRange(period.start, period.end, "requested period")
+            current = periods.DateRange(
+                period.start, period.end, "requested period"
+            )
         else:
             return None
         prior = periods.previous_period(current, today)
@@ -431,4 +477,11 @@ def _dedupe(steps: list[DrillStep]) -> list[DrillStep]:
     return out
 
 
-__all__ = ["DrillError", "DrillStep", "append_level", "describe", "drill_into", "next_steps"]
+__all__ = [
+    "DrillError",
+    "DrillStep",
+    "append_level",
+    "describe",
+    "drill_into",
+    "next_steps",
+]

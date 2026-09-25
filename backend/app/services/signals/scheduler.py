@@ -46,13 +46,19 @@ async def run_once() -> None:
         new = await asyncio.to_thread(store.record, report.signals)
         logger.info(
             "signal scan: %d scopes, %d signals (%d new), %d abstained, %d failed, %dms",
-            report.scopes_run, len(report.signals), new,
-            len(report.abstained), report.scopes_failed, report.duration_ms,
+            report.scopes_run,
+            len(report.signals),
+            new,
+            len(report.abstained),
+            report.scopes_failed,
+            report.duration_ms,
         )
         # Abstention is a result, and one worth seeing in the log: a scan that has abstained
         # on the same scope for months is a scope whose data never arrived.
         if report.abstained:
-            logger.info("signal scan abstained on: %s", ", ".join(report.abstained))
+            logger.info(
+                "signal scan abstained on: %s", ", ".join(report.abstained)
+            )
         for warning in report.warnings:
             logger.warning("signal scan: %s", warning)
 
@@ -92,7 +98,9 @@ def start(app_state) -> asyncio.Task | None:
         logger.info("signal scan disabled by configuration")
         return None
     task = asyncio.create_task(
-        run_forever(interval_s=getattr(settings, "signals_scan_interval_s", INTERVAL_S))
+        run_forever(
+            interval_s=getattr(settings, "signals_scan_interval_s", INTERVAL_S)
+        )
     )
     app_state.signal_scan_task = task
     return task

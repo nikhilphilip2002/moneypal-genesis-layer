@@ -61,35 +61,50 @@ class TestFlowMetrics:
         )
         actual = scalar(
             warehouse_cursor,
-            QuerySpec(metrics=["disbursement_total"], period=Period(relative="all_time")),
+            QuerySpec(
+                metrics=["disbursement_total"],
+                period=Period(relative="all_time"),
+            ),
         )
         assert close(actual, expected)
 
     def test_sanctioned_amount(self, warehouse_cursor):
         expected = hand_scalar(
-            warehouse_cursor, "SELECT SUM(approved_amount) FROM gold.loan_accounts"
+            warehouse_cursor,
+            "SELECT SUM(approved_amount) FROM gold.loan_accounts",
         )
         actual = scalar(
             warehouse_cursor,
-            QuerySpec(metrics=["sanctioned_amount"], period=Period(relative="all_time")),
+            QuerySpec(
+                metrics=["sanctioned_amount"],
+                period=Period(relative="all_time"),
+            ),
         )
         assert close(actual, expected)
 
     def test_loan_count(self, warehouse_cursor):
         actual = scalar(
             warehouse_cursor,
-            QuerySpec(metrics=["loan_count"], period=Period(relative="all_time")),
+            QuerySpec(
+                metrics=["loan_count"], period=Period(relative="all_time")
+            ),
         )
-        expected = hand_scalar(warehouse_cursor, "SELECT count(*) FROM gold.loan_accounts")
+        expected = hand_scalar(
+            warehouse_cursor, "SELECT count(*) FROM gold.loan_accounts"
+        )
         assert actual == expected
 
     def test_amount_collected(self, warehouse_cursor):
         expected = hand_scalar(
-            warehouse_cursor, "SELECT SUM(total_amount_paid) FROM gold.loan_repayments"
+            warehouse_cursor,
+            "SELECT SUM(total_amount_paid) FROM gold.loan_repayments",
         )
         actual = scalar(
             warehouse_cursor,
-            QuerySpec(metrics=["amount_collected"], period=Period(relative="all_time")),
+            QuerySpec(
+                metrics=["amount_collected"],
+                period=Period(relative="all_time"),
+            ),
         )
         assert close(actual, expected)
 
@@ -120,14 +135,19 @@ class TestRatioMetrics:
         )
         actual = scalar(
             warehouse_cursor,
-            QuerySpec(metrics=["collection_efficiency"], period=Period(relative="all_time")),
+            QuerySpec(
+                metrics=["collection_efficiency"],
+                period=Period(relative="all_time"),
+            ),
         )
         assert close(actual, expected, 0.001)
 
     def test_avg_ticket_size_is_total_over_count(self, warehouse_cursor):
         actual = scalar(
             warehouse_cursor,
-            QuerySpec(metrics=["avg_ticket_size"], period=Period(relative="all_time")),
+            QuerySpec(
+                metrics=["avg_ticket_size"], period=Period(relative="all_time")
+            ),
         )
         expected = hand_scalar(
             warehouse_cursor,
@@ -148,14 +168,22 @@ class TestPointInTimeMetrics:
         )
         actual = scalar(
             warehouse_cursor,
-            QuerySpec(metrics=["par_30"], period=Period(start="2026-01-01", end=AS_OF)),
+            QuerySpec(
+                metrics=["par_30"],
+                period=Period(start="2026-01-01", end=AS_OF),
+            ),
         )
         assert close(actual, expected, 0.0001)
 
-    def test_historical_reads_use_the_gold_as_of_collapse(self, warehouse_cursor):
+    def test_historical_reads_use_the_gold_as_of_collapse(
+        self, warehouse_cursor
+    ):
         correct = scalar(
             warehouse_cursor,
-            QuerySpec(metrics=["par_30"], period=Period(start="2026-01-01", end=AS_OF)),
+            QuerySpec(
+                metrics=["par_30"],
+                period=Period(start="2026-01-01", end=AS_OF),
+            ),
         )
         assert correct is not None and correct > 0
 
@@ -167,7 +195,8 @@ class TestPointInTimeMetrics:
         actual = scalar(
             warehouse_cursor,
             QuerySpec(
-                metrics=["principal_outstanding"], period=Period(start="2026-01-01", end=AS_OF)
+                metrics=["principal_outstanding"],
+                period=Period(start="2026-01-01", end=AS_OF),
             ),
         )
         assert close(actual, expected)
@@ -180,28 +209,36 @@ class TestPointInTimeMetrics:
         actual = scalar(
             warehouse_cursor,
             QuerySpec(
-                metrics=["principal_outstanding_book"], period=Period(relative="today")
+                metrics=["principal_outstanding_book"],
+                period=Period(relative="today"),
             ),
         )
         assert close(actual, expected)
 
-    def test_the_two_outstanding_metrics_deliberately_disagree(self, warehouse_cursor):
+    def test_the_two_outstanding_metrics_deliberately_disagree(
+        self, warehouse_cursor
+    ):
         """The classified subset and whole-book derivation answer different questions,
         which is why the catalog carries a coverage warning rather than quietly picking one."""
         classified = scalar(
             warehouse_cursor,
             QuerySpec(
-                metrics=["principal_outstanding"], period=Period(start="2026-01-01", end=AS_OF)
+                metrics=["principal_outstanding"],
+                period=Period(start="2026-01-01", end=AS_OF),
             ),
         )
         whole_book = scalar(
             warehouse_cursor,
-            QuerySpec(metrics=["principal_outstanding_book"], period=Period(relative="today")),
+            QuerySpec(
+                metrics=["principal_outstanding_book"],
+                period=Period(relative="today"),
+            ),
         )
         assert classified < whole_book
         compiled = compile_spec(
             QuerySpec(
-                metrics=["principal_outstanding"], period=Period(start="2026-01-01", end=AS_OF)
+                metrics=["principal_outstanding"],
+                period=Period(start="2026-01-01", end=AS_OF),
             )
         )
         assert any("5,588" in w for w in compiled.warnings)
@@ -224,7 +261,10 @@ class TestPointInTimeMetrics:
     def test_par_90_matches_the_current_snapshot(self, warehouse_cursor):
         actual = scalar(
             warehouse_cursor,
-            QuerySpec(metrics=["par_90"], period=Period(start="2026-01-01", end=AS_OF)),
+            QuerySpec(
+                metrics=["par_90"],
+                period=Period(start="2026-01-01", end=AS_OF),
+            ),
         )
         expected = hand_scalar(
             warehouse_cursor,
@@ -251,10 +291,14 @@ class TestBreakdownsSumToTheTotal:
         rows = run(
             warehouse_cursor,
             QuerySpec(
-                metrics=["loan_count"], dimensions=["product"], period=Period(relative="all_time")
+                metrics=["loan_count"],
+                dimensions=["product"],
+                period=Period(relative="all_time"),
             ),
         )
-        total = hand_scalar(warehouse_cursor, "SELECT count(*) FROM gold.loan_accounts")
+        total = hand_scalar(
+            warehouse_cursor, "SELECT count(*) FROM gold.loan_accounts"
+        )
         assert sum(int(r[1]) for r in rows) == total
 
     def test_outstanding_by_dpd_bucket_reconciles(self, warehouse_cursor):
@@ -269,17 +313,23 @@ class TestBreakdownsSumToTheTotal:
         total = scalar(
             warehouse_cursor,
             QuerySpec(
-                metrics=["principal_outstanding"], period=Period(start="2026-01-01", end=AS_OF)
+                metrics=["principal_outstanding"],
+                period=Period(start="2026-01-01", end=AS_OF),
             ),
         )
         assert close(sum(float(r[1]) for r in rows), total, 0.01)
 
-    def test_joining_to_the_hub_does_not_inflate_the_total(self, warehouse_cursor):
+    def test_joining_to_the_hub_does_not_inflate_the_total(
+        self, warehouse_cursor
+    ):
         """Grouping by branch routes through loan_account_master. If that join fanned out,
         the grouped total would exceed the ungrouped one."""
         ungrouped = scalar(
             warehouse_cursor,
-            QuerySpec(metrics=["disbursement_total"], period=Period(relative="all_time")),
+            QuerySpec(
+                metrics=["disbursement_total"],
+                period=Period(relative="all_time"),
+            ),
         )
         rows = run(
             warehouse_cursor,

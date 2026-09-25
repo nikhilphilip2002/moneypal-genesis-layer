@@ -1,4 +1,5 @@
 """Competitive intelligence endpoints (Team B) — thin handlers."""
+
 import re
 
 from fastapi import APIRouter, HTTPException
@@ -31,7 +32,9 @@ def add_institution(req: NewInstitution):
     """Config-driven registry: adding an institution writes a JSON file, no code changes."""
     slug = re.sub(r"[^a-z0-9]+", "_", req.name.lower()).strip("_")
     if not slug:
-        raise HTTPException(400, "Institution name must contain letters or digits")
+        raise HTTPException(
+            400, "Institution name must contain letters or digits"
+        )
     if il.load_one(slug):
         raise HTTPException(409, f"Institution '{slug}' already exists")
     record = {
@@ -43,7 +46,8 @@ def add_institution(req: NewInstitution):
         "msme_focus": req.msme_focus,
         "confidence": "medium",
         "source_docs": [],
-        "source_urls": req.source_urls or ({"website": req.website} if req.website else {}),
+        "source_urls": req.source_urls
+        or ({"website": req.website} if req.website else {}),
         "qdrant_collection": f"comp_{slug}",
     }
     il.save(record)
@@ -52,13 +56,19 @@ def add_institution(req: NewInstitution):
 
 @router.get("/landscape", response_model=IntelligenceResponse)
 def landscape(refresh: bool = False):
-    return brief_cache.cached("competitive:landscape", competitive.landscape, refresh)
+    return brief_cache.cached(
+        "competitive:landscape", competitive.landscape, refresh
+    )
 
 
-@router.get("/institutions/{institution_id}", response_model=IntelligenceResponse)
+@router.get(
+    "/institutions/{institution_id}", response_model=IntelligenceResponse
+)
 def institution_profile(institution_id: str, refresh: bool = False):
     result = brief_cache.cached(
-        f"competitive:profile:{institution_id}", lambda: competitive.profile(institution_id), refresh
+        f"competitive:profile:{institution_id}",
+        lambda: competitive.profile(institution_id),
+        refresh,
     )
     if result is None:
         raise HTTPException(404, "Institution not found")
@@ -68,7 +78,9 @@ def institution_profile(institution_id: str, refresh: bool = False):
 @router.get("/institutions/{institution_id}/swot")
 def institution_swot(institution_id: str, refresh: bool = False):
     result = brief_cache.cached(
-        f"competitive:swot:{institution_id}", lambda: competitive.swot(institution_id), refresh
+        f"competitive:swot:{institution_id}",
+        lambda: competitive.swot(institution_id),
+        refresh,
     )
     if result is None:
         raise HTTPException(404, "Institution not found")
@@ -79,4 +91,3 @@ def institution_swot(institution_id: str, refresh: bool = False):
 def mom_vintage():
     """Month-on-Month (MoM) Loan Start Date Vintage Analysis endpoint."""
     return competitive.mom_vintage_analysis()
-

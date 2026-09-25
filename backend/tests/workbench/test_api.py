@@ -13,7 +13,9 @@ from app.main import app
 
 @pytest.fixture
 async def client():
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as value:
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as value:
         yield value
 
 
@@ -24,10 +26,16 @@ def _auth(username: str) -> dict:
 class TestListTools:
     @pytest.mark.anyio
     async def test_admin_sees_all_tools(self, client):
-        r = await client.get("/workbench/tools", headers=_auth("moneypal_admin"))
+        r = await client.get(
+            "/workbench/tools", headers=_auth("moneypal_admin")
+        )
         assert r.status_code == 200
         ids = {t["id"] for t in r.json()["tools"]}
-        assert ids == {"competitor_landscape", "macro_brief", "regulatory_alerts"}
+        assert ids == {
+            "competitor_landscape",
+            "macro_brief",
+            "regulatory_alerts",
+        }
 
     @pytest.mark.anyio
     async def test_policy_maker_does_not_see_the_schema_tool(self, client):
@@ -58,7 +66,8 @@ class TestCancelTurn:
 
         monkeypatch.setattr(route, "cancel_active_turn", cancel)
         response = await client.post(
-            "/workbench/cancel", headers=_auth("moneypal_admin"),
+            "/workbench/cancel",
+            headers=_auth("moneypal_admin"),
             json={"conversation_id": "conversation", "turn_id": "turn"},
         )
         assert response.status_code == 200
@@ -75,13 +84,23 @@ class TestCompletions:
         monkeypatch.setattr(route, "_completion_in_flight", False)
 
     @pytest.mark.anyio
-    async def test_returns_governed_chat_completions(self, client, monkeypatch):
+    async def test_returns_governed_chat_completions(
+        self, client, monkeypatch
+    ):
         from app.api.routes import workbench as route
 
-        monkeypatch.setattr(route.record_lookup, "completions", lambda q, kind: [{
-            "kind": "agent", "value": "AGNT45", "label": "Agent Name",
-            "detail": "AGNT45 · Officer",
-        }])
+        monkeypatch.setattr(
+            route.record_lookup,
+            "completions",
+            lambda q, kind: [
+                {
+                    "kind": "agent",
+                    "value": "AGNT45",
+                    "label": "Agent Name",
+                    "detail": "AGNT45 · Officer",
+                }
+            ],
+        )
 
         response = await client.get(
             "/workbench/completions?q=AGNT4&kind=agent",
@@ -126,7 +145,9 @@ class TestCompletions:
         from app.api.routes import workbench as route
 
         def must_not_query(_q, _kind):
-            raise AssertionError("question prose reached entity completion SQL")
+            raise AssertionError(
+                "question prose reached entity completion SQL"
+            )
 
         monkeypatch.setattr(route.record_lookup, "completions", must_not_query)
 
@@ -142,7 +163,9 @@ class TestCompletions:
 class TestRunTool:
     @pytest.mark.anyio
     async def test_unknown_tool_is_404(self, client):
-        r = await client.post("/workbench/tool/nope", headers=_auth("moneypal_admin"), json={})
+        r = await client.post(
+            "/workbench/tool/nope", headers=_auth("moneypal_admin"), json={}
+        )
         assert r.status_code == 404
 
     @pytest.mark.anyio
@@ -160,7 +183,8 @@ class TestRunTool:
 
         async def fake_competitive(intent, **_kwargs):
             return nodes.SourceResult(
-                source="competitive", card_type="brief",
+                source="competitive",
+                card_type="brief",
                 payload={"summary": "Rivals.", "key_points": []},
             )
 
@@ -190,69 +214,106 @@ class TestConversationOwnership:
     async def test_conversation_is_visible_only_to_its_owner(self, client):
         from app.services.workbench import history
 
-        history.record_turn("private", "Policy question", ["macro"], user="gicc_policy")
+        history.record_turn(
+            "private", "Policy question", ["macro"], user="gicc_policy"
+        )
 
         owner = await client.get(
-            "/workbench/conversations/private", headers=_auth("gicc_policy"),
+            "/workbench/conversations/private",
+            headers=_auth("gicc_policy"),
         )
         other = await client.get(
-            "/workbench/conversations/private", headers=_auth("gicc_director"),
+            "/workbench/conversations/private",
+            headers=_auth("gicc_director"),
         )
 
         assert owner.status_code == 200
         assert other.status_code == 404
-        assert (await client.get(
-            "/workbench/conversations", headers=_auth("gicc_director"),
-        )).json()["conversations"] == []
+        assert (
+            await client.get(
+                "/workbench/conversations",
+                headers=_auth("gicc_director"),
+            )
+        ).json()["conversations"] == []
 
     @pytest.mark.anyio
     async def test_saved_cards_are_returned_for_ui_hydration(self, client):
         from app.services.workbench import history
 
         turn_id = history.begin_turn("cards", "gicc_policy", "Macro outlook")
-        history.add_card("cards", "gicc_policy", turn_id, {
-            "source": "macro", "card_type": "brief",
-            "payload": {"summary": "Growth is stable."},
-        })
+        history.add_card(
+            "cards",
+            "gicc_policy",
+            turn_id,
+            {
+                "source": "macro",
+                "card_type": "brief",
+                "payload": {"summary": "Growth is stable."},
+            },
+        )
         history.complete_turn("cards", "gicc_policy", turn_id)
 
-        body = (await client.get(
-            "/workbench/conversations/cards", headers=_auth("gicc_policy"),
-        )).json()
+        body = (
+            await client.get(
+                "/workbench/conversations/cards",
+                headers=_auth("gicc_policy"),
+            )
+        ).json()
 
         assert body["record_version"] == history.RECORD_VERSION
-        assert body["turns"][0]["cards"][0]["payload"]["summary"] == "Growth is stable."
+        assert (
+            body["turns"][0]["cards"][0]["payload"]["summary"]
+            == "Growth is stable."
+        )
 
     @pytest.mark.anyio
     async def test_route_tools_and_error_details_are_returned_for_ui_hydration(
-        self, client,
+        self,
+        client,
     ):
         from app.services.workbench import history
 
-        turn_id = history.begin_turn("diagnostic", "gicc_policy", "Show PAR 30")
+        turn_id = history.begin_turn(
+            "diagnostic", "gicc_policy", "Show PAR 30"
+        )
         history.set_route(
-            "diagnostic", "gicc_policy", turn_id,
-            sources=["db"], intent="Show PAR 30", tools=["query_metrics"],
+            "diagnostic",
+            "gicc_policy",
+            turn_id,
+            sources=["db"],
+            intent="Show PAR 30",
+            tools=["query_metrics"],
         )
         history.set_error(
-            "diagnostic", "gicc_policy", turn_id, "Timed out.",
-            code="AGENT_TIMEOUT", retryable=True,
+            "diagnostic",
+            "gicc_policy",
+            turn_id,
+            "Timed out.",
+            code="AGENT_TIMEOUT",
+            retryable=True,
         )
 
-        body = (await client.get(
-            "/workbench/conversations/diagnostic", headers=_auth("gicc_policy"),
-        )).json()
+        body = (
+            await client.get(
+                "/workbench/conversations/diagnostic",
+                headers=_auth("gicc_policy"),
+            )
+        ).json()
         turn = body["turns"][0]
         assert turn["route"]["tools"] == ["query_metrics"]
         assert turn["error"] == "Timed out."
         assert turn["error_details"] == {
-            "message": "Timed out.", "code": "AGENT_TIMEOUT", "retryable": True,
+            "message": "Timed out.",
+            "code": "AGENT_TIMEOUT",
+            "retryable": True,
         }
 
 
 class TestAskStreamOverflow:
     @pytest.mark.anyio
-    async def test_native_transcript_overflow_streams_an_error_frame(self, client, monkeypatch):
+    async def test_native_transcript_overflow_streams_an_error_frame(
+        self, client, monkeypatch
+    ):
         """The route answers 200 with a terminal error frame, never a broken stream."""
         from app.services.workbench import graph, history
 
@@ -260,13 +321,18 @@ class TestAskStreamOverflow:
         history._MEMORY.clear()
 
         def overflow(*_args, **_kwargs):
-            raise history.NativeTranscriptOverflow("complete native conversation exceeds")
+            raise history.NativeTranscriptOverflow(
+                "complete native conversation exceeds"
+            )
 
         monkeypatch.setattr(graph.history, "build_native_transcript", overflow)
 
         response = await client.post(
             "/workbench/ask",
-            json={"question": "and schemewise?", "conversation_id": "overflow1"},
+            json={
+                "question": "and schemewise?",
+                "conversation_id": "overflow1",
+            },
             headers=_auth("moneypal_admin"),
         )
 

@@ -49,7 +49,9 @@ class TestFigures:
         figures = structured.extract_figures(text)
 
         assert len(figures) <= 25
-        assert len(figures) == 1, "identical value+sentence pairs collapse to one row"
+        assert len(figures) == 1, (
+            "identical value+sentence pairs collapse to one row"
+        )
 
     def test_long_table_rows_fall_back_to_a_tight_window(self):
         text = "Item " + " ".join(f"{i} 12.5%" for i in range(200))
@@ -74,11 +76,20 @@ class TestTopics:
         assert topics.index("sectors") > 0
 
     def test_unrelated_text_classifies_to_nothing(self):
-        assert macro_topics.classify_topics("The committee met and adjourned.") == []
+        assert (
+            macro_topics.classify_topics("The committee met and adjourned.")
+            == []
+        )
 
 
 def test_snapshot_attaches_topics_and_figures_to_every_row():
-    rows = [{"text": "Real GDP grew 6.5 per cent in FY25.", "document": "x.pdf", "chunk_index": 0}]
+    rows = [
+        {
+            "text": "Real GDP grew 6.5 per cent in FY25.",
+            "document": "x.pdf",
+            "chunk_index": 0,
+        }
+    ]
 
     enriched = list(structured.extract_snapshot(rows))
 

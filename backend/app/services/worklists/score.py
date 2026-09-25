@@ -36,7 +36,10 @@ def prioritise(
     if not rows:
         return []
 
-    ranks = {c.id: _percentile_ranks([_number(r.get(c.id)) for r in rows]) for c in model.components}
+    ranks = {
+        c.id: _percentile_ranks([_number(r.get(c.id)) for r in rows])
+        for c in model.components
+    }
 
     out: list[tuple[float, list[ScoreWeight]]] = []
     for index in range(len(rows)):
@@ -76,7 +79,10 @@ def _percentile_ranks(values: Sequence[float | None]) -> list[float]:
     distinct = sorted(set(present))
     if len(distinct) == 1:
         return [NEUTRAL if v is None else 1.0 for v in values]
-    position = {value: index / (len(distinct) - 1) for index, value in enumerate(distinct)}
+    position = {
+        value: index / (len(distinct) - 1)
+        for index, value in enumerate(distinct)
+    }
     return [NEUTRAL if v is None else position[v] for v in values]
 
 

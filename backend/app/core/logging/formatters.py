@@ -9,15 +9,17 @@ from typing import Any
 from app.core.logging.context import get_trace_context
 
 # Sensitive key names to redact in dictionary payloads
-_SENSITIVE_KEYS = frozenset({
-    "authorization",
-    "api_key",
-    "llm_api_key",
-    "qdrant_api_key",
-    "secret",
-    "password",
-    "token",
-})
+_SENSITIVE_KEYS = frozenset(
+    {
+        "authorization",
+        "api_key",
+        "llm_api_key",
+        "qdrant_api_key",
+        "secret",
+        "password",
+        "token",
+    }
+)
 
 _BEARER_REGEX = re.compile(r"(Bearer\s+)[A-Za-z0-9_\-\.]{8,}", re.IGNORECASE)
 _PAN_REGEX = re.compile(r"\b[A-Z]{5}[0-9]{4}[A-Z]\b")
@@ -62,20 +64,48 @@ class JSONLinesFormatter(logging.Formatter):
             "logger": record.name,
             "msg": record.getMessage(),
             "trace_id": getattr(record, "trace_id", ctx.get("trace_id", "")),
-            "conversation_id": getattr(record, "conversation_id", ctx.get("conversation_id", "")),
+            "conversation_id": getattr(
+                record, "conversation_id", ctx.get("conversation_id", "")
+            ),
             "turn_id": getattr(record, "turn_id", ctx.get("turn_id", "")),
-            "user": getattr(record, "user", getattr(record, "username", ctx.get("username", ""))),
+            "user": getattr(
+                record,
+                "user",
+                getattr(record, "username", ctx.get("username", "")),
+            ),
             "role": getattr(record, "role", ctx.get("role", "")),
         }
 
         # Structured extra payload passed via extra={...}
         # Filter standard logging attributes to avoid pollution
         standard_attrs = {
-            "name", "msg", "args", "levelname", "levelno", "pathname", "filename",
-            "module", "exc_info", "exc_text", "stack_info", "lineno", "funcName",
-            "created", "msecs", "relativeCreated", "thread", "threadName",
-            "processName", "process", "message", "trace_id", "conversation_id",
-            "turn_id", "user", "username", "role",
+            "name",
+            "msg",
+            "args",
+            "levelname",
+            "levelno",
+            "pathname",
+            "filename",
+            "module",
+            "exc_info",
+            "exc_text",
+            "stack_info",
+            "lineno",
+            "funcName",
+            "created",
+            "msecs",
+            "relativeCreated",
+            "thread",
+            "threadName",
+            "processName",
+            "process",
+            "message",
+            "trace_id",
+            "conversation_id",
+            "turn_id",
+            "user",
+            "username",
+            "role",
         }
         for k, v in record.__dict__.items():
             if k not in standard_attrs and not k.startswith("_"):

@@ -60,7 +60,11 @@ def coalesce_system_messages(
             if isinstance(content, str) and content.strip():
                 system_groups.append([{"type": "text", "text": content}])
             elif isinstance(content, list):
-                parts = [dict(part) for part in content if part.get("text", "").strip()]
+                parts = [
+                    dict(part)
+                    for part in content
+                    if part.get("text", "").strip()
+                ]
                 if parts:
                     system_groups.append(parts)
                     has_structured_content = True
@@ -82,7 +86,9 @@ def coalesce_system_messages(
     return [
         {
             "role": "system",
-            "content": "\n\n".join(group[0]["text"] for group in system_groups),
+            "content": "\n\n".join(
+                group[0]["text"] for group in system_groups
+            ),
         },
         *conversation,
     ]

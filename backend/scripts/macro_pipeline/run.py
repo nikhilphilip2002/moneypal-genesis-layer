@@ -10,6 +10,7 @@
 Run from the ``backend/`` directory, or invoke the file directly from anywhere —
 the sys.path bootstrap below mirrors ``backend/scripts/ingest.py``.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -35,7 +36,9 @@ def _setup_logging(verbose: bool) -> None:
         format="%(asctime)s %(levelname)-7s %(name)s: %(message)s",
         handlers=[
             logging.StreamHandler(),
-            logging.FileHandler(log_dir / "macro_pipeline.log", encoding="utf-8"),
+            logging.FileHandler(
+                log_dir / "macro_pipeline.log", encoding="utf-8"
+            ),
         ],
     )
 
@@ -68,10 +71,14 @@ def _cmd_stats(args) -> int:
 def _cmd_analyze(args) -> int:
     from . import extractor
 
-    rows = list(structured.extract_snapshot(extractor.extract(Path(args.file))))
+    rows = list(
+        structured.extract_snapshot(extractor.extract(Path(args.file)))
+    )
     for row in rows:
         print("\n" + "=" * 70)
-        print(f"[chunk {row['chunk_index']}] page={row['page']} topics={row['topics']}")
+        print(
+            f"[chunk {row['chunk_index']}] page={row['page']} topics={row['topics']}"
+        )
         print("figures:", json.dumps(row["figures"], ensure_ascii=False)[:700])
         print("-" * 70)
         print(row["text"][:500])
@@ -95,7 +102,9 @@ def _cmd_migrate(args) -> int:
             "PDFs into the data directory shrinks the macro corpus.\n"
         )
         print("Dry run. Snapshot the collection, then re-run with --apply:")
-        print(f"  curl -X POST \"$QDRANT_URL/collections/{settings.macro_collection}/snapshots\"")
+        print(
+            f'  curl -X POST "$QDRANT_URL/collections/{settings.macro_collection}/snapshots"'
+        )
         print("  python -m scripts.macro_pipeline.run migrate --apply")
         print("  python -m scripts.macro_pipeline.run once --force")
         return 0
@@ -105,24 +114,42 @@ def _cmd_migrate(args) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(prog="macro-pipeline", description=__doc__)
+    parser = argparse.ArgumentParser(
+        prog="macro-pipeline", description=__doc__
+    )
     parser.add_argument("-v", "--verbose", action="store_true")
     sub = parser.add_subparsers(dest="command", required=True)
 
     once = sub.add_parser("once", help="run a refresh now")
-    once.add_argument("--force", action="store_true", help="re-embed every file")
+    once.add_argument(
+        "--force", action="store_true", help="re-embed every file"
+    )
     once.set_defaults(func=_cmd_once)
 
-    sub.add_parser("schedule", help="start the weekly worker").set_defaults(func=_cmd_schedule)
-    sub.add_parser("sources", help="list configured sources").set_defaults(func=_cmd_sources)
-    sub.add_parser("stats", help="collection point counts").set_defaults(func=_cmd_stats)
+    sub.add_parser("schedule", help="start the weekly worker").set_defaults(
+        func=_cmd_schedule
+    )
+    sub.add_parser("sources", help="list configured sources").set_defaults(
+        func=_cmd_sources
+    )
+    sub.add_parser("stats", help="collection point counts").set_defaults(
+        func=_cmd_stats
+    )
 
-    analyze = sub.add_parser("analyze", help="show topics/figures for one file")
+    analyze = sub.add_parser(
+        "analyze", help="show topics/figures for one file"
+    )
     analyze.add_argument("file")
     analyze.set_defaults(func=_cmd_analyze)
 
-    migrate = sub.add_parser("migrate", help="drop legacy unstamped macro points")
-    migrate.add_argument("--apply", action="store_true", help="actually delete (default: dry run)")
+    migrate = sub.add_parser(
+        "migrate", help="drop legacy unstamped macro points"
+    )
+    migrate.add_argument(
+        "--apply",
+        action="store_true",
+        help="actually delete (default: dry run)",
+    )
     migrate.set_defaults(func=_cmd_migrate)
 
     args = parser.parse_args(argv)

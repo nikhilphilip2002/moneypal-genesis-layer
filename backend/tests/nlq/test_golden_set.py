@@ -17,7 +17,13 @@ from tests.nlq.conftest import requires_db
 
 GOLDEN_PATH = Path(__file__).parent / "golden" / "questions.yaml"
 VALID_ROUTES = {"queryspec", "sql", "clarify", "refuse"}
-VALID_REASONS = {"out_of_scope", "not_in_data", "predictive", "advice", "unsafe"}
+VALID_REASONS = {
+    "out_of_scope",
+    "not_in_data",
+    "predictive",
+    "advice",
+    "unsafe",
+}
 
 
 def load_cases() -> list[dict]:
@@ -44,7 +50,9 @@ class TestSetStructure:
 
     def test_answerable_cases_carry_a_spec(self):
         for case in ANSWERABLE:
-            assert case.get("spec"), f"{case['id']} is routed to queryspec but has no spec"
+            assert case.get("spec"), (
+                f"{case['id']} is routed to queryspec but has no spec"
+            )
 
     def test_non_answerable_cases_carry_no_spec(self):
         """A refusal with a spec attached invites someone to "just run it anyway"."""
@@ -60,8 +68,17 @@ class TestSetStructure:
     def test_the_set_covers_every_category_that_matters(self):
         categories = {c["category"] for c in CASES}
         for required in (
-            "aggregate", "breakdown", "trend", "ranking", "ratio", "point_in_time",
-            "comparison", "enum_decode", "coverage", "refuse", "clarify",
+            "aggregate",
+            "breakdown",
+            "trend",
+            "ranking",
+            "ratio",
+            "point_in_time",
+            "comparison",
+            "enum_decode",
+            "coverage",
+            "refuse",
+            "clarify",
         ):
             assert required in categories, f"golden set has no {required} case"
 
@@ -86,7 +103,9 @@ class TestAnswerableCasesCompile:
         compiled = compile_spec(QuerySpec.model_validate(case["spec"]))
         for key, value in compiled.params.items():
             if isinstance(value, str) and len(value) > 3:
-                assert value not in compiled.sql, f"{key} was interpolated, not bound"
+                assert value not in compiled.sql, (
+                    f"{key} was interpolated, not bound"
+                )
 
     def test_coverage_cases_carry_the_expected_warning(self):
         for case in CASES:

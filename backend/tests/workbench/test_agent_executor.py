@@ -20,7 +20,9 @@ from app.services.workbench.results import SourceResult
 def _connectors(monkeypatch):
     from app.mcp import postgres_client
 
-    monkeypatch.setattr(access.settings, "workbench_external_connectors_enabled", True)
+    monkeypatch.setattr(
+        access.settings, "workbench_external_connectors_enabled", True
+    )
     monkeypatch.setattr(access.settings, "exa_mcp_enabled", True)
     monkeypatch.setitem(
         postgres_client._model_tools,
@@ -49,7 +51,8 @@ def _context(*, external=True):
         conversation_id="c1",
         turn_id="t1",
         source_policy=access.build_policy(
-            role="admin", external_sources_enabled=external,
+            role="admin",
+            external_sources_enabled=external,
         ),
         deadline_s=5.0,
         catalog=get_catalog(),
@@ -59,7 +62,9 @@ def _context(*, external=True):
 @pytest.mark.anyio
 async def test_validated_call_dispatches_and_replay_is_lossless(monkeypatch):
     async def fake_handler(call, _ctx):
-        assert call.arguments == {"sql": "SELECT par_30 FROM gold.daily_loan_status LIMIT 1"}
+        assert call.arguments == {
+            "sql": "SELECT par_30 FROM gold.daily_loan_status LIMIT 1"
+        }
         return RawQueryResult(
             payload={"rows": [{"private": "never replay this"}]},
             summary="PAR 30 is 4.2%.",
@@ -72,7 +77,9 @@ async def test_validated_call_dispatches_and_replay_is_lossless(monkeypatch):
         NativeToolCall(
             id="call_1",
             name="query",
-            arguments={"sql": "SELECT par_30 FROM gold.daily_loan_status LIMIT 1"},
+            arguments={
+                "sql": "SELECT par_30 FROM gold.daily_loan_status LIMIT 1"
+            },
         ),
         _context(),
     )
@@ -86,7 +93,9 @@ async def test_validated_call_dispatches_and_replay_is_lossless(monkeypatch):
 
 
 @pytest.mark.anyio
-async def test_database_query_reference_reaches_mcp_and_observation(monkeypatch):
+async def test_database_query_reference_reaches_mcp_and_observation(
+    monkeypatch,
+):
     from app.mcp import postgres_client
 
     seen_meta = None
@@ -95,8 +104,12 @@ async def test_database_query_reference_reaches_mcp_and_observation(monkeypatch)
         nonlocal seen_meta
         seen_meta = meta
         return {
-            "status": "ok", "rows": [{"value": 1}], "columns": ["value"],
-            "row_count": 1, "duration_ms": 2, "validated_sql": "SELECT 1",
+            "status": "ok",
+            "rows": [{"value": 1}],
+            "columns": ["value"],
+            "row_count": 1,
+            "duration_ms": 2,
+            "validated_sql": "SELECT 1",
         }
 
     monkeypatch.setattr(postgres_client, "call_tool", call_tool)
@@ -113,14 +126,19 @@ async def test_database_query_reference_reaches_mcp_and_observation(monkeypatch)
         attempt_id="t1:q1:a1",
     )
     executed = await agent_executor.execute_agent_call(
-        NativeToolCall(id="provider-call", name="query", arguments={"sql": "SELECT 1"}),
+        NativeToolCall(
+            id="provider-call", name="query", arguments={"sql": "SELECT 1"}
+        ),
         context,
     )
 
     assert seen_meta["workbench_query_id"] == "t1:q1"
     assert seen_meta["workbench_attempt_id"] == "t1:q1:a1"
-    assert json.loads(executed.observation_message()["content"])["query_reference"] == {
-        "query_id": 1, "attempt": 1,
+    assert json.loads(executed.observation_message()["content"])[
+        "query_reference"
+    ] == {
+        "query_id": 1,
+        "attempt": 1,
     }
 
 
@@ -149,7 +167,11 @@ async def test_final_answer_call_is_strict_terminal_contract():
         NativeToolCall(
             id="call-final",
             name="submit_final_answer",
-            arguments={"insights": "PAR 30 is 4.2%.", "query_id": 1, "view": "kpi"},
+            arguments={
+                "insights": "PAR 30 is 4.2%.",
+                "query_id": 1,
+                "view": "kpi",
+            },
         ),
         _context(),
     )
@@ -157,9 +179,13 @@ async def test_final_answer_call_is_strict_terminal_contract():
     assert executed.card is None
     assert executed.terminal["outcome"] == "answer"
     assert executed.terminal["synthesis"] == {
-        "insights": "PAR 30 is 4.2%.", "query_id": 1, "view": "kpi",
+        "insights": "PAR 30 is 4.2%.",
+        "query_id": 1,
+        "view": "kpi",
     }
-    assert json.loads(executed.observation_message()["content"]) == {"success": True}
+    assert json.loads(executed.observation_message()["content"]) == {
+        "success": True
+    }
 
 
 @pytest.mark.anyio
@@ -190,7 +216,9 @@ async def test_handler_timeout_is_typed(monkeypatch):
 
 
 @pytest.mark.anyio
-async def test_postgres_statement_timeout_keeps_typed_retry_feedback(monkeypatch):
+async def test_postgres_statement_timeout_keeps_typed_retry_feedback(
+    monkeypatch,
+):
     from app.mcp import postgres_client
 
     async def timed_out(*_args, **_kwargs):
@@ -203,7 +231,9 @@ async def test_postgres_statement_timeout_keeps_typed_retry_feedback(monkeypatch
         }
 
     monkeypatch.setattr(postgres_client, "call_tool", timed_out)
-    call = NativeToolCall(id="call-timeout", name="query", arguments={"sql": "SELECT 1"})
+    call = NativeToolCall(
+        id="call-timeout", name="query", arguments={"sql": "SELECT 1"}
+    )
 
     with pytest.raises(AgentExecutionError) as caught:
         await agent_executor._execute_postgres_mcp(call, _context())
@@ -214,27 +244,41 @@ async def test_postgres_statement_timeout_keeps_typed_retry_feedback(monkeypatch
 
 
 @pytest.mark.anyio
-async def test_postgres_mcp_rejects_mismatched_returned_query_identity(monkeypatch):
+async def test_postgres_mcp_rejects_mismatched_returned_query_identity(
+    monkeypatch,
+):
     from app.mcp import postgres_client
 
     async def mismatched(*_args, **_kwargs):
         return {
-            "status": "ok", "rows": [{"value": 1}], "columns": ["value"],
-            "query_id": "another-turn:q9", "attempt_id": "another-turn:q9:a1",
+            "status": "ok",
+            "rows": [{"value": 1}],
+            "columns": ["value"],
+            "query_id": "another-turn:q9",
+            "attempt_id": "another-turn:q9:a1",
         }
 
     monkeypatch.setattr(postgres_client, "call_tool", mismatched)
     context = _context()
     context = AgentExecutionContext(
-        user=context.user, role=context.role,
-        conversation_id=context.conversation_id, turn_id=context.turn_id,
-        source_policy=context.source_policy, deadline_s=context.deadline_s,
-        catalog=context.catalog, query_id="t1:q1", attempt_id="t1:q1:a1",
+        user=context.user,
+        role=context.role,
+        conversation_id=context.conversation_id,
+        turn_id=context.turn_id,
+        source_policy=context.source_policy,
+        deadline_s=context.deadline_s,
+        catalog=context.catalog,
+        query_id="t1:q1",
+        attempt_id="t1:q1:a1",
     )
 
-    with pytest.raises(AgentExecutionError, match="mismatched query identifier"):
+    with pytest.raises(
+        AgentExecutionError, match="mismatched query identifier"
+    ):
         await agent_executor.execute_agent_call(
-            NativeToolCall(id="call-mismatch", name="query", arguments={"sql": "SELECT 1"}),
+            NativeToolCall(
+                id="call-mismatch", name="query", arguments={"sql": "SELECT 1"}
+            ),
             context,
         )
 
@@ -275,7 +319,10 @@ async def test_web_call_is_reauthorized_before_handler(monkeypatch):
     ],
 )
 async def test_each_nonterminal_tool_dispatches_through_in_memory_mcp(
-    monkeypatch, name, arguments, source,
+    monkeypatch,
+    name,
+    arguments,
+    source,
 ):
     from app.mcp import workbench_client
 
@@ -319,7 +366,10 @@ def _large_lookup(rows: int = 5000) -> agent_executor.ExecutedAgentCall:
         },
         summary=f"{rows} customers under Vanitha.",
         sensitive=True,
-        lineage={"sql": "SELECT ... LIMIT 5000", "params": {"agent_name": "vanitha"}},
+        lineage={
+            "sql": "SELECT ... LIMIT 5000",
+            "params": {"agent_name": "vanitha"},
+        },
         row_count=rows,
     )
     return agent_executor.ExecutedAgentCall(
@@ -328,9 +378,13 @@ def _large_lookup(rows: int = 5000) -> agent_executor.ExecutedAgentCall:
     )
 
 
-def test_observation_is_bounded_while_durable_replay_keeps_every_row(monkeypatch):
+def test_observation_is_bounded_while_durable_replay_keeps_every_row(
+    monkeypatch,
+):
     monkeypatch.setattr(
-        agent_executor.settings, "workbench_agent_observation_max_chars", 5_000,
+        agent_executor.settings,
+        "workbench_agent_observation_max_chars",
+        5_000,
         raising=False,
     )
     executed = _large_lookup()
@@ -347,7 +401,11 @@ def test_observation_is_bounded_while_durable_replay_keeps_every_row(monkeypatch
     assert observation["truncated"]["rows_total"] == 5000
     assert observation["truncated"]["rows_omitted"] == 5000 - len(kept)
     assert observation["summary"] == durable["summary"]
-    assert observation["query_reference"] if "query_reference" in observation else True
+    assert (
+        observation["query_reference"]
+        if "query_reference" in observation
+        else True
+    )
     if "lineage" in observation:
         assert observation["lineage"] == durable["lineage"]
     assert executed.observation_message()["tool_call_id"] == "call_big"
@@ -366,14 +424,18 @@ def test_small_results_replay_unchanged():
 
 def test_shape_observation_caps_facts_and_drops_evidence_before_clipping_summary():
     payload = {
-        "status": "ok", "source": "db", "card_type": "chart",
+        "status": "ok",
+        "source": "db",
+        "card_type": "chart",
         "payload": {"rows": []},
         "summary": "s" * 400,
         "evidence": [{"text": "e" * 300}],
         "lineage": {"sql": "x" * 300},
         "facts": [{"id": str(index)} for index in range(100)],
     }
-    shaped = agent_executor.shape_observation(payload, limit_chars=450, max_facts=5)
+    shaped = agent_executor.shape_observation(
+        payload, limit_chars=450, max_facts=5
+    )
 
     assert len(shaped["facts"]) == 5
     assert shaped["truncated"]["facts_omitted"] == 95
@@ -394,7 +456,8 @@ def test_shape_observation_never_drops_query_reference():
     shaped = agent_executor.shape_observation(payload, limit_chars=350)
 
     assert shaped["query_reference"] == {
-        "query_id": "turn:q1", "attempt_id": "turn:q1:a1",
+        "query_id": "turn:q1",
+        "attempt_id": "turn:q1:a1",
     }
     assert shaped["status"] == "ok"
 

@@ -24,7 +24,9 @@ def _intel(summary="A grounded summary.", key_points=None, title="Landscape"):
 
 class TestMacro:
     @pytest.mark.anyio
-    async def test_retrieval_timeout_degrades_to_an_error_card(self, monkeypatch):
+    async def test_retrieval_timeout_degrades_to_an_error_card(
+        self, monkeypatch
+    ):
         def timeout(*args, **kwargs):
             raise TimeoutError("vector store timed out")
 
@@ -47,7 +49,8 @@ class TestMacro:
         )
         assert nodes._answer_limitation(answer)
         assert nodes._strip_unsupported_page_citations(
-            answer, [{"document": "SIDBI", "page": None}],
+            answer,
+            [{"document": "SIDBI", "page": None}],
         ) == (
             "The context does not contain a SIDBI benchmark (document), "
             "so a direct comparison cannot be made."
@@ -56,7 +59,9 @@ class TestMacro:
 
 class TestKnowledge:
     @pytest.mark.anyio
-    async def test_returns_a_governed_catalog_brief_without_model_or_database_rows(self, monkeypatch):
+    async def test_returns_a_governed_catalog_brief_without_model_or_database_rows(
+        self, monkeypatch
+    ):
         fake = FakeLLM(
             "An interest rate is the percentage charged on principal over a stated period. "
             "Interest paid is a rupee amount, so it is different from the rate."
@@ -72,19 +77,39 @@ class TestKnowledge:
 
 class TestCompetitive:
     @pytest.mark.anyio
-    async def test_returns_question_specific_retrieval_for_native_agent(self, monkeypatch):
+    async def test_returns_question_specific_retrieval_for_native_agent(
+        self, monkeypatch
+    ):
         from app.services import institution_loader
 
-        monkeypatch.setattr(institution_loader, "load_all", lambda: [{
-            "id": "peer", "name": "Peer Bank", "type": "cooperative",
-            "qdrant_collection": "comp_peer",
-        }])
-        monkeypatch.setattr(nodes.rag, "search_multi", lambda *a, **k: [{
-            "text": "Peer Bank prices secured MSME loans competitively.",
-            "source": "peer.pdf", "page": 3, "score": 0.8,
-        }])
+        monkeypatch.setattr(
+            institution_loader,
+            "load_all",
+            lambda: [
+                {
+                    "id": "peer",
+                    "name": "Peer Bank",
+                    "type": "cooperative",
+                    "qdrant_collection": "comp_peer",
+                }
+            ],
+        )
+        monkeypatch.setattr(
+            nodes.rag,
+            "search_multi",
+            lambda *a, **k: [
+                {
+                    "text": "Peer Bank prices secured MSME loans competitively.",
+                    "source": "peer.pdf",
+                    "page": 3,
+                    "score": 0.8,
+                }
+            ],
+        )
+
         async def run_inline(fn, *args, **kwargs):
             return fn(*args, **kwargs)
+
         monkeypatch.setattr(nodes.asyncio, "to_thread", run_inline)
 
         result = await nodes.run_competitive("who competes for MSME borrowers")
@@ -92,15 +117,19 @@ class TestCompetitive:
         assert result.card_type == "brief"
         assert "Retrieved 1 competitive passage" in result.payload["summary"]
         assert result.evidence[0].excerpt.startswith("Peer Bank prices")
-        assert result.summary  # non-empty, so multi-source synthesis has something to use
+        assert (
+            result.summary
+        )  # non-empty, so multi-source synthesis has something to use
 
     @pytest.mark.anyio
     async def test_empty_registry_degrades_to_an_error_card(self, monkeypatch):
         from app.services import institution_loader
 
         monkeypatch.setattr(institution_loader, "load_all", lambda: [])
+
         async def run_inline(fn, *args, **kwargs):
             return fn(*args, **kwargs)
+
         monkeypatch.setattr(nodes.asyncio, "to_thread", run_inline)
         result = await nodes.run_competitive("anything")
         assert result.card_type == "error"
@@ -109,30 +138,50 @@ class TestCompetitive:
 class TestRegulatory:
     def _categories(self):
         return [
-            SimpleNamespace(id="psl", display_name="Priority Sector Lending", category="psl",
-                            qdrant_collection="reg_psl", applicability="banks", effective_date="current"),
-            SimpleNamespace(id="dnbs", display_name="DNBS Returns", category="reporting",
-                            qdrant_collection="reg_dnbs", applicability="NBFCs", effective_date="current"),
+            SimpleNamespace(
+                id="psl",
+                display_name="Priority Sector Lending",
+                category="psl",
+                qdrant_collection="reg_psl",
+                applicability="banks",
+                effective_date="current",
+            ),
+            SimpleNamespace(
+                id="dnbs",
+                display_name="DNBS Returns",
+                category="reporting",
+                qdrant_collection="reg_dnbs",
+                applicability="NBFCs",
+                effective_date="current",
+            ),
         ]
 
     @pytest.mark.anyio
-    async def test_matches_the_category_the_question_is_about(self, monkeypatch):
+    async def test_matches_the_category_the_question_is_about(
+        self, monkeypatch
+    ):
         from app.services import regulatory_rag
         from app.services import regulatory
 
         seen = {}
         monkeypatch.setattr(regulatory, "list_categories", self._categories)
         monkeypatch.setattr(regulatory_rag, "search", lambda *a, **k: [])
+
         async def run_inline(fn, *args, **kwargs):
             return fn(*args, **kwargs)
+
         monkeypatch.setattr(nodes.asyncio, "to_thread", run_inline)
 
         def detail(category_id):
             seen["id"] = category_id
-            return _intel(summary="DNBS-02 is filed quarterly.", title="DNBS Returns")
+            return _intel(
+                summary="DNBS-02 is filed quarterly.", title="DNBS Returns"
+            )
 
         monkeypatch.setattr(regulatory, "regulation_detail", detail)
-        result = await nodes.run_regulatory("what are the DNBS reporting obligations")
+        result = await nodes.run_regulatory(
+            "what are the DNBS reporting obligations"
+        )
 
         assert seen["id"] == "dnbs"
         assert result.source == "regulatory"
@@ -140,15 +189,19 @@ class TestRegulatory:
         assert "DNBS-02" in result.payload["summary"]
 
     @pytest.mark.anyio
-    async def test_defaults_to_the_first_category_when_nothing_matches(self, monkeypatch):
+    async def test_defaults_to_the_first_category_when_nothing_matches(
+        self, monkeypatch
+    ):
         from app.services import regulatory_rag
         from app.services import regulatory
 
         seen = {}
         monkeypatch.setattr(regulatory, "list_categories", self._categories)
         monkeypatch.setattr(regulatory_rag, "search", lambda *a, **k: [])
+
         async def run_inline(fn, *args, **kwargs):
             return fn(*args, **kwargs)
+
         monkeypatch.setattr(nodes.asyncio, "to_thread", run_inline)
 
         def detail(category_id):
@@ -156,5 +209,7 @@ class TestRegulatory:
             return _intel()
 
         monkeypatch.setattr(regulatory, "regulation_detail", detail)
-        await nodes.run_regulatory("something entirely unrelated to any category")
+        await nodes.run_regulatory(
+            "something entirely unrelated to any category"
+        )
         assert seen["id"] == "psl"  # first category

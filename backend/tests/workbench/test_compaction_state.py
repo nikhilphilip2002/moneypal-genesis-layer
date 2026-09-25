@@ -13,10 +13,13 @@ def _chart_turn(turn_id: str, question: str, summary: str, *, sources=("db",)):
         "question": question,
         "status": "complete",
         "route": {"sources": list(sources), "intent": "data"},
-        "events": [{
-            "sequence": 0, "type": "user_message",
-            "payload": {"role": "user", "content": question},
-        }],
+        "events": [
+            {
+                "sequence": 0,
+                "type": "user_message",
+                "payload": {"role": "user", "content": question},
+            }
+        ],
         "cards": [
             {
                 "source": sources[0],
@@ -45,7 +48,9 @@ def _text_of(turn):
 
 class TestFigures:
     def test_captures_percentages_with_their_period(self):
-        turn = _chart_turn("t1", "PAR-30 for FY25?", "PAR-30 stood at 4.2% in FY25.")
+        turn = _chart_turn(
+            "t1", "PAR-30 for FY25?", "PAR-30 stood at 4.2% in FY25."
+        )
 
         state = session_state.extract_turn(turn, _text_of(turn))
 
@@ -56,21 +61,37 @@ class TestFigures:
         assert figure.turn_id == "t1"
 
     def test_captures_rupee_amounts(self):
-        turn = _chart_turn("t2", "MSME book?", "MSME credit outstanding is Rs 12,50,000 crore.")
+        turn = _chart_turn(
+            "t2",
+            "MSME book?",
+            "MSME credit outstanding is Rs 12,50,000 crore.",
+        )
 
-        values = {f.value for f in session_state.extract_turn(turn, _text_of(turn)).figures}
+        values = {
+            f.value
+            for f in session_state.extract_turn(turn, _text_of(turn)).figures
+        }
 
         assert "Rs 12,50,000 crore" in values
 
     def test_captures_basis_points(self):
-        turn = _chart_turn("t3", "Rate move?", "The repo rate was cut by 25 bps.")
+        turn = _chart_turn(
+            "t3", "Rate move?", "The repo rate was cut by 25 bps."
+        )
 
-        values = {f.value for f in session_state.extract_turn(turn, _text_of(turn)).figures}
+        values = {
+            f.value
+            for f in session_state.extract_turn(turn, _text_of(turn)).figures
+        }
 
         assert "25 bps" in values
 
     def test_period_falls_back_to_the_question(self):
-        turn = _chart_turn("t4", "What was collection efficiency in FY24?", "It reached 92.5%.")
+        turn = _chart_turn(
+            "t4",
+            "What was collection efficiency in FY24?",
+            "It reached 92.5%.",
+        )
 
         figure = session_state.extract_turn(turn, _text_of(turn)).figures[0]
 
@@ -93,7 +114,7 @@ class TestFigures:
         ],
     )
     def test_currency_marker_needs_a_word_boundary(self, text):
-        """"yea|rs 2024" must not be read as a rupee amount.
+        """ "yea|rs 2024" must not be read as a rupee amount.
 
         A false figure is worse than a missing one: it enters the state block as fact.
         """
@@ -102,16 +123,22 @@ class TestFigures:
         assert session_state.extract_turn(turn, _text_of(turn)).figures == []
 
     def test_real_currency_forms_are_still_caught(self):
-        turn = _chart_turn("t8", "Book?", "Sanctioned ₹1,200 crore and Rs.75 lakh this year.")
+        turn = _chart_turn(
+            "t8", "Book?", "Sanctioned ₹1,200 crore and Rs.75 lakh this year."
+        )
 
-        value = session_state.extract_turn(turn, _text_of(turn)).figures[0].value
+        value = (
+            session_state.extract_turn(turn, _text_of(turn)).figures[0].value
+        )
 
         assert "Rs 1,200 crore" in value
         assert "Rs 75 lakh" in value
 
     def test_one_row_per_sentence_not_per_number(self):
         turn = _chart_turn(
-            "t7", "Split?", "Term loans 5.1%, working capital 3.4%, gold loans 1.2% in 2026-07."
+            "t7",
+            "Split?",
+            "Term loans 5.1%, working capital 3.4%, gold loans 1.2% in 2026-07.",
         )
 
         figures = session_state.extract_turn(turn, _text_of(turn)).figures
@@ -123,7 +150,9 @@ class TestFigures:
         assert figures[0].period == "2026-07"
 
     def test_values_survive_verbatim_not_rounded(self):
-        turn = _chart_turn("t6", "Growth?", "Real GDP grew 6.5 per cent in FY25.")
+        turn = _chart_turn(
+            "t6", "Growth?", "Real GDP grew 6.5 per cent in FY25."
+        )
 
         figure = session_state.extract_turn(turn, _text_of(turn)).figures[0]
 
@@ -133,7 +162,9 @@ class TestFigures:
 
 class TestRouteAndRefusals:
     def test_sources_are_collected(self):
-        turn = _chart_turn("t1", "Compare", "Nothing numeric here.", sources=("db", "macro"))
+        turn = _chart_turn(
+            "t1", "Compare", "Nothing numeric here.", sources=("db", "macro")
+        )
 
         state = session_state.extract_turn(turn, _text_of(turn))
 
@@ -141,7 +172,9 @@ class TestRouteAndRefusals:
 
     def test_refusals_are_retained(self):
         turn = _chart_turn("t1", "Show borrower names", "")
-        turn["refusal"] = {"message": "Borrower PII is not available for your role."}
+        turn["refusal"] = {
+            "message": "Borrower PII is not available for your role."
+        }
 
         state = session_state.extract_turn(turn, _text_of(turn))
 
@@ -150,7 +183,9 @@ class TestRouteAndRefusals:
         assert "t1" in state.refusals[0]
 
     def test_pinned_document_is_carried(self):
-        turn = _chart_turn("t1", "What does it say?", "It says growth held up.")
+        turn = _chart_turn(
+            "t1", "What does it say?", "It says growth held up."
+        )
         turn["pinned"] = "RBI Master Direction 2024.pdf"
 
         state = session_state.extract_turn(turn, _text_of(turn))
@@ -160,9 +195,13 @@ class TestRouteAndRefusals:
 
     def test_currency_scale_is_preserved(self):
         """crore and lakh crore differ by 10,000x — the magnitude word is the figure."""
-        turn = _chart_turn("t1", "Book size?", "The book stands at Rs 1,200 crore.")
+        turn = _chart_turn(
+            "t1", "Book size?", "The book stands at Rs 1,200 crore."
+        )
 
-        value = session_state.extract_turn(turn, _text_of(turn)).figures[0].value
+        value = (
+            session_state.extract_turn(turn, _text_of(turn)).figures[0].value
+        )
 
         assert value == "Rs 1,200 crore"
 
@@ -177,39 +216,61 @@ class TestRouteAndRefusals:
         turn = _chart_turn("t1", "Top branch?", "Aluva leads at 4.2%.")
         # Native calls are read from the turn's event stream, the one representation
         # every reader shares; the `agent_exchanges` copy is never consulted.
-        calls = [{
-            "id": "c1", "name": "query_metrics",
-            "arguments": {
-                "metrics": ["par_30"], "dimensions": ["branch"],
-                "period": {"relative": "today"},
+        calls = [
+            {
+                "id": "c1",
+                "name": "query_metrics",
+                "arguments": {
+                    "metrics": ["par_30"],
+                    "dimensions": ["branch"],
+                    "period": {"relative": "today"},
+                },
             },
-        }, {
-            "id": "c2", "name": "lookup_records",
-            "arguments": {"selector": "branch", "value": "Aluva"},
-        }]
+            {
+                "id": "c2",
+                "name": "lookup_records",
+                "arguments": {"selector": "branch", "value": "Aluva"},
+            },
+        ]
         turn["events"] = [
-            {"sequence": 0, "type": "user_message", "payload": {"role": "user", "content": "Top branch?"}},
+            {
+                "sequence": 0,
+                "type": "user_message",
+                "payload": {"role": "user", "content": "Top branch?"},
+            },
             *(
                 {
-                    "sequence": index + 1, "type": "tool_call",
+                    "sequence": index + 1,
+                    "type": "tool_call",
                     "payload": {"execution_path": "native", "call": call},
                 }
                 for index, call in enumerate(calls)
             ),
         ]
-        turn["agent_exchanges"] = [{"calls": [{
-            "id": "stale", "name": "lookup_records",
-            "arguments": {"selector": "x", "value": "ignored"},
-        }]}]
-        turn["cards"][0]["payload"].update({
-            "chart_type": "ranking",
-            "columns": [
-                {"name": "branch", "unit": "text"},
-                {"name": "par_30", "unit": "percent"},
-            ],
-            "rows": [{"branch": "Aluva", "par_30": 4.2}],
-            "next_steps": [{"id": "by_agent", "question": "Show Aluva by agent"}],
-        })
+        turn["agent_exchanges"] = [
+            {
+                "calls": [
+                    {
+                        "id": "stale",
+                        "name": "lookup_records",
+                        "arguments": {"selector": "x", "value": "ignored"},
+                    }
+                ]
+            }
+        ]
+        turn["cards"][0]["payload"].update(
+            {
+                "chart_type": "ranking",
+                "columns": [
+                    {"name": "branch", "unit": "text"},
+                    {"name": "par_30", "unit": "percent"},
+                ],
+                "rows": [{"branch": "Aluva", "par_30": 4.2}],
+                "next_steps": [
+                    {"id": "by_agent", "question": "Show Aluva by agent"}
+                ],
+            }
+        )
 
         state = session_state.extract_turn(turn, _text_of(turn))
 
@@ -238,7 +299,9 @@ class TestMergeAndRender:
             ]
         )
         turn = _chart_turn("t9", "Latest?", "Latest reading is 9.9% in FY26.")
-        merged = session_state.merge(base, session_state.extract_turn(turn, _text_of(turn)))
+        merged = session_state.merge(
+            base, session_state.extract_turn(turn, _text_of(turn))
+        )
 
         assert len(merged.figures) == session_state.MAX_FIGURES
         assert merged.figures[-1].value == "9.9%"
@@ -247,7 +310,9 @@ class TestMergeAndRender:
         assert session_state.render(session_state.SessionState()) == ""
 
     def test_render_emits_tagged_blocks(self):
-        turn = _chart_turn("t1", "PAR for FY25?", "PAR-30 stood at 4.2% in FY25.")
+        turn = _chart_turn(
+            "t1", "PAR for FY25?", "PAR-30 stood at 4.2% in FY25."
+        )
         rendered = session_state.render(
             session_state.from_turns([turn], _text_of)
         )
@@ -265,9 +330,13 @@ class TestMergeAndRender:
         assert state.is_empty()
 
     def test_payload_round_trip(self):
-        turn = _chart_turn("t1", "PAR for FY25?", "PAR-30 stood at 4.2% in FY25.")
+        turn = _chart_turn(
+            "t1", "PAR for FY25?", "PAR-30 stood at 4.2% in FY25."
+        )
         original = session_state.from_turns([turn], _text_of)
 
-        restored = session_state.from_payload(session_state.to_payload(original))
+        restored = session_state.from_payload(
+            session_state.to_payload(original)
+        )
 
         assert session_state.render(restored) == session_state.render(original)

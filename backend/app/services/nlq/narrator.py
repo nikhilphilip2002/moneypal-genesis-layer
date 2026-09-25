@@ -98,7 +98,9 @@ def narrate(
             parts.append(zero_note)
 
     if compiled.signoff_pending:
-        labels = ", ".join(cat.metrics[m].label for m in compiled.signoff_pending)
+        labels = ", ".join(
+            cat.metrics[m].label for m in compiled.signoff_pending
+        )
         parts.append(f"Definition of {labels} is pending client sign-off.")
 
     return " ".join(p for p in parts if p)
@@ -116,7 +118,11 @@ def _filter_phrase(spec: QuerySpec, cat: Catalog) -> str:
         dimension = cat.dimensions.get(filt.field)
         if dimension is None or filt.op != "eq" or filt.value is None:
             continue
-        enum = cat.enum_for_dimension(dimension.decode) if dimension.decode else None
+        enum = (
+            cat.enum_for_dimension(dimension.decode)
+            if dimension.decode
+            else None
+        )
         label = enum.label_for(str(filt.value)) if enum else str(filt.value)
         parts.append(f"{dimension.label.lower()} {label}")
     return (" for " + " and ".join(parts)) if parts else ""
@@ -129,13 +135,18 @@ def _period_phrase(compiled: CompiledQuery) -> str:
 
 
 def _kpi_sentence(
-    spec: QuerySpec, compiled: CompiledQuery, rows: list[dict[str, Any]], cat: Catalog
+    spec: QuerySpec,
+    compiled: CompiledQuery,
+    rows: list[dict[str, Any]],
+    cat: Catalog,
 ) -> str:
     row = rows[0]
     pieces = []
     for metric_id in spec.metrics:
         metric = cat.metrics[metric_id]
-        pieces.append(f"{metric.label} was {format_value(row.get(metric_id), metric.unit)}")
+        pieces.append(
+            f"{metric.label} was {format_value(row.get(metric_id), metric.unit)}"
+        )
     scope = f"{_filter_phrase(spec, cat)} {_period_phrase(compiled)}".strip()
     return f"{'; '.join(pieces)} {scope}.".replace("  ", " ").strip()
 
@@ -147,7 +158,9 @@ def _ranking_sentence(
     metric,
     cat: Catalog,
 ) -> str:
-    dim_id = next((d for d in spec.dimensions if not cat.dimensions[d].is_time), None)
+    dim_id = next(
+        (d for d in spec.dimensions if not cat.dimensions[d].is_time), None
+    )
     if dim_id is None:
         return _kpi_sentence(spec, compiled, rows, cat)
 
@@ -180,9 +193,7 @@ def _ranking_sentence(
     # Share of total is meaningless for a percentage metric — PAR values do not sum to
     # anything, so "36% of the total PAR" would be a number with no referent.
     if share is not None and metric.unit != "percent" and len(ranked) > 1:
-        sentence += (
-            f", {share:.0f}% of the total across {_plural(len(ranked), dim.label.lower())}"
-        )
+        sentence += f", {share:.0f}% of the total across {_plural(len(ranked), dim.label.lower())}"
     return sentence + "."
 
 
@@ -195,7 +206,9 @@ def _definition_sentence(spec: QuerySpec, cat: Catalog) -> str:
         if formula:
             formula = formula[:1].lower() + formula[1:]
             definitions.append(
-                formula if len(spec.metrics) == 1 else f"{metric.label}: {formula}"
+                formula
+                if len(spec.metrics) == 1
+                else f"{metric.label}: {formula}"
             )
     if not definitions:
         return ""
@@ -203,7 +216,9 @@ def _definition_sentence(spec: QuerySpec, cat: Catalog) -> str:
     if len(definitions) == 1:
         sentence = f"This measures {definitions[0]}"
     else:
-        sentence = "The figures use these governed definitions: " + "; ".join(definitions)
+        sentence = "The figures use these governed definitions: " + "; ".join(
+            definitions
+        )
 
     grouped = [cat.dimensions[d].label.lower() for d in spec.dimensions]
     if grouped:
@@ -236,8 +251,12 @@ def _trend_sentence(
 
     first, last = points[0], points[-1]
     change = last[metric.id] - first[metric.id]
-    direction = "rose" if change > 0 else "fell" if change < 0 else "was unchanged"
-    time_dim = next((d for d in spec.dimensions if cat.dimensions[d].is_time), None)
+    direction = (
+        "rose" if change > 0 else "fell" if change < 0 else "was unchanged"
+    )
+    time_dim = next(
+        (d for d in spec.dimensions if cat.dimensions[d].is_time), None
+    )
 
     sentence = (
         f"{metric.label} {direction} from {format_value(first[metric.id], metric.unit)} "
@@ -245,17 +264,27 @@ def _trend_sentence(
         f"({last.get(time_dim)})"
     )
     if change and first[metric.id]:
-        sentence += f", a change of {abs(change / first[metric.id] * 100):.1f}%"
+        sentence += (
+            f", a change of {abs(change / first[metric.id] * 100):.1f}%"
+        )
     sentence += "."
     if gaps:
         sentence += f" {gaps} period(s) in this range have no underlying data."
     return sentence
 
 
-def _variance_sentence(compiled: CompiledQuery, rows: list[dict[str, Any]], metric) -> str:
-    totals_now = sum(r["current"] for r in rows if isinstance(r.get("current"), (int, float)))
+def _variance_sentence(
+    compiled: CompiledQuery, rows: list[dict[str, Any]], metric
+) -> str:
+    totals_now = sum(
+        r["current"]
+        for r in rows
+        if isinstance(r.get("current"), (int, float))
+    )
     totals_before = sum(
-        r["previous"] for r in rows if isinstance(r.get("previous"), (int, float))
+        r["previous"]
+        for r in rows
+        if isinstance(r.get("previous"), (int, float))
     )
     if not totals_before:
         return (
@@ -282,11 +311,15 @@ def _all_zero_note(rows: list[dict[str, Any]], metric) -> str:
     values = [r.get(metric.id) for r in rows]
     numeric = [v for v in values if isinstance(v, (int, float))]
     if numeric and all(v == 0 for v in numeric):
-        return f"Every value is zero — this is a real result, not a failed query."
+        return (
+            "Every value is zero — this is a real result, not a failed query."
+        )
     return ""
 
 
-def _empty_summary(spec: QuerySpec, compiled: CompiledQuery, cat: Catalog) -> str:
+def _empty_summary(
+    spec: QuerySpec, compiled: CompiledQuery, cat: Catalog
+) -> str:
     """Name the filters that produced the empty result, so it can be corrected.
 
     "No results" alone leaves the user unable to tell a wrong filter from a genuine

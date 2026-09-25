@@ -22,18 +22,26 @@ def test_llama_server_root_removes_only_v1_suffix():
 
 
 def test_snapshot_identity_is_conversation_scoped_and_safe(monkeypatch):
-    monkeypatch.setattr(settings, "llama_slot_cache_prefix", "Money Pal / Workbench")
+    monkeypatch.setattr(
+        settings, "llama_slot_cache_prefix", "Money Pal / Workbench"
+    )
     kwargs = dict(
-        user="analyst@example.com", conversation_id="conversation-1",
-        system_prompt="stable", tool_schema_hash="tools-v1",
+        user="analyst@example.com",
+        conversation_id="conversation-1",
+        system_prompt="stable",
+        tool_schema_hash="tools-v1",
     )
     first = snapshot_filename(**kwargs)
     assert first == snapshot_filename(**kwargs)
     assert first.startswith("Money-Pal-Workbench-")
     assert "analyst" not in first and "/" not in first
     assert first != snapshot_filename(**{**kwargs, "user": "other"})
-    assert first != snapshot_filename(**{**kwargs, "conversation_id": "conversation-2"})
-    assert first != snapshot_filename(**{**kwargs, "tool_schema_hash": "tools-v2"})
+    assert first != snapshot_filename(
+        **{**kwargs, "conversation_id": "conversation-2"}
+    )
+    assert first != snapshot_filename(
+        **{**kwargs, "tool_schema_hash": "tools-v2"}
+    )
     monkeypatch.setattr(settings, "llm_model", "other-model")
     assert first != snapshot_filename(**kwargs)
 
@@ -48,8 +56,12 @@ def test_slot_action_uses_server_root_and_filename(monkeypatch):
         return httpx.Response(200, json={"id_slot": 0, "n_saved": 12})
 
     async def request():
-        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
-            return await slot_action("save", filename="safe.bin", http_client=client)
+        async with httpx.AsyncClient(
+            transport=httpx.MockTransport(handler)
+        ) as client:
+            return await slot_action(
+                "save", filename="safe.bin", http_client=client
+            )
 
     result = asyncio.run(request())
     assert result["n_saved"] == 12
@@ -69,7 +81,9 @@ def test_slot_action_reports_http_failure(monkeypatch):
         async with httpx.AsyncClient(
             transport=httpx.MockTransport(lambda _: httpx.Response(404))
         ) as client:
-            await slot_action("restore", filename="missing.bin", http_client=client)
+            await slot_action(
+                "restore", filename="missing.bin", http_client=client
+            )
 
     with pytest.raises(SlotCacheError, match="slot restore failed"):
         asyncio.run(request())

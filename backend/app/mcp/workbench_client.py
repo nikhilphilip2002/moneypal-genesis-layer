@@ -73,7 +73,8 @@ def canonical_model_definitions() -> list[dict[str, Any]]:
     if not _tools:
         raise RuntimeError(_initialization_error)
     return [
-        deepcopy(provider_tool_definition(_tools[name])) for name in sorted(_tools)
+        deepcopy(provider_tool_definition(_tools[name]))
+        for name in sorted(_tools)
     ]
 
 

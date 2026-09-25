@@ -65,7 +65,10 @@ from app.services.dnbs02_spec import (  # noqa: F401 - re-exported for callers a
     part8c_buckets,
 )
 from app.services import dnbs02_spec as spec
-from app.services.approved_report_values import apply_approved_values, load_approved_values
+from app.services.approved_report_values import (
+    apply_approved_values,
+    load_approved_values,
+)
 
 TEMPLATE_FILENAME = "DNBS02_Blank_Template.xlsx"
 
@@ -96,7 +99,10 @@ def parse_period_range(frequency: str, period: str) -> Tuple[str, str]:
             raise PeriodError(
                 f"Monthly period must look like 'YYYY-MM' (got {period!r})."
             ) from exc
-        return f"{year:04d}-{month:02d}-01", f"{year:04d}-{month:02d}-{last_day:02d}"
+        return (
+            f"{year:04d}-{month:02d}-01",
+            f"{year:04d}-{month:02d}-{last_day:02d}",
+        )
 
     if freq == "quarterly":
         # Expected: YYYY-Qn, where the year is the financial year start (Apr-Mar).
@@ -126,7 +132,10 @@ def parse_period_range(frequency: str, period: str) -> Tuple[str, str]:
         try:
             if "-" in p_str:
                 start_s, end_s = p_str.split("-")
-                start_year, end_year = int(start_s.replace("FY", "")), int(end_s)
+                start_year, end_year = (
+                    int(start_s.replace("FY", "")),
+                    int(end_s),
+                )
                 if end_year != start_year + 1:
                     raise PeriodError(
                         f"Financial year {period!r} must span consecutive years "
@@ -155,7 +164,9 @@ def get_available_snapshot_dates(cur: Any) -> List[str]:
     # Normalise midnight timestamps to date-only strings before comparing them with the
     # UI's YYYY-MM-DD period end.
     return [
-        (r[0].date() if isinstance(r[0], datetime.datetime) else r[0]).isoformat()
+        (
+            r[0].date() if isinstance(r[0], datetime.datetime) else r[0]
+        ).isoformat()
         for r in cur.fetchall()
     ]
 
@@ -172,7 +183,11 @@ def get_available_gl_years(cur: Any) -> List[int]:
 
 def get_available_gl_dates(cur: Any) -> List[str]:
     cur.execute(spec.GL_DATES_SQL)
-    return [_date_only.isoformat() for row in cur.fetchall() for _date_only in [row[0]]]
+    return [
+        _date_only.isoformat()
+        for row in cur.fetchall()
+        for _date_only in [row[0]]
+    ]
 
 
 def resolve_snapshot_date(cur: Any, end_date: str) -> str:
@@ -184,7 +199,9 @@ def resolve_snapshot_date(cur: Any, end_date: str) -> str:
     """
     available = get_available_snapshot_dates(cur)
     if not available:
-        raise PeriodError("silver.loan_daily_snapshot_summary holds no portfolio snapshots at all.")
+        raise PeriodError(
+            "silver.loan_daily_snapshot_summary holds no portfolio snapshots at all."
+        )
     if end_date in available:
         return end_date
     raise PeriodError(
@@ -208,7 +225,11 @@ def get_reportable_periods() -> Dict[str, Any]:
         snapshots = get_available_snapshot_dates(cur)
         gl_years = get_available_gl_years(cur)
     monthly = [
-        {"value": s[:7], "label": datetime.date.fromisoformat(s).strftime("%B %Y"), "end_date": s}
+        {
+            "value": s[:7],
+            "label": datetime.date.fromisoformat(s).strftime("%B %Y"),
+            "end_date": s,
+        }
         for s in snapshots
     ]
     quarter_ends = {(3, 31), (6, 30), (9, 30), (12, 31)}
@@ -225,17 +246,21 @@ def get_reportable_periods() -> Dict[str, Any]:
                 fiscal_year, quarter = date.year, "Q3"
             else:
                 fiscal_year, quarter = date.year - 1, "Q4"
-            quarterly.append({
-                "value": f"{fiscal_year}-{quarter}",
-                "label": f"{quarter} FY{str(fiscal_year + 1)[-2:]}",
-                "end_date": snapshot,
-            })
+            quarterly.append(
+                {
+                    "value": f"{fiscal_year}-{quarter}",
+                    "label": f"{quarter} FY{str(fiscal_year + 1)[-2:]}",
+                    "end_date": snapshot,
+                }
+            )
         if (date.month, date.day) == (3, 31):
-            yearly.append({
-                "value": f"{date.year - 1}-{date.year}",
-                "label": f"FY {date.year - 1}-{date.year}",
-                "end_date": snapshot,
-            })
+            yearly.append(
+                {
+                    "value": f"{date.year - 1}-{date.year}",
+                    "label": f"FY {date.year - 1}-{date.year}",
+                    "end_date": snapshot,
+                }
+            )
     return {
         "monthly": list(reversed(monthly)),
         "quarterly": list(reversed(quarterly)),
@@ -273,8 +298,17 @@ class Ctx:
     be executed on its own with a hand-built Ctx.
     """
 
-    def __init__(self, cur, conn, start_date: str, end_date: str, snapshot_date: str,
-                 gl_year: int, gl_years: List[int], gl_dates: List[str]):
+    def __init__(
+        self,
+        cur,
+        conn,
+        start_date: str,
+        end_date: str,
+        snapshot_date: str,
+        gl_year: int,
+        gl_years: List[int],
+        gl_dates: List[str],
+    ):
         self.cur = cur
         self.conn = conn
         self.start_date = start_date
@@ -383,14 +417,16 @@ def _sec_core_account_reconciliation(ctx: Ctx) -> int:
         pct_key = key.removesuffix("_matches") + "_coverage_pct"
         ctx.reconciliation[pct_key] = (
             round(ctx.reconciliation[key] / snapshot_accounts * 100, 2)
-            if snapshot_accounts else 0.0
+            if snapshot_accounts
+            else 0.0
         )
     return 1 if snapshot_accounts else 0
 
 
 def _sec_part1(ctx: Ctx) -> int:
     ctx.cur.execute(
-        spec.PART1_SQL, (ctx.end_date, GL_SHARE_CAPITAL, GL_RESERVES, GL_BORROWINGS)
+        spec.PART1_SQL,
+        (ctx.end_date, GL_SHARE_CAPITAL, GL_RESERVES, GL_BORROWINGS),
     )
     out = ctx.rows["part1_capital"]
     share_capital = reserves = borrowings = 0.0
@@ -403,14 +439,42 @@ def _sec_part1(ctx: Ctx) -> int:
         else:
             borrowings += amt
         out.append(
-            {"gl_group": gl_group, "particulars": (descn or "").strip(), "amount_lakhs": amt}
+            {
+                "gl_group": gl_group,
+                "particulars": (descn or "").strip(),
+                "amount_lakhs": amt,
+            }
         )
     ctx.totals["owned_funds"] = round(share_capital + reserves, 2)
     if out:
-        out.append({"gl_group": "TOTAL", "particulars": "Share Capital", "amount_lakhs": round(share_capital, 2)})
-        out.append({"gl_group": "TOTAL", "particulars": "Reserves and Surplus", "amount_lakhs": round(reserves, 2)})
-        out.append({"gl_group": "TOTAL", "particulars": "Borrowings", "amount_lakhs": round(borrowings, 2)})
-        out.append({"gl_group": "TOTAL", "particulars": "Owned Funds", "amount_lakhs": ctx.totals["owned_funds"]})
+        out.append(
+            {
+                "gl_group": "TOTAL",
+                "particulars": "Share Capital",
+                "amount_lakhs": round(share_capital, 2),
+            }
+        )
+        out.append(
+            {
+                "gl_group": "TOTAL",
+                "particulars": "Reserves and Surplus",
+                "amount_lakhs": round(reserves, 2),
+            }
+        )
+        out.append(
+            {
+                "gl_group": "TOTAL",
+                "particulars": "Borrowings",
+                "amount_lakhs": round(borrowings, 2),
+            }
+        )
+        out.append(
+            {
+                "gl_group": "TOTAL",
+                "particulars": "Owned Funds",
+                "amount_lakhs": ctx.totals["owned_funds"],
+            }
+        )
     return len(out)
 
 
@@ -432,11 +496,16 @@ def _sec_part2(ctx: Ctx) -> int:
 
 def _sec_part2_maturity(ctx: Ctx) -> int:
     ctx.cur.execute(
-        spec.PART2_MATURITY_SQL, (ctx.snapshot_date, ctx.snapshot_date, ctx.snapshot_date)
+        spec.PART2_MATURITY_SQL,
+        (ctx.snapshot_date, ctx.snapshot_date, ctx.snapshot_date),
     )
     for bucket, cnt, amount in ctx.cur.fetchall():
         ctx.rows["part2_maturity"].append(
-            {"bucket": bucket, "account_count": int(cnt), "amount_lakhs": round(_f(amount), 2)}
+            {
+                "bucket": bucket,
+                "account_count": int(cnt),
+                "amount_lakhs": round(_f(amount), 2),
+            }
         )
     return len(ctx.rows["part2_maturity"])
 
@@ -445,14 +514,20 @@ def _sec_part3(ctx: Ctx) -> int:
     ctx.cur.execute(spec.PART3_SQL, (ctx.end_date, GL_INCOME))
     for descn, amount in ctx.cur.fetchall():
         ctx.rows["part3_income"].append(
-            {"head": (descn or "").strip(), "amount_lakhs": round(_f(amount), 2)}
+            {
+                "head": (descn or "").strip(),
+                "amount_lakhs": round(_f(amount), 2),
+            }
         )
     return len(ctx.rows["part3_income"])
 
 
 def _sec_part4(ctx: Ctx) -> int:
     ctx.rows["part4_nof"].append(
-        {"particulars": "Owned Fund (from Part 1)", "amount_lakhs": ctx.totals["owned_funds"]}
+        {
+            "particulars": "Owned Fund (from Part 1)",
+            "amount_lakhs": ctx.totals["owned_funds"],
+        }
     )
     return len(ctx.rows["part4_nof"])
 
@@ -469,7 +544,11 @@ def _sec_part6(ctx: Ctx) -> int:
         else:
             sector = "Other"
         ctx.rows["part6_sensitive"].append(
-            {"sector": sector, "particulars": label, "exposure_lakhs": round(_f(amount), 2)}
+            {
+                "sector": sector,
+                "particulars": label,
+                "exposure_lakhs": round(_f(amount), 2),
+            }
         )
     return len(ctx.rows["part6_sensitive"])
 
@@ -485,7 +564,9 @@ def _sec_part8(ctx: Ctx) -> int:
         ctx.rows["part8_asset_quality"].append(
             {
                 "asset_code": code,
-                "status": ASSET_CODE_LABELS.get(code, f"Unmapped asset code ({code})"),
+                "status": ASSET_CODE_LABELS.get(
+                    code, f"Unmapped asset code ({code})"
+                ),
                 "is_npa": is_npa,
                 "count": int(cnt),
                 "amount_lakhs": round(_f(amount), 2),
@@ -599,7 +680,9 @@ def _sec_annex10(ctx: Ctx) -> int:
 
 
 def _sec_annex11(ctx: Ctx) -> int:
-    ctx.cur.execute(spec.ANNEX11_SQL, (ctx.snapshot_date, list(NPA_ASSET_CODES)))
+    ctx.cur.execute(
+        spec.ANNEX11_SQL, (ctx.snapshot_date, list(NPA_ASSET_CODES))
+    )
     for row in ctx.cur.fetchall():
         ctx.rows["annex11_top_npas"].append(
             {
@@ -620,7 +703,17 @@ def _sec_annex11(ctx: Ctx) -> int:
 def _sec_annex13(ctx: Ctx) -> int:
     ctx.cur.execute(spec.ANNEX13_SQL, (ctx.snapshot_date,))
     for row in ctx.cur.fetchall():
-        brn_code, name, address, opened, closed, location_code, customers, accounts, amount = row
+        (
+            brn_code,
+            name,
+            address,
+            opened,
+            closed,
+            location_code,
+            customers,
+            accounts,
+            amount,
+        ) = row
         code = str(int(brn_code))
         ctx.rows["annex13_branches"].append(
             {
@@ -647,7 +740,12 @@ def _gl_available(ctx: Ctx) -> bool:
 
 SECTIONS: List[Section] = [
     Section("summary", source=SOURCES["summary"], run=_sec_summary),
-    Section("coverage", source=SOURCES["coverage"], requires=("summary",), run=_sec_coverage),
+    Section(
+        "coverage",
+        source=SOURCES["coverage"],
+        requires=("summary",),
+        run=_sec_coverage,
+    ),
     Section(
         "core_account_reconciliation",
         source=SOURCES["core_account_reconciliation"],
@@ -666,7 +764,11 @@ SECTIONS: List[Section] = [
         precondition_reason=_gl_reason,
     ),
     Section("part2_loans", source=SOURCES["part2_loans"], run=_sec_part2),
-    Section("part2_maturity", source=SOURCES["part2_maturity"], run=_sec_part2_maturity),
+    Section(
+        "part2_maturity",
+        source=SOURCES["part2_maturity"],
+        run=_sec_part2_maturity,
+    ),
     Section(
         "part3_income",
         source=SOURCES["part3_income"],
@@ -686,7 +788,9 @@ SECTIONS: List[Section] = [
         source=SOURCES["part4_nof"],
         requires=("part1_capital",),
         run=_sec_part4,
-        precondition=lambda ctx: ctx.gl_available and bool(ctx.totals["owned_funds"]),
+        precondition=lambda ctx: (
+            ctx.gl_available and bool(ctx.totals["owned_funds"])
+        ),
         precondition_reason=lambda ctx: (
             "Depends on Part 1, which has no trial balance for this period."
         ),
@@ -700,7 +804,11 @@ SECTIONS: List[Section] = [
             f"silver.gl_balance_history has no exact balance for {ctx.end_date}."
         ),
     ),
-    Section("part8_asset_quality", source=SOURCES["part8_asset_quality"], run=_sec_part8),
+    Section(
+        "part8_asset_quality",
+        source=SOURCES["part8_asset_quality"],
+        run=_sec_part8,
+    ),
     Section(
         "part8a_msme",
         source=SOURCES["part8a_msme"],
@@ -725,7 +833,11 @@ SECTIONS: List[Section] = [
         run=_sec_annex2,
         note="Share register has no PAN; PAN cells remain blank.",
     ),
-    Section("annex9_top_borrowers", source=SOURCES["annex9_top_borrowers"], run=_sec_annex9),
+    Section(
+        "annex9_top_borrowers",
+        source=SOURCES["annex9_top_borrowers"],
+        run=_sec_annex9,
+    ),
     Section(
         "annex10_investment_totals",
         source=SOURCES["annex10_investment_totals"],
@@ -740,8 +852,16 @@ SECTIONS: List[Section] = [
             "only aggregate investment GL heads, with no counterparty name or PAN."
         ),
     ),
-    Section("annex11_top_npas", source=SOURCES["annex11_top_npas"], run=_sec_annex11),
-    Section("annex13_branches", source=SOURCES["annex13_branches"], run=_sec_annex13),
+    Section(
+        "annex11_top_npas",
+        source=SOURCES["annex11_top_npas"],
+        run=_sec_annex11,
+    ),
+    Section(
+        "annex13_branches",
+        source=SOURCES["annex13_branches"],
+        run=_sec_annex13,
+    ),
     Section(
         "annex13_branch_geography",
         no_source_reason=(
@@ -815,9 +935,13 @@ def get_dnbs02_report_data(
     because a plausible-looking invented number in a regulatory return is worse than a
     gap.
     """
-    custom_request = bool(start_date or end_date) or frequency.lower().strip() == "custom"
+    custom_request = (
+        bool(start_date or end_date) or frequency.lower().strip() == "custom"
+    )
     if bool(start_date) != bool(end_date):
-        raise PeriodError("Custom reports require both start_date and end_date.")
+        raise PeriodError(
+            "Custom reports require both start_date and end_date."
+        )
     if not start_date or not end_date:
         calc_start, calc_end = parse_period_range(frequency, period)
         start_date = start_date or calc_start
@@ -827,9 +951,13 @@ def get_dnbs02_report_data(
         d1 = datetime.datetime.strptime(start_date, "%Y-%m-%d")
         d2 = datetime.datetime.strptime(end_date, "%Y-%m-%d")
     except ValueError as exc:
-        raise PeriodError(f"Dates must be ISO YYYY-MM-DD (got {start_date!r}..{end_date!r}).") from exc
+        raise PeriodError(
+            f"Dates must be ISO YYYY-MM-DD (got {start_date!r}..{end_date!r})."
+        ) from exc
     if d2 < d1:
-        raise PeriodError(f"Period end {end_date} precedes period start {start_date}.")
+        raise PeriodError(
+            f"Period end {end_date} precedes period start {start_date}."
+        )
     num_days = (d2 - d1).days + 1
 
     provenance: Dict[str, Dict[str, Any]] = {}
@@ -870,12 +998,20 @@ def get_dnbs02_report_data(
 
     total_loan_book = ctx.totals["total_loan_book"]
     npa_amount = ctx.totals["npa_amount"]
-    gross_npa_pct = round(npa_amount / total_loan_book * 100, 2) if total_loan_book else 0.0
+    gross_npa_pct = (
+        round(npa_amount / total_loan_book * 100, 2)
+        if total_loan_book
+        else 0.0
+    )
 
     # A section is "live" only if its own query actually ran and returned rows - not
     # merely because the connection opened.
-    live_sections = sorted(k for k, v in provenance.items() if v["status"] == "ok")
-    degraded_sections = sorted(k for k, v in provenance.items() if v["status"] != "ok")
+    live_sections = sorted(
+        k for k, v in provenance.items() if v["status"] == "ok"
+    )
+    degraded_sections = sorted(
+        k for k, v in provenance.items() if v["status"] != "ok"
+    )
 
     result = {
         "frequency": frequency,
@@ -924,7 +1060,9 @@ def get_dnbs02_report_data(
         "bindings": ctx.bindings,
     }
     result["report_mode"] = "custom" if custom_request else "regulatory"
-    result["filing_eligible"] = bool(not custom_request and result["is_live_pg"])
+    result["filing_eligible"] = bool(
+        not custom_request and result["is_live_pg"]
+    )
     result["filing_note"] = (
         "Custom ranges are internal analytical outputs and are not marked filing-ready."
         if custom_request
@@ -948,7 +1086,11 @@ def get_template_path() -> str:
     backend/scripts/build_dnbs02_blank_template.py.
     """
     candidates = [
-        os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "assets", TEMPLATE_FILENAME)),
+        os.path.abspath(
+            os.path.join(
+                os.path.dirname(__file__), "..", "assets", TEMPLATE_FILENAME
+            )
+        ),
         "/srv/backend/app/assets/" + TEMPLATE_FILENAME,
     ]
     for p in candidates:
@@ -960,7 +1102,9 @@ def get_template_path() -> str:
     )
 
 
-def _find_label_row(sheet, label: str, within: Optional[Tuple[int, int]] = None) -> int:
+def _find_label_row(
+    sheet, label: str, within: Optional[Tuple[int, int]] = None
+) -> int:
     """Row whose label column starts with `label`. Must match exactly one row."""
     target = _norm(label)
     lo, hi = within if within else (1, sheet.max_row)
@@ -972,7 +1116,9 @@ def _find_label_row(sheet, label: str, within: Optional[Tuple[int, int]] = None)
     if len(matches) == 1:
         return matches[0]
     if not matches:
-        raise CellMapError(f"{sheet.title}: no row whose label starts with {label!r}")
+        raise CellMapError(
+            f"{sheet.title}: no row whose label starts with {label!r}"
+        )
     raise CellMapError(
         f"{sheet.title}: label {label!r} is ambiguous, matches rows {matches}. "
         "Use a longer fragment or scope it with `within`."
@@ -1019,13 +1165,16 @@ def _effective_width(sheet, cell) -> float:
 
     first_col, last_col = cell.column, cell.column
     for rng in sheet.merged_cells.ranges:
-        if rng.min_row <= cell.row <= rng.max_row and rng.min_col <= cell.column <= rng.max_col:
+        if (
+            rng.min_row <= cell.row <= rng.max_row
+            and rng.min_col <= cell.column <= rng.max_col
+        ):
             first_col, last_col = rng.min_col, rng.max_col
             break
     total = 0.0
     for col in range(first_col, last_col + 1):
         dim = sheet.column_dimensions.get(get_column_letter(col))
-        total += (dim.width if dim and dim.width else DEFAULT_COLUMN_WIDTH)
+        total += dim.width if dim and dim.width else DEFAULT_COLUMN_WIDTH
     return max(total, 1.0)
 
 
@@ -1048,11 +1197,15 @@ def _fit_row_height(sheet, cell, text: str) -> None:
         sheet.row_dimensions[cell.row].height = needed
 
 
-def _safe_set_cell_value(sheet, coord: str, value: Any, wrap_text: bool = True) -> None:
+def _safe_set_cell_value(
+    sheet, coord: str, value: Any, wrap_text: bool = True
+) -> None:
     """Write a cell, skipping merged anchors. Raises on anything unexpected."""
     cell = sheet[coord]
     if type(cell).__name__ == "MergedCell":
-        logger.warning("DNBS-02: skipped merged cell %s!%s", sheet.title, coord)
+        logger.warning(
+            "DNBS-02: skipped merged cell %s!%s", sheet.title, coord
+        )
         return
     cell.value = value
     if not isinstance(value, str):
@@ -1086,7 +1239,12 @@ def _write_table(wb, data: Dict[str, Any], block: TableBlock) -> int:
     for idx, record in enumerate(rows[: block.max_rows]):
         row_num = block.first_row + idx
         if block.serial_column:
-            _safe_set_cell_value(sheet, f"{block.serial_column}{row_num}", idx + 1, wrap_text=False)
+            _safe_set_cell_value(
+                sheet,
+                f"{block.serial_column}{row_num}",
+                idx + 1,
+                wrap_text=False,
+            )
         for col in block.columns:
             value = record.get(col.field, "")
             _safe_set_cell_value(sheet, f"{col.column}{row_num}", value)
@@ -1096,18 +1254,31 @@ def _write_table(wb, data: Dict[str, Any], block: TableBlock) -> int:
 def _log_unmapped_gl_heads(data: Dict[str, Any]) -> None:
     """Report GL heads that reached no RBI line, so a new head is noticed rather than dropped."""
     for row in data.get("part1_capital") or []:
-        if row["gl_group"] != "TOTAL" and row["particulars"].upper() not in GL_DESC_TO_PART1_LINE:
-            logger.info("DNBS-02 Part 1: GL head %r has no RBI line mapping", row["particulars"])
+        if (
+            row["gl_group"] != "TOTAL"
+            and row["particulars"].upper() not in GL_DESC_TO_PART1_LINE
+        ):
+            logger.info(
+                "DNBS-02 Part 1: GL head %r has no RBI line mapping",
+                row["particulars"],
+            )
     for row in data.get("part3_income") or []:
         if row["head"].upper() not in GL_DESC_TO_PART3_LINE:
-            logger.info("DNBS-02 Part 3: GL head %r has no RBI line mapping", row["head"])
+            logger.info(
+                "DNBS-02 Part 3: GL head %r has no RBI line mapping",
+                row["head"],
+            )
 
 
 def _filing_meta(data: Dict[str, Any]) -> Dict[str, Any]:
     """Values for the FilingInfo cells whose coordinates FIELD_SPECS declares."""
     try:
-        end_display = datetime.datetime.strptime(data["end_date"], "%Y-%m-%d").strftime("%d/%m/%Y")
-        start_display = datetime.datetime.strptime(data["start_date"], "%Y-%m-%d").strftime("%d/%m/%Y")
+        end_display = datetime.datetime.strptime(
+            data["end_date"], "%Y-%m-%d"
+        ).strftime("%d/%m/%Y")
+        start_display = datetime.datetime.strptime(
+            data["start_date"], "%Y-%m-%d"
+        ).strftime("%d/%m/%Y")
     except ValueError:
         start_display, end_display = data["start_date"], data["end_date"]
     return {
@@ -1133,7 +1304,8 @@ def _filing_remarks(data: Dict[str, Any]) -> List[str]:
         )
     if data.get("degraded_sections"):
         remarks.append(
-            "Sections left blank (no source): " + ", ".join(data["degraded_sections"])
+            "Sections left blank (no source): "
+            + ", ".join(data["degraded_sections"])
         )
     return remarks
 
@@ -1148,19 +1320,32 @@ def write_report_into(wb, data: Dict[str, Any]) -> None:
     _log_unmapped_gl_heads(data)
 
     try:
-        end_upper = datetime.datetime.strptime(data["end_date"], "%Y-%m-%d").strftime("%d-%b-%Y").upper()
+        end_upper = (
+            datetime.datetime.strptime(data["end_date"], "%Y-%m-%d")
+            .strftime("%d-%b-%Y")
+            .upper()
+        )
     except ValueError:
         end_upper = data["end_date"]
 
     # Period-end stamp on every reporting sheet (FIELD_SPECS declares this as B5).
     for name in wb.sheetnames:
         if name.startswith("DNBS02_"):
-            _safe_set_cell_value(wb[name], "B5", f"Reporting Period End Date :{end_upper}", wrap_text=False)
+            _safe_set_cell_value(
+                wb[name],
+                "B5",
+                f"Reporting Period End Date :{end_upper}",
+                wrap_text=False,
+            )
 
     # -- FilingInfo, including an explicit statement of what has no source ----
     if "FilingInfo" in wb.sheetnames:
         sheet = wb["FilingInfo"]
-        _safe_set_cell_value(sheet, "B2", f"Period: {data['start_date']} to {data['end_date']} ({data['frequency']})")
+        _safe_set_cell_value(
+            sheet,
+            "B2",
+            f"Period: {data['start_date']} to {data['end_date']} ({data['frequency']})",
+        )
         _safe_set_cell_value(sheet, "B3", f"Generated: {data['generated_at']}")
         for coord, value in _filing_meta(data).items():
             _safe_set_cell_value(sheet, coord, value)
@@ -1170,9 +1355,13 @@ def write_report_into(wb, data: Dict[str, Any]) -> None:
         # labels, so the text overlapped them.
         try:
             remarks_row = _find_label_row(sheet, "General remarks")
-            _safe_set_cell_value(sheet, f"C{remarks_row}", "\n".join(_filing_remarks(data)))
+            _safe_set_cell_value(
+                sheet, f"C{remarks_row}", "\n".join(_filing_remarks(data))
+            )
         except CellMapError:
-            logger.warning("FilingInfo has no 'General remarks' row; disclosures omitted")
+            logger.warning(
+                "FilingInfo has no 'General remarks' row; disclosures omitted"
+            )
 
     # -- Every RBI line item, from the registry ------------------------------
     for fs in FIELD_SPECS:
@@ -1209,7 +1398,10 @@ def generate_dnbs02_excel(
     figures.
     """
     data = get_dnbs02_report_data(
-        frequency=frequency, period=period, start_date=start_date, end_date=end_date
+        frequency=frequency,
+        period=period,
+        start_date=start_date,
+        end_date=end_date,
     )
     wb = openpyxl.load_workbook(get_template_path())
     write_report_into(wb, data)

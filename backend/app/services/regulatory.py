@@ -2,7 +2,12 @@ from datetime import date
 
 from fastapi import HTTPException
 
-from app.models.schema import IntelligenceResponse, RegulatoryAlert, RegulationCategory, Source
+from app.models.schema import (
+    IntelligenceResponse,
+    RegulatoryAlert,
+    RegulationCategory,
+    Source,
+)
 from app.registry import get_regulation_category, load_regulation_categories
 from app.services.regulatory_rag import (
     build_context,
@@ -30,7 +35,11 @@ def regulation_detail(category_id: str) -> IntelligenceResponse:
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
-    hits = search(category.qdrant_collection, f"{category.display_name}. {DETAIL_QUERY}", limit=8)
+    hits = search(
+        category.qdrant_collection,
+        f"{category.display_name}. {DETAIL_QUERY}",
+        limit=8,
+    )
     context = build_context(hits)
     prompt = (
         "Using only the source context below, write a director-level regulatory briefing. "
@@ -46,7 +55,15 @@ def regulation_detail(category_id: str) -> IntelligenceResponse:
         category.effective_date,
     )
 
-    source_doc = hits[0].get("document") if hits else (category.source_docs[0] if category.source_docs else category.display_name)
+    source_doc = (
+        hits[0].get("document")
+        if hits
+        else (
+            category.source_docs[0]
+            if category.source_docs
+            else category.display_name
+        )
+    )
     confidence = "high" if hits else "low"
     return IntelligenceResponse(
         title=category.display_name,

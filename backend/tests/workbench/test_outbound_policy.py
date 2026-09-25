@@ -7,7 +7,9 @@ from app.services.workbench import access, outbound_policy, web
 
 @pytest.fixture(autouse=True)
 def _connectors(monkeypatch):
-    monkeypatch.setattr(access.settings, "workbench_external_connectors_enabled", True)
+    monkeypatch.setattr(
+        access.settings, "workbench_external_connectors_enabled", True
+    )
     monkeypatch.setattr(access.settings, "exa_mcp_enabled", True)
 
 
@@ -30,7 +32,8 @@ def _policy(enabled=True):
 def test_private_variants_are_rejected(query):
     with pytest.raises(outbound_policy.OutboundPolicyDenied):
         outbound_policy.authorize_public_search(
-            {"search_query": query}, policy=_policy(),
+            {"search_query": query},
+            policy=_policy(),
         )
 
 
@@ -54,14 +57,17 @@ def test_session_private_entities_are_rejected():
 def test_consent_is_checked_before_search():
     with pytest.raises(access.SourceAccessDenied):
         outbound_policy.authorize_public_search(
-            {"search_query": "latest RBI repo rate"}, policy=_policy(False),
+            {"search_query": "latest RBI repo rate"},
+            policy=_policy(False),
         )
 
 
 def test_mixed_internal_public_comparison_is_rejected():
     with pytest.raises(outbound_policy.OutboundPolicyDenied):
         outbound_policy.authorize_public_search(
-            {"search_query": "Compare our portfolio against RBI bank credit growth"},
+            {
+                "search_query": "Compare our portfolio against RBI bank credit growth"
+            },
             policy=_policy(),
         )
 
@@ -77,6 +83,8 @@ async def test_denial_performs_no_retrieval(monkeypatch):
     monkeypatch.setattr(web, "retrieve", fake_retrieve)
     with pytest.raises(outbound_policy.OutboundPolicyDenied):
         await outbound_policy.retrieve_public(
-            "customer ID 42", user="alice", policy=_policy(),
+            "customer ID 42",
+            user="alice",
+            policy=_policy(),
         )
     assert called is False

@@ -13,7 +13,14 @@ from app.core.logging.setup import (
 
 def _inject_trace_context(payload: dict[str, Any]) -> dict[str, Any]:
     ctx = get_trace_context()
-    for k in ("trace_id", "conversation_id", "turn_id", "user", "username", "role"):
+    for k in (
+        "trace_id",
+        "conversation_id",
+        "turn_id",
+        "user",
+        "username",
+        "role",
+    ):
         if k in ctx and k not in payload:
             payload[k] = ctx[k]
     return payload
@@ -37,14 +44,16 @@ def log_raw_trace(
 ) -> None:
     """Write a raw LLM request/response trace to the rotating raw trace stream."""
     logger = get_raw_llm_logger()
-    payload = _inject_trace_context({
-        "event": event,
-        "provider": provider,
-        "model": model,
-        "duration_ms": round(duration_ms, 2),
-        "status_code": status_code,
-        **extra,
-    })
+    payload = _inject_trace_context(
+        {
+            "event": event,
+            "provider": provider,
+            "model": model,
+            "duration_ms": round(duration_ms, 2),
+            "status_code": status_code,
+            **extra,
+        }
+    )
     if prompt is not None:
         payload["prompt"] = prompt
     if completion is not None:
@@ -76,12 +85,14 @@ def log_parsed_output(
 ) -> None:
     """Write a parsed LLM output or tool call record to the rotating parsed stream."""
     logger = get_parsed_llm_logger()
-    payload = _inject_trace_context({
-        "event": event,
-        "status": status,
-        "duration_ms": round(duration_ms, 2),
-        **extra,
-    })
+    payload = _inject_trace_context(
+        {
+            "event": event,
+            "status": status,
+            "duration_ms": round(duration_ms, 2),
+            **extra,
+        }
+    )
     if tool_name is not None:
         payload["tool_name"] = tool_name
     if tool_args is not None:
@@ -111,11 +122,13 @@ def log_app_event(
 ) -> None:
     """Write an application domain event to the rotating application events stream."""
     logger = get_event_logger()
-    payload = _inject_trace_context({
-        "event": event,
-        "duration_ms": round(duration_ms, 2),
-        **extra,
-    })
+    payload = _inject_trace_context(
+        {
+            "event": event,
+            "duration_ms": round(duration_ms, 2),
+            **extra,
+        }
+    )
     if stage is not None:
         payload["stage"] = stage
     if outcome is not None:

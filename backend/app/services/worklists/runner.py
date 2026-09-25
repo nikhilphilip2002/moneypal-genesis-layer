@@ -16,8 +16,15 @@ from typing import Any, Iterable
 
 from app.services.nlq import pii
 from app.services.nlq.catalog import Catalog, get_catalog
-from app.services.nlq.catalog.loader import EwsRule, WorklistPreset, canonical_enum_code
-from app.services.nlq.compiler import describe_parameters, render_sql_for_display
+from app.services.nlq.catalog.loader import (
+    EwsRule,
+    WorklistPreset,
+    canonical_enum_code,
+)
+from app.services.nlq.compiler import (
+    describe_parameters,
+    render_sql_for_display,
+)
 from app.services.nlq.contracts import (
     ColumnSpec,
     Filter,
@@ -81,7 +88,8 @@ def build(
         formulas={
             **compiled.formulas,
             "priority score": " + ".join(
-                f"{c.weight} x {c.label} (percentile rank)" for c in config.score.components
+                f"{c.weight} x {c.label} (percentile rank)"
+                for c in config.score.components
             ),
         },
         row_count=len(items),
@@ -127,14 +135,20 @@ def _rank(
             # happen. If it does, the row has no reason to be on a worklist and stating one
             # would be an invention.
             continue
-        severity = min((r.severity for r in triggered), key=lambda s: _SEVERITY_RANK.get(s, 2))
+        severity = min(
+            (r.severity for r in triggered),
+            key=lambda s: _SEVERITY_RANK.get(s, 2),
+        )
         playbook = cat.worklists.playbook_for(
-            row.get("asset_class__raw", row.get("asset_class")), row.get("dpd_days")
+            row.get("asset_class__raw", row.get("asset_class")),
+            row.get("dpd_days"),
         )
         items.append(
             WorklistItem(
                 rank=0,  # assigned after the sort, so it always matches what is displayed
-                account=canonical_enum_code(row.get("loan_account_number", "")),
+                account=canonical_enum_code(
+                    row.get("loan_account_number", "")
+                ),
                 score=score,
                 severity=severity,  # type: ignore[arg-type]
                 reasons=[_reason(rule, row, cat) for rule in triggered],
@@ -168,7 +182,11 @@ def _reason(rule: EwsRule, row: dict[str, Any], cat: Catalog) -> str:
         if token not in text:
             continue
         value = row.get(column.id)
-        rendered = "not recorded" if value is None else format_value(value, column.unit)
+        rendered = (
+            "not recorded"
+            if value is None
+            else format_value(value, column.unit)
+        )
         text = text.replace(token, str(rendered))
     return text
 
@@ -198,10 +216,13 @@ def _display_fields(row: dict[str, Any]) -> dict[str, Any]:
     out = {
         key: value
         for key, value in row.items()
-        if not key.startswith(rule_engine.RULE_PREFIX) and not key.endswith("__raw")
+        if not key.startswith(rule_engine.RULE_PREFIX)
+        and not key.endswith("__raw")
     }
     if "loan_account_number" in out:
-        out["loan_account_number"] = canonical_enum_code(out["loan_account_number"])
+        out["loan_account_number"] = canonical_enum_code(
+            out["loan_account_number"]
+        )
     return out
 
 
@@ -225,7 +246,9 @@ def _warnings(result, preset: WorklistPreset, shown: int) -> list[str]:
             "product to see the rest."
         )
     if not shown:
-        warnings.append("No account triggered any of this list's rules for the requested slice.")
+        warnings.append(
+            "No account triggered any of this list's rules for the requested slice."
+        )
     return warnings
 
 
@@ -236,7 +259,9 @@ def _mask(worklist: Worklist, role: str | None, cat: Catalog) -> Worklist:
     borrowers — so this is not optional and is not left to the caller.
     """
     rows = [item.fields for item in worklist.items]
-    masked_rows, masked = pii.mask_rows(rows, worklist.columns, role=role, catalog=cat)
+    masked_rows, masked = pii.mask_rows(
+        rows, worklist.columns, role=role, catalog=cat
+    )
     if not masked:
         return worklist
     for item, row in zip(worklist.items, masked_rows):
@@ -263,23 +288,34 @@ def to_csv(worklist: Worklist) -> str:
     """
     buffer = io.StringIO()
     headers = [
-        "rank", "account", "severity", "score",
-        *[column.name for column in worklist.columns if column.name != "loan_account_number"],
-        "reasons", "action", "owner",
+        "rank",
+        "account",
+        "severity",
+        "score",
+        *[
+            column.name
+            for column in worklist.columns
+            if column.name != "loan_account_number"
+        ],
+        "reasons",
+        "action",
+        "owner",
     ]
     writer = csv.DictWriter(buffer, fieldnames=headers, extrasaction="ignore")
     writer.writeheader()
     for item in worklist.items:
-        writer.writerow({
-            "rank": item.rank,
-            "account": item.account,
-            "severity": item.severity,
-            "score": item.score,
-            **item.fields,
-            "reasons": " ".join(item.reasons),
-            "action": item.action,
-            "owner": item.owner,
-        })
+        writer.writerow(
+            {
+                "rank": item.rank,
+                "account": item.account,
+                "severity": item.severity,
+                "score": item.score,
+                **item.fields,
+                "reasons": " ".join(item.reasons),
+                "action": item.action,
+                "owner": item.owner,
+            }
+        )
     return buffer.getvalue()
 
 

@@ -126,7 +126,9 @@ class TestSchemaIsolation:
         """An unqualified name resolves through search_path, which is not a decision the
         model gets to make."""
         with pytest.raises(ValidationError):
-            validate("SELECT loan_account_number FROM loan_account_master LIMIT 1")
+            validate(
+                "SELECT loan_account_number FROM loan_account_master LIMIT 1"
+            )
 
     def test_unknown_gold_view_is_rejected(self):
         with pytest.raises(ValidationError):
@@ -152,7 +154,9 @@ class TestSchemaIsolation:
         ):
             validate(sql, allow_pii=True)
 
-    def test_unqualified_column_shared_by_joined_tables_is_rejected_as_ambiguous(self):
+    def test_unqualified_column_shared_by_joined_tables_is_rejected_as_ambiguous(
+        self,
+    ):
         sql = """
         SELECT loan_account_number
         FROM gold.loan_accounts AS loan
@@ -216,9 +220,7 @@ class TestUncontrolledEgress:
             validate(sql)
 
     def test_pii_columns_are_rejected_without_permission(self):
-        sql = (
-            "SELECT full_name, date_of_birth FROM gold.customers LIMIT 5"
-        )
+        sql = "SELECT full_name, date_of_birth FROM gold.customers LIMIT 5"
         with pytest.raises(ValidationError):
             validate(sql, allow_pii=False)
 
@@ -228,11 +230,10 @@ class TestUncontrolledEgress:
         assert "full_name" in result.pii_columns
 
     def test_pii_can_be_narrowed_to_borrower_name_columns(self):
-        sql = (
-            "SELECT full_name, date_of_birth "
-            "FROM gold.customers LIMIT 5"
-        )
-        with pytest.raises(ValidationError, match="not permitted for this query path"):
+        sql = "SELECT full_name, date_of_birth FROM gold.customers LIMIT 5"
+        with pytest.raises(
+            ValidationError, match="not permitted for this query path"
+        ):
             validate(
                 sql,
                 allow_pii=True,
@@ -321,7 +322,8 @@ class TestScopedColumnResolution:
         )
         result = validate(sql)
         assert result.tables == [
-            "gold.loan_accounts", "gold.loan_disbursements",
+            "gold.loan_accounts",
+            "gold.loan_disbursements",
         ]
 
     def test_union_branches_validate_independently(self):
@@ -347,7 +349,9 @@ class TestScopedColumnResolution:
             "UNION ALL "
             "SELECT invented_column FROM gold.loan_disbursements"
         )
-        with pytest.raises(ValidationError, match="invented_column.*UNION branch"):
+        with pytest.raises(
+            ValidationError, match="invented_column.*UNION branch"
+        ):
             validate(sql)
 
     def test_correlated_subquery_may_reference_the_outer_alias(self):
@@ -369,7 +373,9 @@ class TestScopedColumnResolution:
             "WITH c AS (SELECT loan_account_number FROM gold.loan_accounts) "
             "SELECT c.made_up FROM c"
         )
-        with pytest.raises(ValidationError, match="made_up.*not projected by 'c'"):
+        with pytest.raises(
+            ValidationError, match="made_up.*not projected by 'c'"
+        ):
             validate(sql)
 
     def test_derived_table_alias_cannot_bypass_column_validation(self):
@@ -377,7 +383,9 @@ class TestScopedColumnResolution:
             "SELECT s.made_up FROM "
             "(SELECT loan_account_number FROM gold.loan_accounts) AS s"
         )
-        with pytest.raises(ValidationError, match="made_up.*not projected by 's'"):
+        with pytest.raises(
+            ValidationError, match="made_up.*not projected by 's'"
+        ):
             validate(sql)
 
     def test_cte_projection_is_resolved_through_its_select_list_aliases(self):
@@ -387,12 +395,16 @@ class TestScopedColumnResolution:
         )
         assert is_safe(sql)
 
-    def test_unqualified_column_missing_from_the_cte_projection_is_rejected(self):
+    def test_unqualified_column_missing_from_the_cte_projection_is_rejected(
+        self,
+    ):
         sql = (
             "WITH c AS (SELECT loan_account_number AS lan FROM gold.loan_accounts) "
             "SELECT loan_account_number FROM c"
         )
-        with pytest.raises(ValidationError, match="does not exist on any referenced table"):
+        with pytest.raises(
+            ValidationError, match="does not exist on any referenced table"
+        ):
             validate(sql)
 
     def test_cte_over_a_union_projects_the_first_branch(self):
@@ -406,7 +418,9 @@ class TestScopedColumnResolution:
 
     def test_unknown_qualifier_names_the_scope(self):
         sql = "SELECT zz.loan_account_number FROM gold.loan_accounts AS lam"
-        with pytest.raises(ValidationError, match="qualifier 'zz'.*outer query"):
+        with pytest.raises(
+            ValidationError, match="qualifier 'zz'.*outer query"
+        ):
             validate(sql)
 
     def test_ambiguity_error_names_the_candidate_tables(self):
@@ -429,10 +443,14 @@ class TestFunctionPolicy:
     rejects anything not on ALLOWED_FUNCTIONS; `denylist` mode logs the unlisted call so
     the allowlist can be completed from canary evidence."""
 
-    UNLISTED = "SELECT pg_typeof(loan_account_number) FROM gold.loan_accounts LIMIT 1"
+    UNLISTED = (
+        "SELECT pg_typeof(loan_account_number) FROM gold.loan_accounts LIMIT 1"
+    )
 
     def test_allowlist_mode_rejects_an_unlisted_function(self):
-        with pytest.raises(ValidationError, match="pg_typeof.*not on the allowlist"):
+        with pytest.raises(
+            ValidationError, match="pg_typeof.*not on the allowlist"
+        ):
             validate(self.UNLISTED, function_mode="allowlist")
 
     def test_denylist_mode_accepts_and_logs_an_unlisted_function(self, caplog):

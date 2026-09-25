@@ -53,7 +53,10 @@ class TestLevelShift:
     def test_missing_periods_are_skipped_not_zeroed(self):
         """A month with no rows is a gap. Treating it as zero invents a crash and then
         reports the recovery from it as a spike."""
-        assert detectors.level_shift([4.0, None, 4.1, 3.9, 4.0, 4.05, 3.95, 4.0]) is None
+        assert (
+            detectors.level_shift([4.0, None, 4.1, 3.9, 4.0, 4.05, 3.95, 4.0])
+            is None
+        )
 
     def test_it_reports_the_baseline_it_judged_against(self):
         """A signal saying only "PAR 30 is unusual" is one the reader has to go and check."""
@@ -84,20 +87,29 @@ class TestTrendBreak:
 
 class TestThresholdBreach:
     def test_above_an_alert_bound_is_an_alert(self):
-        detection = detectors.threshold_breach(12.0, watch_above=5.0, alert_above=10.0)
+        detection = detectors.threshold_breach(
+            12.0, watch_above=5.0, alert_above=10.0
+        )
         assert detection is not None and detection.severity == "alert"
 
     def test_between_the_bounds_is_a_watch(self):
-        detection = detectors.threshold_breach(7.0, watch_above=5.0, alert_above=10.0)
+        detection = detectors.threshold_breach(
+            7.0, watch_above=5.0, alert_above=10.0
+        )
         assert detection is not None and detection.severity == "watch"
 
     def test_a_below_bound_fires_on_falling(self):
-        detection = detectors.threshold_breach(85.0, watch_below=95.0, alert_below=90.0)
+        detection = detectors.threshold_breach(
+            85.0, watch_below=95.0, alert_below=90.0
+        )
         assert detection is not None
         assert detection.severity == "alert" and detection.direction == "down"
 
     def test_a_healthy_value_is_silent(self):
-        assert detectors.threshold_breach(3.0, watch_above=5.0, alert_above=10.0) is None
+        assert (
+            detectors.threshold_breach(3.0, watch_above=5.0, alert_above=10.0)
+            is None
+        )
 
     def test_no_value_is_not_a_breach(self):
         """An empty query result is not a zero, and zero breaches every below-threshold."""
@@ -111,16 +123,27 @@ class TestThresholdBreach:
 
 class TestConcentration:
     def test_a_single_borrower_book_is_maximally_concentrated(self):
-        detection = detectors.concentration([1000.0], watch_hhi=0.05, alert_hhi=0.15)
+        detection = detectors.concentration(
+            [1000.0], watch_hhi=0.05, alert_hhi=0.15
+        )
         assert detection is not None and detection.severity == "alert"
 
     def test_an_evenly_spread_book_is_silent(self):
-        detection = detectors.concentration([100.0] * 100, watch_hhi=0.05, alert_hhi=0.15)
+        detection = detectors.concentration(
+            [100.0] * 100, watch_hhi=0.05, alert_hhi=0.15
+        )
         assert detection is None
 
     def test_an_empty_book_produces_nothing(self):
-        assert detectors.concentration([], watch_hhi=0.05, alert_hhi=0.15) is None
-        assert detectors.concentration([None, 0.0], watch_hhi=0.05, alert_hhi=0.15) is None
+        assert (
+            detectors.concentration([], watch_hhi=0.05, alert_hhi=0.15) is None
+        )
+        assert (
+            detectors.concentration(
+                [None, 0.0], watch_hhi=0.05, alert_hhi=0.15
+            )
+            is None
+        )
 
 
 class TestRankMovement:
@@ -175,7 +198,12 @@ class TestTheCatalogHoldsUp:
             if "threshold" not in scope.detectors:
                 continue
             assert any(
-                (scope.watch_above, scope.alert_above, scope.watch_below, scope.alert_below)
+                (
+                    scope.watch_above,
+                    scope.alert_above,
+                    scope.watch_below,
+                    scope.alert_below,
+                )
             ), scope.id
 
     def test_a_structural_scope_has_a_dimension(self, catalog):
@@ -189,7 +217,10 @@ class TestTheCatalogHoldsUp:
         for scope in catalog.signals.scopes.values():
             if "concentration" not in scope.detectors:
                 continue
-            assert catalog.signals.grain not in scan._series_spec(scope, catalog).dimensions
+            assert (
+                catalog.signals.grain
+                not in scan._series_spec(scope, catalog).dimensions
+            )
 
     def test_the_gaps_are_named(self, catalog):
         """A reader who does not know variance-to-plan is missing will read an empty feed
@@ -203,12 +234,17 @@ class TestTheCatalogHoldsUp:
             assert check.table in catalog.tables
             assert check.watch_days <= check.alert_days
             table = catalog.tables[check.table]
-            assert any(col.column == check.date_column for col in catalog.columns_for(table.table))
+            assert any(
+                col.column == check.date_column
+                for col in catalog.columns_for(table.table)
+            )
 
 
 class TestSignalIdentity:
     def _signal(self, **kwargs):
-        base = dict(scope="par30_by_branch", label="PAR 30", kind="threshold", text="x")
+        base = dict(
+            scope="par30_by_branch", label="PAR 30", kind="threshold", text="x"
+        )
         base.update(kwargs)
         return Signal(**base)
 
@@ -216,10 +252,16 @@ class TestSignalIdentity:
         """A standing problem is one signal with a history. Without that, a director who
         acknowledged a breach on Monday sees it again on Tuesday and stops reading by
         Friday."""
-        assert self._signal(member="Aluva").fingerprint == self._signal(member="Aluva").fingerprint
+        assert (
+            self._signal(member="Aluva").fingerprint
+            == self._signal(member="Aluva").fingerprint
+        )
 
     def test_a_different_member_is_a_different_signal(self):
-        assert self._signal(member="Aluva").fingerprint != self._signal(member="Kozhikode").fingerprint
+        assert (
+            self._signal(member="Aluva").fingerprint
+            != self._signal(member="Kozhikode").fingerprint
+        )
 
     def test_a_different_detector_is_a_different_signal(self):
         """PAR breaching its limit and PAR jumping are two findings about one number, and
@@ -245,8 +287,13 @@ class TestStore:
 
     def _signal(self, member="Aluva", severity="alert", **kwargs):
         return Signal(
-            scope="par30_by_branch", label="PAR 30", kind="threshold",
-            member=member, severity=severity, text="PAR 30 is above its limit.", **kwargs
+            scope="par30_by_branch",
+            label="PAR 30",
+            kind="threshold",
+            member=member,
+            severity=severity,
+            text="PAR 30 is above its limit.",
+            **kwargs,
         )
 
     def test_a_new_finding_is_new(self):
@@ -279,8 +326,12 @@ class TestStore:
         assert store.open_signals() == []
 
     def test_alerts_come_before_watches(self):
-        store.record([self._signal(member="A", severity="watch"),
-                      self._signal(member="B", severity="alert")])
+        store.record(
+            [
+                self._signal(member="A", severity="watch"),
+                self._signal(member="B", severity="alert"),
+            ]
+        )
         assert [s.signal.member for s in store.open_signals()] == ["B", "A"]
 
     def test_an_invented_status_is_refused(self):
@@ -334,18 +385,31 @@ class TestBriefingHeadline:
     """Deterministic and never model-written, including when there is nothing to say."""
 
     def _signal(self, severity, label="PAR 30"):
-        return Signal(scope="s", label=label, kind="threshold", severity=severity, text="x")
+        return Signal(
+            scope="s",
+            label=label,
+            kind="threshold",
+            severity=severity,
+            text="x",
+        )
 
     def test_alerts_lead_and_are_counted(self):
         headline = morning._headline(
-            [self._signal("alert"), self._signal("alert", "NPA ratio"), self._signal("watch")],
-            [], "Chief Executive",
+            [
+                self._signal("alert"),
+                self._signal("alert", "NPA ratio"),
+                self._signal("watch"),
+            ],
+            [],
+            "Chief Executive",
         )
         assert headline.startswith("2 things need attention")
         assert "PAR 30" in headline
 
     def test_an_acronym_survives_mid_sentence(self):
-        headline = morning._headline([self._signal("alert", "NPA ratio")], [], "Finance")
+        headline = morning._headline(
+            [self._signal("alert", "NPA ratio")], [], "Finance"
+        )
         assert "npa" not in headline
 
     def test_watches_alone_say_nothing_is_urgent(self):
@@ -371,20 +435,29 @@ class TestScanReporting:
         monkeypatch.setattr(scan.nlq_db, "health", lambda: {"status": "ok"})
 
     def test_abstention_is_reported_not_swallowed(self, catalog, monkeypatch):
-        """"Not enough data yet" and "nothing is wrong" must never look the same."""
+        """ "Not enough data yet" and "nothing is wrong" must never look the same."""
         monkeypatch.setattr(scan, "_scan_scope", lambda scope, cat, today: [])
         monkeypatch.setattr(scan, "_scan_data_health", lambda cat: ([], []))
         report = scan.run(catalog=catalog, today=TODAY)
         assert set(report.abstained) == set(catalog.signals.scopes)
         assert report.signals == []
 
-    def test_one_broken_scope_does_not_lose_the_others(self, catalog, monkeypatch):
+    def test_one_broken_scope_does_not_lose_the_others(
+        self, catalog, monkeypatch
+    ):
         from app.services.nlq.executor import ExecutionError
 
         def flaky(scope, cat, today):
             if scope.id == "par30_total":
                 raise ExecutionError("boom")
-            return [Signal(scope=scope.id, label=scope.label, kind="threshold", text="x")]
+            return [
+                Signal(
+                    scope=scope.id,
+                    label=scope.label,
+                    kind="threshold",
+                    text="x",
+                )
+            ]
 
         monkeypatch.setattr(scan, "_scan_scope", flaky)
         monkeypatch.setattr(scan, "_scan_data_health", lambda cat: ([], []))
@@ -393,22 +466,39 @@ class TestScanReporting:
         assert len(report.signals) == len(catalog.signals.scopes) - 1
         assert report.warnings
 
-    def test_findings_are_ranked_before_they_are_returned(self, catalog, monkeypatch):
+    def test_findings_are_ranked_before_they_are_returned(
+        self, catalog, monkeypatch
+    ):
         def ranked(scope, cat, today):
             severity = "alert" if scope.id == "npa_total" else "watch"
-            return [Signal(scope=scope.id, label=scope.label, kind="threshold",
-                           severity=severity, text="x")]
+            return [
+                Signal(
+                    scope=scope.id,
+                    label=scope.label,
+                    kind="threshold",
+                    severity=severity,
+                    text="x",
+                )
+            ]
 
         monkeypatch.setattr(scan, "_scan_scope", ranked)
         monkeypatch.setattr(scan, "_scan_data_health", lambda cat: ([], []))
         report = scan.run(catalog=catalog, today=TODAY)
         assert report.signals[0].scope == "npa_total"
 
-    def test_every_signal_is_stamped_and_identified(self, catalog, monkeypatch):
+    def test_every_signal_is_stamped_and_identified(
+        self, catalog, monkeypatch
+    ):
         monkeypatch.setattr(
-            scan, "_scan_scope",
+            scan,
+            "_scan_scope",
             lambda scope, cat, today: [
-                Signal(scope=scope.id, label=scope.label, kind="threshold", text="x")
+                Signal(
+                    scope=scope.id,
+                    label=scope.label,
+                    kind="threshold",
+                    text="x",
+                )
             ],
         )
         monkeypatch.setattr(scan, "_scan_data_health", lambda cat: ([], []))
@@ -426,7 +516,8 @@ class TestSignalEvidence:
         from app.services.nlq.contracts import Period, QuerySpec
 
         spec = QuerySpec(
-            metrics=["par_30"], dimensions=["month", "branch"],
+            metrics=["par_30"],
+            dimensions=["month", "branch"],
             period=Period(relative="last_12_months"),
         )
         filtered = scan._member_spec(spec, "branch", "1002", catalog)
@@ -439,18 +530,27 @@ class TestSignalEvidence:
         from app.services.nlq.contracts import Period, QuerySpec
 
         spec = QuerySpec(
-            metrics=["par_30"], dimensions=["month", "branch"],
+            metrics=["par_30"],
+            dimensions=["month", "branch"],
             period=Period(relative="last_12_months"),
         )
-        assert scan._member_spec(spec, "branch", "1002", catalog).filters[-1].value != "Aluva"
+        assert (
+            scan._member_spec(spec, "branch", "1002", catalog)
+            .filters[-1]
+            .value
+            != "Aluva"
+        )
 
     def test_a_data_health_signal_carries_no_spec(self, catalog, monkeypatch):
         """It is a finding about a table, not about a measure. Attaching a plausible-looking
         query would send the reader to a chart that cannot show them the problem."""
+
         class Result:
             rows = [{"newest": date(2020, 1, 1)}]
 
-        monkeypatch.setattr("app.services.signals.scan.execute", lambda q: Result())
+        monkeypatch.setattr(
+            "app.services.signals.scan.execute", lambda q: Result()
+        )
         found, _warnings = scan._scan_data_health(catalog)
         assert found
         assert all(signal.spec is None for signal in found)
@@ -472,7 +572,9 @@ class TestMemberLabels:
         scope = catalog.signals.scopes["par30_by_branch"]
         metric = catalog.metrics["par_30"]
         spec = scan._series_spec(scope, catalog)
-        found = scan._scan_by_member(scope, metric, spec, self._rows(), catalog)
+        found = scan._scan_by_member(
+            scope, metric, spec, self._rows(), catalog
+        )
         assert found
         assert any("Aluva" in s.text for s in found)
         assert not any("1002" in s.text for s in found)
@@ -481,14 +583,22 @@ class TestMemberLabels:
         scope = catalog.signals.scopes["par30_by_branch"]
         metric = catalog.metrics["par_30"]
         spec = scan._series_spec(scope, catalog)
-        found = scan._scan_by_member(scope, metric, spec, self._rows(), catalog)
+        found = scan._scan_by_member(
+            scope, metric, spec, self._rows(), catalog
+        )
         branch_filters = [
-            f for s in found if s.spec for f in s.spec.filters if f.field == "branch"
+            f
+            for s in found
+            if s.spec
+            for f in s.spec.filters
+            if f.field == "branch"
         ]
         assert branch_filters
         assert all(f.value == "1002" for f in branch_filters)
 
-    def test_an_undecodable_member_shows_its_code_rather_than_an_invented_name(self, catalog):
+    def test_an_undecodable_member_shows_its_code_rather_than_an_invented_name(
+        self, catalog
+    ):
         assert scan._label_for("branch", "9999", catalog) == "Branch 9999"
         assert scan._label_for("borrower", "ACME LTD", catalog) == "ACME LTD"
 
@@ -503,13 +613,17 @@ class TestAnUnreachableWarehouse:
 
     def _down(self, monkeypatch, status="down"):
         monkeypatch.setattr(
-            scan.nlq_db, "health", lambda: {"status": status, "detail": "connection refused"}
+            scan.nlq_db,
+            "health",
+            lambda: {"status": status, "detail": "connection refused"},
         )
 
     def test_nothing_is_scanned(self, catalog, monkeypatch):
         self._down(monkeypatch)
         called = []
-        monkeypatch.setattr(scan, "_scan_scope", lambda *a: called.append(a) or [])
+        monkeypatch.setattr(
+            scan, "_scan_scope", lambda *a: called.append(a) or []
+        )
         report = scan.run(catalog=catalog, today=TODAY)
         assert called == []
         assert report.scopes_run == 0
@@ -519,8 +633,11 @@ class TestAnUnreachableWarehouse:
         are the simplest — and they need the same connection as everything else."""
         self._down(monkeypatch)
         monkeypatch.setattr(
-            scan, "_scan_data_health",
-            lambda cat: pytest.fail("freshness must not run without a warehouse"),
+            scan,
+            "_scan_data_health",
+            lambda cat: pytest.fail(
+                "freshness must not run without a warehouse"
+            ),
         )
         scan.run(catalog=catalog, today=TODAY)
 
@@ -532,18 +649,26 @@ class TestAnUnreachableWarehouse:
         assert report.scopes_failed == 0
         assert report.signals == []
 
-    def test_it_says_so_rather_than_reporting_a_clean_book(self, catalog, monkeypatch):
+    def test_it_says_so_rather_than_reporting_a_clean_book(
+        self, catalog, monkeypatch
+    ):
         self._down(monkeypatch)
         report = scan.run(catalog=catalog, today=TODAY)
-        assert any("not the same as a clean book" in w for w in report.warnings)
+        assert any(
+            "not the same as a clean book" in w for w in report.warnings
+        )
 
-    def test_an_unconfigured_role_is_treated_the_same(self, catalog, monkeypatch):
+    def test_an_unconfigured_role_is_treated_the_same(
+        self, catalog, monkeypatch
+    ):
         """A missing `nlq_readonly` password is not an outage, but it produces the same
         fifteen failures and deserves the same single line."""
         self._down(monkeypatch, status="unconfigured")
         assert scan.run(catalog=catalog, today=TODAY).scopes_run == 0
 
-    def test_losing_the_warehouse_mid_scan_stops_the_rest(self, catalog, monkeypatch):
+    def test_losing_the_warehouse_mid_scan_stops_the_rest(
+        self, catalog, monkeypatch
+    ):
         """The first scope to see it says so; the rest stop rather than each re-reporting
         the same outage."""
         from app.services.nlq.executor import ExecutionError
@@ -553,7 +678,9 @@ class TestAnUnreachableWarehouse:
 
         def dies(scope, cat, today):
             attempts.append(scope.id)
-            raise ExecutionError("unavailable", detail="OperationalError: server closed")
+            raise ExecutionError(
+                "unavailable", detail="OperationalError: server closed"
+            )
 
         monkeypatch.setattr(scan, "_scan_scope", dies)
         report = scan.run(catalog=catalog, today=TODAY)
@@ -561,7 +688,9 @@ class TestAnUnreachableWarehouse:
         assert report.scopes_failed == 0
         assert any("unreachable partway" in w for w in report.warnings)
 
-    def test_one_genuinely_bad_scope_still_steps_over_itself(self, catalog, monkeypatch):
+    def test_one_genuinely_bad_scope_still_steps_over_itself(
+        self, catalog, monkeypatch
+    ):
         """A broken scope is a different fact from a dead warehouse, and must not silence
         the scan the way an outage does."""
         from app.services.nlq.executor import ExecutionError
@@ -572,7 +701,14 @@ class TestAnUnreachableWarehouse:
         def flaky(scope, cat, today):
             if scope.id == "par30_total":
                 raise ExecutionError("too broad", detail="plan cost exceeded")
-            return [Signal(scope=scope.id, label=scope.label, kind="threshold", text="x")]
+            return [
+                Signal(
+                    scope=scope.id,
+                    label=scope.label,
+                    kind="threshold",
+                    text="x",
+                )
+            ]
 
         monkeypatch.setattr(scan, "_scan_scope", flaky)
         report = scan.run(catalog=catalog, today=TODAY)
@@ -607,12 +743,18 @@ class TestDegenerateBaselines:
     def test_percentage_points_matter_not_relative_ones(self):
         """Collection efficiency moving 99.99 -> 96.3 is a real 3.7-point fall. It is not a
         z-score finding, and the catalog gives it thresholds for exactly that reason."""
-        assert detectors.threshold_breach(
-            96.3, watch_below=95.0, alert_below=90.0
-        ) is None
-        assert detectors.threshold_breach(
-            88.0, watch_below=95.0, alert_below=90.0
-        ) is not None
+        assert (
+            detectors.threshold_breach(
+                96.3, watch_below=95.0, alert_below=90.0
+            )
+            is None
+        )
+        assert (
+            detectors.threshold_breach(
+                88.0, watch_below=95.0, alert_below=90.0
+            )
+            is not None
+        )
 
 
 class TestFreshnessReadsTheExecutorsDates:
@@ -640,7 +782,9 @@ class TestFreshnessReadsTheExecutorsDates:
         class Result:
             rows = [{"newest": (date.today() - timedelta(days=1)).isoformat()}]
 
-        monkeypatch.setattr("app.services.signals.scan.execute", lambda q: Result())
+        monkeypatch.setattr(
+            "app.services.signals.scan.execute", lambda q: Result()
+        )
         found, warnings = scan._scan_data_health(catalog)
         assert found == []
         assert warnings == []
@@ -649,7 +793,9 @@ class TestFreshnessReadsTheExecutorsDates:
         class Result:
             rows = [{"newest": "2020-01-01"}]
 
-        monkeypatch.setattr("app.services.signals.scan.execute", lambda q: Result())
+        monkeypatch.setattr(
+            "app.services.signals.scan.execute", lambda q: Result()
+        )
         found, _warnings = scan._scan_data_health(catalog)
         assert len(found) == len(catalog.signals.data_health)
         assert all(s.severity == "alert" for s in found)

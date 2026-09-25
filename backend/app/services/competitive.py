@@ -1,4 +1,5 @@
 """Business logic for competitive intelligence (Team B)."""
+
 from genesis_core import make_response, rag
 
 from app import prompts
@@ -37,19 +38,27 @@ def profile(institution_id: str):
         f"Maximum ~170 words."
     )
     queries = [f"{inst['name']} {q}" for q in prompts.PROFILE_QUERIES]
-    answer, sources = rag.ask(inst["qdrant_collection"], prompt, queries=queries)
-    page = str(sources[0]["page"]) if sources and sources[0].get("page") else None
+    answer, sources = rag.ask(
+        inst["qdrant_collection"], prompt, queries=queries
+    )
+    page = (
+        str(sources[0]["page"]) if sources and sources[0].get("page") else None
+    )
     return make_response(
         title=f"{inst['name']} — Institution Profile",
         summary=answer,
         key_points=[
             f"Type: {inst['type']}",
             f"HQ: {inst.get('headquarters', 'N/A')}",
-            "MSME-focused lender" if inst.get("msme_focus") else "Broad lender",
+            "MSME-focused lender"
+            if inst.get("msme_focus")
+            else "Broad lender",
             "Karnataka presence",
         ],
         document=f"{inst['name']} public disclosures",
-        url=inst.get("source_urls", {}).get("website", inst.get("website", "#")),
+        url=inst.get("source_urls", {}).get(
+            "website", inst.get("website", "#")
+        ),
         page=page,
         ai_note="",
         confidence=inst.get("confidence", "medium"),
@@ -71,7 +80,9 @@ def swot(institution_id: str):
         "swot_analysis": answer,
         "source": {
             "document": f"{inst['name']} annual report & public disclosures",
-            "url": inst.get("source_urls", {}).get("annual_report", inst.get("website", "#")),
+            "url": inst.get("source_urls", {}).get(
+                "annual_report", inst.get("website", "#")
+            ),
         },
         "ai_note": "",
     }
@@ -83,7 +94,10 @@ def landscape():
     for inst in il.load_all():
         try:
             chunks += rag.search_multi(
-                inst["qdrant_collection"], prompts.LANDSCAPE_QUERIES, top_k=2, max_chunks=3
+                inst["qdrant_collection"],
+                prompts.LANDSCAPE_QUERIES,
+                top_k=2,
+                max_chunks=3,
             )
         except Exception:
             continue  # unindexed collection — skip
@@ -91,7 +105,11 @@ def landscape():
     if chunks:
         answer = rag.generate(prompts.LANDSCAPE, chunks[:14])
     else:
-        answer, _ = rag.ask(LANDSCAPE_ANCHOR, prompts.LANDSCAPE, queries=prompts.LANDSCAPE_QUERIES)
+        answer, _ = rag.ask(
+            LANDSCAPE_ANCHOR,
+            prompts.LANDSCAPE,
+            queries=prompts.LANDSCAPE_QUERIES,
+        )
     return make_response(
         title="Karnataka MSME Lending Landscape",
         summary=answer,
@@ -115,17 +133,74 @@ def mom_vintage_analysis() -> dict:
     GICC's internal competitive efficiency and improvement over time.
     """
     vintages = [
-        {"vintage_month": "2025-12", "month_name": "December 2025", "total_loans": 1420, "disbursed_amt": 42500000.0, "repaid_amt": 39950000.0, "efficiency_pct": 94.0, "improvement_delta": "+0.0%"},
-        {"vintage_month": "2026-01", "month_name": "January 2026", "total_loans": 1580, "disbursed_amt": 48200000.0, "repaid_amt": 45790000.0, "efficiency_pct": 95.0, "improvement_delta": "+1.0%"},
-        {"vintage_month": "2026-02", "month_name": "February 2026", "total_loans": 1690, "disbursed_amt": 51900000.0, "repaid_amt": 49408800.0, "efficiency_pct": 95.2, "improvement_delta": "+0.2%"},
-        {"vintage_month": "2026-03", "month_name": "March 2026", "total_loans": 1810, "disbursed_amt": 56400000.0, "repaid_amt": 54031200.0, "efficiency_pct": 95.8, "improvement_delta": "+0.6%"},
-        {"vintage_month": "2026-04", "month_name": "April 2026", "total_loans": 1940, "disbursed_amt": 61200000.0, "repaid_amt": 58996800.0, "efficiency_pct": 96.4, "improvement_delta": "+0.6%"},
-        {"vintage_month": "2026-05", "month_name": "May 2026", "total_loans": 2100, "disbursed_amt": 67500000.0, "repaid_amt": 65542500.0, "efficiency_pct": 97.1, "improvement_delta": "+0.7%"},
-        {"vintage_month": "2026-06", "month_name": "June 2026 (Position as of June 30)", "total_loans": 2250, "disbursed_amt": 73800000.0, "repaid_amt": 72176400.0, "efficiency_pct": 97.8, "improvement_delta": "+0.7%"},
+        {
+            "vintage_month": "2025-12",
+            "month_name": "December 2025",
+            "total_loans": 1420,
+            "disbursed_amt": 42500000.0,
+            "repaid_amt": 39950000.0,
+            "efficiency_pct": 94.0,
+            "improvement_delta": "+0.0%",
+        },
+        {
+            "vintage_month": "2026-01",
+            "month_name": "January 2026",
+            "total_loans": 1580,
+            "disbursed_amt": 48200000.0,
+            "repaid_amt": 45790000.0,
+            "efficiency_pct": 95.0,
+            "improvement_delta": "+1.0%",
+        },
+        {
+            "vintage_month": "2026-02",
+            "month_name": "February 2026",
+            "total_loans": 1690,
+            "disbursed_amt": 51900000.0,
+            "repaid_amt": 49408800.0,
+            "efficiency_pct": 95.2,
+            "improvement_delta": "+0.2%",
+        },
+        {
+            "vintage_month": "2026-03",
+            "month_name": "March 2026",
+            "total_loans": 1810,
+            "disbursed_amt": 56400000.0,
+            "repaid_amt": 54031200.0,
+            "efficiency_pct": 95.8,
+            "improvement_delta": "+0.6%",
+        },
+        {
+            "vintage_month": "2026-04",
+            "month_name": "April 2026",
+            "total_loans": 1940,
+            "disbursed_amt": 61200000.0,
+            "repaid_amt": 58996800.0,
+            "efficiency_pct": 96.4,
+            "improvement_delta": "+0.6%",
+        },
+        {
+            "vintage_month": "2026-05",
+            "month_name": "May 2026",
+            "total_loans": 2100,
+            "disbursed_amt": 67500000.0,
+            "repaid_amt": 65542500.0,
+            "efficiency_pct": 97.1,
+            "improvement_delta": "+0.7%",
+        },
+        {
+            "vintage_month": "2026-06",
+            "month_name": "June 2026 (Position as of June 30)",
+            "total_loans": 2250,
+            "disbursed_amt": 73800000.0,
+            "repaid_amt": 72176400.0,
+            "efficiency_pct": 97.8,
+            "improvement_delta": "+0.7%",
+        },
     ]
 
     try:
         from app.services.db_schema import get_connection
+
         conn = get_connection()
         cur = conn.cursor()
         cur.execute("""
@@ -149,15 +224,17 @@ def mom_vintage_analysis() -> dict:
                 delta = round(eff - prev_eff, 1)
                 delta_str = f"+{delta}%" if delta >= 0 else f"{delta}%"
                 prev_eff = eff
-                db_vintages.append({
-                    "vintage_month": v_m,
-                    "month_name": v_m,
-                    "total_loans": cnt,
-                    "disbursed_amt": disb,
-                    "repaid_amt": round(disb * (eff / 100.0), 2),
-                    "efficiency_pct": eff,
-                    "improvement_delta": delta_str
-                })
+                db_vintages.append(
+                    {
+                        "vintage_month": v_m,
+                        "month_name": v_m,
+                        "total_loans": cnt,
+                        "disbursed_amt": disb,
+                        "repaid_amt": round(disb * (eff / 100.0), 2),
+                        "efficiency_pct": eff,
+                        "improvement_delta": delta_str,
+                    }
+                )
             if db_vintages:
                 vintages = db_vintages
         conn.close()
@@ -169,6 +246,5 @@ def mom_vintage_analysis() -> dict:
         "description": "Internal competitive intelligence tracking GICC operational improvement and repayment efficiency across loan start cohorts.",
         "as_of_date": "2026-06-30",
         "vintages": vintages,
-        "overall_summary": "GICC operational collection efficiency improved consistently from 94.0% in Dec 2025 to 97.8% in June 2026 (+3.8% MoM improvement)."
+        "overall_summary": "GICC operational collection efficiency improved consistently from 94.0% in Dec 2025 to 97.8% in June 2026 (+3.8% MoM improvement).",
     }
-

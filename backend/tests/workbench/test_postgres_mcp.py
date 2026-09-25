@@ -32,11 +32,16 @@ def test_trusted_metadata_accepts_model_shape_and_missing_context():
     ctx = SimpleNamespace(request_context=SimpleNamespace(meta=model_meta))
 
     assert postgres_server._trusted_meta(ctx) == {"workbench_role": "admin"}
-    assert postgres_server._trusted_meta(SimpleNamespace(request_context=None)) == {}
+    assert (
+        postgres_server._trusted_meta(SimpleNamespace(request_context=None))
+        == {}
+    )
 
 
 @pytest.mark.anyio
-async def test_health_tool_is_discoverable_and_returns_structured_content(monkeypatch):
+async def test_health_tool_is_discoverable_and_returns_structured_content(
+    monkeypatch,
+):
     monkeypatch.setattr(
         postgres_server.nlq_db,
         "health",
@@ -86,7 +91,9 @@ async def test_client_timeout_also_bounds_session_shutdown(monkeypatch):
             return self
 
         async def call_tool(self, *_args, **_kwargs):
-            return SimpleNamespace(data={"success": True, "data": {"status": "ok"}})
+            return SimpleNamespace(
+                data={"success": True, "data": {"status": "ok"}}
+            )
 
         async def __aexit__(self, *args):
             await asyncio.sleep(1)
@@ -113,7 +120,9 @@ def test_query_tool_preserves_statement_timeout_code(monkeypatch):
     )
     catalog = SimpleNamespace(version="test-catalog")
     monkeypatch.setattr(postgres_server, "get_catalog", lambda: catalog)
-    monkeypatch.setattr(postgres_server, "validate", lambda *_args, **_kwargs: checked)
+    monkeypatch.setattr(
+        postgres_server, "validate", lambda *_args, **_kwargs: checked
+    )
     monkeypatch.setattr(postgres_server.pii, "may_see_pii", lambda _role: True)
 
     def timed_out(_sql):
@@ -141,7 +150,9 @@ def test_query_tool_classifies_sql_validation_as_compile_rejected(monkeypatch):
     monkeypatch.setattr(postgres_server.pii, "may_see_pii", lambda _role: True)
 
     def rejected(*_args, **_kwargs):
-        raise ValidationError("SELECT * is not allowed; name the columns explicitly")
+        raise ValidationError(
+            "SELECT * is not allowed; name the columns explicitly"
+        )
 
     monkeypatch.setattr(postgres_server, "validate", rejected)
 

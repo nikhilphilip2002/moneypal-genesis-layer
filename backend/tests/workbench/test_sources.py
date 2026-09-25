@@ -13,7 +13,9 @@ ALL_IDS = {"db", "macro", "competitive", "regulatory", "knowledge", "web"}
 
 @pytest.fixture(autouse=True)
 def _connector_settings(monkeypatch):
-    monkeypatch.setattr(settings, "workbench_external_connectors_enabled", True)
+    monkeypatch.setattr(
+        settings, "workbench_external_connectors_enabled", True
+    )
     monkeypatch.setattr(settings, "exa_mcp_enabled", True)
 
 
@@ -35,7 +37,14 @@ def test_director_sees_loan_book_sources_but_not_market_or_regulatory():
 
 def test_policy_maker_sees_loan_book_during_open_access_rollout():
     visible = {s.id for s in sources.visible_sources("gicc_policy")}
-    assert visible == {"db", "macro", "competitive", "regulatory", "knowledge", "web"}
+    assert visible == {
+        "db",
+        "macro",
+        "competitive",
+        "regulatory",
+        "knowledge",
+        "web",
+    }
 
 
 def test_loan_book_is_sensitive_public_intelligence_is_not():
@@ -47,4 +56,6 @@ def test_loan_book_is_sensitive_public_intelligence_is_not():
 def test_web_source_disappears_when_feature_flag_is_off(monkeypatch):
     monkeypatch.setattr(settings, "exa_mcp_enabled", False)
 
-    assert "web" not in {source.id for source in sources.visible_sources("admin")}
+    assert "web" not in {
+        source.id for source in sources.visible_sources("admin")
+    }

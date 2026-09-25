@@ -32,16 +32,24 @@ def llama_server_root(base_url: str) -> str:
 
 
 def snapshot_filename(
-    *, user: str, conversation_id: str, system_prompt: str, tool_schema_hash: str,
+    *,
+    user: str,
+    conversation_id: str,
+    system_prompt: str,
+    tool_schema_hash: str,
 ) -> str:
     """Bind a private snapshot to its owner, conversation, model and prompt contract."""
-    material = json.dumps({
-        "user": user,
-        "conversation_id": conversation_id,
-        "model": settings.llm_model,
-        "system_prompt": system_prompt,
-        "tool_schema_hash": tool_schema_hash,
-    }, sort_keys=True, separators=(",", ":"))
+    material = json.dumps(
+        {
+            "user": user,
+            "conversation_id": conversation_id,
+            "model": settings.llm_model,
+            "system_prompt": system_prompt,
+            "tool_schema_hash": tool_schema_hash,
+        },
+        sort_keys=True,
+        separators=(",", ":"),
+    )
     digest = hashlib.sha256(material.encode("utf-8")).hexdigest()
     prefix = re.sub(r"[^A-Za-z0-9_.-]+", "-", settings.llama_slot_cache_prefix)
     prefix = prefix.strip(".-")[:48] or "moneypal-workbench"
@@ -49,7 +57,9 @@ def snapshot_filename(
 
 
 async def slot_action(
-    action: str, *, filename: str | None = None,
+    action: str,
+    *,
+    filename: str | None = None,
     http_client: httpx.AsyncClient | None = None,
 ) -> dict[str, Any]:
     if action not in {"save", "restore", "erase"}:
@@ -61,7 +71,8 @@ async def slot_action(
     try:
         headers = (
             {"Authorization": f"Bearer {settings.llm_api_key}"}
-            if settings.llm_api_key else None
+            if settings.llm_api_key
+            else None
         )
         response = await client.post(
             f"{llama_server_root(settings.llm_base_url)}/slots/{settings.llama_slot_id}",
@@ -72,13 +83,22 @@ async def slot_action(
         response.raise_for_status()
         payload = response.json()
         if not isinstance(payload, dict):
-            raise SlotCacheError(f"llama-server {action} returned a non-object response")
+            raise SlotCacheError(
+                f"llama-server {action} returned a non-object response"
+            )
         return payload
     except (httpx.HTTPError, ValueError) as exc:
-        raise SlotCacheError(f"llama-server slot {action} failed: {exc}") from exc
+        raise SlotCacheError(
+            f"llama-server slot {action} failed: {exc}"
+        ) from exc
     finally:
         if owns_client:
             await client.aclose()
 
 
-__all__ = ["SlotCacheError", "llama_server_root", "snapshot_filename", "slot_action"]
+__all__ = [
+    "SlotCacheError",
+    "llama_server_root",
+    "snapshot_filename",
+    "slot_action",
+]

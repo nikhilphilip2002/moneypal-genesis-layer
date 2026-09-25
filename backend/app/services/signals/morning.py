@@ -67,7 +67,9 @@ def build(
         raise BriefingError(f"unknown persona {persona_id!r}")
 
     signals = _signals_for(persona, cat)
-    analyses, worklists, warnings = _run(persona, cat, today, role, include_worklists)
+    analyses, worklists, warnings = _run(
+        persona, cat, today, role, include_worklists
+    )
 
     return Briefing(
         persona=persona.id,
@@ -88,15 +90,22 @@ def _signals_for(persona, cat: Catalog) -> list[Signal]:
     other number on the page wrong, and there is no desk for which that is somebody else's
     problem.
     """
-    scoped = store.open_signals(scopes=list(persona.signal_scopes), limit=MAX_SIGNALS)
+    scoped = store.open_signals(
+        scopes=list(persona.signal_scopes), limit=MAX_SIGNALS
+    )
     health = [
-        s for s in store.open_signals(limit=MAX_SIGNALS)
+        s
+        for s in store.open_signals(limit=MAX_SIGNALS)
         if s.signal.kind == "data_health"
     ]
     merged = {s.signal.fingerprint: s for s in (*health, *scoped)}
     rank = {"alert": 0, "watch": 1, "info": 2}
     ordered = sorted(
-        merged.values(), key=lambda s: (rank.get(s.signal.severity, 2), -abs(s.signal.magnitude))
+        merged.values(),
+        key=lambda s: (
+            rank.get(s.signal.severity, 2),
+            -abs(s.signal.magnitude),
+        ),
     )
     out = []
     for stored in ordered[:MAX_SIGNALS]:
@@ -104,13 +113,19 @@ def _signals_for(persona, cat: Catalog) -> list[Signal]:
         if stored.is_standing:
             # A problem that has been there a week is a different conversation from one that
             # appeared last night, and the difference is invisible without saying it.
-            signal.text = f"{signal.text} Standing since {stored.first_seen_at:%d %b}."
+            signal.text = (
+                f"{signal.text} Standing since {stored.first_seen_at:%d %b}."
+            )
         out.append(signal)
     return out
 
 
 def _run(
-    persona, cat: Catalog, today: date | None, role: str | None, include_worklists: bool
+    persona,
+    cat: Catalog,
+    today: date | None,
+    role: str | None,
+    include_worklists: bool,
 ) -> tuple[list[AnalysisResult], list[Worklist], list[str]]:
     from app.services import worklists as worklist_service
 
@@ -122,14 +137,20 @@ def _run(
         return analysis_service.run(spec, catalog=cat, today=today, role=role)
 
     def run_worklist(worklist_id: str):
-        return worklist_service.build(worklist_id, catalog=cat, as_of=today, role=role)
+        return worklist_service.build(
+            worklist_id, catalog=cat, as_of=today, role=role
+        )
 
     analyses: list[AnalysisResult] = []
     lists: list[Worklist] = []
 
-    with concurrent.futures.ThreadPoolExecutor(max_workers=MAX_WORKERS) as pool:
+    with concurrent.futures.ThreadPoolExecutor(
+        max_workers=MAX_WORKERS
+    ) as pool:
         analysis_futures = {
-            pool.submit(run_analysis, a): a for a in persona.analyses if a in cat.analyses
+            pool.submit(run_analysis, a): a
+            for a in persona.analyses
+            if a in cat.analyses
         }
         worklist_futures = {}
         if include_worklists:
@@ -145,14 +166,22 @@ def _run(
             try:
                 analyses.append(future.result())
             except Exception as exc:  # noqa: BLE001
-                logger.warning("briefing analysis %s failed: %s", analysis_id, exc)
-                warnings.append(f"{analysis_id.replace('_', ' ')} could not be prepared.")
+                logger.warning(
+                    "briefing analysis %s failed: %s", analysis_id, exc
+                )
+                warnings.append(
+                    f"{analysis_id.replace('_', ' ')} could not be prepared."
+                )
         for future, worklist_id in worklist_futures.items():
             try:
                 lists.append(future.result())
             except Exception as exc:  # noqa: BLE001
-                logger.warning("briefing worklist %s failed: %s", worklist_id, exc)
-                warnings.append(f"{worklist_id.replace('_', ' ')} could not be prepared.")
+                logger.warning(
+                    "briefing worklist %s failed: %s", worklist_id, exc
+                )
+                warnings.append(
+                    f"{worklist_id.replace('_', ' ')} could not be prepared."
+                )
 
     # Preserve the persona's declared order rather than whatever finished first.
     order = {a: i for i, a in enumerate(persona.analyses)}
@@ -162,7 +191,9 @@ def _run(
     return analyses, lists, warnings
 
 
-def _headline(signals: list[Signal], analyses: list[AnalysisResult], label: str) -> str:
+def _headline(
+    signals: list[Signal], analyses: list[AnalysisResult], label: str
+) -> str:
     """Deterministic, and never model-written.
 
     Says what is wrong, or says plainly that nothing is — and distinguishes "nothing is

@@ -39,7 +39,9 @@ def failure(
 def require_owned_data(result: Any, *, tool_name: str) -> dict[str, Any]:
     """Extract the object payload from FastMCP's native parsed result."""
     envelope = result.data
-    if not isinstance(envelope, dict) or not isinstance(envelope.get("success"), bool):
+    if not isinstance(envelope, dict) or not isinstance(
+        envelope.get("success"), bool
+    ):
         raise OwnedToolResultError(
             f"MCP tool {tool_name!r} returned an invalid result envelope"
         )
@@ -57,7 +59,9 @@ def require_owned_data(result: Any, *, tool_name: str) -> dict[str, Any]:
             f"MCP tool {tool_name!r} returned an invalid error envelope"
         )
     error = OwnedToolResultError(
-        str(error_payload.get("message") or f"MCP tool {tool_name!r} failed")[:1500]
+        str(error_payload.get("message") or f"MCP tool {tool_name!r} failed")[
+            :1500
+        ]
     )
     error.code = str(error_payload.get("code") or "MCP_TOOL_ERROR")
     error.retryable = bool(error_payload.get("retryable", True))

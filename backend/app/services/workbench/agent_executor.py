@@ -29,10 +29,22 @@ from app.services.workbench.results import Evidence, SourceResult
 
 logger = logging.getLogger(__name__)
 
-_CHART_UNITS = frozenset({
-    "inr", "percent", "count", "days", "months", "years", "year", "ratio",
-    "text", "date", "datetime", "boolean",
-})
+_CHART_UNITS = frozenset(
+    {
+        "inr",
+        "percent",
+        "count",
+        "days",
+        "months",
+        "years",
+        "year",
+        "ratio",
+        "text",
+        "date",
+        "datetime",
+        "boolean",
+    }
+)
 
 
 def _chart_unit(value: Any, *, numeric: bool) -> str:
@@ -91,7 +103,9 @@ class ExecutedAgentCall:
     attempt_id: str | None = None
 
     @staticmethod
-    def _local_reference(query_id: str, attempt_id: str) -> dict[str, int | str]:
+    def _local_reference(
+        query_id: str, attempt_id: str
+    ) -> dict[str, int | str]:
         query_tail = query_id.rsplit(":q", 1)
         attempt_tail = attempt_id.rsplit(":a", 1)
         if len(query_tail) == 2 and query_tail[1].isdigit():
@@ -104,7 +118,8 @@ class ExecutedAgentCall:
     def replay_payload(self) -> dict[str, Any]:
         query_reference = (
             self._local_reference(self.query_id, self.attempt_id)
-            if self.query_id and self.attempt_id else None
+            if self.query_id and self.attempt_id
+            else None
         )
         if self.error is not None:
             payload = {"status": "error", **self.error}
@@ -167,7 +182,9 @@ class ExecutedAgentCall:
         return {
             "role": "tool",
             "tool_call_id": self.call.id,
-            "content": json.dumps(self.replay_payload(), default=str, separators=(",", ":")),
+            "content": json.dumps(
+                self.replay_payload(), default=str, separators=(",", ":")
+            ),
         }
 
     def observation_message(self) -> dict[str, str]:
@@ -176,7 +193,8 @@ class ExecutedAgentCall:
             "role": "tool",
             "tool_call_id": self.call.id,
             "content": shape_observation_text(
-                self.replay_message()["content"], tool_name=self.call.name,
+                self.replay_message()["content"],
+                tool_name=self.call.name,
             ),
         }
 
@@ -186,9 +204,13 @@ def observation_limit_chars(tool_name: str | None) -> int:
     limit = settings.workbench_agent_observation_max_chars
     if tool_name:
         try:
-            limit = min(limit, get_runtime_tool_policy(tool_name).max_result_chars)
+            limit = min(
+                limit, get_runtime_tool_policy(tool_name).max_result_chars
+            )
         except Exception:  # noqa: BLE001 - unknown tool names keep the default bound
-            logger.debug("no observation bound registered for tool %r", tool_name)
+            logger.debug(
+                "no observation bound registered for tool %r", tool_name
+            )
     return limit
 
 
@@ -197,7 +219,10 @@ def _encoded_size(payload: dict[str, Any]) -> int:
 
 
 def shape_observation(
-    payload: dict[str, Any], *, limit_chars: int, max_facts: int | None = None,
+    payload: dict[str, Any],
+    *,
+    limit_chars: int,
+    max_facts: int | None = None,
 ) -> dict[str, Any]:
     """Bound a replay payload for the model without touching the durable copy.
 
@@ -226,7 +251,11 @@ def shape_observation(
         inner = dict(inner)
         shaped["payload"] = inner
         list_keys = sorted(
-            (key for key, value in inner.items() if isinstance(value, list) and value),
+            (
+                key
+                for key, value in inner.items()
+                if isinstance(value, list) and value
+            ),
             key=lambda key: -len(json.dumps(inner[key], default=str)),
         )
         for key in list_keys:
@@ -294,7 +323,9 @@ def shape_observation(
     return shaped
 
 
-def shape_observation_text(content: str, *, tool_name: str | None = None) -> str:
+def shape_observation_text(
+    content: str, *, tool_name: str | None = None
+) -> str:
     """Shape a serialized tool message; non-JSON content is only cut to the bound."""
     limit = observation_limit_chars(tool_name)
     try:
@@ -308,7 +339,8 @@ def shape_observation_text(content: str, *, tool_name: str | None = None) -> str
 
 
 async def _execute_postgres_mcp(
-    call: NativeToolCall, ctx: AgentExecutionContext,
+    call: NativeToolCall,
+    ctx: AgentExecutionContext,
 ) -> RawQueryResult:
     from app.mcp import postgres_client
 
@@ -321,17 +353,27 @@ async def _execute_postgres_mcp(
             "workbench_conversation_id": ctx.conversation_id,
             "workbench_turn_id": ctx.turn_id,
             "source_policy_version": ctx.source_policy.version,
-            "workbench_effective_sources": list(ctx.source_policy.effective_sources),
+            "workbench_effective_sources": list(
+                ctx.source_policy.effective_sources
+            ),
             "workbench_query_id": ctx.query_id,
             "workbench_attempt_id": ctx.attempt_id,
         },
     )
     returned_query_id = payload.get("query_id")
     returned_attempt_id = payload.get("attempt_id")
-    if returned_query_id is not None and str(returned_query_id) != str(ctx.query_id):
-        raise AgentExecutionError("PostgreSQL MCP returned a mismatched query identifier")
-    if returned_attempt_id is not None and str(returned_attempt_id) != str(ctx.attempt_id):
-        raise AgentExecutionError("PostgreSQL MCP returned a mismatched attempt identifier")
+    if returned_query_id is not None and str(returned_query_id) != str(
+        ctx.query_id
+    ):
+        raise AgentExecutionError(
+            "PostgreSQL MCP returned a mismatched query identifier"
+        )
+    if returned_attempt_id is not None and str(returned_attempt_id) != str(
+        ctx.attempt_id
+    ):
+        raise AgentExecutionError(
+            "PostgreSQL MCP returned a mismatched attempt identifier"
+        )
     if payload.get("status") == "error":
         message = str(payload.get("message") or "PostgreSQL MCP failed")
         detail = str(payload.get("detail") or "").strip()
@@ -345,7 +387,9 @@ async def _execute_postgres_mcp(
     rows = payload.get("rows")
     columns = payload.get("columns")
     if not isinstance(rows, list) or not isinstance(columns, list):
-        raise AgentExecutionError("PostgreSQL MCP returned no tabular query result")
+        raise AgentExecutionError(
+            "PostgreSQL MCP returned no tabular query result"
+        )
     result = QueryResult(
         rows=[dict(row) for row in rows if isinstance(row, dict)],
         columns=[str(column) for column in columns],
@@ -365,11 +409,14 @@ async def _execute_postgres_mcp(
         {
             "name": column,
             "label": column.replace("_", " ").title(),
-            "unit": _chart_unit(unit_hints.get(column), numeric=any(
-                isinstance(row.get(column), (int, float))
-                and not isinstance(row.get(column), bool)
-                for row in result.rows
-            )),
+            "unit": _chart_unit(
+                unit_hints.get(column),
+                numeric=any(
+                    isinstance(row.get(column), (int, float))
+                    and not isinstance(row.get(column), bool)
+                    for row in result.rows
+                ),
+            ),
             "sensitivity": "internal",
         }
         for column in result.columns
@@ -390,7 +437,9 @@ async def _execute_postgres_mcp(
     }
     return RawQueryResult(
         payload={
-            "title": (ctx.question or "PostgreSQL query").strip().rstrip("?.!")[:120],
+            "title": (ctx.question or "PostgreSQL query")
+            .strip()
+            .rstrip("?.!")[:120],
             "columns": raw_columns,
             "rows": result.rows,
             "lineage": lineage,
@@ -404,39 +453,53 @@ async def _execute_postgres_mcp(
 
 
 async def _search_curated(
-    args: SearchCuratedKnowledgeArguments, ctx: AgentExecutionContext,
+    args: SearchCuratedKnowledgeArguments,
+    ctx: AgentExecutionContext,
 ) -> SourceResult:
     from app.services.workbench import nodes
 
     handlers: dict[str, Callable[[], Awaitable[SourceResult]]] = {
         "concepts": lambda: nodes.run_knowledge(args.query),
         "macro": lambda: nodes.run_macro(args.query, policy=ctx.source_policy),
-        "competitive": lambda: nodes.run_competitive(args.query, policy=ctx.source_policy),
-        "regulatory": lambda: nodes.run_regulatory(args.query, policy=ctx.source_policy),
+        "competitive": lambda: nodes.run_competitive(
+            args.query, policy=ctx.source_policy
+        ),
+        "regulatory": lambda: nodes.run_regulatory(
+            args.query, policy=ctx.source_policy
+        ),
     }
     return await handlers[args.domain]()
 
 
 async def _search_public_web(
-    args: SearchPublicWebArguments, ctx: AgentExecutionContext,
+    args: SearchPublicWebArguments,
+    ctx: AgentExecutionContext,
 ) -> SourceResult:
     from app.services.workbench import nodes
 
     return await nodes.run_web(
-        args.search_query, user=ctx.user, policy=ctx.source_policy,
+        args.search_query,
+        user=ctx.user,
+        policy=ctx.source_policy,
         raise_policy_denials=True,
         private_entities=ctx.private_entities,
     )
 
 
 async def _visualize_query_result(
-    args: VisualizeQueryResultArguments, ctx: AgentExecutionContext,
+    args: VisualizeQueryResultArguments,
+    ctx: AgentExecutionContext,
 ) -> SourceResult:
     from app.services.workbench import history
-    from app.services.workbench.visualization import VisualizationError, build_visual
+    from app.services.workbench.visualization import (
+        VisualizationError,
+        build_visual,
+    )
 
     source = history.query_result(
-        ctx.conversation_id, user=ctx.user, query_id=args.query_id,
+        ctx.conversation_id,
+        user=ctx.user,
+        query_id=args.query_id,
     )
     if source is None:
         raise VisualizationError(
@@ -451,43 +514,62 @@ def _source_result_from_mcp(data: dict[str, Any]) -> SourceResult:
         raise AgentExecutionError("Workbench MCP tool returned no card")
     raw_evidence = card.get("evidence") or []
     if not isinstance(raw_evidence, list):
-        raise AgentExecutionError("Workbench MCP tool returned invalid evidence")
+        raise AgentExecutionError(
+            "Workbench MCP tool returned invalid evidence"
+        )
     return SourceResult(
         source=str(card.get("source") or ""),
         card_type=str(card.get("kind") or ""),
         payload=dict(card.get("payload") or {}),
         summary=str(card.get("summary") or ""),
         sources=list(card.get("sources") or []),
-        evidence=[Evidence(**item) for item in raw_evidence if isinstance(item, dict)],
+        evidence=[
+            Evidence(**item) for item in raw_evidence if isinstance(item, dict)
+        ],
         complete=bool(card.get("complete", True)),
         limitation=str(card.get("limitation") or ""),
         sensitive=bool(card.get("sensitive")),
-        lineage=(dict(card["lineage"]) if isinstance(card.get("lineage"), dict) else None),
+        lineage=(
+            dict(card["lineage"])
+            if isinstance(card.get("lineage"), dict)
+            else None
+        ),
     )
 
 
 async def execute_agent_call(
-    call: NativeToolCall, ctx: AgentExecutionContext,
+    call: NativeToolCall,
+    ctx: AgentExecutionContext,
 ) -> ExecutedAgentCall:
     """Validate, reauthorize, bound, and execute exactly one native call."""
     from app.mcp import postgres_client
 
     from app.mcp.tool_catalog import catalog as mcp_catalog
 
-    if mcp_catalog.is_postgres(call.name) or postgres_client.is_model_tool(call.name):
+    if mcp_catalog.is_postgres(call.name) or postgres_client.is_model_tool(
+        call.name
+    ):
         ctx.source_policy.require("db")
-        remaining = ctx.deadline_s - (time.monotonic() - ctx.deadline_started_at)
+        remaining = ctx.deadline_s - (
+            time.monotonic() - ctx.deadline_started_at
+        )
         try:
             async with asyncio.timeout(max(0.001, remaining)):
                 raw_result = await _execute_postgres_mcp(call, ctx)
         except TimeoutError as exc:
-            raise AgentToolTimeout(f"{call.name} exceeded its execution deadline") from exc
+            raise AgentToolTimeout(
+                f"{call.name} exceeded its execution deadline"
+            ) from exc
         return ExecutedAgentCall(
-            call=call, raw_result=raw_result,
-            query_id=ctx.query_id, attempt_id=ctx.attempt_id,
+            call=call,
+            raw_result=raw_result,
+            query_id=ctx.query_id,
+            attempt_id=ctx.attempt_id,
         )
 
-    authorize_local_tool_call(call.name, call.arguments, policy=ctx.source_policy)
+    authorize_local_tool_call(
+        call.name, call.arguments, policy=ctx.source_policy
+    )
     tool = get_runtime_tool_policy(call.name)
     remaining = ctx.deadline_s - (time.monotonic() - ctx.deadline_started_at)
     timeout = min(tool.timeout_s, max(0.001, remaining))
@@ -501,11 +583,15 @@ async def execute_agent_call(
                 context=ctx,
             )
     except TimeoutError as exc:
-        raise AgentToolTimeout(f"{call.name} exceeded its execution deadline") from exc
+        raise AgentToolTimeout(
+            f"{call.name} exceeded its execution deadline"
+        ) from exc
     if data.get("kind") == "terminal":
         terminal = data.get("terminal")
         if not isinstance(terminal, dict):
-            raise AgentExecutionError("Workbench MCP tool returned an invalid terminal result")
+            raise AgentExecutionError(
+                "Workbench MCP tool returned an invalid terminal result"
+            )
         return ExecutedAgentCall(call=call, terminal=terminal)
     card = _source_result_from_mcp(data)
     if card.card_type == "error":
@@ -514,16 +600,23 @@ async def execute_agent_call(
             card=card,
             error={
                 "code": str(card.payload.get("code") or "SOURCE_UNAVAILABLE"),
-                "message": str(card.payload.get("message") or "Source unavailable.")[:500],
+                "message": str(
+                    card.payload.get("message") or "Source unavailable."
+                )[:500],
             },
         )
-    if card.card_type == "refusal" and card.payload.get("reason") == "not_in_data":
+    if (
+        card.card_type == "refusal"
+        and card.payload.get("reason") == "not_in_data"
+    ):
         return ExecutedAgentCall(
             call=call,
             card=card,
             error={
                 "code": "NO_MATCHING_ROWS",
-                "message": str(card.payload.get("message") or "No matching rows.")[:500],
+                "message": str(
+                    card.payload.get("message") or "No matching rows."
+                )[:500],
             },
         )
     return ExecutedAgentCall(call=call, card=card)

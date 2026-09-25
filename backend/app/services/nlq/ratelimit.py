@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+
 # One local inference at a time. On the deployed Qwen3.6 hybrid model, a second slot doing
 # prefill drops the active slot from ~20 token/s to effectively zero and makes recurrent
 # prompt-cache reuse unreliable. This in-process semaphore is paired with the shared-file

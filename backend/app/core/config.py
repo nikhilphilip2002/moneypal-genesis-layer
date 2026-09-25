@@ -5,14 +5,14 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 
-BASE_DIR = Path(__file__).resolve().parents[2]   # backend/
-REGISTRY_DIR = BASE_DIR / "registry"             # institution/regulation JSON configs
-DATA_DIR = BASE_DIR / "data"                     # ingested PDFs/TXTs (gitignored)
+BASE_DIR = Path(__file__).resolve().parents[2]  # backend/
+REGISTRY_DIR = BASE_DIR / "registry"  # institution/regulation JSON configs
+DATA_DIR = BASE_DIR / "data"  # ingested PDFs/TXTs (gitignored)
 
 # Qdrant collections. MACRO_COLLECTION is bound from settings at the bottom of this
 # module (the env loader is defined below); it stays a module-level constant so the
 # existing `from app.core.config import MACRO_COLLECTION` imports keep working.
-LANDSCAPE_ANCHOR = "comp_sidbi"                  # anchor collection for the landscape summary
+LANDSCAPE_ANCHOR = "comp_sidbi"  # anchor collection for the landscape summary
 
 
 def _load_env_file() -> dict[str, str]:
@@ -36,61 +36,136 @@ class Settings:
         def get(name: str, default: str | None = None) -> str | None:
             return os.environ.get(name) or env_file.get(name) or default
 
-        self.qdrant_url = get("QDRANT_URL", "http://localhost:6333") or "http://localhost:6333"
+        self.qdrant_url = (
+            get("QDRANT_URL", "http://localhost:6333")
+            or "http://localhost:6333"
+        )
         self.qdrant_api_key = get("QDRANT_API_KEY")
         self.qdrant_timeout = float(get("QDRANT_TIMEOUT", "20.0") or "20.0")
 
-        self.embedding_model = get("EMBEDDING_MODEL", "BAAI/bge-m3") or "BAAI/bge-m3"
+        self.embedding_model = (
+            get("EMBEDDING_MODEL", "BAAI/bge-m3") or "BAAI/bge-m3"
+        )
         self.vector_size = int(get("VECTOR_SIZE", "1024") or "1024")
         self.collection_prefix = get("COLLECTION_PREFIX", "reg_") or "reg_"
 
         # --- Macro intelligence ingestion pipeline ----------------------------------
         # Point MACRO_COLLECTION at a scratch collection to exercise the refresh/purge
         # cycle without touching the collection the macro API serves from.
-        self.macro_collection = get("MACRO_COLLECTION", "macro_intel1") or "macro_intel1"
-        self.macro_data_dir = Path(get("MACRO_DATA_DIR", str(DATA_DIR / "macro")) or DATA_DIR / "macro")
+        self.macro_collection = (
+            get("MACRO_COLLECTION", "macro_intel1") or "macro_intel1"
+        )
+        self.macro_data_dir = Path(
+            get("MACRO_DATA_DIR", str(DATA_DIR / "macro"))
+            or DATA_DIR / "macro"
+        )
         self.macro_state_file = Path(
-            get("MACRO_STATE_FILE", str(DATA_DIR / "macro" / "state.json")) or DATA_DIR / "macro" / "state.json"
+            get("MACRO_STATE_FILE", str(DATA_DIR / "macro" / "state.json"))
+            or DATA_DIR / "macro" / "state.json"
         )
         self.macro_sources_file = Path(
-            get("MACRO_SOURCES_FILE", str(BASE_DIR / "scripts" / "macro_pipeline" / "sources.txt"))
+            get(
+                "MACRO_SOURCES_FILE",
+                str(BASE_DIR / "scripts" / "macro_pipeline" / "sources.txt"),
+            )
             or BASE_DIR / "scripts" / "macro_pipeline" / "sources.txt"
         )
         # Weekly refresh. APScheduler day_of_week names: mon,tue,wed,thu,fri,sat,sun.
         self.macro_schedule_day = get("MACRO_SCHEDULE_DAY", "sun") or "sun"
-        self.macro_schedule_hour = int(get("MACRO_SCHEDULE_HOUR", "10") or "10")
-        self.macro_schedule_minute = int(get("MACRO_SCHEDULE_MINUTE", "0") or "0")
-        self.macro_schedule_tz = get("MACRO_SCHEDULE_TZ", "Asia/Kolkata") or "Asia/Kolkata"
+        self.macro_schedule_hour = int(
+            get("MACRO_SCHEDULE_HOUR", "10") or "10"
+        )
+        self.macro_schedule_minute = int(
+            get("MACRO_SCHEDULE_MINUTE", "0") or "0"
+        )
+        self.macro_schedule_tz = (
+            get("MACRO_SCHEDULE_TZ", "Asia/Kolkata") or "Asia/Kolkata"
+        )
         # Off by default: a container restart should not trigger a full crawl.
-        self.macro_run_on_startup = (get("MACRO_RUN_ON_STARTUP", "false") or "false").lower() in (
-            "1", "true", "yes", "on",
+        self.macro_run_on_startup = (
+            get("MACRO_RUN_ON_STARTUP", "false") or "false"
+        ).lower() in (
+            "1",
+            "true",
+            "yes",
+            "on",
         )
         # Stale-point purge. The min-ratio rail stops a blocked crawl from emptying the
         # collection — three of the four configured sources are auth/JS/TLS gated today.
-        self.macro_purge_stale = (get("MACRO_PURGE_STALE", "true") or "true").lower() in (
-            "1", "true", "yes", "on",
+        self.macro_purge_stale = (
+            get("MACRO_PURGE_STALE", "true") or "true"
+        ).lower() in (
+            "1",
+            "true",
+            "yes",
+            "on",
         )
-        self.macro_purge_min_ratio = float(get("MACRO_PURGE_MIN_RATIO", "0.5") or "0.5")
+        self.macro_purge_min_ratio = float(
+            get("MACRO_PURGE_MIN_RATIO", "0.5") or "0.5"
+        )
         # Off by default: macro_intel1 holds points from an earlier ingest with a
         # different payload schema, covering sources the crawler cannot reach today.
         # Retiring them is a deliberate migration (`run.py migrate`), not a side effect
         # of the first weekly refresh.
-        self.macro_purge_legacy = (get("MACRO_PURGE_LEGACY", "false") or "false").lower() in (
-            "1", "true", "yes", "on",
+        self.macro_purge_legacy = (
+            get("MACRO_PURGE_LEGACY", "false") or "false"
+        ).lower() in (
+            "1",
+            "true",
+            "yes",
+            "on",
         )
-        self.macro_max_pages_per_site = int(get("MACRO_MAX_PAGES_PER_SITE", "100") or "100")
+        self.macro_max_pages_per_site = int(
+            get("MACRO_MAX_PAGES_PER_SITE", "100") or "100"
+        )
         self.macro_max_depth = int(get("MACRO_MAX_DEPTH", "2") or "2")
-        self.macro_max_files_per_site = int(get("MACRO_MAX_FILES_PER_SITE", "50") or "50")
-        self.macro_max_download_mb = int(get("MACRO_MAX_DOWNLOAD_MB", "80") or "80")
-        self.macro_request_delay_s = float(get("MACRO_REQUEST_DELAY_S", "1.0") or "1.0")
-        self.macro_request_timeout_s = float(get("MACRO_REQUEST_TIMEOUT_S", "45") or "45")
-        self.macro_respect_robots = (get("MACRO_RESPECT_ROBOTS", "true") or "true").lower() in (
-            "1", "true", "yes", "on",
+        self.macro_max_files_per_site = int(
+            get("MACRO_MAX_FILES_PER_SITE", "50") or "50"
+        )
+        self.macro_max_download_mb = int(
+            get("MACRO_MAX_DOWNLOAD_MB", "80") or "80"
+        )
+        self.macro_request_delay_s = float(
+            get("MACRO_REQUEST_DELAY_S", "1.0") or "1.0"
+        )
+        self.macro_request_timeout_s = float(
+            get("MACRO_REQUEST_TIMEOUT_S", "45") or "45"
+        )
+        self.macro_respect_robots = (
+            get("MACRO_RESPECT_ROBOTS", "true") or "true"
+        ).lower() in (
+            "1",
+            "true",
+            "yes",
+            "on",
         )
 
-        self.regulations_dir = Path(get("REGULATIONS_DIR", str(REPO_ROOT / "Regulations")) or REPO_ROOT / "Regulations")
-        self.registry_dir = Path(get("REGISTRY_DIR", str(REPO_ROOT / "backend" / "registry" / "regulations")) or REPO_ROOT / "backend" / "registry" / "regulations")
-        self.local_index_path = Path(get("LOCAL_INDEX_PATH", str(REPO_ROOT / "backend" / "vector_store" / "regulatory_chunks.jsonl")) or REPO_ROOT / "backend" / "vector_store" / "regulatory_chunks.jsonl")
+        self.regulations_dir = Path(
+            get("REGULATIONS_DIR", str(REPO_ROOT / "Regulations"))
+            or REPO_ROOT / "Regulations"
+        )
+        self.registry_dir = Path(
+            get(
+                "REGISTRY_DIR",
+                str(REPO_ROOT / "backend" / "registry" / "regulations"),
+            )
+            or REPO_ROOT / "backend" / "registry" / "regulations"
+        )
+        self.local_index_path = Path(
+            get(
+                "LOCAL_INDEX_PATH",
+                str(
+                    REPO_ROOT
+                    / "backend"
+                    / "vector_store"
+                    / "regulatory_chunks.jsonl"
+                ),
+            )
+            or REPO_ROOT
+            / "backend"
+            / "vector_store"
+            / "regulatory_chunks.jsonl"
+        )
         self.cors_origins = ["*"]
 
         # --- Standing signals --------------------------------------------------------
@@ -100,14 +175,22 @@ class Settings:
         self.signals_scan_enabled = (
             get("SIGNALS_SCAN_ENABLED", "true") or "true"
         ).lower() in ("1", "true", "yes", "on")
-        self.signals_scan_interval_s = int(get("SIGNALS_SCAN_INTERVAL_S", "21600") or "21600")
+        self.signals_scan_interval_s = int(
+            get("SIGNALS_SCAN_INTERVAL_S", "21600") or "21600"
+        )
 
         # --- Shared OpenAI-compatible LLM endpoint ----------------------------------
         # Every feature uses this one endpoint. Keep it inside the deployment's trusted
         # network whenever prompts can contain private banking data.
-        self.llm_base_url = get("LLM_BASE_URL", "http://localhost:8080/v1") or "http://localhost:8080/v1"
+        self.llm_base_url = (
+            get("LLM_BASE_URL", "http://localhost:8080/v1")
+            or "http://localhost:8080/v1"
+        )
         self.llm_api_key = get("LLM_API_KEY")
-        self.llm_model = get("LLM_MODEL", "qwen3.6-32b-instruct-q4_K_M") or "qwen3.6-32b-instruct-q4_K_M"
+        self.llm_model = (
+            get("LLM_MODEL", "qwen3.6-32b-instruct-q4_K_M")
+            or "qwen3.6-32b-instruct-q4_K_M"
+        )
         self.llm_timeout_s = float(get("LLM_TIMEOUT", "300") or "300")
         # Disk slot snapshots contain real conversation content and stay disabled until
         # the deployed model/server has demonstrated reuse after save and restore.
@@ -124,9 +207,13 @@ class Settings:
         # Qwen3.5/3.6 use recurrent state and llama-server can invalidate their reusable
         # prompt state when concurrent requests move between slots. Both containers mount
         # LOG_DIR from the same host directory, so this advisory-lock path is shared.
-        configured_log_dir = Path(get("LOG_DIR", str(DATA_DIR / "logs")) or DATA_DIR / "logs")
+        configured_log_dir = Path(
+            get("LOG_DIR", str(DATA_DIR / "logs")) or DATA_DIR / "logs"
+        )
         self.nlq_llm_lock_path = Path(
-            get("NLQ_LLM_LOCK_PATH", str(configured_log_dir / ".llamacpp.lock"))
+            get(
+                "NLQ_LLM_LOCK_PATH", str(configured_log_dir / ".llamacpp.lock")
+            )
             or configured_log_dir / ".llamacpp.lock"
         )
         # End-to-end budget for one streamed NLQ turn. Local llama.cpp deployments
@@ -142,7 +229,9 @@ class Settings:
         # never silently fall back to POSTGRES_USER.
         self.nlq_db_user = get("NLQ_DB_USER", "nlq_readonly") or "nlq_readonly"
         self.nlq_db_password = get("NLQ_DB_PASSWORD")
-        self.nlq_statement_timeout_ms = int(get("NLQ_STATEMENT_TIMEOUT_MS", "15000") or "15000")
+        self.nlq_statement_timeout_ms = int(
+            get("NLQ_STATEMENT_TIMEOUT_MS", "15000") or "15000"
+        )
         self.nlq_max_rows = int(get("NLQ_MAX_ROWS", "5000") or "5000")
         # Temporary rollout mode requested by the product owner: all authenticated
         # Workbench roles can query and view governed PII fields. Set false when the
@@ -158,19 +247,31 @@ class Settings:
         if self.nlq_sql_function_mode not in ("denylist", "allowlist"):
             self.nlq_sql_function_mode = "denylist"
 
-        self.postgres_mcp_url = get("POSTGRES_MCP_URL", "http://postgres-mcp:8001/mcp") or "http://postgres-mcp:8001/mcp"
-        self.postgres_mcp_timeout_s = float(get("POSTGRES_MCP_TIMEOUT_S", "30") or "30")
+        self.postgres_mcp_url = (
+            get("POSTGRES_MCP_URL", "http://postgres-mcp:8001/mcp")
+            or "http://postgres-mcp:8001/mcp"
+        )
+        self.postgres_mcp_timeout_s = float(
+            get("POSTGRES_MCP_TIMEOUT_S", "30") or "30"
+        )
         self.postgres_mcp_model_tools = tuple(
             name.strip()
-            for name in (get("POSTGRES_MCP_MODEL_TOOLS", "query") or "query").split(",")
+            for name in (
+                get("POSTGRES_MCP_MODEL_TOOLS", "query") or "query"
+            ).split(",")
             if name.strip()
         )
 
         # Exa is a public-web boundary. It is independently gated so deployments can keep
         # the private Workbench running when the external search quota or network is down.
         self.exa_api_key = get("EXA_API_KEY")
-        self.exa_mcp_enabled = (get("EXA_MCP_ENABLED", "false") or "false").lower() in (
-            "1", "true", "yes", "on",
+        self.exa_mcp_enabled = (
+            get("EXA_MCP_ENABLED", "false") or "false"
+        ).lower() in (
+            "1",
+            "true",
+            "yes",
+            "on",
         )
         self.exa_mcp_url = (
             get(
@@ -186,7 +287,9 @@ class Settings:
         self.exa_fetch_max_pages = max(
             0, min(3, int(get("EXA_FETCH_MAX_PAGES", "2") or "2"))
         )
-        self.exa_cache_ttl_s = max(0, int(get("EXA_CACHE_TTL_S", "3600") or "3600"))
+        self.exa_cache_ttl_s = max(
+            0, int(get("EXA_CACHE_TTL_S", "3600") or "3600")
+        )
         self.exa_daily_user_limit = max(
             1, int(get("EXA_DAILY_USER_LIMIT", "10") or "10")
         )
@@ -205,12 +308,16 @@ class Settings:
             1, min(12, int(get("WORKBENCH_AGENT_MAX_TOOL_CALLS", "6") or "6"))
         )
         self.workbench_agent_synthesis_repairs = max(
-            0, min(1, int(get("WORKBENCH_AGENT_SYNTHESIS_REPAIRS", "1") or "1"))
+            0,
+            min(1, int(get("WORKBENCH_AGENT_SYNTHESIS_REPAIRS", "1") or "1")),
         )
         # What goes back to the model after a tool call is bounded separately from what
         # is stored: durable history keeps every row, the observation is shaped to fit.
         self.workbench_agent_observation_max_chars = max(
-            2_000, int(get("WORKBENCH_AGENT_OBSERVATION_MAX_CHARS", "5000") or "5000")
+            2_000,
+            int(
+                get("WORKBENCH_AGENT_OBSERVATION_MAX_CHARS", "5000") or "5000"
+            ),
         )
         self.workbench_agent_observation_max_facts = max(
             0, int(get("WORKBENCH_AGENT_OBSERVATION_MAX_FACTS", "40") or "40")
@@ -230,11 +337,17 @@ class Settings:
         # The transcript budget was previously expressed in characters because no token
         # count was persisted. Real prompt_tokens from the provider are now recorded per
         # turn, so the budget is stated in the unit the context window is actually in.
-        self.workbench_context_window = int(get("WORKBENCH_CONTEXT_WINDOW", "32768") or "32768")
+        self.workbench_context_window = int(
+            get("WORKBENCH_CONTEXT_WINDOW", "32768") or "32768"
+        )
         # Headroom for the next turn's system prompt, catalog grammar and output. Smaller
         # than a coding agent's: workbench answers are 300-500 tokens, not long diffs.
-        self.workbench_reserve_tokens = int(get("WORKBENCH_RESERVE_TOKENS", "8192") or "8192")
-        self.workbench_keep_recent_turns = int(get("WORKBENCH_KEEP_RECENT_TURNS", "6") or "6")
+        self.workbench_reserve_tokens = int(
+            get("WORKBENCH_RESERVE_TOKENS", "8192") or "8192"
+        )
+        self.workbench_keep_recent_turns = int(
+            get("WORKBENCH_KEEP_RECENT_TURNS", "6") or "6"
+        )
         # Summarization stays dark until the deterministic phases are proven in place;
         # with it off the transcript still gets token-accurate budgeting and the
         # mechanically extracted session state.
@@ -248,20 +361,47 @@ class Settings:
             get("WORKBENCH_HISTORY_WRITE_LEGACY_EXCHANGES", "true") or "true"
         ).lower() in ("1", "true", "yes", "on")
         # --- Rotating Logging Subsystem ---------------------------------------------
-        self.log_dir = Path(get("LOG_DIR", str(DATA_DIR / "logs")) or DATA_DIR / "logs")
-        self.log_raw_traces_enabled = (get("LOG_RAW_TRACES_ENABLED", "true") or "true").lower() in (
-            "1", "true", "yes", "on",
+        self.log_dir = Path(
+            get("LOG_DIR", str(DATA_DIR / "logs")) or DATA_DIR / "logs"
         )
-        self.log_parsed_outputs_enabled = (get("LOG_PARSED_OUTPUTS_ENABLED", "true") or "true").lower() in (
-            "1", "true", "yes", "on",
+        self.log_raw_traces_enabled = (
+            get("LOG_RAW_TRACES_ENABLED", "true") or "true"
+        ).lower() in (
+            "1",
+            "true",
+            "yes",
+            "on",
         )
-        self.log_app_events_enabled = (get("LOG_APP_EVENTS_ENABLED", "true") or "true").lower() in (
-            "1", "true", "yes", "on",
+        self.log_parsed_outputs_enabled = (
+            get("LOG_PARSED_OUTPUTS_ENABLED", "true") or "true"
+        ).lower() in (
+            "1",
+            "true",
+            "yes",
+            "on",
         )
-        self.log_rotation_max_bytes = int(get("LOG_ROTATION_MAX_BYTES", str(50 * 1024 * 1024)) or 50 * 1024 * 1024)
-        self.log_rotation_backup_count = int(get("LOG_ROTATION_BACKUP_COUNT", "10") or "10")
-        self.log_mask_pii = (get("LOG_MASK_PII", "false") or "false").lower() in (
-            "1", "true", "yes", "on",
+        self.log_app_events_enabled = (
+            get("LOG_APP_EVENTS_ENABLED", "true") or "true"
+        ).lower() in (
+            "1",
+            "true",
+            "yes",
+            "on",
+        )
+        self.log_rotation_max_bytes = int(
+            get("LOG_ROTATION_MAX_BYTES", str(50 * 1024 * 1024))
+            or 50 * 1024 * 1024
+        )
+        self.log_rotation_backup_count = int(
+            get("LOG_ROTATION_BACKUP_COUNT", "10") or "10"
+        )
+        self.log_mask_pii = (
+            get("LOG_MASK_PII", "false") or "false"
+        ).lower() in (
+            "1",
+            "true",
+            "yes",
+            "on",
         )
 
 

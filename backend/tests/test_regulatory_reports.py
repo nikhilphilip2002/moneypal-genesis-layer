@@ -20,7 +20,9 @@ def _sample_data(report_id: str):
         "return_code": definition.return_code,
         "name": definition.name,
         "frequency": definition.frequency,
-        "start_date": "2026-04-01" if definition.frequency == "quarterly" else "2026-06-01",
+        "start_date": "2026-04-01"
+        if definition.frequency == "quarterly"
+        else "2026-06-01",
         "end_date": "2026-06-30",
         "cashflows_thousands": {
             "P": [1.0] * 10,
@@ -32,33 +34,54 @@ def _sample_data(report_id: str):
 
 def test_registry_exposes_five_report_outputs():
     assert list(reports.REPORTS) == [
-        "dnbs02", "dnbs13", "dnbs4a", "dnbs4b_structural", "dnbs4b_irs"
+        "dnbs02",
+        "dnbs13",
+        "dnbs4a",
+        "dnbs4b_structural",
+        "dnbs4b_irs",
     ]
 
 
 def test_new_clean_templates_preserve_expected_sheets():
     expected = {
-        "DNBS13_Blank_Template.xlsx": ["FilingInfo", "DNBS13", "AuthorisedSignatory"],
+        "DNBS13_Blank_Template.xlsx": [
+            "FilingInfo",
+            "DNBS13",
+            "AuthorisedSignatory",
+        ],
         "DNBS4A_Blank_Template.xlsx": [
-            "FilingInfo", "DNBS4AShortTermDynamicLiquidity", "AuthorisedSignatory"
+            "FilingInfo",
+            "DNBS4AShortTermDynamicLiquidity",
+            "AuthorisedSignatory",
         ],
         "DNBS4B_Blank_Template.xlsx": [
-            "Filing Info", "AuthorisedSignatory", "DNBS4BStructuralLiquidity", "DNBS4BIRS"
+            "Filing Info",
+            "AuthorisedSignatory",
+            "DNBS4BStructuralLiquidity",
+            "DNBS4BIRS",
         ],
     }
     for filename, sheets in expected.items():
-        wb = openpyxl.load_workbook(reports.ASSET_DIR / filename, data_only=False)
+        wb = openpyxl.load_workbook(
+            reports.ASSET_DIR / filename, data_only=False
+        )
         assert wb.sheetnames == sheets
 
 
 def test_new_templates_contain_no_pan_or_email():
     for filename in (
-        "DNBS13_Blank_Template.xlsx", "DNBS4A_Blank_Template.xlsx", "DNBS4B_Blank_Template.xlsx"
+        "DNBS13_Blank_Template.xlsx",
+        "DNBS4A_Blank_Template.xlsx",
+        "DNBS4B_Blank_Template.xlsx",
     ):
-        wb = openpyxl.load_workbook(reports.ASSET_DIR / filename, data_only=False)
+        wb = openpyxl.load_workbook(
+            reports.ASSET_DIR / filename, data_only=False
+        )
         values = "\n".join(
             str(cell.value)
-            for ws in wb.worksheets for row in ws.iter_rows() for cell in row
+            for ws in wb.worksheets
+            for row in ws.iter_rows()
+            for cell in row
             if cell.value is not None
         )
         assert not PAN_RE.search(values)
@@ -70,8 +93,16 @@ def test_dnbs4a_writer_discovers_rows_and_bucket_headers():
     wb = openpyxl.load_workbook(reports.ASSET_DIR / definition.template)
     reports._write_dnbs4a(wb, definition, _sample_data("dnbs4a"))
     ws = wb["DNBS4AShortTermDynamicLiquidity"]
-    row = reports._find_row(ws, "6 Interest inflow on performing Advances", (38, 88))
-    assert [ws.cell(row, col).value for col in range(3, 8)] == [0.5, 0.5, 0.5, 1.0, 0.5]
+    row = reports._find_row(
+        ws, "6 Interest inflow on performing Advances", (38, 88)
+    )
+    assert [ws.cell(row, col).value for col in range(3, 8)] == [
+        0.5,
+        0.5,
+        0.5,
+        1.0,
+        0.5,
+    ]
     assert ws.cell(row, 8).value == 3.0
 
 
@@ -91,12 +122,16 @@ def test_dnbs13_writer_keeps_detail_rows_blank():
     output = io.BytesIO()
     wb.save(output)
     reopened = openpyxl.load_workbook(io.BytesIO(output.getvalue()))
-    assert all(reopened["DNBS13"].cell(13, col).value is None for col in range(2, 18))
+    assert all(
+        reopened["DNBS13"].cell(13, col).value is None for col in range(2, 18)
+    )
 
 
 def test_custom_range_requires_both_dates():
     definition = reports.REPORTS["dnbs4b_structural"]
-    with pytest.raises(reports.ReportError, match="both start_date and end_date"):
+    with pytest.raises(
+        reports.ReportError, match="both start_date and end_date"
+    ):
         reports._parse_request(definition, "custom", "", "2026-07-01", None)
 
 

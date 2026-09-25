@@ -29,7 +29,11 @@ class Evidence:
         object.__setattr__(self, "excerpt", compact)
 
     def as_dict(self) -> dict[str, Any]:
-        return {key: value for key, value in asdict(self).items() if value not in ("", None)}
+        return {
+            key: value
+            for key, value in asdict(self).items()
+            if value not in ("", None)
+        }
 
 
 @dataclass(slots=True)
@@ -50,7 +54,9 @@ class ToolResult:
         from app.services.workbench.access import source_group
 
         if self.card_type != "error":
-            source_group(self.source)  # every successful tool result is registered
+            source_group(
+                self.source
+            )  # every successful tool result is registered
         self.evidence = list(self.evidence[:MAX_EVIDENCE_ITEMS])
 
     @property

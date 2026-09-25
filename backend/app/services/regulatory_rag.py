@@ -1,4 +1,5 @@
 """Regulatory policy adapter over the shared ``genesis_core.rag`` engine."""
+
 from __future__ import annotations
 
 import json
@@ -18,7 +19,9 @@ REGULATORY_SYSTEM = (
 )
 
 
-def search_local_index(collection_name: str, query: str, limit: int = 6) -> list[dict[str, Any]]:
+def search_local_index(
+    collection_name: str, query: str, limit: int = 6
+) -> list[dict[str, Any]]:
     """Search the ingestion JSONL when the shared Qdrant service is unavailable."""
     if not settings.local_index_path.exists():
         return []
@@ -37,7 +40,9 @@ def search_local_index(collection_name: str, query: str, limit: int = 6) -> list
     return matched or [item for _, item in scored[:limit]]
 
 
-def search(collection_name: str, query: str, limit: int = 6) -> list[dict[str, Any]]:
+def search(
+    collection_name: str, query: str, limit: int = 6
+) -> list[dict[str, Any]]:
     """Use the shared vector engine, falling back to the regulatory local index."""
     try:
         hits = rag.search(collection_name, query, top_k=limit)
@@ -77,10 +82,19 @@ def generate_brief(prompt: str, hits: list[dict[str, Any]]) -> str | None:
         return None
 
 
-def extractive_regulatory_summary(category_name: str, context: str, effective_date: str) -> str:
+def extractive_regulatory_summary(
+    category_name: str, context: str, effective_date: str
+) -> str:
     sentences = re.split(r"(?<=[.!?])\s+", context)
-    selected = [sentence.strip() for sentence in sentences if len(sentence.strip()) > 60][:8]
-    body = " ".join(selected[:4]) or "No indexed source text was available for this category."
+    selected = [
+        sentence.strip()
+        for sentence in sentences
+        if len(sentence.strip()) > 60
+    ][:8]
+    body = (
+        " ".join(selected[:4])
+        or "No indexed source text was available for this category."
+    )
     return (
         f"**Executive Summary**\n{body[:900]}\n\n"
         f"**Applicability**\nThis briefing is prepared for NBFC leadership, with specific attention to NBFCs below Rs. 500 crore where the cited RBI text applies or creates governance expectations.\n\n"
@@ -100,7 +114,9 @@ def key_points_from_text(text: str) -> list[str]:
         return bullets[:5]
     sentences = [
         sentence.strip()
-        for sentence in re.split(r"(?<=[.!?])\s+", re.sub(r"\*\*.*?\*\*", "", text))
+        for sentence in re.split(
+            r"(?<=[.!?])\s+", re.sub(r"\*\*.*?\*\*", "", text)
+        )
         if len(sentence.strip()) > 40
     ]
     return sentences[:5]

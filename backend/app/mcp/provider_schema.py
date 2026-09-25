@@ -35,7 +35,9 @@ def _collapse_any_of(
             types.append(value_type)
         if value_type == "array":
             array_constraints = {
-                key: deepcopy(value) for key, value in option.items() if key != "type"
+                key: deepcopy(value)
+                for key, value in option.items()
+                if key != "type"
             }
         elif set(option) != {"type"}:
             raise ProviderSchemaError(
@@ -82,7 +84,9 @@ def provider_schema(raw_schema: dict[str, Any]) -> dict[str, Any]:
                 raise ProviderSchemaError(
                     f"unknown schema reference {ref!r} at {path}"
                 ) from exc
-            target.update({key: value for key, value in node.items() if key != "$ref"})
+            target.update(
+                {key: value for key, value in node.items() if key != "$ref"}
+            )
             return project(target, path=path, resolving=resolving | {ref})
 
         unsupported = {"oneOf", "allOf", "if", "then", "else", "discriminator"}
@@ -126,7 +130,9 @@ def provider_schema(raw_schema: dict[str, Any]) -> dict[str, Any]:
 
     schema = project(raw)
     if not isinstance(schema, dict) or schema.get("type") != "object":
-        raise ProviderSchemaError("tool input schema is not a top-level object")
+        raise ProviderSchemaError(
+            "tool input schema is not a top-level object"
+        )
     return schema
 
 
@@ -147,4 +153,8 @@ def provider_tool_definition(tool: Any) -> dict[str, Any]:
     }
 
 
-__all__ = ["ProviderSchemaError", "provider_schema", "provider_tool_definition"]
+__all__ = [
+    "ProviderSchemaError",
+    "provider_schema",
+    "provider_tool_definition",
+]

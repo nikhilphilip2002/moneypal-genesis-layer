@@ -9,7 +9,9 @@ def load_regulation_categories() -> list[RegulationCategory]:
     categories: list[RegulationCategory] = []
     for path in sorted(settings.registry_dir.glob("*.json")):
         with path.open("r", encoding="utf-8") as file:
-            categories.append(RegulationCategory.model_validate(json.load(file)))
+            categories.append(
+                RegulationCategory.model_validate(json.load(file))
+            )
     return categories
 
 

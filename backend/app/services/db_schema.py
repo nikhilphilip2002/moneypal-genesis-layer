@@ -8,7 +8,16 @@ than filled with a plausible-looking placeholder.
 import contextlib
 import logging
 import os
-from typing import Any, Callable, Dict, Generator, List, Optional, Sequence, Tuple
+from typing import (
+    Any,
+    Callable,
+    Dict,
+    Generator,
+    List,
+    Optional,
+    Sequence,
+    Tuple,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -84,7 +93,11 @@ def get_connection():
         "password": password,
     }
     # The two drivers spell the connect timeout differently.
-    kwargs["connect_timeout" if _driver.__name__.startswith("psycopg2") else "timeout"] = 3
+    kwargs[
+        "connect_timeout"
+        if _driver.__name__.startswith("psycopg2")
+        else "timeout"
+    ] = 3
     return _driver.connect(**kwargs)
 
 
@@ -112,7 +125,14 @@ class SectionResult:
 
     __slots__ = ("name", "status", "rows", "error", "note")
 
-    def __init__(self, name: str, status: str, rows: int = 0, error: str = "", note: str = ""):
+    def __init__(
+        self,
+        name: str,
+        status: str,
+        rows: int = 0,
+        error: str = "",
+        note: str = "",
+    ):
         self.name = name
         self.status = status
         self.rows = rows
@@ -141,14 +161,19 @@ def run_section(
         provenance[name] = SectionResult(
             # Preserve caveats for an empty result as well: an auditor still needs to
             # know why a valid query produced a blank regulatory section.
-            name, "ok" if count else "empty", count, note=note
+            name,
+            "ok" if count else "empty",
+            count,
+            note=note,
         ).as_dict()
     except Exception as exc:  # noqa: BLE001 - one bad section must not kill the graph
         logger.exception("Information graph section %r failed", name)
         if conn is not None:
             with contextlib.suppress(Exception):
                 conn.rollback()
-        provenance[name] = SectionResult(name, "error", 0, f"{type(exc).__name__}: {exc}").as_dict()
+        provenance[name] = SectionResult(
+            name, "error", 0, f"{type(exc).__name__}: {exc}"
+        ).as_dict()
 
 
 def _f(value: Any) -> float:
@@ -192,7 +217,11 @@ def get_scheme_name_map(cur) -> Dict[str, str]:
         "SELECT lnschm_schm_code, lnschm_schm_name FROM bronze.nbfclnscheme "
         "WHERE lnschm_schm_code IS NOT NULL"
     )
-    return {str(c).strip(): (n or "").strip() for c, n in cur.fetchall() if (n or "").strip()}
+    return {
+        str(c).strip(): (n or "").strip()
+        for c, n in cur.fetchall()
+        if (n or "").strip()
+    }
 
 
 def scheme_title(code: Any, name_map: Dict[str, str]) -> str:
@@ -220,7 +249,9 @@ def _repaid_pct(repaid: float, disbursed: float) -> float:
     return round(repaid / disbursed * 100, 1) if disbursed else 0.0
 
 
-def get_collection_efficiency(cur, account_nums: Optional[Sequence[Any]] = None) -> Dict[str, Any]:
+def get_collection_efficiency(
+    cur, account_nums: Optional[Sequence[Any]] = None
+) -> Dict[str, Any]:
     """True collection efficiency: instalments paid over instalments due.
 
     bronze.loanrepay carries both sides - lnrepay_prin_amt / lnrepay_int_amt are amounts
@@ -251,7 +282,10 @@ def get_collection_efficiency(cur, account_nums: Optional[Sequence[Any]] = None)
 # Search
 # --------------------------------------------------------------------------- #
 
-def search_entities(query_str: str, entity_type: str = "all") -> List[Dict[str, Any]]:
+
+def search_entities(
+    query_str: str, entity_type: str = "all"
+) -> List[Dict[str, Any]]:
     """Find products, branches and borrowers.
 
     Codes are matched exactly. They used to be matched with LIKE '%term%', so searching
@@ -363,7 +397,10 @@ def search_entities(query_str: str, entity_type: str = "all") -> List[Dict[str, 
 # Monthly aggregates
 # --------------------------------------------------------------------------- #
 
-def get_monthly_breakdown(selected_month: Optional[str] = None) -> Dict[str, Any]:
+
+def get_monthly_breakdown(
+    selected_month: Optional[str] = None,
+) -> Dict[str, Any]:
     """Monthly sanction / disbursement / repayment aggregates.
 
     Returns an empty series if the query fails rather than a fabricated one - this used to
@@ -421,12 +458,14 @@ def get_monthly_breakdown(selected_month: Optional[str] = None) -> Dict[str, Any
     selected_metrics = None
     if monthly_series:
         selected_metrics = next(
-            (m for m in monthly_series if m["month"] == selected_month), monthly_series[0]
+            (m for m in monthly_series if m["month"] == selected_month),
+            monthly_series[0],
         )
 
     return {
         "monthly_series": monthly_series,
-        "selected_month": selected_month or (monthly_series[0]["month"] if monthly_series else None),
+        "selected_month": selected_month
+        or (monthly_series[0]["month"] if monthly_series else None),
         "selected_metrics": selected_metrics,
         "total_months": len(monthly_series),
         "provenance": provenance,
@@ -480,7 +519,9 @@ def get_mom_loan_start_analysis() -> Dict[str, Any]:
                     "volume_disbursed": disbursed,
                     "volume_repaid": repaid,
                     # Real average rate, no 17.7 default.
-                    "avg_interest_rate": round(_f(row[6]), 2) if row[6] is not None else None,
+                    "avg_interest_rate": round(_f(row[6]), 2)
+                    if row[6] is not None
+                    else None,
                     "avg_ticket_size": round(_f(row[7]), 2),
                     # None for the first cohort: there is no prior month to grow from.
                     "mom_growth_pct": growth,
@@ -500,7 +541,11 @@ def get_mom_loan_start_analysis() -> Dict[str, Any]:
 
     first = monthly_cohorts[0] if monthly_cohorts else None
     latest = monthly_cohorts[-1] if monthly_cohorts else None
-    growths = [c["mom_growth_pct"] for c in monthly_cohorts if c["mom_growth_pct"] is not None]
+    growths = [
+        c["mom_growth_pct"]
+        for c in monthly_cohorts
+        if c["mom_growth_pct"] is not None
+    ]
 
     return {
         "monthly_cohorts": list(reversed(monthly_cohorts)),
@@ -508,12 +553,18 @@ def get_mom_loan_start_analysis() -> Dict[str, Any]:
             "start_period": first["start_month"] if first else None,
             "latest_period": latest["start_month"] if latest else None,
             "origination_growth_multiplier": (
-                round(latest["volume_sanctioned"] / first["volume_sanctioned"], 1)
+                round(
+                    latest["volume_sanctioned"] / first["volume_sanctioned"], 1
+                )
                 if first and latest and first["volume_sanctioned"]
                 else None
             ),
-            "average_mom_growth_pct": round(sum(growths) / len(growths), 1) if growths else None,
-            "total_new_volume_started": sum(c["volume_sanctioned"] for c in monthly_cohorts),
+            "average_mom_growth_pct": round(sum(growths) / len(growths), 1)
+            if growths
+            else None,
+            "total_new_volume_started": sum(
+                c["volume_sanctioned"] for c in monthly_cohorts
+            ),
         },
         "provenance": provenance,
     }
@@ -522,6 +573,7 @@ def get_mom_loan_start_analysis() -> Dict[str, Any]:
 # --------------------------------------------------------------------------- #
 # Graph
 # --------------------------------------------------------------------------- #
+
 
 def _money(value: float) -> str:
     return f"₹{value:,.0f}"
@@ -565,11 +617,12 @@ def get_db_schema_graph(
         "org": "Moneypal GICC Holdings Ltd",
     }
 
-    month_filter = "WHERE TO_CHAR(gnlnac_sanc_date, 'YYYY-MM') = %s" if month else ""
+    month_filter = (
+        "WHERE TO_CHAR(gnlnac_sanc_date, 'YYYY-MM') = %s" if month else ""
+    )
     month_params: Tuple[Any, ...] = (month,) if month else ()
 
     with db_cursor() as (conn, cur):
-
         branch_names = get_branch_name_map(cur)
 
         def _totals() -> int:
@@ -607,7 +660,7 @@ def get_db_schema_graph(
                        COALESCE(SUM(COALESCE(NULLIF(gnlnac_lndisb_amt, 0), gnlnac_sanc_amt)), 0),
                        COALESCE(SUM(gnlnac_pri_repay_amt), 0)
                 FROM {LOAN_PORTFOLIO_SQL} portfolio
-                {month_filter or 'WHERE TRUE'} AND gnlnac_prod_code IS NOT NULL
+                {month_filter or "WHERE TRUE"} AND gnlnac_prod_code IS NOT NULL
                 GROUP BY gnlnac_prod_code
                 ORDER BY 2 DESC
                 """,
@@ -638,7 +691,7 @@ def get_db_schema_graph(
                        COALESCE(SUM(COALESCE(NULLIF(gnlnac_lndisb_amt, 0), gnlnac_sanc_amt)), 0),
                        COALESCE(SUM(gnlnac_pri_repay_amt), 0)
                 FROM {LOAN_PORTFOLIO_SQL} portfolio
-                {month_filter or 'WHERE TRUE'} AND gnlnac_appl_brn_code IS NOT NULL
+                {month_filter or "WHERE TRUE"} AND gnlnac_appl_brn_code IS NOT NULL
                 GROUP BY gnlnac_appl_brn_code
                 ORDER BY 2 DESC
                 """,
@@ -680,7 +733,7 @@ def get_db_schema_graph(
                        COALESCE(SUM(COALESCE(NULLIF(gnlnac_lndisb_amt, 0), gnlnac_sanc_amt)), 0),
                        COALESCE(SUM(gnlnac_pri_repay_amt), 0)
                 FROM {LOAN_PORTFOLIO_SQL} portfolio
-                {month_filter or 'WHERE TRUE'}
+                {month_filter or "WHERE TRUE"}
                   AND gnlnac_appl_brn_code IS NOT NULL AND gnlnac_prod_code IS NOT NULL
                 GROUP BY 1, 2
                 ORDER BY 3 DESC
@@ -704,7 +757,8 @@ def get_db_schema_graph(
 
             for branch in branches:
                 links = sorted(
-                    by_branch.get(branch["code"], []), key=lambda x: -x["acnt_count"]
+                    by_branch.get(branch["code"], []),
+                    key=lambda x: -x["acnt_count"],
                 )
                 branch["zone_ids"] = [link_["zone_id"] for link_ in links]
                 if links:
@@ -712,7 +766,9 @@ def get_db_schema_graph(
                     # branch's dominant product by account count, and zone_ids carries
                     # the full set.
                     branch["zone_id"] = links[0]["zone_id"]
-                    branch["zone_name"] = product_title(links[0]["product_code"])
+                    branch["zone_name"] = product_title(
+                        links[0]["product_code"]
+                    )
             return len(branch_product_links)
 
         run_section(provenance, "branch_product_links", _links, conn)
@@ -727,7 +783,9 @@ def get_db_schema_graph(
         # Search may redirect the requested level.
         current_level = view_level or "executive"
         if search_term and search_term.strip():
-            matches = search_entities(search_term, entity_type=entity_type or "all")
+            matches = search_entities(
+                search_term, entity_type=entity_type or "all"
+            )
             if matches:
                 top = matches[0]
                 current_level = top["view_level"]
@@ -774,7 +832,11 @@ def get_db_schema_graph(
                 }
             )
             for product in products:
-                linked = {l["branch_code"] for l in branch_product_links if l["zone_id"] == product["id"]}
+                linked = {
+                    l["branch_code"]
+                    for l in branch_product_links
+                    if l["zone_id"] == product["id"]
+                }
                 nodes.append(_product_node(product, len(linked)))
                 edges.append(
                     {
@@ -787,8 +849,12 @@ def get_db_schema_graph(
                 )
 
         # ---------------- Tier 1: product division ----------------
-        elif current_level == "zonal" or (zonal_id and not manager_id and not agent_id and not customer_id):
-            selected_zonal = product_by_id(zonal_id) or (products[0] if products else None)
+        elif current_level == "zonal" or (
+            zonal_id and not manager_id and not agent_id and not customer_id
+        ):
+            selected_zonal = product_by_id(zonal_id) or (
+                products[0] if products else None
+            )
             if selected_zonal:
                 # Only branches that genuinely originate this product.
                 linked_codes = [
@@ -796,7 +862,9 @@ def get_db_schema_graph(
                     for l in branch_product_links
                     if l["zone_id"] == selected_zonal["id"]
                 ]
-                assigned = [b for b in branches if b["code"] in set(linked_codes)]
+                assigned = [
+                    b for b in branches if b["code"] in set(linked_codes)
+                ]
                 nodes.append(_product_node(selected_zonal, len(assigned)))
                 for branch in assigned:
                     link = next(
@@ -815,13 +883,19 @@ def get_db_schema_graph(
                             "target": branch["id"],
                             "weight": 8,
                             "label": "ORIGINATES_AT",
-                            "purpose": f"{link['acnt_count']:,} accounts" if link else "Branch",
+                            "purpose": f"{link['acnt_count']:,} accounts"
+                            if link
+                            else "Branch",
                         }
                     )
 
         # ---------------- Tier 2: branch ----------------
-        elif current_level == "manager" or (manager_id and not agent_id and not customer_id):
-            selected_mgr = branch_by_id(manager_id) or (branches[0] if branches else None)
+        elif current_level == "manager" or (
+            manager_id and not agent_id and not customer_id
+        ):
+            selected_mgr = branch_by_id(manager_id) or (
+                branches[0] if branches else None
+            )
             if selected_mgr:
                 selected_zonal = product_by_id(selected_mgr["zone_id"])
                 if selected_zonal:
@@ -857,7 +931,13 @@ def get_db_schema_graph(
                         """,
                         (selected_mgr["code"],),
                     )
-                    for schm, custs, accts, disbursed, repaid in cur.fetchall():
+                    for (
+                        schm,
+                        custs,
+                        accts,
+                        disbursed,
+                        repaid,
+                    ) in cur.fetchall():
                         branch_schemes.append(
                             {
                                 "schm_code": _code(schm),
@@ -869,11 +949,15 @@ def get_db_schema_graph(
                         )
                     return len(branch_schemes)
 
-                run_section(provenance, "branch_schemes", _branch_schemes, conn)
+                run_section(
+                    provenance, "branch_schemes", _branch_schemes, conn
+                )
 
                 for scheme in branch_schemes:
                     title = scheme_title(scheme["schm_code"], scheme_names)
-                    node_id = f"SCHM-{selected_mgr['code']}-{scheme['schm_code']}"
+                    node_id = (
+                        f"SCHM-{selected_mgr['code']}-{scheme['schm_code']}"
+                    )
                     nodes.append(
                         {
                             "id": node_id,
@@ -910,9 +994,15 @@ def get_db_schema_graph(
         # ---------------- Tier 3: scheme desk ----------------
         elif current_level == "agent" or (agent_id and not customer_id):
             parts = (agent_id or "").split("-")
-            brn_code = parts[1] if len(parts) > 1 else (branches[0]["code"] if branches else "")
+            brn_code = (
+                parts[1]
+                if len(parts) > 1
+                else (branches[0]["code"] if branches else "")
+            )
             schm_code = parts[2] if len(parts) > 2 else ""
-            selected_mgr = next((b for b in branches if b["code"] == brn_code), None)
+            selected_mgr = next(
+                (b for b in branches if b["code"] == brn_code), None
+            )
 
             borrowers: List[Dict[str, Any]] = []
 
@@ -938,15 +1028,26 @@ def get_db_schema_graph(
                 sql += " GROUP BY g.gnlnac_cust_id ORDER BY 4 DESC LIMIT %s"
                 params.append(limit)
                 cur.execute(sql, tuple(params))
-                for cust_id, name, accts, disbursed, repaid, last_date in cur.fetchall():
+                for (
+                    cust_id,
+                    name,
+                    accts,
+                    disbursed,
+                    repaid,
+                    last_date,
+                ) in cur.fetchall():
                     borrowers.append(
                         {
                             "cust_id": _code(cust_id),
-                            "cust_name": (name or f"Borrower #{_code(cust_id)}").strip(),
+                            "cust_name": (
+                                name or f"Borrower #{_code(cust_id)}"
+                            ).strip(),
                             "account_count": int(accts or 0),
                             "disb_amt": _f(disbursed),
                             "repay_amt": _f(repaid),
-                            "sanc_date": last_date.isoformat() if last_date else "",
+                            "sanc_date": last_date.isoformat()
+                            if last_date
+                            else "",
                         }
                     )
                 return len(borrowers)
@@ -981,7 +1082,9 @@ def get_db_schema_graph(
                     "details": {
                         "Scheme Name": title,
                         "Scheme Code": schm_code or "—",
-                        "Branch": selected_mgr["display_title"] if selected_mgr else "—",
+                        "Branch": selected_mgr["display_title"]
+                        if selected_mgr
+                        else "—",
                         "Total Borrowers": f"{len(borrowers):,}",
                         "Total Disbursed": _money(agent_disb),
                         "Total Repaid": _money(agent_repay),
@@ -1015,7 +1118,9 @@ def get_db_schema_graph(
                         "details": {
                             "Borrower Name": borrower["cust_name"],
                             "Customer ID": borrower["cust_id"],
-                            "Branch": selected_mgr["display_title"] if selected_mgr else "—",
+                            "Branch": selected_mgr["display_title"]
+                            if selected_mgr
+                            else "—",
                             "Loan Accounts": f"{borrower['account_count']:,}",
                             "Total Disbursed": _money(borrower["disb_amt"]),
                             "Total Repaid": _money(borrower["repay_amt"]),
@@ -1073,10 +1178,17 @@ def get_db_schema_graph(
             run_section(provenance, "borrower_accounts", _accounts, conn)
 
             if accounts:
-                account_nums = [int(a["acnt_num"]) for a in accounts if a["acnt_num"].isdigit()]
+                account_nums = [
+                    int(a["acnt_num"])
+                    for a in accounts
+                    if a["acnt_num"].isdigit()
+                ]
                 borrower = {
                     "cust_id": customer_id,
-                    "cust_name": next((a["name"] for a in accounts if a["name"]), f"Borrower #{customer_id}"),
+                    "cust_name": next(
+                        (a["name"] for a in accounts if a["name"]),
+                        f"Borrower #{customer_id}",
+                    ),
                     "account_count": len(accounts),
                     "disb_amt": sum(a["disb_amt"] for a in accounts),
                     "repay_amt": sum(a["repay_amt"] for a in accounts),
@@ -1097,7 +1209,9 @@ def get_db_schema_graph(
                         "details": {
                             "Borrower Name": borrower["cust_name"],
                             "Customer ID": str(customer_id),
-                            "Branch": branch_label(borrower["brn_code"], branch_names),
+                            "Branch": branch_label(
+                                borrower["brn_code"], branch_names
+                            ),
                             "Loan Accounts": f"{borrower['account_count']:,}",
                             "Total Disbursed": _money(borrower["disb_amt"]),
                             "Total Repaid": _money(borrower["repay_amt"]),
@@ -1194,12 +1308,16 @@ def get_db_schema_graph(
                             "details": {
                                 "Account Number": account["acnt_num"],
                                 "Borrower Name": borrower["cust_name"],
-                                "Scheme": scheme_title(account["schm_code"], scheme_names),
+                                "Scheme": scheme_title(
+                                    account["schm_code"], scheme_names
+                                ),
                                 "Sanctioned": _money(account["sanc_amt"]),
                                 "Total Disbursed": _money(account["disb_amt"]),
                                 "Total Repaid": _money(account["repay_amt"]),
                                 "Sanction Date": account["sanc_date"],
-                                "Status": "Closed" if account["closed"] else "Open",
+                                "Status": "Closed"
+                                if account["closed"]
+                                else "Open",
                             },
                         }
                     )
@@ -1221,13 +1339,17 @@ def get_db_schema_graph(
                             "type": "disbursement",
                             "title": f"Disbursement {_money(disb['amount'])}",
                             "subtitle": disb["date"],
-                            "node_label": NODE_TYPE_STYLES["disbursement"]["label"],
+                            "node_label": NODE_TYPE_STYLES["disbursement"][
+                                "label"
+                            ],
                             "color": NODE_TYPE_STYLES["disbursement"]["color"],
                             "size": 16,
                             "details": {
                                 "Account Number": disb["acnt_num"],
                                 "Disbursed Amount": _money(disb["amount"]),
-                                "Net Paid to Borrower": _money(disb["net_paid"]),
+                                "Net Paid to Borrower": _money(
+                                    disb["net_paid"]
+                                ),
                                 "Charges Deducted": _money(disb["charges"]),
                                 "Disbursement Date": disb["date"],
                                 "Source": "bronze.genlndisb",
@@ -1254,15 +1376,21 @@ def get_db_schema_graph(
                             "type": "repayment",
                             "title": f"Repayment {_money(paid)}",
                             "subtitle": repay["date"],
-                            "node_label": NODE_TYPE_STYLES["repayment"]["label"],
+                            "node_label": NODE_TYPE_STYLES["repayment"][
+                                "label"
+                            ],
                             "color": NODE_TYPE_STYLES["repayment"]["color"],
                             "size": 16,
                             "details": {
                                 "Account Number": repay["acnt_num"],
                                 "Instalment Due": _money(due),
                                 "Amount Received": _money(paid),
-                                "Principal Received": _money(repay["principal_paid"]),
-                                "Interest Received": _money(repay["interest_paid"]),
+                                "Principal Received": _money(
+                                    repay["principal_paid"]
+                                ),
+                                "Interest Received": _money(
+                                    repay["interest_paid"]
+                                ),
                                 "Repayment Date": repay["date"],
                                 "Source": "bronze.loanrepay",
                             },
@@ -1280,17 +1408,21 @@ def get_db_schema_graph(
 
                 # A genuine collection efficiency for this borrower: received over due.
                 def _efficiency() -> int:
-                    borrower["collection_efficiency"] = get_collection_efficiency(cur, account_nums)
+                    borrower["collection_efficiency"] = (
+                        get_collection_efficiency(cur, account_nums)
+                    )
                     return 1
 
-                run_section(provenance, "collection_efficiency", _efficiency, conn)
+                run_section(
+                    provenance, "collection_efficiency", _efficiency, conn
+                )
                 eff = borrower.get("collection_efficiency") or {}
                 if eff.get("instalments"):
                     for node in nodes:
                         if node["id"] == cust_node_id:
-                            node["details"]["Collection Efficiency (paid/due)"] = (
-                                f"{eff['efficiency_pct']:.1f}%"
-                            )
+                            node["details"][
+                                "Collection Efficiency (paid/due)"
+                            ] = f"{eff['efficiency_pct']:.1f}%"
 
         monthly_summary = get_monthly_breakdown(month)
 
@@ -1307,7 +1439,9 @@ def get_db_schema_graph(
         unique_nodes = [n for n in unique_nodes if n["id"] in connected]
 
     live = sorted(k for k, v in provenance.items() if v["status"] == "ok")
-    degraded = sorted(k for k, v in provenance.items() if v["status"] not in ("ok", "empty"))
+    degraded = sorted(
+        k for k, v in provenance.items() if v["status"] not in ("ok", "empty")
+    )
 
     return {
         "nodes": unique_nodes,
@@ -1345,7 +1479,9 @@ def get_db_schema_graph(
     }
 
 
-def _product_node(product: Dict[str, Any], branch_count: Optional[int]) -> Dict[str, Any]:
+def _product_node(
+    product: Dict[str, Any], branch_count: Optional[int]
+) -> Dict[str, Any]:
     details = {
         "Product Code": product["code"],
         "Product": product["name"],
@@ -1370,7 +1506,9 @@ def _product_node(product: Dict[str, Any], branch_count: Optional[int]) -> Dict[
     }
 
 
-def _branch_node(branch: Dict[str, Any], link: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+def _branch_node(
+    branch: Dict[str, Any], link: Optional[Dict[str, Any]]
+) -> Dict[str, Any]:
     details = {
         "Branch Code": branch["code"],
         "Total Borrowers": f"{branch['cust_count']:,}",

@@ -141,9 +141,12 @@ def decompose(
 
     is_ratio = metric.is_ratio
     totals_known = True
-    has_weights = bool(weight_metric) and any(
-        w for _, w in current.values()
-    ) or bool(weight_metric) and any(w for _, w in prior.values())
+    has_weights = (
+        bool(weight_metric)
+        and any(w for _, w in current.values())
+        or bool(weight_metric)
+        and any(w for _, w in prior.values())
+    )
 
     if is_ratio and has_weights:
         contributions, current_total, prior_total = _ratio_contributions(
@@ -151,8 +154,10 @@ def decompose(
         )
         exact, caveat = True, ""
     elif is_ratio:
-        contributions, current_total, prior_total = _unweighted_ratio_contributions(
-            members, current, prior, enum, dim_label
+        contributions, current_total, prior_total = (
+            _unweighted_ratio_contributions(
+                members, current, prior, enum, dim_label
+            )
         )
         exact, caveat, totals_known = False, NO_WEIGHT_CAVEAT, False
     else:
@@ -163,7 +168,9 @@ def decompose(
 
     delta = current_total - prior_total
     contributions = _with_shares(contributions, delta, attributable=exact)
-    ranked = tuple(sorted(contributions, key=lambda c: abs(c.delta), reverse=True))
+    ranked = tuple(
+        sorted(contributions, key=lambda c: abs(c.delta), reverse=True)
+    )
 
     shown, other = _truncate(ranked, top_n=top_n, coverage=coverage)
     if delta == 0 and exact:
@@ -191,7 +198,10 @@ def decompose(
 
 
 def _index(
-    rows: Sequence[dict[str, Any]], dimension: str, metric_id: str, weight_metric: str | None
+    rows: Sequence[dict[str, Any]],
+    dimension: str,
+    metric_id: str,
+    weight_metric: str | None,
 ) -> dict[str, tuple[float, float]]:
     """member -> (metric value, weight). Rows arrive from the executor, so values may be
     Decimal or None; both are coerced once here rather than at every use."""
@@ -256,13 +266,19 @@ def _ratio_contributions(members, current, prior, enum, dim_label):
     # Recomputed from numerator and denominator, never averaged from the member ratios —
     # the same invariant the compiler enforces for ratio metrics.
     current_total = (
-        sum(current.get(m, (0.0, 0.0))[0] * current.get(m, (0.0, 0.0))[1] for m in members)
+        sum(
+            current.get(m, (0.0, 0.0))[0] * current.get(m, (0.0, 0.0))[1]
+            for m in members
+        )
         / weight_current
         if weight_current
         else 0.0
     )
     prior_total = (
-        sum(prior.get(m, (0.0, 0.0))[0] * prior.get(m, (0.0, 0.0))[1] for m in members)
+        sum(
+            prior.get(m, (0.0, 0.0))[0] * prior.get(m, (0.0, 0.0))[1]
+            for m in members
+        )
         / weight_prior
         if weight_prior
         else 0.0
@@ -325,7 +341,6 @@ def _with_shares(
     if not attributable or delta == 0:
         return contributions
 
-
     return [replace(c, share=c.delta / delta) for c in contributions]
 
 
@@ -373,7 +388,9 @@ def _truncate(
 # --------------------------------------------------------------------------------------
 
 
-def narrate(decomposition: Decomposition, catalog: Catalog | None = None) -> str:
+def narrate(
+    decomposition: Decomposition, catalog: Catalog | None = None
+) -> str:
     """The sentence under the waterfall. Templated, so every figure in it came from above.
 
     Deliberately not a model call: this is the one sentence a director will quote in a
@@ -412,7 +429,9 @@ def narrate(decomposition: Decomposition, catalog: Catalog | None = None) -> str
     parts = [head]
 
     if d.is_ratio and d.exact:
-        driver = "rate" if abs(top.rate_effect) >= abs(top.mix_effect) else "mix"
+        driver = (
+            "rate" if abs(top.rate_effect) >= abs(top.mix_effect) else "mix"
+        )
         parts.append(
             f"The largest mover is {top.label} at {_signed(top.delta, unit)}, mostly a "
             f"{driver} effect ({_signed(top.rate_effect, unit)} rate, "
@@ -424,7 +443,9 @@ def narrate(decomposition: Decomposition, catalog: Catalog | None = None) -> str
             f"({_signed(top.delta, unit)})."
         )
     else:
-        parts.append(f"The largest mover is {top.label} at {_signed(top.delta, unit)}.")
+        parts.append(
+            f"The largest mover is {top.label} at {_signed(top.delta, unit)}."
+        )
 
     if d.caveat:
         parts.append(d.caveat)

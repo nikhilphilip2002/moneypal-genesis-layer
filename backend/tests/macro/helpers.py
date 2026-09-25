@@ -36,6 +36,10 @@ def put_foreign_point(client, module: str = "regulatory") -> str:
     client.points[point_id] = FakePoint(
         point_id,
         [0.0, 0.0, 0.0],
-        {"module": module, "document": "master_direction.pdf", "text": "not macro"},
+        {
+            "module": module,
+            "document": "master_direction.pdf",
+            "text": "not macro",
+        },
     )
     return point_id

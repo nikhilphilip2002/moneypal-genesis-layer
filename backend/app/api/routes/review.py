@@ -1,4 +1,5 @@
 """Intelligence review queue endpoints (GICC Administrator)."""
+
 from typing import Literal
 
 from fastapi import APIRouter

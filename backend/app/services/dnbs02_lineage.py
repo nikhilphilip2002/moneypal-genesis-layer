@@ -65,8 +65,17 @@ STATUS_NO_SOURCE = "NO SOURCE"
 GAP_COLUMN_WIDTH = 2.5
 
 
-def _set(sheet, row: int, col: int, value: Any, *, font=None, fill=None,
-         wrap: bool = False, border: bool = True):
+def _set(
+    sheet,
+    row: int,
+    col: int,
+    value: Any,
+    *,
+    font=None,
+    fill=None,
+    wrap: bool = False,
+    border: bool = True,
+):
     cell = sheet.cell(row=row, column=col)
     cell.value = value
     if font is not None:
@@ -103,7 +112,11 @@ def _copy_template_block(src, dst) -> int:
         try:
             dst.merge_cells(str(rng))
         except Exception:  # noqa: BLE001 - a malformed range must not lose the sheet
-            logger.debug("lineage: could not mirror merged range %s on %s", rng, src.title)
+            logger.debug(
+                "lineage: could not mirror merged range %s on %s",
+                rng,
+                src.title,
+            )
     for letter, dim in src.column_dimensions.items():
         if dim.width:
             dst.column_dimensions[letter].width = dim.width
@@ -123,7 +136,10 @@ def _section_status(data: Dict[str, Any], section: str) -> Tuple[str, str]:
     prov = (data.get("provenance") or {}).get(section)
     if not prov:
         return ("", "")
-    return (prov.get("status", ""), prov.get("note", "") or prov.get("reason", "") or "")
+    return (
+        prov.get("status", ""),
+        prov.get("note", "") or prov.get("reason", "") or "",
+    )
 
 
 def _resolve_coord(report_wb, fs: spec.FieldSpec) -> str:
@@ -135,7 +151,9 @@ def _resolve_coord(report_wb, fs: spec.FieldSpec) -> str:
     if fs.sheet not in report_wb.sheetnames:
         return "(sheet absent)"
     if fs.kind == spec.KIND_TABLE:
-        block = next((b for b in spec.TABLE_BLOCKS if b.sheet == fs.sheet), None)
+        block = next(
+            (b for b in spec.TABLE_BLOCKS if b.sheet == fs.sheet), None
+        )
         if block is None:
             return f"{fs.column}?"
         return f"{fs.column}{block.first_row}:{fs.column}{block.first_row + block.max_rows - 1}"
@@ -196,11 +214,24 @@ def _write_bindings_sheet(wb, data: Dict[str, Any]) -> None:
     sheet.sheet_properties.tabColor = "1F3864"
     b = data.get("bindings") or {}
 
-    _set(sheet, 1, 1, "DNBS-02 - how the UI selection became query parameters",
-         font=TITLE, border=False)
+    _set(
+        sheet,
+        1,
+        1,
+        "DNBS-02 - how the UI selection became query parameters",
+        font=TITLE,
+        border=False,
+    )
     row = 3
 
-    _set(sheet, row, 1, "1. What the user selected", font=BOLD, fill=SUBHEAD_FILL)
+    _set(
+        sheet,
+        row,
+        1,
+        "1. What the user selected",
+        font=BOLD,
+        fill=SUBHEAD_FILL,
+    )
     for c in range(2, 6):
         _set(sheet, row, c, "", fill=SUBHEAD_FILL)
     row += 1
@@ -211,8 +242,16 @@ def _write_bindings_sheet(wb, data: Dict[str, Any]) -> None:
     sheet.column_dimensions["E"].width = 62
 
     for label, value, origin in (
-        ("Reporting frequency", data.get("frequency", ""), "UI dropdown (monthly / quarterly / yearly)"),
-        ("Reporting period", data.get("period", ""), "UI period picker, restricted to periods the warehouse can back"),
+        (
+            "Reporting frequency",
+            data.get("frequency", ""),
+            "UI dropdown (monthly / quarterly / yearly)",
+        ),
+        (
+            "Reporting period",
+            data.get("period", ""),
+            "UI period picker, restricted to periods the warehouse can back",
+        ),
     ):
         _set(sheet, row, 1, label, font=SMALL)
         _set(sheet, row, 2, value, font=BOLD)
@@ -220,32 +259,57 @@ def _write_bindings_sheet(wb, data: Dict[str, Any]) -> None:
         row += 1
 
     row += 1
-    _set(sheet, row, 1, "2. What those selections derive", font=BOLD, fill=SUBHEAD_FILL)
+    _set(
+        sheet,
+        row,
+        1,
+        "2. What those selections derive",
+        font=BOLD,
+        fill=SUBHEAD_FILL,
+    )
     for c in range(2, 6):
         _set(sheet, row, c, "", fill=SUBHEAD_FILL)
     row += 1
-    for col, header in enumerate(("Bind", "Value", "Derived by", "Used as", "Meaning"), start=1):
+    for col, header in enumerate(
+        ("Bind", "Value", "Derived by", "Used as", "Meaning"), start=1
+    ):
         _set(sheet, row, col, header, font=HEADER_FONT, fill=HEADER_FILL)
     row += 1
 
     derivations = [
-        ("start_date", b.get("start_date", ""), "parse_period_range(frequency, period)",
-         "period start",
-         "First day of the selected period. Reported on FilingInfo only - every "
-         "point-in-time figure is measured at the period end, not across the range."),
-        ("end_date", b.get("end_date", ""), "parse_period_range(frequency, period)",
-         "period end",
-         "Last day of the selected period. For quarterly, RBI quarters are financial "
-         "(Q1 = Apr-Jun, Q4 = Jan-Mar of the following calendar year)."),
-        ("snapshot_date", b.get("snapshot_date", ""), "resolve_snapshot_date(end_date)",
-         "gnlnr_report_date = %s",
-         "Must equal the period end exactly. If silver.loan_daily_snapshot_summary holds no snapshot "
-         "on that date the report is refused rather than silently reported on the "
-         "nearest earlier snapshot."),
-        ("gl_year", b.get("gl_year", ""), "_gl_year_for(end_date) = int(end_date[:4])",
-         "glbbal_year = %s",
-         "silver.gl_daily_balances is keyed by branch and year only - no date dimension - so Parts "
-         "1, 3, 4, 6 and Annex 10 are annual figures however short the selected period."),
+        (
+            "start_date",
+            b.get("start_date", ""),
+            "parse_period_range(frequency, period)",
+            "period start",
+            "First day of the selected period. Reported on FilingInfo only - every "
+            "point-in-time figure is measured at the period end, not across the range.",
+        ),
+        (
+            "end_date",
+            b.get("end_date", ""),
+            "parse_period_range(frequency, period)",
+            "period end",
+            "Last day of the selected period. For quarterly, RBI quarters are financial "
+            "(Q1 = Apr-Jun, Q4 = Jan-Mar of the following calendar year).",
+        ),
+        (
+            "snapshot_date",
+            b.get("snapshot_date", ""),
+            "resolve_snapshot_date(end_date)",
+            "gnlnr_report_date = %s",
+            "Must equal the period end exactly. If silver.loan_daily_snapshot_summary holds no snapshot "
+            "on that date the report is refused rather than silently reported on the "
+            "nearest earlier snapshot.",
+        ),
+        (
+            "gl_year",
+            b.get("gl_year", ""),
+            "_gl_year_for(end_date) = int(end_date[:4])",
+            "glbbal_year = %s",
+            "silver.gl_daily_balances is keyed by branch and year only - no date dimension - so Parts "
+            "1, 3, 4, 6 and Annex 10 are annual figures however short the selected period.",
+        ),
     ]
     for name, value, derived_by, used_as, meaning in derivations:
         _set(sheet, row, 1, name, font=MONO)
@@ -257,7 +321,14 @@ def _write_bindings_sheet(wb, data: Dict[str, Any]) -> None:
         row += 1
 
     row += 1
-    _set(sheet, row, 1, "3. Consequence for this run", font=BOLD, fill=SUBHEAD_FILL)
+    _set(
+        sheet,
+        row,
+        1,
+        "3. Consequence for this run",
+        font=BOLD,
+        fill=SUBHEAD_FILL,
+    )
     for c in range(2, 6):
         _set(sheet, row, c, "", fill=SUBHEAD_FILL)
     row += 1
@@ -275,10 +346,14 @@ def _write_bindings_sheet(wb, data: Dict[str, Any]) -> None:
             f"silver.loan_daily_snapshot_summary and are excluded."
         )
     if data.get("degraded_sections"):
-        notes.append("Sections with no data: " + ", ".join(data["degraded_sections"]))
+        notes.append(
+            "Sections with no data: " + ", ".join(data["degraded_sections"])
+        )
     for note in notes:
         _set(sheet, row, 1, note, font=SMALL, wrap=True)
-        sheet.merge_cells(start_row=row, start_column=1, end_row=row, end_column=5)
+        sheet.merge_cells(
+            start_row=row, start_column=1, end_row=row, end_column=5
+        )
         sheet.row_dimensions[row].height = 32
         row += 1
 
@@ -296,7 +371,15 @@ def _write_summary_sheet(wb, data: Dict[str, Any]) -> None:
         sheet.column_dimensions[get_column_letter(idx)].width = width
 
     row = 3
-    headers = ("Section", "Status", "Rows", "Source table(s)", "Filter", "Grain", "Reason / caveat")
+    headers = (
+        "Section",
+        "Status",
+        "Rows",
+        "Source table(s)",
+        "Filter",
+        "Grain",
+        "Reason / caveat",
+    )
     for col, header in enumerate(headers, start=1):
         _set(sheet, row, col, header, font=HEADER_FONT, fill=HEADER_FILL)
     row += 1
@@ -306,13 +389,38 @@ def _write_summary_sheet(wb, data: Dict[str, Any]) -> None:
         entry = prov[key]
         source = spec.SOURCES.get(key)
         status = entry.get("status", "")
-        fill = OK_FILL if status == "ok" else (GAP_FILL if status == "no_source" else BLANK_FILL)
+        fill = (
+            OK_FILL
+            if status == "ok"
+            else (GAP_FILL if status == "no_source" else BLANK_FILL)
+        )
         _set(sheet, row, 1, key, font=MONO)
         _set(sheet, row, 2, status, fill=fill, font=SMALL)
         _set(sheet, row, 3, entry.get("row_count", 0), font=SMALL)
-        _set(sheet, row, 4, source.table if source else "-", font=SMALL, wrap=True)
-        _set(sheet, row, 5, source.filters if source else "-", font=SMALL, wrap=True)
-        _set(sheet, row, 6, source.grain if source else "-", font=SMALL, wrap=True)
+        _set(
+            sheet,
+            row,
+            4,
+            source.table if source else "-",
+            font=SMALL,
+            wrap=True,
+        )
+        _set(
+            sheet,
+            row,
+            5,
+            source.filters if source else "-",
+            font=SMALL,
+            wrap=True,
+        )
+        _set(
+            sheet,
+            row,
+            6,
+            source.grain if source else "-",
+            font=SMALL,
+            wrap=True,
+        )
         reason = entry.get("note", "") or ""
         if source and source.caveat:
             reason = (reason + "  " if reason else "") + source.caveat
@@ -324,20 +432,39 @@ def _write_summary_sheet(wb, data: Dict[str, Any]) -> None:
     sheet.sheet_view.showGridLines = False
 
 
-def _write_mapping_block(sheet, report_wb, data: Dict[str, Any],
-                         specs: List[spec.FieldSpec], meta: Dict[str, Any],
-                         first_col: int) -> None:
+def _write_mapping_block(
+    sheet,
+    report_wb,
+    data: Dict[str, Any],
+    specs: List[spec.FieldSpec],
+    meta: Dict[str, Any],
+    first_col: int,
+) -> None:
     """The mapping table to the right of the template, plus the query appendix below it."""
     for offset, (header, width) in enumerate(MAP_HEADERS):
         col = first_col + offset
         sheet.column_dimensions[get_column_letter(col)].width = width
 
     row = 1
-    _set(sheet, row, first_col, "Field mapping - where each value on this sheet comes from",
-         font=TITLE, border=False)
+    _set(
+        sheet,
+        row,
+        first_col,
+        "Field mapping - where each value on this sheet comes from",
+        font=TITLE,
+        border=False,
+    )
     row = 2
     for offset, (header, _width) in enumerate(MAP_HEADERS):
-        _set(sheet, row, first_col + offset, header, font=HEADER_FONT, fill=HEADER_FILL, wrap=True)
+        _set(
+            sheet,
+            row,
+            first_col + offset,
+            header,
+            font=HEADER_FONT,
+            fill=HEADER_FILL,
+            wrap=True,
+        )
     row += 1
 
     sections_used: List[str] = []
@@ -352,19 +479,28 @@ def _write_mapping_block(sheet, report_wb, data: Dict[str, Any],
         if fs.kind == spec.KIND_NO_SOURCE:
             derivation = reason
         elif reason:
-            derivation = f"{derivation}\nCaveat: {reason}" if derivation else reason
+            derivation = (
+                f"{derivation}\nCaveat: {reason}" if derivation else reason
+            )
 
         binds = ""
         if source is not None:
-            binds = source.filters.format(**{k: v for k, v in (data.get("bindings") or {}).items()}) \
-                if "{" in source.filters else source.filters
+            binds = (
+                source.filters.format(
+                    **{k: v for k, v in (data.get("bindings") or {}).items()}
+                )
+                if "{" in source.filters
+                else source.filters
+            )
 
         cells = [
             _resolve_coord(report_wb, fs),
             fs.rbi_line,
             value,
             status,
-            source.table if source else ("UI selection" if fs.section == "_bindings" else "-"),
+            source.table
+            if source
+            else ("UI selection" if fs.section == "_bindings" else "-"),
             ", ".join(source.columns) if source else "-",
             binds or "-",
             derivation or "-",
@@ -372,8 +508,15 @@ def _write_mapping_block(sheet, report_wb, data: Dict[str, Any],
         ]
         for offset, cell_value in enumerate(cells):
             font = MONO if offset in (0, 4, 5, 8) else SMALL
-            _set(sheet, row, first_col + offset, cell_value, font=font, wrap=offset >= 4,
-                 fill=(fill if offset == 3 else None))
+            _set(
+                sheet,
+                row,
+                first_col + offset,
+                cell_value,
+                font=font,
+                wrap=offset >= 4,
+                fill=(fill if offset == 3 else None),
+            )
         if fs.unit:
             sheet.cell(row=row, column=first_col + 2).number_format = (
                 "#,##0.00" if fs.unit != "count" else "#,##0"
@@ -385,29 +528,59 @@ def _write_mapping_block(sheet, report_wb, data: Dict[str, Any],
     if not sections_used:
         return
     row += 2
-    _set(sheet, row, first_col, "Queries behind this sheet", font=TITLE, border=False)
+    _set(
+        sheet,
+        row,
+        first_col,
+        "Queries behind this sheet",
+        font=TITLE,
+        border=False,
+    )
     row += 1
     for key in sections_used:
         source = spec.SOURCES[key]
         _set(sheet, row, first_col, key, font=BOLD, fill=SUBHEAD_FILL)
         for offset in range(1, len(MAP_HEADERS)):
             _set(sheet, row, first_col + offset, "", fill=SUBHEAD_FILL)
-        _set(sheet, row, first_col + 1, source.table, font=SMALL, fill=SUBHEAD_FILL)
+        _set(
+            sheet,
+            row,
+            first_col + 1,
+            source.table,
+            font=SMALL,
+            fill=SUBHEAD_FILL,
+        )
         row += 1
         if source.binds:
             _set(sheet, row, first_col, "binds", font=SMALL)
-            _set(sheet, row, first_col + 1,
-                 ", ".join(f"%s -> {b}" for b in source.binds), font=MONO, wrap=True)
-            sheet.merge_cells(start_row=row, start_column=first_col + 1,
-                              end_row=row, end_column=first_col + len(MAP_HEADERS) - 1)
+            _set(
+                sheet,
+                row,
+                first_col + 1,
+                ", ".join(f"%s -> {b}" for b in source.binds),
+                font=MONO,
+                wrap=True,
+            )
+            sheet.merge_cells(
+                start_row=row,
+                start_column=first_col + 1,
+                end_row=row,
+                end_column=first_col + len(MAP_HEADERS) - 1,
+            )
             row += 1
         sql = source.sql.strip()
         _set(sheet, row, first_col, sql, font=MONO, wrap=True)
-        sheet.merge_cells(start_row=row, start_column=first_col,
-                          end_row=row, end_column=first_col + len(MAP_HEADERS) - 1)
+        sheet.merge_cells(
+            start_row=row,
+            start_column=first_col,
+            end_row=row,
+            end_column=first_col + len(MAP_HEADERS) - 1,
+        )
         # One line of Consolas 9 is about 12 points; cap so a long CTE does not push the
         # rest of the appendix off the screen.
-        sheet.row_dimensions[row].height = min(12.5 * (sql.count("\n") + 2), 420)
+        sheet.row_dimensions[row].height = min(
+            12.5 * (sql.count("\n") + 2), 420
+        )
         row += 2
 
 
@@ -423,7 +596,10 @@ def generate_dnbs02_lineage_excel(
     values that were actually written - not a second, independently computed set.
     """
     data = get_dnbs02_report_data(
-        frequency=frequency, period=period, start_date=start_date, end_date=end_date
+        frequency=frequency,
+        period=period,
+        start_date=start_date,
+        end_date=end_date,
     )
 
     report_wb = openpyxl.load_workbook(get_template_path())
@@ -451,15 +627,26 @@ def generate_dnbs02_lineage_excel(
         # Leave room for the template's own banner text, which sits in column B and runs
         # well past the last column that actually holds a value.
         first_col = max(max_col + 2, 8)
-        dst.column_dimensions[get_column_letter(max_col + 1)].width = GAP_COLUMN_WIDTH
+        dst.column_dimensions[
+            get_column_letter(max_col + 1)
+        ].width = GAP_COLUMN_WIDTH
         _write_mapping_block(dst, report_wb, data, specs, meta, first_col)
         dst.sheet_view.showGridLines = False
 
     # Specs whose sheet is a pseudo-name (the B5 period stamp applies to every sheet).
-    leftover = [s for s in spec.FIELD_SPECS if s.sheet not in report_wb.sheetnames]
+    leftover = [
+        s for s in spec.FIELD_SPECS if s.sheet not in report_wb.sheetnames
+    ]
     if leftover:
         dst = out.create_sheet("_AllSheets")
-        _set(dst, 1, 1, "Fields written to every DNBS02_* sheet", font=TITLE, border=False)
+        _set(
+            dst,
+            1,
+            1,
+            "Fields written to every DNBS02_* sheet",
+            font=TITLE,
+            border=False,
+        )
         _write_mapping_block(dst, report_wb, data, leftover, meta, 1)
         dst.sheet_view.showGridLines = False
 

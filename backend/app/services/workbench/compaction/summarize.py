@@ -101,7 +101,9 @@ def _serialize(turns: list[dict[str, Any]], assistant_text_of) -> str:
             parts.append(f"[Analyst]: {question}")
         route = turn.get("route")
         if isinstance(route, dict) and route.get("sources"):
-            parts.append(f"[Routed to]: {', '.join(str(s) for s in route['sources'])}")
+            parts.append(
+                f"[Routed to]: {', '.join(str(s) for s in route['sources'])}"
+            )
         answer = assistant_text_of(turn)
         if answer:
             clipped = answer[:TURN_TEXT_MAX_CHARS]

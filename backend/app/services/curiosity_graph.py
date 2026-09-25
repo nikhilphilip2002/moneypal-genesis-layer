@@ -20,26 +20,71 @@ logger = logging.getLogger(__name__)
 
 GICC_ENTITY = os.environ.get("CURIOSITY_GRAPH_ENTITY_NUM", "1").strip() or "1"
 GRAPH_LIMIT_MAX = 100
-LEVELS = ("portfolio", "product", "branch", "scheme", "agent", "tenure", "loan_size", "customer")
-WEIGHTS = {"borrowers": "borrower_count", "outstanding": "principal_outstanding", "accounts": "account_count"}
-CACHE_TTL_SECONDS = float(os.environ.get("CURIOSITY_GRAPH_CACHE_TTL_SECONDS", "1800.0"))
+LEVELS = (
+    "portfolio",
+    "product",
+    "branch",
+    "scheme",
+    "agent",
+    "tenure",
+    "loan_size",
+    "customer",
+)
+WEIGHTS = {
+    "borrowers": "borrower_count",
+    "outstanding": "principal_outstanding",
+    "accounts": "account_count",
+}
+CACHE_TTL_SECONDS = float(
+    os.environ.get("CURIOSITY_GRAPH_CACHE_TTL_SECONDS", "1800.0")
+)
 
 TENURE_BANDS = {
-    "tenure_0_12": ("\u2264 12 Months", "COALESCE(l.total_emi_count, 0) <= 12"),
-    "tenure_13_24": ("13\u201324 Months", "l.total_emi_count > 12 AND l.total_emi_count <= 24"),
-    "tenure_25_36": ("25\u201336 Months", "l.total_emi_count > 24 AND l.total_emi_count <= 36"),
-    "tenure_37_60": ("37\u201360 Months", "l.total_emi_count > 36 AND l.total_emi_count <= 60"),
+    "tenure_0_12": (
+        "\u2264 12 Months",
+        "COALESCE(l.total_emi_count, 0) <= 12",
+    ),
+    "tenure_13_24": (
+        "13\u201324 Months",
+        "l.total_emi_count > 12 AND l.total_emi_count <= 24",
+    ),
+    "tenure_25_36": (
+        "25\u201336 Months",
+        "l.total_emi_count > 24 AND l.total_emi_count <= 36",
+    ),
+    "tenure_37_60": (
+        "37\u201360 Months",
+        "l.total_emi_count > 36 AND l.total_emi_count <= 60",
+    ),
     "tenure_60_plus": ("> 60 Months", "l.total_emi_count > 60"),
 }
 
 LOAN_SIZE_BUCKETS = {
     "bucket_0_10k": ("0 - 10k", "l.approved_amount < 10000"),
-    "bucket_10k_50k": ("10k - 50k", "l.approved_amount >= 10000 AND l.approved_amount < 50000"),
-    "bucket_50k_1l": ("50k - 1L", "l.approved_amount >= 50000 AND l.approved_amount < 100000"),
-    "bucket_1l_2l": ("1L - 2L", "l.approved_amount >= 100000 AND l.approved_amount < 200000"),
-    "bucket_2l_5l": ("2L - 5L", "l.approved_amount >= 200000 AND l.approved_amount < 500000"),
-    "bucket_5l_10l": ("5L - 10L", "l.approved_amount >= 500000 AND l.approved_amount < 1000000"),
-    "bucket_10l_50l": ("10L - 50L", "l.approved_amount >= 1000000 AND l.approved_amount < 5000000"),
+    "bucket_10k_50k": (
+        "10k - 50k",
+        "l.approved_amount >= 10000 AND l.approved_amount < 50000",
+    ),
+    "bucket_50k_1l": (
+        "50k - 1L",
+        "l.approved_amount >= 50000 AND l.approved_amount < 100000",
+    ),
+    "bucket_1l_2l": (
+        "1L - 2L",
+        "l.approved_amount >= 100000 AND l.approved_amount < 200000",
+    ),
+    "bucket_2l_5l": (
+        "2L - 5L",
+        "l.approved_amount >= 200000 AND l.approved_amount < 500000",
+    ),
+    "bucket_5l_10l": (
+        "5L - 10L",
+        "l.approved_amount >= 500000 AND l.approved_amount < 1000000",
+    ),
+    "bucket_10l_50l": (
+        "10L - 50L",
+        "l.approved_amount >= 1000000 AND l.approved_amount < 5000000",
+    ),
     "bucket_50l_plus": ("50L+", "l.approved_amount >= 5000000"),
 }
 
@@ -126,9 +171,17 @@ MAX(l.data_as_of_date) AS loan_data_as_of
 """
 
 METRIC_COLUMNS = (
-    "account_count", "active_account_count", "borrower_count", "sanctioned_amount",
-    "disbursed_amount", "principal_outstanding", "total_overdue", "par30_outstanding",
-    "npa_outstanding", "risk_covered_accounts", "loan_data_as_of",
+    "account_count",
+    "active_account_count",
+    "borrower_count",
+    "sanctioned_amount",
+    "disbursed_amount",
+    "principal_outstanding",
+    "total_overdue",
+    "par30_outstanding",
+    "npa_outstanding",
+    "risk_covered_accounts",
+    "loan_data_as_of",
 )
 
 
@@ -147,7 +200,9 @@ def _agent_label(agent_code: Any, agent_name: Any) -> str:
     """Reserve the unassigned label for records that actually lack an agent code."""
     code = _text(agent_code) or "UNASSIGNED"
     name = _text(agent_name)
-    return name or ("Unassigned agent" if code == "UNASSIGNED" else f"Agent {code}")
+    return name or (
+        "Unassigned agent" if code == "UNASSIGNED" else f"Agent {code}"
+    )
 
 
 def _metrics(values: Iterable[Any]) -> dict[str, Any]:
@@ -158,7 +213,11 @@ def _metrics(values: Iterable[Any]) -> dict[str, Any]:
     par30 = _money(row["par30_outstanding"])
     npa = _money(row["npa_outstanding"])
     as_of = row["loan_data_as_of"]
-    as_of_str = as_of.isoformat() if as_of and hasattr(as_of, "isoformat") else (str(as_of) if as_of else None)
+    as_of_str = (
+        as_of.isoformat()
+        if as_of and hasattr(as_of, "isoformat")
+        else (str(as_of) if as_of else None)
+    )
     return {
         "account_count": accounts,
         "active_account_count": int(row["active_account_count"] or 0),
@@ -168,16 +227,22 @@ def _metrics(values: Iterable[Any]) -> dict[str, Any]:
         "principal_outstanding": outstanding,
         "total_overdue": _money(row["total_overdue"]),
         "par30_outstanding": par30,
-        "par30_ratio": round(par30 / outstanding * 100, 4) if outstanding else 0.0,
+        "par30_ratio": round(par30 / outstanding * 100, 4)
+        if outstanding
+        else 0.0,
         "npa_outstanding": npa,
         "npa_ratio": round(npa / outstanding * 100, 4) if outstanding else 0.0,
         "risk_covered_accounts": covered,
-        "risk_coverage_pct": round(covered / accounts * 100, 1) if accounts else 0.0,
+        "risk_coverage_pct": round(covered / accounts * 100, 1)
+        if accounts
+        else 0.0,
         "loan_data_as_of": as_of_str,
     }
 
 
-def _where(filters: dict[str, str], month: str | None = None) -> tuple[str, list[Any]]:
+def _where(
+    filters: dict[str, str], month: str | None = None
+) -> tuple[str, list[Any]]:
     clauses = ["l.company_code = %s"]
     params: list[Any] = [GICC_ENTITY]
     if filters.get("product_code"):
@@ -187,7 +252,9 @@ def _where(filters: dict[str, str], month: str | None = None) -> tuple[str, list
         clauses.append(f"{BRANCH_SQL} = %s")
         params.append(filters["branch_code"])
     if filters.get("scheme_code"):
-        clauses.append("COALESCE(NULLIF(BTRIM(l.scheme_code::text), ''), 'UNASSIGNED') = %s")
+        clauses.append(
+            "COALESCE(NULLIF(BTRIM(l.scheme_code::text), ''), 'UNASSIGNED') = %s"
+        )
         params.append(filters["scheme_code"])
     if "agent_code" in filters:
         if filters["agent_code"] == "UNASSIGNED":
@@ -212,10 +279,13 @@ def _where(filters: dict[str, str], month: str | None = None) -> tuple[str, list
     return " AND ".join(clauses), params
 
 
-def _aggregate(cur: Any, filters: dict[str, str], month: str | None) -> dict[str, Any]:
+def _aggregate(
+    cur: Any, filters: dict[str, str], month: str | None
+) -> dict[str, Any]:
     where, params = _where(filters, month)
     cur.execute(
-        RISK_CTE + f"""
+        RISK_CTE
+        + f"""
         SELECT {METRIC_SQL}
         FROM gold.loan_accounts l
         LEFT JOIN latest_risk r
@@ -239,17 +309,25 @@ def _branch_names(cur: Any) -> dict[str, str]:
         "WHERE company_code = %s AND branch_code IS NOT NULL",
         (GICC_ENTITY,),
     )
-    res = {_text(code): (_text(name) or f"Branch {code}") for code, name in cur.fetchall()}
+    res = {
+        _text(code): (_text(name) or f"Branch {code}")
+        for code, name in cur.fetchall()
+    }
     _META_CACHE["branch_names"] = (res, now + CACHE_TTL_SECONDS)
     return res
 
 
-def _title(cur: Any, level: str, filters: dict[str, str], branch_names: dict[str, str]) -> str:
+def _title(
+    cur: Any, level: str, filters: dict[str, str], branch_names: dict[str, str]
+) -> str:
     if level == "portfolio":
         return "GICC Loan Book"
     if level == "branch":
         code = filters.get("branch_code", "UNASSIGNED")
-        return branch_names.get(code, "Unassigned branch" if code == "UNASSIGNED" else f"Branch {code}")
+        return branch_names.get(
+            code,
+            "Unassigned branch" if code == "UNASSIGNED" else f"Branch {code}",
+        )
     if level == "tenure":
         band = filters.get("tenure_band", "")
         return TENURE_BANDS.get(band, (band or "Tenure",))[0]
@@ -271,14 +349,27 @@ def _title(cur: Any, level: str, filters: dict[str, str], branch_names: dict[str
         "agent": "MAX(NULLIF(BTRIM(l.agent_name), ''))",
         "customer": "MAX(NULLIF(BTRIM(l.customer_name), ''))",
     }[level]
-    cur.execute(f"SELECT {field} FROM gold.loan_accounts l WHERE {where}", tuple(params))
+    cur.execute(
+        f"SELECT {field} FROM gold.loan_accounts l WHERE {where}",
+        tuple(params),
+    )
     label = _text(cur.fetchone()[0])
-    title = label or (f"Unassigned {level}" if code == "UNASSIGNED" else f"{level.title()} {code}")
+    title = label or (
+        f"Unassigned {level}"
+        if code == "UNASSIGNED"
+        else f"{level.title()} {code}"
+    )
     _TITLE_CACHE[cache_key] = (title, now + CACHE_TTL_SECONDS)
     return title
 
 
-def _node(node_id: str, node_type: str, label: str, metrics: dict[str, Any], **extra: Any) -> dict[str, Any]:
+def _node(
+    node_id: str,
+    node_type: str,
+    label: str,
+    metrics: dict[str, Any],
+    **extra: Any,
+) -> dict[str, Any]:
     return {
         "id": node_id,
         "type": node_type,
@@ -300,16 +391,30 @@ def _children(
 ) -> tuple[list[dict[str, Any]], int]:
     where, params = _where(filters, month)
     key_sql, label_sql = {
-        "product": ("COALESCE(NULLIF(BTRIM(l.product_code::text), ''), 'UNASSIGNED')", "MAX(NULLIF(BTRIM(l.product_name), ''))"),
+        "product": (
+            "COALESCE(NULLIF(BTRIM(l.product_code::text), ''), 'UNASSIGNED')",
+            "MAX(NULLIF(BTRIM(l.product_name), ''))",
+        ),
         "branch": (BRANCH_SQL, "NULL"),
-        "scheme": ("COALESCE(NULLIF(BTRIM(l.scheme_code::text), ''), 'UNASSIGNED')", "MAX(NULLIF(BTRIM(l.scheme_name), ''))"),
-        "agent": ("COALESCE(NULLIF(BTRIM(l.agent_code::text), ''), 'UNASSIGNED')", "MAX(NULLIF(BTRIM(l.agent_name), ''))"),
+        "scheme": (
+            "COALESCE(NULLIF(BTRIM(l.scheme_code::text), ''), 'UNASSIGNED')",
+            "MAX(NULLIF(BTRIM(l.scheme_name), ''))",
+        ),
+        "agent": (
+            "COALESCE(NULLIF(BTRIM(l.agent_code::text), ''), 'UNASSIGNED')",
+            "MAX(NULLIF(BTRIM(l.agent_name), ''))",
+        ),
         "tenure": (TENURE_KEY_SQL, TENURE_LABEL_SQL),
         "loan_size": (LOAN_SIZE_KEY_SQL, LOAN_SIZE_LABEL_SQL),
-        "customer": ("l.customer_id::text", "MAX(NULLIF(BTRIM(l.customer_name), ''))"),
+        "customer": (
+            "l.customer_id::text",
+            "MAX(NULLIF(BTRIM(l.customer_name), ''))",
+        ),
     }[child_level]
     order_alias = WEIGHTS[weight_by]
-    sql = RISK_CTE + f"""
+    sql = (
+        RISK_CTE
+        + f"""
         SELECT {key_sql} AS node_key, {label_sql} AS node_label, {METRIC_SQL},
                COUNT(*) OVER ()::bigint AS total_groups
         FROM gold.loan_accounts l
@@ -321,6 +426,7 @@ def _children(
         ORDER BY {order_alias} DESC, node_key
         LIMIT %s OFFSET %s
     """
+    )
     cur.execute(sql, (GICC_ENTITY, *params, limit, offset))
     rows = cur.fetchall()
     total_returned = int(rows[0][-1] or 0) if rows else 0
@@ -329,21 +435,35 @@ def _children(
         code = _text(row[0])
         raw_label = _text(row[1])
         if child_level == "branch":
-            label = branch_names.get(code, "Unassigned branch" if code == "UNASSIGNED" else f"Branch {code}")
+            label = branch_names.get(
+                code,
+                "Unassigned branch"
+                if code == "UNASSIGNED"
+                else f"Branch {code}",
+            )
         elif child_level == "tenure":
             label = TENURE_BANDS.get(code, (raw_label or code,))[0]
         elif child_level == "loan_size":
             label = LOAN_SIZE_BUCKETS.get(code, (raw_label or code,))[0]
         else:
-            label = raw_label or (f"Unassigned {child_level}" if code == "UNASSIGNED" else f"{child_level.title()} {code}")
+            label = raw_label or (
+                f"Unassigned {child_level}"
+                if code == "UNASSIGNED"
+                else f"{child_level.title()} {code}"
+            )
         metrics = _metrics(row[2:-1])
-        result.append(_node(
-            f"{child_level}:{code}", child_level, label, metrics,
-            code=code,
-            weight_value=metrics[order_alias],
-            is_leader=offset + index == 0,
-            rank=offset + index + 1,
-        ))
+        result.append(
+            _node(
+                f"{child_level}:{code}",
+                child_level,
+                label,
+                metrics,
+                code=code,
+                weight_value=metrics[order_alias],
+                is_leader=offset + index == 0,
+                rank=offset + index + 1,
+            )
+        )
     return result, total_returned
 
 
@@ -430,7 +550,10 @@ def _get_portfolio_data(entity_num: str = GICC_ENTITY) -> dict[str, Any]:
             "WHERE company_code = %s AND branch_code IS NOT NULL",
             (entity_num,),
         )
-        branch_names = {_text(code): (_text(name) or f"Branch {code}") for code, name in cur.fetchall()}
+        branch_names = {
+            _text(code): (_text(name) or f"Branch {code}")
+            for code, name in cur.fetchall()
+        }
 
     records: list[dict[str, Any]] = []
     product_names: dict[str, str] = {}
@@ -470,49 +593,66 @@ def _get_portfolio_data(entity_num: str = GICC_ENTITY) -> dict[str, Any]:
             product_names[pcode] = pname
         if sname and scode and scode not in scheme_names:
             scheme_names[scode] = sname
-        if agname and agcode and agcode != "UNASSIGNED" and agcode not in agent_names:
+        if (
+            agname
+            and agcode
+            and agcode != "UNASSIGNED"
+            and agcode not in agent_names
+        ):
             agent_names[agcode] = agname
         if cname and cid and cid not in customer_names:
             customer_names[cid] = cname
 
-        if snap_date and (max_snapshot_date is None or snap_date > max_snapshot_date):
+        if snap_date and (
+            max_snapshot_date is None or snap_date > max_snapshot_date
+        ):
             max_snapshot_date = snap_date
-        if data_as_of and (max_data_as_of is None or data_as_of > max_data_as_of):
+        if data_as_of and (
+            max_data_as_of is None or data_as_of > max_data_as_of
+        ):
             max_data_as_of = data_as_of
 
-        records.append({
-            "account": acnt,
-            "customer_id": cid,
-            "customer_name": cname,
-            "product_code": pcode,
-            "product_name": pname,
-            "branch_code": bcode,
-            "scheme_code": scode,
-            "scheme_name": sname,
-            "agent_code": agcode,
-            "agent_name": agname,
-            "sanction_amount": sanc_amt,
-            "disbursed_amount": disb_amt,
-            "sanction_date": sanc_date,
-            "sanction_month": sanc_date.strftime("%Y-%m") if sanc_date else None,
-            "closure_date": close_date,
-            "number_of_emis": emis,
-            "data_as_of": data_as_of,
-            "loan_status": status,
-            "principal_outstanding": prin_os,
-            "total_overdue": tot_od,
-            "is_par30": par30,
-            "is_npa": npa,
-            "has_risk": has_risk,
-            "dpd_days": dpd,
-            "snapshot_date": snap_date,
-            "tenure_band": _tenure_band(emis),
-            "loan_size_bucket": _loan_size_bucket(sanc_amt),
-        })
+        records.append(
+            {
+                "account": acnt,
+                "customer_id": cid,
+                "customer_name": cname,
+                "product_code": pcode,
+                "product_name": pname,
+                "branch_code": bcode,
+                "scheme_code": scode,
+                "scheme_name": sname,
+                "agent_code": agcode,
+                "agent_name": agname,
+                "sanction_amount": sanc_amt,
+                "disbursed_amount": disb_amt,
+                "sanction_date": sanc_date,
+                "sanction_month": sanc_date.strftime("%Y-%m")
+                if sanc_date
+                else None,
+                "closure_date": close_date,
+                "number_of_emis": emis,
+                "data_as_of": data_as_of,
+                "loan_status": status,
+                "principal_outstanding": prin_os,
+                "total_overdue": tot_od,
+                "is_par30": par30,
+                "is_npa": npa,
+                "has_risk": has_risk,
+                "dpd_days": dpd,
+                "snapshot_date": snap_date,
+                "tenure_band": _tenure_band(emis),
+                "loan_size_bucket": _loan_size_bucket(sanc_amt),
+            }
+        )
 
     snapshot_info = {
-        "snapshot_date": max_snapshot_date.isoformat() if max_snapshot_date else None,
-        "snapshot_data_as_of": max_data_as_of.isoformat() if max_data_as_of else None,
+        "snapshot_date": max_snapshot_date.isoformat()
+        if max_snapshot_date
+        else None,
+        "snapshot_data_as_of": max_data_as_of.isoformat()
+        if max_data_as_of
+        else None,
         "snapshot_entity_count": 1,
     }
 
@@ -535,11 +675,20 @@ def _calc_kpis(subset: list[dict[str, Any]]) -> dict[str, Any]:
     accounts = len(subset)
     if not accounts:
         return {
-            "account_count": 0, "active_account_count": 0, "borrower_count": 0,
-            "sanctioned_amount": 0.0, "disbursed_amount": 0.0, "principal_outstanding": 0.0,
-            "total_overdue": 0.0, "par30_outstanding": 0.0, "par30_ratio": 0.0,
-            "npa_outstanding": 0.0, "npa_ratio": 0.0, "risk_covered_accounts": 0,
-            "risk_coverage_pct": 0.0, "loan_data_as_of": None,
+            "account_count": 0,
+            "active_account_count": 0,
+            "borrower_count": 0,
+            "sanctioned_amount": 0.0,
+            "disbursed_amount": 0.0,
+            "principal_outstanding": 0.0,
+            "total_overdue": 0.0,
+            "par30_outstanding": 0.0,
+            "par30_ratio": 0.0,
+            "npa_outstanding": 0.0,
+            "npa_ratio": 0.0,
+            "risk_covered_accounts": 0,
+            "risk_coverage_pct": 0.0,
+            "loan_data_as_of": None,
         }
     active_accounts = sum(1 for r in subset if r["closure_date"] is None)
     borrowers = len(set(r["customer_id"] for r in subset if r["customer_id"]))
@@ -547,10 +696,16 @@ def _calc_kpis(subset: list[dict[str, Any]]) -> dict[str, Any]:
     disbursed = _money(sum(r["disbursed_amount"] for r in subset))
     outstanding = _money(sum(r["principal_outstanding"] for r in subset))
     overdue = _money(sum(r["total_overdue"] for r in subset))
-    par30 = _money(sum(r["principal_outstanding"] for r in subset if r["is_par30"]))
-    npa = _money(sum(r["principal_outstanding"] for r in subset if r["is_npa"]))
+    par30 = _money(
+        sum(r["principal_outstanding"] for r in subset if r["is_par30"])
+    )
+    npa = _money(
+        sum(r["principal_outstanding"] for r in subset if r["is_npa"])
+    )
     covered = sum(1 for r in subset if r["has_risk"])
-    max_as_of = max((r["data_as_of"] for r in subset if r["data_as_of"]), default=None)
+    max_as_of = max(
+        (r["data_as_of"] for r in subset if r["data_as_of"]), default=None
+    )
     return {
         "account_count": accounts,
         "active_account_count": active_accounts,
@@ -560,21 +715,36 @@ def _calc_kpis(subset: list[dict[str, Any]]) -> dict[str, Any]:
         "principal_outstanding": outstanding,
         "total_overdue": overdue,
         "par30_outstanding": par30,
-        "par30_ratio": round(par30 / outstanding * 100, 4) if outstanding else 0.0,
+        "par30_ratio": round(par30 / outstanding * 100, 4)
+        if outstanding
+        else 0.0,
         "npa_outstanding": npa,
         "npa_ratio": round(npa / outstanding * 100, 4) if outstanding else 0.0,
         "risk_covered_accounts": covered,
-        "risk_coverage_pct": round(covered / accounts * 100, 1) if accounts else 0.0,
+        "risk_coverage_pct": round(covered / accounts * 100, 1)
+        if accounts
+        else 0.0,
         "loan_data_as_of": max_as_of.isoformat() if max_as_of else None,
     }
 
 
-def _record_matches(r: dict[str, Any], filters: dict[str, str], month: str | None) -> bool:
-    if filters.get("product_code") and r["product_code"] != filters["product_code"]:
+def _record_matches(
+    r: dict[str, Any], filters: dict[str, str], month: str | None
+) -> bool:
+    if (
+        filters.get("product_code")
+        and r["product_code"] != filters["product_code"]
+    ):
         return False
-    if filters.get("branch_code") and r["branch_code"] != filters["branch_code"]:
+    if (
+        filters.get("branch_code")
+        and r["branch_code"] != filters["branch_code"]
+    ):
         return False
-    if filters.get("scheme_code") and r["scheme_code"] != filters["scheme_code"]:
+    if (
+        filters.get("scheme_code")
+        and r["scheme_code"] != filters["scheme_code"]
+    ):
         return False
     if "agent_code" in filters:
         target_agent = filters["agent_code"]
@@ -591,19 +761,27 @@ def _record_matches(r: dict[str, Any], filters: dict[str, str], month: str | Non
         bucket = filters["loan_size_bucket"]
         if bucket in LOAN_SIZE_BUCKETS and r["loan_size_bucket"] != bucket:
             return False
-    if filters.get("customer_id") and r["customer_id"] != filters["customer_id"]:
+    if (
+        filters.get("customer_id")
+        and r["customer_id"] != filters["customer_id"]
+    ):
         return False
     if month and r["sanction_month"] != month:
         return False
     return True
 
 
-def _title_from_meta(level: str, filters: dict[str, str], meta: dict[str, Any]) -> str:
+def _title_from_meta(
+    level: str, filters: dict[str, str], meta: dict[str, Any]
+) -> str:
     if level == "portfolio":
         return "GICC Loan Book"
     if level == "branch":
         code = filters.get("branch_code", "UNASSIGNED")
-        return meta["branch_names"].get(code, "Unassigned branch" if code == "UNASSIGNED" else f"Branch {code}")
+        return meta["branch_names"].get(
+            code,
+            "Unassigned branch" if code == "UNASSIGNED" else f"Branch {code}",
+        )
     if level == "tenure":
         band = filters.get("tenure_band", "")
         return TENURE_BANDS.get(band, (band or "Tenure",))[0]
@@ -619,7 +797,11 @@ def _title_from_meta(level: str, filters: dict[str, str], meta: dict[str, Any]) 
         "customer": meta["customer_names"],
     }.get(level, {})
     label = lookup.get(code)
-    return label or (f"Unassigned {level}" if code == "UNASSIGNED" else f"{level.title()} {code}")
+    return label or (
+        f"Unassigned {level}"
+        if code == "UNASSIGNED"
+        else f"{level.title()} {code}"
+    )
 
 
 def get_curiosity_graph(
@@ -647,16 +829,20 @@ def get_curiosity_graph(
     filters = {
         key: _text(value)
         for key, value in {
-            "product_code": product_code, "branch_code": branch_code,
-            "scheme_code": scheme_code, "agent_code": agent_code,
-            "tenure_band": tenure_band, "loan_size_bucket": loan_size_bucket,
+            "product_code": product_code,
+            "branch_code": branch_code,
+            "scheme_code": scheme_code,
+            "agent_code": agent_code,
+            "tenure_band": tenure_band,
+            "loan_size_bucket": loan_size_bucket,
             "customer_id": customer_id,
         }.items()
         if value is not None and _text(value)
     }
 
     required = {
-        "product": ("product_code",), "branch": ("product_code", "branch_code"),
+        "product": ("product_code",),
+        "branch": ("product_code", "branch_code"),
         "scheme": (),
         "agent": ("agent_code",),
         "tenure": ("tenure_band",),
@@ -665,9 +851,13 @@ def get_curiosity_graph(
     }
     is_valid = True
     if level == "scheme":
-        if not filters.get("scheme_code") or (not filters.get("branch_code") and not filters.get("agent_code")):
+        if not filters.get("scheme_code") or (
+            not filters.get("branch_code") and not filters.get("agent_code")
+        ):
             is_valid = False
-    elif level != "portfolio" and any(not filters.get(field) for field in required.get(level, ())):
+    elif level != "portfolio" and any(
+        not filters.get(field) for field in required.get(level, ())
+    ):
         is_valid = False
 
     if not is_valid:
@@ -697,11 +887,25 @@ def get_curiosity_graph(
         if level == "customer" and filters.get("customer_id")
         else filters
     )
-    filtered_records = [r for r in records if _record_matches(r, metric_filters, month)]
+    filtered_records = [
+        r for r in records if _record_matches(r, metric_filters, month)
+    ]
     current_metrics = _calc_kpis(filtered_records)
     current_title = _title_from_meta(level, filters, meta)
-    current_code = filters.get(f"{level}_code") or filters.get("customer_id") or filters.get("tenure_band") or filters.get("loan_size_bucket") or GICC_ENTITY
-    current = _node(f"{level}:{current_code}", level, current_title, current_metrics, code=current_code)
+    current_code = (
+        filters.get(f"{level}_code")
+        or filters.get("customer_id")
+        or filters.get("tenure_band")
+        or filters.get("loan_size_bucket")
+        or GICC_ENTITY
+    )
+    current = _node(
+        f"{level}:{current_code}",
+        level,
+        current_title,
+        current_metrics,
+        code=current_code,
+    )
     nodes = [current]
     edges: list[dict[str, str]] = []
     children_total = 0
@@ -726,7 +930,11 @@ def get_curiosity_graph(
         next_level = None
 
     if next_level:
-        effective_weight = "outstanding" if next_level == "customer" and weight_by == "borrowers" else weight_by
+        effective_weight = (
+            "outstanding"
+            if next_level == "customer" and weight_by == "borrowers"
+            else weight_by
+        )
         order_alias = WEIGHTS[effective_weight]
 
         groups: dict[str, list[dict[str, Any]]] = {}
@@ -753,7 +961,12 @@ def get_curiosity_graph(
         for code, group_records in groups.items():
             metrics = _calc_kpis(group_records)
             if next_level == "branch":
-                label = branch_names.get(code, "Unassigned branch" if code == "UNASSIGNED" else f"Branch {code}")
+                label = branch_names.get(
+                    code,
+                    "Unassigned branch"
+                    if code == "UNASSIGNED"
+                    else f"Branch {code}",
+                )
             elif next_level == "tenure":
                 label = TENURE_BANDS.get(code, (code,))[0]
             elif next_level == "loan_size":
@@ -761,37 +974,61 @@ def get_curiosity_graph(
             elif next_level == "product":
                 label = meta["product_names"].get(code) or f"Product {code}"
             elif next_level == "scheme":
-                label = meta["scheme_names"].get(code) or (f"Unassigned scheme" if code == "UNASSIGNED" else f"Scheme {code}")
+                label = meta["scheme_names"].get(code) or (
+                    "Unassigned scheme"
+                    if code == "UNASSIGNED"
+                    else f"Scheme {code}"
+                )
             elif next_level == "agent":
-                label = meta["agent_names"].get(code) or (f"Unassigned agent" if code == "UNASSIGNED" else f"Agent {code}")
+                label = meta["agent_names"].get(code) or (
+                    "Unassigned agent"
+                    if code == "UNASSIGNED"
+                    else f"Agent {code}"
+                )
             elif next_level == "customer":
                 label = meta["customer_names"].get(code) or f"Customer {code}"
             else:
                 label = f"{next_level.title()} {code}"
 
-            child_nodes.append(_node(
-                f"{next_level}:{code}", next_level, label, metrics,
-                code=code,
-                weight_value=metrics[order_alias],
-            ))
+            child_nodes.append(
+                _node(
+                    f"{next_level}:{code}",
+                    next_level,
+                    label,
+                    metrics,
+                    code=code,
+                    weight_value=metrics[order_alias],
+                )
+            )
 
         # Sort: metrics[order_alias] DESC, code ASC
         child_nodes.sort(key=lambda x: (-x["weight_value"], x["code"]))
         children_total = len(child_nodes)
-        visible_slice = child_nodes[offset:offset + limit]
+        visible_slice = child_nodes[offset : offset + limit]
 
         for index, child in enumerate(visible_slice):
-            child["is_leader"] = (offset + index == 0)
+            child["is_leader"] = offset + index == 0
             child["rank"] = offset + index + 1
 
         nodes.extend(visible_slice)
-        edges.extend({"source": current["id"], "target": child["id"], "label": f"HAS_{next_level.upper()}"} for child in visible_slice)
+        edges.extend(
+            {
+                "source": current["id"],
+                "target": child["id"],
+                "label": f"HAS_{next_level.upper()}",
+            }
+            for child in visible_slice
+        )
 
     elif level == "customer" and filters.get("customer_id"):
         cust_id = filters["customer_id"]
         cust_records = [r for r in records if r["customer_id"] == cust_id]
         cust_records.sort(
-            key=lambda r: (r["sanction_date"] is None, -(r["sanction_date"].toordinal() if r["sanction_date"] else 0), r["account"])
+            key=lambda r: (
+                r["sanction_date"] is None,
+                -(r["sanction_date"].toordinal() if r["sanction_date"] else 0),
+                r["account"],
+            )
         )
         account_nodes = []
         related: dict[str, dict[str, Any]] = {}
@@ -801,57 +1038,95 @@ def get_curiosity_graph(
             account = r["account"]
             agent_code = r["agent_code"] or "UNASSIGNED"
             agent_name = _agent_label(agent_code, r["agent_name"])
-            account_nodes.append({
-                "id": f"account:{account}", "type": "account", "code": account,
-                "label": f"Loan {account}",
-                "metrics": {
-                    "account_count": 1, "active_account_count": 1 if r["closure_date"] is None else 0,
-                    "borrower_count": 1,
-                    "sanctioned_amount": _money(r["sanction_amount"]),
-                    "disbursed_amount": _money(r["disbursed_amount"]),
-                    "active": r["closure_date"] is None,
-                    "loan_status": _text(r["loan_status"]),
-                    "principal_outstanding": _money(r["principal_outstanding"]),
-                    "total_overdue": _money(r["total_overdue"]),
-                    "dpd_days": int(r["dpd_days"] or 0),
-                    "is_par30": bool(r["is_par30"]),
-                    "is_npa": bool(r["is_npa"]),
-                    "par30_ratio": 100.0 if r["is_par30"] else 0.0,
-                    "npa_ratio": 100.0 if r["is_npa"] else 0.0,
-                    "risk_coverage_pct": 100.0 if r["has_risk"] else 0.0,
+            account_nodes.append(
+                {
+                    "id": f"account:{account}",
+                    "type": "account",
+                    "code": account,
+                    "label": f"Loan {account}",
+                    "metrics": {
+                        "account_count": 1,
+                        "active_account_count": 1
+                        if r["closure_date"] is None
+                        else 0,
+                        "borrower_count": 1,
+                        "sanctioned_amount": _money(r["sanction_amount"]),
+                        "disbursed_amount": _money(r["disbursed_amount"]),
+                        "active": r["closure_date"] is None,
+                        "loan_status": _text(r["loan_status"]),
+                        "principal_outstanding": _money(
+                            r["principal_outstanding"]
+                        ),
+                        "total_overdue": _money(r["total_overdue"]),
+                        "dpd_days": int(r["dpd_days"] or 0),
+                        "is_par30": bool(r["is_par30"]),
+                        "is_npa": bool(r["is_npa"]),
+                        "par30_ratio": 100.0 if r["is_par30"] else 0.0,
+                        "npa_ratio": 100.0 if r["is_npa"] else 0.0,
+                        "risk_coverage_pct": 100.0 if r["has_risk"] else 0.0,
+                    },
+                    "product_code": _text(r["product_code"]),
+                    "product_name": _text(r["product_name"]),
+                    "branch_code": _text(r["branch_code"]),
+                    "scheme_code": _text(r["scheme_code"]),
+                    "scheme_name": _text(r["scheme_name"]),
+                    "agent_code": agent_code,
+                }
+            )
+            related.setdefault(
+                agent_code,
+                {
+                    "id": f"related-agent:{agent_code}",
+                    "type": "related_agent",
+                    "code": agent_code,
+                    "label": agent_name,
+                    "account_count": 0,
+                    "is_selected_path": agent_code == selected_agent_code,
                 },
-                "product_code": _text(r["product_code"]), "product_name": _text(r["product_name"]),
-                "branch_code": _text(r["branch_code"]), "scheme_code": _text(r["scheme_code"]),
-                "scheme_name": _text(r["scheme_name"]), "agent_code": agent_code,
-            })
-            related.setdefault(agent_code, {
-                "id": f"related-agent:{agent_code}", "type": "related_agent", "code": agent_code,
-                "label": agent_name, "account_count": 0,
-                "is_selected_path": agent_code == selected_agent_code,
-            })["account_count"] += 1
-            links.append({"source": f"related-agent:{agent_code}", "target": f"account:{account}", "label": "HANDLES"})
+            )["account_count"] += 1
+            links.append(
+                {
+                    "source": f"related-agent:{agent_code}",
+                    "target": f"account:{account}",
+                    "label": "HANDLES",
+                }
+            )
 
         agents_list = list(related.values())
         nodes.extend(agents_list)
-        visible_accounts = account_nodes[offset:offset + limit]
+        visible_accounts = account_nodes[offset : offset + limit]
         nodes.extend(visible_accounts)
-        edges.extend({"source": agent["id"], "target": current["id"], "label": "SERVES"} for agent in agents_list)
+        edges.extend(
+            {"source": agent["id"], "target": current["id"], "label": "SERVES"}
+            for agent in agents_list
+        )
         visible_account_ids = {node["id"] for node in visible_accounts}
-        edges.extend(link for link in links if link["target"] in visible_account_ids)
+        edges.extend(
+            link for link in links if link["target"] in visible_account_ids
+        )
         children_total = len(account_nodes)
 
-    path = [{"level": "portfolio", "code": GICC_ENTITY, "label": "GICC Loan Book"}]
-    is_agent_originated = bool(filters.get("agent_code") and not filters.get("branch_code"))
+    path = [
+        {"level": "portfolio", "code": GICC_ENTITY, "label": "GICC Loan Book"}
+    ]
+    is_agent_originated = bool(
+        filters.get("agent_code") and not filters.get("branch_code")
+    )
     if is_agent_originated:
         path_keys = (
-            ("agent", "agent_code"), ("scheme", "scheme_code"),
-            ("tenure", "tenure_band"), ("loan_size", "loan_size_bucket"),
+            ("agent", "agent_code"),
+            ("scheme", "scheme_code"),
+            ("tenure", "tenure_band"),
+            ("loan_size", "loan_size_bucket"),
         )
     else:
         path_keys = (
-            ("product", "product_code"), ("branch", "branch_code"),
-            ("scheme", "scheme_code"), ("agent", "agent_code"),
-            ("tenure", "tenure_band"), ("loan_size", "loan_size_bucket"),
+            ("product", "product_code"),
+            ("branch", "branch_code"),
+            ("scheme", "scheme_code"),
+            ("agent", "agent_code"),
+            ("tenure", "tenure_band"),
+            ("loan_size", "loan_size_bucket"),
         )
 
     for path_level, key in path_keys:
@@ -859,19 +1134,34 @@ def get_curiosity_graph(
             if path_level == level:
                 path_label = current_title
             elif path_level == "branch":
-                path_label = branch_names.get(filters[key], f"Branch {filters[key]}")
+                path_label = branch_names.get(
+                    filters[key], f"Branch {filters[key]}"
+                )
             elif path_level == "tenure":
                 path_label = TENURE_BANDS.get(filters[key], (filters[key],))[0]
             elif path_level == "loan_size":
-                path_label = LOAN_SIZE_BUCKETS.get(filters[key], (filters[key],))[0]
+                path_label = LOAN_SIZE_BUCKETS.get(
+                    filters[key], (filters[key],)
+                )[0]
             else:
-                path_label = _title_from_meta(path_level, {f"{path_level}_code": filters[key]}, meta)
-            path.append({
-                "level": path_level, "code": filters[key],
-                "label": path_label,
-            })
+                path_label = _title_from_meta(
+                    path_level, {f"{path_level}_code": filters[key]}, meta
+                )
+            path.append(
+                {
+                    "level": path_level,
+                    "code": filters[key],
+                    "label": path_label,
+                }
+            )
     if filters.get("customer_id"):
-        path.append({"level": "customer", "code": filters["customer_id"], "label": current_title})
+        path.append(
+            {
+                "level": "customer",
+                "code": filters["customer_id"],
+                "label": current_title,
+            }
+        )
 
     result = {
         "version": 2,
@@ -897,7 +1187,8 @@ def get_curiosity_graph(
             "branch_basis_note": "Reporting branch is currently empty in Gold; application branch supplies the hierarchy until remediation.",
             "source_schema": "gold",
             "source_views": [
-                "gold.loan_accounts", "gold.daily_loan_status",
+                "gold.loan_accounts",
+                "gold.daily_loan_status",
                 "gold.branches",
             ],
         },
@@ -908,7 +1199,9 @@ def get_curiosity_graph(
     return result
 
 
-def search_curiosity_entities(query: str, limit: int = 15) -> list[dict[str, str]]:
+def search_curiosity_entities(
+    query: str, limit: int = 15
+) -> list[dict[str, str]]:
     """Search governed hierarchy entities without exposing unrestricted SQL."""
     term = " ".join((query or "").split())
     if len(term) < 2:
@@ -929,14 +1222,18 @@ def search_curiosity_entities(query: str, limit: int = 15) -> list[dict[str, str
             continue
         if term_lower in (name or "").lower() or term_lower in code.lower():
             label = name or f"Agent {code}"
-            agent_matches.append({"type": "agent", "code": code, "label": label})
+            agent_matches.append(
+                {"type": "agent", "code": code, "label": label}
+            )
     agent_matches.sort(key=lambda x: (x["label"] is None, x["label"]))
 
     customer_matches: list[dict[str, str]] = []
     for code, name in meta["customer_names"].items():
         if term_lower in (name or "").lower() or term_lower in code.lower():
             label = name or f"Customer {code}"
-            customer_matches.append({"type": "customer", "code": code, "label": label})
+            customer_matches.append(
+                {"type": "customer", "code": code, "label": label}
+            )
     customer_matches.sort(key=lambda x: (x["label"] is None, x["label"]))
 
     results = (agent_matches + customer_matches)[:max_limit]
@@ -1020,9 +1317,20 @@ def get_customer_360_details(customer_id: str) -> dict[str, Any]:
             pan = _text(row[12])
             pan_masked = f"{pan[:2]}XXXXX{pan[-2:]}" if len(pan) >= 6 else pan
             aadhaar = _text(row[13])
-            aadhaar_masked = f"XXXX-XXXX-{aadhaar[-4:]}" if len(aadhaar) >= 4 else aadhaar
+            aadhaar_masked = (
+                f"XXXX-XXXX-{aadhaar[-4:]}" if len(aadhaar) >= 4 else aadhaar
+            )
             address_parts = [
-                _text(part) for part in [row[5], row[6], row[7], row[8], row[9], row[10], row[11]]
+                _text(part)
+                for part in [
+                    row[5],
+                    row[6],
+                    row[7],
+                    row[8],
+                    row[9],
+                    row[10],
+                    row[11],
+                ]
                 if _text(part)
             ]
             profile = {
@@ -1047,7 +1355,8 @@ def get_customer_360_details(customer_id: str) -> dict[str, Any]:
 
         # 2. Loans
         cur.execute(
-            RISK_CTE + """
+            RISK_CTE
+            + """
             SELECT l.loan_account_number::text, l.product_code::text, l.product_name,
                    l.scheme_code::text, l.scheme_name, l.approved_on, l.closed_on,
                    l.approved_amount, l.amount_given, l.principal_paid_so_far, l.interest_paid_so_far,
@@ -1088,32 +1397,35 @@ def get_customer_360_details(customer_id: str) -> dict[str, Any]:
             total_outstanding += outst
             total_overdue += od
 
-            loans.append({
-                "loan_account_number": _text(r[0]),
-                "product_code": _text(r[1]),
-                "product_name": _text(r[2]),
-                "scheme_code": _text(r[3]),
-                "scheme_name": _text(r[4]),
-                "sanction_date": r[5].isoformat() if r[5] else None,
-                "closure_date": r[6].isoformat() if r[6] else None,
-                "sanction_amount": sanc,
-                "disbursed_amount": disb,
-                "principal_repaid": p_rep,
-                "interest_repaid": _money(r[10]),
-                "interest_rate": round(float(r[11] or 0), 2),
-                "number_of_emis": int(r[12] or 0),
-                "emi_amount": _money(r[13]),
-                "loan_status": _text(r[14]),
-                "active": is_active,
-                "agent_code": _text(r[15]),
-                "agent_name": _text(r[16]),
-                "principal_outstanding": outst,
-                "total_overdue": od,
-                "dpd_days": int(r[19] or 0),
-                "is_par30": bool(r[20]),
-                "is_npa": bool(r[21]),
-                "asset_classification": _text(r[22]) or ("NPA" if r[21] else "STANDARD"),
-            })
+            loans.append(
+                {
+                    "loan_account_number": _text(r[0]),
+                    "product_code": _text(r[1]),
+                    "product_name": _text(r[2]),
+                    "scheme_code": _text(r[3]),
+                    "scheme_name": _text(r[4]),
+                    "sanction_date": r[5].isoformat() if r[5] else None,
+                    "closure_date": r[6].isoformat() if r[6] else None,
+                    "sanction_amount": sanc,
+                    "disbursed_amount": disb,
+                    "principal_repaid": p_rep,
+                    "interest_repaid": _money(r[10]),
+                    "interest_rate": round(float(r[11] or 0), 2),
+                    "number_of_emis": int(r[12] or 0),
+                    "emi_amount": _money(r[13]),
+                    "loan_status": _text(r[14]),
+                    "active": is_active,
+                    "agent_code": _text(r[15]),
+                    "agent_name": _text(r[16]),
+                    "principal_outstanding": outst,
+                    "total_overdue": od,
+                    "dpd_days": int(r[19] or 0),
+                    "is_par30": bool(r[20]),
+                    "is_npa": bool(r[21]),
+                    "asset_classification": _text(r[22])
+                    or ("NPA" if r[21] else "STANDARD"),
+                }
+            )
 
         # 3. Repayment Events
         cur.execute(
@@ -1150,22 +1462,28 @@ def get_customer_360_details(customer_id: str) -> dict[str, Any]:
             else:
                 status = "MISSED"
 
-            repayments.append({
-                "loan_account_number": _text(rep[0]),
-                "sequence": int(rep[1] or 0),
-                "repayment_date": rep[2].isoformat() if rep[2] else None,
-                "principal_due": _money(rep[3]),
-                "interest_due": _money(rep[4]),
-                "total_due": t_due,
-                "principal_paid": _money(rep[6]),
-                "interest_paid": _money(rep[7]),
-                "total_paid": t_paid,
-                "collection_shortfall": s_fall,
-                "collection_efficiency": eff,
-                "status": status,
-            })
+            repayments.append(
+                {
+                    "loan_account_number": _text(rep[0]),
+                    "sequence": int(rep[1] or 0),
+                    "repayment_date": rep[2].isoformat() if rep[2] else None,
+                    "principal_due": _money(rep[3]),
+                    "interest_due": _money(rep[4]),
+                    "total_due": t_due,
+                    "principal_paid": _money(rep[6]),
+                    "interest_paid": _money(rep[7]),
+                    "total_paid": t_paid,
+                    "collection_shortfall": s_fall,
+                    "collection_efficiency": eff,
+                    "status": status,
+                }
+            )
 
-        overall_efficiency = round(total_paid_sum / total_due_sum * 100, 2) if total_due_sum > 0 else 100.0
+        overall_efficiency = (
+            round(total_paid_sum / total_due_sum * 100, 2)
+            if total_due_sum > 0
+            else 100.0
+        )
 
         res = {
             "profile": profile,

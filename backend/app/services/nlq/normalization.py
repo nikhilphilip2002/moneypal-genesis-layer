@@ -26,7 +26,9 @@ ASCII apostrophe silently loses the borrower name in front of it."""
 
 _INTEREST_TYPO = re.compile(r"\bint(?:r|er)?est\b|\bintrest\b", re.IGNORECASE)
 _DISBURSEMENT_TYPO = re.compile(r"\bdisbursment\b", re.IGNORECASE)
-_HISTORY_TYPO = re.compile(r"\b(?:histoy|histry|hisotry|hitory)\b", re.IGNORECASE)
+_HISTORY_TYPO = re.compile(
+    r"\b(?:histoy|histry|hisotry|hitory)\b", re.IGNORECASE
+)
 _PRINCIPAL_TYPO = re.compile(
     r"\bprinciple(?=s?\s+(?:outstanding|amount|due|paid|repaid|balance|overdue|"
     r"arrears|collected|recovery|component|portion)\b)|"

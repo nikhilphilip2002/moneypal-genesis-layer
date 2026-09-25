@@ -24,7 +24,9 @@ def _memory_only(monkeypatch):
 
 
 def test_first_turn_titles_the_conversation_from_the_question():
-    history.record_turn("c1", "What was our disbursement last quarter?", ["db"])
+    history.record_turn(
+        "c1", "What was our disbursement last quarter?", ["db"]
+    )
     rec = history.get("c1")
     assert rec is not None
     assert rec.title.startswith("What was our disbursement")
@@ -61,23 +63,33 @@ def test_get_unknown_conversation_is_none():
 
 def test_complete_cards_are_saved_and_become_assistant_context():
     turn_id = history.begin_turn("c1", "alice", "What is PAR 30?")
-    history.set_route("c1", "alice", turn_id, sources=["db"], intent="What is PAR 30?")
-    history.add_card("c1", "alice", turn_id, {
-        "source": "db",
-        "card_type": "chart",
-        "payload": {
-            "title": "PAR 30",
-            "chart_type": "kpi",
-            "columns": [{"name": "par_30", "label": "PAR 30"}],
-            "rows": [{"par_30": 4.2}],
-            "summary": "PAR 30 is 4.2%.",
-            "lineage": {"sql": "must not enter model context"},
+    history.set_route(
+        "c1", "alice", turn_id, sources=["db"], intent="What is PAR 30?"
+    )
+    history.add_card(
+        "c1",
+        "alice",
+        turn_id,
+        {
+            "source": "db",
+            "card_type": "chart",
+            "payload": {
+                "title": "PAR 30",
+                "chart_type": "kpi",
+                "columns": [{"name": "par_30", "label": "PAR 30"}],
+                "rows": [{"par_30": 4.2}],
+                "summary": "PAR 30 is 4.2%.",
+                "lineage": {"sql": "must not enter model context"},
+            },
         },
-    })
+    )
     history.complete_turn("c1", "alice", turn_id)
 
     rec = history.get("c1", user="alice")
-    assert rec is not None and rec.turns[0]["cards"][0]["payload"]["title"] == "PAR 30"
+    assert (
+        rec is not None
+        and rec.turns[0]["cards"][0]["payload"]["title"] == "PAR 30"
+    )
     messages = history.transcript("c1", user="alice")
     assert messages[-2] == {"role": "user", "content": "What is PAR 30?"}
     assert "PAR 30 is 4.2%" in messages[-1]["content"]
@@ -90,28 +102,53 @@ def test_conversations_and_context_are_isolated_by_user():
     history.record_turn("bob-chat", "Bob question", ["db"], user="bob")
 
     assert history.get("bob-chat", user="alice") is None
-    assert [item.conversation_id for item in history.list_recent(user="alice")] == ["alice-chat"]
+    assert [
+        item.conversation_id for item in history.list_recent(user="alice")
+    ] == ["alice-chat"]
     assert history.transcript("bob-chat", user="alice") == []
 
 
 def test_previous_queries_are_owner_scoped_and_exclude_current_turn():
     old_turn = history.begin_turn("query-history", "alice", "First question")
-    history.set_query_registry("query-history", "alice", old_turn, [{
-        "query_id": f"{old_turn}:q1", "status": "success",
-    }])
+    history.set_query_registry(
+        "query-history",
+        "alice",
+        old_turn,
+        [
+            {
+                "query_id": f"{old_turn}:q1",
+                "status": "success",
+            }
+        ],
+    )
     current_turn = history.begin_turn("query-history", "alice", "Follow up")
-    history.set_query_registry("query-history", "alice", current_turn, [{
-        "query_id": f"{current_turn}:q2", "status": "pending",
-    }])
+    history.set_query_registry(
+        "query-history",
+        "alice",
+        current_turn,
+        [
+            {
+                "query_id": f"{current_turn}:q2",
+                "status": "pending",
+            }
+        ],
+    )
 
     previous = history.previous_query_registry(
-        "query-history", user="alice", turn_id=current_turn,
+        "query-history",
+        user="alice",
+        turn_id=current_turn,
     )
 
     assert [item["query_id"] for item in previous] == [f"{old_turn}:q1"]
-    assert history.previous_query_registry(
-        "query-history", user="bob", turn_id=current_turn,
-    ) == []
+    assert (
+        history.previous_query_registry(
+            "query-history",
+            user="bob",
+            turn_id=current_turn,
+        )
+        == []
+    )
 
 
 def test_new_conversation_starts_with_empty_context():
@@ -122,13 +159,22 @@ def test_new_conversation_starts_with_empty_context():
 def test_route_tools_and_structured_error_round_trip():
     turn_id = history.begin_turn("diagnostic", "alice", "Show PAR 30")
     history.set_route(
-        "diagnostic", "alice", turn_id,
-        sources=["db"], intent="Show PAR 30", model="native_agent",
+        "diagnostic",
+        "alice",
+        turn_id,
+        sources=["db"],
+        intent="Show PAR 30",
+        model="native_agent",
         tools=["query_metrics"],
     )
     history.set_error(
-        "diagnostic", "alice", turn_id, "The model timed out.",
-        code="AGENT_TIMEOUT", retryable=True, reason="deadline",
+        "diagnostic",
+        "alice",
+        turn_id,
+        "The model timed out.",
+        code="AGENT_TIMEOUT",
+        retryable=True,
+        reason="deadline",
     )
 
     turn = history.get("diagnostic", user="alice").turns[0]
@@ -147,9 +193,16 @@ def test_route_tools_and_structured_error_round_trip():
 def test_explicit_empty_query_attribution_survives_history_round_trip():
     turn_id = history.begin_turn("attribution", "alice", "What does PAR mean?")
     answer = {
-        "schema_version": 1, "status": "answered", "text": "Portfolio at risk.",
-        "active_query_ids": [], "visual_query_ids": [], "excluded_queries": [],
-        "sources": [], "citations": [], "unavailable_sources": [], "limitations": [],
+        "schema_version": 1,
+        "status": "answered",
+        "text": "Portfolio at risk.",
+        "active_query_ids": [],
+        "visual_query_ids": [],
+        "excluded_queries": [],
+        "sources": [],
+        "citations": [],
+        "unavailable_sources": [],
+        "limitations": [],
     }
     history.set_answer("attribution", "alice", turn_id, answer)
 
@@ -166,11 +219,19 @@ def test_current_turn_without_events_is_rejected():
 
 def test_transcript_respects_the_token_budget():
     for index in range(12):
-        turn_id = history.begin_turn("long", "alice", f"Question {index} " + "q" * 100)
-        history.add_card("long", "alice", turn_id, {
-            "source": "macro", "card_type": "brief",
-            "payload": {"summary": f"Answer {index} " + "a" * 600},
-        })
+        turn_id = history.begin_turn(
+            "long", "alice", f"Question {index} " + "q" * 100
+        )
+        history.add_card(
+            "long",
+            "alice",
+            turn_id,
+            {
+                "source": "macro",
+                "card_type": "brief",
+                "payload": {"summary": f"Answer {index} " + "a" * 600},
+            },
+        )
         history.complete_turn("long", "alice", turn_id)
 
     # ~1000 tokens: room for a couple of these turns, not twelve.
@@ -179,7 +240,9 @@ def test_transcript_respects_the_token_budget():
     assert sum(len(message["content"]) for message in verbatim) <= 4_200
     # The newest turn always survives, whatever the budget.
     assert "Question 11" in messages[-2]["content"]
-    assert "Question 0" not in " ".join(message["content"] for message in verbatim)
+    assert "Question 0" not in " ".join(
+        message["content"] for message in verbatim
+    )
 
 
 def test_an_analysis_turn_survives_into_model_context():
@@ -187,24 +250,39 @@ def test_an_analysis_turn_survives_into_model_context():
     branch of its own it flattened to "" — a compacted thread lost the briefing entirely, and
     the follow-up "why is that?" then had nothing to refer back to."""
     turn_id = history.begin_turn("c2", "alice", "How is the business doing?")
-    history.set_route("c2", "alice", turn_id, sources=["db"], intent="briefing")
-    history.add_card("c2", "alice", turn_id, {
-        "source": "db",
-        "card_type": "analysis",
-        "payload": {
-            "id": "portfolio_health",
-            "title": "Portfolio health",
-            "compose": "briefing",
-            "headline": "2 of 4 indicators need attention: PAR 30, NPA ratio.",
-            "findings": [
-                {"step_id": "par30", "label": "PAR 30", "text": "PAR 30: 14.0%, above 10.0%."},
-                {"step_id": "npa", "label": "NPA ratio", "text": "NPA ratio: 8.0%."},
-            ],
-            "narrative": "Arrears drove the move.",
-            "charts": [],
-            "warnings": [],
+    history.set_route(
+        "c2", "alice", turn_id, sources=["db"], intent="briefing"
+    )
+    history.add_card(
+        "c2",
+        "alice",
+        turn_id,
+        {
+            "source": "db",
+            "card_type": "analysis",
+            "payload": {
+                "id": "portfolio_health",
+                "title": "Portfolio health",
+                "compose": "briefing",
+                "headline": "2 of 4 indicators need attention: PAR 30, NPA ratio.",
+                "findings": [
+                    {
+                        "step_id": "par30",
+                        "label": "PAR 30",
+                        "text": "PAR 30: 14.0%, above 10.0%.",
+                    },
+                    {
+                        "step_id": "npa",
+                        "label": "NPA ratio",
+                        "text": "NPA ratio: 8.0%.",
+                    },
+                ],
+                "narrative": "Arrears drove the move.",
+                "charts": [],
+                "warnings": [],
+            },
         },
-    })
+    )
     history.complete_turn("c2", "alice", turn_id)
 
     context = history.transcript("c2", user="alice")[-1]["content"]
@@ -219,23 +297,41 @@ def test_a_briefing_turn_survives_into_model_context():
     signals. Without a branch of its own it flattened to "", and a compacted thread lost the
     morning read entirely — so "why is that?" afterwards had nothing to refer back to."""
     turn_id = history.begin_turn("c3", "alice", "What do I need to know?")
-    history.set_route("c3", "alice", turn_id, sources=["db"], intent="briefing")
-    history.add_card("c3", "alice", turn_id, {
-        "source": "db",
-        "card_type": "briefing",
-        "payload": {
-            "persona": "risk",
-            "label": "Credit and Risk",
-            "headline": "2 things need attention: PAR 30, NPA ratio.",
-            "signals": [
-                {"id": "a", "text": "PAR 30 for Aluva is 14.0% — above the alert threshold of 10.0."},
-                {"id": "b", "text": "NPA ratio is 8.0% — 3.2 standard deviations from its average."},
-            ],
-            "analyses": [{"title": "Portfolio health", "headline": "1 of 4 indicators need attention."}],
-            "worklists": [],
-            "warnings": [],
+    history.set_route(
+        "c3", "alice", turn_id, sources=["db"], intent="briefing"
+    )
+    history.add_card(
+        "c3",
+        "alice",
+        turn_id,
+        {
+            "source": "db",
+            "card_type": "briefing",
+            "payload": {
+                "persona": "risk",
+                "label": "Credit and Risk",
+                "headline": "2 things need attention: PAR 30, NPA ratio.",
+                "signals": [
+                    {
+                        "id": "a",
+                        "text": "PAR 30 for Aluva is 14.0% — above the alert threshold of 10.0.",
+                    },
+                    {
+                        "id": "b",
+                        "text": "NPA ratio is 8.0% — 3.2 standard deviations from its average.",
+                    },
+                ],
+                "analyses": [
+                    {
+                        "title": "Portfolio health",
+                        "headline": "1 of 4 indicators need attention.",
+                    }
+                ],
+                "worklists": [],
+                "warnings": [],
+            },
         },
-    })
+    )
     history.complete_turn("c3", "alice", turn_id)
 
     context = history.transcript("c3", user="alice")[-1]["content"]
@@ -249,19 +345,34 @@ def test_native_transcript_replays_only_complete_call_result_groups():
     assistant = {
         "role": "assistant",
         "content": None,
-        "tool_calls": [{
-            "id": "call_1", "type": "function",
-            "function": {"name": "query_metrics", "arguments": '{"metrics":["par_30"]}'},
-        }],
+        "tool_calls": [
+            {
+                "id": "call_1",
+                "type": "function",
+                "function": {
+                    "name": "query_metrics",
+                    "arguments": '{"metrics":["par_30"]}',
+                },
+            }
+        ],
     }
     tool = {
-        "role": "tool", "tool_call_id": "call_1",
+        "role": "tool",
+        "tool_call_id": "call_1",
         "content": '{"status":"ok","summary":"PAR 30 is 4.2%."}',
     }
     history.add_agent_exchange(
-        "native", "alice", turn_id,
+        "native",
+        "alice",
+        turn_id,
         assistant_message=assistant,
-        calls=[{"id": "call_1", "name": "query_metrics", "arguments": {"metrics": ["par_30"]}}],
+        calls=[
+            {
+                "id": "call_1",
+                "name": "query_metrics",
+                "arguments": {"metrics": ["par_30"]},
+            }
+        ],
         tool_messages=[tool],
     )
     history.set_answer("native", "alice", turn_id, {"text": "PAR 30 is 4.2%."})
@@ -269,7 +380,10 @@ def test_native_transcript_replays_only_complete_call_result_groups():
 
     messages = history.build_native_transcript("native", user="alice")
     assert [message["role"] for message in messages] == [
-        "user", "assistant", "tool", "assistant",
+        "user",
+        "assistant",
+        "tool",
+        "assistant",
     ]
     assert messages[1]["tool_calls"][0]["id"] == "call_1"
     assert messages[2]["tool_call_id"] == "call_1"
@@ -311,32 +425,45 @@ def test_native_transcript_fails_instead_of_silently_dropping_a_complete_exchang
     assistant = {
         "role": "assistant",
         "content": None,
-        "tool_calls": [{
-            "id": "large_1", "type": "function",
-            "function": {"name": "lookup_records", "arguments": "{}"},
-        }],
+        "tool_calls": [
+            {
+                "id": "large_1",
+                "type": "function",
+                "function": {"name": "lookup_records", "arguments": "{}"},
+            }
+        ],
     }
     history.add_agent_exchange(
-        "native-overflow", "alice", turn_id,
+        "native-overflow",
+        "alice",
+        turn_id,
         assistant_message=assistant,
         calls=[{"id": "large_1", "name": "lookup_records", "arguments": {}}],
-        tool_messages=[{
-            "role": "tool",
-            "tool_call_id": "large_1",
-            "content": "x" * 20_000,
-        }],
+        tool_messages=[
+            {
+                "role": "tool",
+                "tool_call_id": "large_1",
+                "content": "x" * 20_000,
+            }
+        ],
     )
     history.complete_turn("native-overflow", "alice", turn_id)
 
-    with pytest.raises(history.NativeTranscriptOverflow, match="context window"):
+    with pytest.raises(
+        history.NativeTranscriptOverflow, match="context window"
+    ):
         history.build_native_transcript(
-            "native-overflow", user="alice", token_budget=100,
+            "native-overflow",
+            user="alice",
+            token_budget=100,
         )
 
 
 def test_named_agent_lookup_call_rows_and_lineage_replay_to_the_followup():
     turn_id = history.begin_turn(
-        "vanitha-followup", "alice", "customers under vanitha",
+        "vanitha-followup",
+        "alice",
+        "customers under vanitha",
     )
     arguments = {
         "selector": "agent_name",
@@ -347,14 +474,16 @@ def test_named_agent_lookup_call_rows_and_lineage_replay_to_the_followup():
     assistant = {
         "role": "assistant",
         "content": None,
-        "tool_calls": [{
-            "id": "lookup_vanitha",
-            "type": "function",
-            "function": {
-                "name": "lookup_records",
-                "arguments": json.dumps(arguments),
-            },
-        }],
+        "tool_calls": [
+            {
+                "id": "lookup_vanitha",
+                "type": "function",
+                "function": {
+                    "name": "lookup_records",
+                    "arguments": json.dumps(arguments),
+                },
+            }
+        ],
     }
     rows = [
         {"customer_id": str(index), "borrower_name": f"Customer {index}"}
@@ -382,27 +511,36 @@ def test_named_agent_lookup_call_rows_and_lineage_replay_to_the_followup():
         "content": json.dumps(tool_payload),
     }
     history.add_agent_exchange(
-        "vanitha-followup", "alice", turn_id,
+        "vanitha-followup",
+        "alice",
+        turn_id,
         assistant_message=assistant,
-        calls=[{
-            "id": "lookup_vanitha",
-            "name": "lookup_records",
-            "arguments": arguments,
-        }],
+        calls=[
+            {
+                "id": "lookup_vanitha",
+                "name": "lookup_records",
+                "arguments": arguments,
+            }
+        ],
         tool_messages=[tool],
     )
     history.set_answer(
-        "vanitha-followup", "alice", turn_id,
+        "vanitha-followup",
+        "alice",
+        turn_id,
         {"text": "Showing 30 linked customers.", "status": "answered"},
     )
     history.complete_turn("vanitha-followup", "alice", turn_id)
 
     messages = history.build_native_transcript(
-        "vanitha-followup", user="alice", token_budget=20_000,
+        "vanitha-followup",
+        user="alice",
+        token_budget=20_000,
     )
 
     assert messages[0] == {
-        "role": "user", "content": "customers under vanitha",
+        "role": "user",
+        "content": "customers under vanitha",
     }
     replayed_arguments = json.loads(
         messages[1]["tool_calls"][0]["function"]["arguments"]
@@ -418,25 +556,36 @@ def test_public_search_arguments_are_redacted_in_durable_native_history():
     assistant = {
         "role": "assistant",
         "content": None,
-        "tool_calls": [{
-            "id": "web_1", "type": "function",
-            "function": {
-                "name": "search_public_web",
-                "arguments": '{"search_query":"customer ID secret-42"}',
-            },
-        }],
+        "tool_calls": [
+            {
+                "id": "web_1",
+                "type": "function",
+                "function": {
+                    "name": "search_public_web",
+                    "arguments": '{"search_query":"customer ID secret-42"}',
+                },
+            }
+        ],
     }
     history.add_agent_exchange(
-        "web-native", "alice", turn_id,
+        "web-native",
+        "alice",
+        turn_id,
         assistant_message=assistant,
-        calls=[{
-            "id": "web_1", "name": "search_public_web",
-            "arguments": {"search_query": "customer ID secret-42"},
-        }],
-        tool_messages=[{
-            "role": "tool", "tool_call_id": "web_1",
-            "content": '{"status":"error","code":"PII_POLICY_VIOLATION"}',
-        }],
+        calls=[
+            {
+                "id": "web_1",
+                "name": "search_public_web",
+                "arguments": {"search_query": "customer ID secret-42"},
+            }
+        ],
+        tool_messages=[
+            {
+                "role": "tool",
+                "tool_call_id": "web_1",
+                "content": '{"status":"error","code":"PII_POLICY_VIOLATION"}',
+            }
+        ],
     )
     record = history.get("web-native", user="alice")
     encoded = str(record.turns[0]["agent_exchanges"])
@@ -447,26 +596,43 @@ def test_public_search_arguments_are_redacted_in_durable_native_history():
 def test_lookup_values_feed_session_private_entity_screening():
     turn_id = history.begin_turn("lookup-native", "alice", "Find Asha Rao")
     history.add_agent_exchange(
-        "lookup-native", "alice", turn_id,
+        "lookup-native",
+        "alice",
+        turn_id,
         assistant_message={
-            "role": "assistant", "content": None,
-            "tool_calls": [{
-                "id": "lookup_1", "type": "function",
-                "function": {"name": "lookup_records", "arguments": "{}"},
-            }],
+            "role": "assistant",
+            "content": None,
+            "tool_calls": [
+                {
+                    "id": "lookup_1",
+                    "type": "function",
+                    "function": {"name": "lookup_records", "arguments": "{}"},
+                }
+            ],
         },
-        calls=[{
-            "id": "lookup_1", "name": "lookup_records",
-            "arguments": {"selector": "borrower_name", "value": "Asha Rao"},
-        }],
-        tool_messages=[{
-            "role": "tool", "tool_call_id": "lookup_1",
-            "content": '{"status":"ok"}',
-        }],
+        calls=[
+            {
+                "id": "lookup_1",
+                "name": "lookup_records",
+                "arguments": {
+                    "selector": "borrower_name",
+                    "value": "Asha Rao",
+                },
+            }
+        ],
+        tool_messages=[
+            {
+                "role": "tool",
+                "tool_call_id": "lookup_1",
+                "content": '{"status":"ok"}',
+            }
+        ],
     )
     history.complete_turn("lookup-native", "alice", turn_id)
 
-    assert history.private_entities("lookup-native", user="alice") == ("Asha Rao",)
+    assert history.private_entities("lookup-native", user="alice") == (
+        "Asha Rao",
+    )
     assert history.private_entities("lookup-native", user="bob") == ()
 
 
@@ -474,55 +640,89 @@ def test_native_exchange_rejects_unmatched_tool_results():
     turn_id = history.begin_turn("native", "alice", "Show PAR 30")
     with pytest.raises(ValueError, match="every persisted native call"):
         history.add_agent_exchange(
-            "native", "alice", turn_id,
-            assistant_message={"role": "assistant", "content": None, "tool_calls": []},
+            "native",
+            "alice",
+            turn_id,
+            assistant_message={
+                "role": "assistant",
+                "content": None,
+                "tool_calls": [],
+            },
             calls=[{"id": "call_1", "name": "query_metrics", "arguments": {}}],
             tool_messages=[],
         )
 
 
-def test_stored_native_results_replay_bounded_but_are_kept_complete(monkeypatch):
+def test_stored_native_results_replay_bounded_but_are_kept_complete(
+    monkeypatch,
+):
     """History keeps every row; the transcript the model sees is shaped like a live one."""
     from app.services.workbench import agent_executor
 
     monkeypatch.setattr(
-        agent_executor.settings, "workbench_agent_observation_max_chars", 6_000,
+        agent_executor.settings,
+        "workbench_agent_observation_max_chars",
+        6_000,
         raising=False,
     )
-    turn_id = history.begin_turn("bounded-replay", "alice", "customers under vanitha")
+    turn_id = history.begin_turn(
+        "bounded-replay", "alice", "customers under vanitha"
+    )
     rows = [
         {"customer_id": str(index), "borrower_name": f"Customer {index}"}
         for index in range(2000)
     ]
     assistant = {
-        "role": "assistant", "content": None,
-        "tool_calls": [{
-            "id": "lookup_big", "type": "function",
-            "function": {"name": "lookup_records", "arguments": "{}"},
-        }],
+        "role": "assistant",
+        "content": None,
+        "tool_calls": [
+            {
+                "id": "lookup_big",
+                "type": "function",
+                "function": {"name": "lookup_records", "arguments": "{}"},
+            }
+        ],
     }
     history.add_agent_exchange(
-        "bounded-replay", "alice", turn_id,
+        "bounded-replay",
+        "alice",
+        turn_id,
         assistant_message=assistant,
-        calls=[{"id": "lookup_big", "name": "lookup_records", "arguments": {}}],
-        tool_messages=[{
-            "role": "tool", "tool_call_id": "lookup_big",
-            "content": json.dumps({
-                "status": "ok", "source": "db", "card_type": "chart",
-                "payload": {"columns": ["customer_id", "borrower_name"], "rows": rows},
-                "summary": "2000 customers.",
-            }),
-        }],
+        calls=[
+            {"id": "lookup_big", "name": "lookup_records", "arguments": {}}
+        ],
+        tool_messages=[
+            {
+                "role": "tool",
+                "tool_call_id": "lookup_big",
+                "content": json.dumps(
+                    {
+                        "status": "ok",
+                        "source": "db",
+                        "card_type": "chart",
+                        "payload": {
+                            "columns": ["customer_id", "borrower_name"],
+                            "rows": rows,
+                        },
+                        "summary": "2000 customers.",
+                    }
+                ),
+            }
+        ],
     )
     history.complete_turn("bounded-replay", "alice", turn_id)
 
     stored = history.get("bounded-replay", user="alice").turns[-1]
-    result_event = next(e for e in stored["events"] if e["type"] == "tool_result")
+    result_event = next(
+        e for e in stored["events"] if e["type"] == "tool_result"
+    )
     stored_rows = json.loads(result_event["payload"]["message"]["content"])
     assert len(stored_rows["payload"]["rows"]) == 2000
 
     messages = history.build_native_transcript(
-        "bounded-replay", user="alice", token_budget=50_000,
+        "bounded-replay",
+        user="alice",
+        token_budget=50_000,
     )
     replayed = json.loads(messages[2]["content"])
     assert len(messages[2]["content"]) <= 6_000
@@ -536,11 +736,15 @@ def test_stored_native_results_replay_bounded_but_are_kept_complete(monkeypatch)
 
 def _assistant_calling(call_id: str, name: str, arguments: str = "{}") -> dict:
     return {
-        "role": "assistant", "content": None,
-        "tool_calls": [{
-            "id": call_id, "type": "function",
-            "function": {"name": name, "arguments": arguments},
-        }],
+        "role": "assistant",
+        "content": None,
+        "tool_calls": [
+            {
+                "id": call_id,
+                "type": "function",
+                "function": {"name": name, "arguments": arguments},
+            }
+        ],
     }
 
 
@@ -556,13 +760,21 @@ def test_native_cards_fill_the_history_rail_without_a_second_tool_result_event()
     """The native `tool_result` event already carries the result; the rendered card is
     kept on the turn for the History rail in the same write, with no event of its own."""
     turn_id = history.begin_turn("one-write", "alice", "Show PAR 30")
-    card = {"source": "db", "card_type": "chart", "payload": {"rows": [{"par_30": 4.2}]},
-            "call_id": "call_1"}
+    card = {
+        "source": "db",
+        "card_type": "chart",
+        "payload": {"rows": [{"par_30": 4.2}]},
+        "call_id": "call_1",
+    }
     history.add_agent_exchange(
-        "one-write", "alice", turn_id,
+        "one-write",
+        "alice",
+        turn_id,
         assistant_message=_assistant_calling("call_1", "query_metrics"),
         calls=[{"id": "call_1", "name": "query_metrics", "arguments": {}}],
-        tool_messages=[_tool("call_1", '{"status":"ok","summary":"PAR 30 is 4.2%."}')],
+        tool_messages=[
+            _tool("call_1", '{"status":"ok","summary":"PAR 30 is 4.2%."}')
+        ],
         cards=[card],
     )
 
@@ -577,18 +789,27 @@ def test_selection_stage_and_nudges_are_stored_but_nudges_are_not_replayed():
     replay policy, and stored nudges are not resent."""
     turn_id = history.begin_turn("exact", "alice", "Show PAR 30")
     history.add_agent_exchange(
-        "exact", "alice", turn_id,
+        "exact",
+        "alice",
+        turn_id,
         assistant_message=_assistant_calling("c1", "query_metrics"),
         calls=[{"id": "c1", "name": "query_metrics", "arguments": {}}],
         tool_messages=[_tool("c1", "error: unknown metric")],
         stage="route",
     )
     history.add_system_message(
-        "exact", "alice", turn_id, content="Inspect the results above.", kind="nudge",
-        stage="continue", round_number=1,
+        "exact",
+        "alice",
+        turn_id,
+        content="Inspect the results above.",
+        kind="nudge",
+        stage="continue",
+        round_number=1,
     )
     history.add_agent_exchange(
-        "exact", "alice", turn_id,
+        "exact",
+        "alice",
+        turn_id,
         assistant_message=_assistant_calling("c2", "query_metrics"),
         calls=[{"id": "c2", "name": "query_metrics", "arguments": {}}],
         tool_messages=[_tool("c2", "PAR 30 is 4.2%.")],
@@ -600,51 +821,86 @@ def test_selection_stage_and_nudges_are_stored_but_nudges_are_not_replayed():
     turn = history.get("exact", user="alice").turns[0]
     assert _types(turn) == [
         "user_message",
-        "llm_assistant_message", "tool_call", "tool_result",
+        "llm_assistant_message",
+        "tool_call",
+        "tool_result",
         "system_message",
-        "llm_assistant_message", "tool_call", "tool_result",
+        "llm_assistant_message",
+        "tool_call",
+        "tool_result",
         "final_answer",
     ]
     assert turn["events"][1]["payload"]["stage"] == "route"
     assert turn["events"][5]["payload"]["stage"] == "continue"
     nudge = turn["events"][4]["payload"]
-    assert nudge["kind"] == "nudge" and nudge["synthetic"] is True and nudge["round"] == 1
-    assert nudge["message"] == {"role": "user", "content": "Inspect the results above."}
+    assert (
+        nudge["kind"] == "nudge"
+        and nudge["synthetic"] is True
+        and nudge["round"] == 1
+    )
+    assert nudge["message"] == {
+        "role": "user",
+        "content": "Inspect the results above.",
+    }
 
     replay = history.build_native_transcript("exact", user="alice")
     assert [m["role"] for m in replay] == [
-        "user", "assistant", "tool", "assistant", "tool", "assistant",
+        "user",
+        "assistant",
+        "tool",
+        "assistant",
+        "tool",
+        "assistant",
     ]
-    assert all(m.get("content") != "Inspect the results above." for m in replay)
+    assert all(
+        m.get("content") != "Inspect the results above." for m in replay
+    )
 
 
 def test_synthesis_candidate_and_final_answer_are_one_event_each():
     turn_id = history.begin_turn("candidate", "alice", "PAR?")
     history.set_synthesis(
-        "candidate", "alice", turn_id, "PAR 30 is about 4%.",
+        "candidate",
+        "alice",
+        turn_id,
+        "PAR 30 is about 4%.",
         message={"role": "assistant", "content": "PAR 30 is about 4%."},
     )
-    history.set_answer("candidate", "alice", turn_id, {"text": "PAR 30 is 4.2%."})
+    history.set_answer(
+        "candidate", "alice", turn_id, {"text": "PAR 30 is 4.2%."}
+    )
     history.complete_turn("candidate", "alice", turn_id)
 
     turn = history.get("candidate", user="alice").turns[0]
-    assert _types(turn) == ["user_message", "llm_assistant_message", "final_answer"]
+    assert _types(turn) == [
+        "user_message",
+        "llm_assistant_message",
+        "final_answer",
+    ]
     candidate = turn["events"][1]["payload"]
-    assert candidate["candidate"] is True and candidate["stage"] == "synthesize"
+    assert (
+        candidate["candidate"] is True and candidate["stage"] == "synthesize"
+    )
     assert candidate["message"]["content"] == "PAR 30 is about 4%."
     assert turn["model_messages"] == ["PAR 30 is about 4%."]
     assert turn["events"][2]["payload"]["answer"]["text"] == "PAR 30 is 4.2%."
     # The compatibility field mirrors the final text; the events keep both.
     assert turn["synthesis"] == "PAR 30 is 4.2%."
     replay = history.build_native_transcript("candidate", user="alice")
-    assert [m["content"] for m in replay if m["role"] == "assistant"] == ["PAR 30 is 4.2%."]
+    assert [m["content"] for m in replay if m["role"] == "assistant"] == [
+        "PAR 30 is 4.2%."
+    ]
 
 
 def test_legacy_exchange_copy_is_written_only_behind_the_flag(monkeypatch):
-    monkeypatch.setattr(history.settings, "workbench_history_write_legacy_exchanges", False)
+    monkeypatch.setattr(
+        history.settings, "workbench_history_write_legacy_exchanges", False
+    )
     turn_id = history.begin_turn("no-legacy", "alice", "PAR?")
     history.add_agent_exchange(
-        "no-legacy", "alice", turn_id,
+        "no-legacy",
+        "alice",
+        turn_id,
         assistant_message=_assistant_calling("c1", "query_metrics"),
         calls=[{"id": "c1", "name": "query_metrics", "arguments": {}}],
         tool_messages=[_tool("c1", "PAR 30 is 4.2%.")],
@@ -654,20 +910,32 @@ def test_legacy_exchange_copy_is_written_only_behind_the_flag(monkeypatch):
     turn = history.get("no-legacy", user="alice").turns[0]
     assert turn["agent_exchanges"] == []
     assert "tool_call" in _types(turn)
-    assert [m["role"] for m in history.build_native_transcript("no-legacy", user="alice")] == [
-        "user", "assistant", "tool",
+    assert [
+        m["role"]
+        for m in history.build_native_transcript("no-legacy", user="alice")
+    ] == [
+        "user",
+        "assistant",
+        "tool",
     ]
     assert history.private_entities("no-legacy", user="alice") == ()
 
-    monkeypatch.setattr(history.settings, "workbench_history_write_legacy_exchanges", True)
+    monkeypatch.setattr(
+        history.settings, "workbench_history_write_legacy_exchanges", True
+    )
     turn_id = history.begin_turn("no-legacy", "alice", "Again?")
     history.add_agent_exchange(
-        "no-legacy", "alice", turn_id,
+        "no-legacy",
+        "alice",
+        turn_id,
         assistant_message=_assistant_calling("c2", "query_metrics"),
         calls=[{"id": "c2", "name": "query_metrics", "arguments": {}}],
         tool_messages=[_tool("c2", "Still 4.2%.")],
     )
-    assert len(history.get("no-legacy", user="alice").turns[1]["agent_exchanges"]) == 1
+    assert (
+        len(history.get("no-legacy", user="alice").turns[1]["agent_exchanges"])
+        == 1
+    )
 
 
 def _compat_replay(turns: list[dict]) -> list[dict]:
@@ -690,30 +958,63 @@ def _version_5_record() -> history.ConversationRecord:
     tool_content = "PAR 30 is 4.2% across 12 branches."
     turns = [
         {
-            "id": "t1", "question": "Show PAR 30", "route": {"sources": ["db"], "intent": "data"},
-            "sources": ["db"], "status": "complete",
-            "agent_exchanges": [{
-                "assistant": _assistant_calling("c1", "query_metrics", '{"metrics":["par_30"]}'),
-                "calls": [{"id": "c1", "name": "query_metrics", "arguments": {"metrics": ["par_30"]}}],
-                "tools": [_tool("c1", tool_content)],
-            }],
-            "cards": [{"source": "db", "card_type": "chart", "payload": {"summary": tool_content}}],
+            "id": "t1",
+            "question": "Show PAR 30",
+            "route": {"sources": ["db"], "intent": "data"},
+            "sources": ["db"],
+            "status": "complete",
+            "agent_exchanges": [
+                {
+                    "assistant": _assistant_calling(
+                        "c1", "query_metrics", '{"metrics":["par_30"]}'
+                    ),
+                    "calls": [
+                        {
+                            "id": "c1",
+                            "name": "query_metrics",
+                            "arguments": {"metrics": ["par_30"]},
+                        }
+                    ],
+                    "tools": [_tool("c1", tool_content)],
+                }
+            ],
+            "cards": [
+                {
+                    "source": "db",
+                    "card_type": "chart",
+                    "payload": {"summary": tool_content},
+                }
+            ],
             "synthesis": "PAR 30 is about 4 percent.",
             "answer": {"text": "PAR 30 is 4.2%."},
-            "refusal": None, "error": None,
-            "created_at": "2025-01-01T00:00:00+00:00", "completed_at": "2025-01-01T00:00:05+00:00",
+            "refusal": None,
+            "error": None,
+            "created_at": "2025-01-01T00:00:00+00:00",
+            "completed_at": "2025-01-01T00:00:05+00:00",
         },
         {
-            "id": "t2", "question": "And by branch?", "route": {"sources": ["db"], "intent": "data"},
-            "sources": ["db"], "status": "partial",
-            "agent_exchanges": [], "cards": [], "synthesis": None, "answer": None,
-            "refusal": None, "error": "The workbench hit an error.",
-            "created_at": "2025-01-01T00:01:00+00:00", "completed_at": "2025-01-01T00:01:02+00:00",
+            "id": "t2",
+            "question": "And by branch?",
+            "route": {"sources": ["db"], "intent": "data"},
+            "sources": ["db"],
+            "status": "partial",
+            "agent_exchanges": [],
+            "cards": [],
+            "synthesis": None,
+            "answer": None,
+            "refusal": None,
+            "error": "The workbench hit an error.",
+            "created_at": "2025-01-01T00:01:00+00:00",
+            "completed_at": "2025-01-01T00:01:02+00:00",
         },
     ]
     return history.ConversationRecord(
-        conversation_id="v5", owner_username="alice", title="Show PAR 30",
-        updated_at=history._now(), turns=turns, record_version=5,
+        conversation_id="v5",
+        owner_username="alice",
+        title="Show PAR 30",
+        updated_at=history._now(),
+        turns=turns,
+        record_version=5,
     )
 
 
@@ -726,8 +1027,11 @@ def test_old_record_version_is_rejected_instead_of_migrated():
 
 def test_save_refuses_a_record_version_it_does_not_understand():
     record = history.ConversationRecord(
-        conversation_id="future", owner_username="alice", title="?",
-        updated_at=history._now(), record_version=history.RECORD_VERSION + 1,
+        conversation_id="future",
+        owner_username="alice",
+        title="?",
+        updated_at=history._now(),
+        record_version=history.RECORD_VERSION + 1,
     )
     with pytest.raises(history.UnknownRecordVersion, match="record version"):
         history._save(record)
@@ -738,20 +1042,29 @@ def test_overflow_names_whether_compaction_could_help():
     big = _assistant_calling("big", "lookup_records")
     turn_id = history.begin_turn("reason", "alice", "Everything")
     history.add_agent_exchange(
-        "reason", "alice", turn_id, assistant_message=big,
+        "reason",
+        "alice",
+        turn_id,
+        assistant_message=big,
         calls=[{"id": "big", "name": "lookup_records", "arguments": {}}],
         tool_messages=[_tool("big", "x" * 2_000)],
     )
     history.complete_turn("reason", "alice", turn_id)
-    with pytest.raises(history.NativeTranscriptOverflow, match="single_turn_exceeds_budget") as one:
-        history.build_native_transcript("reason", user="alice", token_budget=100)
+    with pytest.raises(
+        history.NativeTranscriptOverflow, match="single_turn_exceeds_budget"
+    ) as one:
+        history.build_native_transcript(
+            "reason", user="alice", token_budget=100
+        )
     assert one.value.reason == "single_turn_exceeds_budget"
 
     turn_id = history.begin_turn("reason", "alice", "Again")
     history.set_answer("reason", "alice", turn_id, {"text": "short"})
     history.complete_turn("reason", "alice", turn_id)
     with pytest.raises(history.NativeTranscriptOverflow) as two:
-        history.build_native_transcript("reason", user="alice", token_budget=100)
+        history.build_native_transcript(
+            "reason", user="alice", token_budget=100
+        )
     assert two.value.reason == "conversation_exceeds_budget"
 
 
@@ -766,8 +1079,10 @@ class _FakeCursor:
             self.updates.append(tuple(params))
         else:
             self._selected = [
-                (cid, version, payload) for cid, version, payload in self.rows
-                if version != params[0] and (len(params) == 1 or cid == params[1])
+                (cid, version, payload)
+                for cid, version, payload in self.rows
+                if version != params[0]
+                and (len(params) == 1 or cid == params[1])
             ]
 
     def fetchall(self):
@@ -794,8 +1109,14 @@ def test_cleanup_script_dry_run_and_apply(monkeypatch):
 
     from app.services import db_schema
 
-    path = Path(__file__).resolve().parents[2] / "scripts" / "clear_pre_release_workbench_history.py"
-    spec = importlib.util.spec_from_file_location("clear_pre_release_workbench_history", path)
+    path = (
+        Path(__file__).resolve().parents[2]
+        / "scripts"
+        / "clear_pre_release_workbench_history.py"
+    )
+    spec = importlib.util.spec_from_file_location(
+        "clear_pre_release_workbench_history", path
+    )
     script = importlib.util.module_from_spec(spec)
     # Registered before execution so the script's dataclass can resolve its
     # postponed annotations through sys.modules, as a normal import would.

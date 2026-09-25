@@ -41,10 +41,10 @@ def _field_matches(payload: dict, condition: Any) -> bool:
 def _matches(payload: dict, flt: Any) -> bool:
     if flt is None:
         return True
-    for condition in (flt.must or []):
+    for condition in flt.must or []:
         if not _field_matches(payload, condition):
             return False
-    for condition in (flt.must_not or []):
+    for condition in flt.must_not or []:
         if _field_matches(payload, condition):
             return False
     return True
@@ -65,32 +65,52 @@ class FakeQdrant:
         class _Named:
             name: str
 
-        return type("Result", (), {"collections": [_Named(n) for n in self.collections]})()
+        return type(
+            "Result",
+            (),
+            {"collections": [_Named(n) for n in self.collections]},
+        )()
 
     def create_collection(self, collection_name: str, **_) -> None:
         self.collections.add(collection_name)
 
-    def create_payload_index(self, collection_name: str, field_name: str, **_) -> None:
+    def create_payload_index(
+        self, collection_name: str, field_name: str, **_
+    ) -> None:
         self.indexes.append(field_name)
 
     # --- points ---
     def upsert(self, collection_name: str, points: list, **_) -> None:
         for point in points:
-            self.points[point.id] = FakePoint(point.id, point.vector, dict(point.payload))
+            self.points[point.id] = FakePoint(
+                point.id, point.vector, dict(point.payload)
+            )
 
-    def set_payload(self, collection_name: str, payload: dict, points: Any, **_) -> None:
+    def set_payload(
+        self, collection_name: str, payload: dict, points: Any, **_
+    ) -> None:
         for point in self.points.values():
             if _matches(point.payload, points):
                 point.payload.update(payload)
 
     def delete(self, collection_name: str, points_selector: Any, **_) -> None:
         flt = points_selector.filter
-        doomed = [pid for pid, p in self.points.items() if _matches(p.payload, flt)]
+        doomed = [
+            pid for pid, p in self.points.items() if _matches(p.payload, flt)
+        ]
         for pid in doomed:
             del self.points[pid]
 
-    def count(self, collection_name: str, count_filter: Any = None, **_) -> CountResult:
-        return CountResult(sum(1 for p in self.points.values() if _matches(p.payload, count_filter)))
+    def count(
+        self, collection_name: str, count_filter: Any = None, **_
+    ) -> CountResult:
+        return CountResult(
+            sum(
+                1
+                for p in self.points.values()
+                if _matches(p.payload, count_filter)
+            )
+        )
 
     # --- helpers for assertions ---
     def payloads(self) -> list[dict]:
@@ -114,7 +134,9 @@ def fake_qdrant(monkeypatch):
     client = FakeQdrant()
     monkeypatch.setattr(ingestor, "client", lambda: client)
     monkeypatch.setattr(rag, "get_qdrant", lambda: client)
-    monkeypatch.setattr(rag, "ensure_collection", lambda name: client.collections.add(name))
+    monkeypatch.setattr(
+        rag, "ensure_collection", lambda name: client.collections.add(name)
+    )
     return client
 
 

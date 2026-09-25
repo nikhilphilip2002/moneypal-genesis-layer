@@ -71,7 +71,13 @@ def test_projects_refs_nullable_nested_objects_and_constraints_deterministically
     "schema,message",
     [
         ({"type": "string"}, "top-level object"),
-        ({"type": "object", "properties": [],}, "invalid properties"),
+        (
+            {
+                "type": "object",
+                "properties": [],
+            },
+            "invalid properties",
+        ),
         (
             {
                 "type": "object",
@@ -126,7 +132,10 @@ def test_tool_definition_uses_mcp_descriptor_fields():
     tool = SimpleNamespace(
         name="lookup",
         description="Look something up.",
-        input_schema={"type": "object", "properties": {"id": {"type": "integer"}}},
+        input_schema={
+            "type": "object",
+            "properties": {"id": {"type": "integer"}},
+        },
     )
     assert provider_tool_definition(tool) == {
         "type": "function",

@@ -61,7 +61,12 @@ def start_logging(
 
     from app.core.config import settings
 
-    target_dir = Path(log_dir or getattr(settings, "log_dir", settings.macro_data_dir.parent / "logs"))
+    target_dir = Path(
+        log_dir
+        or getattr(
+            settings, "log_dir", settings.macro_data_dir.parent / "logs"
+        )
+    )
     target_dir.mkdir(parents=True, exist_ok=True)
 
     max_b = int(
@@ -94,7 +99,9 @@ def start_logging(
         _file_handlers.append(raw_handler)
 
     # 2. Parsed LLM outputs & tool calls stream
-    if parsed_enabled and getattr(settings, "log_parsed_outputs_enabled", True):
+    if parsed_enabled and getattr(
+        settings, "log_parsed_outputs_enabled", True
+    ):
         parsed_handler = RotatingFileHandler(
             target_dir / "llm_parsed_outputs.jsonl",
             maxBytes=max_b,
@@ -135,16 +142,24 @@ def start_logging(
     _log_queue = queue.Queue(-1)
     queue_handler = ContextInjectingQueueHandler(_log_queue)
 
-    for logger_name in (RAW_LLM_LOGGER_NAME, PARSED_LLM_LOGGER_NAME, EVENT_LOGGER_NAME):
+    for logger_name in (
+        RAW_LLM_LOGGER_NAME,
+        PARSED_LLM_LOGGER_NAME,
+        EVENT_LOGGER_NAME,
+    ):
         logger = logging.getLogger(logger_name)
         logger.setLevel(logging.DEBUG)
         # Avoid duplicating heavy json payloads to root/console
         logger.propagate = False
         # Remove existing QueueHandlers to avoid double logging on reload
-        logger.handlers = [h for h in logger.handlers if not isinstance(h, QueueHandler)]
+        logger.handlers = [
+            h for h in logger.handlers if not isinstance(h, QueueHandler)
+        ]
         logger.addHandler(queue_handler)
 
-    _listener = QueueListener(_log_queue, *handlers, respect_handler_level=True)
+    _listener = QueueListener(
+        _log_queue, *handlers, respect_handler_level=True
+    )
     _listener.start()
     return _listener
 

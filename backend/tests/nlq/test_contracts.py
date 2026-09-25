@@ -41,12 +41,14 @@ class TestFilter:
     @pytest.mark.parametrize(
         "kwargs",
         [
-            dict(field="product", op="in", value="16"),          # scalar for a list op
-            dict(field="product", op="in", value=[]),            # empty list
-            dict(field="amount", op="between", value=[1]),       # wrong arity
+            dict(field="product", op="in", value="16"),  # scalar for a list op
+            dict(field="product", op="in", value=[]),  # empty list
+            dict(field="amount", op="between", value=[1]),  # wrong arity
             dict(field="amount", op="between", value=[1, 2, 3]),
-            dict(field="branch", op="eq", value=None),           # missing value
-            dict(field="branch", op="eq", value=["3", "4"]),     # list for a scalar op
+            dict(field="branch", op="eq", value=None),  # missing value
+            dict(
+                field="branch", op="eq", value=["3", "4"]
+            ),  # list for a scalar op
         ],
     )
     def test_rejects_malformed_filters(self, kwargs):
@@ -73,8 +75,10 @@ class TestPeriod:
     def test_rejects_relative_period_mixed_with_explicit_bounds(self):
         with pytest.raises(ValidationError, match="cannot combine"):
             Period(
-                grain="month", relative="all_time",
-                start=date(2026, 1, 1), end=date(2026, 12, 31),
+                grain="month",
+                relative="all_time",
+                start=date(2026, 1, 1),
+                end=date(2026, 12, 31),
             )
 
     @pytest.mark.parametrize(
@@ -90,7 +94,9 @@ class TestPeriod:
 
     def test_is_resolved_only_with_concrete_dates(self):
         assert not Period(relative="last_quarter").is_resolved
-        assert Period(start=date(2026, 1, 1), end=date(2026, 3, 31)).is_resolved
+        assert Period(
+            start=date(2026, 1, 1), end=date(2026, 3, 31)
+        ).is_resolved
 
     def test_relative_vocabulary_is_closed(self):
         """An open string would let the planner invent periods the compiler cannot honour."""
@@ -131,14 +137,20 @@ class TestQuerySpec:
 
     def test_cache_key_changes_with_meaning(self):
         assert _spec(limit=50).cache_key() != _spec(limit=51).cache_key()
-        assert _spec(dimensions=["branch"]).cache_key() != _spec(dimensions=["product"]).cache_key()
+        assert (
+            _spec(dimensions=["branch"]).cache_key()
+            != _spec(dimensions=["product"]).cache_key()
+        )
 
     def test_round_trips_through_json(self):
         original = _spec(
             filters=[Filter(field="product", op="in", value=[1, 16])],
             compare_to=Period(grain="month", relative="last_fy"),
         )
-        assert QuerySpec.model_validate(original.model_dump(mode="json")) == original
+        assert (
+            QuerySpec.model_validate(original.model_dump(mode="json"))
+            == original
+        )
 
 
 class TestPlanUnion:
@@ -151,18 +163,25 @@ class TestPlanUnion:
                 {"route": "queryspec", "spec": None, "confidence": 0.9},
                 QuerySpecPlan,
             ),
-            ({"route": "clarify", "question": "FY or calendar year?"}, ClarifyPlan),
+            (
+                {"route": "clarify", "question": "FY or calendar year?"},
+                ClarifyPlan,
+            ),
             ({"route": "refuse", "reason": "predictive"}, RefusalPlan),
         ],
     )
     def test_discriminates_on_route(self, payload, expected):
         if payload.get("spec", "missing") is None:
             payload["spec"] = _spec().model_dump(mode="json")
-        assert isinstance(_PlanEnvelope.model_validate({"plan": payload}).plan, expected)
+        assert isinstance(
+            _PlanEnvelope.model_validate({"plan": payload}).plan, expected
+        )
 
     def test_unknown_route_is_rejected(self):
         with pytest.raises(ValidationError):
-            _PlanEnvelope.model_validate({"plan": {"route": "execute_sql", "sql": "SELECT 1"}})
+            _PlanEnvelope.model_validate(
+                {"plan": {"route": "execute_sql", "sql": "SELECT 1"}}
+            )
 
     def test_refusal_reason_is_a_closed_set(self):
         with pytest.raises(ValidationError):
@@ -182,7 +201,9 @@ class TestChartSpec:
         chart = ChartSpec(
             chart_type="kpi",
             title="Disbursement",
-            lineage=Lineage(path="postgres_mcp", sql="SELECT 1", unverified=True),
+            lineage=Lineage(
+                path="postgres_mcp", sql="SELECT 1", unverified=True
+            ),
         )
         assert chart.lineage.unverified is True
         assert chart.rows == []

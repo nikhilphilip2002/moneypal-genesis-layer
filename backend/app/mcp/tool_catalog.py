@@ -55,7 +55,9 @@ class ToolCatalog:
         definitions: list[dict[str, Any]],
     ) -> None:
         retained = {
-            name: entry for name, entry in self._entries.items() if entry.owner != owner
+            name: entry
+            for name, entry in self._entries.items()
+            if entry.owner != owner
         }
         incoming: dict[str, CatalogTool] = {}
         for definition in definitions:
@@ -66,7 +68,9 @@ class ToolCatalog:
                     f"duplicate MCP tool name {name!r} owned by {other} and {owner}"
                 )
             if name in incoming:
-                raise ToolCatalogError(f"duplicate MCP tool name {name!r} from {owner}")
+                raise ToolCatalogError(
+                    f"duplicate MCP tool name {name!r} from {owner}"
+                )
             incoming[name] = CatalogTool(name, owner, deepcopy(definition))
         self._entries = {**retained, **incoming}
 
@@ -86,12 +90,18 @@ class ToolCatalog:
             if stale:
                 details.append("policy without MCP tool: " + ", ".join(stale))
             self._local_ready = False
-            raise ToolCatalogError("Workbench MCP classification mismatch (" + "; ".join(details) + ")")
+            raise ToolCatalogError(
+                "Workbench MCP classification mismatch ("
+                + "; ".join(details)
+                + ")"
+            )
         self._replace_owner("workbench", definitions)
         self._local_ready = True
         return sorted(discovered)
 
-    async def discover_postgres(self, *, check_health: bool = True) -> list[str]:
+    async def discover_postgres(
+        self, *, check_health: bool = True
+    ) -> list[str]:
         from app.mcp import postgres_client
 
         try:
@@ -120,7 +130,9 @@ class ToolCatalog:
         """Register already-discovered canonical definitions without network I/O."""
         self._replace_owner("postgres", definitions)
         self._postgres_ready = bool(definitions)
-        self._postgres_error = "" if definitions else "PostgreSQL MCP has no model tools."
+        self._postgres_error = (
+            "" if definitions else "PostgreSQL MCP has no model tools."
+        )
         return sorted(_definition_name(item) for item in definitions)
 
     async def initialize(self) -> dict[str, Any]:
@@ -133,7 +145,9 @@ class ToolCatalog:
             pass
         return self.readiness()
 
-    async def model_tool_definitions(self, policy: Any) -> list[dict[str, Any]]:
+    async def model_tool_definitions(
+        self, policy: Any
+    ) -> list[dict[str, Any]]:
         if not self._local_ready:
             await self.discover_local()
         allowed_local = set(visible_runtime_tool_names(policy))
@@ -146,9 +160,9 @@ class ToolCatalog:
                 continue
             definition = deepcopy(entry.definition)
             if name == "search_curated_knowledge":
-                definition["function"]["parameters"]["properties"]["domain"]["enum"] = (
-                    allowed_curated_domains(policy)
-                )
+                definition["function"]["parameters"]["properties"]["domain"][
+                    "enum"
+                ] = allowed_curated_domains(policy)
             definitions.append(definition)
         return definitions
 
@@ -159,7 +173,10 @@ class ToolCatalog:
             raise ToolCatalogError(f"unknown MCP tool {name!r}") from exc
 
     def is_postgres(self, name: str) -> bool:
-        return self._entries.get(name, None) is not None and self._entries[name].owner == "postgres"
+        return (
+            self._entries.get(name, None) is not None
+            and self._entries[name].owner == "postgres"
+        )
 
     def names(self, *, owner: ToolOwner | None = None) -> list[str]:
         return sorted(
@@ -183,12 +200,15 @@ class ToolCatalog:
         from app.mcp import postgres_client, workbench_client
 
         owners = {
-            owner: self.names(owner=owner) for owner in ("workbench", "postgres")
+            owner: self.names(owner=owner)
+            for owner in ("workbench", "postgres")
         }
         return {
             "status": (
-                "ok" if self._local_ready and self._postgres_ready
-                else "degraded" if self._local_ready
+                "ok"
+                if self._local_ready and self._postgres_ready
+                else "degraded"
+                if self._local_ready
                 else "unavailable"
             ),
             "owners": owners,

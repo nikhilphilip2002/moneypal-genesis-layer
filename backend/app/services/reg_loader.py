@@ -1,4 +1,5 @@
 """Config-driven regulation registry (Team C). One JSON per category in backend/registry/regulations/."""
+
 from app.core.config import REGISTRY_DIR
 from app.services import json_registry
 

@@ -139,15 +139,21 @@ SOURCES: dict[str, Source] = {
     ),
 }
 
-EXTERNAL_CONNECTOR_SOURCES = frozenset({"macro", "competitive", "regulatory", "web"})
+EXTERNAL_CONNECTOR_SOURCES = frozenset(
+    {"macro", "competitive", "regulatory", "web"}
+)
 
 
 def visible_sources(
-    role: str, allowed_source_ids: tuple[str, ...] | list[str] | set[str] | None = None,
+    role: str,
+    allowed_source_ids: tuple[str, ...] | list[str] | set[str] | None = None,
 ) -> list[Source]:
-    allowed = set(allowed_source_ids) if allowed_source_ids is not None else None
+    allowed = (
+        set(allowed_source_ids) if allowed_source_ids is not None else None
+    )
     return [
-        s for s in SOURCES.values()
+        s
+        for s in SOURCES.values()
         if s.visible_to(role)
         and (allowed is None or s.id in allowed)
         and (

@@ -54,7 +54,10 @@ def stable_hash(value: str | bytes) -> str:
 def serialize_messages(messages: Sequence[ChatMessage]) -> bytes:
     """Serialize messages deterministically for byte-stability tests and fingerprints."""
     return json.dumps(
-        list(messages), ensure_ascii=False, separators=(",", ":"), sort_keys=True,
+        list(messages),
+        ensure_ascii=False,
+        separators=(",", ":"),
+        sort_keys=True,
     ).encode("utf-8")
 
 
@@ -87,8 +90,11 @@ class CallRecord:
         return asdict(self)
 
 
-_collector: contextvars.ContextVar[list[CallRecord] | None] = contextvars.ContextVar(
-    "llm_call_collector", default=None,
+_collector: contextvars.ContextVar[list[CallRecord] | None] = (
+    contextvars.ContextVar(
+        "llm_call_collector",
+        default=None,
+    )
 )
 
 
@@ -124,20 +130,24 @@ def summarize_calls(records: Sequence[CallRecord]) -> dict[str, Any]:
     )
     return {
         "model_call_count": len(records),
-        "prompt_tokens": max((item.prompt_tokens for item in records), default=0),
+        "prompt_tokens": max(
+            (item.prompt_tokens for item in records), default=0
+        ),
         "total_prompt_tokens": sum(item.prompt_tokens for item in records),
-        "cached_prompt_tokens": sum(item.cached_prompt_tokens for item in records),
-        "cache_write_prompt_tokens": sum(item.cache_write_prompt_tokens for item in records),
-        "uncached_prompt_tokens": sum(item.uncached_prompt_tokens for item in records),
+        "cached_prompt_tokens": sum(
+            item.cached_prompt_tokens for item in records
+        ),
+        "cache_write_prompt_tokens": sum(
+            item.cache_write_prompt_tokens for item in records
+        ),
+        "uncached_prompt_tokens": sum(
+            item.uncached_prompt_tokens for item in records
+        ),
         "completion_tokens": sum(item.completion_tokens for item in records),
         "model_duration_ms": sum(item.duration_ms for item in records),
         "retry_count": sum(item.retries for item in records),
         "tool_call_count": sum(item.tool_call_count for item in records),
-        "tool_names": [
-            name
-            for item in records
-            for name in item.tool_names
-        ],
+        "tool_names": [name for item in records for name in item.tool_names],
         # Provider-neutral token-equivalent work. Currency reporting can multiply these
         # categories by the deployed provider's current price without losing detail.
         "weighted_input_units": round(weighted_input_units, 2),
@@ -153,7 +163,8 @@ def call_counts(records: Sequence[CallRecord]) -> dict[str, int]:
 
 
 def budget_violations(
-    records: Sequence[CallRecord], limits: dict[str, int],
+    records: Sequence[CallRecord],
+    limits: dict[str, int],
 ) -> dict[str, tuple[int, int]]:
     """Return ``purpose -> (actual, limit)`` for model-call budget test failures."""
     counts = call_counts(records)

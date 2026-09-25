@@ -58,24 +58,44 @@ def _db_available() -> bool:
         return False
 
 
-requires_db = pytest.mark.skipif(not _db_available(), reason="PostgreSQL warehouse not reachable")
+requires_db = pytest.mark.skipif(
+    not _db_available(), reason="PostgreSQL warehouse not reachable"
+)
 
 
 class TestPeriodParsing:
     def test_monthly(self):
-        assert parse_period_range("monthly", "2026-05") == ("2026-05-01", "2026-05-31")
+        assert parse_period_range("monthly", "2026-05") == (
+            "2026-05-01",
+            "2026-05-31",
+        )
 
     def test_monthly_leap_february(self):
-        assert parse_period_range("monthly", "2028-02") == ("2028-02-01", "2028-02-29")
+        assert parse_period_range("monthly", "2028-02") == (
+            "2028-02-01",
+            "2028-02-29",
+        )
 
     def test_quarterly_is_fiscal(self):
         # Q1 of FY2026 is Apr-Jun 2026; Q4 spills into the next calendar year.
-        assert parse_period_range("quarterly", "2026-Q1") == ("2026-04-01", "2026-06-30")
-        assert parse_period_range("quarterly", "2025-Q4") == ("2026-01-01", "2026-03-31")
+        assert parse_period_range("quarterly", "2026-Q1") == (
+            "2026-04-01",
+            "2026-06-30",
+        )
+        assert parse_period_range("quarterly", "2025-Q4") == (
+            "2026-01-01",
+            "2026-03-31",
+        )
 
     def test_yearly(self):
-        assert parse_period_range("yearly", "2025-2026") == ("2025-04-01", "2026-03-31")
-        assert parse_period_range("yearly", "2025") == ("2025-04-01", "2026-03-31")
+        assert parse_period_range("yearly", "2025-2026") == (
+            "2025-04-01",
+            "2026-03-31",
+        )
+        assert parse_period_range("yearly", "2025") == (
+            "2025-04-01",
+            "2026-03-31",
+        )
 
     @pytest.mark.parametrize(
         "frequency,period",
@@ -116,12 +136,20 @@ class TestTemplateIntegrity:
                         continue
                     text = str(cell.value)
                     if PAN_RE.search(text):
-                        offences.append(f"{name}!{cell.coordinate} PAN {text!r}")
+                        offences.append(
+                            f"{name}!{cell.coordinate} PAN {text!r}"
+                        )
                     if EMAIL_RE.search(text):
-                        offences.append(f"{name}!{cell.coordinate} email {text!r}")
+                        offences.append(
+                            f"{name}!{cell.coordinate} email {text!r}"
+                        )
                     if isinstance(cell.value, (int, float)) and cell.row >= 13:
-                        offences.append(f"{name}!{cell.coordinate} figure {cell.value!r}")
-        assert not offences, "prior filing data in template: " + "; ".join(offences[:10])
+                        offences.append(
+                            f"{name}!{cell.coordinate} figure {cell.value!r}"
+                        )
+        assert not offences, "prior filing data in template: " + "; ".join(
+            offences[:10]
+        )
 
     def test_second_tier_column_headers_survive_blanking(self):
         """Blanking must strip reported figures without taking header labels with them:
@@ -131,7 +159,10 @@ class TestTemplateIntegrity:
         assert _norm(part8a["G13"].value) == "min"
         assert _norm(part8a["H13"].value) == "max"
         assert _norm(part8a["I13"].value).startswith("weighted average")
-        assert all(_norm(wb["DNBS02_PART8C"][f"{c}13"].value) == "amount" for c in "CD")
+        assert all(
+            _norm(wb["DNBS02_PART8C"][f"{c}13"].value) == "amount"
+            for c in "CD"
+        )
 
     def test_cell_map_matches_template(self):
         """Every declared column must sit under the header it claims."""
@@ -141,7 +172,9 @@ class TestTemplateIntegrity:
         """Guard the guard: a moved header must be caught, not written through."""
         wb = openpyxl.load_workbook(get_template_path())
         block = TABLE_BLOCKS[0]
-        wb[block.sheet][f"{block.columns[0].column}{block.header_row}"] = "Something Else"
+        wb[block.sheet][f"{block.columns[0].column}{block.header_row}"] = (
+            "Something Else"
+        )
         with pytest.raises(CellMapError):
             validate_cell_map(wb)
 
@@ -152,7 +185,9 @@ class TestTemplateIntegrity:
         # the investment-income "(a) Interest", so it must be rejected unless scoped.
         with pytest.raises(CellMapError):
             _find_label_row(sheet, "(a) Interest")
-        assert _find_label_row(sheet, "(a) Interest", within=svc.PART3_INVESTMENT_SCOPE)
+        assert _find_label_row(
+            sheet, "(a) Interest", within=svc.PART3_INVESTMENT_SCOPE
+        )
 
     def test_label_lookup_rejects_missing_label(self):
         wb = openpyxl.load_workbook(get_template_path())
@@ -185,7 +220,9 @@ def report():
 @pytest.fixture(scope="module")
 def workbook():
     return openpyxl.load_workbook(
-        io.BytesIO(generate_dnbs02_excel(frequency="monthly", period="2026-05"))
+        io.BytesIO(
+            generate_dnbs02_excel(frequency="monthly", period="2026-05")
+        )
     )
 
 
@@ -203,17 +240,26 @@ class TestReportData:
     def test_every_section_declares_provenance(self, report):
         assert report["provenance"]
         for name, entry in report["provenance"].items():
-            assert entry["status"] in {"ok", "empty", "error", "no_source"}, name
+            assert entry["status"] in {"ok", "empty", "error", "no_source"}, (
+                name
+            )
             if entry["status"] in {"error", "no_source"}:
-                assert entry.get("error"), f"{name} must explain why it has no data"
+                assert entry.get("error"), (
+                    f"{name} must explain why it has no data"
+                )
 
     def test_is_live_only_when_all_sections_resolved(self, report):
-        expected = bool(report["live_sections"]) and not report["degraded_sections"]
+        expected = (
+            bool(report["live_sections"]) and not report["degraded_sections"]
+        )
         assert report["is_live_pg"] is expected
 
     def test_sections_without_a_source_are_empty(self, report):
         """No fabricated stand-ins for sections the warehouse cannot back."""
-        assert report["provenance"]["annex10_investment_entities"]["status"] == "no_source"
+        assert (
+            report["provenance"]["annex10_investment_entities"]["status"]
+            == "no_source"
+        )
         for inv in report["annex10_top_investments"]:
             assert inv["entity_name"] == ""
             assert inv["pan"] == ""
@@ -221,7 +267,10 @@ class TestReportData:
     def test_annex2_uses_the_migrated_share_register(self, report):
         assert report["provenance"]["annex2_shareholders"]["status"] == "ok"
         assert 1 <= len(report["annex2_shareholders"]) <= 10
-        assert all(row["name"] and row["num_shares"] > 0 for row in report["annex2_shareholders"])
+        assert all(
+            row["name"] and row["num_shares"] > 0
+            for row in report["annex2_shareholders"]
+        )
         assert all(row["pan"] == "" for row in report["annex2_shareholders"])
 
     def test_crar_is_null_without_risk_weighted_assets(self, report):
@@ -239,43 +288,72 @@ class TestReportData:
         assert 0 < len(borrowers) <= 25
         ids = [b["cust_id"] for b in borrowers]
         assert len(ids) == len(set(ids)), "a borrower must appear at most once"
-        assert borrowers == sorted(borrowers, key=lambda b: b["total_outstanding"], reverse=True)
+        assert borrowers == sorted(
+            borrowers, key=lambda b: b["total_outstanding"], reverse=True
+        )
 
     def test_annex9_carries_real_pans(self, report):
         pans = [b["pan"] for b in report["annex9_top_borrowers"]]
-        assert all(PAN_RE.fullmatch(p) for p in pans if p), "PANs must be real, not 'NA'"
+        assert all(PAN_RE.fullmatch(p) for p in pans if p), (
+            "PANs must be real, not 'NA'"
+        )
 
     def test_annex9_uses_cif_borrower_type(self, report):
-        borrower_types = [b["borrower_type"] for b in report["annex9_top_borrowers"]]
+        borrower_types = [
+            b["borrower_type"] for b in report["annex9_top_borrowers"]
+        ]
         assert borrower_types
-        assert all(value in {"Individual", "Corporate", ""} for value in borrower_types)
+        assert all(
+            value in {"Individual", "Corporate", ""}
+            for value in borrower_types
+        )
         assert any(borrower_types)
 
     def test_part8_amounts_reconcile_with_the_loan_book(self, report):
-        total = sum(row["amount_lakhs"] for row in report["part8_asset_quality"])
-        assert total == pytest.approx(report["summary"]["total_loan_book"], abs=0.05)
+        total = sum(
+            row["amount_lakhs"] for row in report["part8_asset_quality"]
+        )
+        assert total == pytest.approx(
+            report["summary"]["total_loan_book"], abs=0.05
+        )
 
     def test_msme_empty_join_is_disclosed(self, report):
         """The refreshed source has no account-number overlap between the MSME map and
         loan master. It remains blank rather than being inferred from product codes."""
         assert report["provenance"]["part8a_msme"]["status"] == "empty"
-        assert "gnlnac_ln_intrate" in report["provenance"]["part8a_msme"]["note"]
+        assert (
+            "gnlnac_ln_intrate" in report["provenance"]["part8a_msme"]["note"]
+        )
         assert report["part8a_msme"] == []
 
     def test_coverage_is_disclosed(self, report):
         """genln_rpt_day covers product 16 only; the excluded remainder must be stated."""
         coverage = report["coverage"]
-        assert coverage["covered_lakhs"] == report["summary"]["total_loan_book"]
+        assert (
+            coverage["covered_lakhs"] == report["summary"]["total_loan_book"]
+        )
         assert coverage["uncovered_accounts"] > 0
         assert 0 < coverage["covered_pct"] < 100
 
     def test_core_accounts_are_reconciliation_only(self, report):
         reconciliation = report["core_account_reconciliation"]
-        assert report["provenance"]["core_account_reconciliation"]["status"] == "ok"
+        assert (
+            report["provenance"]["core_account_reconciliation"]["status"]
+            == "ok"
+        )
         assert reconciliation["snapshot_accounts"] > 0
-        for key in ("core_account_matches", "balance_matches", "customer_matches"):
-            assert 0 <= reconciliation[key] <= reconciliation["snapshot_accounts"]
-        assert "Validation only" in report["provenance"]["core_account_reconciliation"]["note"]
+        for key in (
+            "core_account_matches",
+            "balance_matches",
+            "customer_matches",
+        ):
+            assert (
+                0 <= reconciliation[key] <= reconciliation["snapshot_accounts"]
+            )
+        assert (
+            "Validation only"
+            in report["provenance"]["core_account_reconciliation"]["note"]
+        )
 
     def test_owned_funds_reconcile_with_part1(self, report):
         totals = {
@@ -290,7 +368,10 @@ class TestReportData:
     def test_different_periods_give_different_figures(self, report):
         """The old generator ignored the period entirely for DB-backed sections."""
         april = get_dnbs02_report_data(frequency="monthly", period="2026-04")
-        assert april["summary"]["total_loan_book"] != report["summary"]["total_loan_book"]
+        assert (
+            april["summary"]["total_loan_book"]
+            != report["summary"]["total_loan_book"]
+        )
 
 
 @requires_db
@@ -306,8 +387,12 @@ class TestExcelExport:
                     text = str(cell.value or "")
                     for marker in PRIOR_FILING_MARKERS:
                         if marker.lower() in text.lower():
-                            offences.append(f"{name}!{cell.coordinate}: {marker}")
-        assert not offences, "prior filing data leaked: " + "; ".join(offences[:10])
+                            offences.append(
+                                f"{name}!{cell.coordinate}: {marker}"
+                            )
+        assert not offences, "prior filing data leaked: " + "; ".join(
+            offences[:10]
+        )
 
     def test_untouched_sheets_carry_no_reported_data(self, workbook):
         """Sheets the generator has no source for must not carry inherited figures.
@@ -315,7 +400,12 @@ class TestExcelExport:
         Static RBI instruction text is legitimate template content and stays; what must
         never appear is reported data - figures, PANs or contact details.
         """
-        for name in ("AuthorisedSignatory", "DNBS02_Annex3", "DNBS02_Annex12", "DNBS02_PART9"):
+        for name in (
+            "AuthorisedSignatory",
+            "DNBS02_Annex3",
+            "DNBS02_Annex12",
+            "DNBS02_PART9",
+        ):
             offences = []
             for row in workbook[name].iter_rows(min_row=13):
                 for cell in row:
@@ -323,9 +413,13 @@ class TestExcelExport:
                         continue
                     if isinstance(cell.value, (int, float)):
                         offences.append(f"{cell.coordinate}={cell.value!r}")
-                    elif PAN_RE.search(str(cell.value)) or EMAIL_RE.search(str(cell.value)):
+                    elif PAN_RE.search(str(cell.value)) or EMAIL_RE.search(
+                        str(cell.value)
+                    ):
                         offences.append(f"{cell.coordinate}={cell.value!r}")
-            assert not offences, f"{name} carries reported data: {offences[:5]}"
+            assert not offences, (
+                f"{name} carries reported data: {offences[:5]}"
+            )
 
     def test_part1_values_land_on_their_rbi_lines(self, workbook, report):
         """Verified against the label in column B, not against a row number."""
@@ -337,27 +431,45 @@ class TestExcelExport:
         }
         share_row = _find_label_row(sheet, "2 Share Capital")
         reserves_row = _find_label_row(sheet, "3 Reserves and Surplus")
-        assert sheet[f"C{share_row}"].value == pytest.approx(totals["Share Capital"])
-        assert sheet[f"C{reserves_row}"].value == pytest.approx(totals["Reserves and Surplus"])
+        assert sheet[f"C{share_row}"].value == pytest.approx(
+            totals["Share Capital"]
+        )
+        assert sheet[f"C{reserves_row}"].value == pytest.approx(
+            totals["Reserves and Surplus"]
+        )
 
     def test_owned_funds_land_on_the_owned_fund_line(self, workbook, report):
         sheet = workbook["DNBS02_PART4"]
         row = _find_label_row(sheet, "Owned Fund (from Part 1)")
-        assert sheet[f"C{row}"].value == pytest.approx(report["summary"]["owned_funds"])
+        assert sheet[f"C{row}"].value == pytest.approx(
+            report["summary"]["owned_funds"]
+        )
 
-    def test_part8a_rates_land_in_min_max_weighted_columns(self, workbook, report):
+    def test_part8a_rates_land_in_min_max_weighted_columns(
+        self, workbook, report
+    ):
         """The old writer wrote a single average into G, which is the Min column."""
         sheet = workbook["DNBS02_PART8A"]
         row = _find_label_row(sheet, "A.1 Direct Exposure")
         if report["part8a_msme"]:
             msme = report["part8a_msme"][0]
-            assert sheet[f"G{row}"].value == pytest.approx(msme["min_interest_rate"])
-            assert sheet[f"H{row}"].value == pytest.approx(msme["max_interest_rate"])
-            assert sheet[f"I{row}"].value == pytest.approx(msme["weighted_avg_interest_rate"])
+            assert sheet[f"G{row}"].value == pytest.approx(
+                msme["min_interest_rate"]
+            )
+            assert sheet[f"H{row}"].value == pytest.approx(
+                msme["max_interest_rate"]
+            )
+            assert sheet[f"I{row}"].value == pytest.approx(
+                msme["weighted_avg_interest_rate"]
+            )
             assert sheet[f"C{row}"].value == msme["account_count"]
-            assert sheet[f"D{row}"].value == pytest.approx(msme["amount_lakhs"])
+            assert sheet[f"D{row}"].value == pytest.approx(
+                msme["amount_lakhs"]
+            )
         else:
-            assert all(sheet[f"{column}{row}"].value is None for column in "CDGHI")
+            assert all(
+                sheet[f"{column}{row}"].value is None for column in "CDGHI"
+            )
 
     def test_part8c_standard_and_npa_lines(self, workbook, report):
         sheet = workbook["DNBS02_PART8C"]
@@ -380,7 +492,9 @@ class TestExcelExport:
                 first[col.field] if first[col.field] != "" else None
             )
 
-    def test_annex13_uses_branch_master_without_inventing_geography(self, workbook, report):
+    def test_annex13_uses_branch_master_without_inventing_geography(
+        self, workbook, report
+    ):
         sheet = workbook["DNBS02_Annex13"]
         assert _norm(sheet["H12"].value).startswith("opening date")
         assert _norm(sheet["I12"].value).startswith("closing date")
@@ -421,19 +535,29 @@ class TestExcelExport:
                     width = svc._effective_width(sheet, cell)
                     per_line = max(int(width * 1.1), 1)
                     lines = sum(
-                        max(1, -(-len(part) // per_line)) for part in cell.value.split("\n")
+                        max(1, -(-len(part) // per_line))
+                        for part in cell.value.split("\n")
                     )
-                    height = sheet.row_dimensions[cell.row].height or svc.DEFAULT_ROW_HEIGHT
+                    height = (
+                        sheet.row_dimensions[cell.row].height
+                        or svc.DEFAULT_ROW_HEIGHT
+                    )
                     if lines * svc.DEFAULT_ROW_HEIGHT > height + 0.5:
-                        offenders.append(f"{name}!{cell.coordinate} ({cell.value[:30]!r})")
-        assert not offenders, "wrapped cells overflow their row: " + "; ".join(offenders[:8])
+                        offenders.append(
+                            f"{name}!{cell.coordinate} ({cell.value[:30]!r})"
+                        )
+        assert not offenders, "wrapped cells overflow their row: " + "; ".join(
+            offenders[:8]
+        )
 
     def test_disclosures_do_not_collide_with_template_labels(self, workbook):
         """The disclosures belong in the General remarks value cell, not in the label
         column rows that already carry "Tool version" / "Report status" / "Date of Audit"."""
         sheet = workbook["FilingInfo"]
         remarks_row = _find_label_row(sheet, "General remarks")
-        assert sheet[f"C{remarks_row}"].value, "disclosures must land in General remarks"
+        assert sheet[f"C{remarks_row}"].value, (
+            "disclosures must land in General remarks"
+        )
         # Those label rows must still read as the template wrote them.
         for label in ("Tool version", "Report status", "Date of Audit"):
             assert _find_label_row(sheet, label)
@@ -441,7 +565,10 @@ class TestExcelExport:
     def test_filinginfo_states_the_limitations(self, workbook, report):
         sheet = workbook["FilingInfo"]
         text = " ".join(
-            str(cell.value) for row in sheet.iter_rows() for cell in row if cell.value is not None
+            str(cell.value)
+            for row in sheet.iter_rows()
+            for cell in row
+            if cell.value is not None
         )
         assert report["snapshot_date"] in text
         if report["degraded_sections"]:
@@ -472,23 +599,33 @@ class TestSpecRegistry:
                 _find_label_row(wb[fs.sheet], fs.rbi_line, fs.within)
             except CellMapError as exc:
                 problems.append(str(exc))
-        assert not problems, "unresolvable field specs:\n  " + "\n  ".join(problems)
+        assert not problems, "unresolvable field specs:\n  " + "\n  ".join(
+            problems
+        )
 
     def test_every_spec_names_a_real_section(self):
         known = set(svc.SECTIONS_BY_KEY) | set(spec.SOURCES) | {"_bindings"}
-        gaps = {fs.section for fs in spec.FIELD_SPECS if fs.kind == spec.KIND_NO_SOURCE}
+        gaps = {
+            fs.section
+            for fs in spec.FIELD_SPECS
+            if fs.kind == spec.KIND_NO_SOURCE
+        }
         unknown = {
             fs.section
             for fs in spec.FIELD_SPECS
             if fs.section not in known and fs.section not in gaps
         }
-        assert not unknown, f"specs reference unknown sections: {sorted(unknown)}"
+        assert not unknown, (
+            f"specs reference unknown sections: {sorted(unknown)}"
+        )
 
     def test_section_dependencies_are_declared_and_ordered(self):
         seen = set()
         for section in svc.SECTIONS:
             for dep in section.requires:
-                assert dep in svc.SECTIONS_BY_KEY, f"{section.key} requires unknown {dep!r}"
+                assert dep in svc.SECTIONS_BY_KEY, (
+                    f"{section.key} requires unknown {dep!r}"
+                )
                 assert dep in seen, (
                     f"{section.key} requires {dep!r}, which runs after it - the pipeline "
                     "would silently use an unpopulated value"
@@ -511,21 +648,39 @@ class TestSpecRegistry:
         """
         wb = openpyxl.load_workbook(get_template_path())
         covered = {
-            fs.sheet for fs in spec.FIELD_SPECS
+            fs.sheet
+            for fs in spec.FIELD_SPECS
             if fs.kind in (spec.KIND_LINE, spec.KIND_TABLE)
         }
-        uncovered = sorted(n for n in wb.sheetnames if n.startswith("DNBS02_") and n not in covered)
+        uncovered = sorted(
+            n
+            for n in wb.sheetnames
+            if n.startswith("DNBS02_") and n not in covered
+        )
         assert uncovered == [
-            "DNBS02_Annex1", "DNBS02_Annex12", "DNBS02_Annex3", "DNBS02_Annex4",
-            "DNBS02_Annex5", "DNBS02_Annex6", "DNBS02_Annex7", "DNBS02_Annex8",
-            "DNBS02_PART5", "DNBS02_PART6", "DNBS02_PART7", "DNBS02_PART7A",
-            "DNBS02_PART8", "DNBS02_PART8B", "DNBS02_PART9",
+            "DNBS02_Annex1",
+            "DNBS02_Annex12",
+            "DNBS02_Annex3",
+            "DNBS02_Annex4",
+            "DNBS02_Annex5",
+            "DNBS02_Annex6",
+            "DNBS02_Annex7",
+            "DNBS02_Annex8",
+            "DNBS02_PART5",
+            "DNBS02_PART6",
+            "DNBS02_PART7",
+            "DNBS02_PART7A",
+            "DNBS02_PART8",
+            "DNBS02_PART8B",
+            "DNBS02_PART9",
         ], f"sheet coverage changed: {uncovered}"
 
     def test_documented_gaps_carry_a_reason(self):
         for fs in spec.FIELD_SPECS:
             if fs.kind == spec.KIND_NO_SOURCE:
-                assert fs.no_source_reason.strip(), f"{fs.sheet}/{fs.rbi_line} states no reason"
+                assert fs.no_source_reason.strip(), (
+                    f"{fs.sheet}/{fs.rbi_line} states no reason"
+                )
 
     @requires_db
     def test_gates_name_real_report_keys(self, report):
@@ -539,7 +694,11 @@ class TestSpecRegistry:
 @pytest.fixture(scope="module")
 def lineage():
     return openpyxl.load_workbook(
-        io.BytesIO(generate_dnbs02_lineage_excel(frequency="monthly", period="2026-05"))
+        io.BytesIO(
+            generate_dnbs02_lineage_excel(
+                frequency="monthly", period="2026-05"
+            )
+        )
     )
 
 
@@ -551,7 +710,10 @@ class TestLineageWorkbook:
 
     def test_bindings_sheet_states_every_query_bind(self, lineage, report):
         text = "\n".join(
-            str(c.value) for row in lineage["_Bindings"].iter_rows() for c in row if c.value
+            str(c.value)
+            for row in lineage["_Bindings"].iter_rows()
+            for c in row
+            if c.value
         )
         for bind in ("start_date", "end_date", "snapshot_date", "gl_year"):
             assert bind in text, f"_Bindings does not document {bind}"
@@ -560,23 +722,33 @@ class TestLineageWorkbook:
 
     def test_every_documented_gap_appears_with_its_reason(self, lineage):
         text = "\n".join(
-            str(c.value) for name in lineage.sheetnames
-            for row in lineage[name].iter_rows() for c in row if c.value
+            str(c.value)
+            for name in lineage.sheetnames
+            for row in lineage[name].iter_rows()
+            for c in row
+            if c.value
         )
         for fs in spec.FIELD_SPECS:
             if fs.kind == spec.KIND_NO_SOURCE:
-                assert fs.rbi_line in text, f"gap {fs.rbi_line!r} missing from lineage workbook"
+                assert fs.rbi_line in text, (
+                    f"gap {fs.rbi_line!r} missing from lineage workbook"
+                )
                 assert fs.no_source_reason.split(";")[0][:40] in text
 
     def test_each_sheet_carries_the_sql_behind_it(self, lineage):
         for name in ("DNBS02_PART8C", "DNBS02_Annex9", "DNBS02_PART1"):
             text = "\n".join(
-                str(c.value) for row in lineage[name].iter_rows() for c in row if c.value
+                str(c.value)
+                for row in lineage[name].iter_rows()
+                for c in row
+                if c.value
             )
             assert "SELECT" in text, f"{name} carries no query text"
             assert "FROM silver." in text
 
-    def test_mirrors_the_filing_rather_than_recomputing_it(self, lineage, workbook):
+    def test_mirrors_the_filing_rather_than_recomputing_it(
+        self, lineage, workbook
+    ):
         for name in ("DNBS02_PART8C", "DNBS02_PART1", "DNBS02_PART4"):
             filed, mirrored = workbook[name], lineage[name]
             for row in filed.iter_rows(min_row=6):

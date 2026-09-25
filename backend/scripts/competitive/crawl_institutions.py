@@ -62,7 +62,9 @@ async def crawl_institution(
             return
 
         visited.add(url)
-        print(f"[{institution.slug}] Crawling {len(visited)}/{max_pages}: {url}")
+        print(
+            f"[{institution.slug}] Crawling {len(visited)}/{max_pages}: {url}"
+        )
 
         try:
             result = await crawler.arun(url=url)
@@ -76,7 +78,9 @@ async def crawl_institution(
 
         title = result.metadata.get("title", "Untitled")
         file_path = output_dir / safe_filename(url)
-        file_path.write_text(f"# {title}\n\nURL: {url}\n\n{result.markdown}", encoding="utf-8")
+        file_path.write_text(
+            f"# {title}\n\nURL: {url}\n\n{result.markdown}", encoding="utf-8"
+        )
         print(f"[{institution.slug}] Saved: {file_path.name}")
 
         for link in result.links.get("internal", []):
@@ -92,13 +96,17 @@ async def crawl_institution(
 async def run(args: argparse.Namespace) -> None:
     config_path = Path(args.config)
     raw_root = Path(args.raw_root)
-    institutions = select_institutions(load_institutions(config_path), args.only)
+    institutions = select_institutions(
+        load_institutions(config_path), args.only
+    )
 
     raw_root.mkdir(parents=True, exist_ok=True)
 
     async with AsyncWebCrawler() as crawler:
         for institution in institutions:
-            await crawl_institution(institution, crawler, raw_root, args.max_pages)
+            await crawl_institution(
+                institution, crawler, raw_root, args.max_pages
+            )
 
     print("\n==============================")
     print("Crawling finished")
@@ -108,12 +116,36 @@ async def run(args: argparse.Namespace) -> None:
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Config-driven multi-institution Crawl4AI crawler.")
-    default_config = DEFAULT_CONFIG_DIR if DEFAULT_CONFIG_DIR.exists() else DEFAULT_CONFIG_PATH
-    parser.add_argument("--config", default=str(default_config), help="Path to institutions JSON config or config folder.")
-    parser.add_argument("--raw-root", default=str(DEFAULT_RAW_ROOT), help="Folder for per-institution raw Markdown.")
-    parser.add_argument("--max-pages", type=int, default=100, help="Default max pages per institution.")
-    parser.add_argument("--only", nargs="*", default=[], help="Optional institution slug(s) to crawl.")
+    parser = argparse.ArgumentParser(
+        description="Config-driven multi-institution Crawl4AI crawler."
+    )
+    default_config = (
+        DEFAULT_CONFIG_DIR
+        if DEFAULT_CONFIG_DIR.exists()
+        else DEFAULT_CONFIG_PATH
+    )
+    parser.add_argument(
+        "--config",
+        default=str(default_config),
+        help="Path to institutions JSON config or config folder.",
+    )
+    parser.add_argument(
+        "--raw-root",
+        default=str(DEFAULT_RAW_ROOT),
+        help="Folder for per-institution raw Markdown.",
+    )
+    parser.add_argument(
+        "--max-pages",
+        type=int,
+        default=100,
+        help="Default max pages per institution.",
+    )
+    parser.add_argument(
+        "--only",
+        nargs="*",
+        default=[],
+        help="Optional institution slug(s) to crawl.",
+    )
     return parser.parse_args()
 
 

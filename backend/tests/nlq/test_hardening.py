@@ -37,7 +37,10 @@ class TestFiscalYear:
 
     def test_fy_bounds_span_april_to_march(self):
         bounds = fy_bounds(2026)
-        assert (bounds.start, bounds.end) == (date(2025, 4, 1), date(2026, 3, 31))
+        assert (bounds.start, bounds.end) == (
+            date(2025, 4, 1),
+            date(2026, 3, 31),
+        )
         assert bounds.label == "FY26"
 
     def test_q1_is_april_to_june(self):
@@ -71,11 +74,17 @@ class TestFiscalYear:
         which lands mid-December and makes every QoQ comparison quietly wrong."""
         quarter = resolve_relative("last_quarter", TODAY)
         prior = previous_period(quarter)
-        assert (prior.start, prior.end) == (date(2026, 1, 1), date(2026, 3, 31))
+        assert (prior.start, prior.end) == (
+            date(2026, 1, 1),
+            date(2026, 3, 31),
+        )
 
     def test_fiscal_year_compares_to_the_prior_fiscal_year(self):
         prior = previous_period(resolve_relative("last_fy", TODAY))
-        assert (prior.start, prior.end) == (date(2024, 4, 1), date(2025, 3, 31))
+        assert (prior.start, prior.end) == (
+            date(2024, 4, 1),
+            date(2025, 3, 31),
+        )
 
     def test_rolling_window_compares_by_day_count(self):
         prior = previous_period(resolve_relative("last_30_days", TODAY))
@@ -103,7 +112,9 @@ class TestPiiMasking:
         "value,expected",
         [("Rajesh Kumar", "Rajesh K***"), ("Priya", "Pr***"), ("A", "A")],
     )
-    def test_names_keep_enough_to_confirm_not_to_identify(self, value, expected):
+    def test_names_keep_enough_to_confirm_not_to_identify(
+        self, value, expected
+    ):
         assert pii.mask_name(value) == expected
 
     def test_identifiers_keep_the_last_four(self):
@@ -120,14 +131,18 @@ class TestPiiMasking:
             ColumnSpec(name="loan_count", label="Loans", unit="count"),
         ]
         rows = [{"full_name": "Rajesh Kumar", "loan_count": 3}]
-        masked, fields = pii.mask_rows(rows, columns, role="gicc_policy", catalog=catalog)
+        masked, fields = pii.mask_rows(
+            rows, columns, role="gicc_policy", catalog=catalog
+        )
         assert masked[0]["full_name"] == "Rajesh Kumar"
         assert masked[0]["loan_count"] == 3  # non-PII is untouched
         assert fields == []
         assert columns[0].masked is False
 
     def test_rows_are_untouched_for_a_privileged_role(self):
-        columns = [ColumnSpec(name="full_name", label="Full name", sensitivity="pii")]
+        columns = [
+            ColumnSpec(name="full_name", label="Full name", sensitivity="pii")
+        ]
         rows = [{"full_name": "Rajesh Kumar"}]
         masked, fields = pii.mask_rows(rows, columns, role="gicc_admin")
         assert masked[0]["full_name"] == "Rajesh Kumar"
@@ -163,7 +178,9 @@ class TestCache:
         assert cache.get_result(cache.result_key("SELECT 1", [])) is None
 
     def test_different_params_are_different_keys(self):
-        assert cache.result_key("SELECT 1", [1]) != cache.result_key("SELECT 1", [2])
+        assert cache.result_key("SELECT 1", [1]) != cache.result_key(
+            "SELECT 1", [2]
+        )
 
     @pytest.mark.parametrize(
         "a,b",
@@ -176,11 +193,11 @@ class TestCache:
         assert cache.normalise_question(a) == cache.normalise_question(b)
 
     def test_word_order_is_not_normalised(self):
-        """"disbursement by branch" and "branch by disbursement" are different questions;
+        """ "disbursement by branch" and "branch by disbursement" are different questions;
         collapsing them would serve a wrong plan."""
-        assert cache.normalise_question("disbursement by branch") != cache.normalise_question(
-            "branch by disbursement"
-        )
+        assert cache.normalise_question(
+            "disbursement by branch"
+        ) != cache.normalise_question("branch by disbursement")
 
     def test_plan_cache_is_keyed_by_catalog_version(self):
         cache.put_plan("q", "v1", "plan-a")

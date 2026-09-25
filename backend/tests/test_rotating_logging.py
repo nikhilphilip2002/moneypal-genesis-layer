@@ -23,13 +23,17 @@ def test_rotating_logging_streams(tmp_path: Path):
         force=True,
     )
 
-    with bind_trace(trace_id="test-trace-123", conversation_id="conv-1", username="analyst_bob"):
+    with bind_trace(
+        trace_id="test-trace-123",
+        conversation_id="conv-1",
+        username="analyst_bob",
+    ):
         log_raw_trace(
             "LLM completion received",
             provider="llm",
             model="llama-3.3-70b-versatile",
             prompt="what is the total loan disbursement?",
-            completion="{\"route\": \"data_warehouse\"}",
+            completion='{"route": "data_warehouse"}',
             duration_ms=250.5,
             usage={"prompt_tokens": 100, "completion_tokens": 20},
             authorization="Bearer secrettoken123",
@@ -60,7 +64,10 @@ def test_rotating_logging_streams(tmp_path: Path):
     assert event_file.exists()
 
     # Verify raw trace content
-    raw_lines = [json.loads(line) for line in raw_file.read_text(encoding="utf-8").strip().splitlines()]
+    raw_lines = [
+        json.loads(line)
+        for line in raw_file.read_text(encoding="utf-8").strip().splitlines()
+    ]
     assert len(raw_lines) == 1
     assert raw_lines[0]["trace_id"] == "test-trace-123"
     assert raw_lines[0]["user"] == "analyst_bob"
@@ -71,7 +78,12 @@ def test_rotating_logging_streams(tmp_path: Path):
     assert raw_lines[0]["authorization"] == "***REDACTED***"
 
     # Verify parsed output content
-    parsed_lines = [json.loads(line) for line in parsed_file.read_text(encoding="utf-8").strip().splitlines()]
+    parsed_lines = [
+        json.loads(line)
+        for line in parsed_file.read_text(encoding="utf-8")
+        .strip()
+        .splitlines()
+    ]
     assert len(parsed_lines) == 1
     assert parsed_lines[0]["trace_id"] == "test-trace-123"
     assert parsed_lines[0]["tool_name"] == "lookup_table"
@@ -79,7 +91,10 @@ def test_rotating_logging_streams(tmp_path: Path):
     assert parsed_lines[0]["status"] == "success"
 
     # Verify event content
-    event_lines = [json.loads(line) for line in event_file.read_text(encoding="utf-8").strip().splitlines()]
+    event_lines = [
+        json.loads(line)
+        for line in event_file.read_text(encoding="utf-8").strip().splitlines()
+    ]
     assert len(event_lines) == 1
     assert event_lines[0]["trace_id"] == "test-trace-123"
     assert event_lines[0]["stage"] == "nlq_planning"

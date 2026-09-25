@@ -10,6 +10,7 @@ Usage
     rag.ingest_folder("macro_intel", "./data")            # offline
     answer, sources = rag.ask("macro_intel", "Summarise ...")  # in a request
 """
+
 from __future__ import annotations
 
 import uuid
@@ -36,9 +37,11 @@ def embed_text(text: str) -> list[float]:
 
 
 def embed_batch(texts: list[str]) -> list[list[float]]:
-    return get_embedder().encode(
-        texts, normalize_embeddings=True, show_progress_bar=True
-    ).tolist()
+    return (
+        get_embedder()
+        .encode(texts, normalize_embeddings=True, show_progress_bar=True)
+        .tolist()
+    )
 
 
 # --------------------------------------------------------------------------
@@ -57,7 +60,9 @@ def get_qdrant():
     )
     if settings.qdrant_url:
         return QdrantClient(url=settings.qdrant_url, **common)
-    return QdrantClient(host=settings.qdrant_host, port=settings.qdrant_port, **common)
+    return QdrantClient(
+        host=settings.qdrant_host, port=settings.qdrant_port, **common
+    )
 
 
 def ensure_collection(name: str) -> None:
@@ -70,14 +75,18 @@ def ensure_collection(name: str) -> None:
         return
     client.create_collection(
         collection_name=name,
-        vectors_config=VectorParams(size=settings.vector_size, distance=Distance.COSINE),
+        vectors_config=VectorParams(
+            size=settings.vector_size, distance=Distance.COSINE
+        ),
     )
 
 
 # --------------------------------------------------------------------------
 # Loading & chunking
 # --------------------------------------------------------------------------
-def load_pdf(path: str, *, skip_page_errors: bool = False) -> list[tuple[int, str]]:
+def load_pdf(
+    path: str, *, skip_page_errors: bool = False
+) -> list[tuple[int, str]]:
     """Return extractable PDF pages, optionally isolating malformed-page failures."""
     from pypdf import PdfReader
 
@@ -99,7 +108,9 @@ def load_text_file(path: str) -> str:
     return Path(path).read_text(encoding="utf-8", errors="ignore")
 
 
-def chunk_text(text: str, chunk_words: int = 500, overlap: int = 50) -> list[str]:
+def chunk_text(
+    text: str, chunk_words: int = 500, overlap: int = 50
+) -> list[str]:
     """Split text into ~chunk_words windows with `overlap` words carried over."""
     words = text.split()
     if not words:
@@ -115,7 +126,9 @@ def chunk_text(text: str, chunk_words: int = 500, overlap: int = 50) -> list[str
     return chunks
 
 
-def chunk_text_chars(text: str, chunk_size: int = 1800, overlap: int = 250) -> list[str]:
+def chunk_text_chars(
+    text: str, chunk_size: int = 1800, overlap: int = 250
+) -> list[str]:
     """Split normalized text into character windows for regulatory document ingestion."""
     clean = " ".join(text.split())
     if not clean:
@@ -161,7 +174,9 @@ def ingest_files(
                 segments.append((None, ch))
 
         if not segments:
-            print(f"  [warn] no extractable text in {p.name} (scanned PDF?) — skipped")
+            print(
+                f"  [warn] no extractable text in {p.name} (scanned PDF?) — skipped"
+            )
             continue
 
         vectors = embed_batch([s[1] for s in segments])
@@ -170,7 +185,9 @@ def ingest_files(
             payload = {"text": ch, "source": p.name, "page": page_no}
             if extra_payload:
                 payload.update(extra_payload)
-            points.append(PointStruct(id=str(uuid.uuid4()), vector=vec, payload=payload))
+            points.append(
+                PointStruct(id=str(uuid.uuid4()), vector=vec, payload=payload)
+            )
 
         client.upsert(collection_name=collection, points=points)
         total += len(points)
@@ -202,10 +219,15 @@ def search(collection: str, query: str, top_k: int = 5) -> list[dict]:
         limit=top_k,
         with_payload=True,
     ).points
+
     def clean_source(payload: dict):
         # Older module ingests used document_name/source_file keys — some hold
         # full local paths from the original scrape machine; keep the filename.
-        src = payload.get("source") or payload.get("document_name") or payload.get("source_file")
+        src = (
+            payload.get("source")
+            or payload.get("document_name")
+            or payload.get("source_file")
+        )
         if src:
             src = str(src).replace("\\", "/").rsplit("/", 1)[-1]
         return src
@@ -268,7 +290,11 @@ def _llm_client():
 def _chat(messages: list[dict]) -> str:
     response = _llm_client().post(
         "/chat/completions",
-        json={"model": settings.llm_model, "messages": messages, "stream": False},
+        json={
+            "model": settings.llm_model,
+            "messages": messages,
+            "stream": False,
+        },
     )
     response.raise_for_status()
     return str(response.json()["choices"][0]["message"]["content"]).strip()
@@ -281,7 +307,11 @@ def _chat_stream(messages: list[dict]):
     with _llm_client().stream(
         "POST",
         "/chat/completions",
-        json={"model": settings.llm_model, "messages": messages, "stream": True},
+        json={
+            "model": settings.llm_model,
+            "messages": messages,
+            "stream": True,
+        },
     ) as response:
         response.raise_for_status()
         for line in response.iter_lines():
@@ -323,7 +353,9 @@ def _context_user(prompt: str, context_chunks: list[dict]) -> str:
             return f"[Source: {c.get('source')}]"
         return f"[Source: {c.get('source')}, p.{page}]"
 
-    context = "\n\n".join(f"{label(c)}\n{c.get('text', '')}" for c in context_chunks)
+    context = "\n\n".join(
+        f"{label(c)}\n{c.get('text', '')}" for c in context_chunks
+    )
     return f"CONTEXT:\n{context}\n\n---\n\nTASK:\n{prompt}"
 
 
@@ -367,6 +399,10 @@ def ask(
     Pass `queries` (short data-seeking phrases) so retrieval matches data pages
     instead of the instruction prompt itself.
     """
-    chunks = search_multi(collection, queries) if queries else search(collection, prompt, top_k)
+    chunks = (
+        search_multi(collection, queries)
+        if queries
+        else search(collection, prompt, top_k)
+    )
     answer = generate(prompt, chunks, system)
     return answer, chunks

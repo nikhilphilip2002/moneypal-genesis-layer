@@ -24,17 +24,23 @@ class ValidatedSql:
     column_units: dict[str, str] = field(default_factory=dict)
 
 
-def infer_column_units(sql: str, tables: list[str], catalog: Catalog) -> dict[str, str]:
+def infer_column_units(
+    sql: str, tables: list[str], catalog: Catalog
+) -> dict[str, str]:
     """Carry catalog units through SQL aliases such as ``total_security_value``."""
     try:
         tree = sqlglot.parse_one(sql, read="postgres")
-    except Exception:  # pragma: no cover - validated SQL has already parsed successfully
+    except (
+        Exception
+    ):  # pragma: no cover - validated SQL has already parsed successfully
         return {}
 
     units_by_name: dict[str, set[str]] = {}
     for table in tables:
         for column in catalog.columns_for(table):
-            units_by_name.setdefault(column.column.lower(), set()).add(column.unit)
+            units_by_name.setdefault(column.column.lower(), set()).add(
+                column.unit
+            )
 
     inferred: dict[str, str] = {}
     select = tree.find(exp.Select)
@@ -58,7 +64,9 @@ def infer_column_units(sql: str, tables: list[str], catalog: Catalog) -> dict[st
 
 
 def lineage_for_validated_sql(
-    statement: ValidatedSql, row_count: int, duration_ms: int,
+    statement: ValidatedSql,
+    row_count: int,
+    duration_ms: int,
 ) -> Lineage:
     """Lineage for deterministic application-owned SQL used by record lookups."""
     return Lineage(

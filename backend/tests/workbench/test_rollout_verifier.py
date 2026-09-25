@@ -6,16 +6,18 @@ from scripts.verify_workbench_rollout import assert_required_llm
 
 
 def test_accepts_ready_llamacpp_with_matching_served_model():
-    assert_required_llm({
-        "capabilities": {"ask": True},
-        "llm": {
-            "status": "ok",
-            "provider": "llamacpp",
-            "model": "qwen-9b",
-            "served_models": ["qwen-9b"],
-            "model_match": True,
-        },
-    })
+    assert_required_llm(
+        {
+            "capabilities": {"ask": True},
+            "llm": {
+                "status": "ok",
+                "provider": "llamacpp",
+                "model": "qwen-9b",
+                "served_models": ["qwen-9b"],
+                "model_match": True,
+            },
+        }
+    )
 
 
 @pytest.mark.parametrize(
@@ -23,13 +25,20 @@ def test_accepts_ready_llamacpp_with_matching_served_model():
     [
         {
             "capabilities": {"ask": False},
-            "llm": {"status": "down", "provider": "llamacpp", "model": "qwen-9b"},
+            "llm": {
+                "status": "down",
+                "provider": "llamacpp",
+                "model": "qwen-9b",
+            },
         },
         {
             "capabilities": {"ask": True},
             "llm": {
-                "status": "degraded", "provider": "llamacpp", "model": "qwen-9b",
-                "served_models": ["qwen-35b"], "model_match": False,
+                "status": "degraded",
+                "provider": "llamacpp",
+                "model": "qwen-9b",
+                "served_models": ["qwen-35b"],
+                "model_match": False,
             },
         },
     ],
@@ -40,14 +49,26 @@ def test_rejects_unavailable_or_degraded_llamacpp(health):
 
 
 def test_accepts_ready_non_llamacpp_provider_without_model_identity_extension():
-    assert_required_llm({
-        "capabilities": {"ask": True},
-        "llm": {"status": "ok", "provider": "llm", "model": "hosted-model"},
-    })
+    assert_required_llm(
+        {
+            "capabilities": {"ask": True},
+            "llm": {
+                "status": "ok",
+                "provider": "llm",
+                "model": "hosted-model",
+            },
+        }
+    )
 
 
 def test_accepts_ready_llamacpp_without_identity_extension():
-    assert_required_llm({
-        "capabilities": {"ask": True},
-        "llm": {"status": "ok", "provider": "llamacpp", "model": "qwen-9b"},
-    })
+    assert_required_llm(
+        {
+            "capabilities": {"ask": True},
+            "llm": {
+                "status": "ok",
+                "provider": "llamacpp",
+                "model": "qwen-9b",
+            },
+        }
+    )

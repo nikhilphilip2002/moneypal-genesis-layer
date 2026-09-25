@@ -17,8 +17,14 @@ def test_workbench_system_prompts_do_not_duplicate_json_schema_prose():
 
 
 def test_answer_prompts_do_not_duplicate_structured_result_rows():
-    assert "Structured result rows are rendered separately" in prompts.AGENT_SYSTEM_PROMPT
-    assert "do not reproduce them as a Markdown table" in prompts.AGENT_SYSTEM_PROMPT
+    assert (
+        "Structured result rows are rendered separately"
+        in prompts.AGENT_SYSTEM_PROMPT
+    )
+    assert (
+        "do not reproduce them as a Markdown table"
+        in prompts.AGENT_SYSTEM_PROMPT
+    )
 
 
 def test_agent_prompt_forbids_wildcard_and_duplicate_queries():
@@ -49,7 +55,9 @@ def test_agent_prompt_keeps_catalog_hints_out_of_stable_prefix():
 
 
 def test_scheme_wise_metric_prompt_exposes_the_governed_scheme_dimension():
-    context = prompts.build_agent_catalog_context("interest collected schemewise")
+    context = prompts.build_agent_catalog_context(
+        "interest collected schemewise"
+    )
 
     assert context.metrics == ("interest_collected",)
     assert context.dimensions == ("scheme",)
@@ -73,20 +81,26 @@ async def test_database_tools_are_not_defined_in_the_local_registry():
     catalog = ToolCatalog()
     await catalog.discover_local()
     offered = [
-        item["function"]["name"] for item in await catalog.model_tool_definitions(
+        item["function"]["name"]
+        for item in await catalog.model_tool_definitions(
             access.build_policy(role="admin", external_sources_enabled=True),
         )
     ]
-    assert not ({"query_metrics", "run_validated_query", "query"} & set(offered))
+    assert not (
+        {"query_metrics", "run_validated_query", "query"} & set(offered)
+    )
     assert set(offered) == {
-        "search_curated_knowledge", "finish_without_data", "submit_final_answer",
+        "search_curated_knowledge",
+        "finish_without_data",
+        "submit_final_answer",
     }
 
 
 def test_latest_tool_error_supplements_catalog_retrieval():
     plain = prompts.build_agent_catalog_context("interest collected")
     supplemented = prompts.build_agent_catalog_context(
-        "interest collected", supplement="unknown dimension 'schemes'; did you mean scheme",
+        "interest collected",
+        supplement="unknown dimension 'schemes'; did you mean scheme",
     )
     assert "scheme" not in plain.dimensions
     assert "scheme" in supplemented.dimensions

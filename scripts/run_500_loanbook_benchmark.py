@@ -57,7 +57,9 @@ class Result:
     chain_title: str
     question: str
     conversation_id: str = ""
-    status: str = "Error"  # Answered | Partial | Clarification | Refused | Error
+    status: str = (
+        "Error"  # Answered | Partial | Clarification | Refused | Error
+    )
     latency_s: float = 0.0
     db_duration_ms: int | None = None
     route_sources: list[str] = field(default_factory=list)
@@ -87,13 +89,19 @@ class Result:
         return self.status in {"Answered", "Partial"}
 
 
-def parse_events(result: Result, events: list[tuple[str, dict[str, Any]]]) -> None:
+def parse_events(
+    result: Result, events: list[tuple[str, dict[str, Any]]]
+) -> None:
     answers: list[str] = []
     for event, data in events:
         if event == "conversation":
-            result.conversation_id = str(data.get("conversation_id") or result.conversation_id)
+            result.conversation_id = str(
+                data.get("conversation_id") or result.conversation_id
+            )
         elif event == "route":
-            result.route_sources = [str(v) for v in data.get("sources", []) or []]
+            result.route_sources = [
+                str(v) for v in data.get("sources", []) or []
+            ]
             result.route_model = str(data.get("model") or "")
         elif event == "source_card":
             card_type = str(data.get("card_type") or "")
@@ -105,20 +113,30 @@ def parse_events(result: Result, events: list[tuple[str, dict[str, Any]]]) -> No
             elif card_type == "chart" and result.chart_type == "none":
                 result.chart_type = "chart"
 
-            text = data.get("summary") or data.get("headline") or data.get("message")
+            text = (
+                data.get("summary")
+                or data.get("headline")
+                or data.get("message")
+            )
             if text:
                 answers.append(str(text))
 
             lineage = data.get("lineage")
             if isinstance(lineage, dict):
-                result.sql = str(lineage.get("display_sql") or lineage.get("sql") or result.sql)
+                result.sql = str(
+                    lineage.get("display_sql")
+                    or lineage.get("sql")
+                    or result.sql
+                )
                 if lineage.get("row_count") is not None:
                     result.row_count = int(lineage["row_count"])
                 if lineage.get("duration_ms") is not None:
                     result.db_duration_ms = int(lineage["duration_ms"])
 
             if card_type == "error":
-                result.error = str(data.get("message") or "Source returned an error")
+                result.error = str(
+                    data.get("message") or "Source returned an error"
+                )
             elif card_type == "clarify":
                 result.status = "Clarification"
             elif card_type == "refusal":
@@ -143,7 +161,9 @@ def parse_events(result: Result, events: list[tuple[str, dict[str, Any]]]) -> No
         elif event == "error":
             result.error = str(data.get("message") or "Workbench error")
 
-    result.answer = "\n\n".join(dict.fromkeys(t.strip() for t in answers if t.strip()))
+    result.answer = "\n\n".join(
+        dict.fromkeys(t.strip() for t in answers if t.strip())
+    )
     if result.error and result.status == "Answered":
         result.status = "Partial"
     if result.status == "Error" and not result.error:
@@ -151,7 +171,9 @@ def parse_events(result: Result, events: list[tuple[str, dict[str, Any]]]) -> No
 
 
 class PostgresReconciler:
-    def __init__(self, host: str, port: int, db: str, user: str, password: str):
+    def __init__(
+        self, host: str, port: int, db: str, user: str, password: str
+    ):
         self.host = host
         self.port = port
         self.db = db
@@ -161,7 +183,9 @@ class PostgresReconciler:
 
     def _get_connection(self):
         if pg8000 is None:
-            raise RuntimeError("pg8000 is required for PostgreSQL reconciliation")
+            raise RuntimeError(
+                "pg8000 is required for PostgreSQL reconciliation"
+            )
         return pg8000.native.Connection(
             self.user,
             host=self.host,
@@ -197,7 +221,10 @@ class PostgresReconciler:
                 result.pg_sample_data = " | ".join(sample)
 
                 # Compare row counts
-                if result.row_count is not None and result.row_count != result.pg_row_count:
+                if (
+                    result.row_count is not None
+                    and result.row_count != result.pg_row_count
+                ):
                     result.pg_status = "ROW_COUNT_MISMATCH"
                 else:
                     result.pg_status = "VERIFIED_MATCH"
@@ -206,7 +233,9 @@ class PostgresReconciler:
             result.pg_status = "SQL_EXECUTION_ERROR"
             result.pg_error = str(exc)
 
-    def fetch_conversation_telemetry(self, conversation_id: str, turn_idx: int, result: Result) -> None:
+    def fetch_conversation_telemetry(
+        self, conversation_id: str, turn_idx: int, result: Result
+    ) -> None:
         if not conversation_id:
             return
         try:
@@ -231,12 +260,23 @@ class PostgresReconciler:
                     turn = turns[turn_idx]
                     usage = turn.get("usage")
                     if isinstance(usage, dict):
-                        result.prompt_tokens = int(usage.get("prompt_tokens") or 0)
-                        result.cached_prompt_tokens = int(usage.get("cached_prompt_tokens") or 0)
-                        result.uncached_prompt_tokens = int(usage.get("uncached_prompt_tokens") or 0)
+                        result.prompt_tokens = int(
+                            usage.get("prompt_tokens") or 0
+                        )
+                        result.cached_prompt_tokens = int(
+                            usage.get("cached_prompt_tokens") or 0
+                        )
+                        result.uncached_prompt_tokens = int(
+                            usage.get("uncached_prompt_tokens") or 0
+                        )
                         if result.prompt_tokens > 0:
                             result.cache_hit_pct = round(
-                                (result.cached_prompt_tokens / result.prompt_tokens) * 100, 1
+                                (
+                                    result.cached_prompt_tokens
+                                    / result.prompt_tokens
+                                )
+                                * 100,
+                                1,
                             )
         except Exception:
             pass
@@ -288,7 +328,9 @@ def run_chain(
 
         if reconciler is not None:
             reconciler.reconcile(item)
-            reconciler.fetch_conversation_telemetry(conversation_id or "", turn - 1, item)
+            reconciler.fetch_conversation_telemetry(
+                conversation_id or "", turn - 1, item
+            )
 
         results.append(item)
         progress(item)
@@ -323,16 +365,22 @@ def generate_markdown_report(
     tokens_total = sum(item.prompt_tokens for item in ordered)
     tokens_cached = sum(item.cached_prompt_tokens for item in ordered)
     tokens_uncached = sum(item.uncached_prompt_tokens for item in ordered)
-    overall_cache_pct = (tokens_cached / tokens_total * 100) if tokens_total > 0 else 0.0
+    overall_cache_pct = (
+        (tokens_cached / tokens_total * 100) if tokens_total > 0 else 0.0
+    )
     compacted_turns = sum(1 for item in ordered if item.compaction_active)
 
-    sla_label = f"{timeout_s}s" if (timeout_s and timeout_s > 0) else "None (unlimited / unconstrained)"
+    sla_label = (
+        f"{timeout_s}s"
+        if (timeout_s and timeout_s > 0)
+        else "None (unlimited / unconstrained)"
+    )
     lines = [
         "# Moneypal Genesis Intelligence — 500 Governed Loan Book Benchmark & Reconciliation Report",
         "",
         f"**Generated:** {dt.datetime.now(dt.timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')}  ",
         f"**Application URL:** `{base_url}`  ",
-        f"**Database:** PostgreSQL (`moneypaldb.gold` on `100.70.118.31:5432`)  ",
+        "**Database:** PostgreSQL (`moneypaldb.gold` on `100.70.118.31:5432`)  ",
         f"**Questions Completed:** {len(ordered)} / {total_expected} (across {len(chain_ids)} chains)  ",
         f"**Total Run Duration:** {elapsed_s:.2f}s ({elapsed_s / 60:.1f} minutes)  ",
         f"**Per-Question Timeout (SLA):** {sla_label} (LLM execution unconstrained)  ",
@@ -353,11 +401,17 @@ def generate_markdown_report(
         f"| **Errors / Timeouts** | **{counts['Error']}** | < 10% | {'✅ Normal' if counts['Error'] < len(ordered) * 0.1 else '⚠️ High'} |",
         f"| **Complete 5-Turn Chains** | **{complete_chains} / {len(chain_ids)}** | - | 🎯 |",
         f"| **PostgreSQL Exact Matches** | **{pg_counts['VERIFIED_MATCH']} / {len(ordered)}** | - | 🛡️ |",
-        f"| **Mean Query Latency** | **{statistics.mean(latencies):.2f}s** | < 45s | ⏱️ |" if latencies else "| **Mean Query Latency** | **0.00s** | < 45s | ⏱️ |",
-        f"| **Median (P50) Latency** | **{statistics.median(latencies):.2f}s** | - | ⏱️ |" if latencies else "| **Median (P50) Latency** | **0.00s** | - | ⏱️ |",
+        f"| **Mean Query Latency** | **{statistics.mean(latencies):.2f}s** | < 45s | ⏱️ |"
+        if latencies
+        else "| **Mean Query Latency** | **0.00s** | < 45s | ⏱️ |",
+        f"| **Median (P50) Latency** | **{statistics.median(latencies):.2f}s** | - | ⏱️ |"
+        if latencies
+        else "| **Median (P50) Latency** | **0.00s** | - | ⏱️ |",
         f"| **P90 Latency** | **{percentile(latencies, 0.90):.2f}s** | - | ⏱️ |",
         f"| **P95 Latency** | **{percentile(latencies, 0.95):.2f}s** | - | ⏱️ |",
-        f"| **Max Latency** | **{max(latencies):.2f}s** | - | ⏱️ |" if latencies else "| **Max Latency** | **0.00s** | - | ⏱️ |",
+        f"| **Max Latency** | **{max(latencies):.2f}s** | - | ⏱️ |"
+        if latencies
+        else "| **Max Latency** | **0.00s** | - | ⏱️ |",
         "",
         "---",
         "",
@@ -365,10 +419,10 @@ def generate_markdown_report(
         "",
         "| Reconciliation Outcome | Count | Share (%) | Description |",
         "|---|---:|---:|---|",
-        f"| **VERIFIED_MATCH** | {pg_counts['VERIFIED_MATCH']} | {(pg_counts['VERIFIED_MATCH']/len(ordered)*100 if ordered else 0):.1f}% | Generated SQL executed successfully; row counts & results match DB. |",
-        f"| **ROW_COUNT_MISMATCH** | {pg_counts['ROW_COUNT_MISMATCH']} | {(pg_counts['ROW_COUNT_MISMATCH']/len(ordered)*100 if ordered else 0):.1f}% | SQL executed, but application asserted row count differs from Postgres. |",
-        f"| **SQL_EXECUTION_ERROR** | {pg_counts['SQL_EXECUTION_ERROR']} | {(pg_counts['SQL_EXECUTION_ERROR']/len(ordered)*100 if ordered else 0):.1f}% | Generated SQL failed execution syntax or schema checks on Postgres. |",
-        f"| **NO_SQL (Refusal/Clarify/Cache)** | {pg_counts['NO_SQL']} | {(pg_counts['NO_SQL']/len(ordered)*100 if ordered else 0):.1f}% | Query handled without SQL or refused by policy. |",
+        f"| **VERIFIED_MATCH** | {pg_counts['VERIFIED_MATCH']} | {(pg_counts['VERIFIED_MATCH'] / len(ordered) * 100 if ordered else 0):.1f}% | Generated SQL executed successfully; row counts & results match DB. |",
+        f"| **ROW_COUNT_MISMATCH** | {pg_counts['ROW_COUNT_MISMATCH']} | {(pg_counts['ROW_COUNT_MISMATCH'] / len(ordered) * 100 if ordered else 0):.1f}% | SQL executed, but application asserted row count differs from Postgres. |",
+        f"| **SQL_EXECUTION_ERROR** | {pg_counts['SQL_EXECUTION_ERROR']} | {(pg_counts['SQL_EXECUTION_ERROR'] / len(ordered) * 100 if ordered else 0):.1f}% | Generated SQL failed execution syntax or schema checks on Postgres. |",
+        f"| **NO_SQL (Refusal/Clarify/Cache)** | {pg_counts['NO_SQL']} | {(pg_counts['NO_SQL'] / len(ordered) * 100 if ordered else 0):.1f}% | Query handled without SQL or refused by policy. |",
         "",
         "---",
         "",
@@ -387,7 +441,7 @@ def generate_markdown_report(
         "",
         f"- **Compaction Monitored Turns:** {len(ordered)}",
         f"- **Compacted Checkpoints Recorded:** {compacted_turns}",
-        f"- **Context Policy:** Turns exceeding budget are automatically summarized in `record_json.compaction` without discarding history.",
+        "- **Context Policy:** Turns exceeding budget are automatically summarized in `record_json.compaction` without discarding history.",
         "",
         "---",
         "",
@@ -397,7 +451,9 @@ def generate_markdown_report(
         "|---|---:|---:|---|",
     ]
     for ct, cnt in chart_counts.most_common():
-        lines.append(f"| `{ct}` | {cnt} | {(cnt / len(ordered) * 100):.1f}% | Visual format returned in UI cards |")
+        lines.append(
+            f"| `{ct}` | {cnt} | {(cnt / len(ordered) * 100):.1f}% | Visual format returned in UI cards |"
+        )
 
     lines += [
         "",
@@ -413,9 +469,13 @@ def generate_markdown_report(
         rows = [item for item in ordered if item.category == cat]
         ans = sum(item.answered for item in rows)
         pg_v = sum(item.pg_status == "VERIFIED_MATCH" for item in rows)
-        mean_l = statistics.mean(item.latency_s for item in rows) if rows else 0.0
+        mean_l = (
+            statistics.mean(item.latency_s for item in rows) if rows else 0.0
+        )
         pct = (ans / len(rows) * 100) if rows else 0.0
-        lines.append(f"| **{cat}** | {len(rows)} | {ans} | {pct:.1f}% | {pg_v} | {mean_l:.2f}s |")
+        lines.append(
+            f"| **{cat}** | {len(rows)} | {ans} | {pct:.1f}% | {pg_v} | {mean_l:.2f}s |"
+        )
 
     lines += [
         "",
@@ -430,8 +490,14 @@ def generate_markdown_report(
         rows = [item for item in ordered if item.turn == turn]
         ans = sum(item.answered for item in rows)
         pg_v = sum(item.pg_status == "VERIFIED_MATCH" for item in rows)
-        mean_l = statistics.mean(item.latency_s for item in rows) if rows else 0.0
-        avg_cache = statistics.mean(item.cache_hit_pct for item in rows) if rows else 0.0
+        mean_l = (
+            statistics.mean(item.latency_s for item in rows) if rows else 0.0
+        )
+        avg_cache = (
+            statistics.mean(item.cache_hit_pct for item in rows)
+            if rows
+            else 0.0
+        )
         pct = (ans / len(rows) * 100) if rows else 0.0
         lines.append(
             f"| Turn {turn} | {len(rows)} | {ans} | {pct:.1f}% | {pg_v} | {mean_l:.2f}s | {avg_cache:.1f}% |"
@@ -510,17 +576,27 @@ def write_checkpoints(
     total_expected: int = 500,
 ) -> None:
     report = generate_markdown_report(
-        results, base_url, elapsed_s, timeout_s, workers, total_expected=total_expected
+        results,
+        base_url,
+        elapsed_s,
+        timeout_s,
+        workers,
+        total_expected=total_expected,
     )
     markdown_path.write_text(report, encoding="utf-8")
     json_path.write_text(
-        json.dumps([asdict(item) for item in sorted(results, key=lambda r: r.id)], indent=2),
+        json.dumps(
+            [asdict(item) for item in sorted(results, key=lambda r: r.id)],
+            indent=2,
+        ),
         encoding="utf-8",
     )
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Run 500 Governed Loan Book Benchmark with PostgreSQL Reconciliation")
+    parser = argparse.ArgumentParser(
+        description="Run 500 Governed Loan Book Benchmark with PostgreSQL Reconciliation"
+    )
     parser.add_argument("--url", default="http://100.70.118.31:4321")
     parser.add_argument("--token", default="mock-token-gicc_admin")
     parser.add_argument("--db-host", default="100.70.118.31")
@@ -528,10 +604,21 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--db-name", default="moneypaldb")
     parser.add_argument("--db-user", default="moneypal")
     parser.add_argument("--db-pass", default="moneypal123")
-    parser.add_argument("--timeout", type=int, default=0, help="Per-question timeout in seconds (0 = unlimited / no timeout)")
+    parser.add_argument(
+        "--timeout",
+        type=int,
+        default=0,
+        help="Per-question timeout in seconds (0 = unlimited / no timeout)",
+    )
     parser.add_argument("--workers", type=int, default=1)
-    parser.add_argument("--chains", default="all", help="Chain range to run, e.g. '1-100', '1-5', or 'all'")
-    parser.add_argument("--output-md", default="benchmark_500_queries_report.md")
+    parser.add_argument(
+        "--chains",
+        default="all",
+        help="Chain range to run, e.g. '1-100', '1-5', or 'all'",
+    )
+    parser.add_argument(
+        "--output-md", default="benchmark_500_queries_report.md"
+    )
     parser.add_argument("--output-json", default="benchmark_500_queries.json")
     parser.add_argument(
         "--no-reconcile",
@@ -558,8 +645,16 @@ def main(argv: list[str] | None = None) -> int:
     )
 
     client = Client(args.url, args.token, args.timeout)
-    reconciler = None if args.no_reconcile else PostgresReconciler(
-        args.db_host, args.db_port, args.db_name, args.db_user, args.db_pass
+    reconciler = (
+        None
+        if args.no_reconcile
+        else PostgresReconciler(
+            args.db_host,
+            args.db_port,
+            args.db_name,
+            args.db_user,
+            args.db_pass,
+        )
     )
     markdown_path = Path(args.output_md)
     json_path = Path(args.output_json)
@@ -581,7 +676,9 @@ def main(argv: list[str] | None = None) -> int:
             )
 
     # Run chains sequentially or with workers
-    with concurrent.futures.ThreadPoolExecutor(max_workers=max(1, args.workers)) as pool:
+    with concurrent.futures.ThreadPoolExecutor(
+        max_workers=max(1, args.workers)
+    ) as pool:
         future_map = {
             pool.submit(run_chain, chain, client, reconciler, progress): chain
             for chain in selected_chains
@@ -622,8 +719,12 @@ def main(argv: list[str] | None = None) -> int:
     answered = sum(item.answered for item in results)
     pg_verified = sum(item.pg_status == "VERIFIED_MATCH" for item in results)
     print("\n" + "=" * 80)
-    print(f"Benchmark Finished: {len(results)}/{total_expected} questions executed in {elapsed:.2f}s.")
-    print(f"Answered: {answered}/{len(results)} ({(answered/len(results)*100 if results else 0):.1f}%)")
+    print(
+        f"Benchmark Finished: {len(results)}/{total_expected} questions executed in {elapsed:.2f}s."
+    )
+    print(
+        f"Answered: {answered}/{len(results)} ({(answered / len(results) * 100 if results else 0):.1f}%)"
+    )
     print(f"Postgres Ground-Truth Verified: {pg_verified}/{len(results)}")
     print(f"Markdown Report: {markdown_path.resolve()}")
     print(f"JSON Output: {json_path.resolve()}")

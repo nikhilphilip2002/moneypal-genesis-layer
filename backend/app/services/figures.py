@@ -22,13 +22,18 @@ _RUPEE_RE = re.compile(
     r"\s*(lakh\s*crore|thousand\s*crore|crore|lakh|trillion|billion|million)?",
     re.I,
 )
-_PERCENT_RE = re.compile(r"(-?\d{1,3}(?:\.\d{1,2})?)\s*(?:%|per\s*cent\b|percent\b)", re.I)
+_PERCENT_RE = re.compile(
+    r"(-?\d{1,3}(?:\.\d{1,2})?)\s*(?:%|per\s*cent\b|percent\b)", re.I
+)
 _BPS_RE = re.compile(r"(-?\d{1,4})\s*(?:bps\b|basis\s*points?\b)", re.I)
-_PP_RE = re.compile(r"(-?\d{1,3}(?:\.\d{1,2})?)\s*(?:percentage\s*points?\b|pp\b)", re.I)
+_PP_RE = re.compile(
+    r"(-?\d{1,3}(?:\.\d{1,2})?)\s*(?:percentage\s*points?\b|pp\b)", re.I
+)
 
 # FY25 / FY2025 / Q1 FY25 / CY2024 / 2026-07 / 2026-07-31
 _PERIOD_RE = re.compile(
-    r"\b(?:(?:Q[1-4]\s*)?FY\s?\d{2,4}|CY\s?\d{4}|\d{4}-\d{2}(?:-\d{2})?)\b", re.I
+    r"\b(?:(?:Q[1-4]\s*)?FY\s?\d{2,4}|CY\s?\d{4}|\d{4}-\d{2}(?:-\d{2})?)\b",
+    re.I,
 )
 
 PERCENT = "percent"
@@ -39,11 +44,15 @@ PP = "pp"
 
 @dataclass(frozen=True, slots=True)
 class Quantity:
-    kind: str      # percent | currency | bps | pp
-    value: float   # the number itself
-    unit: str      # "%", "crore", "lakh crore", "bps", "pp", or "" when unqualified
-    text: str      # normalized for display, e.g. "Rs 1,200 crore"
-    start: int     # offset in the source string, for locating the sentence around it
+    kind: str  # percent | currency | bps | pp
+    value: float  # the number itself
+    unit: (
+        str  # "%", "crore", "lakh crore", "bps", "pp", or "" when unqualified
+    )
+    text: str  # normalized for display, e.g. "Rs 1,200 crore"
+    start: (
+        int  # offset in the source string, for locating the sentence around it
+    )
 
 
 def _to_float(raw: str) -> float:
@@ -59,7 +68,9 @@ def find_quantities(text: str) -> list[Quantity]:
 
     for match in _PERCENT_RE.finditer(text):
         value = _to_float(match.group(1))
-        found.append(Quantity(PERCENT, value, "%", f"{match.group(1)}%", match.start()))
+        found.append(
+            Quantity(PERCENT, value, "%", f"{match.group(1)}%", match.start())
+        )
 
     for match in _RUPEE_RE.finditer(text):
         unit = " ".join((match.group(2) or "").split()).lower()
@@ -76,11 +87,15 @@ def find_quantities(text: str) -> list[Quantity]:
 
     for match in _BPS_RE.finditer(text):
         value = _to_float(match.group(1))
-        found.append(Quantity(BPS, value, "bps", f"{match.group(1)} bps", match.start()))
+        found.append(
+            Quantity(BPS, value, "bps", f"{match.group(1)} bps", match.start())
+        )
 
     for match in _PP_RE.finditer(text):
         value = _to_float(match.group(1))
-        found.append(Quantity(PP, value, "pp", f"{match.group(1)} pp", match.start()))
+        found.append(
+            Quantity(PP, value, "pp", f"{match.group(1)} pp", match.start())
+        )
 
     found.sort(key=lambda quantity: quantity.start)
     return found

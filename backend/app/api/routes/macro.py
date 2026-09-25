@@ -3,6 +3,7 @@
 Briefs are LLM-generated, so each is served from the SQLite brief cache;
 pass ?refresh=1 to force regeneration.
 """
+
 from fastapi import APIRouter
 
 from genesis_core import IntelligenceResponse
@@ -10,6 +11,7 @@ from genesis_core import IntelligenceResponse
 from app.services import brief_cache, macro
 
 router = APIRouter(prefix="/macro", tags=["macro"])
+
 
 @router.get("/snapshot", response_model=IntelligenceResponse)
 def snapshot(refresh: bool = False):

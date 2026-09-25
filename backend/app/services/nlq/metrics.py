@@ -75,31 +75,51 @@ def _check_single_base_table(metrics: tuple[Metric, ...]) -> None:
     """
     tables = {m.base_table for m in metrics}
     if len(tables) > 1:
-        by_table = {t: [m.id for m in metrics if m.base_table == t] for t in sorted(tables)}
-        detail = "; ".join(f"{t.split('.')[-1]}: {', '.join(ids)}" for t, ids in by_table.items())
+        by_table = {
+            t: [m.id for m in metrics if m.base_table == t]
+            for t in sorted(tables)
+        }
+        detail = "; ".join(
+            f"{t.split('.')[-1]}: {', '.join(ids)}"
+            for t, ids in by_table.items()
+        )
         raise MetricError(
             "these metrics come from different source tables and cannot be combined in one "
             f"query without double-counting ({detail}). Ask for them separately."
         )
 
 
-def _check_time_grain(spec: QuerySpec, metrics: tuple[Metric, ...], cat: Catalog) -> None:
+def _check_time_grain(
+    spec: QuerySpec, metrics: tuple[Metric, ...], cat: Catalog
+) -> None:
     """The grain rule (§2.2)."""
-    time_dims = [cat.dimensions[d] for d in spec.dimensions if cat.dimensions[d].is_time]
+    time_dims = [
+        cat.dimensions[d] for d in spec.dimensions if cat.dimensions[d].is_time
+    ]
 
     for metric in metrics:
-        if metric.grain == "point_in_time" and time_dims and not metric.needs_as_of:
+        if (
+            metric.grain == "point_in_time"
+            and time_dims
+            and not metric.needs_as_of
+        ):
             raise MetricError(
                 f"'{metric.label}' is a point-in-time figure with no history in the data — "
                 "it cannot be broken down over time. Ask for it as a single value instead."
             )
-        if metric.no_time_travel and (spec.period.start or spec.period.relative not in (None, "today")):
+        if metric.no_time_travel and (
+            spec.period.start or spec.period.relative not in (None, "today")
+        ):
             raise MetricError(
                 f"'{metric.label}' is only available as of the latest data load and cannot "
                 "be back-dated. For a historical view use a metric based on the "
                 "classification history."
             )
-        if metric.grain == "point_in_time" and spec.compare_to and not metric.needs_as_of:
+        if (
+            metric.grain == "point_in_time"
+            and spec.compare_to
+            and not metric.needs_as_of
+        ):
             raise MetricError(
                 f"'{metric.label}' cannot be compared across periods — it has a single "
                 "as-of value."
@@ -118,7 +138,11 @@ def _check_dimensions_exist(spec: QuerySpec, cat: Catalog) -> None:
 
 def _check_having_metrics(spec: QuerySpec) -> None:
     selected = set(spec.metrics)
-    unknown = [condition.field for condition in spec.having if condition.field not in selected]
+    unknown = [
+        condition.field
+        for condition in spec.having
+        if condition.field not in selected
+    ]
     if unknown:
         raise MetricError(
             "aggregate conditions may reference only selected metrics; add "
@@ -145,7 +169,10 @@ def _check_dimension_compatibility(
         if cat.join_between(base_table, dim.table) is not None:
             continue
         if dim.table == hub or cat.join_between(base_table, hub) is not None:
-            if cat.join_between(hub, dim.table) is not None or dim.table == hub:
+            if (
+                cat.join_between(hub, dim.table) is not None
+                or dim.table == hub
+            ):
                 continue
         restriction = (base_entry.restrictions if base_entry else "") or (
             "there is no declared join between these tables"
@@ -170,7 +197,13 @@ def _coverage_warnings(metrics: tuple[Metric, ...], cat: Catalog) -> list[str]:
     return out
 
 
-def formulas_for(metric_ids: list[str], catalog: Catalog | None = None) -> dict[str, str]:
+def formulas_for(
+    metric_ids: list[str], catalog: Catalog | None = None
+) -> dict[str, str]:
     """Metric id -> human-readable formula, for the lineage panel."""
     cat = catalog or get_catalog()
-    return {mid: cat.metrics[mid].formula for mid in metric_ids if mid in cat.metrics}
+    return {
+        mid: cat.metrics[mid].formula
+        for mid in metric_ids
+        if mid in cat.metrics
+    }

@@ -41,7 +41,9 @@ class Tool:
     handler: Callable[[dict, "SourceAccessPolicy"], Awaitable[SourceResult]]
     source_id: str
     roles: frozenset[str] | None = None  # None = every role
-    params: dict[str, Any] = field(default_factory=dict)  # JSON-schema-ish for the "+" form
+    params: dict[str, Any] = field(
+        default_factory=dict
+    )  # JSON-schema-ish for the "+" form
 
     def visible_to(self, role: str) -> bool:
         return self.roles is None or role in self.roles
@@ -51,13 +53,18 @@ class Tool:
 # Thin wrappers over the source nodes, so a tool and the equivalent typed question can never
 # drift. Referencing `nodes.run_*` at call time keeps them monkeypatchable in tests.
 
-async def _competitor_landscape(params: dict, policy: "SourceAccessPolicy") -> SourceResult:
+
+async def _competitor_landscape(
+    params: dict, policy: "SourceAccessPolicy"
+) -> SourceResult:
     from app.services.workbench import nodes
 
     return await nodes.run_competitive("competitive landscape", policy=policy)
 
 
-async def _macro_brief(params: dict, policy: "SourceAccessPolicy") -> SourceResult:
+async def _macro_brief(
+    params: dict, policy: "SourceAccessPolicy"
+) -> SourceResult:
     from app.services.workbench import nodes
 
     return await nodes.run_macro(
@@ -66,7 +73,9 @@ async def _macro_brief(params: dict, policy: "SourceAccessPolicy") -> SourceResu
     )
 
 
-async def _regulatory_alerts(params: dict, policy: "SourceAccessPolicy") -> SourceResult:
+async def _regulatory_alerts(
+    params: dict, policy: "SourceAccessPolicy"
+) -> SourceResult:
     from app.services.workbench import nodes
 
     return await nodes.run_regulatory(
@@ -115,7 +124,10 @@ def get_tool(tool_id: str) -> Tool | None:
 
 
 async def run_tool(
-    tool_id: str, *, role: str, params: dict | None = None,
+    tool_id: str,
+    *,
+    role: str,
+    params: dict | None = None,
     external_sources_enabled: bool = False,
 ) -> SourceResult:
     """Run a tool, enforcing role access. Raises ToolNotFound / ToolAccessError."""
@@ -135,7 +147,9 @@ async def run_tool(
         raise ToolNotFound(tool_id)
     from app.services.workbench.access import build_policy
 
-    policy = build_policy(role=role, external_sources_enabled=external_sources_enabled)
+    policy = build_policy(
+        role=role, external_sources_enabled=external_sources_enabled
+    )
     if not tool.visible_to(role) or not policy.allows(tool.source_id):
         log_parsed_output(
             f"Tool access denied: {tool_id}",
@@ -155,7 +169,10 @@ async def run_tool(
             event="tool_call",
             tool_name=tool_id,
             tool_args=params or {},
-            tool_result={"kind": getattr(result, "kind", ""), "item_count": len(getattr(result, "items", []) or [])},
+            tool_result={
+                "kind": getattr(result, "kind", ""),
+                "item_count": len(getattr(result, "items", []) or []),
+            },
             duration_ms=duration_ms,
             status="success",
         )

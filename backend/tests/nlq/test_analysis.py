@@ -34,7 +34,9 @@ def _chart(step, rows, chart_type="kpi"):
 def _results(spec, values: dict[str, list[dict]]):
     """Pair each step with a chart built from `values[step.id]`."""
     return [
-        analysis.StepResult(step=step, chart=_chart(step, values.get(step.id, [])))
+        analysis.StepResult(
+            step=step, chart=_chart(step, values.get(step.id, []))
+        )
         for step in spec.steps
     ]
 
@@ -53,13 +55,19 @@ class TestBuild:
 
     def test_a_named_period_overrides_the_default(self, catalog):
         spec = analysis.build(
-            "portfolio_health", catalog=catalog, period=Period(relative="last_quarter")
+            "portfolio_health",
+            catalog=catalog,
+            period=Period(relative="last_quarter"),
         )
-        assert all(s.spec.period.relative == "last_quarter" for s in spec.steps)
+        assert all(
+            s.spec.period.relative == "last_quarter" for s in spec.steps
+        )
 
     def test_filters_are_applied_to_every_step(self, catalog):
         gold_loans = [Filter(field="product", op="eq", value="1")]
-        spec = analysis.build("portfolio_health", catalog=catalog, filters=gold_loans)
+        spec = analysis.build(
+            "portfolio_health", catalog=catalog, filters=gold_loans
+        )
         assert all(s.spec.filters == gold_loans for s in spec.steps)
 
     def test_thresholds_survive_the_build(self, catalog):
@@ -106,32 +114,48 @@ class TestBriefing:
         return analysis.compose(spec, _results(spec, values), catalog)
 
     def test_a_breached_alert_outranks_everything_else(self, catalog):
-        result = self._composed(catalog, {
-            "book_size": [{"principal_outstanding": 5_00_00_000.0}],
-            "par30": [{"par_30": 14.0}],          # alert_above 10
-            "npa": [{"npa_ratio": 1.0}],
-            "collections": [{"collection_efficiency": 99.0}],
-        })
+        result = self._composed(
+            catalog,
+            {
+                "book_size": [{"principal_outstanding": 5_00_00_000.0}],
+                "par30": [{"par_30": 14.0}],  # alert_above 10
+                "npa": [{"npa_ratio": 1.0}],
+                "collections": [{"collection_efficiency": 99.0}],
+            },
+        )
         assert result.findings[0].step_id == "par30"
         assert result.findings[0].severity == "alert"
 
     def test_watch_outranks_info_but_not_alert(self, catalog):
-        result = self._composed(catalog, {
-            "par30": [{"par_30": 7.0}],           # watch_above 5
-            "npa": [{"npa_ratio": 8.0}],          # alert_above 6
-            "book_size": [{"principal_outstanding": 1.0}],
-        })
+        result = self._composed(
+            catalog,
+            {
+                "par30": [{"par_30": 7.0}],  # watch_above 5
+                "npa": [{"npa_ratio": 8.0}],  # alert_above 6
+                "book_size": [{"principal_outstanding": 1.0}],
+            },
+        )
         severities = [f.severity for f in result.findings]
-        assert severities == sorted(severities, key=lambda s: {"alert": 0, "watch": 1, "info": 2}[s])
+        assert severities == sorted(
+            severities, key=lambda s: {"alert": 0, "watch": 1, "info": 2}[s]
+        )
 
     def test_a_below_threshold_fires_on_falling_below_it(self, catalog):
-        result = self._composed(catalog, {"collections": [{"collection_efficiency": 88.0}]})
-        collections = next(f for f in result.findings if f.step_id == "collections")
+        result = self._composed(
+            catalog, {"collections": [{"collection_efficiency": 88.0}]}
+        )
+        collections = next(
+            f for f in result.findings if f.step_id == "collections"
+        )
         assert collections.severity == "alert"
 
     def test_a_healthy_value_is_only_info(self, catalog):
-        result = self._composed(catalog, {"collections": [{"collection_efficiency": 99.0}]})
-        collections = next(f for f in result.findings if f.step_id == "collections")
+        result = self._composed(
+            catalog, {"collections": [{"collection_efficiency": 99.0}]}
+        )
+        collections = next(
+            f for f in result.findings if f.step_id == "collections"
+        )
         assert collections.severity == "info"
 
     def test_a_step_that_returned_nothing_produces_no_finding(self, catalog):
@@ -141,20 +165,29 @@ class TestBriefing:
         assert not [f for f in result.findings if f.step_id == "par30"]
 
     def test_the_headline_counts_what_needs_attention(self, catalog):
-        result = self._composed(catalog, {
-            "par30": [{"par_30": 14.0}],
-            "npa": [{"npa_ratio": 8.0}],
-            "collections": [{"collection_efficiency": 99.0}],
-        })
+        result = self._composed(
+            catalog,
+            {
+                "par30": [{"par_30": 14.0}],
+                "npa": [{"npa_ratio": 8.0}],
+                "collections": [{"collection_efficiency": 99.0}],
+            },
+        )
         assert "2" in result.headline
 
     def test_a_clean_briefing_says_so(self, catalog):
-        result = self._composed(catalog, {
-            "par30": [{"par_30": 1.0}],
-            "npa": [{"npa_ratio": 1.0}],
-            "collections": [{"collection_efficiency": 99.0}],
-        })
-        assert "nothing" in result.headline.lower() or "no " in result.headline.lower()
+        result = self._composed(
+            catalog,
+            {
+                "par30": [{"par_30": 1.0}],
+                "npa": [{"npa_ratio": 1.0}],
+                "collections": [{"collection_efficiency": 99.0}],
+            },
+        )
+        assert (
+            "nothing" in result.headline.lower()
+            or "no " in result.headline.lower()
+        )
 
     def test_every_finding_carries_the_spec_that_produced_it(self, catalog):
         result = self._composed(catalog, {"par30": [{"par_30": 14.0}]})
@@ -162,10 +195,13 @@ class TestBriefing:
             assert finding.spec.metrics
 
     def test_charts_are_returned_for_every_step_that_answered(self, catalog):
-        result = self._composed(catalog, {
-            "par30": [{"par_30": 4.0}],
-            "npa": [{"npa_ratio": 1.0}],
-        })
+        result = self._composed(
+            catalog,
+            {
+                "par30": [{"par_30": 4.0}],
+                "npa": [{"npa_ratio": 1.0}],
+            },
+        )
         assert len(result.charts) == 2
 
     def test_a_breakdown_step_reports_its_largest_member(self, catalog):
@@ -175,10 +211,14 @@ class TestBriefing:
                 step=step,
                 chart=_chart(
                     step,
-                    [{"dpd_bucket": "90+", "overdue_total": 900.0},
-                     {"dpd_bucket": "30-59", "overdue_total": 100.0}],
+                    [
+                        {"dpd_bucket": "90+", "overdue_total": 900.0},
+                        {"dpd_bucket": "30-59", "overdue_total": 100.0},
+                    ],
                     chart_type="bar",
-                ) if step.id == "by_bucket" else _chart(step, []),
+                )
+                if step.id == "by_bucket"
+                else _chart(step, []),
             )
             for step in spec.steps
         ]
@@ -191,29 +231,43 @@ class TestConcentration:
     def test_a_single_borrower_book_is_maximally_concentrated(self, catalog):
         spec = analysis.build("concentration", catalog=catalog)
         rows = [{"borrower": "A", "principal_outstanding": 1000.0}]
-        result = analysis.compose(spec, _results(spec, {"exposure": rows}), catalog)
+        result = analysis.compose(
+            spec, _results(spec, {"exposure": rows}), catalog
+        )
         hhi = next(f for f in result.findings if "Herfindahl" in f.label)
         assert hhi.value == pytest.approx(1.0)
         assert hhi.severity == "alert"
 
     def test_an_evenly_spread_book_is_not(self, catalog):
         spec = analysis.build("concentration", catalog=catalog)
-        rows = [{"borrower": str(i), "principal_outstanding": 100.0} for i in range(100)]
-        result = analysis.compose(spec, _results(spec, {"exposure": rows}), catalog)
+        rows = [
+            {"borrower": str(i), "principal_outstanding": 100.0}
+            for i in range(100)
+        ]
+        result = analysis.compose(
+            spec, _results(spec, {"exposure": rows}), catalog
+        )
         hhi = next(f for f in result.findings if "Herfindahl" in f.label)
         assert hhi.value == pytest.approx(0.01)
         assert hhi.severity == "info"
 
     def test_it_reports_the_top_ten_share(self, catalog):
         spec = analysis.build("concentration", catalog=catalog)
-        rows = [{"borrower": str(i), "principal_outstanding": 100.0} for i in range(20)]
-        result = analysis.compose(spec, _results(spec, {"exposure": rows}), catalog)
+        rows = [
+            {"borrower": str(i), "principal_outstanding": 100.0}
+            for i in range(20)
+        ]
+        result = analysis.compose(
+            spec, _results(spec, {"exposure": rows}), catalog
+        )
         top10 = next(f for f in result.findings if "Top 10" in f.label)
         assert top10.value == pytest.approx(50.0)
 
     def test_an_empty_book_produces_no_ratio(self, catalog):
         spec = analysis.build("concentration", catalog=catalog)
-        result = analysis.compose(spec, _results(spec, {"exposure": []}), catalog)
+        result = analysis.compose(
+            spec, _results(spec, {"exposure": []}), catalog
+        )
         assert not result.findings
 
 
@@ -228,15 +282,17 @@ class TestQuadrant:
         {"branch": "4", "disbursement_total": 100.0},
     ]
     QUALITY = [
-        {"branch": "1", "par_30": 2.0},    # grow, clean
-        {"branch": "2", "par_30": 20.0},   # grow, risky
-        {"branch": "3", "par_30": 2.0},    # slow, clean
-        {"branch": "4", "par_30": 20.0},   # slow, risky
+        {"branch": "1", "par_30": 2.0},  # grow, clean
+        {"branch": "2", "par_30": 20.0},  # grow, risky
+        {"branch": "3", "par_30": 2.0},  # slow, clean
+        {"branch": "4", "par_30": 20.0},  # slow, risky
     ]
 
     def _composed(self, catalog):
         spec = analysis.build("growth_versus_quality", catalog=catalog)
-        results = _results(spec, {"growth": self.GROWTH, "quality": self.QUALITY})
+        results = _results(
+            spec, {"growth": self.GROWTH, "quality": self.QUALITY}
+        )
         return analysis.compose(spec, results, catalog), spec
 
     def test_each_member_lands_in_a_quadrant(self, catalog):
@@ -266,7 +322,9 @@ class TestQuadrant:
     def test_it_names_the_best_and_the_worst(self, catalog):
         result, _ = self._composed(catalog)
         assert "1" in result.findings[0].text
-        attention = next(f for f in result.findings if f.label == "Needs attention")
+        attention = next(
+            f for f in result.findings if f.label == "Needs attention"
+        )
         assert "4" in attention.text
         assert attention.severity == "watch"
 
@@ -278,19 +336,30 @@ class TestQuadrant:
         """A branch with disbursement but no snapshot row cannot be placed on two axes, and
         plotting it at zero arrears would invent the most flattering possible position."""
         spec = analysis.build("growth_versus_quality", catalog=catalog)
-        results = _results(spec, {
-            "growth": [*self.GROWTH, {"branch": "9", "disbursement_total": 50.0}],
-            "quality": self.QUALITY,
-        })
+        results = _results(
+            spec,
+            {
+                "growth": [
+                    *self.GROWTH,
+                    {"branch": "9", "disbursement_total": 50.0},
+                ],
+                "quality": self.QUALITY,
+            },
+        )
         result = analysis.compose(spec, results, catalog)
         assert "9" not in {r["branch"] for r in result.charts[0].rows}
 
-    def test_one_member_returns_its_readings_without_inventing_a_quadrant(self, catalog):
+    def test_one_member_returns_its_readings_without_inventing_a_quadrant(
+        self, catalog
+    ):
         spec = analysis.build("growth_versus_quality", catalog=catalog)
-        results = _results(spec, {
-            "growth": [{"branch": "1", "disbursement_total": 1.0}],
-            "quality": [{"branch": "1", "par_30": 1.0}],
-        })
+        results = _results(
+            spec,
+            {
+                "growth": [{"branch": "1", "disbursement_total": 1.0}],
+                "quality": [{"branch": "1", "par_30": 1.0}],
+            },
+        )
         result = analysis.compose(spec, results, catalog)
         assert len(result.findings) == 1
         assert "only comparable member" in result.findings[0].text
@@ -300,19 +369,25 @@ class TestQuadrant:
 
     def test_two_members_still_use_the_normal_median_comparison(self, catalog):
         spec = analysis.build("growth_versus_quality", catalog=catalog)
-        results = _results(spec, {
-            "growth": [
-                {"branch": "1", "disbursement_total": 10.0},
-                {"branch": "2", "disbursement_total": 5.0},
-            ],
-            "quality": [
-                {"branch": "1", "par_30": 2.0},
-                {"branch": "2", "par_30": 8.0},
-            ],
-        })
+        results = _results(
+            spec,
+            {
+                "growth": [
+                    {"branch": "1", "disbursement_total": 10.0},
+                    {"branch": "2", "disbursement_total": 5.0},
+                ],
+                "quality": [
+                    {"branch": "1", "par_30": 2.0},
+                    {"branch": "2", "par_30": 8.0},
+                ],
+            },
+        )
         result = analysis.compose(spec, results, catalog)
         assert len(result.charts[0].rows) == 2
-        assert all(row["quadrant"] != "Comparison unavailable" for row in result.charts[0].rows)
+        assert all(
+            row["quadrant"] != "Comparison unavailable"
+            for row in result.charts[0].rows
+        )
         assert any("median" in warning.lower() for warning in result.warnings)
 
 
@@ -323,27 +398,39 @@ class TestFindingsCarryTheirOwnQuestion:
 
     def test_a_finding_names_its_period(self, catalog):
         spec = analysis.build(
-            "portfolio_health", catalog=catalog, period=Period(relative="last_quarter")
+            "portfolio_health",
+            catalog=catalog,
+            period=Period(relative="last_quarter"),
         )
-        result = analysis.compose(spec, _results(spec, {"par30": [{"par_30": 14.0}]}), catalog)
+        result = analysis.compose(
+            spec, _results(spec, {"par30": [{"par_30": 14.0}]}), catalog
+        )
         assert "last quarter" in result.findings[0].question
 
-    def test_a_finding_carries_the_filter_the_card_was_built_with(self, catalog):
+    def test_a_finding_carries_the_filter_the_card_was_built_with(
+        self, catalog
+    ):
         spec = analysis.build(
             "portfolio_health",
             catalog=catalog,
             filters=[Filter(field="product", op="eq", value="1")],
         )
-        result = analysis.compose(spec, _results(spec, {"par30": [{"par_30": 14.0}]}), catalog)
+        result = analysis.compose(
+            spec, _results(spec, {"par30": [{"par_30": 14.0}]}), catalog
+        )
         assert "product" in result.findings[0].question
 
     def test_every_composer_populates_it(self, catalog):
         cases = {
-            "concentration": {"exposure": [
-                {"borrower": str(i), "principal_outstanding": 100.0} for i in range(20)
-            ]},
+            "concentration": {
+                "exposure": [
+                    {"borrower": str(i), "principal_outstanding": 100.0}
+                    for i in range(20)
+                ]
+            },
             "growth_versus_quality": {
-                "growth": TestQuadrant.GROWTH, "quality": TestQuadrant.QUALITY
+                "growth": TestQuadrant.GROWTH,
+                "quality": TestQuadrant.QUALITY,
             },
             "portfolio_health": {"par30": [{"par_30": 14.0}]},
         }
@@ -365,7 +452,9 @@ class TestAFailedStepNeverBecomesAPosition:
         results = [
             analysis.StepResult(
                 step=step,
-                chart=_chart(step, TestQuadrant.GROWTH) if step.id == "growth" else None,
+                chart=_chart(step, TestQuadrant.GROWTH)
+                if step.id == "growth"
+                else None,
                 error="" if step.id == "growth" else "connection timed out",
             )
             for step in spec.steps
@@ -374,7 +463,9 @@ class TestAFailedStepNeverBecomesAPosition:
 
     def test_no_quadrants_are_produced(self, catalog):
         result, _ = self._one_step_failed(catalog)
-        assert not any(r.get("quadrant") for chart in result.charts for r in chart.rows)
+        assert not any(
+            r.get("quadrant") for chart in result.charts for r in chart.rows
+        )
 
     def test_it_says_which_half_is_missing(self, catalog):
         result, _ = self._one_step_failed(catalog)

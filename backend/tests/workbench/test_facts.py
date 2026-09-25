@@ -10,14 +10,23 @@ from app.services.workbench.results import ToolResult
 
 def _fact(fact_id, value, unit="inr", period="FY26"):
     return Fact(
-        id=fact_id, label=fact_id, value=Decimal(str(value)), display_value=str(value),
-        unit=unit, source="db", card_type="chart", row=0, field=fact_id, period=period,
+        id=fact_id,
+        label=fact_id,
+        value=Decimal(str(value)),
+        display_value=str(value),
+        unit=unit,
+        source="db",
+        card_type="chart",
+        row=0,
+        field=fact_id,
+        period=period,
     )
 
 
 def test_chart_rows_become_verified_typed_facts():
     result = ToolResult(
-        source="db", card_type="chart",
+        source="db",
+        card_type="chart",
         payload={
             "columns": [
                 {"name": "branch", "label": "Branch", "unit": "text"},
@@ -37,8 +46,12 @@ def test_chart_rows_become_verified_typed_facts():
 
 def test_derived_difference_and_share_carry_provenance():
     left, right = _fact("left", 120), _fact("right", 100)
-    delta = calculations.derive("difference", left, right, fact_id="delta", label="Change")
-    share = calculations.derive("share", left, right, fact_id="share", label="Share")
+    delta = calculations.derive(
+        "difference", left, right, fact_id="delta", label="Change"
+    )
+    share = calculations.derive(
+        "share", left, right, fact_id="share", label="Share"
+    )
     assert delta.value == Decimal("20")
     assert delta.operands == ("left", "right")
     assert share.value == Decimal("120.0")
@@ -46,16 +59,27 @@ def test_derived_difference_and_share_carry_provenance():
 
 
 def test_calculation_rejects_zero_and_mixed_units():
-    with pytest.raises(calculations.CalculationError, match="division by zero"):
-        calculations.derive("ratio", _fact("a", 1), _fact("b", 0), fact_id="x", label="x")
+    with pytest.raises(
+        calculations.CalculationError, match="division by zero"
+    ):
+        calculations.derive(
+            "ratio", _fact("a", 1), _fact("b", 0), fact_id="x", label="x"
+        )
     with pytest.raises(calculations.CalculationError, match="units"):
         calculations.derive(
-            "difference", _fact("a", 1), _fact("b", 1, "count"), fact_id="x", label="x",
+            "difference",
+            _fact("a", 1),
+            _fact("b", 1, "count"),
+            fact_id="x",
+            label="x",
         )
     with pytest.raises(calculations.CalculationError, match="periods"):
         calculations.derive(
-            "difference", _fact("a", 1, period=""), _fact("b", 1),
-            fact_id="x", label="x",
+            "difference",
+            _fact("a", 1, period=""),
+            _fact("b", 1),
+            fact_id="x",
+            label="x",
         )
 
 
@@ -68,15 +92,23 @@ def test_claim_validation_accepts_ledger_and_rejects_invention():
 
 def test_analysis_findings_become_facts_with_period_and_filters():
     result = ToolResult(
-        source="db", card_type="analysis",
+        source="db",
+        card_type="analysis",
         payload={
-            "findings": [{
-                "step_id": "par", "label": "PAR 30", "value": 4.2, "unit": "percent",
-                "spec": {
-                    "period": {"relative": "this_month"},
-                    "filters": [{"field": "branch", "op": "eq", "value": "Aluva"}],
-                },
-            }],
+            "findings": [
+                {
+                    "step_id": "par",
+                    "label": "PAR 30",
+                    "value": 4.2,
+                    "unit": "percent",
+                    "spec": {
+                        "period": {"relative": "this_month"},
+                        "filters": [
+                            {"field": "branch", "op": "eq", "value": "Aluva"}
+                        ],
+                    },
+                }
+            ],
         },
     )
     fact = facts.from_results([result])[0]
@@ -94,7 +126,10 @@ def test_weighted_average_is_deterministic_and_provenanced():
         _fact("w2", 3, "count"),
     ]
     derived = calculations.weighted_average(
-        values, weights, fact_id="weighted", label="Weighted rate",
+        values,
+        weights,
+        fact_id="weighted",
+        label="Weighted rate",
     )
     assert derived.value == Decimal("17.5")
     assert derived.operands == ("v1", "w1", "v2", "w2")
@@ -111,5 +146,9 @@ def test_ordered_markers_are_allowed_and_invalid_numeric_sentence_is_removed():
 def test_claim_validation_rejects_wrong_unit_and_explicit_wrong_period():
     ledger = [replace(_fact("par", "4.2", "percent"), period="FY26")]
     assert composer.numbers_are_grounded("PAR was 4.2% in FY26.", "", ledger)
-    assert not composer.numbers_are_grounded("PAR was Rs 4.2 in FY26.", "", ledger)
-    assert not composer.numbers_are_grounded("PAR was 4.2% in FY25.", "", ledger)
+    assert not composer.numbers_are_grounded(
+        "PAR was Rs 4.2 in FY26.", "", ledger
+    )
+    assert not composer.numbers_are_grounded(
+        "PAR was 4.2% in FY25.", "", ledger
+    )

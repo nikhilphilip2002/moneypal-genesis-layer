@@ -21,7 +21,11 @@ from app.core.config import settings
 from app.services.nlq.catalog import get_catalog
 from app.services.nlq.llm import LLMError, LLMProtocolError, LLMTimeout
 from app.services.nlq.llm.client import request_gate
-from app.services.nlq.llm.slot_cache import SlotCacheError, slot_action, snapshot_filename
+from app.services.nlq.llm.slot_cache import (
+    SlotCacheError,
+    slot_action,
+    snapshot_filename,
+)
 from app.services.workbench import history, models, prompts
 from app.services.workbench.agent_executor import (
     AgentExecutionContext,
@@ -96,8 +100,10 @@ class TurnBudget:
 
     def snapshot(self) -> dict[str, int]:
         return {
-            "rounds_used": self.rounds_used, "max_rounds": self.max_rounds,
-            "calls_used": self.calls_used, "max_calls": self.max_calls,
+            "rounds_used": self.rounds_used,
+            "max_rounds": self.max_rounds,
+            "calls_used": self.calls_used,
+            "max_calls": self.max_calls,
         }
 
 
@@ -115,8 +121,10 @@ def _budget(state: dict[str, Any]) -> TurnBudget:
 
 
 _CURATED_SOURCES = {
-    "concepts": "knowledge", "macro": "macro",
-    "competitive": "competitive", "regulatory": "regulatory",
+    "concepts": "knowledge",
+    "macro": "macro",
+    "competitive": "competitive",
+    "regulatory": "regulatory",
 }
 
 
@@ -150,13 +158,13 @@ _USER_ERROR_MESSAGES = {
 
 
 def _user_error_message(code: str, turn_id: str) -> str:
-    base = _USER_ERROR_MESSAGES.get(code, _USER_ERROR_MESSAGES["SOURCE_UNAVAILABLE"])
+    base = _USER_ERROR_MESSAGES.get(
+        code, _USER_ERROR_MESSAGES["SOURCE_UNAVAILABLE"]
+    )
     return f"{base} (reference {turn_id})"
 
 
-_PII_REFUSAL_TEXT = (
-    "I can’t send private customer, account, or repayment details to public web search."
-)
+_PII_REFUSAL_TEXT = "I can’t send private customer, account, or repayment details to public web search."
 _SOURCE_REFUSAL_TEXT = "That source is not enabled for this request."
 _BUDGET_LIMITATION = {
     "source": "agent",
@@ -188,7 +196,11 @@ _NUDGES = {
         "do not enumerate the table in prose."
     ),
 }
-_PURPOSES = {"required": "agent_select", "auto": "agent_continue", "none": "agent_synthesize"}
+_PURPOSES = {
+    "required": "agent_select",
+    "auto": "agent_continue",
+    "none": "agent_synthesize",
+}
 # The stage each request kind is recorded under in the turn's event stream.
 _STAGES = {"required": "route", "auto": "continue", "none": "synthesize"}
 
@@ -200,7 +212,9 @@ def _elapsed_ms(state: dict[str, Any]) -> int:
 
 def _trace_arguments(call) -> dict[str, Any]:
     """Return arguments safe to render to the authenticated user."""
-    arguments = dict(call.arguments) if isinstance(call.arguments, dict) else {}
+    arguments = (
+        dict(call.arguments) if isinstance(call.arguments, dict) else {}
+    )
     if call.name == "search_public_web" and "search_query" in arguments:
         # A denied call can contain private material before outbound policy evaluation.
         arguments["search_query"] = "[redacted after policy evaluation]"
@@ -217,8 +231,12 @@ async def _emit_trace(state: dict[str, Any], step: dict[str, Any]) -> None:
 
 
 async def _select(
-    state: dict[str, Any], *, repair_messages=None, tool_choice: str = "required",
-    supplement: str = "", trace_id: str | None = None,
+    state: dict[str, Any],
+    *,
+    repair_messages=None,
+    tool_choice: str = "required",
+    supplement: str = "",
+    trace_id: str | None = None,
 ):
     """Make one provider request with the policy's permitted tool-call subset.
 
@@ -229,7 +247,9 @@ async def _select(
     budget: TurnBudget = state["_agent_budget"]
     catalog = state.setdefault("_agent_catalog", get_catalog())
     catalog_context = prompts.build_agent_catalog_context(
-        state["question"], catalog, supplement=supplement,
+        state["question"],
+        catalog,
+        supplement=supplement,
     )
     from app.mcp.tool_catalog import catalog as mcp_catalog
 
@@ -244,7 +264,9 @@ async def _select(
                 await mcp_catalog.discover_postgres(check_health=False)
             except Exception:
                 pass
-    definitions = await mcp_catalog.model_tool_definitions(state["source_policy"])
+    definitions = await mcp_catalog.model_tool_definitions(
+        state["source_policy"]
+    )
     if not definitions:
         raise LLMError("no native tools are authorized for this request")
     prompt = prompts.build_agent_prompt(
@@ -269,7 +291,9 @@ async def _select(
     async def complete(**kwargs):
         if selecting:
             return await client.complete(**kwargs)
-        return await complete_answer(client, state, trace_id=trace_id, **kwargs)
+        return await complete_answer(
+            client, state, trace_id=trace_id, **kwargs
+        )
 
     async def request():
         return await complete(
@@ -287,7 +311,9 @@ async def _select(
         return await request()
 
     schema_hash = hashlib.sha256(
-        json.dumps(definitions, sort_keys=True, separators=(",", ":")).encode("utf-8")
+        json.dumps(definitions, sort_keys=True, separators=(",", ":")).encode(
+            "utf-8"
+        )
     ).hexdigest()
     filename = snapshot_filename(
         user=state["user"],
@@ -304,12 +330,16 @@ async def _select(
                 try:
                     await slot_action("restore", filename=filename)
                 except SlotCacheError:
-                    logger.info("No reusable conversation slot snapshot was restored")
+                    logger.info(
+                        "No reusable conversation slot snapshot was restored"
+                    )
         result = await request()
         try:
             await slot_action("save", filename=filename)
         except SlotCacheError:
-            logger.warning("Conversation slot snapshot save failed", exc_info=True)
+            logger.warning(
+                "Conversation slot snapshot save failed", exc_info=True
+            )
         return result
 
 
@@ -317,12 +347,17 @@ def _preflight(result, state: dict[str, Any]) -> list[tuple[str, str, str]]:
     """Validate and reauthorize every call; one ``(call_id, message, code)`` per failure."""
     failures: list[tuple[str, str, str]] = []
     terminals = [
-        call for call in result.tool_calls
+        call
+        for call in result.tool_calls
         if call.name in {"finish_without_data", "submit_final_answer"}
     ]
     if terminals and len(result.tool_calls) != 1:
         failures.extend(
-            (call.id, f"{call.name} must be the only call", "INVALID_TOOL_ARGUMENTS")
+            (
+                call.id,
+                f"{call.name} must be the only call",
+                "INVALID_TOOL_ARGUMENTS",
+            )
             for call in terminals
         )
     for call in result.tool_calls:
@@ -332,19 +367,26 @@ def _preflight(result, state: dict[str, Any]) -> list[tuple[str, str, str]]:
             if _is_postgres_tool(call.name):
                 state["source_policy"].require("db")
                 if not isinstance(call.arguments, dict):
-                    raise AgentToolArgumentsInvalid("MCP tool arguments must be a JSON object")
+                    raise AgentToolArgumentsInvalid(
+                        "MCP tool arguments must be a JSON object"
+                    )
                 continue
             authorize_local_tool_call(
                 call.name, call.arguments, policy=state["source_policy"]
             )
             if call.name == "submit_final_answer":
                 query_number = call.arguments.get("query_id")
-                if not isinstance(query_number, int) or isinstance(query_number, bool):
+                if not isinstance(query_number, int) or isinstance(
+                    query_number, bool
+                ):
                     continue
-                from app.services.workbench.attribution import resolve_current_query
+                from app.services.workbench.attribution import (
+                    resolve_current_query,
+                )
 
                 selected = resolve_current_query(
-                    list(state.get("query_registry", [])), query_number,
+                    list(state.get("query_registry", [])),
+                    query_number,
                     prior_registry=state.get("prior_query_registry", []),
                 )
                 if selected is None:
@@ -354,15 +396,16 @@ def _preflight(result, state: dict[str, Any]) -> list[tuple[str, str, str]]:
                 if (
                     selected.get("status") != "success"
                     or selected.get("has_data") is not True
-                    or not _is_postgres_tool(str(selected.get("tool_name") or ""))
+                    or not _is_postgres_tool(
+                        str(selected.get("tool_name") or "")
+                    )
                 ):
                     raise AgentToolArgumentsInvalid(
                         f"query_id {query_number} must reference a successful database query"
                     )
-                if (
-                    selected in state.get("prior_query_registry", [])
-                    and not isinstance(selected.get("result_payload"), dict)
-                ):
+                if selected in state.get(
+                    "prior_query_registry", []
+                ) and not isinstance(selected.get("result_payload"), dict):
                     raise AgentToolArgumentsInvalid(
                         f"query_id {query_number} has no stored result to reuse"
                     )
@@ -391,24 +434,36 @@ def _authorized_tool_names(state: dict[str, Any]) -> list[str]:
     return names
 
 
-def _failure_observation(call, message: str, code: str, state: dict[str, Any] | None):
-    payload: dict[str, Any] = {"status": "error", "code": code, "message": message[:500]}
+def _failure_observation(
+    call, message: str, code: str, state: dict[str, Any] | None
+):
+    payload: dict[str, Any] = {
+        "status": "error",
+        "code": code,
+        "message": message[:500],
+    }
     if code == "POLICY_DENIED":
         payload["denied"] = {
-            "tool": call.name, "source": _source_for_call(call), "policy": "source_access",
+            "tool": call.name,
+            "source": _source_for_call(call),
+            "policy": "source_access",
         }
         if state is not None:
             payload["authorized_tools"] = _authorized_tool_names(state)
     return {
-        "role": "tool", "tool_call_id": call.id,
+        "role": "tool",
+        "tool_call_id": call.id,
         "content": json.dumps(payload, separators=(",", ":")),
     }
 
 
 def _repair_messages(
-    result, failures: list[tuple[str, str, str]], *,
+    result,
+    failures: list[tuple[str, str, str]],
+    *,
     executed: list[ExecutedAgentCall] | tuple[ExecutedAgentCall, ...] = (),
-    state: dict[str, Any] | None = None, durable: bool = False,
+    state: dict[str, Any] | None = None,
+    durable: bool = False,
 ):
     """The assistant message plus exactly one tool message per call it contains.
 
@@ -416,7 +471,9 @@ def _repair_messages(
     (bounded for the model, complete when ``durable``), so replay parity always holds.
     """
     if result.assistant_message is None:
-        raise LLMProtocolError("native tool response cannot be replayed for repair")
+        raise LLMProtocolError(
+            "native tool response cannot be replayed for repair"
+        )
     failed = {call_id: (message, code) for call_id, message, code in failures}
     items = {item.call.id: item for item in executed}
     messages = [result.assistant_message]
@@ -426,11 +483,20 @@ def _repair_messages(
             messages.append(_failure_observation(call, message, code, state))
         elif call.id in items:
             item = items[call.id]
-            messages.append(item.replay_message() if durable else item.observation_message())
+            messages.append(
+                item.replay_message()
+                if durable
+                else item.observation_message()
+            )
         else:
-            messages.append(_failure_observation(
-                call, "the call was not executed", "SOURCE_UNAVAILABLE", state,
-            ))
+            messages.append(
+                _failure_observation(
+                    call,
+                    "the call was not executed",
+                    "SOURCE_UNAVAILABLE",
+                    state,
+                )
+            )
     return messages
 
 
@@ -443,12 +509,16 @@ def _raise_first_failure(failures: list[tuple[str, str, str]]) -> None:
     raise AgentToolArgumentsInvalid(message)
 
 
-def _stored_arguments(state: dict[str, Any], call, failed: bool) -> dict[str, Any]:
+def _stored_arguments(
+    state: dict[str, Any], call, failed: bool
+) -> dict[str, Any]:
     return call.arguments
 
 
 def _persistable(state) -> bool:
-    return all(state.get(key) for key in ("conversation_id", "user", "turn_id"))
+    return all(
+        state.get(key) for key in ("conversation_id", "user", "turn_id")
+    )
 
 
 def _persist_query_registry(state: dict[str, Any]) -> None:
@@ -456,14 +526,18 @@ def _persist_query_registry(state: dict[str, Any]) -> None:
         return
     try:
         history.set_query_registry(
-            state["conversation_id"], state["user"], state["turn_id"],
+            state["conversation_id"],
+            state["user"],
+            state["turn_id"],
             list(state.get("query_registry", [])),
         )
     except Exception:  # noqa: BLE001 - execution must survive history outages
         logger.warning("query registry persistence failed", exc_info=True)
 
 
-def _register_database_queries(state: dict[str, Any], calls) -> dict[str, dict[str, Any]]:
+def _register_database_queries(
+    state: dict[str, Any], calls
+) -> dict[str, dict[str, Any]]:
     """Allocate IDs before PostgreSQL calls and derived visual creation start."""
     registry = state.setdefault("query_registry", [])
     registered: dict[str, dict[str, Any]] = {}
@@ -471,15 +545,27 @@ def _register_database_queries(state: dict[str, Any], calls) -> dict[str, dict[s
         is_visual = call.name == "visualize_query_result"
         if not _is_postgres_tool(call.name) and not is_visual:
             continue
-        fingerprint = hashlib.sha256(json.dumps(
-            {"tool": call.name, "arguments": call.arguments},
-            sort_keys=True, separators=(",", ":"), default=str,
-        ).encode()).hexdigest()
-        retry_of = None if is_visual else next((
-            record for record in reversed(registry)
-            if record.get("query_fingerprint") == fingerprint
-            and record.get("status") in {"error", "timeout"}
-        ), None)
+        fingerprint = hashlib.sha256(
+            json.dumps(
+                {"tool": call.name, "arguments": call.arguments},
+                sort_keys=True,
+                separators=(",", ":"),
+                default=str,
+            ).encode()
+        ).hexdigest()
+        retry_of = (
+            None
+            if is_visual
+            else next(
+                (
+                    record
+                    for record in reversed(registry)
+                    if record.get("query_fingerprint") == fingerprint
+                    and record.get("status") in {"error", "timeout"}
+                ),
+                None,
+            )
+        )
         if retry_of is not None:
             query_id = str(retry_of["query_id"])
             attempt_number = 1 + sum(
@@ -502,7 +588,9 @@ def _register_database_queries(state: dict[str, Any], calls) -> dict[str, dict[s
             tool_call_id=call.id,
             tool_name=call.name,
             query_fingerprint=fingerprint,
-            source_query_id=(str(call.arguments.get("query_id")) if is_visual else None),
+            source_query_id=(
+                str(call.arguments.get("query_id")) if is_visual else None
+            ),
         ).model_dump(mode="json")
         registry.append(record)
         registered[call.id] = record
@@ -527,79 +615,119 @@ def _query_row_count(item: ExecutedAgentCall) -> int | None:
 
 
 async def _emit_query_event(
-    state: dict[str, Any], event: str, record: dict[str, Any],
+    state: dict[str, Any],
+    event: str,
+    record: dict[str, Any],
 ) -> None:
     from app.services.workbench.graph import sse
 
     result_payload = record.get("result_payload")
     lineage = (
         result_payload.get("lineage")
-        if isinstance(result_payload, dict) and isinstance(result_payload.get("lineage"), dict)
+        if isinstance(result_payload, dict)
+        and isinstance(result_payload.get("lineage"), dict)
         else None
     )
-    await state["emit"].put(sse(event, {
-        "turn_id": state["turn_id"],
-        **{
-            key: record.get(key) for key in (
-                "query_id", "attempt_id", "tool_call_id", "tool_name", "status",
-                "purpose", "row_count", "has_data", "visual_available", "duration_ms",
-                "error_code", "source_query_id", "result_complete",
-            )
-        },
-        **({"lineage": lineage} if lineage is not None else {}),
-    }))
+    await state["emit"].put(
+        sse(
+            event,
+            {
+                "turn_id": state["turn_id"],
+                **{
+                    key: record.get(key)
+                    for key in (
+                        "query_id",
+                        "attempt_id",
+                        "tool_call_id",
+                        "tool_name",
+                        "status",
+                        "purpose",
+                        "row_count",
+                        "has_data",
+                        "visual_available",
+                        "duration_ms",
+                        "error_code",
+                        "source_query_id",
+                        "result_complete",
+                    )
+                },
+                **({"lineage": lineage} if lineage is not None else {}),
+            },
+        )
+    )
 
 
 async def _finalize_query_record(
-    state: dict[str, Any], record: dict[str, Any] | None, item: ExecutedAgentCall,
+    state: dict[str, Any],
+    record: dict[str, Any] | None,
+    item: ExecutedAgentCall,
 ) -> None:
     if record is None:
         return
     row_count = _query_row_count(item)
     if item.error is not None:
         code = str(item.error.get("code") or "SOURCE_UNAVAILABLE")
-        status = "timeout" if code in {"QUERY_TIMEOUT", "TOOL_TIMEOUT"} else "error"
-        record.update({
-            "status": status, "error_code": code, "row_count": row_count,
-            "has_data": False, "visual_available": False,
-            "duration_ms": item.duration_ms,
-        })
+        status = (
+            "timeout" if code in {"QUERY_TIMEOUT", "TOOL_TIMEOUT"} else "error"
+        )
+        record.update(
+            {
+                "status": status,
+                "error_code": code,
+                "row_count": row_count,
+                "has_data": False,
+                "visual_available": False,
+                "duration_ms": item.duration_ms,
+            }
+        )
         event = "query_failed"
     else:
         has_data = row_count is None or row_count > 0
         status = "success" if has_data else "empty"
         is_raw_query = item.raw_result is not None
-        record.update({
-            "status": status, "row_count": row_count, "has_data": has_data,
-            "visual_available": bool(
-                not is_raw_query and has_data and item.card is not None
-                and item.card.card_type in {"chart", "analysis", "worklist", "briefing"}
-            ),
-            "duration_ms": item.duration_ms,
-            "result_complete": (
-                item.raw_result.complete if item.raw_result is not None
-                else bool(item.card.complete) if item.card is not None else True
-            ),
-            "result_payload": (
-                {
-                    **item.raw_result.payload,
-                    "summary": item.raw_result.summary,
-                    "complete": item.raw_result.complete,
-                    "sensitive": item.raw_result.sensitive,
-                }
-                if item.raw_result is not None else None
-            ),
-            "card": (
-                {
-                    "source": item.card.source,
-                    "card_type": item.card.card_type,
-                    "payload": item.card.payload,
-                    "query_id": record["query_id"],
-                    "attempt_id": record["attempt_id"],
-                }
-                if item.card is not None else None
-            ),
-        })
+        record.update(
+            {
+                "status": status,
+                "row_count": row_count,
+                "has_data": has_data,
+                "visual_available": bool(
+                    not is_raw_query
+                    and has_data
+                    and item.card is not None
+                    and item.card.card_type
+                    in {"chart", "analysis", "worklist", "briefing"}
+                ),
+                "duration_ms": item.duration_ms,
+                "result_complete": (
+                    item.raw_result.complete
+                    if item.raw_result is not None
+                    else bool(item.card.complete)
+                    if item.card is not None
+                    else True
+                ),
+                "result_payload": (
+                    {
+                        **item.raw_result.payload,
+                        "summary": item.raw_result.summary,
+                        "complete": item.raw_result.complete,
+                        "sensitive": item.raw_result.sensitive,
+                    }
+                    if item.raw_result is not None
+                    else None
+                ),
+                "card": (
+                    {
+                        "source": item.card.source,
+                        "card_type": item.card.card_type,
+                        "payload": item.card.payload,
+                        "query_id": record["query_id"],
+                        "attempt_id": record["attempt_id"],
+                    }
+                    if item.card is not None
+                    else None
+                ),
+            }
+        )
         event = "query_completed"
     _persist_query_registry(state)
     await _emit_query_event(state, event, record)
@@ -611,10 +739,14 @@ async def finalize_running_queries(state: dict[str, Any]) -> None:
     for record in state.get("query_registry", []):
         if record.get("status") not in {"pending", "running"}:
             continue
-        record.update({
-            "status": "cancelled", "has_data": False,
-            "visual_available": False, "error_code": "CANCELLED",
-        })
+        record.update(
+            {
+                "status": "cancelled",
+                "has_data": False,
+                "visual_available": False,
+                "error_code": "CANCELLED",
+            }
+        )
         changed = True
         await _emit_query_event(state, "query_failed", record)
     if changed:
@@ -630,16 +762,23 @@ async def finalize_running_traces(state: dict[str, Any]) -> None:
         if step.get("status") != "running":
             continue
         terminal = {
-            "id": step["id"], "kind": step["kind"], "status": "error",
-            "label": step["label"], "detail": "Stopped by user",
-            "duration_ms": max(0, _elapsed_ms(state) - step.get("elapsed_ms", 0)),
+            "id": step["id"],
+            "kind": step["kind"],
+            "status": "error",
+            "label": step["label"],
+            "detail": "Stopped by user",
+            "duration_ms": max(
+                0, _elapsed_ms(state) - step.get("elapsed_ms", 0)
+            ),
         }
         if "call_id" in step:
             terminal["call_id"] = step["call_id"]
         await _emit_trace(state, terminal)
 
 
-def _persist_exchange(state, result, failures, executed, *, stage: str = "route") -> None:
+def _persist_exchange(
+    state, result, failures, executed, *, stage: str = "route"
+) -> None:
     """One write per round: the assistant message, its calls, their complete results,
     and the rendered cards the client was streamed. The ``tool_result`` events carry
     the cards' content, so the cards get no event of their own."""
@@ -649,26 +788,39 @@ def _persist_exchange(state, result, failures, executed, *, stage: str = "route"
         return
     failed_ids = {call_id for call_id, _message, _code in failures}
     history.add_agent_exchange(
-        state["conversation_id"], state["user"], state["turn_id"],
+        state["conversation_id"],
+        state["user"],
+        state["turn_id"],
         assistant_message=result.assistant_message,
         calls=[
             {
-                "id": call.id, "name": call.name,
-                "arguments": _stored_arguments(state, call, call.id in failed_ids),
+                "id": call.id,
+                "name": call.name,
+                "arguments": _stored_arguments(
+                    state, call, call.id in failed_ids
+                ),
             }
             for call in result.tool_calls
         ],
         tool_messages=_repair_messages(
-            result, failures, executed=executed, state=state, durable=True,
+            result,
+            failures,
+            executed=executed,
+            state=state,
+            durable=True,
         )[1:],
         stage=stage,
         cards=[
             {
-                "source": item.card.source, "card_type": item.card.card_type,
-                "payload": item.card.payload, "call_id": item.call.id,
-                "query_id": item.query_id, "attempt_id": item.attempt_id,
+                "source": item.card.source,
+                "card_type": item.card.card_type,
+                "payload": item.card.payload,
+                "call_id": item.call.id,
+                "query_id": item.query_id,
+                "attempt_id": item.attempt_id,
             }
-            for item in executed if item.card is not None
+            for item in executed
+            if item.card is not None
         ],
     )
 
@@ -680,15 +832,21 @@ def _persist_nudge(state, tool_choice: str) -> None:
     budget = state.get("_agent_budget")
     try:
         history.add_system_message(
-            state["conversation_id"], state["user"], state["turn_id"],
-            content=_NUDGES[tool_choice], kind="nudge", stage=_STAGES[tool_choice],
+            state["conversation_id"],
+            state["user"],
+            state["turn_id"],
+            content=_NUDGES[tool_choice],
+            kind="nudge",
+            stage=_STAGES[tool_choice],
             round_number=budget.rounds_used if budget is not None else 0,
         )
     except Exception:  # noqa: BLE001 - persistence is best effort
         logger.warning("native nudge persistence failed", exc_info=True)
 
 
-def _protocol_repair_message(exc: BaseException, tool_choice: str) -> dict[str, str]:
+def _protocol_repair_message(
+    exc: BaseException, tool_choice: str
+) -> dict[str, str]:
     instruction = (
         "Return one valid native tool call with a unique call ID, an authorized function "
         "name, and JSON-object arguments."
@@ -699,35 +857,49 @@ def _protocol_repair_message(exc: BaseException, tool_choice: str) -> dict[str, 
         instruction = "Return a non-empty final answer and do not call a tool."
     return {
         "role": "user",
-        "content": json.dumps({
-            "status": "error",
-            "code": "MODEL_PROTOCOL_ERROR",
-            "message": str(exc)[:500],
-            "instruction": instruction,
-        }, separators=(",", ":")),
+        "content": json.dumps(
+            {
+                "status": "error",
+                "code": "MODEL_PROTOCOL_ERROR",
+                "message": str(exc)[:500],
+                "instruction": instruction,
+            },
+            separators=(",", ":"),
+        ),
     }
 
 
 def _persist_protocol_repair(
-    state: dict[str, Any], message: dict[str, str], tool_choice: str,
+    state: dict[str, Any],
+    message: dict[str, str],
+    tool_choice: str,
 ) -> None:
     if not _persistable(state):
         return
     budget = state.get("_agent_budget")
     try:
         history.add_system_message(
-            state["conversation_id"], state["user"], state["turn_id"],
-            content=message["content"], kind="protocol_repair",
+            state["conversation_id"],
+            state["user"],
+            state["turn_id"],
+            content=message["content"],
+            kind="protocol_repair",
             stage=_STAGES[tool_choice],
             round_number=budget.rounds_used if budget is not None else 0,
         )
     except Exception:  # noqa: BLE001 - persistence is best effort
-        logger.warning("native protocol repair persistence failed", exc_info=True)
+        logger.warning(
+            "native protocol repair persistence failed", exc_info=True
+        )
 
 
 def _queue_protocol_repair(
-    state: dict[str, Any], exchange: list[dict[str, Any]], exc: BaseException,
-    tool_choice: str, *, assistant_message: dict[str, Any] | None = None,
+    state: dict[str, Any],
+    exchange: list[dict[str, Any]],
+    exc: BaseException,
+    tool_choice: str,
+    *,
+    assistant_message: dict[str, Any] | None = None,
 ) -> None:
     if assistant_message is not None:
         exchange.append(assistant_message)
@@ -743,9 +915,14 @@ def _denial(failures, executed) -> dict[str, Any] | None:
         if code == "POLICY_DENIED":
             latest = {"policy": "source_access", "message": message}
     for item in executed:
-        if item.error is not None and item.error.get("code") == "POLICY_DENIED":
+        if (
+            item.error is not None
+            and item.error.get("code") == "POLICY_DENIED"
+        ):
             latest = {
-                "policy": item.error.get("denied", {}).get("policy", "source_access"),
+                "policy": item.error.get("denied", {}).get(
+                    "policy", "source_access"
+                ),
                 "message": item.error.get("message", ""),
             }
     return latest
@@ -786,7 +963,11 @@ async def select_calls(state: dict[str, Any]):
                 raise exc
             _persist_exchange(state, result, (), ())
             _queue_protocol_repair(
-                state, exchange, exc, "required", assistant_message=result.assistant_message,
+                state,
+                exchange,
+                exc,
+                "required",
+                assistant_message=result.assistant_message,
             )
             continue
         budget.charge_call(len(result.tool_calls))
@@ -800,7 +981,10 @@ async def select_calls(state: dict[str, Any]):
 
 
 async def _execute_one(
-    state, context: AgentExecutionContext, call, query_record: dict[str, Any] | None = None,
+    state,
+    context: AgentExecutionContext,
+    call,
+    query_record: dict[str, Any] | None = None,
 ) -> ExecutedAgentCall:
     started_at = time.perf_counter()
     execution_context = context
@@ -814,12 +998,19 @@ async def _execute_one(
         item = await execute_agent_call(call, execution_context)
         if call.name == "submit_final_answer" and item.terminal is not None:
             from app.services.workbench.agent_contracts import FinalSynthesis
-            from app.services.workbench.attribution import resolve_current_query
-            from app.services.workbench.visualization import build_inferred_visual
+            from app.services.workbench.attribution import (
+                resolve_current_query,
+            )
+            from app.services.workbench.visualization import (
+                build_inferred_visual,
+            )
 
-            synthesis = FinalSynthesis.model_validate(item.terminal.get("synthesis"))
+            synthesis = FinalSynthesis.model_validate(
+                item.terminal.get("synthesis")
+            )
             selected = resolve_current_query(
-                list(state.get("query_registry", [])), synthesis.query_id,
+                list(state.get("query_registry", [])),
+                synthesis.query_id,
                 prior_registry=state.get("prior_query_registry", []),
             )
             if selected is None:
@@ -828,7 +1019,9 @@ async def _execute_one(
                 )
             internal_query_id = str(selected["query_id"])
             item.card = build_inferred_visual(
-                selected, query_id=internal_query_id, view=synthesis.view,
+                selected,
+                query_id=internal_query_id,
+                view=synthesis.view,
             )
             item.query_id = internal_query_id
             item.attempt_id = str(selected["attempt_id"])
@@ -844,9 +1037,11 @@ async def _execute_one(
             # The outbound privacy gate is a policy denial like any other: the model is
             # told what was denied and what it may still call, then decides.
             error = {
-                "code": "POLICY_DENIED", "message": str(exc)[:500],
+                "code": "POLICY_DENIED",
+                "message": str(exc)[:500],
                 "denied": {
-                    "tool": call.name, "source": _source_for_call(call),
+                    "tool": call.name,
+                    "source": _source_for_call(call),
                     "policy": "outbound_privacy",
                 },
                 "authorized_tools": _authorized_tool_names(state),
@@ -863,7 +1058,8 @@ async def _stream_item(state: dict[str, Any], item: ExecutedAgentCall) -> None:
     from app.services.workbench.graph import sse
 
     if (
-        item.card is None and item.error is not None
+        item.card is None
+        and item.error is not None
         and item.error.get("code") != "POLICY_DENIED"
         and not _is_postgres_tool(item.call.name)
     ):
@@ -873,7 +1069,8 @@ async def _stream_item(state: dict[str, Any], item: ExecutedAgentCall) -> None:
             # message plus the turn id so the incident can be found in the logs.
             code = item.error.get("code", "SOURCE_UNAVAILABLE")
             item.card = SourceResult(
-                source=source, card_type="error",
+                source=source,
+                card_type="error",
                 payload={
                     "message": _user_error_message(code, state["turn_id"]),
                     "code": code,
@@ -882,7 +1079,11 @@ async def _stream_item(state: dict[str, Any], item: ExecutedAgentCall) -> None:
             )
     trace_status = "error" if item.error is not None else "complete"
     if item.error is not None:
-        trace_detail = str(item.error.get("message") or item.error.get("code") or "Tool failed")
+        trace_detail = str(
+            item.error.get("message")
+            or item.error.get("code")
+            or "Tool failed"
+        )
     elif item.terminal is not None:
         synthesis = item.terminal.get("synthesis")
         trace_detail = (
@@ -893,48 +1094,76 @@ async def _stream_item(state: dict[str, Any], item: ExecutedAgentCall) -> None:
     elif item.raw_result is not None:
         trace_detail = item.raw_result.summary
     elif item.card is not None:
-        trace_detail = item.card.summary or f"Returned {item.card.card_type} result"
+        trace_detail = (
+            item.card.summary or f"Returned {item.card.card_type} result"
+        )
     else:
         trace_detail = "Tool completed"
-    await _emit_trace(state, {
-        "id": f"tool-{item.call.id}", "kind": "tool", "status": trace_status,
-        "label": item.call.name, "call_id": item.call.id,
-        "detail": trace_detail[:500], "duration_ms": item.duration_ms,
-    })
+    await _emit_trace(
+        state,
+        {
+            "id": f"tool-{item.call.id}",
+            "kind": "tool",
+            "status": trace_status,
+            "label": item.call.name,
+            "call_id": item.call.id,
+            "detail": trace_detail[:500],
+            "duration_ms": item.duration_ms,
+        },
+    )
     if item.raw_result is not None:
         state["timing"]["source_completions"].append("db")
     if item.card is None:
         return
     source = item.card.source
     state["timing"]["source_completions"].append(source)
-    await state["emit"].put(sse("source_card", {
-        "source": source, "card_type": item.card.card_type,
-        "query_id": item.query_id, "attempt_id": item.attempt_id,
-        **item.card.payload,
-    }))
+    await state["emit"].put(
+        sse(
+            "source_card",
+            {
+                "source": source,
+                "card_type": item.card.card_type,
+                "query_id": item.query_id,
+                "attempt_id": item.attempt_id,
+                **item.card.payload,
+            },
+        )
+    )
     state["timing"].setdefault(
-        "first_card_ms", int((time.perf_counter() - state["timing"]["started_at"]) * 1000),
+        "first_card_ms",
+        int((time.perf_counter() - state["timing"]["started_at"]) * 1000),
     )
     # Not persisted here: the round's ``tool_result`` event already carries this card,
     # and `_persist_exchange` records the rendered view in the same write.
 
 
-async def _execute_batch(state, context: AgentExecutionContext, calls) -> list[ExecutedAgentCall]:
+async def _execute_batch(
+    state, context: AgentExecutionContext, calls
+) -> list[ExecutedAgentCall]:
     from app.services.workbench.graph import sse
 
     query_records = _register_database_queries(state, calls)
     for record in query_records.values():
         await _emit_query_event(state, "query_registered", record)
     for call in calls:
-        await _emit_trace(state, {
-            "id": f"tool-{call.id}", "kind": "tool", "status": "running",
-            "label": call.name, "call_id": call.id,
-            "detail": "Calling tool", "arguments": _trace_arguments(call),
-        })
+        await _emit_trace(
+            state,
+            {
+                "id": f"tool-{call.id}",
+                "kind": "tool",
+                "status": "running",
+                "label": call.name,
+                "call_id": call.id,
+                "detail": "Calling tool",
+                "arguments": _trace_arguments(call),
+            },
+        )
         source = _source_for_call(call)
         if source is not None:
             state["timing"]["source_attempts"].append(source)
-            await state["emit"].put(sse("source_start", {"source": source, "tool": call.name}))
+            await state["emit"].put(
+                sse("source_start", {"source": source, "tool": call.name})
+            )
         record = query_records.get(call.id)
         if record is not None:
             record["status"] = "running"
@@ -943,28 +1172,39 @@ async def _execute_batch(state, context: AgentExecutionContext, calls) -> list[E
 
     output: list[ExecutedAgentCall | None] = [None] * len(calls)
     parallel = [
-        (i, call) for i, call in enumerate(calls)
+        (i, call)
+        for i, call in enumerate(calls)
         if not _is_postgres_tool(call.name)
         and get_runtime_tool_policy(call.name).parallel_safe
     ]
     serial = [
-        (i, call) for i, call in enumerate(calls)
+        (i, call)
+        for i, call in enumerate(calls)
         if _is_postgres_tool(call.name)
         or not get_runtime_tool_policy(call.name).parallel_safe
     ]
     if parallel:
+
         async def indexed(index, call):
             return index, await _execute_one(
-                state, context, call, query_records.get(call.id),
+                state,
+                context,
+                call,
+                query_records.get(call.id),
             )
 
-        tasks = [asyncio.create_task(indexed(index, call)) for index, call in parallel]
+        tasks = [
+            asyncio.create_task(indexed(index, call))
+            for index, call in parallel
+        ]
         try:
             for task in asyncio.as_completed(tasks):
                 index, item = await task
                 output[index] = item
                 await _finalize_query_record(
-                    state, query_records.get(item.call.id), item,
+                    state,
+                    query_records.get(item.call.id),
+                    item,
                 )
                 await _stream_item(state, item)
         except asyncio.CancelledError:
@@ -979,9 +1219,14 @@ async def _execute_batch(state, context: AgentExecutionContext, calls) -> list[E
     try:
         for index, call in serial:
             output[index] = await _execute_one(
-                state, context, call, query_records.get(call.id),
+                state,
+                context,
+                call,
+                query_records.get(call.id),
             )
-            await _finalize_query_record(state, query_records.get(call.id), output[index])
+            await _finalize_query_record(
+                state, query_records.get(call.id), output[index]
+            )
             await _stream_item(state, output[index])
     except asyncio.CancelledError:
         await finalize_running_queries(state)
@@ -993,30 +1238,47 @@ async def _execute_batch(state, context: AgentExecutionContext, calls) -> list[E
 async def _announce_route(state: dict[str, Any], calls) -> None:
     from app.services.workbench.graph import sse
 
-    sources = list(dict.fromkeys(
-        source for call in calls if (source := _source_for_call(call))
-    ))
+    sources = list(
+        dict.fromkeys(
+            source for call in calls if (source := _source_for_call(call))
+        )
+    )
     decision = ExecutionDecision(
-        sources=sources, intent=state["question"],
+        sources=sources,
+        intent=state["question"],
         policy_version=state["source_policy"].version,
         effective_sources=state["source_policy"].effective_sources,
     )
     state["decision"] = decision
-    await state["emit"].put(sse("route", {
-        "sources": sources, "intent": state["question"], "model": "native_agent",
-        "reason": "native_tool_selection",
-        "policy_version": decision.policy_version, "tools": [call.name for call in calls],
-    }))
+    await state["emit"].put(
+        sse(
+            "route",
+            {
+                "sources": sources,
+                "intent": state["question"],
+                "model": "native_agent",
+                "reason": "native_tool_selection",
+                "policy_version": decision.policy_version,
+                "tools": [call.name for call in calls],
+            },
+        )
+    )
     history.set_route(
-        state["conversation_id"], state["user"], state["turn_id"],
-        sources=sources, intent=state["question"], model="native_agent",
+        state["conversation_id"],
+        state["user"],
+        state["turn_id"],
+        sources=sources,
+        intent=state["question"],
+        model="native_agent",
         reason="native_tool_selection",
         effective_sources=decision.effective_sources,
         tools=[call.name for call in calls],
     )
 
 
-async def _end_without_data(state: dict[str, Any], payload: dict[str, Any], *, origin: str) -> None:
+async def _end_without_data(
+    state: dict[str, Any], payload: dict[str, Any], *, origin: str
+) -> None:
     """Emit a clarification or refusal. ``origin`` says who decided: the model's
     ``finish_without_data`` call, or the application after a denial the model never
     resolved within budget."""
@@ -1027,14 +1289,23 @@ async def _end_without_data(state: dict[str, Any], payload: dict[str, Any], *, o
         "schema_version": 1,
         "status": "clarify" if outcome == "clarify" else "refused",
         "text": payload.get("message", ""),
-        "sources": [], "citations": [], "unavailable_sources": [], "limitations": [],
+        "sources": [],
+        "citations": [],
+        "unavailable_sources": [],
+        "limitations": [],
         "suggestions": payload.get("suggestions", []),
         "reason": payload.get("reason_code"),
         "origin": origin,
-        "active_query_ids": [], "visual_query_ids": [], "excluded_queries": [],
+        "active_query_ids": [],
+        "visual_query_ids": [],
+        "excluded_queries": [],
     }
-    await state["emit"].put(sse("refusal" if outcome == "refuse" else "answer", answer))
-    history.set_answer(state["conversation_id"], state["user"], state["turn_id"], answer)
+    await state["emit"].put(
+        sse("refusal" if outcome == "refuse" else "answer", answer)
+    )
+    history.set_answer(
+        state["conversation_id"], state["user"], state["turn_id"], answer
+    )
 
 
 async def run(state: dict[str, Any]) -> None:
@@ -1051,23 +1322,31 @@ async def run(state: dict[str, Any]) -> None:
     budget = _budget(state)
     catalog = state.setdefault("_agent_catalog", get_catalog())
     context = AgentExecutionContext(
-        user=state["user"], role=state["role"],
-        conversation_id=state["conversation_id"], turn_id=state["turn_id"],
+        user=state["user"],
+        role=state["role"],
+        conversation_id=state["conversation_id"],
+        turn_id=state["turn_id"],
         source_policy=state["source_policy"],
         deadline_s=max(0.001, budget.deadline - time.perf_counter()),
         question=state["question"],
-        catalog=catalog, catalog_version=getattr(catalog, "version", ""),
+        catalog=catalog,
+        catalog_version=getattr(catalog, "version", ""),
         private_entities=tuple(state.get("agent_private_entities", ())),
     )
     await emit.put(sse("stage", {"stage": "routing", "agent": "native"}))
 
-    exchange: list[dict[str, Any]] = []  # this turn's assistant and tool messages
+    exchange: list[
+        dict[str, Any]
+    ] = []  # this turn's assistant and tool messages
     executed: list[ExecutedAgentCall] = []
     final = None
     denial: dict[str, Any] | None = None
     last_error = ""
     while budget.rounds_remaining and not budget.expired:
-        if state.get("attribution_repairs", 0) > settings.workbench_agent_synthesis_repairs:
+        if (
+            state.get("attribution_repairs", 0)
+            > settings.workbench_agent_synthesis_repairs
+        ):
             raise LLMProtocolError(
                 "native agent exceeded its final-synthesis repair limit "
                 f"({settings.workbench_agent_synthesis_repairs})"
@@ -1075,7 +1354,8 @@ async def run(state: dict[str, Any]) -> None:
         if any(item.terminal is not None for item in executed):
             break
         has_data = any(
-            (item.card is not None or item.raw_result is not None) and item.error is None
+            (item.card is not None or item.raw_result is not None)
+            and item.error is None
             for item in executed
         )
         if not has_data and not budget.calls_remaining:
@@ -1088,40 +1368,68 @@ async def run(state: dict[str, Any]) -> None:
         model_trace_id = f"model-{round_number}"
         model_started_at = time.perf_counter()
         model_label = (
-            "Model preparing answer" if tool_choice == "none"
+            "Model preparing answer"
+            if tool_choice == "none"
             else "Model deciding next action"
         )
-        await _emit_trace(state, {
-            "id": model_trace_id, "kind": "model", "status": "running",
-            "label": model_label, "detail": f"Round {round_number}",
-        })
+        await _emit_trace(
+            state,
+            {
+                "id": model_trace_id,
+                "kind": "model",
+                "status": "running",
+                "label": model_label,
+                "detail": f"Round {round_number}",
+            },
+        )
         try:
             result = await _select(
-                state, repair_messages=exchange or None, tool_choice=tool_choice,
-                supplement=last_error, trace_id=model_trace_id,
+                state,
+                repair_messages=exchange or None,
+                tool_choice=tool_choice,
+                supplement=last_error,
+                trace_id=model_trace_id,
             )
         except asyncio.CancelledError:
             logger.info(
                 "Workbench model request cancelled: conversation=%s turn=%s round=%s",
-                state["conversation_id"], state["turn_id"], round_number,
+                state["conversation_id"],
+                state["turn_id"],
+                round_number,
             )
             await finalize_running_traces(state)
             raise
         except (TimeoutError, LLMTimeout):
-            await _emit_trace(state, {
-                "id": model_trace_id, "kind": "model", "status": "error",
-                "label": model_label, "detail": "Model request timed out",
-                "duration_ms": int((time.perf_counter() - model_started_at) * 1000),
-            })
+            await _emit_trace(
+                state,
+                {
+                    "id": model_trace_id,
+                    "kind": "model",
+                    "status": "error",
+                    "label": model_label,
+                    "detail": "Model request timed out",
+                    "duration_ms": int(
+                        (time.perf_counter() - model_started_at) * 1000
+                    ),
+                },
+            )
             if not has_data:
                 raise
             break
         except LLMProtocolError as exc:
-            await _emit_trace(state, {
-                "id": model_trace_id, "kind": "model", "status": "error",
-                "label": model_label, "detail": str(exc)[:500],
-                "duration_ms": int((time.perf_counter() - model_started_at) * 1000),
-            })
+            await _emit_trace(
+                state,
+                {
+                    "id": model_trace_id,
+                    "kind": "model",
+                    "status": "error",
+                    "label": model_label,
+                    "detail": str(exc)[:500],
+                    "duration_ms": int(
+                        (time.perf_counter() - model_started_at) * 1000
+                    ),
+                },
+            )
             if not budget.rounds_remaining:
                 if has_data:
                     break
@@ -1130,29 +1438,46 @@ async def run(state: dict[str, Any]) -> None:
             _queue_protocol_repair(state, exchange, exc, tool_choice)
             continue
         except Exception as exc:
-            await _emit_trace(state, {
-                "id": model_trace_id, "kind": "model", "status": "error",
-                "label": model_label, "detail": str(exc)[:500],
-                "duration_ms": int((time.perf_counter() - model_started_at) * 1000),
-            })
+            await _emit_trace(
+                state,
+                {
+                    "id": model_trace_id,
+                    "kind": "model",
+                    "status": "error",
+                    "label": model_label,
+                    "detail": str(exc)[:500],
+                    "duration_ms": int(
+                        (time.perf_counter() - model_started_at) * 1000
+                    ),
+                },
+            )
             raise
         model_detail = (
             f"Selected {len(result.tool_calls)} tool call(s)"
-            if result.tool_calls else "Prepared the response"
+            if result.tool_calls
+            else "Prepared the response"
         )
         model_trace: dict[str, Any] = {
-            "id": model_trace_id, "kind": "model", "status": "complete",
-            "label": model_label, "detail": model_detail,
-            "duration_ms": int((time.perf_counter() - model_started_at) * 1000),
+            "id": model_trace_id,
+            "kind": "model",
+            "status": "complete",
+            "label": model_label,
+            "detail": model_detail,
+            "duration_ms": int(
+                (time.perf_counter() - model_started_at) * 1000
+            ),
         }
         if reasoning := getattr(result, "reasoning", ""):
             model_trace["reasoning"] = reasoning
         if result.tool_calls:
-            model_trace["tool_calls"] = [{
-                "index": index,
-                "id": call.id,
-                "name": call.name,
-            } for index, call in enumerate(result.tool_calls)]
+            model_trace["tool_calls"] = [
+                {
+                    "index": index,
+                    "id": call.id,
+                    "name": call.name,
+                }
+                for index, call in enumerate(result.tool_calls)
+            ]
         await _emit_trace(state, model_trace)
         if not result.tool_calls:
             if tool_choice == "required":
@@ -1161,9 +1486,14 @@ async def run(state: dict[str, Any]) -> None:
                 )
                 if not budget.rounds_remaining:
                     raise exc
-                _persist_exchange(state, result, (), (), stage=_STAGES[tool_choice])
+                _persist_exchange(
+                    state, result, (), (), stage=_STAGES[tool_choice]
+                )
                 _queue_protocol_repair(
-                    state, exchange, exc, tool_choice,
+                    state,
+                    exchange,
+                    exc,
+                    tool_choice,
                     assistant_message=result.assistant_message,
                 )
                 last_error = str(exc)
@@ -1174,9 +1504,14 @@ async def run(state: dict[str, Any]) -> None:
                 )
                 if not budget.rounds_remaining:
                     break
-                _persist_exchange(state, result, (), (), stage=_STAGES[tool_choice])
+                _persist_exchange(
+                    state, result, (), (), stage=_STAGES[tool_choice]
+                )
                 _queue_protocol_repair(
-                    state, exchange, exc, tool_choice,
+                    state,
+                    exchange,
+                    exc,
+                    tool_choice,
                     assistant_message=result.assistant_message,
                 )
                 last_error = str(exc)
@@ -1184,12 +1519,19 @@ async def run(state: dict[str, Any]) -> None:
             final = result
             break
         if tool_choice == "none":
-            exc = LLMProtocolError("tool call returned during final synthesis phase")
+            exc = LLMProtocolError(
+                "tool call returned during final synthesis phase"
+            )
             if not budget.rounds_remaining:
                 break
-            _persist_exchange(state, result, (), (), stage=_STAGES[tool_choice])
+            _persist_exchange(
+                state, result, (), (), stage=_STAGES[tool_choice]
+            )
             _queue_protocol_repair(
-                state, exchange, exc, tool_choice,
+                state,
+                exchange,
+                exc,
+                tool_choice,
                 assistant_message=result.assistant_message,
             )
             last_error = str(exc)
@@ -1205,51 +1547,82 @@ async def run(state: dict[str, Any]) -> None:
         failures = _preflight(result, state)
         failed_ids = {call_id for call_id, _message, _code in failures}
         calls_by_id = {call.id: call for call in result.tool_calls}
-        state["attribution_repairs"] = state.get("attribution_repairs", 0) + sum(
-            1 for call_id in failed_ids
+        state["attribution_repairs"] = state.get(
+            "attribution_repairs", 0
+        ) + sum(
+            1
+            for call_id in failed_ids
             if calls_by_id.get(call_id) is not None
             and calls_by_id[call_id].name == "submit_final_answer"
         )
         for call_id, message, code in failures:
             failed_call = calls_by_id.get(call_id)
-            await _emit_trace(state, {
-                "id": f"tool-{call_id}", "kind": "tool", "status": "error",
-                "label": failed_call.name if failed_call is not None else "Tool validation",
-                "call_id": call_id, "detail": f"{code}: {message}"[:500],
-                "arguments": _trace_arguments(failed_call) if failed_call is not None else {},
-                "duration_ms": 0,
-            })
+            await _emit_trace(
+                state,
+                {
+                    "id": f"tool-{call_id}",
+                    "kind": "tool",
+                    "status": "error",
+                    "label": failed_call.name
+                    if failed_call is not None
+                    else "Tool validation",
+                    "call_id": call_id,
+                    "detail": f"{code}: {message}"[:500],
+                    "arguments": _trace_arguments(failed_call)
+                    if failed_call is not None
+                    else {},
+                    "duration_ms": 0,
+                },
+            )
         items = await _execute_batch(
-            state, context, [call for call in result.tool_calls if call.id not in failed_ids],
+            state,
+            context,
+            [call for call in result.tool_calls if call.id not in failed_ids],
         )
-        _persist_exchange(state, result, failures, items, stage=_STAGES[tool_choice])
-        exchange.extend(_repair_messages(result, failures, executed=items, state=state))
+        _persist_exchange(
+            state, result, failures, items, stage=_STAGES[tool_choice]
+        )
+        exchange.extend(
+            _repair_messages(result, failures, executed=items, state=state)
+        )
         executed.extend(items)
         denial = _denial(failures, items) or denial
         last_error = _latest_error(failures, items)
     logger.info("native agent turn budget %s", budget.snapshot())
 
-    terminal = next((item for item in executed if item.terminal is not None), None)
+    terminal = next(
+        (item for item in executed if item.terminal is not None), None
+    )
     if terminal is not None:
         terminal_payload = terminal.terminal or {}
         if terminal_payload.get("outcome") == "answer":
             from app.services.workbench.agent_contracts import FinalSynthesis
 
-            structured = FinalSynthesis.model_validate(terminal_payload.get("synthesis"))
+            structured = FinalSynthesis.model_validate(
+                terminal_payload.get("synthesis")
+            )
             state["agent_final_synthesis"] = structured
-            state["results"] = [item.card for item in executed if item.card is not None]
+            state["results"] = [
+                item.card for item in executed if item.card is not None
+            ]
             await answer_results(state)
         else:
             await _end_without_data(state, terminal_payload, origin="model")
         return
     cards = [item.card for item in executed if item.card is not None]
-    raw_results = [item.raw_result for item in executed if item.raw_result is not None]
+    raw_results = [
+        item.raw_result for item in executed if item.raw_result is not None
+    ]
     if final is not None:
         state["agent_final_result"] = final
         # The candidate as the model wrote it; `answer_results` records the final text.
         history.set_synthesis(
-            state["conversation_id"], state["user"], state["turn_id"], final.text,
-            message=final.assistant_message, stage="synthesize",
+            state["conversation_id"],
+            state["user"],
+            state["turn_id"],
+            final.text,
+            message=final.assistant_message,
+            stage="synthesize",
         )
     elif not cards and not raw_results:
         if budget.expired:
@@ -1257,16 +1630,24 @@ async def run(state: dict[str, Any]) -> None:
         if denial is not None:
             # The model never resolved the denial with a replacement call or a refusal
             # of its own; the application ends the turn and says so.
-            await _end_without_data(state, {
-                "outcome": "refuse",
-                "message": (
-                    _PII_REFUSAL_TEXT if denial["policy"] == "outbound_privacy"
-                    else _SOURCE_REFUSAL_TEXT
-                ),
-                "suggestions": [], "reason_code": "POLICY_DENIED",
-            }, origin="application")
+            await _end_without_data(
+                state,
+                {
+                    "outcome": "refuse",
+                    "message": (
+                        _PII_REFUSAL_TEXT
+                        if denial["policy"] == "outbound_privacy"
+                        else _SOURCE_REFUSAL_TEXT
+                    ),
+                    "suggestions": [],
+                    "reason_code": "POLICY_DENIED",
+                },
+                origin="application",
+            )
             return
-        raise BudgetExhausted("native agent spent its budget without a usable result")
+        raise BudgetExhausted(
+            "native agent spent its budget without a usable result"
+        )
     elif cards and any(card.card_type != "error" for card in cards):
         state["decision"].limitations.append(dict(_BUDGET_LIMITATION))
     state["results"] = cards

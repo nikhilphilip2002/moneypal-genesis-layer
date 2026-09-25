@@ -12,12 +12,17 @@ Prerequisites:
 Run:
   python scripts/smoke_test.py
 """
+
 from pathlib import Path
 
 from genesis_core import make_response, rag
 
 COLLECTION = "smoke_test_tmp"
-PDF = Path(__file__).resolve().parents[1] / "docs" / "Moneypal Genesis Layer Buildathon.pdf"
+PDF = (
+    Path(__file__).resolve().parents[1]
+    / "docs"
+    / "Moneypal Genesis Layer Buildathon.pdf"
+)
 
 
 def main() -> None:
@@ -26,7 +31,9 @@ def main() -> None:
     assert n > 0, "ingestion produced 0 chunks"
 
     print("\n2) Semantic search")
-    hits = rag.search(COLLECTION, "What are the three buildathon modules?", top_k=4)
+    hits = rag.search(
+        COLLECTION, "What are the three buildathon modules?", top_k=4
+    )
     for h in hits:
         print(f"   score={h['score']:.3f}  {h['source']} p{h['page']}")
     assert hits, "search returned no hits"

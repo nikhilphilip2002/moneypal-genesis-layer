@@ -27,7 +27,9 @@ def estimate_tokens(text: str) -> int:
 
 def turn_tokens(turn: dict[str, Any], assistant_text: str) -> int:
     """Estimated cost of one turn as it appears in a transcript."""
-    return estimate_tokens(str(turn.get("question", ""))) + estimate_tokens(assistant_text)
+    return estimate_tokens(str(turn.get("question", ""))) + estimate_tokens(
+        assistant_text
+    )
 
 
 def measured_prompt_tokens(turn: dict[str, Any]) -> int | None:
@@ -58,13 +60,17 @@ def transcript_tokens(turns: list[dict[str, Any]], assistant_text_of) -> int:
             break
 
     if last_measured_index < 0:
-        return sum(turn_tokens(turn, assistant_text_of(turn)) for turn in turns)
+        return sum(
+            turn_tokens(turn, assistant_text_of(turn)) for turn in turns
+        )
 
     # `prompt_tokens` for turn N covers the transcript as it stood at the *start* of that
     # turn plus the question — the answer was the completion, not part of the prompt. The
     # next transcript will contain that answer, so it has to be added back explicitly or
     # every estimate is short by one assistant message.
-    measured_answer = estimate_tokens(assistant_text_of(turns[last_measured_index]))
+    measured_answer = estimate_tokens(
+        assistant_text_of(turns[last_measured_index])
+    )
     trailing = sum(
         turn_tokens(turn, assistant_text_of(turn))
         for turn in turns[last_measured_index + 1 :]
@@ -74,7 +80,10 @@ def transcript_tokens(turns: list[dict[str, Any]], assistant_text_of) -> int:
 
 def budget_tokens() -> int:
     """How much of the context window the transcript may occupy."""
-    return max(0, settings.workbench_context_window - settings.workbench_reserve_tokens)
+    return max(
+        0,
+        settings.workbench_context_window - settings.workbench_reserve_tokens,
+    )
 
 
 # The compressed layers (checkpoint summary + session state) precede every live turn, so
@@ -121,7 +130,9 @@ def newest_turn_replay_tokens(turns: list[dict[str, Any]]) -> int:
     return history.measure_replay_turns(turns).newest_turn_tokens
 
 
-def should_compact(turns: list[dict[str, Any]], assistant_text_of=None) -> bool:
+def should_compact(
+    turns: list[dict[str, Any]], assistant_text_of=None
+) -> bool:
     """Whether the native replay of these turns has outgrown the context window.
 
     `assistant_text_of` is accepted for callers written against the prose measure and

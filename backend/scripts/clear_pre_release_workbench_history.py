@@ -36,7 +36,8 @@ def clear(*, apply: bool) -> int:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
-        "--apply", action="store_true",
+        "--apply",
+        action="store_true",
         help="delete unsupported records; without this flag nothing is changed",
     )
     args = parser.parse_args(argv)
@@ -44,7 +45,9 @@ def main(argv: list[str] | None = None) -> int:
     verb = "deleted" if args.apply else "would delete"
     print(f"{verb} {count} unsupported Workbench conversation(s)")
     if not args.apply:
-        print("dry run: nothing deleted; re-run with --apply after verification")
+        print(
+            "dry run: nothing deleted; re-run with --apply after verification"
+        )
     return 0
 
 

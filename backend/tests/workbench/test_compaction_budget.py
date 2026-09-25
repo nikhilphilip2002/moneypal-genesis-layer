@@ -10,20 +10,28 @@ from app.services.workbench.compaction import budget
 
 def _turn(question: str, answer: str, prompt_tokens: int | None = None):
     turn = {
-        "id": "t", "question": question, "synthesis": answer, "status": "complete",
+        "id": "t",
+        "question": question,
+        "synthesis": answer,
+        "status": "complete",
         "events": [
             {
-                "sequence": 0, "type": "user_message",
+                "sequence": 0,
+                "type": "user_message",
                 "payload": {"role": "user", "content": question},
             },
             {
-                "sequence": 1, "type": "final_answer",
+                "sequence": 1,
+                "type": "final_answer",
                 "payload": {"answer": {"text": answer}},
             },
         ],
     }
     if prompt_tokens is not None:
-        turn["usage"] = {"prompt_tokens": prompt_tokens, "completion_tokens": 20}
+        turn["usage"] = {
+            "prompt_tokens": prompt_tokens,
+            "completion_tokens": 20,
+        }
     return turn
 
 
@@ -42,7 +50,9 @@ class TestEstimation:
     def test_estimates_everything_when_no_turn_was_measured(self):
         turns = [_turn("q" * 40, "a" * 40), _turn("q" * 40, "a" * 40)]
 
-        assert budget.transcript_tokens(turns, _answer_of) == 40  # 4 * ceil(80/4) / 2
+        assert (
+            budget.transcript_tokens(turns, _answer_of) == 40
+        )  # 4 * ceil(80/4) / 2
 
 
 class TestMeasuredUsage:
@@ -64,14 +74,18 @@ class TestMeasuredUsage:
         ]
 
         answer = budget.estimate_tokens("measured answer")
-        assert budget.transcript_tokens(turns, _answer_of) == 5000 + answer + 20
+        assert (
+            budget.transcript_tokens(turns, _answer_of) == 5000 + answer + 20
+        )
 
     def test_the_measured_turns_own_answer_is_counted(self):
         """Otherwise every estimate is short by exactly one assistant message."""
         short = [_turn("q", "tiny", prompt_tokens=5000)]
         long = [_turn("q", "a" * 4000, prompt_tokens=5000)]
 
-        assert budget.transcript_tokens(long, _answer_of) > budget.transcript_tokens(short, _answer_of)
+        assert budget.transcript_tokens(
+            long, _answer_of
+        ) > budget.transcript_tokens(short, _answer_of)
 
     def test_ignores_zero_and_malformed_usage(self):
         turns = [_turn("q" * 40, "a" * 40)]
@@ -94,46 +108,73 @@ class TestThreshold:
         assert budget.budget_tokens() == 32768 - 8192
 
     def test_short_conversation_does_not_compact(self):
-        assert budget.should_compact([_turn("hi", "hello", prompt_tokens=100)], _answer_of) is False
+        assert (
+            budget.should_compact(
+                [_turn("hi", "hello", prompt_tokens=100)], _answer_of
+            )
+            is False
+        )
 
     def test_over_budget_conversation_compacts(self):
         over = budget.budget_tokens() + 1
-        assert budget.should_compact([_turn("q", "a", prompt_tokens=over)], _answer_of) is True
+        assert (
+            budget.should_compact(
+                [_turn("q", "a", prompt_tokens=over)], _answer_of
+            )
+            is True
+        )
 
     def test_disabled_flag_wins(self, monkeypatch):
         monkeypatch.setattr(settings, "workbench_compaction_enabled", False)
         over = budget.budget_tokens() + 1
 
-        assert budget.should_compact([_turn("q", "a", prompt_tokens=over)], _answer_of) is False
+        assert (
+            budget.should_compact(
+                [_turn("q", "a", prompt_tokens=over)], _answer_of
+            )
+            is False
+        )
 
-    def test_reserve_larger_than_window_yields_zero_not_negative(self, monkeypatch):
+    def test_reserve_larger_than_window_yields_zero_not_negative(
+        self, monkeypatch
+    ):
         monkeypatch.setattr(settings, "workbench_reserve_tokens", 99999)
 
         assert budget.budget_tokens() == 0
 
 
 class TestNativeReplayMeasure:
-    def test_measured_prompt_anchors_and_later_turns_are_estimated_from_the_replay(self):
+    def test_measured_prompt_anchors_and_later_turns_are_estimated_from_the_replay(
+        self,
+    ):
         from app.services.workbench import history
 
         measured = _turn("measured", "measured answer", prompt_tokens=5000)
         later = _turn("later question", "later answer")
-        later_cost = history.replay_group_tokens(history.native_replay_group(later))
+        later_cost = history.replay_group_tokens(
+            history.native_replay_group(later)
+        )
 
         tokens = budget.native_replay_tokens([measured, later])
 
         assert later_cost > 0
-        assert tokens == 5000 + budget.estimate_tokens("measured answer") + later_cost
+        assert (
+            tokens
+            == 5000 + budget.estimate_tokens("measured answer") + later_cost
+        )
 
     def test_without_a_measurement_every_replay_group_is_estimated(self):
         from app.services.workbench import history
 
         turns = [_turn("q1", "a1"), _turn("q2", "a2")]
         expected = sum(
-            history.replay_group_tokens(history.native_replay_group(turn)) for turn in turns
+            history.replay_group_tokens(history.native_replay_group(turn))
+            for turn in turns
         )
 
         assert budget.native_replay_tokens(turns) == expected
-        assert budget.newest_turn_replay_tokens(turns) == history.replay_group_tokens(
+        assert budget.newest_turn_replay_tokens(
+            turns
+        ) == history.replay_group_tokens(
             history.native_replay_group(turns[-1])
         )

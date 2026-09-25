@@ -2,7 +2,9 @@ import importlib.util
 from pathlib import Path
 
 
-MODULE_PATH = Path(__file__).resolve().parents[2] / "scripts" / "benchmark_common.py"
+MODULE_PATH = (
+    Path(__file__).resolve().parents[2] / "scripts" / "benchmark_common.py"
+)
 SPEC = importlib.util.spec_from_file_location("benchmark_common", MODULE_PATH)
 assert SPEC and SPEC.loader
 benchmark_common = importlib.util.module_from_spec(SPEC)

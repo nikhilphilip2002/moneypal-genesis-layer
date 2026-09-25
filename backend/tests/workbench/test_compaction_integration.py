@@ -29,32 +29,52 @@ def enabled(monkeypatch):
 def _add_turn(cid, user, question, answer, *, sources=("db",), usage=None):
     turn_id = history.begin_turn(cid, user, question)
     history.set_route(cid, user, turn_id, sources=list(sources), intent="data")
-    history.add_card(cid, user, turn_id, {
-        "source": sources[0], "card_type": "chart",
-        "payload": {"title": "Result", "columns": [{"name": "value"}], "rows": [], "summary": answer},
-    })
+    history.add_card(
+        cid,
+        user,
+        turn_id,
+        {
+            "source": sources[0],
+            "card_type": "chart",
+            "payload": {
+                "title": "Result",
+                "columns": [{"name": "value"}],
+                "rows": [],
+                "summary": answer,
+            },
+        },
+    )
     history.set_synthesis(cid, user, turn_id, answer)
     if usage is not None:
-        history.set_usage(cid, user, turn_id, prompt_tokens=usage, completion_tokens=10)
+        history.set_usage(
+            cid, user, turn_id, prompt_tokens=usage, completion_tokens=10
+        )
     history.complete_turn(cid, user, turn_id)
     return turn_id
 
 
 class TestTranscriptLayering:
     def test_recent_turns_are_verbatim(self):
-        _add_turn("c1", "u", "What is PAR-30?", "PAR-30 stood at 4.2% in FY25.")
+        _add_turn(
+            "c1", "u", "What is PAR-30?", "PAR-30 stood at 4.2% in FY25."
+        )
 
         messages = history.transcript("c1", user="u")
 
         assert {"role": "user", "content": "What is PAR-30?"} in messages
-        assert any(m["role"] == "assistant" and "4.2%" in m["content"] for m in messages)
+        assert any(
+            m["role"] == "assistant" and "4.2%" in m["content"]
+            for m in messages
+        )
 
     def test_session_state_block_is_always_present(self):
         _add_turn("c1", "u", "PAR for FY25?", "PAR-30 stood at 4.2% in FY25.")
 
         messages = history.transcript("c1", user="u")
 
-        state_blocks = [m for m in messages if "<established-figures>" in m["content"]]
+        state_blocks = [
+            m for m in messages if "<established-figures>" in m["content"]
+        ]
         assert len(state_blocks) == 1
         assert state_blocks[0]["role"] == "system"
 
@@ -65,7 +85,12 @@ class TestTranscriptLayering:
 
     def test_budget_drops_oldest_turns_but_keeps_the_newest(self, monkeypatch):
         for index in range(10):
-            _add_turn("c1", "u", f"question number {index}", f"answer number {index} " * 40)
+            _add_turn(
+                "c1",
+                "u",
+                f"question number {index}",
+                f"answer number {index} " * 40,
+            )
         # A budget far too small for ten turns.
         messages = history.transcript("c1", user="u", token_budget=120)
 
@@ -77,14 +102,21 @@ class TestTranscriptLayering:
     def test_figures_from_dropped_turns_survive_in_the_state_block(self):
         _add_turn("c1", "u", "PAR in FY25?", "PAR-30 stood at 4.2% in FY25.")
         for index in range(8):
-            _add_turn("c1", "u", f"filler {index}", f"nothing numeric here {index} " * 30)
+            _add_turn(
+                "c1",
+                "u",
+                f"filler {index}",
+                f"nothing numeric here {index} " * 30,
+            )
 
         messages = history.transcript("c1", user="u", token_budget=150)
 
         users = [m["content"] for m in messages if m["role"] == "user"]
         assert "PAR in FY25?" not in users, "the old turn should have aged out"
         # ...but its figure is still available to the model.
-        assert any("4.2%" in m["content"] for m in messages if m["role"] == "system")
+        assert any(
+            "4.2%" in m["content"] for m in messages if m["role"] == "system"
+        )
 
 
 class TestContextOverflow:
@@ -93,26 +125,46 @@ class TestContextOverflow:
     def test_state_block_is_capped_to_a_share_of_the_budget(self):
         # Many turns, each contributing figures, so the state block wants to be large.
         for index in range(40):
-            _add_turn("c1", "u", f"metric {index} for FY25?", f"Metric {index} reached {index}.5% in FY25.")
+            _add_turn(
+                "c1",
+                "u",
+                f"metric {index} for FY25?",
+                f"Metric {index} reached {index}.5% in FY25.",
+            )
 
         built = history.build_transcript("c1", user="u", token_budget=400)
 
-        state_blocks = [m for m in built.messages if "<established-figures>" in m["content"]]
+        state_blocks = [
+            m
+            for m in built.messages
+            if "<established-figures>" in m["content"]
+        ]
         assert state_blocks
         from app.services.workbench.compaction import budget
 
-        assert budget.estimate_tokens(state_blocks[0]["content"]) <= 400 * budget.COMPRESSED_SHARE
+        assert (
+            budget.estimate_tokens(state_blocks[0]["content"])
+            <= 400 * budget.COMPRESSED_SHARE
+        )
 
     def test_a_long_checkpoint_summary_is_clipped(self):
         _add_turn("c1", "u", "question", "answer")
-        history.set_compaction("c1", "u", {
-            "summary": "verbose checkpoint. " * 5000,
-            "first_kept_turn_id": "",
-        })
+        history.set_compaction(
+            "c1",
+            "u",
+            {
+                "summary": "verbose checkpoint. " * 5000,
+                "first_kept_turn_id": "",
+            },
+        )
 
         built = history.build_transcript("c1", user="u", token_budget=400)
 
-        checkpoint = next(m for m in built.messages if "Conversation checkpoint" in m["content"])
+        checkpoint = next(
+            m
+            for m in built.messages
+            if "Conversation checkpoint" in m["content"]
+        )
         assert "truncated to fit the context window" in checkpoint["content"]
 
     def test_oversized_newest_turn_is_clipped_and_flagged(self):
@@ -122,7 +174,9 @@ class TestContextOverflow:
 
         assert built.overflow is True
         assistant = [m for m in built.messages if m["role"] == "assistant"]
-        assert assistant, "the current exchange must survive even when it does not fit"
+        assert assistant, (
+            "the current exchange must survive even when it does not fit"
+        )
         assert "truncated to fit the context window" in assistant[0]["content"]
 
     def test_normal_conversation_does_not_report_overflow(self):
@@ -137,7 +191,9 @@ class TestContextOverflow:
 
         from app.services.workbench.compaction import budget
 
-        total = sum(budget.estimate_tokens(m["content"]) for m in built.messages)
+        total = sum(
+            budget.estimate_tokens(m["content"]) for m in built.messages
+        )
         # Clipping is approximate (labels and role overhead are not counted), so allow
         # headroom — the point is that an unbounded turn is now bounded.
         assert total <= 300 * 1.5
@@ -159,16 +215,28 @@ class TestContextOverflow:
     def test_ordinary_errors_are_not_mistaken_for_overflow(self):
         from app.services.workbench.graph import _is_context_overflow
 
-        assert _is_context_overflow(RuntimeError("connection refused")) is False
-        assert _is_context_overflow(RuntimeError("model did not return JSON")) is False
+        assert (
+            _is_context_overflow(RuntimeError("connection refused")) is False
+        )
+        assert (
+            _is_context_overflow(RuntimeError("model did not return JSON"))
+            is False
+        )
 
     def test_refusals_do_not_grow_without_bound(self):
         from app.services.workbench.compaction import state as session_state
 
         for index in range(30):
             turn_id = history.begin_turn("c1", "u", f"show me PII {index}")
-            history.set_route("c1", "u", turn_id, sources=["db"], intent="data")
-            history.set_refusal("c1", "u", turn_id, {"message": f"Denied for your role ({index})."})
+            history.set_route(
+                "c1", "u", turn_id, sources=["db"], intent="data"
+            )
+            history.set_refusal(
+                "c1",
+                "u",
+                turn_id,
+                {"message": f"Denied for your role ({index})."},
+            )
             history.complete_turn("c1", "u", turn_id)
 
         record = history.get("c1", user="u")
@@ -182,10 +250,14 @@ class TestContextOverflow:
 class TestCheckpoint:
     @pytest.mark.anyio
     async def test_writes_and_replaces_older_turns(self, enabled, monkeypatch):
-        async def fake_summary(turns, *, assistant_text_of, previous_summary=""):
+        async def fake_summary(
+            turns, *, assistant_text_of, previous_summary=""
+        ):
             return "## Line of Enquiry\nPortfolio quality."
 
-        monkeypatch.setattr(compaction.summarize, "write_checkpoint", fake_summary)
+        monkeypatch.setattr(
+            compaction.summarize, "write_checkpoint", fake_summary
+        )
         for index in range(5):
             _add_turn("c1", "u", f"question {index}", f"answer {index}")
 
@@ -198,17 +270,25 @@ class TestCheckpoint:
         messages = history.transcript("c1", user="u")
         assert any("Conversation checkpoint" in m["content"] for m in messages)
         users = [m["content"] for m in messages if m["role"] == "user"]
-        assert users == ["question 3", "question 4"], "only the kept window replays"
+        assert users == ["question 3", "question 4"], (
+            "only the kept window replays"
+        )
 
     @pytest.mark.anyio
-    async def test_is_a_noop_when_nothing_new_aged_out(self, enabled, monkeypatch):
+    async def test_is_a_noop_when_nothing_new_aged_out(
+        self, enabled, monkeypatch
+    ):
         calls = []
 
-        async def fake_summary(turns, *, assistant_text_of, previous_summary=""):
+        async def fake_summary(
+            turns, *, assistant_text_of, previous_summary=""
+        ):
             calls.append(len(turns))
             return "## Line of Enquiry\nX."
 
-        monkeypatch.setattr(compaction.summarize, "write_checkpoint", fake_summary)
+        monkeypatch.setattr(
+            compaction.summarize, "write_checkpoint", fake_summary
+        )
         for index in range(5):
             _add_turn("c1", "u", f"question {index}", f"answer {index}")
 
@@ -217,14 +297,20 @@ class TestCheckpoint:
         assert len(calls) == 1
 
     @pytest.mark.anyio
-    async def test_second_checkpoint_only_summarizes_new_turns(self, enabled, monkeypatch):
+    async def test_second_checkpoint_only_summarizes_new_turns(
+        self, enabled, monkeypatch
+    ):
         seen = []
 
-        async def fake_summary(turns, *, assistant_text_of, previous_summary=""):
+        async def fake_summary(
+            turns, *, assistant_text_of, previous_summary=""
+        ):
             seen.append([t["question"] for t in turns])
             return "## Line of Enquiry\nX."
 
-        monkeypatch.setattr(compaction.summarize, "write_checkpoint", fake_summary)
+        monkeypatch.setattr(
+            compaction.summarize, "write_checkpoint", fake_summary
+        )
         for index in range(5):
             _add_turn("c1", "u", f"question {index}", f"answer {index}")
         await compaction.compact_now("c1", "u")
@@ -252,7 +338,9 @@ class TestCheckpoint:
             called = True
             return "## Line of Enquiry\nX."
 
-        monkeypatch.setattr(compaction.summarize, "write_checkpoint", fake_summary)
+        monkeypatch.setattr(
+            compaction.summarize, "write_checkpoint", fake_summary
+        )
         for index in range(20):
             _add_turn("c1", "u", f"q{index}", f"a{index}", usage=50)
 
@@ -260,11 +348,15 @@ class TestCheckpoint:
         assert called is False
 
     @pytest.mark.anyio
-    async def test_conversation_over_budget_is_summarized(self, enabled, monkeypatch):
+    async def test_conversation_over_budget_is_summarized(
+        self, enabled, monkeypatch
+    ):
         async def fake_summary(*args, **kwargs):
             return "## Line of Enquiry\nX."
 
-        monkeypatch.setattr(compaction.summarize, "write_checkpoint", fake_summary)
+        monkeypatch.setattr(
+            compaction.summarize, "write_checkpoint", fake_summary
+        )
         monkeypatch.setattr(settings, "workbench_context_window", 1000)
         monkeypatch.setattr(settings, "workbench_reserve_tokens", 500)
         for index in range(10):
@@ -281,7 +373,9 @@ class TestCheckpoint:
         assert await compaction.compact_now("c1", "u") is False
 
     @pytest.mark.anyio
-    async def test_summarizer_failure_leaves_the_record_usable(self, enabled, monkeypatch):
+    async def test_summarizer_failure_leaves_the_record_usable(
+        self, enabled, monkeypatch
+    ):
         async def boom(turns, *, assistant_text_of, previous_summary=""):
             raise compaction.summarize.SummarizationError("model unavailable")
 
@@ -305,7 +399,9 @@ class TestCheckpoint:
             called = True
             return "x"
 
-        monkeypatch.setattr(compaction.summarize, "write_checkpoint", fake_summary)
+        monkeypatch.setattr(
+            compaction.summarize, "write_checkpoint", fake_summary
+        )
         for index in range(5):
             _add_turn("c1", "u", f"question {index}", f"answer {index}")
 
@@ -313,18 +409,28 @@ class TestCheckpoint:
         assert called is False
 
     @pytest.mark.anyio
-    async def test_dropping_the_checkpoint_restores_full_replay(self, enabled, monkeypatch):
-        async def fake_summary(turns, *, assistant_text_of, previous_summary=""):
+    async def test_dropping_the_checkpoint_restores_full_replay(
+        self, enabled, monkeypatch
+    ):
+        async def fake_summary(
+            turns, *, assistant_text_of, previous_summary=""
+        ):
             return "## Line of Enquiry\nX."
 
-        monkeypatch.setattr(compaction.summarize, "write_checkpoint", fake_summary)
+        monkeypatch.setattr(
+            compaction.summarize, "write_checkpoint", fake_summary
+        )
         for index in range(5):
             _add_turn("c1", "u", f"question {index}", f"answer {index}")
         await compaction.compact_now("c1", "u")
 
         history.set_compaction("c1", "u", None)
 
-        users = [m["content"] for m in history.transcript("c1", user="u") if m["role"] == "user"]
+        users = [
+            m["content"]
+            for m in history.transcript("c1", user="u")
+            if m["role"] == "user"
+        ]
         assert users == [f"question {i}" for i in range(5)]
 
 
@@ -336,18 +442,28 @@ class TestRecordVersioning:
         record.compaction = None
         history._MEMORY[("u", "c1")] = record
 
-        with pytest.raises(history.UnknownRecordVersion, match="requires version"):
+        with pytest.raises(
+            history.UnknownRecordVersion, match="requires version"
+        ):
             history.transcript("c1", user="u")
 
     def test_unknown_first_kept_pointer_falls_back_to_full_replay(self):
         _add_turn("c1", "u", "question one", "answer one")
         _add_turn("c1", "u", "question two", "answer two")
-        history.set_compaction("c1", "u", {
-            "summary": "## Line of Enquiry\nX.",
-            "first_kept_turn_id": "a-turn-that-no-longer-exists",
-        })
+        history.set_compaction(
+            "c1",
+            "u",
+            {
+                "summary": "## Line of Enquiry\nX.",
+                "first_kept_turn_id": "a-turn-that-no-longer-exists",
+            },
+        )
 
-        users = [m["content"] for m in history.transcript("c1", user="u") if m["role"] == "user"]
+        users = [
+            m["content"]
+            for m in history.transcript("c1", user="u")
+            if m["role"] == "user"
+        ]
         assert users == ["question one", "question two"]
 
 
@@ -371,7 +487,14 @@ class TestSafety:
             return FakeClient()
 
         monkeypatch.setattr(compaction.summarize.models, "client", fake_client)
-        turns = [{"id": "t1", "question": "q", "synthesis": "a", "status": "complete"}]
+        turns = [
+            {
+                "id": "t1",
+                "question": "q",
+                "synthesis": "a",
+                "status": "complete",
+            }
+        ]
 
         await compaction.summarize.write_checkpoint(
             turns, assistant_text_of=lambda t: t["synthesis"]
@@ -393,7 +516,14 @@ class TestSafety:
         monkeypatch.setattr(
             compaction.summarize.models, "client", lambda: FakeClient()
         )
-        turns = [{"id": "t1", "question": "q", "synthesis": "a", "status": "complete"}]
+        turns = [
+            {
+                "id": "t1",
+                "question": "q",
+                "synthesis": "a",
+                "status": "complete",
+            }
+        ]
 
         with pytest.raises(compaction.summarize.SummarizationError):
             await compaction.summarize.write_checkpoint(
@@ -414,7 +544,14 @@ class TestSafety:
         monkeypatch.setattr(
             compaction.summarize.models, "client", lambda: FakeClient()
         )
-        turns = [{"id": "t1", "question": "q", "synthesis": "a", "status": "complete"}]
+        turns = [
+            {
+                "id": "t1",
+                "question": "q",
+                "synthesis": "a",
+                "status": "complete",
+            }
+        ]
 
         with pytest.raises(compaction.summarize.SummarizationError):
             await compaction.summarize.write_checkpoint(
@@ -426,14 +563,24 @@ class TestCheckpointEvents:
     """Compaction adds a view over the record; it never edits the durable events."""
 
     @pytest.mark.anyio
-    async def test_checkpoint_is_an_event_naming_the_turns_it_replaces(self, enabled, monkeypatch):
-        async def fake_summary(turns, *, assistant_text_of, previous_summary=""):
+    async def test_checkpoint_is_an_event_naming_the_turns_it_replaces(
+        self, enabled, monkeypatch
+    ):
+        async def fake_summary(
+            turns, *, assistant_text_of, previous_summary=""
+        ):
             return "## Line of Enquiry\nX."
 
-        monkeypatch.setattr(compaction.summarize, "write_checkpoint", fake_summary)
-        ids = [_add_turn("c1", "u", f"question {i}", f"answer {i}") for i in range(5)]
+        monkeypatch.setattr(
+            compaction.summarize, "write_checkpoint", fake_summary
+        )
+        ids = [
+            _add_turn("c1", "u", f"question {i}", f"answer {i}")
+            for i in range(5)
+        ]
         before = [
-            [dict(e) for e in turn["events"]] for turn in history.get("c1", user="u").turns
+            [dict(e) for e in turn["events"]]
+            for turn in history.get("c1", user="u").turns
         ]
 
         assert await compaction.compact_now("c1", "u") is True
@@ -450,12 +597,17 @@ class TestCheckpointEvents:
         assert summary["payload"]["summary"] == "## Line of Enquiry\nX."
         assert record.compaction["first_kept_turn_id"] == ids[3]
         # Replay skips the summarized turns but the record has lost nothing.
-        assert [t["question"] for t in history.live_turns(record)] == ["question 3", "question 4"]
+        assert [t["question"] for t in history.live_turns(record)] == [
+            "question 3",
+            "question 4",
+        ]
         assert len(record.turns) == 5
 
     @pytest.mark.anyio
     async def test_newest_turn_over_budget_is_not_compacted_and_overflows_precisely(
-        self, enabled, monkeypatch,
+        self,
+        enabled,
+        monkeypatch,
     ):
         called = False
 
@@ -464,20 +616,36 @@ class TestCheckpointEvents:
             called = True
             return "x"
 
-        monkeypatch.setattr(compaction.summarize, "write_checkpoint", fake_summary)
+        monkeypatch.setattr(
+            compaction.summarize, "write_checkpoint", fake_summary
+        )
         monkeypatch.setattr(settings, "workbench_context_window", 1000)
         monkeypatch.setattr(settings, "workbench_reserve_tokens", 500)
         for index in range(4):
             _add_turn("c1", "u", f"q{index}", f"a{index}")
         turn_id = history.begin_turn("c1", "u", "everything")
         history.add_agent_exchange(
-            "c1", "u", turn_id,
-            assistant_message={"role": "assistant", "content": None, "tool_calls": [{
-                "id": "big", "type": "function",
-                "function": {"name": "lookup_records", "arguments": "{}"},
-            }]},
+            "c1",
+            "u",
+            turn_id,
+            assistant_message={
+                "role": "assistant",
+                "content": None,
+                "tool_calls": [
+                    {
+                        "id": "big",
+                        "type": "function",
+                        "function": {
+                            "name": "lookup_records",
+                            "arguments": "{}",
+                        },
+                    }
+                ],
+            },
             calls=[{"id": "big", "name": "lookup_records", "arguments": {}}],
-            tool_messages=[{"role": "tool", "tool_call_id": "big", "content": "x" * 4000}],
+            tool_messages=[
+                {"role": "tool", "tool_call_id": "big", "content": "x" * 4000}
+            ],
         )
         history.complete_turn("c1", "u", turn_id)
 
@@ -488,15 +656,24 @@ class TestCheckpointEvents:
         assert raised.value.reason == "single_turn_exceeds_budget"
 
     @pytest.mark.anyio
-    async def test_measurement_taken_before_the_checkpoint_is_not_trusted(self, enabled, monkeypatch):
+    async def test_measurement_taken_before_the_checkpoint_is_not_trusted(
+        self, enabled, monkeypatch
+    ):
         async def fake_summary(*args, **kwargs):
             return "## Line of Enquiry\nX."
 
-        monkeypatch.setattr(compaction.summarize, "write_checkpoint", fake_summary)
+        monkeypatch.setattr(
+            compaction.summarize, "write_checkpoint", fake_summary
+        )
         for index in range(4):
             _add_turn("c1", "u", f"q{index}", f"a{index}")
         measured = _add_turn("c1", "u", "measured", "answer", usage=9000)
-        assert history.measure_native_replay(history.get("c1", user="u")).measured_turn_id == measured
+        assert (
+            history.measure_native_replay(
+                history.get("c1", user="u")
+            ).measured_turn_id
+            == measured
+        )
 
         await compaction.compact_now("c1", "u")
 
@@ -509,5 +686,7 @@ class TestCheckpointEvents:
         fresh = history.measure_native_replay(record)
         assert fresh.measured_turn_id == fresh_id
         # The prompt already held the checkpoint; only this turn's completion is added.
-        completion = compaction.budget.estimate_tokens(history.assistant_text(record.turns[-1]))
+        completion = compaction.budget.estimate_tokens(
+            history.assistant_text(record.turns[-1])
+        )
         assert fresh.tokens == 700 + completion

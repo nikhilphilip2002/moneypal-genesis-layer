@@ -36,34 +36,53 @@ def result_of(rows, columns=None):
 
 def chart_for(spec: QuerySpec, rows, catalog, prior=None):
     compiled = compile_spec(spec, catalog, TODAY)
-    return charts.build(spec, compiled, result_of(rows), prior=prior, catalog=catalog)
+    return charts.build(
+        spec, compiled, result_of(rows), prior=prior, catalog=catalog
+    )
 
 
 class TestChartTypeRules:
     def test_one_metric_no_dimension_is_a_kpi(self, catalog):
-        spec = QuerySpec(metrics=["loan_count"], period=Period(relative="all_time"))
-        assert chart_for(spec, [{"loan_count": 13510}], catalog).chart_type == "kpi"
+        spec = QuerySpec(
+            metrics=["loan_count"], period=Period(relative="all_time")
+        )
+        assert (
+            chart_for(spec, [{"loan_count": 13510}], catalog).chart_type
+            == "kpi"
+        )
 
     def test_a_flow_over_time_is_an_area(self, catalog):
         """Filling under the curve claims the values accumulate. For a flow they do."""
         spec = QuerySpec(
-            metrics=["loan_count"], dimensions=["month"], period=Period(relative="last_fy")
+            metrics=["loan_count"],
+            dimensions=["month"],
+            period=Period(relative="last_fy"),
         )
-        rows = [{"month": "2026-01-01", "loan_count": 5}, {"month": "2026-02-01", "loan_count": 8}]
+        rows = [
+            {"month": "2026-01-01", "loan_count": 5},
+            {"month": "2026-02-01", "loan_count": 8},
+        ]
         assert chart_for(spec, rows, catalog).chart_type == "area"
 
     def test_a_stock_over_time_stays_a_line(self, catalog):
         """PAR 30 is a percentage of a book at a moment. Area under it would imply that
         three months of PAR sum to something, and nothing sums there."""
         spec = QuerySpec(
-            metrics=["par_30"], dimensions=["month"], period=Period(relative="last_fy")
+            metrics=["par_30"],
+            dimensions=["month"],
+            period=Period(relative="last_fy"),
         )
-        rows = [{"month": "2026-01-01", "par_30": 4.1}, {"month": "2026-02-01", "par_30": 4.6}]
+        rows = [
+            {"month": "2026-01-01", "par_30": 4.1},
+            {"month": "2026-02-01", "par_30": 4.6},
+        ]
         assert chart_for(spec, rows, catalog).chart_type == "line"
 
     def test_few_categories_is_a_bar(self, catalog):
         spec = QuerySpec(
-            metrics=["loan_count"], dimensions=["product"], period=Period(relative="all_time")
+            metrics=["loan_count"],
+            dimensions=["product"],
+            period=Period(relative="all_time"),
         )
         rows = [{"product": c, "loan_count": 1} for c in (1, 13, 16)]
         assert chart_for(spec, rows, catalog).chart_type == "bar"
@@ -74,7 +93,10 @@ class TestChartTypeRules:
             dimensions=["scheme"],
             period=Period(relative="all_time"),
         )
-        rows = [{"scheme": str(1300 + i), "sanctioned_amount": i} for i in range(30)]
+        rows = [
+            {"scheme": str(1300 + i), "sanctioned_amount": i}
+            for i in range(30)
+        ]
         assert chart_for(spec, rows, catalog).chart_type == "ranking"
 
     def test_compare_to_per_item_is_a_dumbbell(self, catalog):
@@ -103,13 +125,17 @@ class TestChartTypeRules:
             compare_to=Period(relative="last_quarter"),
         )
         rows = [{"month": "2026-01-01", "sanctioned_amount": 100.0}]
-        prior = result_of([{"month": "2026-01-01", "sanctioned_amount": 120.0}])
+        prior = result_of(
+            [{"month": "2026-01-01", "sanctioned_amount": 120.0}]
+        )
         chart = chart_for(spec, rows, catalog, prior=prior)
         assert chart.chart_type == "variance"
         assert [s.field for s in chart.series] == ["delta"]
         assert chart.rows[0]["delta"] == -20.0
 
-    def test_single_quarter_comparison_aligns_different_time_keys(self, catalog):
+    def test_single_quarter_comparison_aligns_different_time_keys(
+        self, catalog
+    ):
         """Q3 and Q2 are the two comparison sides, not dimension keys to equi-join."""
         spec = QuerySpec(
             metrics=["loan_count"],
@@ -127,7 +153,9 @@ class TestChartTypeRules:
         assert chart.rows[0]["delta"] == 28
         assert chart.rows[0]["delta_pct"] == 18.5
 
-    def test_percentage_variance_distinguishes_points_from_relative_change(self, catalog):
+    def test_percentage_variance_distinguishes_points_from_relative_change(
+        self, catalog
+    ):
         spec = QuerySpec(
             metrics=["collection_efficiency"],
             dimensions=["quarter"],
@@ -135,7 +163,9 @@ class TestChartTypeRules:
             compare_to=Period(relative="last_quarter"),
         )
         current = [{"quarter": "2026-07-01", "collection_efficiency": 92.0}]
-        prior = result_of([{"quarter": "2026-04-01", "collection_efficiency": 95.5}])
+        prior = result_of(
+            [{"quarter": "2026-04-01", "collection_efficiency": 95.5}]
+        )
 
         chart = chart_for(spec, current, catalog, prior=prior)
 
@@ -161,14 +191,18 @@ class TestChartTypeRules:
         rows = [{"product": c, "sanctioned_amount": 10.0} for c in (1, 13, 16)]
         assert chart_for(spec, rows, catalog).chart_type == "donut"
 
-    def test_one_category_composition_uses_a_labelled_bar_not_a_meaningless_donut(self, catalog):
+    def test_one_category_composition_uses_a_labelled_bar_not_a_meaningless_donut(
+        self, catalog
+    ):
         spec = QuerySpec(
             metrics=["sanctioned_amount"],
             dimensions=["product"],
             period=Period(relative="all_time"),
             as_share=True,
         )
-        chart = chart_for(spec, [{"product": 16.0, "sanctioned_amount": 906900000}], catalog)
+        chart = chart_for(
+            spec, [{"product": 16.0, "sanctioned_amount": 906900000}], catalog
+        )
         assert chart.chart_type == "bar"
         assert chart.rows[0]["product"] == "Business & MSME Loans"
 
@@ -190,7 +224,9 @@ class TestChartTypeRules:
             period=Period(relative="all_time"),
             as_share=True,
         )
-        rows = [{"product": c, "collection_efficiency": 90.0} for c in (1, 13, 16)]
+        rows = [
+            {"product": c, "collection_efficiency": 90.0} for c in (1, 13, 16)
+        ]
         assert chart_for(spec, rows, catalog).chart_type == "bar"
 
     def test_too_many_slices_is_not_a_donut(self, catalog):
@@ -200,7 +236,10 @@ class TestChartTypeRules:
             period=Period(relative="all_time"),
             as_share=True,
         )
-        rows = [{"scheme": str(1300 + i), "sanctioned_amount": 1.0} for i in range(9)]
+        rows = [
+            {"scheme": str(1300 + i), "sanctioned_amount": 1.0}
+            for i in range(9)
+        ]
         assert chart_for(spec, rows, catalog).chart_type == "bar"
 
     def test_share_of_a_flow_over_time_is_a_stacked_area(self, catalog):
@@ -226,7 +265,11 @@ class TestChartTypeRules:
             as_share=True,
         )
         rows = [
-            {"month": "2026-01-01", "product": p, "principal_outstanding": 10.0}
+            {
+                "month": "2026-01-01",
+                "product": p,
+                "principal_outstanding": 10.0,
+            }
             for p in (1, 13, 16)
         ]
         assert chart_for(spec, rows, catalog).chart_type == "stacked_bar"
@@ -249,7 +292,9 @@ class TestChartTypeRules:
             for literal in re.findall(r'"(\w+)"', line)
         }
         declared = set(ChartType.__args__)  # type: ignore[attr-defined]
-        assert declared - chosen == set(), f"unreachable chart types: {declared - chosen}"
+        assert declared - chosen == set(), (
+            f"unreachable chart types: {declared - chosen}"
+        )
 
     def test_many_series_over_time_becomes_small_multiples(self, catalog):
         """Sixteen branches on one time axis is a hairball, and stacking them answers a
@@ -260,7 +305,8 @@ class TestChartTypeRules:
             period=Period(relative="last_fy"),
         )
         rows = [
-            {"month": "2026-01-01", "branch": b, "disbursement_total": 1.0} for b in range(1, 17)
+            {"month": "2026-01-01", "branch": b, "disbursement_total": 1.0}
+            for b in range(1, 17)
         ]
         assert chart_for(spec, rows, catalog).chart_type == "small_multiples"
 
@@ -277,7 +323,8 @@ class TestChartTypeRules:
             period=Period(relative="all_time"),
         )
         rows = [
-            {"branch": b, "avg_ticket_size": 1.0, "avg_interest_rate": 2.0} for b in (1, 2, 3)
+            {"branch": b, "avg_ticket_size": 1.0, "avg_interest_rate": 2.0}
+            for b in (1, 2, 3)
         ]
         assert chart_for(spec, rows, catalog).chart_type == "scatter"
 
@@ -290,7 +337,12 @@ class TestChartTypeRules:
             period=Period(relative="all_time"),
         )
         rows = [
-            {"branch": 1, "sanctioned_amount": 1.0, "avg_interest_rate": 2.0, "loan_count": 3}
+            {
+                "branch": 1,
+                "sanctioned_amount": 1.0,
+                "avg_interest_rate": 2.0,
+                "loan_count": 3,
+            }
         ]
         assert chart_for(spec, rows, catalog).chart_type == "table"
 
@@ -299,7 +351,9 @@ class TestDecoding:
     def test_codes_become_labels_and_keep_the_raw_value(self, catalog):
         """The label is what a human reads; the raw code is what a drill-down filters on."""
         spec = QuerySpec(
-            metrics=["loan_count"], dimensions=["product"], period=Period(relative="all_time")
+            metrics=["loan_count"],
+            dimensions=["product"],
+            period=Period(relative="all_time"),
         )
         chart = chart_for(spec, [{"product": 1, "loan_count": 140}], catalog)
         assert chart.rows[0]["product"] == "Gold Loans"
@@ -307,36 +361,52 @@ class TestDecoding:
 
     def test_float_shaped_numeric_codes_use_the_governed_label(self, catalog):
         spec = QuerySpec(
-            metrics=["loan_count"], dimensions=["product"], period=Period(relative="all_time")
+            metrics=["loan_count"],
+            dimensions=["product"],
+            period=Period(relative="all_time"),
         )
-        chart = chart_for(spec, [{"product": 16.0, "loan_count": 5753}], catalog)
+        chart = chart_for(
+            spec, [{"product": 16.0, "loan_count": 5753}], catalog
+        )
         assert chart.rows[0]["product"] == "Business & MSME Loans"
         assert "16.0" not in chart.summary
 
     def test_time_buckets_get_fiscal_labels(self, catalog):
         spec = QuerySpec(
-            metrics=["loan_count"], dimensions=["fy"], period=Period(relative="last_fy")
+            metrics=["loan_count"],
+            dimensions=["fy"],
+            period=Period(relative="last_fy"),
         )
-        chart = chart_for(spec, [{"fy": "2025-04-01", "loan_count": 10}], catalog)
+        chart = chart_for(
+            spec, [{"fy": "2025-04-01", "loan_count": 10}], catalog
+        )
         assert chart.rows[0]["fy"] == "FY26"
 
     def test_missing_dimension_values_are_named_not_dropped(self, catalog):
         spec = QuerySpec(
-            metrics=["loan_count"], dimensions=["product"], period=Period(relative="all_time")
+            metrics=["loan_count"],
+            dimensions=["product"],
+            period=Period(relative="all_time"),
         )
         chart = chart_for(spec, [{"product": None, "loan_count": 3}], catalog)
         assert chart.rows[0]["product"] == "Not recorded"
 
     def test_live_scheme_codes_use_governed_names(self, catalog):
         spec = QuerySpec(
-            metrics=["amount_collected"], dimensions=["scheme"], period=Period(relative="all_time")
+            metrics=["amount_collected"],
+            dimensions=["scheme"],
+            period=Period(relative="all_time"),
         )
-        chart = chart_for(spec, [{"scheme": "1616", "amount_collected": 10.0}], catalog)
+        chart = chart_for(
+            spec, [{"scheme": "1616", "amount_collected": 10.0}], catalog
+        )
         assert chart.rows[0]["scheme"] == "MSME Loans"
 
     def test_duplicate_scheme_names_are_disambiguated_by_code(self, catalog):
         spec = QuerySpec(
-            metrics=["amount_collected"], dimensions=["scheme"], period=Period(relative="all_time")
+            metrics=["amount_collected"],
+            dimensions=["scheme"],
+            period=Period(relative="all_time"),
         )
         chart = chart_for(
             spec,
@@ -384,7 +454,9 @@ class TestNarration:
         assert "as at" in chart.summary.lower()
         assert "This measures" in chart.summary
 
-    def test_generated_rate_distribution_gets_units_chart_and_descriptive_summary(self, catalog):
+    def test_generated_rate_distribution_gets_units_chart_and_descriptive_summary(
+        self, catalog
+    ):
         result = result_of(
             [
                 {"interest_rate": 16.0, "loan_count": 33},
@@ -395,7 +467,9 @@ class TestNarration:
         chart = charts.build_from_rows(
             question="what are the various intrest rate?",
             result=result,
-            lineage=Lineage(path="postgres_mcp", sql="SELECT 1", unverified=True),
+            lineage=Lineage(
+                path="postgres_mcp", sql="SELECT 1", unverified=True
+            ),
             catalog=catalog,
             unit_hints={"interest_rate": "percent", "loan_count": "count"},
             description="Distinct contractual rates with the account count at each rate.",
@@ -413,21 +487,25 @@ class TestNarration:
         assert "par_30" in chart.lineage.requires_signoff
 
     def test_empty_result_names_the_filters_that_produced_it(self, catalog):
-        """"No results" alone leaves the user unable to tell a wrong filter from a genuine
+        """ "No results" alone leaves the user unable to tell a wrong filter from a genuine
         absence."""
         spec = QuerySpec(
             metrics=["disbursement_total"],
             period=Period(start=date(2024, 1, 1), end=date(2024, 6, 30)),
         )
         compiled = compile_spec(spec, catalog, TODAY)
-        empty = QueryResult(rows=[], columns=[], status="empty", duration_ms=1, sql="SELECT 1")
+        empty = QueryResult(
+            rows=[], columns=[], status="empty", duration_ms=1, sql="SELECT 1"
+        )
         chart = charts.build(spec, compiled, empty, catalog=catalog)
         assert "No disbursement found" in chart.summary
         assert "2024-01-01" in chart.summary
 
     def test_an_all_zero_chart_says_it_is_a_real_result(self, catalog):
         spec = QuerySpec(
-            metrics=["par_30"], dimensions=["branch"], period=Period(relative="today")
+            metrics=["par_30"],
+            dimensions=["branch"],
+            period=Period(relative="today"),
         )
         rows = [{"branch": 1, "par_30": 0.0}, {"branch": 4, "par_30": 0.0}]
         assert "not a failed query" in chart_for(spec, rows, catalog).summary
@@ -444,12 +522,21 @@ class TestNarration:
             {"month": "2025-05-01", "collection_efficiency": 80.0},
         ]
         summary = chart_for(spec, rows, catalog).summary.lower()
-        for word in ("should", "recommend", "suggest", "consider", "advise", "must"):
+        for word in (
+            "should",
+            "recommend",
+            "suggest",
+            "consider",
+            "advise",
+            "must",
+        ):
             assert word not in summary
 
     def test_trend_reports_gaps_rather_than_hiding_them(self, catalog):
         spec = QuerySpec(
-            metrics=["par_30"], dimensions=["month"], period=Period(relative="last_90_days")
+            metrics=["par_30"],
+            dimensions=["month"],
+            period=Period(relative="last_90_days"),
         )
         rows = [
             {"month": "2026-05-01", "par_30": None},
@@ -472,7 +559,9 @@ class TestLineage:
         assert chart.lineage.source_tables == ["gold.daily_loan_status"]
 
     def test_queryspec_answers_are_not_marked_unverified(self, catalog):
-        spec = QuerySpec(metrics=["loan_count"], period=Period(relative="all_time"))
+        spec = QuerySpec(
+            metrics=["loan_count"], period=Period(relative="all_time")
+        )
         chart = chart_for(spec, [{"loan_count": 1}], catalog)
         assert chart.lineage.path == "queryspec"
         assert chart.lineage.unverified is False
@@ -486,39 +575,58 @@ class TestLineage:
 class TestDrilldown:
     def test_a_time_chart_drills_into_branch(self, catalog):
         spec = QuerySpec(
-            metrics=["loan_count"], dimensions=["month"], period=Period(relative="last_fy")
+            metrics=["loan_count"],
+            dimensions=["month"],
+            period=Period(relative="last_fy"),
         )
-        chart = chart_for(spec, [{"month": "2026-01-01", "loan_count": 1}], catalog)
+        chart = chart_for(
+            spec, [{"month": "2026-01-01", "loan_count": 1}], catalog
+        )
         assert chart.drilldown is not None
         assert "branch" in chart.drilldown.dimensions
 
-    def test_no_drilldown_is_offered_when_there_is_no_sensible_next_level(self, catalog):
+    def test_no_drilldown_is_offered_when_there_is_no_sensible_next_level(
+        self, catalog
+    ):
         spec = QuerySpec(
             metrics=["loan_count"],
             dimensions=["branch", "product"],
             period=Period(relative="all_time"),
         )
-        assert chart_for(spec, [{"branch": 1, "product": 13, "loan_count": 1}], catalog).drilldown is None
+        assert (
+            chart_for(
+                spec, [{"branch": 1, "product": 13, "loan_count": 1}], catalog
+            ).drilldown
+            is None
+        )
 
     def test_every_chart_carries_its_next_questions(self, catalog):
         spec = QuerySpec(
-            metrics=["loan_count"], dimensions=["branch"], period=Period(relative="last_fy")
+            metrics=["loan_count"],
+            dimensions=["branch"],
+            period=Period(relative="last_fy"),
         )
         chart = chart_for(spec, [{"branch": 1, "loan_count": 4}], catalog)
         assert chart.next_steps
-        assert {"deeper", "explain", "act"} <= {s.kind for s in chart.next_steps}
+        assert {"deeper", "explain", "act"} <= {
+            s.kind for s in chart.next_steps
+        }
 
     def test_a_next_step_is_a_runnable_spec(self, catalog):
         """The chip has to execute with no model in the loop, which means compiling."""
         spec = QuerySpec(
-            metrics=["loan_count"], dimensions=["branch"], period=Period(relative="last_fy")
+            metrics=["loan_count"],
+            dimensions=["branch"],
+            period=Period(relative="last_fy"),
         )
-        for step in chart_for(spec, [{"branch": 1, "loan_count": 4}], catalog).next_steps:
+        for step in chart_for(
+            spec, [{"branch": 1, "loan_count": 4}], catalog
+        ).next_steps:
             compile_spec(step.spec, catalog, TODAY)
 
 
 class TestExplain:
-    """"Why did it change?" — a decomposition, not a variance table."""
+    """ "Why did it change?" — a decomposition, not a variance table."""
 
     SPEC = QuerySpec(
         metrics=["disbursement_total"],
@@ -537,32 +645,46 @@ class TestExplain:
     ]
 
     def test_an_explained_comparison_is_a_waterfall(self, catalog):
-        chart = chart_for(self.SPEC, self.CURRENT, catalog, prior=result_of(self.PRIOR))
+        chart = chart_for(
+            self.SPEC, self.CURRENT, catalog, prior=result_of(self.PRIOR)
+        )
         assert chart.chart_type == "waterfall"
 
     def test_the_same_shape_without_explain_stays_a_dumbbell(self, catalog):
         """The rows are identical. Only the question differs, so only the spec can say."""
         spec = self.SPEC.model_copy(update={"explain": False})
-        chart = chart_for(spec, self.CURRENT, catalog, prior=result_of(self.PRIOR))
+        chart = chart_for(
+            spec, self.CURRENT, catalog, prior=result_of(self.PRIOR)
+        )
         assert chart.chart_type == "dumbbell"
 
     def test_it_bridges_from_the_prior_total_to_the_current_one(self, catalog):
-        chart = chart_for(self.SPEC, self.CURRENT, catalog, prior=result_of(self.PRIOR))
+        chart = chart_for(
+            self.SPEC, self.CURRENT, catalog, prior=result_of(self.PRIOR)
+        )
         assert chart.rows[0]["kind"] == "total"
         assert chart.rows[0]["value"] == pytest.approx(800.0)
         assert chart.rows[-1]["kind"] == "total"
         assert chart.rows[-1]["value"] == pytest.approx(900.0)
 
     def test_the_contributions_bridge_the_two_totals(self, catalog):
-        chart = chart_for(self.SPEC, self.CURRENT, catalog, prior=result_of(self.PRIOR))
+        chart = chart_for(
+            self.SPEC, self.CURRENT, catalog, prior=result_of(self.PRIOR)
+        )
         moves = [r["value"] for r in chart.rows if r["kind"] == "contribution"]
-        assert sum(moves) == pytest.approx(chart.rows[-1]["value"] - chart.rows[0]["value"])
+        assert sum(moves) == pytest.approx(
+            chart.rows[-1]["value"] - chart.rows[0]["value"]
+        )
 
     def test_the_summary_names_the_driver(self, catalog):
-        chart = chart_for(self.SPEC, self.CURRENT, catalog, prior=result_of(self.PRIOR))
+        chart = chart_for(
+            self.SPEC, self.CURRENT, catalog, prior=result_of(self.PRIOR)
+        )
         assert "rose" in chart.summary
 
-    def test_a_ratio_without_its_weight_is_not_drawn_as_a_bridge(self, catalog):
+    def test_a_ratio_without_its_weight_is_not_drawn_as_a_bridge(
+        self, catalog
+    ):
         """A ratio's change only splits exactly when the denominator came through the query.
         Without it there is no exact split and no honest total, so a waterfall would have
         nothing at either end — it falls back to a comparison form, which claims only what a
@@ -592,22 +714,40 @@ class TestExplain:
         )
         chart = chart_for(
             spec,
-            [{"branch": 1, "collection_efficiency": 80.0, "amount_due": 500.0}],
+            [
+                {
+                    "branch": 1,
+                    "collection_efficiency": 80.0,
+                    "amount_due": 500.0,
+                }
+            ],
             catalog,
-            prior=result_of([{"branch": 1, "collection_efficiency": 95.0, "amount_due": 400.0}]),
+            prior=result_of(
+                [
+                    {
+                        "branch": 1,
+                        "collection_efficiency": 95.0,
+                        "amount_due": 400.0,
+                    }
+                ]
+            ),
         )
         assert chart.chart_type == "waterfall"
 
     def test_the_share_column_is_whole_percent(self, catalog):
         """`unit: percent` means already-scaled everywhere in the product. Passing the raw
         0.62 fraction rendered a 62% driver as "0.62%" beneath a summary saying 62%."""
-        chart = chart_for(self.SPEC, self.CURRENT, catalog, prior=result_of(self.PRIOR))
+        chart = chart_for(
+            self.SPEC, self.CURRENT, catalog, prior=result_of(self.PRIOR)
+        )
         top = next(r for r in chart.rows if r["kind"] == "contribution")
         assert top["share"] == pytest.approx(200.0)
 
     def test_the_axes_name_keys_that_exist_in_the_rows(self, catalog):
         """A waterfall's rows are the decomposition's, not the query's."""
-        chart = chart_for(self.SPEC, self.CURRENT, catalog, prior=result_of(self.PRIOR))
+        chart = chart_for(
+            self.SPEC, self.CURRENT, catalog, prior=result_of(self.PRIOR)
+        )
         assert chart.x is not None and chart.x.field in chart.rows[0]
         assert all(s.field in chart.rows[0] for s in chart.series)
 

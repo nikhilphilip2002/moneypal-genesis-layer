@@ -58,9 +58,16 @@ class SessionState:
 
     def is_empty(self) -> bool:
         return not (
-            self.figures or self.sources_consulted or self.metrics_seen or self.refusals
-            or self.pinned or self.active_plans or self.selected_entities
-            or self.ranked_rows or self.fact_references or self.drill_actions
+            self.figures
+            or self.sources_consulted
+            or self.metrics_seen
+            or self.refusals
+            or self.pinned
+            or self.active_plans
+            or self.selected_entities
+            or self.ranked_rows
+            or self.fact_references
+            or self.drill_actions
         )
 
 
@@ -110,8 +117,14 @@ def _dedupe_values(values: list[str]) -> list[str]:
     return list(dict.fromkeys(values))
 
 
-def _chart_state(card: dict[str, Any], payload: dict[str, Any], state: SessionState) -> None:
-    columns = payload.get("columns") if isinstance(payload.get("columns"), list) else []
+def _chart_state(
+    card: dict[str, Any], payload: dict[str, Any], state: SessionState
+) -> None:
+    columns = (
+        payload.get("columns")
+        if isinstance(payload.get("columns"), list)
+        else []
+    )
     for column in columns:
         if isinstance(column, dict) and column.get("name"):
             state.metrics_seen.add(str(column["name"]))
@@ -132,7 +145,9 @@ def extract_turn(turn: dict[str, Any], assistant_text: str) -> SessionState:
 
     refusal = turn.get("refusal")
     if isinstance(refusal, dict) and refusal.get("message"):
-        state.refusals.append(f"{_clean(refusal['message'])[:SENTENCE_MAX]} ({turn_id})")
+        state.refusals.append(
+            f"{_clean(refusal['message'])[:SENTENCE_MAX]} ({turn_id})"
+        )
 
     if turn.get("pinned"):
         state.pinned = str(turn["pinned"])
@@ -143,12 +158,21 @@ def extract_turn(turn: dict[str, Any], assistant_text: str) -> SessionState:
 
     for call in native_tool_calls(turn):
         name = str(call.get("name", ""))
-        arguments = call.get("arguments") if isinstance(call.get("arguments"), dict) else {}
+        arguments = (
+            call.get("arguments")
+            if isinstance(call.get("arguments"), dict)
+            else {}
+        )
         if name in {
-            "query_metrics", "run_analysis", "create_worklist",
-            "generate_briefing", "run_validated_query",
+            "query_metrics",
+            "run_analysis",
+            "create_worklist",
+            "generate_briefing",
+            "run_validated_query",
         }:
-            rendered = json.dumps(arguments, sort_keys=True, default=str, separators=(",", ":"))
+            rendered = json.dumps(
+                arguments, sort_keys=True, default=str, separators=(",", ":")
+            )
             state.active_plans.append(f"{name}:{rendered[:600]}")
         if name in settings.postgres_mcp_model_tools:
             sql = str(arguments.get("sql", ""))
@@ -158,19 +182,30 @@ def extract_turn(turn: dict[str, Any], assistant_text: str) -> SessionState:
             selector = str(arguments.get("selector", ""))
             value = str(arguments.get("value", ""))
             if selector and value:
-                state.selected_entities.append(f"{selector}={value}"[:SENTENCE_MAX])
+                state.selected_entities.append(
+                    f"{selector}={value}"[:SENTENCE_MAX]
+                )
 
     fallback_period = _period_in(str(turn.get("question", "")))
     for card in turn.get("cards") or []:
         if not isinstance(card, dict) or card.get("card_type") != "chart":
             continue
-        payload = card.get("payload") if isinstance(card.get("payload"), dict) else {}
+        payload = (
+            card.get("payload")
+            if isinstance(card.get("payload"), dict)
+            else {}
+        )
         _chart_state(card, payload, state)
         active_plan = payload.get("drilldown")
         if isinstance(active_plan, dict):
             state.active_plans.append(
                 "query_metrics:"
-                + json.dumps(active_plan, sort_keys=True, default=str, separators=(",", ":"))[:600]
+                + json.dumps(
+                    active_plan,
+                    sort_keys=True,
+                    default=str,
+                    separators=(",", ":"),
+                )[:600]
             )
         for action in payload.get("next_steps") or []:
             if not isinstance(action, dict):
@@ -178,36 +213,55 @@ def extract_turn(turn: dict[str, Any], assistant_text: str) -> SessionState:
             action_id = str(action.get("id", ""))
             question = str(action.get("question", ""))
             if action_id or question:
-                state.drill_actions.append(f"{action_id}:{question}"[:SENTENCE_MAX])
-        columns = payload.get("columns") if isinstance(payload.get("columns"), list) else []
+                state.drill_actions.append(
+                    f"{action_id}:{question}"[:SENTENCE_MAX]
+                )
+        columns = (
+            payload.get("columns")
+            if isinstance(payload.get("columns"), list)
+            else []
+        )
         text_fields = [
             str(column.get("name"))
             for column in columns
-            if isinstance(column, dict) and column.get("unit") == "text" and column.get("name")
+            if isinstance(column, dict)
+            and column.get("unit") == "text"
+            and column.get("name")
         ]
         numeric_fields = [
             str(column.get("name"))
             for column in columns
             if isinstance(column, dict)
-            and column.get("unit") not in {"text", "date", "datetime", "boolean"}
+            and column.get("unit")
+            not in {"text", "date", "datetime", "boolean"}
             and column.get("name")
         ]
-        rows = payload.get("rows") if isinstance(payload.get("rows"), list) else []
+        rows = (
+            payload.get("rows")
+            if isinstance(payload.get("rows"), list)
+            else []
+        )
         if payload.get("chart_type") == "ranking":
             for rank, row in enumerate(rows[:5], start=1):
                 if isinstance(row, dict):
                     identity = ", ".join(
-                        f"{field}={row[field]}" for field in text_fields if row.get(field) is not None
+                        f"{field}={row[field]}"
+                        for field in text_fields
+                        if row.get(field) is not None
                     )
                     if identity:
-                        state.ranked_rows.append(f"{rank}:{identity}"[:SENTENCE_MAX])
+                        state.ranked_rows.append(
+                            f"{rank}:{identity}"[:SENTENCE_MAX]
+                        )
         for row_index, row in enumerate(rows[:20]):
             if not isinstance(row, dict):
                 continue
             for field_name in numeric_fields:
                 if row.get(field_name) is not None:
                     state.fact_references.append(
-                        f"{turn_id}:{row_index}:{field_name}={row[field_name]}"[:SENTENCE_MAX]
+                        f"{turn_id}:{row_index}:{field_name}={row[field_name]}"[
+                            :SENTENCE_MAX
+                        ]
                     )
 
     # Figures come from the rendered assistant text rather than the raw payload: that is
@@ -243,11 +297,17 @@ def merge(base: SessionState, addition: SessionState) -> SessionState:
         metrics_seen=base.metrics_seen | addition.metrics_seen,
         refusals=list(dict.fromkeys([*base.refusals, *addition.refusals])),
         pinned=addition.pinned or base.pinned,
-        active_plans=list(dict.fromkeys([*base.active_plans, *addition.active_plans]))[-MAX_ANCHORS:],
-        selected_entities=list(
-            dict.fromkeys([*base.selected_entities, *addition.selected_entities])
+        active_plans=list(
+            dict.fromkeys([*base.active_plans, *addition.active_plans])
         )[-MAX_ANCHORS:],
-        ranked_rows=list(dict.fromkeys([*base.ranked_rows, *addition.ranked_rows]))[-MAX_ANCHORS:],
+        selected_entities=list(
+            dict.fromkeys(
+                [*base.selected_entities, *addition.selected_entities]
+            )
+        )[-MAX_ANCHORS:],
+        ranked_rows=list(
+            dict.fromkeys([*base.ranked_rows, *addition.ranked_rows])
+        )[-MAX_ANCHORS:],
         fact_references=list(
             dict.fromkeys([*base.fact_references, *addition.fact_references])
         )[-MAX_FIGURES:],
@@ -264,7 +324,9 @@ def merge(base: SessionState, addition: SessionState) -> SessionState:
     return merged
 
 
-def trim_to_fit(state: SessionState, max_tokens: int, estimate) -> SessionState:
+def trim_to_fit(
+    state: SessionState, max_tokens: int, estimate
+) -> SessionState:
     """Shed the oldest figures until the rendered block fits `max_tokens`.
 
     The block is added to every transcript ahead of any live turn, so it must not be
@@ -336,14 +398,20 @@ def render(state: SessionState) -> str:
         )
     if state.metrics_seen:
         metrics = sorted(state.metrics_seen)[:MAX_METRICS]
-        blocks.append(f"<metrics-examined>{', '.join(metrics)}</metrics-examined>")
+        blocks.append(
+            f"<metrics-examined>{', '.join(metrics)}</metrics-examined>"
+        )
     if state.refusals:
         joined = "\n".join(state.refusals)
         blocks.append(f"<refusals>\n{joined}\n</refusals>")
     if state.pinned:
         blocks.append(f"<pinned-document>{state.pinned}</pinned-document>")
     if state.active_plans:
-        blocks.append("<governed-plans>\n" + "\n".join(state.active_plans) + "\n</governed-plans>")
+        blocks.append(
+            "<governed-plans>\n"
+            + "\n".join(state.active_plans)
+            + "\n</governed-plans>"
+        )
     if state.selected_entities:
         blocks.append(
             "<selected-entities>\n"
@@ -351,7 +419,11 @@ def render(state: SessionState) -> str:
             + "\n</selected-entities>"
         )
     if state.ranked_rows:
-        blocks.append("<ranked-rows>\n" + "\n".join(state.ranked_rows) + "\n</ranked-rows>")
+        blocks.append(
+            "<ranked-rows>\n"
+            + "\n".join(state.ranked_rows)
+            + "\n</ranked-rows>"
+        )
     if state.fact_references:
         blocks.append(
             "<fact-references>\n"
@@ -371,8 +443,11 @@ def to_payload(state: SessionState) -> dict[str, Any]:
     return {
         "figures": [
             {
-                "label": f.label, "value": f.value, "period": f.period,
-                "source": f.source, "turn_id": f.turn_id,
+                "label": f.label,
+                "value": f.value,
+                "period": f.period,
+                "source": f.source,
+                "turn_id": f.turn_id,
             }
             for f in state.figures
         ],
@@ -394,8 +469,10 @@ def from_payload(payload: dict[str, Any] | None) -> SessionState:
     return SessionState(
         figures=[
             Figure(
-                label=str(item.get("label", "")), value=str(item.get("value", "")),
-                period=str(item.get("period", "")), source=str(item.get("source", "")),
+                label=str(item.get("label", "")),
+                value=str(item.get("value", "")),
+                period=str(item.get("period", "")),
+                source=str(item.get("source", "")),
                 turn_id=str(item.get("turn_id", "")),
             )
             for item in payload.get("figures", []) or []

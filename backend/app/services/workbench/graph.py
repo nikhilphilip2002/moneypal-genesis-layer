@@ -46,30 +46,41 @@ def sse(event: str, data: Any) -> str:
 
 
 def _log_query_attribution(
-    state: dict[str, Any], *, active: list[str], visual: list[str],
-    invalid: list[str], proposed: list[str], fallback_used: bool,
+    state: dict[str, Any],
+    *,
+    active: list[str],
+    visual: list[str],
+    invalid: list[str],
+    proposed: list[str],
+    fallback_used: bool,
 ) -> None:
     """Emit counts only; query rows and model prose never enter attribution telemetry."""
     registry = list(state.get("query_registry", []))
     successful = sum(
-        1 for record in registry
+        1
+        for record in registry
         if record.get("status") == "success" and record.get("has_data") is True
     )
     by_id = {
         str(record.get("query_id")): record
-        for record in registry if record.get("query_id")
+        for record in registry
+        if record.get("query_id")
     }
     filtered_execution_references = sum(
-        1 for query_id in dict.fromkeys(proposed)
-        if query_id in by_id and not (
+        1
+        for query_id in dict.fromkeys(proposed)
+        if query_id in by_id
+        and not (
             by_id[query_id].get("status") == "success"
             and by_id[query_id].get("has_data") is True
         )
     )
     active_set = set(active)
     unused_records = [
-        record for record in registry
-        if record.get("status") == "success" and record.get("has_data") is True
+        record
+        for record in registry
+        if record.get("status") == "success"
+        and record.get("has_data") is True
         and record.get("query_id") not in active_set
     ]
     unused_by_purpose: dict[str, int] = {}
@@ -95,9 +106,12 @@ def _log_query_attribution(
             "unused_by_tool": unused_by_tool,
             "invalid_model_references": len(invalid),
             "filtered_execution_references": filtered_execution_references,
-            "structured_output_repairs": int(state.get("attribution_repairs", 0)),
+            "structured_output_repairs": int(
+                state.get("attribution_repairs", 0)
+            ),
             "fallback_used": fallback_used,
-            "data_bearing_answer_empty_attribution": successful > 0 and not active,
+            "data_bearing_answer_empty_attribution": successful > 0
+            and not active,
             "executed_to_active_ratio": (
                 round(len(registry) / len(active), 3) if active else None
             ),
@@ -117,8 +131,13 @@ CONTEXT_FULL_MESSAGE = (
 # past the window. Providers report it as a 4xx whose body names the context limit, so
 # the runtime case is matched here as well as the pre-emptive one.
 _CONTEXT_ERROR_MARKERS = (
-    "context window", "context length", "context size", "n_ctx",
-    "too many tokens", "exceeds the available", "maximum context",
+    "context window",
+    "context length",
+    "context size",
+    "n_ctx",
+    "too many tokens",
+    "exceeds the available",
+    "maximum context",
 )
 
 
@@ -151,13 +170,29 @@ def _native_error(exc: BaseException) -> tuple[str, str, bool]:
     if isinstance(exc, (TimeoutError, LLMTimeout)):
         return "AGENT_TIMEOUT", "The agent took too long to answer.", True
     if isinstance(exc, LLMUnavailable):
-        return "MODEL_UNAVAILABLE", "The language model is unavailable right now.", True
+        return (
+            "MODEL_UNAVAILABLE",
+            "The language model is unavailable right now.",
+            True,
+        )
     if isinstance(exc, LLMIncomplete):
-        return "MODEL_INCOMPLETE", "The language model response was cut short.", True
+        return (
+            "MODEL_INCOMPLETE",
+            "The language model response was cut short.",
+            True,
+        )
     if isinstance(exc, LLMResponseBlocked):
-        return "MODEL_RESPONSE_BLOCKED", "The language model could not provide a response.", False
+        return (
+            "MODEL_RESPONSE_BLOCKED",
+            "The language model could not provide a response.",
+            False,
+        )
     if isinstance(exc, AgentToolAccessDenied):
-        return "POLICY_DENIED", "That capability is not authorized for this request.", False
+        return (
+            "POLICY_DENIED",
+            "That capability is not authorized for this request.",
+            False,
+        )
     if isinstance(exc, LLMProtocolError):
         return (
             "MODEL_PROTOCOL_ERROR",
@@ -165,7 +200,11 @@ def _native_error(exc: BaseException) -> tuple[str, str, bool]:
             True,
         )
     if isinstance(exc, LLMError):
-        return "MODEL_ERROR", "The language model could not complete this request.", True
+        return (
+            "MODEL_ERROR",
+            "The language model could not complete this request.",
+            True,
+        )
     return "WORKBENCH_INTERNAL", "The workbench hit an internal error.", True
 
 
@@ -202,7 +241,8 @@ async def answer_results(state: WorkbenchState) -> dict[str, Any]:
     decision = state.get("decision")
     all_results = state.get("results", [])
     results = [
-        r for r in all_results
+        r
+        for r in all_results
         if r.card_type in _ANSWERABLE_CARD_TYPES and r.summary.strip()
     ]
     unavailable = [
@@ -210,16 +250,21 @@ async def answer_results(state: WorkbenchState) -> dict[str, Any]:
             "source": r.source,
             "type": r.card_type,
             "reason": str(
-                r.payload.get("message") or r.payload.get("question") or "No usable result."
+                r.payload.get("message")
+                or r.payload.get("question")
+                or "No usable result."
             ),
         }
         for r in all_results
         if r not in results
     ]
-    limitations = list(decision.limitations if decision is not None else []) + [
+    limitations = list(
+        decision.limitations if decision is not None else []
+    ) + [
         {
             "source": r.source,
-            "reason": r.limitation or "The source only supported part of the request.",
+            "reason": r.limitation
+            or "The source only supported part of the request.",
         }
         for r in results
         if not r.complete
@@ -236,77 +281,151 @@ async def answer_results(state: WorkbenchState) -> dict[str, Any]:
             "schema_version": 1,
             "status": "answered",
             "text": final_result.text.strip(),
-            "active_query_ids": [], "visual_query_ids": [], "excluded_queries": [],
-            "model_active_query_ids": [], "invalid_query_ids": [],
+            "active_query_ids": [],
+            "visual_query_ids": [],
+            "excluded_queries": [],
+            "model_active_query_ids": [],
+            "invalid_query_ids": [],
             "attribution_fallback_used": False,
-            "sources": [], "citations": [], "unavailable_sources": [],
-            "limitations": [], "facts": [],
+            "sources": [],
+            "citations": [],
+            "unavailable_sources": [],
+            "limitations": [],
+            "facts": [],
         }
         await emit.put(sse("answer", payload))
         state["timing"].setdefault(
-            "final_answer_ms", int((time.perf_counter() - state["timing"]["started_at"]) * 1000)
+            "final_answer_ms",
+            int((time.perf_counter() - state["timing"]["started_at"]) * 1000),
         )
         _persist(
             history.set_answer,
-            state["conversation_id"], state["user"], state["turn_id"], payload,
+            state["conversation_id"],
+            state["user"],
+            state["turn_id"],
+            payload,
         )
         _log_query_attribution(
-            state, active=[], visual=[], invalid=[], proposed=[], fallback_used=False,
+            state,
+            active=[],
+            visual=[],
+            invalid=[],
+            proposed=[],
+            fallback_used=False,
         )
         return {}
 
     if not results:
-        refusal = next((r for r in all_results if r.card_type == "refusal"), None)
-        clarification = next((r for r in all_results if r.card_type == "clarify"), None)
+        refusal = next(
+            (r for r in all_results if r.card_type == "refusal"), None
+        )
+        clarification = next(
+            (r for r in all_results if r.card_type == "clarify"), None
+        )
         if clarification is not None:
             payload = {
                 "schema_version": 1,
                 "status": "clarify",
-                "text": str(clarification.payload.get("question") or "Please clarify the request."),
-                "sources": [], "citations": [], "unavailable_sources": unavailable,
+                "text": str(
+                    clarification.payload.get("question")
+                    or "Please clarify the request."
+                ),
+                "sources": [],
+                "citations": [],
+                "unavailable_sources": unavailable,
                 "limitations": [],
-                "active_query_ids": [], "visual_query_ids": [], "excluded_queries": [],
+                "active_query_ids": [],
+                "visual_query_ids": [],
+                "excluded_queries": [],
             }
             await emit.put(sse("answer", payload))
             state["timing"].setdefault(
-                "final_answer_ms", int((time.perf_counter() - state["timing"]["started_at"]) * 1000)
+                "final_answer_ms",
+                int(
+                    (time.perf_counter() - state["timing"]["started_at"])
+                    * 1000
+                ),
             )
-            _persist(history.set_answer, state["conversation_id"], state["user"], state["turn_id"], payload)
+            _persist(
+                history.set_answer,
+                state["conversation_id"],
+                state["user"],
+                state["turn_id"],
+                payload,
+            )
         elif refusal is not None:
             payload = {
                 "schema_version": 1,
                 "status": "refused",
-                "text": str(refusal.payload.get("message") or "That request cannot be answered safely."),
-                "sources": [], "citations": [], "unavailable_sources": unavailable,
+                "text": str(
+                    refusal.payload.get("message")
+                    or "That request cannot be answered safely."
+                ),
+                "sources": [],
+                "citations": [],
+                "unavailable_sources": unavailable,
                 "limitations": [],
-                "active_query_ids": [], "visual_query_ids": [], "excluded_queries": [],
+                "active_query_ids": [],
+                "visual_query_ids": [],
+                "excluded_queries": [],
             }
             await emit.put(sse("answer", payload))
             state["timing"].setdefault(
-                "final_answer_ms", int((time.perf_counter() - state["timing"]["started_at"]) * 1000)
+                "final_answer_ms",
+                int(
+                    (time.perf_counter() - state["timing"]["started_at"])
+                    * 1000
+                ),
             )
-            _persist(history.set_answer, state["conversation_id"], state["user"], state["turn_id"], payload)
+            _persist(
+                history.set_answer,
+                state["conversation_id"],
+                state["user"],
+                state["turn_id"],
+                payload,
+            )
         else:
-            first_error = next((r for r in all_results if r.card_type == "error"), None)
+            first_error = next(
+                (r for r in all_results if r.card_type == "error"), None
+            )
             if first_error is not None:
                 # The source card already streamed the actionable failure. Do not add a
                 # second generic Workbench error underneath it.
-                message = str(first_error.payload.get("message") or "Source unavailable.")
-                _persist(history.set_error,
-                    state["conversation_id"], state["user"], state["turn_id"], message,
-                    code=str(first_error.payload.get("code") or "SOURCE_UNAVAILABLE"),
+                message = str(
+                    first_error.payload.get("message") or "Source unavailable."
+                )
+                _persist(
+                    history.set_error,
+                    state["conversation_id"],
+                    state["user"],
+                    state["turn_id"],
+                    message,
+                    code=str(
+                        first_error.payload.get("code") or "SOURCE_UNAVAILABLE"
+                    ),
                     retryable=bool(first_error.payload.get("retryable")),
                 )
                 return {}
             message = "No intelligence source produced a usable answer."
             _persist(
                 history.set_error,
-                state["conversation_id"], state["user"], state["turn_id"], message,
-                code="NO_USABLE_RESULT", retryable=True,
+                state["conversation_id"],
+                state["user"],
+                state["turn_id"],
+                message,
+                code="NO_USABLE_RESULT",
+                retryable=True,
             )
-            await emit.put(sse("error", {
-                "code": "NO_USABLE_RESULT", "message": message, "retryable": True,
-            }))
+            await emit.put(
+                sse(
+                    "error",
+                    {
+                        "code": "NO_USABLE_RESULT",
+                        "message": message,
+                        "retryable": True,
+                    },
+                )
+            )
         return {}
 
     text = results[0].summary.strip()
@@ -332,20 +451,26 @@ async def answer_results(state: WorkbenchState) -> dict[str, Any]:
     registry = list(state.get("query_registry", []))
     attribution = (
         reconcile_query_attribution(
-            registry, structured_synthesis,
+            registry,
+            structured_synthesis,
             prior_registry=state.get("prior_query_registry", []),
         )
-        if structured_synthesis is not None else ReconciledAttribution()
+        if structured_synthesis is not None
+        else ReconciledAttribution()
     )
     if structured_synthesis is not None:
         text = structured_synthesis.insights.strip()
     proposed = (
         [f"q{structured_synthesis.query_id}"]
-        if structured_synthesis is not None else []
+        if structured_synthesis is not None
+        else []
     )
     _persist(
         history.set_query_registry,
-        state["conversation_id"], state["user"], state["turn_id"], registry,
+        state["conversation_id"],
+        state["user"],
+        state["turn_id"],
+        registry,
     )
     _log_query_attribution(
         state,
@@ -373,15 +498,20 @@ async def answer_results(state: WorkbenchState) -> dict[str, Any]:
         "text": text,
         "insights": text,
         "query_id": (
-            structured_synthesis.query_id if structured_synthesis is not None else None
+            structured_synthesis.query_id
+            if structured_synthesis is not None
+            else None
         ),
         "view": (
-            structured_synthesis.view if structured_synthesis is not None else None
+            structured_synthesis.view
+            if structured_synthesis is not None
+            else None
         ),
         "active_query_ids": attribution.active_query_ids,
         "visual_query_ids": attribution.visual_query_ids,
         "excluded_queries": [
-            item.model_dump(mode="json") for item in attribution.excluded_queries
+            item.model_dump(mode="json")
+            for item in attribution.excluded_queries
         ],
         "model_active_query_ids": proposed,
         "invalid_query_ids": attribution.invalid_query_ids,
@@ -394,14 +524,24 @@ async def answer_results(state: WorkbenchState) -> dict[str, Any]:
     }
     await emit.put(sse("answer", payload))
     state["timing"].setdefault(
-        "final_answer_ms", int((time.perf_counter() - state["timing"]["started_at"]) * 1000)
+        "final_answer_ms",
+        int((time.perf_counter() - state["timing"]["started_at"]) * 1000),
     )
-    _persist(history.set_answer, state["conversation_id"], state["user"], state["turn_id"], payload)
+    _persist(
+        history.set_answer,
+        state["conversation_id"],
+        state["user"],
+        state["turn_id"],
+        payload,
+    )
     if result is not None:
         # The prompt this call carried is the best available measure of how full the
         # conversation's context has become; the transcript budget is built on it.
-        _persist(history.set_usage,
-            state["conversation_id"], state["user"], state["turn_id"],
+        _persist(
+            history.set_usage,
+            state["conversation_id"],
+            state["user"],
+            state["turn_id"],
             prompt_tokens=getattr(result, "prompt_tokens", 0),
             completion_tokens=getattr(result, "completion_tokens", 0),
         )
@@ -421,21 +561,30 @@ def _spawn_background(coro) -> None:
 
 
 async def run_workbench(
-    *, question: str, conversation_id: str, user: str, role: str, pinned: str | None = None,
+    *,
+    question: str,
+    conversation_id: str,
+    user: str,
+    role: str,
+    pinned: str | None = None,
     external_sources_enabled: bool = False,
 ) -> AsyncIterator[str]:
     """Run one turn, yielding SSE frames as the graph produces them."""
     started_at = time.perf_counter()
     emit: "asyncio.Queue[str | None]" = asyncio.Queue()
     source_policy = access.build_policy(
-        role=role, external_sources_enabled=external_sources_enabled,
+        role=role,
+        external_sources_enabled=external_sources_enabled,
         pinned_source=pinned,
     )
     is_new_chat = False
     try:
         is_new_chat = history.get(conversation_id, user=user) is None
         turn_id = history.begin_turn(
-            conversation_id, user, question, pinned=pinned,
+            conversation_id,
+            user,
+            question,
+            pinned=pinned,
             source_policy=source_policy.snapshot(),
         )
     except Exception:  # noqa: BLE001
@@ -465,24 +614,35 @@ async def run_workbench(
     # rail onto it.
     first_event_ms = int((time.perf_counter() - started_at) * 1000)
     try:
-        yield sse("conversation", {
-            "conversation_id": conversation_id, "turn_id": turn_id,
-        })
+        yield sse(
+            "conversation",
+            {
+                "conversation_id": conversation_id,
+                "turn_id": turn_id,
+            },
+        )
         # The native transcript is loaded only after the turn exists and the client has
         # the conversation id, so a transcript that cannot fit becomes a recorded,
         # user-visible error rather than a dropped stream.
         try:
             agent_history_messages = history.build_native_transcript(
-                conversation_id, user=user,
+                conversation_id,
+                user=user,
             )
             prior_query_registry = history.previous_query_registry(
-                conversation_id, user=user, turn_id=turn_id,
+                conversation_id,
+                user=user,
+                turn_id=turn_id,
             )
-            agent_private_entities = history.private_entities(conversation_id, user=user)
+            agent_private_entities = history.private_entities(
+                conversation_id, user=user
+            )
         except history.NativeTranscriptOverflow as exc:
             logger.warning(
                 "workbench native transcript overflow: conversation=%s turn=%s: %s",
-                conversation_id, turn_id, exc,
+                conversation_id,
+                turn_id,
+                exc,
             )
             log_app_event(
                 "Workbench turn refused: native transcript exceeds the context window",
@@ -492,17 +652,34 @@ async def run_workbench(
                 data={"code": CONTEXT_CAPACITY_CODE, "reason": exc.reason},
             )
             _persist(
-                history.set_error, conversation_id, user, turn_id, CONTEXT_FULL_MESSAGE,
-                code=CONTEXT_CAPACITY_CODE, retryable=False, reason=exc.reason,
+                history.set_error,
+                conversation_id,
+                user,
+                turn_id,
+                CONTEXT_FULL_MESSAGE,
+                code=CONTEXT_CAPACITY_CODE,
+                retryable=False,
+                reason=exc.reason,
             )
-            _persist(history.complete_turn, conversation_id, user, turn_id, partial=True)
+            _persist(
+                history.complete_turn,
+                conversation_id,
+                user,
+                turn_id,
+                partial=True,
+            )
             # `reason` says whether compaction could have helped
             # (conversation_exceeds_budget) or the newest turn alone is too large
             # (single_turn_exceeds_budget); the message to the user is the same.
-            yield sse("error", {
-                "message": CONTEXT_FULL_MESSAGE, "retryable": False,
-                "code": CONTEXT_CAPACITY_CODE, "reason": exc.reason,
-            })
+            yield sse(
+                "error",
+                {
+                    "message": CONTEXT_FULL_MESSAGE,
+                    "retryable": False,
+                    "code": CONTEXT_CAPACITY_CODE,
+                    "reason": exc.reason,
+                },
+            )
             yield sse("done", {})
             return
         except Exception as exc:  # noqa: BLE001
@@ -512,7 +689,8 @@ async def run_workbench(
             # visibly and retryably.
             logger.exception(
                 "workbench native transcript load failed: conversation=%s turn=%s",
-                conversation_id, turn_id,
+                conversation_id,
+                turn_id,
             )
             message = (
                 "The conversation history could not be loaded, so this question was "
@@ -526,27 +704,49 @@ async def run_workbench(
                 data={"code": "HISTORY_UNAVAILABLE"},
             )
             _persist(
-                history.set_error, conversation_id, user, turn_id, message,
-                code="HISTORY_UNAVAILABLE", retryable=True,
+                history.set_error,
+                conversation_id,
+                user,
+                turn_id,
+                message,
+                code="HISTORY_UNAVAILABLE",
+                retryable=True,
             )
-            _persist(history.complete_turn, conversation_id, user, turn_id, partial=True)
-            yield sse("error", {
-                "message": message, "retryable": True, "code": "HISTORY_UNAVAILABLE",
-            })
+            _persist(
+                history.complete_turn,
+                conversation_id,
+                user,
+                turn_id,
+                partial=True,
+            )
+            yield sse(
+                "error",
+                {
+                    "message": message,
+                    "retryable": True,
+                    "code": "HISTORY_UNAVAILABLE",
+                },
+            )
             yield sse("done", {})
             return
         yield sse("stage", {"stage": "understanding"})
     except (GeneratorExit, asyncio.CancelledError):
-        _persist(history.complete_turn, conversation_id, user, turn_id, partial=True)
+        _persist(
+            history.complete_turn, conversation_id, user, turn_id, partial=True
+        )
         raise
 
     state: WorkbenchState = {
-        "question": question, "conversation_id": conversation_id,
-        "user": user, "role": role, "turn_id": turn_id,
+        "question": question,
+        "conversation_id": conversation_id,
+        "user": user,
+        "role": role,
+        "turn_id": turn_id,
         "agent_history_messages": agent_history_messages,
         "_slot_new_chat": is_new_chat,
         "agent_private_entities": agent_private_entities,
-        "emit": emit, "pinned": pinned,
+        "emit": emit,
+        "pinned": pinned,
         "source_policy": source_policy,
         "timing": {
             "started_at": started_at,
@@ -576,7 +776,8 @@ async def run_workbench(
             partial = True
             logger.info(
                 "Workbench stream task cancelled: conversation=%s turn=%s",
-                conversation_id, turn_id,
+                conversation_id,
+                turn_id,
             )
             await agent.finalize_running_queries(state)
             await agent.finalize_running_traces(state)
@@ -585,49 +786,85 @@ async def run_workbench(
             partial = True
             code, message, retryable = _native_error(exc)
             if code == CONTEXT_CAPACITY_CODE:
-                logger.warning("workbench context overflow: conversation=%s", conversation_id)
+                logger.warning(
+                    "workbench context overflow: conversation=%s",
+                    conversation_id,
+                )
             else:
                 logger.exception("workbench graph failed")
             log_app_event(
                 f"Workbench turn failed: {message}",
                 event="workbench_turn_completed",
                 outcome="error",
-                error=str(exc), data={"code": code},
+                error=str(exc),
+                data={"code": code},
             )
             _persist(
-                history.set_error, conversation_id, user, turn_id, message,
-                code=code, retryable=retryable,
+                history.set_error,
+                conversation_id,
+                user,
+                turn_id,
+                message,
+                code=code,
+                retryable=retryable,
             )
-            await emit.put(sse("error", {
-                "code": code, "message": message, "retryable": retryable,
-            }))
+            await emit.put(
+                sse(
+                    "error",
+                    {
+                        "code": code,
+                        "message": message,
+                        "retryable": retryable,
+                    },
+                )
+            )
         finally:
             if call_records:
-                _persist(history.set_usage,
-                    conversation_id, user, turn_id,
+                _persist(
+                    history.set_usage,
+                    conversation_id,
+                    user,
+                    turn_id,
                     **summarize_calls(call_records),
                 )
-            _persist(history.set_timing,
-                conversation_id, user, turn_id,
+            _persist(
+                history.set_timing,
+                conversation_id,
+                user,
+                turn_id,
                 first_event_ms=state["timing"].get("first_event_ms", 0),
                 first_card_ms=state["timing"].get("first_card_ms", 0),
                 final_answer_ms=state["timing"].get("final_answer_ms", 0),
                 total_ms=int((time.perf_counter() - started_at) * 1000),
                 source_attempts=state["timing"].get("source_attempts", []),
-                source_completions=state["timing"].get("source_completions", []),
+                source_completions=state["timing"].get(
+                    "source_completions", []
+                ),
             )
             _persist(
                 history.set_execution_trace,
-                conversation_id, user, turn_id,
+                conversation_id,
+                user,
+                turn_id,
                 trace=state.get("trace", []),
             )
-            _persist(history.complete_turn, conversation_id, user, turn_id, partial=partial)
+            _persist(
+                history.complete_turn,
+                conversation_id,
+                user,
+                turn_id,
+                partial=partial,
+            )
             # Checkpoint after the turn, never before it: the summarization call would
             # otherwise sit between the user's question and their first streamed token.
             # Detached and failure-tolerant — the transcript works without it.
             if not partial and settings.workbench_compaction_enabled:
-                _spawn_background(compaction.maybe_compact(conversation_id, user))
-            await emit.put(None)  # sentinel: the graph is done producing frames
+                _spawn_background(
+                    compaction.maybe_compact(conversation_id, user)
+                )
+            await emit.put(
+                None
+            )  # sentinel: the graph is done producing frames
 
     task = asyncio.create_task(drive())
     active_key = (conversation_id, user, turn_id)
@@ -651,4 +888,6 @@ async def run_workbench(
         finally:
             if _active_turn_tasks.get(active_key) is task:
                 _active_turn_tasks.pop(active_key, None)
-    yield sse("done", {"total_ms": int((time.perf_counter() - started_at) * 1000)})
+    yield sse(
+        "done", {"total_ms": int((time.perf_counter() - started_at) * 1000)}
+    )

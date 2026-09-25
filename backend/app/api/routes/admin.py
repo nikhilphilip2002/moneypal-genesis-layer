@@ -1,4 +1,5 @@
 """Platform administration and governed portfolio exploration."""
+
 from fastapi import APIRouter, HTTPException
 
 from app.services import platform
@@ -42,7 +43,9 @@ def db_schema(
     The legacy parameter names remain accepted while old clients roll forward.
     """
     effective_level = level or {
-        "executive": "portfolio", "zonal": "product", "manager": "branch",
+        "executive": "portfolio",
+        "zonal": "product",
+        "manager": "branch",
     }.get(view_level, view_level)
     return get_curiosity_graph(
         level=effective_level,

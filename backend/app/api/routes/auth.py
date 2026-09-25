@@ -1,13 +1,16 @@
 """Mock authentication routes for the Buildathon."""
+
 from fastapi import APIRouter, Header, HTTPException
 from pydantic import BaseModel
 from typing import Optional
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
+
 class LoginRequest(BaseModel):
     username: str
     password: str
+
 
 # Mock database of users matching docs/BUILDATHON_PLAN.md
 USERS = {
@@ -15,25 +18,25 @@ USERS = {
         "password": "admin123",
         "role": "admin",
         "full_name": "Moneypal Administrator",
-        "email": "admin@moneypal.com"
+        "email": "admin@moneypal.com",
     },
     "gicc_admin": {
         "password": "admin123",
         "role": "gicc_admin",
         "full_name": "GICC Administrator",
-        "email": "admin@gicc.com"
+        "email": "admin@gicc.com",
     },
     "gicc_policy": {
         "password": "policy123",
         "role": "gicc_policy",
         "full_name": "GICC Policy Maker",
-        "email": "policy@gicc.com"
+        "email": "policy@gicc.com",
     },
     "gicc_director": {
         "password": "director123",
         "role": "gicc_director",
         "full_name": "GICC Director",
-        "email": "director@gicc.com"
+        "email": "director@gicc.com",
     },
 }
 
@@ -41,9 +44,14 @@ USERS = {
 def identity_from_authorization(authorization: str | None) -> tuple[str, str]:
     """Resolve the demo bearer token to the resource owner and access-policy role."""
     token = (authorization or "").removeprefix("Bearer ").strip()
-    username = token.removeprefix("mock-token-") if token.startswith("mock-token-") else ""
+    username = (
+        token.removeprefix("mock-token-")
+        if token.startswith("mock-token-")
+        else ""
+    )
     user = USERS.get(username)
     return (username or "anonymous", user["role"] if user else "anonymous")
+
 
 @router.post("/login/")
 def login(req: LoginRequest):
@@ -53,11 +61,17 @@ def login(req: LoginRequest):
     # Return mock token containing username
     return {"access": f"mock-token-{req.username}"}
 
+
 @router.get("/users/")
 def list_users():
     """Demo user directory for the platform administration panel (no passwords)."""
     return [
-        {"username": username, "role": u["role"], "full_name": u["full_name"], "email": u["email"]}
+        {
+            "username": username,
+            "role": u["role"],
+            "full_name": u["full_name"],
+            "email": u["email"],
+        }
         for username, u in USERS.items()
     ]
 
@@ -74,5 +88,5 @@ def me(authorization: Optional[str] = Header(None)):
         "role": user["role"],
         "full_name": user["full_name"],
         "email": user["email"],
-        "is_staff": user["role"] == "admin"
+        "is_staff": user["role"] == "admin",
     }

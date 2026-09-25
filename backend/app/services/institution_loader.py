@@ -3,6 +3,7 @@
 Every institution is one JSON file in backend/registry/institutions/. Adding an
 institution = adding a JSON file. No code changes.
 """
+
 from app.core.config import REGISTRY_DIR
 from app.services import json_registry
 

@@ -8,6 +8,7 @@ The process keeps bge-m3 resident, so the scheduled run pays no model cold start
 Keep it alive with the OS service manager (compose ``restart: unless-stopped``,
 systemd ``Restart=always``, or pm2).
 """
+
 from __future__ import annotations
 
 import logging

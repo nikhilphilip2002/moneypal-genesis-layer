@@ -29,6 +29,7 @@ requires_db = pytest.mark.skipif(
     reason="PostgreSQL warehouse not reachable",
 )
 
+
 @pytest.fixture(scope="module")
 def reachable_readonly_role():
     """Skip role assertions when the credential exists but its warehouse is offline."""
@@ -99,9 +100,12 @@ def readonly_via_warehouse(monkeypatch, warehouse_cursor):
 
     @contextlib.contextmanager
     def _cursor():
-        yield warehouse_cursor.connection if hasattr(
-            warehouse_cursor, "connection"
-        ) else None, warehouse_cursor
+        yield (
+            warehouse_cursor.connection
+            if hasattr(warehouse_cursor, "connection")
+            else None,
+            warehouse_cursor,
+        )
 
     monkeypatch.setattr(nlq_db, "readonly_cursor", _cursor)
     yield

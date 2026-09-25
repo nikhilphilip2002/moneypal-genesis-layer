@@ -55,7 +55,9 @@ def test_execute_raw_classifies_postgres_statement_timeout(monkeypatch):
 
         def execute(self, sql):
             if not sql.startswith("EXPLAIN "):
-                raise QueryCanceled("canceling statement due to statement timeout")
+                raise QueryCanceled(
+                    "canceling statement due to statement timeout"
+                )
 
         def fetchall(self):
             return [["Seq Scan  (cost=0.00..1.00 rows=1 width=4)"]]

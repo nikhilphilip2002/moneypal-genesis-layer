@@ -78,7 +78,8 @@ def compile_worklist(
 
     selects = [f"{column.sql} AS {column.id}" for column in config.columns]
     selects += [
-        f"({_expand(rule.predicate, config)}) AS {RULE_PREFIX}{rule.id}" for rule in rules
+        f"({_expand(rule.predicate, config)}) AS {RULE_PREFIX}{rule.id}"
+        for rule in rules
     ]
 
     where = [f"({_expand(rule.predicate, config)})" for rule in rules]
@@ -92,7 +93,9 @@ def compile_worklist(
         "SELECT " + ",\n       ".join(selects) + "\n"
         f"FROM {config.base_from} {config.base_alias}\n"
         + "".join(f"{join}\n" for join in config.joins)
-        + "WHERE " + "\n  AND ".join(conditions) + "\n"
+        + "WHERE "
+        + "\n  AND ".join(conditions)
+        + "\n"
         # Ordered here only so the row cap is deterministic; the priority score is computed
         # in Python over the returned candidates and reorders them.
         "ORDER BY s.total_overdue DESC NULLS LAST, s.days_past_due DESC NULLS LAST\n"
@@ -122,8 +125,12 @@ def _expand(predicate: str, config: WorklistConfig) -> str:
     def replace(match: re.Match) -> str:
         name = match.group(1)
         fragment = config.expressions.get(name)
-        if fragment is None:  # pragma: no cover - the catalog validator rejects these
-            raise RuleError(f"predicate references undefined expression {{{name}}}")
+        if (
+            fragment is None
+        ):  # pragma: no cover - the catalog validator rejects these
+            raise RuleError(
+                f"predicate references undefined expression {{{name}}}"
+            )
         return f"({fragment})"
 
     return _EXPRESSION_REF.sub(replace, predicate)
@@ -142,14 +149,28 @@ def _filter_sql(filt: Filter, index: int, params: dict[str, Any]) -> str:
         params[name] = filt.value
         return f"{column} = :{name}"
     if filt.op == "in":
-        params[name] = list(filt.value) if isinstance(filt.value, list) else [filt.value]
+        params[name] = (
+            list(filt.value) if isinstance(filt.value, list) else [filt.value]
+        )
         return f"{column} = ANY(:{name})"
-    raise RuleError(f"a worklist filter cannot use {filt.op!r} — use 'eq' or 'in'")
+    raise RuleError(
+        f"a worklist filter cannot use {filt.op!r} — use 'eq' or 'in'"
+    )
 
 
-def triggered_rules(row: dict[str, Any], rules: tuple[EwsRule, ...]) -> list[EwsRule]:
+def triggered_rules(
+    row: dict[str, Any], rules: tuple[EwsRule, ...]
+) -> list[EwsRule]:
     """Which rules fired for this row, in the catalog's own severity order."""
-    return [rule for rule in rules if row.get(f"{RULE_PREFIX}{rule.id}") is True]
+    return [
+        rule for rule in rules if row.get(f"{RULE_PREFIX}{rule.id}") is True
+    ]
 
 
-__all__ = ["FILTERABLE", "RULE_PREFIX", "RuleError", "compile_worklist", "triggered_rules"]
+__all__ = [
+    "FILTERABLE",
+    "RULE_PREFIX",
+    "RuleError",
+    "compile_worklist",
+    "triggered_rules",
+]

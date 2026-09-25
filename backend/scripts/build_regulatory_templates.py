@@ -25,13 +25,16 @@ EMAIL_RE = re.compile(r"[\w.+-]+@[\w-]+\.[\w.]+")
 FILES = {
     "DNBS13-Overseas Investment Details (1).xlsx": "DNBS13_Blank_Template.xlsx",
     "DNBS4A-Short Term Dynamic Liquidity (STDL) – Quarterly (3).xlsx": "DNBS4A_Blank_Template.xlsx",
-    "DNBS4B-Structural Liquidity & Interest Rate Sensitivity – Monthly.xlsx":
-        "DNBS4B_Blank_Template.xlsx",
+    "DNBS4B-Structural Liquidity & Interest Rate Sensitivity – Monthly.xlsx": "DNBS4B_Blank_Template.xlsx",
 }
 
 
-def _blank_range(ws, min_row: int, max_row: int, min_col: int, max_col: int) -> None:
-    for row in ws.iter_rows(min_row=min_row, max_row=max_row, min_col=min_col, max_col=max_col):
+def _blank_range(
+    ws, min_row: int, max_row: int, min_col: int, max_col: int
+) -> None:
+    for row in ws.iter_rows(
+        min_row=min_row, max_row=max_row, min_col=min_col, max_col=max_col
+    ):
         for cell in row:
             if type(cell).__name__ != "MergedCell":
                 cell.value = None
@@ -109,7 +112,9 @@ def verify(path: Path) -> None:
                 if PAN_RE.search(value) or EMAIL_RE.search(value):
                     problems.append(f"{ws.title}!{cell.coordinate}={value!r}")
     if problems:
-        raise RuntimeError(f"Sensitive filed values remain in {path.name}: {problems[:10]}")
+        raise RuntimeError(
+            f"Sensitive filed values remain in {path.name}: {problems[:10]}"
+        )
 
 
 def main(source_dir: Path) -> None:
@@ -128,5 +133,7 @@ def main(source_dir: Path) -> None:
 
 if __name__ == "__main__":
     if len(sys.argv) != 2:
-        raise SystemExit("Usage: build_regulatory_templates.py <extracted-directory>")
+        raise SystemExit(
+            "Usage: build_regulatory_templates.py <extracted-directory>"
+        )
     main(Path(sys.argv[1]))
