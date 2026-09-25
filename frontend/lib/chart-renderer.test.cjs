@@ -86,6 +86,29 @@ test('stacked bars use the same grouped series with a shared stack', () => {
   assert.ok(rendered.bars.every((bar) => bar.stackId === 'stack'));
 });
 
+test('grouped bars render numeric measures as side-by-side series', () => {
+  const chart = {
+    ...groupedChart,
+    series_by: null,
+    series: [
+      { field: 'disbursed', label: 'Disbursed', unit: 'inr' },
+      { field: 'collected', label: 'Collected', unit: 'inr' },
+    ],
+    rows: [
+      { week_number: 31, disbursed: 168920000, collected: 4800000 },
+      { week_number: 32, disbursed: 250463000, collected: 10500000 },
+    ],
+  };
+  const rendered = renderChart(chart);
+
+  assert.equal(rendered.charts[0].data, chart.rows);
+  assert.deepEqual(rendered.bars.map((bar) => bar.dataKey), ['disbursed', 'collected']);
+  assert.deepEqual(rendered.bars.map((bar) => bar.name), ['Disbursed', 'Collected']);
+  assert.equal(rendered.charts[0].layout, 'horizontal');
+  assert.equal(rendered.legends.length, 1);
+  assert.ok(rendered.bars.every((bar) => bar.stackId === undefined));
+});
+
 test('ordinary bars preserve their rows and compact single-series layout', () => {
   const chart = {
     ...groupedChart,

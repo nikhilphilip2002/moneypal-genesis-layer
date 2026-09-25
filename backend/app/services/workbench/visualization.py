@@ -108,6 +108,20 @@ def infer_visual_arguments(
             series=None,
             aggregation="none",
         )
+    if (
+        view == "grouped_bar"
+        and len(fields) >= 3
+        and all(field in numeric for field in fields[1:])
+        and len({row.get(fields[0]) for row in rows}) == len(rows)
+    ):
+        return VisualizeQueryResultArguments(
+            query_id=query_id,
+            chart_type=view,
+            x=fields[0],
+            y=fields[1:],
+            series=None,
+            aggregation="none",
+        )
     if view in {"grouped_bar", "stacked_area", "heatmap"}:
         if len(fields) < 3:
             raise VisualizationError(

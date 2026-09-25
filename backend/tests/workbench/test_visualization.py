@@ -88,6 +88,45 @@ def test_inferred_grouped_bar_preserves_the_series_dimension():
     assert result.payload["rows"] == source["result_payload"]["rows"]
 
 
+def test_inferred_grouped_bar_compares_numeric_measures_by_month():
+    source = _source(
+        rows=[
+            {"month": "2026-01-01", "disbursed": 168920000, "collected": 4800000},
+            {"month": "2026-02-01", "disbursed": 250463000, "collected": 10500000},
+            {"month": "2026-03-01", "disbursed": 353610000, "collected": None},
+        ]
+    )
+    source["result_payload"]["columns"] = [
+        {"name": "month", "unit": "date"},
+        {"name": "disbursed", "unit": "inr"},
+        {"name": "collected", "unit": "inr"},
+    ]
+
+    result = build_inferred_visual(source, query_id="older:q1", view="grouped_bar")
+
+    assert result.payload["chart_type"] == "grouped_bar"
+    assert result.payload["x"]["field"] == "month"
+    assert result.payload["series_by"] is None
+    assert result.payload["series"] == [
+        {"field": "disbursed", "label": "Disbursed", "unit": "inr"},
+        {"field": "collected", "label": "Collected", "unit": "inr"},
+    ]
+    assert result.payload["rows"] == source["result_payload"]["rows"]
+
+
+def test_inferred_grouped_bar_preserves_numeric_groups_with_repeated_x():
+    source = _source()
+    for row in source["result_payload"]["rows"]:
+        row["scheme_code"] = 1 if row["scheme_code"] == "MSME" else 2
+
+    result = build_inferred_visual(source, query_id="older:q1", view="grouped_bar")
+
+    assert result.payload["series_by"]["field"] == "scheme_code"
+    assert [series["field"] for series in result.payload["series"]] == [
+        "total_collected"
+    ]
+
+
 def test_sum_combines_rows_at_the_requested_grain():
     source = _source(
         rows=[
