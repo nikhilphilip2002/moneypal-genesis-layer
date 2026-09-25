@@ -41,14 +41,14 @@ def _connect_kwargs() -> dict[str, Any]:
             "(backend/scripts/sql/nlq_readonly_role.sql), then set NLQ_DB_USER/"
             "NLQ_DB_PASSWORD in .env. NLQ will not fall back to the app role."
         )
-    host = os.environ.get("POSTGRES_HOST", "192.168.1.183")
+    host = settings.postgres_host
     if host.startswith("http://"):
         host = host[7:]
     host = host.rstrip("/")
     kwargs: dict[str, Any] = {
         "host": host,
-        "port": int(os.environ.get("POSTGRES_PORT", "5432")),
-        "database": os.environ.get("POSTGRES_DB", "moneypaldb"),
+        "port": settings.postgres_port,
+        "database": settings.postgres_db,
         "user": settings.nlq_db_user,
         "password": settings.nlq_db_password,
     }

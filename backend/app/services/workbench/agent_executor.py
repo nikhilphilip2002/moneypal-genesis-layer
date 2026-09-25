@@ -5,10 +5,12 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import re
 import time
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from datetime import date
-from typing import Any, Awaitable, Callable
+from typing import Any
 
 from pydantic import BaseModel
 
@@ -22,6 +24,7 @@ from app.services.workbench import facts
 from app.services.workbench.access import SourceAccessPolicy
 from app.services.workbench.agent_contracts import (
     FinishWithoutDataArguments,
+    LookupCustomerProfileArguments,
     SearchCuratedKnowledgeArguments,
     SearchPublicWebArguments,
 )
@@ -278,11 +281,61 @@ async def _execute_postgres_mcp(
         },
         description="Executed through the read-only PostgreSQL MCP server.",
     )
+    summary = chart.summary
+    chart_payload = chart.model_dump(mode="json")
+    if ctx.source_policy.allows("customer"):
+        sql_text = str(payload.get("validated_sql") or call.arguments.get("sql") or "")
+        cid_match = (
+            re.search(r"customer_id\s*=\s*['\"]?(\w+)['\"]?", sql_text, re.IGNORECASE)
+            or re.search(r"(?:customer|cust)\D*?(\d{3,})", ctx.question or "", re.IGNORECASE)
+            or re.search(r"\b(10\d{3,})\b", ctx.question or "")
+        )
+        cid = cid_match.group(1) if cid_match else None
+        if not cid:
+            for row in rows:
+                if isinstance(row, dict):
+                    for k, v in row.items():
+                        if k.lower() in ("customer_id", "cust_id", "c_id") and v is not None:
+                            cid = str(v).strip()
+                            break
+                    if cid:
+                        break
+        if cid:
+            try:
+                from app.services.workbench import history, nodes
+                from app.services.workbench.graph import (
+                    get_active_emitter,
+                    record_auto_customer_card,
+                    sse,
+                )
+
+                customer_card = await nodes.run_customer(cid, policy=ctx.source_policy)
+                if customer_card and customer_card.payload.get("found"):
+                    record_auto_customer_card(ctx.turn_id, customer_card)
+                    emitter = get_active_emitter(ctx.turn_id)
+                    if emitter is not None:
+                        await emitter.put(sse("source_card", {
+                            "source": customer_card.source,
+                            "card_type": customer_card.card_type,
+                            **customer_card.payload,
+                        }))
+                    history.add_card(ctx.conversation_id, ctx.user, ctx.turn_id, {
+                        "source": customer_card.source,
+                        "card_type": customer_card.card_type,
+                        "payload": customer_card.payload,
+                        "summary": customer_card.summary,
+                    })
+                    summary = (
+                        f"{summary}\n\n[External Customer Intelligence retrieved from Qdrant vector store]:\n"
+                        f"{customer_card.summary}"
+                    )
+            except Exception:
+                logger.warning("auto-retrieval of customer profile failed for cid %s", cid, exc_info=True)
     return SourceResult(
         source="db",
         card_type="chart",
-        payload=chart.model_dump(mode="json"),
-        summary=chart.summary,
+        payload=chart_payload,
+        summary=summary,
         sensitive=bool(payload.get("pii_columns")),
         lineage=chart.lineage.model_dump(mode="json"),
     )
@@ -314,10 +367,114 @@ async def _search_public_web(
     )
 
 
+async def _lookup_customer_profile(
+    args: LookupCustomerProfileArguments, ctx: AgentExecutionContext,
+) -> SourceResult:
+    ctx.source_policy.require("customer")
+    from app.services.workbench import nodes
+
+    customer_card = await nodes.run_customer(args.customer_id, policy=ctx.source_policy)
+
+    # When database access is permitted, also query PostgreSQL for loan-book & KYC details
+    if ctx.source_policy.allows("db"):
+        try:
+            from app.mcp import postgres_client
+            from app.services.nlq import charts
+            from app.services.nlq.contracts import Lineage
+            from app.services.nlq.executor import QueryResult
+            from app.services.workbench import history
+            from app.services.workbench.graph import (
+                get_active_emitter,
+                record_auto_customer_card,
+                sse,
+            )
+
+            clean_cid = re.sub(r"[^a-zA-Z0-9_-]", "", str(args.customer_id))
+            sql = (
+                "SELECT customer_id, full_name, customer_type, customer_category, "
+                "customer_status, yearly_income, monthly_income, primary_mobile, "
+                "pan_number, aadhaar_number, city, district, state, pincode, "
+                f"home_branch_name, linked_loan_count FROM gold.customers WHERE customer_id = '{clean_cid}' LIMIT 1"
+            )
+            payload = await postgres_client.call_tool(
+                "query",
+                {"sql": sql},
+                meta={
+                    "workbench_user": ctx.user,
+                    "workbench_role": ctx.role,
+                    "workbench_conversation_id": ctx.conversation_id,
+                    "workbench_turn_id": ctx.turn_id,
+                    "source_policy_version": ctx.source_policy.version,
+                    "workbench_effective_sources": list(ctx.source_policy.effective_sources),
+                },
+            )
+            rows = payload.get("rows")
+            columns = payload.get("columns")
+            if isinstance(rows, list) and len(rows) > 0 and isinstance(columns, list):
+                result = QueryResult(
+                    rows=[dict(row) for row in rows if isinstance(row, dict)],
+                    columns=[str(c) for c in columns],
+                    status="ok",
+                    duration_ms=int(payload.get("duration_ms") or 0),
+                    sql=str(payload.get("validated_sql") or sql),
+                    row_count=len(rows),
+                    truncated=False,
+                )
+                lineage = Lineage(
+                    path="postgres_mcp",
+                    sql=result.sql,
+                    display_sql=result.sql,
+                    source_tables=[str(item) for item in payload.get("tables", [])],
+                    row_count=result.row_count,
+                    duration_ms=result.duration_ms,
+                    warnings=[],
+                    unverified=True,
+                )
+                chart = charts.build_from_rows(
+                    question=ctx.question or "Customer details",
+                    result=result,
+                    lineage=lineage,
+                    catalog=ctx.catalog,
+                    description="Executed through the read-only PostgreSQL MCP server.",
+                )
+                chart_payload = chart.model_dump(mode="json")
+                db_card = SourceResult(
+                    source="db",
+                    card_type="chart",
+                    payload=chart_payload,
+                    summary=chart.summary,
+                    sensitive=bool(payload.get("pii_columns")),
+                    lineage=chart.lineage.model_dump(mode="json"),
+                )
+                record_auto_customer_card(f"{ctx.turn_id}_db", db_card)
+                emitter = get_active_emitter(ctx.turn_id)
+                if emitter is not None:
+                    await emitter.put(sse("source_card", {
+                        "source": "db",
+                        "card_type": "chart",
+                        **chart_payload,
+                    }))
+                history.add_card(ctx.conversation_id, ctx.user, ctx.turn_id, {
+                    "source": "db",
+                    "card_type": "chart",
+                    "payload": chart_payload,
+                    "summary": chart.summary,
+                })
+                customer_card.summary = (
+                    f"{customer_card.summary}\n\n[PostgreSQL Loan-book & KYC Database Record]:\n"
+                    f"{chart.summary}"
+                )
+        except Exception:
+            logger.warning("auto-query of postgresql failed in lookup_customer_profile", exc_info=True)
+
+    return customer_card
+
+
 Handler = Callable[[Any, AgentExecutionContext], Awaitable[SourceResult]]
 _HANDLERS: dict[str, Handler] = {
     "search_curated_knowledge": _search_curated,
     "search_public_web": _search_public_web,
+    "lookup_customer_profile": _lookup_customer_profile,
 }
 
 

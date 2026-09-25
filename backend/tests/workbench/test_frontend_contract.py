@@ -5,7 +5,7 @@ ROOT = Path(__file__).resolve().parents[3]
 
 
 def test_external_toggle_has_programmatic_label_and_description():
-    source = (ROOT / "frontend/components/workbench/Composer.tsx").read_text()
+    source = (ROOT / "frontend/components/workbench/Composer.tsx").read_text(encoding="utf-8")
     assert 'htmlFor="workbench-external-sources"' in source
     assert 'id="workbench-external-sources"' in source
     assert 'aria-describedby="workbench-external-sources-description"' in source
@@ -14,7 +14,7 @@ def test_external_toggle_has_programmatic_label_and_description():
 
 
 def test_external_workspace_actions_are_consent_gated():
-    source = (ROOT / "frontend/app/workbench/page.tsx").read_text()
+    source = (ROOT / "frontend/app/workbench/page.tsx").read_text(encoding="utf-8")
     for workspace in (
         "macro-intelligence", "competitive-intelligence", "regulatory-intelligence",
         "intelligence-review", "policy-workspace",
@@ -25,7 +25,7 @@ def test_external_workspace_actions_are_consent_gated():
 
 
 def test_workbench_stream_preserves_native_contract_fields():
-    api = (ROOT / "frontend/lib/api.ts").read_text()
+    api = (ROOT / "frontend/lib/api.ts").read_text(encoding="utf-8")
     assert "facts?: WorkbenchVerifiedFact[]" in api
     assert "suggestions?: string[]" in api
     assert "tools?: string[]" in api
@@ -38,7 +38,7 @@ def test_workbench_stream_preserves_native_contract_fields():
 
 
 def test_workbench_turn_renders_preserved_answer_and_route_metadata():
-    source = (ROOT / "frontend/components/workbench/WorkbenchTurn.tsx").read_text()
+    source = (ROOT / "frontend/components/workbench/WorkbenchTurn.tsx").read_text(encoding="utf-8")
     assert "card.card_type === 'schema'" in source
     assert "card.card_type === 'catalog'" in source
     assert 'aria-label="Verified facts"' in source

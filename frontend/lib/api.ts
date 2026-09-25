@@ -896,6 +896,7 @@ export type WorkbenchCard = {
   source: string;
   card_type:
     | 'chart' | 'analysis' | 'worklist' | 'briefing' | 'brief' | 'schema' | 'catalog'
+    | 'profile'
     | 'clarify' | 'refusal' | 'error';
   payload: unknown;
 };

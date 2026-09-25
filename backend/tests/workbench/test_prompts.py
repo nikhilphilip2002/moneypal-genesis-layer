@@ -64,10 +64,12 @@ def test_no_time_cue_still_permits_a_month_breakdown():
     assert "- month |" in prompts.build_agent_gold_schema()
 
 
-def test_database_tools_are_not_defined_in_the_local_registry():
+def test_database_tools_are_not_defined_in_the_local_registry(monkeypatch):
     from app.services.workbench import access
     from app.services.workbench.agent_tools import native_tool_definitions
 
+    monkeypatch.setattr(access.settings, "exa_mcp_enabled", False)
+    monkeypatch.setattr(access.settings, "workbench_customer_source_enabled", False)
     offered = [
         item["function"]["name"] for item in native_tool_definitions(
             access.build_policy(role="admin", external_sources_enabled=True),

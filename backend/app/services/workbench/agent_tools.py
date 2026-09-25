@@ -14,9 +14,14 @@ from typing import Any
 from pydantic import BaseModel, ValidationError
 
 from app.services.nlq.catalog import Catalog, get_catalog
-from app.services.workbench.access import SourceAccessDenied, SourceAccessPolicy, source_group
+from app.services.workbench.access import (
+    SourceAccessDenied,
+    SourceAccessPolicy,
+    source_group,
+)
 from app.services.workbench.agent_contracts import (
     FinishWithoutDataArguments,
+    LookupCustomerProfileArguments,
     SearchCuratedKnowledgeArguments,
     SearchPublicWebArguments,
 )
@@ -89,6 +94,20 @@ AGENT_TOOLS: dict[str, AgentTool] = {
         source_id="web",
         sensitivity="public",
         timeout_s=30.0,
+        max_result_chars=12_000,
+    ),
+    "lookup_customer_profile": AgentTool(
+        name="lookup_customer_profile",
+        description=(
+            "Retrieve external customer intelligence from Qdrant vector store by customer ID "
+            "(e.g. '10455'). Returns web and LinkedIn profile records, scraped snippets, and external "
+            "channels. Call this tool whenever asked about a customer, alongside the PostgreSQL query tool."
+        ),
+        arguments_model=LookupCustomerProfileArguments,
+        handler_key="lookup_customer_profile",
+        source_id="customer",
+        sensitivity="internal",
+        timeout_s=15.0,
         max_result_chars=12_000,
     ),
     "finish_without_data": AgentTool(

@@ -6,9 +6,11 @@ import asyncio
 import contextlib
 import json
 import logging
+import re
 import time
 import uuid
-from typing import Any, AsyncIterator, NotRequired, TypedDict
+from collections.abc import AsyncIterator
+from typing import Any, NotRequired, TypedDict
 
 from app.core.config import settings
 from app.services.nlq.llm.telemetry import collect_calls, summarize_calls
@@ -22,12 +24,33 @@ def _persist(operation, *args, **kwargs) -> None:
     """History is durable best-effort; storage failure must not erase an answer."""
     try:
         operation(*args, **kwargs)
-    except Exception:  # noqa: BLE001
+    except Exception:
         logger.warning("workbench history operation failed", exc_info=True)
 
 
 def sse(event: str, data: Any) -> str:
     return f"event: {event}\ndata: {json.dumps(data, default=str)}\n\n"
+
+
+_ACTIVE_EMITTERS: dict[str, asyncio.Queue[str | None]] = {}
+_AUTO_CUSTOMER_CARDS: dict[str, SourceResult] = {}
+
+
+def get_active_emitter(turn_id: str) -> asyncio.Queue[str | None] | None:
+    return _ACTIVE_EMITTERS.get(turn_id)
+
+
+def record_auto_customer_card(turn_id: str, card: SourceResult) -> None:
+    _AUTO_CUSTOMER_CARDS[turn_id] = card
+
+
+def pop_auto_customer_card(turn_id: str) -> list[SourceResult]:
+    cards = []
+    for k in list(_AUTO_CUSTOMER_CARDS.keys()):
+        if k == turn_id or k.startswith(f"{turn_id}_"):
+            cards.append(_AUTO_CUSTOMER_CARDS.pop(k))
+    return cards
+
 
 
 CONTEXT_CAPACITY_CODE = "CONTEXT_CAPACITY"
@@ -103,7 +126,7 @@ class WorkbenchState(TypedDict):
     agent_history_messages: NotRequired[list[dict[str, Any]]]
     _restore_system_slot: NotRequired[bool]
     agent_private_entities: NotRequired[tuple[str, ...]]
-    emit: "asyncio.Queue[str | None]"
+    emit: asyncio.Queue[str | None]
     pinned: NotRequired[str | None]
     source_policy: access.SourceAccessPolicy
     decision: NotRequired[ExecutionDecision]
@@ -114,14 +137,56 @@ class WorkbenchState(TypedDict):
 
 
 _ANSWERABLE_CARD_TYPES = frozenset(
-    {"chart", "analysis", "worklist", "briefing", "brief", "schema"}
+    {"chart", "analysis", "worklist", "briefing", "brief", "schema", "profile"}
 )
 
 
 async def answer_results(state: WorkbenchState) -> dict[str, Any]:
     emit = state["emit"]
     decision = state.get("decision")
-    all_results = state.get("results", [])
+    all_results = list(state.get("results", []))
+
+    # Check if cards were auto-retrieved during tool execution
+    for auto_card in pop_auto_customer_card(state["turn_id"]):
+        if not any(r.source == auto_card.source for r in all_results):
+            all_results.append(auto_card)
+            if auto_card.source not in state["timing"]["source_completions"]:
+                state["timing"]["source_completions"].append(auto_card.source)
+
+    # When external customer sources are enabled, ensure Qdrant customer profile is retrieved
+    if state["source_policy"].allows("customer") and not any(r.source == "customer" for r in all_results):
+        cid = ""
+        cid_match = re.search(r"(?:customer|cust)\D*?(\d{3,})", state.get("question", ""), re.IGNORECASE) or re.search(r"\b(10\d{3,})\b", state.get("question", ""))
+        if cid_match:
+            cid = cid_match.group(1)
+        else:
+            for r in all_results:
+                if r.source == "db" and isinstance(r.payload, dict):
+                    rows = r.payload.get("rows", [])
+                    if isinstance(rows, list):
+                        for row in rows:
+                            if isinstance(row, dict) and row.get("customer_id"):
+                                cid = str(row["customer_id"]).strip()
+                                break
+                    if cid:
+                        break
+        if cid:
+            from app.services.workbench import nodes
+            try:
+                customer_card = await nodes.run_customer(cid, policy=state["source_policy"])
+                if customer_card and customer_card.payload.get("found"):
+                    all_results.append(customer_card)
+                    if "customer" not in state["timing"]["source_completions"]:
+                        state["timing"]["source_completions"].append("customer")
+                    await emit.put(sse("source_card", {
+                        "source": customer_card.source,
+                        "card_type": customer_card.card_type,
+                        **customer_card.payload,
+                    }))
+            except Exception:
+                logger.warning("customer profile auto-retrieval failed for %s", cid, exc_info=True)
+
+    state["results"] = all_results
     results = [
         r for r in all_results
         if r.card_type in _ANSWERABLE_CARD_TYPES and r.summary.strip()
@@ -203,6 +268,40 @@ async def answer_results(state: WorkbenchState) -> dict[str, Any]:
         # separate messages, and the agent loop alone decides whether to continue.
         text = result.text
 
+    customer_res = next((r for r in results if r.source == "customer" and r.payload.get("found")), None)
+    if customer_res and "external profile" not in text.lower() and "qdrant" not in text.lower():
+        p = customer_res.payload
+        name = p.get("customer_name") or p.get("customer_id")
+        occ = p.get("occupation")
+        city = p.get("city")
+        district = p.get("district")
+        channels = p.get("channels", [])
+        recs = p.get("records", [])
+        ext_parts = [
+            "\n\n### External Customer Intelligence (Qdrant)",
+            f"- **External Profile Name**: {name}",
+        ]
+        if occ:
+            ext_parts.append(f"- **Occupation**: {occ}")
+        loc = ", ".join(filter(None, [city, district]))
+        if loc:
+            ext_parts.append(f"- **Location**: {loc}")
+        if channels:
+            ext_parts.append(f"- **Channels**: {', '.join(channels)}")
+        ext_parts.append(
+            f"- **External Records**: {len(recs)} record(s) retrieved from Qdrant vector store. "
+            "See the External Profile card above for complete profile details, scraped summaries, and source links."
+        )
+        if recs:
+            ext_parts.append("\n**Key Scraped Highlights**:")
+            for i, rec in enumerate(recs[:3], 1):
+                src = rec.get("source_name") or rec.get("channel") or f"Record #{i}"
+                snippet = str(rec.get("scraped_snippet") or "").strip()
+                if snippet:
+                    snippet_preview = snippet[:220] + ("..." if len(snippet) > 220 else "")
+                    ext_parts.append(f"  {i}. **{src}**: {snippet_preview}")
+        text += "\n".join(ext_parts)
+
     citations: list[dict[str, Any]] = []
     seen_citations: set[tuple[str, str]] = set()
     for item in results:
@@ -257,7 +356,7 @@ async def run_workbench(
 ) -> AsyncIterator[str]:
     """Run one turn, yielding SSE frames as the graph produces them."""
     started_at = time.perf_counter()
-    emit: "asyncio.Queue[str | None]" = asyncio.Queue()
+    emit: asyncio.Queue[str | None] = asyncio.Queue()
     source_policy = access.build_policy(
         role=role, external_sources_enabled=external_sources_enabled,
         pinned_source=pinned,
@@ -269,9 +368,10 @@ async def run_workbench(
             conversation_id, user, question, pinned=pinned,
             source_policy=source_policy.snapshot(),
         )
-    except Exception:  # noqa: BLE001
+    except Exception:
         logger.warning("workbench turn persistence unavailable", exc_info=True)
         turn_id = uuid.uuid4().hex[:12]
+    _ACTIVE_EMITTERS[turn_id] = emit
     from app.core.logging import log_app_event, set_trace_context
 
     set_trace_context(
@@ -331,7 +431,7 @@ async def run_workbench(
             })
             yield sse("done", {})
             return
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             # Anything but overflow means the durable record could not be read. Handing
             # the agent the 20-row prose transcript instead would answer from a
             # different history than the one the user can see, so the turn fails
@@ -399,7 +499,7 @@ async def run_workbench(
         except asyncio.CancelledError:
             partial = True
             raise
-        except Exception as exc:  # noqa: BLE001 - surface as an error frame, never a 500
+        except Exception as exc:
             partial = True
             code, message, retryable = _native_error(exc)
             if code == CONTEXT_CAPACITY_CODE:
@@ -455,6 +555,8 @@ async def run_workbench(
                 break
             yield frame
     finally:
+        _ACTIVE_EMITTERS.pop(turn_id, None)
+        _AUTO_CUSTOMER_CARDS.pop(turn_id, None)
         if not task.done():
             task.cancel()
             with contextlib.suppress(asyncio.CancelledError):

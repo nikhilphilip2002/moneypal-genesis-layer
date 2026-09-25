@@ -8,6 +8,7 @@ not choose behavior from question text.
 from __future__ import annotations
 
 from dataclasses import dataclass
+
 from app.core.config import settings
 
 
@@ -137,9 +138,26 @@ SOURCES: dict[str, Source] = {
             "recent Government of India MSME policy announcement",
         ),
     ),
+    "customer": Source(
+        id="customer",
+        label="External customer profiles",
+        sensitive=True,
+        roles=frozenset({"admin", "gicc_admin"}),
+        describes=(
+            "Externally indexed customer profiles — customer ID, name, occupation, city, "
+            "district, channel and external profile references — held in the governed vector "
+            "store and retrieved only for a named, explicitly identified customer. "
+            "External annotations, never the bank's own loan-book figures."
+        ),
+        example_intents=(
+            "show profile for customer ID 10455",
+            "what channel does customer 10489 use",
+            "contact details for customer 10492",
+        ),
+    ),
 }
 
-EXTERNAL_CONNECTOR_SOURCES = frozenset({"macro", "competitive", "regulatory", "web"})
+EXTERNAL_CONNECTOR_SOURCES = frozenset({"macro", "competitive", "regulatory", "web", "customer"})
 
 
 def visible_sources(
@@ -155,4 +173,5 @@ def visible_sources(
             or s.id not in EXTERNAL_CONNECTOR_SOURCES
         )
         and (s.id != "web" or settings.exa_mcp_enabled)
+        and (s.id != "customer" or settings.workbench_customer_source_enabled)
     ]

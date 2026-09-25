@@ -127,6 +127,8 @@ def _source_for_call(call) -> str | None:
         return "db"
     if call.name == "search_public_web":
         return "web"
+    if call.name == "lookup_customer_profile":
+        return "customer"
     if call.name == "search_curated_knowledge":
         return _CURATED_SOURCES.get(str(call.arguments.get("domain", "")))
     return None
@@ -270,7 +272,7 @@ async def _select(
             **extra,
         )
 
-    if state.pop("_restore_system_slot", False):
+    if state.pop("_restore_system_slot", False) and settings.llama_slot_cache_enabled:
         # Keep restore/warm and the first real completion in one serialized section. The
         # nested client calls recognize that the gate is already held, so no lock is
         # reacquired and no other chat can replace slot 0 between these operations.
@@ -328,7 +330,7 @@ def _preflight(result, state: dict[str, Any]) -> list[tuple[str, str, str]]:
             failures.append((call.id, str(exc), "TOOL_NOT_FOUND"))
         except AgentToolArgumentsInvalid as exc:
             failures.append((call.id, str(exc), "INVALID_TOOL_ARGUMENTS"))
-        except Exception as exc:  # noqa: BLE001 - every call failure is model-repairable
+        except Exception as exc:
             logger.exception("native tool preflight failed for %s", call.name)
             failures.append((call.id, str(exc)[:500], "TOOL_VALIDATION_ERROR"))
     return failures
@@ -459,7 +461,7 @@ def _persist_nudge(state, tool_choice: str) -> None:
             content=_NUDGES[tool_choice], kind="nudge", stage=_STAGES[tool_choice],
             round_number=budget.rounds_used if budget is not None else 0,
         )
-    except Exception:  # noqa: BLE001 - persistence is best effort
+    except Exception:
         logger.warning("native nudge persistence failed", exc_info=True)
 
 
@@ -496,7 +498,7 @@ def _persist_protocol_repair(
             stage=_STAGES[tool_choice],
             round_number=budget.rounds_used if budget is not None else 0,
         )
-    except Exception:  # noqa: BLE001 - persistence is best effort
+    except Exception:
         logger.warning("native protocol repair persistence failed", exc_info=True)
 
 

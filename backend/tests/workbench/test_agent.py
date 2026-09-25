@@ -6,11 +6,10 @@ import json
 import time
 
 import pytest
-
 from app.services.nlq.llm import LLMProtocolError, LLMResult, NativeToolCall
 from app.services.workbench import access, agent, history, models, outbound_policy
-from app.services.workbench.agent_tools import AgentToolAccessDenied
 from app.services.workbench.agent_executor import ExecutedAgentCall
+from app.services.workbench.agent_tools import AgentToolAccessDenied
 from app.services.workbench.results import SourceResult
 
 
@@ -20,6 +19,7 @@ def _settings(monkeypatch):
 
     monkeypatch.setattr(access.settings, "workbench_external_connectors_enabled", True)
     monkeypatch.setattr(access.settings, "exa_mcp_enabled", True)
+    monkeypatch.setattr(agent.settings, "workbench_agent_max_rounds", 5)
     monkeypatch.setattr(agent.settings, "workbench_agent_max_tool_calls", 6)
     monkeypatch.setitem(
         postgres_client._model_tools,
@@ -429,6 +429,7 @@ async def test_new_chat_restores_system_slot_before_first_model_call(scripted, m
     async def gate():
         yield
 
+    monkeypatch.setattr(agent.settings, "llama_slot_cache_enabled", True)
     monkeypatch.setattr(agent, "build_warmup_bundle", build_bundle)
     monkeypatch.setattr(agent, "restore_or_warm", restore)
     monkeypatch.setattr(agent, "request_gate", gate)

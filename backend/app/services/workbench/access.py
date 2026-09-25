@@ -23,6 +23,7 @@ SOURCE_GROUPS: dict[str, SourceGroup] = {
     "macro": SourceGroup.EXTERNAL_INDEXED,
     "competitive": SourceGroup.EXTERNAL_INDEXED,
     "regulatory": SourceGroup.EXTERNAL_INDEXED,
+    "customer": SourceGroup.EXTERNAL_INDEXED,
     "web": SourceGroup.LIVE_EXTERNAL,
 }
 EXTERNAL_GROUPS = frozenset({SourceGroup.EXTERNAL_INDEXED, SourceGroup.LIVE_EXTERNAL})
@@ -88,6 +89,7 @@ def build_policy(
             or settings.workbench_external_connectors_enabled
         )
         and (source_id != "web" or settings.exa_mcp_enabled)
+        and (source_id != "customer" or settings.workbench_customer_source_enabled)
     )
     effective_sources = tuple(
         source_id

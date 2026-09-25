@@ -1,6 +1,6 @@
 'use client';
 
-import { AlertTriangle, Ban, HelpCircle } from 'lucide-react';
+import { AlertTriangle, Ban, ExternalLink, HelpCircle } from 'lucide-react';
 import { nlq, type AnalysisResult, type ChartSpec, type QuerySpec, type Briefing, type Worklist,
   type WorkbenchAnswer, type WorkbenchCard as CardData, type WorkbenchError,
   type WorkbenchRoute, type WorkbenchTraceStep } from '@/lib/api';
@@ -436,6 +436,115 @@ function CardBody({ card, onAsk }: { card: CardData; onAsk: (q: string) => void 
                 {s}
               </Button>
             ))}
+          </div>
+        )}
+      </WorkbenchCard>
+    );
+  }
+
+  if (card.card_type === 'profile') {
+    const profile = card.payload as {
+      customer_id?: string;
+      found?: boolean;
+      customer_name?: string;
+      occupation?: string;
+      city?: string;
+      district?: string;
+      channels?: string[];
+      records?: {
+        customer_id?: string;
+        customer_name?: string;
+        occupation?: string;
+        city?: string;
+        district?: string;
+        channel?: string;
+        external_source?: string;
+        source_name?: string;
+        scraped_snippet?: string;
+      }[];
+      message?: string;
+    };
+    if (!profile.found) {
+      return (
+        <WorkbenchCard source={card.source} title="External Customer Profile" collapsible={false}>
+          <StatusRow icon={HelpCircle} tone="info">
+            {profile.message || `No external profile found for customer ID ${profile.customer_id}.`}
+          </StatusRow>
+        </WorkbenchCard>
+      );
+    }
+    return (
+      <WorkbenchCard
+        source={card.source}
+        title={`External Profile: ${profile.customer_name || profile.customer_id}`}
+        subtitle={`${profile.records?.length ?? 0} record(s) from external vector store`}
+      >
+        <dl className="grid gap-2 text-sm sm:grid-cols-2">
+          {profile.customer_name && (
+            <><dt className="text-xs text-muted-foreground">Name</dt><dd className="font-medium">{profile.customer_name}</dd></>
+          )}
+          {profile.occupation && (
+            <><dt className="text-xs text-muted-foreground">Occupation</dt><dd className="font-medium">{profile.occupation}</dd></>
+          )}
+          {profile.city && (
+            <><dt className="text-xs text-muted-foreground">City</dt><dd className="font-medium">{profile.city}</dd></>
+          )}
+          {profile.district && (
+            <><dt className="text-xs text-muted-foreground">District</dt><dd className="font-medium">{profile.district}</dd></>
+          )}
+          {profile.channels && profile.channels.length > 0 && (
+            <><dt className="text-xs text-muted-foreground">Channels</dt><dd className="font-medium">{profile.channels.join(', ')}</dd></>
+          )}
+        </dl>
+        {profile.records && profile.records.length > 0 && (
+          <div className="mt-4 space-y-3 border-t border-border/60 pt-3">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                External Records ({profile.records.length})
+              </span>
+              <span className="text-[11px] text-muted-foreground">Grounded in Qdrant</span>
+            </div>
+            <div className="space-y-3">
+              {profile.records.map((rec, idx) => (
+                <div
+                  key={rec.external_source || idx}
+                  className="rounded-xl border border-border/60 bg-muted/20 p-3.5 space-y-2 text-xs"
+                >
+                  <div className="flex flex-wrap items-center justify-between gap-1.5">
+                    <div className="flex items-center gap-2 font-medium text-foreground">
+                      <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-mono text-muted-foreground">
+                        #{idx + 1}
+                      </span>
+                      <span className="font-semibold text-sm">{rec.source_name || rec.channel || `Record #${idx + 1}`}</span>
+                    </div>
+                    {rec.external_source && (
+                      <a
+                        href={rec.external_source}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1 rounded-md border border-border bg-background/80 px-2 py-1 text-[11px] font-medium text-primary shadow-xs hover:bg-accent hover:underline"
+                      >
+                        <span>View Source</span>
+                        <ExternalLink className="size-3" />
+                      </a>
+                    )}
+                  </div>
+                  {rec.channel && (
+                    <div className="flex items-center gap-2">
+                      <span className="text-muted-foreground">Channel:</span>
+                      <Badge variant="outline" className="text-[10px] font-normal">
+                        {rec.channel}
+                      </Badge>
+                    </div>
+                  )}
+                  {rec.scraped_snippet && (
+                    <div className="rounded-lg bg-background/80 p-3 text-foreground/90 border border-border/50">
+                      <MarkdownRenderer content={rec.scraped_snippet} />
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
           </div>
         )}
       </WorkbenchCard>

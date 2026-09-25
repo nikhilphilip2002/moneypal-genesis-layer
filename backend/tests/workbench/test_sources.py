@@ -8,13 +8,14 @@ from app.services.workbench import sources
 from app.core.config import settings
 
 
-ALL_IDS = {"db", "macro", "competitive", "regulatory", "knowledge", "web"}
+ALL_IDS = {"db", "macro", "competitive", "regulatory", "knowledge", "web", "customer"}
 
 
 @pytest.fixture(autouse=True)
 def _connector_settings(monkeypatch):
     monkeypatch.setattr(settings, "workbench_external_connectors_enabled", True)
     monkeypatch.setattr(settings, "exa_mcp_enabled", True)
+    monkeypatch.setattr(settings, "workbench_customer_source_enabled", True)
 
 
 def test_all_phase2_sources_are_registered():
@@ -38,8 +39,9 @@ def test_policy_maker_sees_loan_book_during_open_access_rollout():
     assert visible == {"db", "macro", "competitive", "regulatory", "knowledge", "web"}
 
 
-def test_loan_book_is_sensitive_public_intelligence_is_not():
+def test_loan_book_and_customer_are_sensitive_public_intelligence_is_not():
     assert sources.SOURCES["db"].sensitive is True
+    assert sources.SOURCES["customer"].sensitive is True
     for public in ("macro", "competitive", "regulatory", "knowledge", "web"):
         assert sources.SOURCES[public].sensitive is False
 

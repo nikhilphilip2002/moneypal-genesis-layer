@@ -10,6 +10,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+
 class AgentArguments(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -23,6 +24,10 @@ class SearchPublicWebArguments(AgentArguments):
     search_query: str = Field(min_length=1, max_length=500)
 
 
+class LookupCustomerProfileArguments(AgentArguments):
+    customer_id: str = Field(min_length=1, max_length=64, description="Authoritative customer ID to look up")
+
+
 class FinishWithoutDataArguments(AgentArguments):
     outcome: Literal["clarify", "refuse"]
     message: str = Field(min_length=1, max_length=500)
@@ -32,7 +37,7 @@ class FinishWithoutDataArguments(AgentArguments):
     ] | None = None
 
     @model_validator(mode="after")
-    def _check_outcome_fields(self) -> "FinishWithoutDataArguments":
+    def _check_outcome_fields(self) -> FinishWithoutDataArguments:
         if self.outcome == "clarify" and self.reason_code is not None:
             raise ValueError("clarification cannot include a refusal reason_code")
         if self.outcome == "refuse":
@@ -46,6 +51,7 @@ class FinishWithoutDataArguments(AgentArguments):
 __all__ = [
     "AgentArguments",
     "FinishWithoutDataArguments",
+    "LookupCustomerProfileArguments",
     "SearchCuratedKnowledgeArguments",
     "SearchPublicWebArguments",
 ]

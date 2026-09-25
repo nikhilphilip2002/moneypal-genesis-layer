@@ -20,6 +20,7 @@ from app.services.workbench.agent_tools import (
 def _connector_settings(monkeypatch):
     monkeypatch.setattr(access.settings, "workbench_external_connectors_enabled", True)
     monkeypatch.setattr(access.settings, "exa_mcp_enabled", True)
+    monkeypatch.setattr(access.settings, "workbench_customer_source_enabled", True)
 
 
 def _policy(*, role="admin", external=True):
@@ -47,6 +48,7 @@ def test_registry_exposes_concrete_flat_tools():
     assert list(AGENT_TOOLS) == [
         "search_curated_knowledge",
         "search_public_web",
+        "lookup_customer_profile",
         "finish_without_data",
     ]
     assert "query_loan_book" not in AGENT_TOOLS

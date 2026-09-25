@@ -14,6 +14,7 @@ export const STREAM_RENDERABLE_CARD_TYPES: ReadonlySet<WorkbenchCard['card_type'
   'briefing',
   'schema',
   'catalog',
+  'profile',
 ]);
 
 export const SOURCE_LABELS: Record<string, string> = {
@@ -24,6 +25,7 @@ export const SOURCE_LABELS: Record<string, string> = {
   knowledge: 'Banking concepts',
   schema: 'Schema',
   web: 'Live web',
+  customer: 'External profile',
 };
 
 export const sourceLabel = (source: string) => SOURCE_LABELS[source] ?? source;

@@ -26,7 +26,7 @@ if TYPE_CHECKING:
     from app.services.workbench.access import SourceAccessPolicy
 
 
-def _require_external(policy: "SourceAccessPolicy | None", source_id: str) -> None:
+def _require_external(policy: SourceAccessPolicy | None, source_id: str) -> None:
     if policy is not None:
         policy.require(source_id)
 
@@ -60,7 +60,7 @@ def _strip_unsupported_page_citations(answer: str, sources: list[dict]) -> str:
 
 
 async def run_macro(
-    intent: str, *, policy: "SourceAccessPolicy | None" = None,
+    intent: str, *, policy: SourceAccessPolicy | None = None,
 ) -> SourceResult:
     """Retrieve published macro evidence; the native agent owns all prose."""
     _require_external(policy, "macro")
@@ -102,7 +102,7 @@ async def run_macro(
 
 
 async def run_web(
-    intent: str, *, user: str, policy: "SourceAccessPolicy",
+    intent: str, *, user: str, policy: SourceAccessPolicy,
     raise_policy_denials: bool = False,
     private_entities: tuple[str, ...] = (),
 ) -> SourceResult:
@@ -129,7 +129,7 @@ async def run_web(
             source="web", card_type="error",
             payload={"message": str(exc), "retryable": False},
         )
-    except Exception as exc:  # external failure is isolated to its source card
+    except Exception as exc:  # noqa: BLE001 - external failure is isolated to its source card
         logger.warning("workbench web retrieval failed: %s", exc)
         return SourceResult(
             source="web", card_type="error",
@@ -213,7 +213,7 @@ def _catalog_definition_fallback(metric_ids: list[str], catalog) -> str:
 
 
 async def run_competitive(
-    intent: str, *, policy: "SourceAccessPolicy | None" = None,
+    intent: str, *, policy: SourceAccessPolicy | None = None,
 ) -> SourceResult:
     """Retrieve question-specific competitor evidence without per-source synthesis."""
     _require_external(policy, "competitive")
@@ -309,14 +309,13 @@ def _extractive_fallback(chunks: list[dict], *, prefix: str) -> str:
 
 
 async def run_regulatory(
-    intent: str, *, policy: "SourceAccessPolicy | None" = None,
+    intent: str, *, policy: SourceAccessPolicy | None = None,
 ) -> SourceResult:
     """Answer from regulatory intelligence. The question is matched to a regulation category
     and that category's grounded detail is returned; an unmatched question falls to the
     first category rather than guessing."""
     _require_external(policy, "regulatory")
-    from app.services import regulatory_rag
-    from app.services import regulatory
+    from app.services import regulatory, regulatory_rag
 
     try:
         categories = regulatory.list_categories()
@@ -445,3 +444,14 @@ def _chunk_evidence(chunks: list[dict]) -> list[Evidence]:
         for chunk in chunks
         if str(chunk.get("text", "")).strip()
     ]
+
+
+async def run_customer(
+    customer_id: str, *, policy: SourceAccessPolicy | None = None,
+) -> SourceResult:
+    """Retrieve external customer profile by exact canonical customer ID."""
+    _require_external(policy, "customer")
+    from app.services.workbench import customer
+
+    return await customer.lookup_customer_profile(customer_id)
+

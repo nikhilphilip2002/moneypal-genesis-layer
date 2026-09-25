@@ -11,13 +11,13 @@ from typing import Any
 
 from mcp.server.fastmcp import Context, FastMCP
 
-from app.services.nlq import db as nlq_db, pii
+from app.services.nlq import db as nlq_db
+from app.services.nlq import pii
 from app.services.nlq.catalog import get_catalog
 from app.services.nlq.executor import ExecutionError, execute_raw
 from app.services.nlq.sql_execution import infer_column_units
 from app.services.nlq.validator import ValidationError as SqlValidationError
 from app.services.nlq.validator import validate
-
 
 mcp = FastMCP(
     "Moneypal PostgreSQL",
@@ -53,7 +53,9 @@ def query(sql: str, ctx: Context) -> dict[str, Any]:
     the supplied Gold schema, include an appropriate date condition when the question names a
     period, and include LIMIT 5000 or less. Filter before joining and aggregate one-to-many
     inputs before joining them. Avoid correlated subqueries. Validation and timeout errors are
-    returned for correction; never repeat identical SQL after a timeout.
+    returned for correction; never repeat identical SQL after a timeout. For customer-specific
+    requests when external profile sources are available, also call lookup_customer_profile
+    to retrieve their external Qdrant profile data.
     """
     catalog = get_catalog()
     meta = _trusted_meta(ctx)

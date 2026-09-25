@@ -1,7 +1,6 @@
-from functools import lru_cache
 import os
+from functools import lru_cache
 from pathlib import Path
-
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 
@@ -13,6 +12,7 @@ DATA_DIR = BASE_DIR / "data"                     # ingested PDFs/TXTs (gitignore
 # module (the env loader is defined below); it stays a module-level constant so the
 # existing `from app.core.config import MACRO_COLLECTION` imports keep working.
 LANDSCAPE_ANCHOR = "comp_sidbi"                  # anchor collection for the landscape summary
+EXTERNAL_CUSTOMER_COLLECTION = "External_customer_details"
 
 
 def _load_env_file() -> dict[str, str]:
@@ -48,6 +48,10 @@ class Settings:
         # Point MACRO_COLLECTION at a scratch collection to exercise the refresh/purge
         # cycle without touching the collection the macro API serves from.
         self.macro_collection = get("MACRO_COLLECTION", "macro_intel1") or "macro_intel1"
+        self.external_customer_collection = (
+            get("EXTERNAL_CUSTOMER_COLLECTION", EXTERNAL_CUSTOMER_COLLECTION)
+            or EXTERNAL_CUSTOMER_COLLECTION
+        )
         self.macro_data_dir = Path(get("MACRO_DATA_DIR", str(DATA_DIR / "macro")) or DATA_DIR / "macro")
         self.macro_state_file = Path(
             get("MACRO_STATE_FILE", str(DATA_DIR / "macro" / "state.json")) or DATA_DIR / "macro" / "state.json"
@@ -116,6 +120,9 @@ class Settings:
             get("LLAMA_SLOT_CACHE_PREFIX", "moneypal-workbench")
             or "moneypal-workbench"
         )
+        self.llama_slot_cache_enabled = (
+            (get("LLAMA_SLOT_CACHE_ENABLED", "true") or "true").lower() not in {"false", "0", "no"}
+        )
         self.nlq_llm_max_retries = int(get("NLQ_LLM_MAX_RETRIES", "4") or "4")
         # Every local request is serialized across the API and PostgreSQL MCP containers.
         # Qwen3.5/3.6 use recurrent state and llama-server can invalidate their reusable
@@ -154,6 +161,10 @@ class Settings:
         ).lower()
         if self.nlq_sql_function_mode not in ("denylist", "allowlist"):
             self.nlq_sql_function_mode = "denylist"
+
+        self.postgres_host = get("POSTGRES_HOST", "187.127.189.199") or "187.127.189.199"
+        self.postgres_port = int(get("POSTGRES_PORT", "5432") or "5432")
+        self.postgres_db = get("POSTGRES_DB", "moneypal_genesis") or "moneypal_genesis"
 
         self.postgres_mcp_url = get("POSTGRES_MCP_URL", "http://postgres-mcp:8001/mcp") or "http://postgres-mcp:8001/mcp"
         self.postgres_mcp_timeout_s = float(get("POSTGRES_MCP_TIMEOUT_S", "30") or "30")
@@ -224,6 +235,9 @@ class Settings:
         # definitions require both availability and explicit user consent.
         self.workbench_external_connectors_enabled = (
             get("WORKBENCH_EXTERNAL_CONNECTORS_ENABLED", "true") or "true"
+        ).lower() in ("1", "true", "yes", "on")
+        self.workbench_customer_source_enabled = (
+            get("WORKBENCH_CUSTOMER_SOURCE_ENABLED", "false") or "false"
         ).lower() in ("1", "true", "yes", "on")
 
         # --- Workbench conversation compaction --------------------------------------
