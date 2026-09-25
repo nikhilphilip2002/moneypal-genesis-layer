@@ -6,12 +6,14 @@ const ts = require('typescript');
 const React = require('react');
 const { renderToStaticMarkup } = require('react-dom/server');
 
-function renderBars(chart) {
-  const rendered = { bars: [], charts: [], legends: [] };
+function renderChart(chart) {
+  const rendered = { bars: [], lines: [], areas: [], charts: [], legends: [] };
   const recharts = new Proxy({}, {
     get: (_, name) => (props) => {
       if (name === 'Bar') rendered.bars.push(props);
-      if (name === 'BarChart') rendered.charts.push(props);
+      if (name === 'Line') rendered.lines.push(props);
+      if (name === 'Area') rendered.areas.push(props);
+      if (['BarChart', 'LineChart', 'AreaChart'].includes(name)) rendered.charts.push(props);
       if (name === 'Legend') rendered.legends.push(props);
       return props.children ?? null;
     },
@@ -64,7 +66,7 @@ const groupedChart = {
 };
 
 test('grouped bars render one series per group against shared categories', () => {
-  const rendered = renderBars(groupedChart);
+  const rendered = renderChart(groupedChart);
 
   assert.deepEqual(rendered.bars.map((bar) => bar.dataKey), ['MSME', 'Personal']);
   assert.deepEqual(JSON.parse(JSON.stringify(rendered.charts[0].data)), [
@@ -78,7 +80,7 @@ test('grouped bars render one series per group against shared categories', () =>
 });
 
 test('stacked bars use the same grouped series with a shared stack', () => {
-  const rendered = renderBars({ ...groupedChart, chart_type: 'stacked_bar' });
+  const rendered = renderChart({ ...groupedChart, chart_type: 'stacked_bar' });
 
   assert.deepEqual(rendered.bars.map((bar) => bar.dataKey), ['MSME', 'Personal']);
   assert.ok(rendered.bars.every((bar) => bar.stackId === 'stack'));
@@ -94,10 +96,43 @@ test('ordinary bars preserve their rows and compact single-series layout', () =>
       { week_number: 32, total_collected: 15 },
     ],
   };
-  const rendered = renderBars(chart);
+  const rendered = renderChart(chart);
 
   assert.equal(rendered.charts[0].data, chart.rows);
   assert.deepEqual(rendered.bars.map((bar) => bar.dataKey), ['total_collected']);
   assert.equal(rendered.charts[0].layout, 'vertical');
   assert.equal(rendered.legends.length, 0);
 });
+
+for (const chartType of ['grouped_bar', 'stacked_bar', 'line', 'area', 'stacked_area']) {
+  for (const groupCount of [8, 9, 10]) {
+    test(`${chartType} preserves all values when rendering ${groupCount} groups`, () => {
+      const rows = [31, 32].flatMap((week) => Array.from({ length: groupCount }, (_, index) => ({
+        week_number: week,
+        scheme_code: `Scheme ${index + 1}`,
+        total_collected: (index + 1) * (week - 30),
+      })));
+      const rendered = renderChart({ ...groupedChart, chart_type: chartType, rows });
+      const marks = [...rendered.bars, ...rendered.lines, ...rendered.areas];
+      const expectedFields = Array.from(
+        { length: groupCount > 8 ? 7 : 8 }, (_, index) => `Scheme ${index + 1}`,
+      );
+      if (groupCount > 8) expectedFields.push('Other');
+
+      assert.deepEqual(marks.map((mark) => mark.dataKey), expectedFields);
+      assert.deepEqual(marks.map((mark) => mark.name), expectedFields);
+      assert.equal(rendered.legends.length, 1);
+      for (const row of rendered.charts[0].data) {
+        const expectedTotal = rows.filter((source) => source.week_number === row.week_number)
+          .reduce((sum, source) => sum + source.total_collected, 0);
+        const renderedTotal = marks.reduce((sum, mark) => sum + row[mark.dataKey], 0);
+        assert.equal(renderedTotal, expectedTotal);
+        if (groupCount > 8) {
+          const expectedOther = rows.filter((source) => source.week_number === row.week_number)
+            .slice(7).reduce((sum, source) => sum + source.total_collected, 0);
+          assert.equal(row.Other, expectedOther);
+        }
+      }
+    });
+  }
+}

@@ -251,8 +251,9 @@ function usePivot(chart: ChartSpec): Wide {
       if (!order.includes(name)) order.push(name);
     }
     // Colour is an identity channel for eight values at most. The ninth is not a new hue.
-    const kept = order.slice(0, MAX_SERIES);
-    const foldedNames = new Set(order.slice(MAX_SERIES));
+    const keptCount = order.length > MAX_SERIES ? MAX_SERIES - 1 : MAX_SERIES;
+    const kept = order.slice(0, keptCount);
+    const foldedNames = new Set(order.slice(keptCount));
 
     const byX = new Map<string, Record<string, unknown>>();
     for (const row of chart.rows) {
