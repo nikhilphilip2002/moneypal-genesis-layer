@@ -94,6 +94,26 @@ def test_conversations_and_context_are_isolated_by_user():
     assert history.transcript("bob-chat", user="alice") == []
 
 
+def test_previous_queries_are_owner_scoped_and_exclude_current_turn():
+    old_turn = history.begin_turn("query-history", "alice", "First question")
+    history.set_query_registry("query-history", "alice", old_turn, [{
+        "query_id": f"{old_turn}:q1", "status": "success",
+    }])
+    current_turn = history.begin_turn("query-history", "alice", "Follow up")
+    history.set_query_registry("query-history", "alice", current_turn, [{
+        "query_id": f"{current_turn}:q2", "status": "pending",
+    }])
+
+    previous = history.previous_query_registry(
+        "query-history", user="alice", turn_id=current_turn,
+    )
+
+    assert [item["query_id"] for item in previous] == [f"{old_turn}:q1"]
+    assert history.previous_query_registry(
+        "query-history", user="bob", turn_id=current_turn,
+    ) == []
+
+
 def test_new_conversation_starts_with_empty_context():
     history.record_turn("old", "Old question", ["db"], user="alice")
     assert history.transcript("new", user="alice") == []

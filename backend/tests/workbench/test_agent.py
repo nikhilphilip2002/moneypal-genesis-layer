@@ -553,6 +553,83 @@ async def test_strict_final_answer_tool_drives_reconciled_answer(scripted):
 
 
 @pytest.mark.anyio
+@pytest.mark.parametrize("failed_previous_turn", [False, True])
+async def test_final_answer_reuses_previous_turn_query_without_sql(
+    scripted, failed_previous_turn,
+):
+    state = _run_state("reuse-final", "Show PAR 30")
+    prior_id = f"{state['turn_id']}:q1"
+    history.set_query_registry(state["conversation_id"], "alice", state["turn_id"], [{
+        "query_id": prior_id, "attempt_id": f"{prior_id}:a1",
+        "tool_call_id": "prior-query", "tool_name": "query",
+        "status": "success", "has_data": True,
+        "result_payload": _raw(_PAR_30).raw_result.payload,
+    }])
+    if failed_previous_turn:
+        history.set_error(
+            state["conversation_id"], "alice", state["turn_id"],
+            "Synthesis failed", code="MODEL_ERROR", retryable=True,
+        )
+    followup_id = history.begin_turn(
+        state["conversation_id"], "alice", "Show that as a table",
+    )
+    prior_registry = history.previous_query_registry(
+        state["conversation_id"], user="alice", turn_id=followup_id,
+    )
+    state.update({
+        "question": "Show that as a table", "turn_id": followup_id,
+        "agent_history_messages": history.build_native_transcript(
+            state["conversation_id"], user="alice",
+        ),
+        "query_registry": [], "prior_query_registry": prior_registry,
+        "results": [], "emit": asyncio.Queue(),
+        "timing": {
+            "started_at": time.perf_counter(), "source_attempts": [],
+            "source_completions": [],
+        },
+    })
+    state.pop("decision", None)
+    final_call = NativeToolCall(
+        id="reuse-query", name="submit_final_answer",
+        arguments={"insights": "PAR 30 is 4.2%.", "query_id": 1, "view": "table"},
+    )
+    from app.services.workbench import agent_executor
+
+    def no_sql(call, context):
+        assert call.name == "submit_final_answer"
+        return agent_executor.execute_agent_call(call, context)
+
+    scripted([_tool_response(final_call)], no_sql)
+    await agent.run(state)
+
+    answer_frame = next(frame for frame in _frames(state) if frame.startswith("event: answer\n"))
+    answer = json.loads(answer_frame.split("data: ", 1)[1])
+    assert answer["active_query_ids"] == [prior_id]
+    assert answer["visual_query_ids"] == [prior_id]
+    assert answer["invalid_query_ids"] == []
+    assert answer["view"] == "table"
+    assert state["query_registry"] == []
+    assert history.get(state["conversation_id"], user="alice").turns[-1]["query_registry"] == []
+
+
+def test_new_query_number_continues_after_previous_turn(monkeypatch):
+    from app.mcp import postgres_client
+
+    monkeypatch.setattr(postgres_client, "is_model_tool", lambda name: name == "query")
+    state = {
+        "turn_id": "new-turn", "query_registry": [],
+        "prior_query_registry": [
+            {"query_id": "old-turn:q1"}, {"query_id": "failed-turn:q2"},
+        ],
+    }
+    call = NativeToolCall(id="new-query", name="query", arguments={"sql": "SELECT 1"})
+
+    record = agent._register_database_queries(state, [call])[call.id]
+
+    assert record["query_id"] == "new-turn:q3"
+
+
+@pytest.mark.anyio
 async def test_invalid_final_answer_contract_is_repaired_once(scripted, monkeypatch):
     monkeypatch.setattr(agent.settings, "workbench_agent_max_rounds", 4)
     invalid_final = NativeToolCall(

@@ -24,6 +24,34 @@ from app.services.workbench.results import SourceResult
 
 
 @pytest.mark.anyio
+async def test_stream_loads_previous_queries_into_turn_state(monkeypatch):
+    from app.services.workbench import agent, history
+
+    monkeypatch.setattr(history, "_ensure_table", lambda: False)
+    prior_turn = history.begin_turn("stream-reuse", "alice", "First question")
+    history.set_query_registry("stream-reuse", "alice", prior_turn, [{
+        "query_id": f"{prior_turn}:q1", "status": "success", "has_data": True,
+    }])
+    seen = []
+
+    async def capture(state):
+        seen.append((state["query_registry"], state["prior_query_registry"]))
+
+    monkeypatch.setattr(agent, "run", capture)
+    events = [
+        frame async for frame in graph.run_workbench(
+            question="Show it as a table", conversation_id="stream-reuse",
+            user="alice", role="admin",
+        )
+    ]
+
+    assert events[-1].startswith("event: done\n")
+    assert seen == [([], [{
+        "query_id": f"{prior_turn}:q1", "status": "success", "has_data": True,
+    }])]
+
+
+@pytest.mark.anyio
 @pytest.mark.parametrize("response_started", [False, True])
 @pytest.mark.parametrize("explicit_stop", [False, True])
 async def test_stop_disconnects_upstream_tcp_connection(

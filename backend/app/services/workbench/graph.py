@@ -189,6 +189,7 @@ class WorkbenchState(TypedDict):
     agent_final_synthesis: NotRequired[Any]
     attribution_repairs: NotRequired[int]
     query_registry: NotRequired[list[dict[str, Any]]]
+    prior_query_registry: NotRequired[list[dict[str, Any]]]
 
 
 _ANSWERABLE_CARD_TYPES = frozenset(
@@ -330,7 +331,10 @@ async def answer_results(state: WorkbenchState) -> dict[str, Any]:
 
     registry = list(state.get("query_registry", []))
     attribution = (
-        reconcile_query_attribution(registry, structured_synthesis)
+        reconcile_query_attribution(
+            registry, structured_synthesis,
+            prior_registry=state.get("prior_query_registry", []),
+        )
         if structured_synthesis is not None else ReconciledAttribution()
     )
     if structured_synthesis is not None:
@@ -471,6 +475,9 @@ async def run_workbench(
             agent_history_messages = history.build_native_transcript(
                 conversation_id, user=user,
             )
+            prior_query_registry = history.previous_query_registry(
+                conversation_id, user=user, turn_id=turn_id,
+            )
             agent_private_entities = history.private_entities(conversation_id, user=user)
         except history.NativeTranscriptOverflow as exc:
             logger.warning(
@@ -549,6 +556,7 @@ async def run_workbench(
         },
         "trace": [],
         "query_registry": [],
+        "prior_query_registry": prior_query_registry,
     }
 
     async def drive() -> None:

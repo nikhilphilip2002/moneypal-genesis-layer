@@ -44,8 +44,10 @@ AGENT_SYSTEM_PROMPT = (
     "When you are ready to answer, call submit_final_answer as the only tool in that response. "
     "Its arguments contain exactly three fields: insights (concise user-facing prose, which may "
     "be empty when the view is self-explanatory), query_id (the positive integer ID from the "
-    "current turn's query observation), and view (the requested presentation type). Select one "
-    "successful current-turn query only. For an answer that needs no database query, return "
+    "query observation in this conversation), and view (the requested presentation type). "
+    "Select one successful query from this conversation, including an earlier turn when "
+    "the user asks to retry or change its presentation. New query IDs continue numbering "
+    "after earlier turns. For an answer that needs no database query, return "
     "concise free text instead of calling submit_final_answer."
 )
 

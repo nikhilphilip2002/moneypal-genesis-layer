@@ -185,7 +185,7 @@ async def finish_without_data(
 
 @mcp.tool(
     description=(
-        "Select one successful current-turn database query, choose its view, and optionally "
+        "Select one successful database query from this conversation, choose its view, and optionally "
         "add concise insights. The backend infers the view fields from the query result. "
         "It must be the only call in the response."
     )

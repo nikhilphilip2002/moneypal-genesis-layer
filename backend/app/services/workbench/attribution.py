@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -19,13 +20,24 @@ class ReconciledAttribution(BaseModel):
     fallback_used: bool = False
 
 
+def next_query_number(registry: list[dict[str, Any]], *, prefix: str = "q") -> int:
+    """Continue the visible query counter across saved conversation turns."""
+    pattern = re.compile(rf":{re.escape(prefix)}(\d+)$")
+    return 1 + max((
+        int(match.group(1))
+        for record in registry if isinstance(record, dict)
+        if (match := pattern.search(str(record.get("query_id") or "")))
+    ), default=0)
+
+
 def resolve_current_query(
     registry: list[dict[str, Any]], query_number: int,
+    *, prior_registry: list[dict[str, Any]] = (),
 ) -> dict[str, Any] | None:
-    """Resolve the model's local qN counter without exposing the internal turn ID."""
+    """Resolve qN, preferring this turn when older conversations reused the number."""
     suffix = f":q{query_number}"
     matches = [
-        record for record in registry
+        record for record in [*prior_registry, *registry]
         if isinstance(record, dict)
         and str(record.get("query_id") or "").endswith(suffix)
         and record.get("source_query_id") is None
@@ -63,8 +75,9 @@ def _exclusion(
 def reconcile_query_attribution(
     registry: list[dict[str, Any]],
     synthesis: FinalSynthesis,
+    *, prior_registry: list[dict[str, Any]] = (),
 ) -> ReconciledAttribution:
-    """Validate model references against this turn's actual database executions."""
+    """Validate the selected evidence; exclude unused executions from this turn only."""
 
     records = {
         str(record.get("query_id")): record
@@ -76,15 +89,17 @@ def reconcile_query_attribution(
         for record in records.values()
         if record.get("supersedes_query_id")
     }
-    selected_record = resolve_current_query(registry, synthesis.query_id)
+    selected_record = resolve_current_query(
+        registry, synthesis.query_id, prior_registry=prior_registry,
+    )
     selected_id = (
         str(selected_record.get("query_id")) if selected_record is not None else ""
     )
-    eligible = {
-        query_id for query_id, record in records.items()
-        if record.get("status") == "success" and record.get("has_data") is True
-    }
-    valid_selection = selected_id in eligible
+    valid_selection = (
+        selected_record is not None
+        and selected_record.get("status") == "success"
+        and selected_record.get("has_data") is True
+    )
     invalid = [] if valid_selection else [f"q{synthesis.query_id}"]
     active = [selected_id] if valid_selection else []
     # The final-answer tool creates the single card directly from the selected query.

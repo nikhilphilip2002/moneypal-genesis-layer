@@ -52,3 +52,18 @@ def test_reconciliation_rejects_unknown_or_unsuccessful_selection():
     assert failed.active_query_ids == []
     assert failed.invalid_query_ids == ["q1"]
     assert missing.invalid_query_ids == ["q2"]
+
+
+def test_reconciliation_attributes_prior_query_without_excluding_old_executions():
+    previous = [_record("older:q1"), _record("older:q2")]
+    current = [_record("current:q3", purpose="discovery")]
+
+    result = reconcile_query_attribution(
+        current, FinalSynthesis(insights="", query_id=1, view="table"),
+        prior_registry=previous,
+    )
+
+    assert result.active_query_ids == ["older:q1"]
+    assert result.visual_query_ids == ["older:q1"]
+    assert result.invalid_query_ids == []
+    assert [item.query_id for item in result.excluded_queries] == ["current:q3"]

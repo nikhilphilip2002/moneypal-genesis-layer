@@ -804,6 +804,23 @@ def get(conversation_id: str, *, user: str = "anonymous") -> ConversationRecord 
     return _load(conversation_id, user)
 
 
+def previous_query_registry(
+    conversation_id: str, *, user: str, turn_id: str,
+) -> list[dict[str, Any]]:
+    """Return earlier query attempts from this user-owned conversation, in turn order."""
+    record = _load(conversation_id, user)
+    if record is None:
+        return []
+    previous: list[dict[str, Any]] = []
+    for turn in record.turns:
+        if turn.get("id") == turn_id:
+            break
+        registry = turn.get("query_registry")
+        if isinstance(registry, list):
+            previous.extend(dict(item) for item in registry if isinstance(item, dict))
+    return previous
+
+
 def query_result(
     conversation_id: str, *, user: str, query_id: str,
 ) -> dict[str, Any] | None:

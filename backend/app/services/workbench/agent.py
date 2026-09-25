@@ -345,10 +345,11 @@ def _preflight(result, state: dict[str, Any]) -> list[tuple[str, str, str]]:
 
                 selected = resolve_current_query(
                     list(state.get("query_registry", [])), query_number,
+                    prior_registry=state.get("prior_query_registry", []),
                 )
                 if selected is None:
                     raise AgentToolArgumentsInvalid(
-                        f"query_id {query_number} does not reference a current-turn query"
+                        f"query_id {query_number} does not reference a query in this conversation"
                     )
                 if (
                     selected.get("status") != "success"
@@ -357,6 +358,13 @@ def _preflight(result, state: dict[str, Any]) -> list[tuple[str, str, str]]:
                 ):
                     raise AgentToolArgumentsInvalid(
                         f"query_id {query_number} must reference a successful database query"
+                    )
+                if (
+                    selected in state.get("prior_query_registry", [])
+                    and not isinstance(selected.get("result_payload"), dict)
+                ):
+                    raise AgentToolArgumentsInvalid(
+                        f"query_id {query_number} has no stored result to reuse"
                     )
         except AgentToolAccessDenied as exc:
             failures.append((call.id, str(exc), "POLICY_DENIED"))
@@ -478,11 +486,14 @@ def _register_database_queries(state: dict[str, Any], calls) -> dict[str, dict[s
                 1 for record in registry if record.get("query_id") == query_id
             )
         else:
+            from app.services.workbench.attribution import next_query_number
+
             prefix = "v" if is_visual else "q"
-            query_number = 1 + len({
-                str(record.get("query_id")) for record in registry
-                if str(record.get("query_id", "")).startswith(f"{state['turn_id']}:{prefix}")
-            })
+            if is_visual:
+                numbered = registry
+            else:
+                numbered = [*state.get("prior_query_registry", []), *registry]
+            query_number = next_query_number(numbered, prefix=prefix)
             query_id = f"{state['turn_id']}:{prefix}{query_number}"
             attempt_number = 1
         record = QueryExecutionRecord(
@@ -809,10 +820,11 @@ async def _execute_one(
             synthesis = FinalSynthesis.model_validate(item.terminal.get("synthesis"))
             selected = resolve_current_query(
                 list(state.get("query_registry", [])), synthesis.query_id,
+                prior_registry=state.get("prior_query_registry", []),
             )
             if selected is None:
                 raise AgentToolArgumentsInvalid(
-                    f"query_id {synthesis.query_id} does not reference a current-turn query"
+                    f"query_id {synthesis.query_id} does not reference a query in this conversation"
                 )
             internal_query_id = str(selected["query_id"])
             item.card = build_inferred_visual(

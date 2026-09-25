@@ -80,7 +80,7 @@ RUNTIME_TOOL_POLICIES: dict[str, RuntimeToolPolicy] = {
         parallel_safe=False,
     ),
     "submit_final_answer": RuntimeToolPolicy(
-        source_id=None,
+        source_id="db",
         sensitivity="internal",
         timeout_s=1.0,
         max_result_chars=2_000,
