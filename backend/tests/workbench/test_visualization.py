@@ -74,6 +74,20 @@ def test_preserves_already_aggregated_rows_for_stacked_area():
     assert result.payload["rows"][0]["total_collected"] == 11.0
 
 
+def test_inferred_grouped_bar_preserves_the_series_dimension():
+    source = _source()
+
+    result = build_inferred_visual(source, query_id="older:q1", view="grouped_bar")
+
+    assert result.payload["chart_type"] == "grouped_bar"
+    assert result.payload["x"]["field"] == "week_number"
+    assert result.payload["series_by"]["field"] == "scheme_code"
+    assert [series["field"] for series in result.payload["series"]] == [
+        "total_collected"
+    ]
+    assert result.payload["rows"] == source["result_payload"]["rows"]
+
+
 def test_sum_combines_rows_at_the_requested_grain():
     source = _source(
         rows=[

@@ -427,24 +427,25 @@ function BarView({
   chart, mode, onDrilldown,
 }: Props & { mode: 'light' | 'dark' }) {
   const palette = ink(mode);
-  const unit = chart.series[0]?.unit ?? 'count';
+  const { rows: pivotedRows, series, folded: foldedSeries } = usePivot(chart);
+  const unit = series[0]?.unit ?? 'count';
   const xKey = chart.x?.field ?? 'x';
 
   // Past MAX_SERIES categories, fold the tail into "Other" rather than inventing hues.
   const { rows, folded } = useMemo(() => {
-    if (chart.chart_type !== 'ranking' || chart.rows.length <= MAX_SERIES) {
-      return { rows: chart.rows, folded: 0 };
+    if (chart.chart_type !== 'ranking' || pivotedRows.length <= MAX_SERIES) {
+      return { rows: pivotedRows, folded: 0 };
     }
-    const head = chart.rows.slice(0, MAX_SERIES);
-    const tail = chart.rows.slice(MAX_SERIES);
-    const field = chart.series[0]?.field ?? '';
+    const head = pivotedRows.slice(0, MAX_SERIES);
+    const tail = pivotedRows.slice(MAX_SERIES);
+    const field = series[0]?.field ?? '';
     const total = tail.reduce(
       (sum, row) => sum + (typeof row[field] === 'number' ? (row[field] as number) : 0), 0,
     );
     return { rows: [...head, { [xKey]: `Other (${tail.length})`, [field]: total }], folded: tail.length };
-  }, [chart, xKey]);
+  }, [chart.chart_type, pivotedRows, series, xKey]);
 
-  const single = chart.series.length === 1;
+  const single = series.length === 1;
   // A lone vertical column expands to fill the plot and makes a simple result look much
   // more dramatic than it is. Short category comparisons are also easier to scan as a
   // labelled list, so keep one-to-six single-series results compact and horizontal.
@@ -453,15 +454,15 @@ function BarView({
   const height = horizontal
     ? Math.max(compactCategories ? 112 : 220, rows.length * 42 + 36)
     : 280;
-  const compressed = hasCompressedValues(rows, chart.series.map((series) => series.field));
+  const compressed = hasCompressedValues(rows, series.map((item) => item.field));
 
   if (single && rows.length === 1) {
-    const series = chart.series[0];
+    const item = series[0];
     return (
       <SingleCategoryView
         label={String(rows[0]?.[xKey] ?? 'Not recorded')}
-        value={rows[0]?.[series.field]}
-        unit={series.unit}
+        value={rows[0]?.[item.field]}
+        unit={item.unit}
         mode={mode}
       />
     );
@@ -520,10 +521,10 @@ function BarView({
             </>
           )}
           <Tooltip content={<ChartTooltip chart={chart} />} cursor={{ fill: palette.grid }} />
-          {chart.series.length > 1 && (
+          {series.length > 1 && (
             <Legend wrapperStyle={{ fontSize: 12, color: palette.secondary }} />
           )}
-          {chart.series.slice(0, MAX_SERIES).map((series, seriesIndex) => (
+          {series.slice(0, MAX_SERIES).map((series, seriesIndex) => (
             <Bar
               key={series.field}
               dataKey={series.field}
@@ -559,7 +560,7 @@ function BarView({
         </BarChart>
       </ResponsiveContainer>
       <VisibilityFloorNote show={compressed} form="bars" />
-      <FoldedNote folded={folded} />
+      <FoldedNote folded={folded + foldedSeries} />
     </>
   );
 }
