@@ -1356,7 +1356,6 @@ async def test_model_refusal_keeps_its_origin(scripted):
             "submission": {
                 "outcome": "refuse",
                 "message": "I cannot share that.",
-                "suggestions": [],
                 "reason_code": "unsafe",
             }
         },

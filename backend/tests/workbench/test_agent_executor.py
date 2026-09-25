@@ -153,7 +153,6 @@ async def test_terminal_call_executes_no_data_handler():
                     "outcome": "clarify",
                     "message": "Which period?",
                     "suggestions": ["This month"],
-                    "reason_code": None,
                 }
             },
         ),

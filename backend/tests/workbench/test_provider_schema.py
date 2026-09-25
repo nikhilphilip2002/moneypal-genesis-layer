@@ -67,12 +67,13 @@ def test_projects_refs_nullable_nested_objects_and_constraints_deterministically
     assert raw["properties"]["filters"]["items"] == {"$ref": "#/$defs/Filter"}
 
 
-def test_projects_nested_object_union():
+@pytest.mark.parametrize("union_keyword", ["anyOf", "oneOf"])
+def test_projects_nested_object_union(union_keyword):
     raw = {
         "type": "object",
         "properties": {
             "submission": {
-                "anyOf": [
+                union_keyword: [
                     {
                         "type": "object",
                         "properties": {

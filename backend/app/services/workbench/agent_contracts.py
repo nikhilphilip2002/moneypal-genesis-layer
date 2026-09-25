@@ -6,9 +6,9 @@ validation and cross-field business rules immediately before execution.
 
 from __future__ import annotations
 
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class AgentArguments(BaseModel):
@@ -137,45 +137,40 @@ class SubmitAnswerArguments(AgentArguments):
     view: VisualizationChartType
 
 
-class WithoutDataArguments(AgentArguments):
-    """End the turn with a clarification or governed refusal."""
+class SubmitClarificationArguments(AgentArguments):
+    """Ask for missing or ambiguous information needed to answer the request."""
 
-    outcome: Literal["clarify", "refuse"]
+    outcome: Literal["clarify"]
     message: str = Field(min_length=1, max_length=500)
     suggestions: list[str] = Field(default_factory=list, max_length=3)
-    reason_code: (
-        Literal[
-            "out_of_scope",
-            "not_in_data",
-            "predictive",
-            "advice",
-            "unsafe",
-        ]
-        | None
-    ) = None
-
-    @model_validator(mode="after")
-    def _check_outcome_fields(self) -> "WithoutDataArguments":
-        if self.outcome == "clarify" and self.reason_code is not None:
-            raise ValueError(
-                "clarification cannot include a refusal reason_code"
-            )
-        if self.outcome == "refuse":
-            if self.reason_code is None:
-                raise ValueError("refusal requires reason_code")
-            if self.suggestions:
-                raise ValueError("refusal cannot include suggestions")
-        return self
 
 
-FinalSubmissionArguments = SubmitAnswerArguments | WithoutDataArguments
+class SubmitRefusalArguments(AgentArguments):
+    """Decline an unsupported or prohibited request with a governed reason."""
+
+    outcome: Literal["refuse"]
+    message: str = Field(min_length=1, max_length=500)
+    reason_code: Literal[
+        "out_of_scope",
+        "not_in_data",
+        "predictive",
+        "advice",
+        "unsafe",
+    ]
+
+
+FinalSubmissionArguments = Annotated[
+    SubmitAnswerArguments | SubmitClarificationArguments | SubmitRefusalArguments,
+    Field(discriminator="outcome"),
+]
 
 
 __all__ = [
     "AgentArguments",
     "FinalSubmissionArguments",
     "SubmitAnswerArguments",
-    "WithoutDataArguments",
+    "SubmitClarificationArguments",
+    "SubmitRefusalArguments",
     "ExcludedQueryReference",
     "FinalSynthesis",
     "QueryExecutionRecord",

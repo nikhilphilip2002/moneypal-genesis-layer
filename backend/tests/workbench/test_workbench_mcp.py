@@ -70,25 +70,33 @@ async def test_discovery_is_the_model_contract_source():
 
 
 @pytest.mark.anyio
-async def test_owned_tool_content_contains_one_json_envelope():
+@pytest.mark.parametrize(
+    "submission",
+    [
+        {
+            "outcome": "clarify",
+            "message": "Which period?",
+            "suggestions": ["This month"],
+        },
+        {
+            "outcome": "refuse",
+            "message": "That is unavailable.",
+            "reason_code": "not_in_data",
+        },
+    ],
+)
+async def test_owned_tool_content_contains_one_json_envelope(submission):
     async with Client(workbench_server.mcp, mode="legacy") as client:
         result = await client.call_tool(
             "submit_final_answer",
-            {
-                "submission": {
-                    "outcome": "clarify",
-                    "message": "Which period?",
-                    "suggestions": ["This month"],
-                    "reason_code": None,
-                }
-            },
+            {"submission": submission},
         )
 
     assert result.data["success"] is True
     assert set(result.data) == {"success", "data"}
     content_payload = json.loads(result.content[0].text)
     assert content_payload == {"success": True}
-    assert result.data["data"]["terminal"]["outcome"] == "clarify"
+    assert result.data["data"]["terminal"] == submission
     assert "text" not in content_payload
 
 
@@ -102,7 +110,6 @@ async def test_in_memory_client_supports_concurrent_calls():
                     "outcome": "clarify",
                     "message": f"Question {index}?",
                     "suggestions": [],
-                    "reason_code": None,
                 }
             },
             context=_context(),
@@ -181,7 +188,6 @@ async def test_fastmcp_rejects_extra_and_cross_field_invalid_arguments():
                         "outcome": "clarify",
                         "message": "Which period?",
                         "suggestions": [],
-                        "reason_code": None,
                         "unexpected": True,
                     }
                 },
@@ -193,7 +199,6 @@ async def test_fastmcp_rejects_extra_and_cross_field_invalid_arguments():
                     "submission": {
                         "outcome": "refuse",
                         "message": "I cannot do that.",
-                        "suggestions": [],
                         "reason_code": None,
                     }
                 },
@@ -235,6 +240,64 @@ async def test_fastmcp_rejects_extra_and_cross_field_invalid_arguments():
                         "outcome": "refuse",
                         "message": "x" * 501,
                         "reason_code": "unsafe",
+                    }
+                },
+            )
+
+
+@pytest.mark.anyio
+async def test_clarification_with_refusal_reason_reports_only_the_selected_branch():
+    submission = {
+        "outcome": "clarify",
+        "message": (
+            "No loan accounts were found associated with the customer name "
+            "'sheelavathi' in the governed Gold schema tables. This could be due "
+            "to a mismatch in the name provided or the customer not having any "
+            "loan accounts in the system."
+        ),
+        "suggestions": [
+            "Verify the spelling of the customer name 'sheelavathi'",
+            "Check if the customer is linked to any loan accounts in the system",
+            "Provide an alternative customer identifier such as customer_id for a more targeted search",
+        ],
+        "reason_code": "not_in_data",
+    }
+    async with Client(workbench_server.mcp, mode="legacy") as client:
+        with pytest.raises(ToolError) as error:
+            await client.call_tool(
+                "submit_final_answer", {"submission": submission}
+            )
+        message = str(error.value)
+        assert "1 validation error" in message
+        assert "submission.clarify.reason_code" in message
+        assert "extra_forbidden" in message
+        assert "query_id" not in message
+        submission.pop("reason_code")
+        result = await client.call_tool(
+            "submit_final_answer", {"submission": submission}
+        )
+        assert result.data["data"]["terminal"] == submission
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    "fields",
+    [
+        {},
+        {"reason_code": "unknown"},
+        {"reason_code": "unsafe", "suggestions": []},
+    ],
+)
+async def test_refusal_rejects_missing_invalid_or_mixed_fields(fields):
+    async with Client(workbench_server.mcp, mode="legacy") as client:
+        with pytest.raises(ToolError):
+            await client.call_tool(
+                "submit_final_answer",
+                {
+                    "submission": {
+                        "outcome": "refuse",
+                        "message": "Unavailable.",
+                        **fields,
                     }
                 },
             )

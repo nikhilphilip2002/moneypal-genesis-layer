@@ -161,8 +161,11 @@ async def test_final_answer_schema_supports_all_terminal_outcomes():
     schema = (await _definitions())["submit_final_answer"]["parameters"]
     assert list(schema["properties"]) == ["submission"]
     variants = schema["properties"]["submission"]["anyOf"]
-    assert len(variants) == 2
-    answer, without_data = (variant["properties"] for variant in variants)
+    assert len(variants) == 3
+    answer, clarify, refuse = (variant["properties"] for variant in variants)
+    for variant in variants:
+        assert variant["additionalProperties"] is False
+        assert variant["required"] == list(variant["properties"])
     assert list(answer) == ["outcome", "message", "query_id", "view"]
     assert answer["outcome"]["enum"] == ["answer"]
     assert answer["view"]["enum"] == [
@@ -177,10 +180,16 @@ async def test_final_answer_schema_supports_all_terminal_outcomes():
         "scatter",
         "heatmap",
     ]
-    assert list(without_data) == [
-        "outcome",
-        "message",
-        "suggestions",
-        "reason_code",
+    assert list(clarify) == ["outcome", "message", "suggestions"]
+    assert clarify["outcome"]["enum"] == ["clarify"]
+    assert clarify["suggestions"]["maxItems"] == 3
+    assert list(refuse) == ["outcome", "message", "reason_code"]
+    assert refuse["outcome"]["enum"] == ["refuse"]
+    assert refuse["reason_code"]["type"] == "string"
+    assert refuse["reason_code"]["enum"] == [
+        "out_of_scope",
+        "not_in_data",
+        "predictive",
+        "advice",
+        "unsafe",
     ]
-    assert without_data["outcome"]["enum"] == ["clarify", "refuse"]

@@ -10,6 +10,34 @@ class ProviderSchemaError(ValueError):
     """An MCP schema cannot be represented by the configured LLM provider."""
 
 
+def _has_disjoint_object_tags(options: Any) -> bool:
+    if (
+        not isinstance(options, list)
+        or not options
+        or not all(
+            isinstance(option, dict) and option.get("type") == "object"
+            for option in options
+        )
+    ):
+        return False
+    for field in options[0].get("required", []):
+        tags: set[str] = set()
+        for option in options:
+            values = option.get("properties", {}).get(field, {}).get("enum")
+            if (
+                field not in option.get("required", [])
+                or not isinstance(values, list)
+                or not values
+                or not all(isinstance(value, str) for value in values)
+                or tags.intersection(values)
+            ):
+                break
+            tags.update(values)
+        else:
+            return True
+    return False
+
+
 def _collapse_any_of(
     options: list[dict[str, Any]], *, path: str
 ) -> dict[str, Any]:
@@ -88,6 +116,24 @@ def provider_schema(raw_schema: dict[str, Any]) -> dict[str, Any]:
                 {key: value for key, value in node.items() if key != "$ref"}
             )
             return project(target, path=path, resolving=resolving | {ref})
+
+        if "oneOf" in node:
+            options = project(
+                node["oneOf"], path=f"{path}.oneOf", resolving=resolving
+            )
+            if "anyOf" in node or not _has_disjoint_object_tags(options):
+                raise ProviderSchemaError(
+                    "provider schema contains unsupported keyword oneOf "
+                    f"without disjoint object tags at {path}"
+                )
+            node = {
+                **{
+                    key: value
+                    for key, value in node.items()
+                    if key not in {"oneOf", "discriminator"}
+                },
+                "anyOf": options,
+            }
 
         unsupported = {"oneOf", "allOf", "if", "then", "else", "discriminator"}
         present = unsupported.intersection(node)
