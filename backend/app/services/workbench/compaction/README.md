@@ -8,9 +8,9 @@ The cut point is selected by token size, so a few large exchanges can trigger co
 
 ## Token accounting
 
-- `GET /v1/models` supplies model context metadata. The effective window is the smallest
-  positive value among the configured runtime window, `meta.n_ctx`, and
-  `meta.n_ctx_train`. Training context is a ceiling, not proof of runtime capacity.
+- `GET /v1/models` supplies the active runtime context window through `meta.n_ctx`.
+  If it is missing or invalid, use `WORKBENCH_CONTEXT_WINDOW` as the fallback.
+  `meta.n_ctx_train` is not used for request budgeting.
 - `POST /v1/messages/count_tokens` counts the prepared system text, messages, tool calls,
   results, and tool definitions. Chat Completions messages are converted to the Messages
   format: separate system text, `tool_use`/`tool_result` blocks, and `input_schema` tools.
@@ -49,7 +49,7 @@ source for exact figures. Compaction uses the same deployment-controlled model e
 ## Configuration
 
 ```bash
-WORKBENCH_CONTEXT_WINDOW=32768       # match the server's runtime allocation
+WORKBENCH_CONTEXT_WINDOW=32768       # fallback when meta.n_ctx is unavailable
 WORKBENCH_RESERVE_TOKENS=8192        # output budget, capped at window / 4
 WORKBENCH_COMPACTION_ENABLED=true
 WORKBENCH_COMPACTION_MAX_TOKENS=1200

@@ -1319,7 +1319,7 @@ class TestEndpointConfiguration:
 
 
 @pytest.mark.anyio
-async def test_context_metadata_caps_configured_window_and_is_cached(
+async def test_runtime_context_metadata_is_model_specific_and_cached(
     monkeypatch,
 ):
     from app.core.config import settings
@@ -1470,7 +1470,17 @@ async def test_truncated_tool_arguments_are_incomplete_and_preserve_usage():
 @pytest.mark.anyio
 @pytest.mark.parametrize(
     "metadata, expected",
-    [({"n_ctx_train": 8192}, 8192), (None, 32768), ("invalid", 32768)],
+    [
+        ({"n_ctx": 32768, "n_ctx_train": 131072}, 32768),
+        ({"n_ctx": 65536, "n_ctx_train": 8192}, 65536),
+        ({"n_ctx_train": 8192}, 32768),
+        ({"n_ctx": 0}, 32768),
+        ({"n_ctx": -1}, 32768),
+        ({"n_ctx": "invalid"}, 32768),
+        ({"n_ctx": True}, 32768),
+        (None, 32768),
+        ("invalid", 32768),
+    ],
 )
 async def test_single_model_metadata_supports_endpoint_aliases(
     monkeypatch, metadata, expected

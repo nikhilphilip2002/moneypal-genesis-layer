@@ -610,12 +610,10 @@ class OpenAICompatibleClient:
                     "Model context metadata unavailable; using configured limit"
                 )
             self._metadata_checked_at = time.monotonic()
-        limits = [settings.workbench_context_window]
-        for key in ("n_ctx", "n_ctx_train"):
-            value = self._context_metadata.get(key)
-            if isinstance(value, int) and value > 0:
-                limits.append(value)
-        return max(1, min(limits))
+        runtime_context = self._context_metadata.get("n_ctx")
+        if type(runtime_context) is int and runtime_context > 0:
+            return runtime_context
+        return max(1, settings.workbench_context_window)
 
     async def count_input_tokens(
         self,
