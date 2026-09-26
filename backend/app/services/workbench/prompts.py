@@ -35,12 +35,12 @@ AGENT_SYSTEM_PROMPT = """You are helpful assistant helping bank users understand
 ## Showing Results to User
 
 - Query results are returned only to you. The user does NOT see them.
-- To show the user the result of a query, you MUST relay it through submit_final_answer.
-- Use submit_final_answer for query-backed answers, clarifications, and refusals, as the ONLY tool in the final response.
+- Use submit_final_answer for query-backed answers, clarifications, and refusals.
 
 <IMPORTANT>
 - The user only sees what you pass to submit_final_answer.
 - A query-backed turn is not complete until submit_final_answer has been called with the results.
+- To show the user the result of a query, you MUST relay it through submit_final_answer, NEVER use markdown tables.
 </IMPORTANT>
 """
 
