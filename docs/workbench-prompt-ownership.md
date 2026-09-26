@@ -5,9 +5,9 @@ agent instructions and governed Gold schema. Question-specific catalog hints, th
 question, and conversation history follow it. Tool names are not appended to system text;
 native tool definitions are supplied through the request's `tools` field.
 
-The compaction system prompt and its initial/update instructions live in
-`workbench/compaction/summarize.py`. Compaction is a separate model request and has no
-additional tool definitions. The model-based suggestion prompt has been removed.
+The request compaction prompt lives in `workbench/compaction/request.py`. It summarizes
+older messages and tool observations before a request exceeds the context budget.
+Compaction uses the same model endpoint without tool definitions.
 
 `workbench/access.py` owns role, consent, and deployment source policy. The agent sends
 only the tool definitions permitted by that policy and enforces the policy again before

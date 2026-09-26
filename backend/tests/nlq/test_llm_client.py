@@ -20,6 +20,7 @@ from app.services.nlq.llm.client import (
     get_llm_client,
     request_gate,
 )
+from app.services.nlq.llm.messages import ChatMessage
 from app.services.nlq.llm.telemetry import collect_calls
 
 SCHEMA = {
@@ -1315,3 +1316,199 @@ class TestEndpointConfiguration:
         client = get_llm_client()
         assert client.profile.supports_json_schema is True
         assert client.profile.supports_native_tools is True
+
+
+@pytest.mark.anyio
+async def test_context_metadata_caps_configured_window_and_is_cached(
+    monkeypatch,
+):
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "workbench_context_window", 32768)
+    calls = []
+
+    def handler(request):
+        calls.append(request.url.path)
+        return httpx.Response(
+            200,
+            json={
+                "data": [
+                    {"id": "other", "meta": {"n_ctx_train": 100}},
+                    {
+                        "id": "m",
+                        "meta": {"n_ctx_train": 131072, "n_ctx": 16384},
+                    },
+                ]
+            },
+        )
+
+    client = _client(handler)
+    assert await client.context_window() == 16384
+    assert await client.context_window() == 16384
+    assert calls == ["/v1/models"]
+    await client.aclose()
+
+
+@pytest.mark.anyio
+async def test_counts_system_tools_and_complete_tool_exchanges():
+    bodies = []
+
+    def handler(request):
+        assert request.url.path == "/v1/messages/count_tokens"
+        bodies.append(json.loads(request.content))
+        return httpx.Response(200, json={"input_tokens": 250})
+
+    client = _client(handler)
+    messages: list[ChatMessage] = [
+        {
+            "role": "system",
+            "content": [
+                {
+                    "type": "text",
+                    "text": "governed schema",
+                    "prompt_cache_breakpoint": {"mode": "explicit"},
+                }
+            ],
+        },
+        {"role": "user", "content": "Show totals"},
+        {
+            "role": "assistant",
+            "content": None,
+            "tool_calls": [
+                {
+                    "id": "q1",
+                    "type": "function",
+                    "function": {
+                        "name": "query_metrics",
+                        "arguments": '{"metric":"loans"}',
+                    },
+                }
+            ],
+        },
+        {"role": "tool", "tool_call_id": "q1", "content": '{"value":42}'},
+    ]
+    assert await client.count_input_tokens(messages, TOOLS) == 250
+    body = bodies[0]
+    assert body["system"] == [{"type": "text", "text": "governed schema"}]
+    assert body["tools"][0]["input_schema"]["required"] == ["metric"]
+    assert body["messages"][1]["content"][0] == {
+        "type": "tool_use",
+        "id": "q1",
+        "name": "query_metrics",
+        "input": {"metric": "loans"},
+    }
+    assert body["messages"][2]["content"][0]["tool_use_id"] == "q1"
+    client.observe_input_tokens(250, 300)
+    assert await client.count_input_tokens(messages, TOOLS) == 300
+    await client.aclose()
+
+
+@pytest.mark.anyio
+async def test_missing_counter_falls_back_without_dropping_tools():
+    calls = []
+
+    def handler(request):
+        calls.append(request.url.path)
+        return httpx.Response(404, json={"error": "not supported"})
+
+    client = _client(handler)
+    messages: list[ChatMessage] = [{"role": "user", "content": "hello"}]
+    plain = await client.count_input_tokens(messages)
+    with_tools = await client.count_input_tokens(messages, TOOLS)
+    assert with_tools > plain > 0
+    assert len(calls) == 1
+    await client.aclose()
+
+
+@pytest.mark.anyio
+async def test_context_overflow_is_not_retried_with_identical_request():
+    from app.services.nlq.llm.client import LLMContextOverflow
+
+    calls = []
+
+    def handler(request):
+        calls.append(request.url.path)
+        return httpx.Response(
+            400,
+            json={
+                "error": {
+                    "message": "request exceeds the available context size",
+                    "code": "context_length_exceeded",
+                }
+            },
+        )
+
+    client = _client(handler, max_retries=3)
+    with pytest.raises(LLMContextOverflow):
+        await client.complete(messages=[{"role": "user", "content": "hello"}])
+    assert len(calls) == 1
+    await client.aclose()
+
+
+@pytest.mark.anyio
+async def test_truncated_tool_arguments_are_incomplete_and_preserve_usage():
+    body = _tool_body(
+        {
+            "id": "q1",
+            "type": "function",
+            "function": {"name": "query_metrics", "arguments": '{"metric":'},
+        }
+    )
+    body["choices"][0]["finish_reason"] = "length"
+    body["usage"] = {"prompt_tokens": 31000, "completion_tokens": 100}
+    client = _client(lambda request: _stream_response(body))
+    with collect_calls() as calls, pytest.raises(LLMIncomplete) as error:
+        await client.complete(
+            messages=[{"role": "user", "content": "query"}], tools=TOOLS
+        )
+    assert error.value.prompt_tokens == 31000
+    assert error.value.completion_tokens == 100
+    assert calls[-1].finish_reason == "length"
+    await client.aclose()
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    "metadata, expected",
+    [({"n_ctx_train": 8192}, 8192), (None, 32768), ("invalid", 32768)],
+)
+async def test_single_model_metadata_supports_endpoint_aliases(
+    monkeypatch, metadata, expected
+):
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "workbench_context_window", 32768)
+    client = _client(
+        lambda request: httpx.Response(
+            200,
+            json={"data": [{"id": "../models/served.gguf", "meta": metadata}]},
+        )
+    )
+    assert await client.context_window() == expected
+    await client.aclose()
+
+
+@pytest.mark.anyio
+async def test_context_error_inside_completion_stream_is_recoverable():
+    from app.services.nlq.llm.client import LLMContextOverflow
+
+    chunks = []
+    content = _sse_chunk({"content": "partial output"})
+    content += 'data: {"error":{"message":"context size exceeded","code":"context_length_exceeded"}}\n\n'
+    client = _client(
+        lambda request: httpx.Response(
+            200,
+            headers={"content-type": "text/event-stream"},
+            content=content,
+        )
+    )
+
+    async def on_text(text):
+        chunks.append(text)
+
+    with pytest.raises(LLMContextOverflow):
+        await client.complete(
+            messages=[{"role": "user", "content": "hello"}], on_text=on_text
+        )
+    assert chunks == ["partial output"]
+    await client.aclose()

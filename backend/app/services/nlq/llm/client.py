@@ -13,6 +13,7 @@ import logging
 import os
 import platform
 import re
+import time
 from contextvars import ContextVar
 from datetime import UTC, datetime
 from email.utils import parsedate_to_datetime
@@ -39,6 +40,11 @@ except ImportError:  # pragma: no cover - exercised only on non-POSIX platforms
 
 from app.core.config import settings
 from app.services.nlq.llm.messages import ChatMessage, coalesce_system_messages
+from app.services.nlq.llm.context import (
+    counting_payload,
+    estimate_request_tokens,
+    is_context_overflow,
+)
 from app.services.nlq.llm.telemetry import (
     CallKind,
     CallPurpose,
@@ -155,6 +161,13 @@ class LLMProtocolError(LLMError):
 class LLMIncomplete(LLMError):
     """The provider stopped before producing a complete response."""
 
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
+
+
+class LLMContextOverflow(LLMError):
+    """The request or generation exceeded the provider's context capacity."""
+
 
 class LLMResponseBlocked(LLMError):
     """The provider declined to return a response because of a content policy."""
@@ -225,6 +238,10 @@ async def _read_completion_stream(
         try:
             chunk = event.model_dump(exclude_none=True)
             if chunk.get("error"):
+                if is_context_overflow(chunk["error"]):
+                    raise LLMContextOverflow(
+                        f"context window overflow: {chunk['error']}"
+                    )
                 raise LLMProtocolError(
                     f"completion stream error: {chunk['error']}"
                 )
@@ -563,6 +580,79 @@ class OpenAICompatibleClient:
     retry_max_delay_s: float = 30.0
     retry_budget_s: float = 30.0
     _client: AsyncOpenAI | None = field(default=None, repr=False)
+    _context_metadata: dict[str, Any] = field(default_factory=dict, repr=False)
+    _metadata_checked_at: float = field(default=0.0, repr=False)
+    _count_unavailable_until: float = field(default=0.0, repr=False)
+    _token_count_scale: float = field(default=1.0, repr=False)
+
+    async def context_window(self) -> int:
+        if (
+            not self._metadata_checked_at
+            or time.monotonic() - self._metadata_checked_at > 60
+        ):
+            try:
+                models = await self._openai().models.list(timeout=5.0)
+                model = next(
+                    (item for item in models.data if item.id == self.model),
+                    None,
+                )
+                if model is None and len(models.data) == 1:
+                    model = models.data[0]
+                if model is not None:
+                    metadata = model.model_dump().get("meta")
+                    self._context_metadata = (
+                        metadata if isinstance(metadata, dict) else {}
+                    )
+                else:
+                    self._context_metadata = {}
+            except (APIError, httpx.HTTPError):
+                logger.warning(
+                    "Model context metadata unavailable; using configured limit"
+                )
+            self._metadata_checked_at = time.monotonic()
+        limits = [settings.workbench_context_window]
+        for key in ("n_ctx", "n_ctx_train"):
+            value = self._context_metadata.get(key)
+            if isinstance(value, int) and value > 0:
+                limits.append(value)
+        return max(1, min(limits))
+
+    async def count_input_tokens(
+        self,
+        messages: list[ChatMessage],
+        tools: list[dict[str, Any]] | None = None,
+    ) -> int:
+        prepared = self._prepare_messages(messages, None)
+        tokens = estimate_request_tokens(prepared, tools)
+        if time.monotonic() >= self._count_unavailable_until:
+            try:
+                body = counting_payload(self.model, prepared, tools)
+                counted = await self._openai().post(
+                    "messages/count_tokens",
+                    body=body,
+                    cast_to=dict[str, Any],
+                    options={"timeout": 5.0},
+                )
+                value = counted.get("input_tokens")
+                if not isinstance(value, int) or value <= 0:
+                    raise ValueError("invalid input_tokens")
+                tokens = value
+            except (
+                APIError,
+                httpx.HTTPError,
+                ValueError,
+                KeyError,
+                TypeError,
+            ):
+                self._count_unavailable_until = time.monotonic() + 60
+                logger.warning(
+                    "Token counting unavailable; using conservative request estimate"
+                )
+        return max(1, int(tokens * self._token_count_scale + 0.999))
+
+    def observe_input_tokens(self, counted: int, actual: int) -> None:
+        if counted > 0 and actual > counted:
+            self._token_count_scale *= actual / counted
 
     @property
     def provider(self) -> str:
@@ -766,6 +856,10 @@ class OpenAICompatibleClient:
                         KeyError,
                         AttributeError,
                     ) as exc:
+                        if is_context_overflow(exc):
+                            raise LLMContextOverflow(
+                                "context window overflow during generation"
+                            ) from exc
                         raise LLMProtocolError(
                             "malformed completion stream"
                         ) from exc
@@ -780,6 +874,9 @@ class OpenAICompatibleClient:
                     )
                     raise
                 except LLMProtocolError as exc:
+                    last_exc = exc
+                    break
+                except LLMContextOverflow as exc:
                     last_exc = exc
                     break
                 except (APITimeoutError, httpx.TimeoutException) as exc:
@@ -800,6 +897,11 @@ class OpenAICompatibleClient:
                         break
                     continue
                 except APIStatusError as exc:
+                    if is_context_overflow(exc):
+                        last_exc = LLMContextOverflow(
+                            f"context window overflow: {str(exc)[:500]}"
+                        )
+                        break
                     if (
                         exc.status_code in _RETRYABLE_STATUS_CODES
                         or exc.status_code >= 500
@@ -873,6 +975,16 @@ class OpenAICompatibleClient:
                     raise LLMProtocolError(
                         "choice.finish_reason must be a nonempty string"
                     )
+                if finish_reason in {"length", "content_filter"}:
+                    _validate_finish_reason(
+                        finish_reason,
+                        tool_calls=[],
+                        reasoning=str(
+                            message.get("reasoning_content")
+                            or message.get("reasoning")
+                            or ""
+                        ),
+                    )
                 tool_calls = _parse_native_tool_calls(
                     message,
                     allowed_names=allowed_tool_names,
@@ -897,6 +1009,11 @@ class OpenAICompatibleClient:
                 LLMIncomplete,
                 LLMResponseBlocked,
             ) as exc:
+                if isinstance(exc, LLMIncomplete):
+                    exc.prompt_tokens = prompt_tokens
+                    exc.completion_tokens = int(
+                        usage.get("completion_tokens", 0) or 0
+                    )
                 duration_ms = int(
                     (asyncio.get_event_loop().time() - request_started) * 1000
                 )

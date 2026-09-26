@@ -1419,3 +1419,76 @@ async def test_deadline_is_checked_in_the_loop_condition(
     with pytest.raises(TimeoutError):
         await agent.run(state)
     assert client.requests == []
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    "failure", ["context", "generation", "output_limit", "repeated"]
+)
+async def test_select_recovers_context_overflow_with_compacted_input(
+    monkeypatch, failure
+):
+    import math
+    from app.services.nlq.llm.client import LLMContextOverflow, LLMIncomplete
+
+    class ContextClient:
+        def __init__(self):
+            self.requests = []
+            self.summaries = []
+            self.observed = []
+
+        async def context_window(self):
+            return 50000
+
+        async def count_input_tokens(self, messages, tools=None):
+            return math.ceil(len(json.dumps([messages, tools])) / 4)
+
+        def observe_input_tokens(self, counted, actual):
+            self.observed.append((counted, actual))
+
+        async def complete(self, **kwargs):
+            if kwargs.get("call_purpose") == "compaction":
+                self.summaries.append(kwargs)
+                return _result(content="Older task: query q1 showed 42 loans.")
+            self.requests.append(kwargs)
+            if len(self.requests) == 1 or failure == "repeated":
+                if failure in {"context", "repeated"}:
+                    raise LLMContextOverflow("context length exceeded")
+                error = LLMIncomplete("truncated output")
+                error.prompt_tokens = 30000
+                error.completion_tokens = (
+                    kwargs["max_output_tokens"]
+                    if failure == "output_limit"
+                    else 50
+                )
+                raise error
+            return _result(content="Recovered answer")
+
+    monkeypatch.setattr(agent.settings, "workbench_compaction_enabled", True)
+    client = ContextClient()
+    monkeypatch.setattr(models, "client", lambda: client)
+    state = _state()
+    state["agent_history_messages"] = [
+        {"role": "user", "content": "Old question"},
+        {"role": "assistant", "content": "old evidence " * 6500},
+    ]
+    state["_agent_budget"] = agent.TurnBudget(5, 5, time.perf_counter() + 60)
+    if failure == "output_limit":
+        with pytest.raises(LLMIncomplete):
+            await agent._select(state)
+        assert len(client.requests) == 1
+        assert client.summaries == []
+        return
+    if failure == "repeated":
+        with pytest.raises(LLMContextOverflow):
+            await agent._select(state)
+    else:
+        result = await agent._select(state)
+        assert result.text == "Recovered answer"
+    assert len(client.requests) == 2
+    assert client.summaries
+    assert len(json.dumps(client.requests[-1]["messages"])) < len(
+        json.dumps(client.requests[0]["messages"])
+    )
+    assert state["_agent_budget"].rounds_used == 1
+    assert state["question"] in client.requests[-1]["messages"][-1]["content"]

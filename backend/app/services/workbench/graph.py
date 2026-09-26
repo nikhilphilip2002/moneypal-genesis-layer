@@ -14,7 +14,7 @@ import anyio
 
 from app.core.config import settings
 from app.services.nlq.llm.telemetry import collect_calls, summarize_calls
-from app.services.workbench import access, compaction, history
+from app.services.workbench import access, history
 from app.services.workbench.results import ExecutionDecision, SourceResult
 
 logger = logging.getLogger(__name__)
@@ -548,18 +548,6 @@ async def answer_results(state: WorkbenchState) -> dict[str, Any]:
     return {}
 
 
-# asyncio keeps only a weak reference to a running task, so a fire-and-forget coroutine
-# can be garbage collected mid-flight. Holding a strong reference until it finishes is the
-# documented way to detach work safely.
-_background: set[asyncio.Task] = set()
-
-
-def _spawn_background(coro) -> None:
-    task = asyncio.create_task(coro)
-    _background.add(task)
-    task.add_done_callback(_background.discard)
-
-
 async def run_workbench(
     *,
     question: str,
@@ -628,6 +616,7 @@ async def run_workbench(
             agent_history_messages = history.build_native_transcript(
                 conversation_id,
                 user=user,
+                enforce_budget=not settings.workbench_compaction_enabled,
             )
             prior_query_registry = history.previous_query_registry(
                 conversation_id,
@@ -855,13 +844,6 @@ async def run_workbench(
                 turn_id,
                 partial=partial,
             )
-            # Checkpoint after the turn, never before it: the summarization call would
-            # otherwise sit between the user's question and their first streamed token.
-            # Detached and failure-tolerant — the transcript works without it.
-            if not partial and settings.workbench_compaction_enabled:
-                _spawn_background(
-                    compaction.maybe_compact(conversation_id, user)
-                )
             await emit.put(
                 None
             )  # sentinel: the graph is done producing frames

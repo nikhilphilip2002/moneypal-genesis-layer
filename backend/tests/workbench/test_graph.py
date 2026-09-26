@@ -250,7 +250,9 @@ async def test_disconnect_waits_for_llm_connection_close(
     monkeypatch.setattr(agent, "_select", select)
     monkeypatch.setattr(agent, "get_catalog", lambda: object())
     monkeypatch.setattr(graph.settings, "workbench_compaction_enabled", True)
-    monkeypatch.setattr(graph.compaction, "maybe_compact", compact)
+    monkeypatch.setattr(
+        "app.services.workbench.compaction.maybe_compact", compact
+    )
     response = StreamingResponse(
         graph.run_workbench(
             question="cancel probe",

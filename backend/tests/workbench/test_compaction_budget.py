@@ -178,3 +178,18 @@ class TestNativeReplayMeasure:
         ) == history.replay_group_tokens(
             history.native_replay_group(turns[-1])
         )
+
+
+def test_context_anchor_uses_latest_conversation_request_after_compaction():
+    turn = {
+        "usage": {
+            "prompt_tokens": 30000,
+            "calls": [
+                {"purpose": "agent_route", "prompt_tokens": 28000},
+                {"purpose": "compaction", "prompt_tokens": 30000},
+                {"purpose": "agent_continue", "prompt_tokens": 6000},
+                {"purpose": "compaction", "prompt_tokens": 10000},
+            ],
+        }
+    }
+    assert budget.measured_prompt_tokens(turn) == 6000

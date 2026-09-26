@@ -7,6 +7,7 @@ import json
 import logging
 import time
 import uuid
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Callable
@@ -1171,7 +1172,7 @@ def transcript(
     ).messages
 
 
-def _tool_names_in(assistant_message: dict[str, Any]) -> dict[str, str]:
+def _tool_names_in(assistant_message: Mapping[str, Any]) -> dict[str, str]:
     names: dict[str, str] = {}
     for call in assistant_message.get("tool_calls") or []:
         if isinstance(call, dict):
@@ -1201,6 +1202,29 @@ def _observation(
     return message
 
 
+def set_request_checkpoint(
+    conversation_id: str,
+    user: str,
+    turn_id: str,
+    messages: list[ChatMessage],
+    *,
+    tokens_before: int,
+    tokens_after: int,
+) -> None:
+    def apply(turn: dict[str, Any]) -> None:
+        _append_turn_event(
+            turn,
+            "request_compaction",
+            {
+                "messages": messages,
+                "tokens_before": tokens_before,
+                "tokens_after": tokens_after,
+            },
+        )
+
+    _mutate(conversation_id, user, turn_id, apply)
+
+
 def native_replay_group(turn: dict[str, Any]) -> list[ChatMessage]:
     """What one turn contributes to the provider transcript, read from its events.
 
@@ -1217,6 +1241,15 @@ def native_replay_group(turn: dict[str, Any]) -> list[ChatMessage]:
     tool_names: dict[str, str] = {}
     for event in turn_events(turn):
         payload = event.get("payload")
+        if event.get("type") == "request_compaction" and isinstance(
+            payload, dict
+        ):
+            checkpoint_messages: list[ChatMessage] = payload["messages"]
+            group = [message.copy() for message in checkpoint_messages]
+            tool_names = {}
+            for checkpoint_message in group:
+                tool_names.update(_tool_names_in(checkpoint_message))
+            continue
         if (
             not isinstance(payload, dict)
             or payload.get("execution_path") != "native"
@@ -1283,7 +1316,17 @@ def live_turns(record: ConversationRecord) -> list[dict[str, Any]]:
         str(compaction.get("first_kept_turn_id", "")) if compaction else ""
     )
     _, live = _split_at_turn(complete, first_kept)
+    for index in range(len(live) - 1, -1, -1):
+        if _has_request_checkpoint(live[index]):
+            return live[index:]
     return live
+
+
+def _has_request_checkpoint(turn: dict[str, Any]) -> bool:
+    return any(
+        event.get("type") == "request_compaction"
+        for event in turn_events(turn)
+    )
 
 
 def _measured_after(turn: dict[str, Any], checkpoint_created_at: str) -> bool:
@@ -1343,11 +1386,10 @@ def measure_native_replay(record: ConversationRecord) -> NativeReplayMeasure:
         record.compaction if isinstance(record.compaction, dict) else None
     )
     created_at = str(compaction.get("created_at", "")) if compaction else ""
-    measure = measure_replay_turns(
-        live_turns(record), checkpoint_created_at=created_at
-    )
+    live = live_turns(record)
+    measure = measure_replay_turns(live, checkpoint_created_at=created_at)
     summary = str(compaction.get("summary", "")).strip() if compaction else ""
-    if summary:
+    if summary and not any(_has_request_checkpoint(turn) for turn in live):
         limit = budget.budget_tokens()
         summary = budget.clip_to_tokens(
             summary, int(limit * budget.SUMMARY_SHARE)
@@ -1364,6 +1406,7 @@ def build_native_transcript(
     *,
     user: str,
     token_budget: int | None = None,
+    enforce_budget: bool = True,
 ) -> list[ChatMessage]:
     """Replay complete native exchanges or fail rather than silently clipping them."""
     from app.services.workbench.compaction import budget
@@ -1378,7 +1421,8 @@ def build_native_transcript(
         record.compaction if isinstance(record.compaction, dict) else None
     )
     summary = str(compaction.get("summary", "")).strip() if compaction else ""
-    if summary:
+    live = live_turns(record)
+    if summary and not any(_has_request_checkpoint(turn) for turn in live):
         summary = budget.clip_to_tokens(
             summary, int(limit * budget.SUMMARY_SHARE)
         )
@@ -1390,15 +1434,11 @@ def build_native_transcript(
         )
         spent += budget.estimate_tokens(summary)
 
-    groups = [
-        group
-        for turn in live_turns(record)
-        if (group := native_replay_group(turn))
-    ]
+    groups = [group for turn in live if (group := native_replay_group(turn))]
     kept: list[list[ChatMessage]] = []
     for group in reversed(groups):
         cost = replay_group_tokens(group)
-        if spent + cost > limit:
+        if enforce_budget and spent + cost > limit:
             if not kept:
                 # The newest turn does not fit even on its own. Compaction summarizes
                 # older turns and cannot shrink this one; only a new conversation helps.

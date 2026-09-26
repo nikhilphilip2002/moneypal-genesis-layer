@@ -20,7 +20,11 @@ from typing import Any
 from app.core.config import settings
 from app.services.nlq.catalog import get_catalog
 from app.services.nlq.llm import LLMError, LLMProtocolError, LLMTimeout
-from app.services.nlq.llm.client import request_gate
+from app.services.nlq.llm.client import (
+    LLMContextOverflow,
+    LLMIncomplete,
+    request_gate,
+)
 from app.services.nlq.llm.slot_cache import (
     SlotCacheError,
     slot_action,
@@ -269,11 +273,24 @@ async def _select(
         raise LLMError("no native tools are authorized for this request")
     prompt = prompts.build_agent_prompt(
         question=state["question"],
-        history_messages=state.get("agent_history_messages", []),
+        history_messages=[
+            message
+            for message in state.get("agent_history_messages", [])
+            if message.get("role") != "system"
+        ],
         catalog=catalog,
         catalog_context=catalog_context,
     )
-    messages = [*prompt.messages, *(repair_messages or [])]
+    messages = [
+        *prompt.messages[:-1],
+        *(
+            message
+            for message in state.get("agent_history_messages", [])
+            if message.get("role") == "system"
+        ),
+        prompt.messages[-1],
+        *(repair_messages or []),
+    ]
     if repair_messages:
         messages.append({"role": "user", "content": _NUDGES[tool_choice]})
         _persist_nudge(state, tool_choice)
@@ -294,16 +311,68 @@ async def _select(
         )
 
     async def request():
-        return await complete(
-            messages=messages,
-            tools=definitions,
-            parallel_tool_calls=False,
-            timeout_s=budget.remaining_s(settings.llm_timeout_s),
-            call_purpose=_PURPOSES[tool_choice],
-            call_kind="repair" if repair_messages and selecting else "planned",
-            catalog_version=catalog.version,
-            **extra,
-        )
+        from app.services.workbench.compaction.request import prepare_request
+
+        can_count = callable(getattr(client, "count_input_tokens", None))
+        async with asyncio.timeout(budget.remaining_s(settings.llm_timeout_s)):
+            for attempt in range(2):
+                prepared = messages
+                counted = 0
+                if can_count:
+                    prepared, output_tokens, counted = await prepare_request(
+                        state,
+                        client,
+                        messages,
+                        definitions,
+                        current_question=prompt.messages[-1],
+                        has_inflight=bool(repair_messages),
+                        force=bool(attempt),
+                        timeout_s=budget.remaining_s(settings.llm_timeout_s),
+                    )
+                    extra["max_output_tokens"] = output_tokens
+                if not selecting:
+                    state["agent_synthesis_messages"] = prepared
+                try:
+                    result = await complete(
+                        messages=prepared,
+                        tools=definitions,
+                        parallel_tool_calls=False,
+                        timeout_s=budget.remaining_s(settings.llm_timeout_s),
+                        call_purpose=_PURPOSES[tool_choice],
+                        call_kind="repair"
+                        if attempt or (repair_messages and selecting)
+                        else "planned",
+                        catalog_version=catalog.version,
+                        **extra,
+                    )
+                except (LLMContextOverflow, LLMIncomplete) as exc:
+                    if isinstance(exc, LLMIncomplete):
+                        if can_count:
+                            client.observe_input_tokens(
+                                counted, exc.prompt_tokens
+                            )
+                        at_context_limit = (
+                            exc.prompt_tokens > 0
+                            and exc.completion_tokens
+                            < extra.get("max_output_tokens", 0)
+                        )
+                        if not at_context_limit:
+                            raise
+                    if (
+                        not can_count
+                        or attempt
+                        or not settings.workbench_compaction_enabled
+                    ):
+                        raise
+                    budget.charge_round("context overflow recovery")
+                    logger.info(
+                        "Compacting context before retrying an overflowing model request"
+                    )
+                    continue
+                if can_count:
+                    client.observe_input_tokens(counted, result.prompt_tokens)
+                return result
+        raise LLMContextOverflow("context window exceeded after recovery")
 
     if not settings.llama_slot_snapshots_enabled:
         return await request()

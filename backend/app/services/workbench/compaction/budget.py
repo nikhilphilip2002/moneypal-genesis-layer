@@ -37,6 +37,18 @@ def measured_prompt_tokens(turn: dict[str, Any]) -> int | None:
     usage = turn.get("usage")
     if not isinstance(usage, dict):
         return None
+    calls: list[Any] | None = usage.get("calls")
+    if isinstance(calls, list) and calls:
+        for call in reversed(calls):
+            if (
+                not isinstance(call, dict)
+                or call.get("purpose") == "compaction"
+            ):
+                continue
+            tokens = call.get("prompt_tokens")
+            if isinstance(tokens, int) and tokens > 0:
+                return tokens
+        return None
     tokens = usage.get("prompt_tokens")
     if not isinstance(tokens, int) or tokens <= 0:
         return None

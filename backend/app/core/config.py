@@ -334,25 +334,17 @@ class Settings:
         ).lower() in ("1", "true", "yes", "on")
 
         # --- Workbench conversation compaction --------------------------------------
-        # The transcript budget was previously expressed in characters because no token
-        # count was persisted. Real prompt_tokens from the provider are now recorded per
-        # turn, so the budget is stated in the unit the context window is actually in.
         self.workbench_context_window = int(
             get("WORKBENCH_CONTEXT_WINDOW", "32768") or "32768"
         )
-        # Headroom for the next turn's system prompt, catalog grammar and output. Smaller
-        # than a coding agent's: workbench answers are 300-500 tokens, not long diffs.
         self.workbench_reserve_tokens = int(
             get("WORKBENCH_RESERVE_TOKENS", "8192") or "8192"
         )
         self.workbench_keep_recent_turns = int(
             get("WORKBENCH_KEEP_RECENT_TURNS", "6") or "6"
         )
-        # Summarization stays dark until the deterministic phases are proven in place;
-        # with it off the transcript still gets token-accurate budgeting and the
-        # mechanically extracted session state.
         self.workbench_compaction_enabled = (
-            get("WORKBENCH_COMPACTION_ENABLED", "false") or "false"
+            get("WORKBENCH_COMPACTION_ENABLED", "true") or "true"
         ).lower() in ("1", "true", "yes", "on")
         self.workbench_compaction_max_tokens = int(
             get("WORKBENCH_COMPACTION_MAX_TOKENS", "1200") or "1200"
