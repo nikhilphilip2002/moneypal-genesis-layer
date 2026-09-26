@@ -54,6 +54,19 @@ class TestEstimation:
             budget.transcript_tokens(turns, _answer_of) == 40
         )  # 4 * ceil(80/4) / 2
 
+    def test_resolve_compaction_limit_defaults_to_forty_percent(self):
+        assert budget.resolve_compaction_limit(10000) == 4000
+        assert budget.resolve_compaction_limit(2000) == 800
+        assert budget.resolve_compaction_limit(0) == 1
+
+    def test_resolve_compaction_limit_env_override_takes_precedence(self):
+        assert budget.resolve_compaction_limit(10000, configured_limit=6000) == 6000
+        assert budget.resolve_compaction_limit(10000, configured_limit=150) == 150
+
+    def test_resolve_compaction_limit_bounds_within_window(self):
+        assert budget.resolve_compaction_limit(5000, configured_limit=8000) == 5000
+        assert budget.resolve_compaction_limit(5000, configured_limit=-10) == 2000
+
 
 class TestMeasuredUsage:
     def test_prefers_the_last_measured_prompt(self):

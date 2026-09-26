@@ -7,7 +7,7 @@ from types import SimpleNamespace
 import pytest
 
 from app.core.config import settings
-from app.services.nlq.llm.client import LLMContextOverflow, LLMError
+from app.services.nlq.llm.client import LLMContextOverflow, LLMError, LLMIncomplete
 from app.services.nlq.llm.messages import ChatMessage
 from app.services.workbench import history
 from app.services.workbench.compaction.request import (
@@ -241,6 +241,28 @@ async def test_summarization_shrinks_chunks_on_server_overflow():
 
 
 @pytest.mark.anyio
+async def test_summarization_shrinks_chunks_after_incomplete_output():
+    class ShorterChunks(CountingClient):
+        incomplete_attempts = 0
+
+        async def complete(self, **kwargs):
+            if len(json.dumps(kwargs["messages"])) > 2000:
+                self.incomplete_attempts += 1
+                raise LLMIncomplete("truncated")
+            return await super().complete(**kwargs)
+
+    client = ShorterChunks()
+    summary = await summarize_messages(
+        client,
+        [{"role": "user", "content": "history " * 1000}],
+        previous="",
+        window=client.window,
+    )
+    assert summary
+    assert client.incomplete_attempts > 0
+
+
+@pytest.mark.anyio
 async def test_later_turn_merges_checkpoint_and_does_not_restore_legacy_summary():
     client = CountingClient()
     old_turn = history.begin_turn("c", "u", "initial question")
@@ -293,3 +315,203 @@ async def test_later_turn_merges_checkpoint_and_does_not_restore_legacy_summary(
     record = history.get("c", user="u")
     assert record is not None
     assert len(record.turns) == 3
+
+
+@pytest.mark.anyio
+async def test_incomplete_summary_does_not_advance_checkpoint():
+    class IncompleteClient(CountingClient):
+        async def complete(self, **kwargs):
+            raise LLMIncomplete("truncated after reasoning")
+
+    client = IncompleteClient()
+    state = {}
+    current: ChatMessage = {"role": "user", "content": "current question"}
+    messages: list[ChatMessage] = [
+        {"role": "system", "content": "policy"},
+        {"role": "system", "content": "existing checkpoint"},
+        {"role": "user", "content": "unique old fact " * 1000},
+        current,
+    ]
+    with pytest.raises(LLMIncomplete, match="truncated after reasoning"):
+        await prepare_request(
+            state,
+            client,
+            messages,
+            [],
+            current_question=current,
+            has_inflight=False,
+        )
+    assert "_request_compaction" not in state
+
+
+@pytest.mark.anyio
+async def test_unusable_summary_does_not_advance_checkpoint():
+    class EmptyClient(CountingClient):
+        async def complete(self, **kwargs):
+            return SimpleNamespace(text="", tool_calls=[])
+
+    state = {}
+    current: ChatMessage = {"role": "user", "content": "current question"}
+    messages: list[ChatMessage] = [
+        {"role": "system", "content": "policy"},
+        {"role": "system", "content": "existing checkpoint"},
+        {"role": "user", "content": "unique old fact " * 1000},
+        current,
+    ]
+    with pytest.raises(LLMError, match="no usable summary"):
+        await prepare_request(
+            state,
+            EmptyClient(),
+            messages,
+            [],
+            current_question=current,
+            has_inflight=False,
+        )
+    assert "_request_compaction" not in state
+
+
+@pytest.mark.anyio
+async def test_compaction_protects_last_two_turns_from_summarizer():
+    client = CountingClient(window=3000)
+    state = {}
+    current: ChatMessage = {"role": "user", "content": "turn 3 question"}
+    messages: list[ChatMessage] = [
+        {"role": "system", "content": "System policy"},
+        {"role": "user", "content": "turn 1 question " * 800},
+        {"role": "assistant", "content": "turn 1 answer"},
+        {"role": "user", "content": "turn 2 question"},
+        {"role": "assistant", "content": "turn 2 answer"},
+        current,
+    ]
+    prepared, _, _ = await prepare_request(
+        state,
+        client,
+        messages,
+        [],
+        current_question=current,
+        has_inflight=False,
+    )
+    assert client.summaries
+    summarized_str = json.dumps(client.summaries)
+    assert "turn 1 question" in summarized_str
+    assert "turn 2 question" not in summarized_str
+    assert "turn 3 question" not in summarized_str
+    assert prepared[-3:] == [
+        {"role": "user", "content": "turn 2 question"},
+        {"role": "assistant", "content": "turn 2 answer"},
+        current,
+    ]
+
+
+@pytest.mark.anyio
+async def test_compaction_allows_up_to_forty_percent_window(monkeypatch):
+    monkeypatch.setattr(settings, "workbench_compaction_max_tokens", None)
+    client = CountingClient(window=10000)
+    state = {}
+    current: ChatMessage = {"role": "user", "content": "q"}
+    messages: list[ChatMessage] = [
+        {"role": "system", "content": "policy"},
+        {"role": "user", "content": "large " * 6500},
+        current,
+    ]
+    await prepare_request(
+        state,
+        client,
+        messages,
+        [],
+        current_question=current,
+        has_inflight=False,
+    )
+    assert client.summaries
+    assert client.summaries[0]["max_output_tokens"] == 4000
+
+
+@pytest.mark.anyio
+async def test_compaction_env_override_takes_precedence(monkeypatch):
+    monkeypatch.setattr(settings, "workbench_compaction_max_tokens", 6000)
+    client = CountingClient(window=10000)
+    state = {}
+    current: ChatMessage = {"role": "user", "content": "q"}
+    messages: list[ChatMessage] = [
+        {"role": "system", "content": "policy"},
+        {"role": "user", "content": "large " * 6500},
+        current,
+    ]
+    await prepare_request(
+        state,
+        client,
+        messages,
+        [],
+        current_question=current,
+        has_inflight=False,
+    )
+    assert client.summaries
+    assert client.summaries[0]["max_output_tokens"] == 6000
+
+
+@pytest.mark.anyio
+async def test_summary_near_output_limit_still_fits_prepared_request(monkeypatch):
+    monkeypatch.setattr(settings, "workbench_compaction_max_tokens", None)
+
+    class LongSummaryClient(CountingClient):
+        async def complete(self, **kwargs):
+            self.summaries.append(kwargs)
+            return SimpleNamespace(
+                text="S" * (kwargs["max_output_tokens"] * 4 - 100),
+                tool_calls=[],
+            )
+
+    client = LongSummaryClient(window=10000)
+    current: ChatMessage = {"role": "user", "content": "current question"}
+    messages: list[ChatMessage] = [
+        {"role": "system", "content": "policy"},
+        {"role": "user", "content": "large old fact " * 3000},
+        current,
+    ]
+    _, _, tokens_after = await prepare_request(
+        {},
+        client,
+        messages,
+        [],
+        current_question=current,
+        has_inflight=False,
+    )
+    assert client.summaries[0]["max_output_tokens"] == 4000
+    assert tokens_after <= 10000 - 2500 - 256
+
+
+@pytest.mark.anyio
+async def test_summary_output_limit_shrinks_to_keep_recent_turns(monkeypatch):
+    monkeypatch.setattr(settings, "workbench_compaction_max_tokens", None)
+    monkeypatch.setattr(settings, "workbench_keep_recent_turns", 2)
+
+    class LongSummaryClient(CountingClient):
+        async def complete(self, **kwargs):
+            self.summaries.append(kwargs)
+            return SimpleNamespace(
+                text="S" * (kwargs["max_output_tokens"] * 4 - 100),
+                tool_calls=[],
+            )
+
+    client = LongSummaryClient(window=3000)
+    current: ChatMessage = {"role": "user", "content": "current question"}
+    recent: ChatMessage = {"role": "user", "content": "recent fact " * 500}
+    messages: list[ChatMessage] = [
+        {"role": "system", "content": "policy"},
+        {"role": "user", "content": "large old fact " * 1000},
+        {"role": "assistant", "content": "old answer"},
+        recent,
+        {"role": "assistant", "content": "recent answer"},
+        current,
+    ]
+    prepared, _, tokens_after = await prepare_request(
+        {},
+        client,
+        messages,
+        [],
+        current_question=current,
+        has_inflight=False,
+    )
+    assert client.summaries[0]["max_output_tokens"] < 1200
+    assert recent in prepared
+    assert tokens_after <= 3000 - 400 - 93

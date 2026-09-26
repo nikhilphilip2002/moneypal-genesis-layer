@@ -558,6 +558,99 @@ class TestSafety:
                 turns, assistant_text_of=lambda t: t["synthesis"]
             )
 
+    @pytest.mark.anyio
+    async def test_incomplete_response_is_rejected(self, monkeypatch):
+        from app.services.nlq.llm.client import LLMIncomplete
+
+        class FakeClient:
+            async def complete(self, **kwargs):
+                raise LLMIncomplete("truncated")
+
+        monkeypatch.setattr(
+            compaction.summarize.models, "client", lambda: FakeClient()
+        )
+        turns = [
+            {
+                "id": "t1",
+                "question": "q",
+                "synthesis": "a",
+                "status": "complete",
+            }
+        ]
+
+        with pytest.raises(compaction.summarize.SummarizationError):
+            await compaction.summarize.write_checkpoint(
+                turns, assistant_text_of=lambda t: t["synthesis"]
+            )
+
+    @pytest.mark.anyio
+    async def test_compaction_limit_bounds_max_output_tokens(self, monkeypatch):
+        captured_tokens = None
+
+        class FakeClient:
+            async def context_window(self):
+                return 2000
+
+            async def complete(self, **kwargs):
+                nonlocal captured_tokens
+                captured_tokens = kwargs.get("max_output_tokens")
+
+                class Result:
+                    text = "## Line of Enquiry\nX."
+                    prompt_tokens = 10
+                    completion_tokens = 5
+
+                return Result()
+
+        monkeypatch.setattr(
+            compaction.summarize.models, "client", lambda: FakeClient()
+        )
+        turns = [
+            {
+                "id": "t1",
+                "question": "q",
+                "synthesis": "a",
+                "status": "complete",
+            }
+        ]
+
+        await compaction.summarize.write_checkpoint(
+            turns, assistant_text_of=lambda t: t["synthesis"]
+        )
+        assert captured_tokens == 800
+
+    @pytest.mark.anyio
+    async def test_checkpoint_output_fits_alongside_prompt(self, monkeypatch):
+        captured_tokens = None
+
+        class FakeClient:
+            async def context_window(self):
+                return 2000
+
+            async def count_input_tokens(self, messages):
+                return 1500
+
+            async def complete(self, **kwargs):
+                nonlocal captured_tokens
+                captured_tokens = kwargs["max_output_tokens"]
+
+                class Result:
+                    text = "## Line of Enquiry\nX."
+
+                return Result()
+
+        monkeypatch.setattr(
+            compaction.summarize.models, "client", lambda: FakeClient()
+        )
+        turns = [
+            {"id": "t1", "question": "q", "synthesis": "a", "status": "complete"}
+        ]
+
+        await compaction.summarize.write_checkpoint(
+            turns, assistant_text_of=lambda t: t["synthesis"]
+        )
+        assert captured_tokens == 372
+
 
 class TestCheckpointEvents:
     """Compaction adds a view over the record; it never edits the durable events."""

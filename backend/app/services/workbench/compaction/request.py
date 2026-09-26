@@ -8,8 +8,9 @@ import logging
 from typing import Any
 
 from app.core.config import settings
-from app.services.nlq.llm.client import LLMContextOverflow, LLMError
+from app.services.nlq.llm.client import LLMContextOverflow, LLMError, LLMIncomplete
 from app.services.nlq.llm.messages import ChatMessage
+from app.services.workbench.compaction.budget import resolve_compaction_limit
 
 logger = logging.getLogger(__name__)
 
@@ -45,6 +46,7 @@ async def summarize_messages(
     *,
     previous: str,
     window: int,
+    max_output_tokens: int | None = None,
     timeout_s: float | None = None,
 ) -> str:
     source = messages
@@ -52,8 +54,12 @@ async def summarize_messages(
         source = [{"role": "system", "content": previous}, *messages]
     remaining = json.dumps(source, ensure_ascii=False, default=str)
     summary = ""
-    output_tokens = min(
-        settings.workbench_compaction_max_tokens, max(1, window // 8)
+    output_tokens = (
+        max_output_tokens
+        if max_output_tokens is not None
+        else resolve_compaction_limit(
+            window, settings.workbench_compaction_max_tokens
+        )
     )
     while remaining:
         width = min(len(remaining), max(1, window * 2))
@@ -80,6 +86,12 @@ async def summarize_messages(
                 except LLMContextOverflow:
                     logger.info(
                         "Reducing compaction chunk after a context overflow"
+                    )
+                except LLMIncomplete:
+                    if width <= 1:
+                        raise
+                    logger.info(
+                        "Reducing compaction chunk after incomplete output"
                     )
             if width <= 1:
                 raise LLMContextOverflow(
@@ -181,25 +193,58 @@ async def prepare_request(
 
     boundaries = exchange_boundaries(body)
     keep_groups = 2 if has_inflight else 1
-    candidates = [index for index in boundaries[1:-keep_groups] if index > cut]
-    if not candidates:
+    user_starts = [
+        index
+        for index, message in enumerate(body)
+        if message.get("role") == "user"
+    ]
+    keep_turns = max(1, settings.workbench_keep_recent_turns)
+    max_cut = (
+        user_starts[-keep_turns]
+        if len(user_starts) >= keep_turns + 1
+        else (user_starts[-1] if user_starts else len(body))
+    )
+    preferred_candidates = [
+        index for index in boundaries[1:-keep_groups] if cut < index <= max_cut
+    ]
+    fallback_candidates = [
+        index for index in boundaries[1:-keep_groups] if index > max(cut, max_cut)
+    ]
+    if not preferred_candidates and not fallback_candidates:
         raise LLMContextOverflow(
             "context window cannot fit the current question and newest tool exchange"
         )
-    summary_room = min(
-        settings.workbench_compaction_max_tokens, max(1, window // 8)
+    summary_limit = resolve_compaction_limit(
+        window, settings.workbench_compaction_max_tokens
     )
-    low, high = 0, len(candidates) - 1
+
+    async def first_fitting_candidate(
+        candidates: list[int], summary_room: int
+    ) -> int | None:
+        low, high = 0, len(candidates) - 1
+        chosen_candidate = None
+        while low <= high:
+            middle = (low + high) // 2
+            candidate = candidates[middle]
+            tokens = await client.count_input_tokens(request(candidate, ""), tools)
+            if tokens + summary_room + 32 <= limit:
+                chosen_candidate = candidate
+                high = middle - 1
+            else:
+                low = middle + 1
+        return chosen_candidate
+
     chosen = None
-    while low <= high:
-        middle = (low + high) // 2
-        candidate = candidates[middle]
-        tokens = await client.count_input_tokens(request(candidate, ""), tools)
-        if tokens + summary_room + 32 <= limit:
-            chosen = candidate
-            high = middle - 1
-        else:
-            low = middle + 1
+    summary_room = summary_limit
+    reduced_room = min(summary_limit, max(1, limit // 4))
+    for candidates in (preferred_candidates, fallback_candidates):
+        for room in (summary_limit, reduced_room):
+            chosen = await first_fitting_candidate(candidates, room)
+            if chosen is not None:
+                summary_room = room
+                break
+        if chosen is not None:
+            break
     if chosen is None:
         raise LLMContextOverflow(
             "context window cannot fit the system prompt, tools, and newest messages"
@@ -211,7 +256,12 @@ async def prepare_request(
         if index != question_index
     ]
     summary = await summarize_messages(
-        client, older, previous=summary, window=window, timeout_s=timeout_s
+        client,
+        older,
+        previous=summary,
+        window=window,
+        max_output_tokens=summary_room,
+        timeout_s=timeout_s,
     )
     prepared = request(chosen, summary)
     tokens_after = await client.count_input_tokens(prepared, tools)

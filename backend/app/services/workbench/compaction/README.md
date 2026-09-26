@@ -23,7 +23,8 @@ The cut point is selected by token size, so a few large exchanges can trigger co
 
 Input must fit the effective window minus output space and a small safety margin. Output
 is capped at the smaller of `WORKBENCH_RESERVE_TOKENS` and one quarter of the window.
-Summary requests are counted separately, chunked to fit, and bounded by the turn deadline.
+Summary requests are counted separately, chunked to fit, capped at 40% of the
+context window (up to `WORKBENCH_COMPACTION_MAX_TOKENS`), and bounded by the turn deadline.
 
 Endpoint formats: [llama.cpp server documentation](https://github.com/ggml-org/llama.cpp/blob/master/tools/server/README.md).
 
@@ -52,7 +53,7 @@ source for exact figures. Compaction uses the same deployment-controlled model e
 WORKBENCH_CONTEXT_WINDOW=32768       # fallback when meta.n_ctx is unavailable
 WORKBENCH_RESERVE_TOKENS=8192        # output budget, capped at window / 4
 WORKBENCH_COMPACTION_ENABLED=true
-WORKBENCH_COMPACTION_MAX_TOKENS=1200
+# WORKBENCH_COMPACTION_MAX_TOKENS=4096 # optional override; defaults to 40% of context window
 ```
 
 `WORKBENCH_KEEP_RECENT_TURNS` only applies to the older explicit `compact_now` helper.

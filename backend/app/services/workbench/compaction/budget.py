@@ -13,10 +13,29 @@ import math
 from typing import Any
 
 from app.core.config import settings
+from app.services.workbench.compaction.constants import (
+    CHARS_PER_TOKEN,
+    COMPACTION_WINDOW_RATIO,
+    COMPRESSED_SHARE,
+    SUMMARY_SHARE,
+)
 
-# Conservative: real tokenizers average better than 4 chars/token on English prose, so
-# dividing by 4 overestimates. Overestimating is the safe direction here.
-CHARS_PER_TOKEN = 4
+__all__ = [
+    "CHARS_PER_TOKEN",
+    "COMPACTION_WINDOW_RATIO",
+    "COMPRESSED_SHARE",
+    "SUMMARY_SHARE",
+    "budget_tokens",
+    "clip_to_tokens",
+    "estimate_tokens",
+    "measured_prompt_tokens",
+    "native_replay_tokens",
+    "newest_turn_replay_tokens",
+    "resolve_compaction_limit",
+    "should_compact",
+    "transcript_tokens",
+    "turn_tokens",
+]
 
 
 def estimate_tokens(text: str) -> int:
@@ -98,11 +117,21 @@ def budget_tokens() -> int:
     )
 
 
-# The compressed layers (checkpoint summary + session state) precede every live turn, so
-# they get a bounded share of the budget rather than an open claim on it. Half leaves
-# room for at least one substantial turn.
-COMPRESSED_SHARE = 0.5
-SUMMARY_SHARE = 0.25
+def resolve_compaction_limit(
+    context_window: int,
+    configured_limit: int | None = None,
+) -> int:
+    if configured_limit and configured_limit > 0:
+        target_limit = configured_limit
+    else:
+        target_limit = int(context_window * COMPACTION_WINDOW_RATIO)
+
+    if target_limit > context_window:
+        return context_window
+    if target_limit < 1:
+        return 1
+
+    return target_limit
 
 
 def clip_to_tokens(text: str, max_tokens: int) -> str:

@@ -19,15 +19,21 @@ from datetime import datetime, timezone
 from typing import Any
 
 from app.core.config import settings
+from app.services.nlq.llm.client import LLMIncomplete
+from app.services.nlq.llm.messages import ChatMessage
 from app.services.workbench import models
 from app.services.workbench.compaction import state as session_state
+from app.services.workbench.compaction.budget import (
+    resolve_compaction_limit,
+)
+from app.services.workbench.compaction.constants import TURN_TEXT_MAX_CHARS
 
 SYSTEM_PROMPT = (
     "You are a context summarization assistant for a banking intelligence console. "
     "Read the conversation and produce a structured checkpoint another model will use "
     "to continue it.\n"
     "Do NOT continue the conversation. Do NOT answer any question that appears in it. "
-    "Output only the checkpoint."
+    "Do NOT output analysis or reasoning. Output only the checkpoint."
 )
 
 _FORMAT = """## Line of Enquiry
@@ -78,10 +84,6 @@ Use this EXACT format:
 {_RULES}"""
 
 logger = logging.getLogger(__name__)
-
-# A checkpoint should not swallow the very context it exists to protect.
-TURN_TEXT_MAX_CHARS = 2000
-
 
 class SummarizationError(RuntimeError):
     """The summarizer failed or returned something unusable."""
@@ -134,15 +136,32 @@ async def write_checkpoint(
 
     # Always sensitive: a checkpoint may describe loan-book results, so it must stay on
     client = models.client()
-    result = await client.complete(
-        messages=[
-            {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": body},
-        ],
-        call_purpose="compaction",
-        prompt_version="workbench-compaction-v1",
-        max_output_tokens=settings.workbench_compaction_max_tokens,
+    window = (
+        await client.context_window()
+        if hasattr(client, "context_window")
+        else settings.workbench_context_window
     )
+    max_output_tokens = resolve_compaction_limit(
+        window, settings.workbench_compaction_max_tokens
+    )
+    messages: list[ChatMessage] = [
+        {"role": "system", "content": SYSTEM_PROMPT},
+        {"role": "user", "content": body},
+    ]
+    if callable(count_input_tokens := getattr(client, "count_input_tokens", None)):
+        prompt_tokens = await count_input_tokens(messages)
+        max_output_tokens = min(max_output_tokens, window - prompt_tokens - 128)
+        if max_output_tokens < 1:
+            raise SummarizationError("context window cannot fit the checkpoint prompt")
+    try:
+        result = await client.complete(
+            messages=messages,
+            call_purpose="compaction",
+            prompt_version="workbench-compaction-v1",
+            max_output_tokens=max_output_tokens,
+        )
+    except LLMIncomplete as exc:
+        raise SummarizationError(f"summarizer was truncated: {exc}") from exc
     text = (result.text or "").strip()
     if not text:
         raise SummarizationError("summarizer returned no text")

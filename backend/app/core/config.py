@@ -346,8 +346,11 @@ class Settings:
         self.workbench_compaction_enabled = (
             get("WORKBENCH_COMPACTION_ENABLED", "true") or "true"
         ).lower() in ("1", "true", "yes", "on")
-        self.workbench_compaction_max_tokens = int(
-            get("WORKBENCH_COMPACTION_MAX_TOKENS", "1200") or "1200"
+        raw_compaction_max_tokens = get("WORKBENCH_COMPACTION_MAX_TOKENS")
+        self.workbench_compaction_max_tokens: int | None = (
+            int(raw_compaction_max_tokens)
+            if raw_compaction_max_tokens
+            else None
         )
         self.workbench_history_write_legacy_exchanges = (
             get("WORKBENCH_HISTORY_WRITE_LEGACY_EXCHANGES", "true") or "true"
