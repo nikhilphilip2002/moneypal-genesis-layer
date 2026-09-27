@@ -26,14 +26,16 @@ const SEVERITY: Record<Severity, { icon: typeof Info; ring: string; text: string
 export default function BriefingCard({
   briefing,
   onDrilldown,
+  plain = false,
 }: {
   briefing: Briefing;
   onDrilldown?: (spec: QuerySpec, question: string) => void;
+  plain?: boolean;
 }) {
   return (
     <div className="w-full space-y-4">
       <header className="space-y-1">
-        <span className="text-xs text-muted-foreground">{briefing.label}</span>
+        {!plain && <span className="text-xs text-muted-foreground">{briefing.label}</span>}
         {briefing.headline && (
           <p className="text-sm leading-6 text-foreground/90">{briefing.headline}</p>
         )}
@@ -42,7 +44,7 @@ export default function BriefingCard({
       {briefing.signals.length > 0 && (
         <ul className="space-y-2">
           {briefing.signals.map((signal) => (
-            <SignalRow key={signal.id} signal={signal} onDrilldown={onDrilldown} />
+          <SignalRow key={signal.id} signal={signal} onDrilldown={onDrilldown} plain={plain} />
           ))}
         </ul>
       )}
@@ -58,14 +60,14 @@ export default function BriefingCard({
       )}
 
       {briefing.analyses.map((analysis) => (
-        <div key={analysis.id} className="rounded-lg border border-border/70 p-3">
-          <AnalysisCard analysis={analysis} onDrilldown={onDrilldown} />
+        <div key={analysis.id} className={cn(!plain && 'rounded-lg border border-border/70 p-3')}>
+          <AnalysisCard analysis={analysis} onDrilldown={onDrilldown} plain={plain} />
         </div>
       ))}
 
       {briefing.worklists.map((worklist) => (
-        <div key={worklist.id} className="rounded-lg border border-border/70 p-3">
-          <WorklistCard worklist={worklist} />
+        <div key={worklist.id} className={cn(!plain && 'rounded-lg border border-border/70 p-3')}>
+          <WorklistCard worklist={worklist} plain={plain} />
         </div>
       ))}
     </div>
@@ -75,9 +77,11 @@ export default function BriefingCard({
 function SignalRow({
   signal,
   onDrilldown,
+  plain,
 }: {
   signal: Signal;
   onDrilldown?: (spec: QuerySpec, question: string) => void;
+  plain?: boolean;
 }) {
   const [status, setStatus] = useState(signal.status);
   const [busy, setBusy] = useState(false);
@@ -97,7 +101,7 @@ function SignalRow({
   };
 
   return (
-    <li className={cn('flex items-start gap-2 rounded-lg border px-3 py-2', tone.ring)}>
+    <li className={cn('flex items-start gap-2 py-2', !plain && cn('rounded-lg border px-3', tone.ring))}>
       <Icon className={cn('mt-0.5 h-3.5 w-3.5 shrink-0', tone.text)} aria-hidden />
 
       <span className="min-w-0 flex-1 space-y-1">

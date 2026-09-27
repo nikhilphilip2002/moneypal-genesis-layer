@@ -46,21 +46,25 @@ const SUMMARY_FIELDS = ['dpd_days', 'total_overdue', 'principal_outstanding'] as
 export default function WorklistCard({
   worklist,
   onExport,
+  plain = false,
 }: {
   worklist: Worklist;
   onExport?: () => void;
+  plain?: boolean;
 }) {
   const alerts = worklist.items.filter((i) => i.severity === 'alert').length;
 
   return (
     <div className="w-full space-y-4">
       <header className="space-y-1">
-        <div className="flex items-baseline gap-2">
-          <h3 className="text-sm font-semibold text-foreground">{worklist.title}</h3>
-          {worklist.subtitle && (
-            <span className="text-xs text-muted-foreground">{worklist.subtitle}</span>
-          )}
-        </div>
+        {!plain && (
+          <div className="flex items-baseline gap-2">
+            <h3 className="text-sm font-semibold text-foreground">{worklist.title}</h3>
+            {worklist.subtitle && (
+              <span className="text-xs text-muted-foreground">{worklist.subtitle}</span>
+            )}
+          </div>
+        )}
         <p className="text-sm leading-6 text-foreground/90">
           {worklist.items.length === 0
             ? 'No account triggered any of this list’s rules.'
@@ -81,17 +85,17 @@ export default function WorklistCard({
       {worklist.items.length > 0 && (
         <ol className="space-y-2">
           {worklist.items.map((item) => (
-            <Row key={item.account} item={item} columns={worklist.columns} />
+            <Row key={item.account} item={item} columns={worklist.columns} plain={plain} />
           ))}
         </ol>
       )}
 
-      <Footer worklist={worklist} onExport={onExport} />
+      <Footer worklist={worklist} onExport={onExport} plain={plain} />
     </div>
   );
 }
 
-function Row({ item, columns }: { item: WorklistItem; columns: Worklist['columns'] }) {
+function Row({ item, columns, plain }: { item: WorklistItem; columns: Worklist['columns']; plain?: boolean }) {
   const [open, setOpen] = useState(false);
   const tone = SEVERITY[item.severity];
   const Icon = tone.icon;
@@ -99,14 +103,14 @@ function Row({ item, columns }: { item: WorklistItem; columns: Worklist['columns
   const branch = String(item.fields.branch ?? '');
 
   return (
-    <li className={cn('rounded-lg border', tone.ring)}>
+    <li className={cn(!plain && cn('rounded-lg border', tone.ring))}>
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
         aria-expanded={open}
         className={cn(
-          'flex w-full items-start gap-3 px-3 py-2 text-left transition-colors',
-          'hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+          'flex w-full items-start gap-3 py-2 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+          plain ? 'hover:text-primary' : 'px-3 hover:bg-muted/50',
         )}
       >
         <span className="mt-0.5 w-6 shrink-0 text-xs font-medium tabular-nums text-muted-foreground">
@@ -160,7 +164,7 @@ function Row({ item, columns }: { item: WorklistItem; columns: Worklist['columns
         )}
       </button>
 
-      {open && <ScoreBreakdown item={item} columns={columns} />}
+      {open && <ScoreBreakdown item={item} columns={columns} plain={plain} />}
     </li>
   );
 }
@@ -168,12 +172,14 @@ function Row({ item, columns }: { item: WorklistItem; columns: Worklist['columns
 function ScoreBreakdown({
   item,
   columns,
+  plain,
 }: {
   item: WorklistItem;
   columns: Worklist['columns'];
+  plain?: boolean;
 }) {
   return (
-    <div className="space-y-3 border-t border-border/60 px-3 py-2">
+    <div className={cn('space-y-3 py-2', !plain && 'border-t border-border/60 px-3')}>
       <div className="space-y-1">
         <p className="flex items-center gap-1.5 text-xs font-medium text-foreground/80">
           <Scale className="h-3 w-3" aria-hidden />
@@ -214,7 +220,7 @@ function ScoreBreakdown({
   );
 }
 
-function Footer({ worklist, onExport }: { worklist: Worklist; onExport?: () => void }) {
+function Footer({ worklist, onExport, plain }: { worklist: Worklist; onExport?: () => void; plain?: boolean }) {
   const [showGaps, setShowGaps] = useState(false);
 
   return (
@@ -225,8 +231,8 @@ function Footer({ worklist, onExport }: { worklist: Worklist; onExport?: () => v
             type="button"
             onClick={onExport}
             className={cn(
-              'inline-flex items-center gap-1.5 rounded-full border border-border/70 bg-muted/60',
-              'px-3 py-1 text-xs text-foreground/80 transition-colors hover:bg-muted',
+              'inline-flex items-center gap-1.5 py-1 text-xs text-foreground/80 transition-colors hover:text-foreground',
+              !plain && 'rounded-full border border-border/70 bg-muted/60 px-3 hover:bg-muted',
               'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
             )}
           >

@@ -25,13 +25,6 @@ import {
   sourceLabel,
 } from '@/lib/workbench-ui';
 
-// One conversational turn: the question, the route the orchestrator chose, an optional
-// merged synthesis lead, and a card per source. Cards stream in as each source returns, so
-// this renders progressively — a pending source shows a spinner rather than blocking.
-//
-// Every non-card message here — loading, refusal, error, partial, clarification — is a
-// StatusRow, so an icon never sits half a line below the text it belongs to.
-
 export type WorkbenchTurnData = {
   id: string;
   question: string;
@@ -77,12 +70,32 @@ export default function WorkbenchTurn({ turn, onAsk }: { turn: WorkbenchTurnData
             !card.query_id && STREAM_RENDERABLE_CARD_TYPES.has(card.card_type),
           ),
         ]
-      : [];
-  const backgroundQueries = hasAttribution
-    ? (turn.queryRegistry ?? []).filter((record) =>
-        record.status !== 'success' || !visualQueryIds.includes(record.query_id),
-      )
-    : [];
+      : turn.done
+        ? turn.cards.filter((card) => STREAM_RENDERABLE_CARD_TYPES.has(card.card_type))
+        : [];
+  const finalQueryIds = visualQueryIds.length > 0 ? visualQueryIds : turn.answer?.active_query_ids ?? [];
+  const finalQueries = finalQueryIds.map((queryId) => {
+    const card = cardsByQueryId.get(queryId);
+    const chart = card?.card_type === 'chart' ? card.payload as ChartSpec : undefined;
+    const lineage = chart?.lineage ?? turn.queryRegistry?.find((query) => query.query_id === queryId)?.lineage;
+    return { queryId, chart, lineage };
+  }).filter((query) => query.lineage?.display_sql || query.lineage?.sql);
+  for (const card of supportingCards) {
+    const charts = card.card_type === 'chart'
+      ? [card.payload as ChartSpec]
+      : card.card_type === 'analysis'
+        ? (card.payload as AnalysisResult).charts
+        : card.card_type === 'briefing'
+          ? (card.payload as Briefing).analyses.flatMap((analysis) => analysis.charts)
+          : [];
+    for (const chart of charts) {
+      const lineage = chart.lineage;
+      const sql = lineage?.display_sql || lineage?.sql;
+      if (sql && !finalQueries.some((query) => (query.lineage?.display_sql || query.lineage?.sql) === sql)) {
+        finalQueries.push({ queryId: card.query_id ?? chart.title, chart, lineage });
+      }
+    }
+  }
   // Model deltas are provisional. During generation the execution trace carries progress;
   // after finalization the reconciled answer is the only user-facing narrative.
   const modelMessages = turn.done && !turn.answer && !turn.synthesis
@@ -94,7 +107,7 @@ export default function WorkbenchTurn({ turn, onAsk }: { turn: WorkbenchTurnData
   return (
     <section className="space-y-5">
       <div className="flex justify-end">
-        <div className="max-w-[88%] rounded-2xl rounded-br-md border border-border/50 bg-muted px-4 py-2.5 text-sm leading-6 text-foreground shadow-none sm:max-w-[78%]">
+        <div className="max-w-[88%] text-right text-sm leading-6 text-foreground sm:max-w-[78%]">
           {turn.question}
         </div>
       </div>
@@ -103,6 +116,7 @@ export default function WorkbenchTurn({ turn, onAsk }: { turn: WorkbenchTurnData
         <div className="min-w-0 flex-1 space-y-3">
           {(!turn.done || (turn.executionTrace?.length ?? 0) > 0) && (
             <ExecutionTrace
+              key={turn.done ? 'complete' : 'active'}
               updates={turn.executionTrace ?? []}
               active={!turn.done}
               startedAt={turn.startedAt}
@@ -123,7 +137,7 @@ export default function WorkbenchTurn({ turn, onAsk }: { turn: WorkbenchTurnData
           )}
 
           {turn.answer?.facts && turn.answer.facts.length > 0 && (
-            <div className="rounded-xl border border-border/60 bg-muted/25 px-3 py-2.5" aria-label="Verified facts">
+            <div aria-label="Verified facts">
               <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
                 Verified facts
               </p>
@@ -185,20 +199,9 @@ export default function WorkbenchTurn({ turn, onAsk }: { turn: WorkbenchTurnData
             <CardBody key={card.query_id ?? `${card.source}-${index}`} card={card} onAsk={onAsk} />
           ))}
 
-          {backgroundQueries.length > 0 && (
-            <BackgroundQueryDrawer
-              queries={backgroundQueries}
-              allQueries={turn.queryRegistry ?? []}
-              cardsByQueryId={cardsByQueryId}
-              exclusions={turn.answer?.excluded_queries ?? []}
-              visualQueryIds={visualQueryIds}
-              onAsk={onAsk}
-            />
-          )}
-
           {turn.answer?.status === 'partial' &&
             (turn.answer.unavailable_sources.length > 0 || turn.answer.limitations?.length > 0) && (
-            <StatusRow icon={AlertTriangle} tone="warning" surface className="text-muted-foreground">
+            <StatusRow icon={AlertTriangle} tone="warning" className="text-muted-foreground">
               Answered with available evidence.{' '}
               {turn.answer.unavailable_sources.length > 0 &&
                 `${turn.answer.unavailable_sources.map((item) => sourceLabel(item.source)).join(', ')} could not contribute. `}
@@ -207,13 +210,13 @@ export default function WorkbenchTurn({ turn, onAsk }: { turn: WorkbenchTurnData
           )}
 
           {turn.refusal && !hasFinalAnswer && (
-            <StatusRow icon={Ban} tone="warning" surface label="Not answerable:">
+            <StatusRow icon={Ban} tone="warning" label="Not answerable:">
               {turn.refusal.message || 'That request cannot be handled here.'}
             </StatusRow>
           )}
 
           {turn.error && (
-            <StatusRow icon={AlertTriangle} tone="danger" surface>
+            <StatusRow icon={AlertTriangle} tone="danger">
               <span>{turn.error.message}</span>
               {turn.error.code && (
                 <span className="ml-1 font-mono text-[10px] text-muted-foreground">
@@ -224,8 +227,8 @@ export default function WorkbenchTurn({ turn, onAsk }: { turn: WorkbenchTurnData
           )}
 
           {turn.partial && !turn.error && (
-            <StatusRow icon={AlertTriangle} tone="warning" surface className="text-muted-foreground">
-              This response was interrupted. Completed answer cards were retained.
+            <StatusRow icon={AlertTriangle} tone="warning" className="text-muted-foreground">
+              This response was interrupted. Completed results were retained.
             </StatusRow>
           )}
 
@@ -240,79 +243,19 @@ export default function WorkbenchTurn({ turn, onAsk }: { turn: WorkbenchTurnData
             </div>
           )}
 
+          {finalQueries.map(({ queryId, chart, lineage }, index) => (
+            <LineagePanel
+              key={queryId || index}
+              chart={chart}
+              lineage={lineage}
+              queryId={finalQueries.length > 1 ? queryId || `Query ${index + 1}` : undefined}
+              plain
+            />
+          ))}
+
         </div>
       </div>
     </section>
-  );
-}
-
-function BackgroundQueryDrawer({
-  queries,
-  allQueries,
-  cardsByQueryId,
-  exclusions,
-  visualQueryIds,
-  onAsk,
-}: {
-  queries: NonNullable<WorkbenchTurnData['queryRegistry']>;
-  allQueries: NonNullable<WorkbenchTurnData['queryRegistry']>;
-  cardsByQueryId: Map<string, CardData>;
-  exclusions: NonNullable<WorkbenchAnswer['excluded_queries']>;
-  visualQueryIds: string[];
-  onAsk: (q: string) => void;
-}) {
-  const reasons = new Map(exclusions.map((item) => [item.query_id, item]));
-  return (
-    <details className="rounded-xl border border-border/60 bg-muted/15">
-      <summary className="cursor-pointer select-none px-3 py-2.5 text-xs font-medium text-muted-foreground">
-        View {queries.length} background {queries.length === 1 ? 'query' : 'queries'} explored by assistant
-      </summary>
-      <div className="space-y-3 border-t border-border/60 p-3">
-        {queries.map((query) => {
-          const exclusion = reasons.get(query.query_id);
-          const candidateCard = cardsByQueryId.get(query.query_id);
-          const card = candidateCard?.attempt_id === query.attempt_id
-            ? candidateCard
-            : undefined;
-          const derivedVisual = allQueries.find((candidate) =>
-            visualQueryIds.includes(candidate.query_id)
-            && candidate.source_query_id === query.query_id
-          );
-          return (
-            <div key={query.attempt_id} className="space-y-2 rounded-lg border border-border/50 bg-background/60 p-3">
-              <div className="flex flex-wrap items-center gap-2 text-xs">
-                <code className="text-[11px] text-muted-foreground">{query.query_id}</code>
-                <Badge variant="outline" className={SOURCE_BADGE}>{query.status}</Badge>
-                {query.row_count != null && (
-                  <span className="text-muted-foreground">
-                    {query.row_count} {query.row_count === 1 ? 'row' : 'rows'}
-                  </span>
-                )}
-              </div>
-              <p className="text-xs leading-5 text-muted-foreground">
-                {exclusion?.reason || (
-                  query.status === 'success'
-                    ? 'Supporting result retained outside the primary visual zone.'
-                    : `Query ended with status ${query.status}.`
-                )}
-              </p>
-              {derivedVisual && (
-                <p className="text-[11px] text-muted-foreground">
-                  Visualized as <code>{derivedVisual.query_id}</code> in the primary result.
-                </p>
-              )}
-              {query.lineage ? (
-                <LineagePanel lineage={query.lineage} sourceLabel="Loan book" />
-              ) : card && derivedVisual && card.card_type === 'chart' ? (
-                <LineagePanel chart={card.payload as ChartSpec} sourceLabel="Loan book" />
-              ) : card ? (
-                <CardBody card={card} onAsk={onAsk} />
-              ) : null}
-            </div>
-          );
-        })}
-      </div>
-    </details>
   );
 }
 
@@ -333,16 +276,16 @@ function CardBody({ card, onAsk }: { card: CardData; onAsk: (q: string) => void 
   if (card.card_type === 'chart') {
     const chart = card.payload as ChartSpec;
     return (
-      <WorkbenchCard source={card.source} title={chart.title || 'Result'} subtitle={chart.subtitle ?? undefined}>
-        <ChartRenderer chart={chart} hideHeader />
+      <WorkbenchCard source={card.source} title={chart.title || 'Result'}>
+        <ChartRenderer chart={chart} hideHeader hideSummary plain />
         {/* In the workbench a chip re-asks in words rather than executing the spec
             directly: the turn has to go through the router so it lands in history with its
             sources, exactly like any other question the user types. */}
         <NextQuestions
           steps={chart.next_steps ?? []}
           onPick={(step) => onAsk(step.question)}
+          plain
         />
-        <LineagePanel chart={chart} sourceLabel="Loan book" />
       </WorkbenchCard>
     );
   }
@@ -361,6 +304,7 @@ function CardBody({ card, onAsk }: { card: CardData; onAsk: (q: string) => void 
         <AnalysisCard
           analysis={analysis}
           onDrilldown={(_spec: QuerySpec, question: string) => onAsk(question)}
+          plain
         />
       </WorkbenchCard>
     );
@@ -375,6 +319,7 @@ function CardBody({ card, onAsk }: { card: CardData; onAsk: (q: string) => void 
         <BriefingCard
           briefing={briefing}
           onDrilldown={(_spec: QuerySpec, question: string) => onAsk(question)}
+          plain
         />
       </WorkbenchCard>
     );
@@ -391,6 +336,7 @@ function CardBody({ card, onAsk }: { card: CardData; onAsk: (q: string) => void 
         <WorklistCard
           worklist={worklist}
           onExport={() => exportWorklist(worklist)}
+          plain
         />
       </WorkbenchCard>
     );
@@ -504,7 +450,7 @@ function CardBody({ card, onAsk }: { card: CardData; onAsk: (q: string) => void 
   if (card.card_type === 'clarify') {
     const { question, suggestions } = card.payload as { question: string; suggestions?: string[] };
     return (
-      <WorkbenchCard source={card.source} title="Clarification needed" collapsible={false}>
+      <WorkbenchCard source={card.source} title="Clarification needed">
         <StatusRow icon={HelpCircle} tone="info" label="Clarification needed:">
           {question}
         </StatusRow>
@@ -524,7 +470,7 @@ function CardBody({ card, onAsk }: { card: CardData; onAsk: (q: string) => void 
   if (card.card_type === 'refusal') {
     const { message, examples } = card.payload as { message: string; examples?: string[] };
     return (
-      <WorkbenchCard source={card.source} title="Not answerable" collapsible={false}>
+      <WorkbenchCard source={card.source} title="Not answerable">
         <StatusRow icon={Ban} tone="warning" label="Not answerable:">
           {message}
         </StatusRow>
@@ -543,7 +489,7 @@ function CardBody({ card, onAsk }: { card: CardData; onAsk: (q: string) => void 
 
   // error
   return (
-    <WorkbenchCard source={card.source} title="Error" collapsible={false}>
+    <WorkbenchCard source={card.source} title="Error">
       <StatusRow icon={AlertTriangle} tone="danger">
         {(card.payload as { message?: string }).message || 'Something went wrong.'}
       </StatusRow>

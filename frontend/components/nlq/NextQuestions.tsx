@@ -22,14 +22,16 @@ const ICONS = {
 export default function NextQuestions({
   steps,
   onPick,
+  plain = false,
 }: {
   steps: DrillStep[];
   onPick: (step: DrillStep) => void;
+  plain?: boolean;
 }) {
   if (!steps.length) return null;
 
   return (
-    <div className="mt-3 rounded-xl border border-border/60 bg-muted/25 px-3.5 py-3">
+    <div className={cn('mt-3', !plain && 'rounded-xl border border-border/60 bg-muted/25 px-3.5 py-3')}>
       <div className="mb-2 flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
         <Sparkles className="size-3.5 text-primary" aria-hidden />
         Suggested next
@@ -45,9 +47,8 @@ export default function NextQuestions({
               onClick={() => onPick(step)}
               title={step.question}
               className={cn(
-                'inline-flex items-center gap-1.5 rounded-full border border-border/70 bg-muted/60',
-                'px-3 py-1 text-xs text-foreground/80 transition-colors',
-                'hover:bg-muted hover:text-foreground',
+                'inline-flex items-center gap-1.5 text-xs text-foreground/80 transition-colors hover:text-foreground',
+                plain ? 'py-1 pr-3' : 'rounded-full border border-border/70 bg-muted/60 px-3 py-1 hover:bg-muted',
                 'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
                 // "Why" and "show the accounts" are the two moves that end a chain in
                 // something useful, so they read as the primary offers.

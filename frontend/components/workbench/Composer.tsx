@@ -178,9 +178,6 @@ export default function Composer({
   }, [externalSourcesEnabled, onPin, pinned, sources]);
 
   return (
-    // Focus is neutral by design: a blue rim around a permanently visible input reads as an
-    // alert and competes with the response cards below it. Border width never changes, and
-    // the ring is drawn outside the box, so focusing shifts nothing.
     <div
       ref={shellRef}
       className="relative rounded-2xl border border-border/80 bg-card shadow-[0_10px_35px_rgba(0,69,129,0.08)] transition-colors focus-within:border-foreground/25 focus-within:ring-2 focus-within:ring-foreground/[0.07]">

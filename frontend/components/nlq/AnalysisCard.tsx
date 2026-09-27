@@ -40,21 +40,25 @@ const SEVERITY: Record<Severity, { icon: typeof Info; ring: string; text: string
 export default function AnalysisCard({
   analysis,
   onDrilldown,
+  plain = false,
 }: {
   analysis: AnalysisResult;
   onDrilldown?: (spec: QuerySpec, question: string) => void;
+  plain?: boolean;
 }) {
   const [expanded, setExpanded] = useState(false);
 
   return (
     <div className="w-full space-y-4">
       <header className="space-y-1">
-        <div className="flex items-baseline gap-2">
-          <h3 className="text-sm font-semibold text-foreground">{analysis.title}</h3>
-          {analysis.subtitle && (
-            <span className="text-xs text-muted-foreground">{analysis.subtitle}</span>
-          )}
-        </div>
+        {!plain && (
+          <div className="flex items-baseline gap-2">
+            <h3 className="text-sm font-semibold text-foreground">{analysis.title}</h3>
+            {analysis.subtitle && (
+              <span className="text-xs text-muted-foreground">{analysis.subtitle}</span>
+            )}
+          </div>
+        )}
         {analysis.headline && (
           <p className="text-sm leading-6 text-foreground/90">{analysis.headline}</p>
         )}
@@ -67,6 +71,7 @@ export default function AnalysisCard({
               key={`${finding.step_id}-${finding.label}`}
               finding={finding}
               onDrilldown={onDrilldown}
+              plain={plain}
             />
           ))}
         </ul>
@@ -92,8 +97,8 @@ export default function AnalysisCard({
             type="button"
             onClick={() => setExpanded((open) => !open)}
             className={cn(
-              'inline-flex items-center gap-1.5 rounded-full border border-border/70 bg-muted/60',
-              'px-3 py-1 text-xs text-foreground/80 transition-colors hover:bg-muted',
+              'inline-flex items-center gap-1.5 py-1 text-xs text-foreground/80 transition-colors hover:text-foreground',
+              !plain && 'rounded-full border border-border/70 bg-muted/60 px-3 hover:bg-muted',
               'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
             )}
             aria-expanded={expanded}
@@ -105,7 +110,7 @@ export default function AnalysisCard({
           {expanded && (
             <div className="grid gap-4 lg:grid-cols-2">
               {analysis.charts.map((chart, index) => (
-                <StepChart key={`${chart.title}-${index}`} chart={chart} onDrilldown={onDrilldown} />
+                <StepChart key={`${chart.title}-${index}`} chart={chart} onDrilldown={onDrilldown} plain={plain} />
               ))}
             </div>
           )}
@@ -118,9 +123,11 @@ export default function AnalysisCard({
 function FindingRow({
   finding,
   onDrilldown,
+  plain,
 }: {
   finding: Finding;
   onDrilldown?: (spec: QuerySpec, question: string) => void;
+  plain?: boolean;
 }) {
   const tone = SEVERITY[finding.severity];
   const Icon = tone.icon;
@@ -145,16 +152,15 @@ function FindingRow({
           type="button"
           onClick={() => onDrilldown?.(finding.spec, finding.question || finding.label)}
           className={cn(
-            'flex w-full items-start gap-2 rounded-lg border px-3 py-2 text-left transition-colors',
-            'hover:bg-muted/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-            tone.ring,
+            'flex w-full items-start gap-2 py-2 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+            plain ? 'hover:text-primary' : cn('rounded-lg border px-3 hover:bg-muted/70', tone.ring),
           )}
           title={`See the query behind "${finding.label}"`}
         >
           {body}
         </button>
       ) : (
-        <div className={cn('flex items-start gap-2 rounded-lg border px-3 py-2', tone.ring)}>
+        <div className={cn('flex items-start gap-2 py-2', !plain && cn('rounded-lg border px-3', tone.ring))}>
           {body}
         </div>
       )}
@@ -165,16 +171,19 @@ function FindingRow({
 function StepChart({
   chart,
   onDrilldown,
+  plain,
 }: {
   chart: ChartSpec;
   onDrilldown?: (spec: QuerySpec, question: string) => void;
+  plain?: boolean;
 }) {
   return (
-    <div className="min-w-0 rounded-xl border border-border/70 bg-background/40 p-3.5">
-      <ChartRenderer chart={chart} onDrilldown={(spec) => onDrilldown?.(spec, chart.title)} />
+    <div className={cn('min-w-0', !plain && 'rounded-xl border border-border/70 bg-background/40 p-3.5')}>
+      <ChartRenderer chart={chart} onDrilldown={(spec) => onDrilldown?.(spec, chart.title)} plain={plain} hideSummary={plain} />
       <NextQuestions
         steps={chart.next_steps ?? []}
         onPick={(step) => onDrilldown?.(step.spec, step.question)}
+        plain={plain}
       />
     </div>
   );

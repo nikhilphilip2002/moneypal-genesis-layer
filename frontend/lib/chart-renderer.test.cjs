@@ -6,7 +6,7 @@ const ts = require('typescript');
 const React = require('react');
 const { renderToStaticMarkup } = require('react-dom/server');
 
-function renderChart(chart) {
+function renderChart(chart, props = {}) {
   const rendered = { bars: [], lines: [], areas: [], charts: [], legends: [] };
   const recharts = new Proxy({}, {
     get: (_, name) => (props) => {
@@ -48,7 +48,7 @@ function renderChart(chart) {
     return exports;
   }
   const ChartRenderer = load(`${__dirname}/../components/nlq/ChartRenderer.tsx`).default;
-  renderToStaticMarkup(React.createElement(ChartRenderer, { chart, hideHeader: true }));
+  rendered.markup = renderToStaticMarkup(React.createElement(ChartRenderer, { chart, hideHeader: true, ...props }));
   return rendered;
 }
 
@@ -64,6 +64,20 @@ const groupedChart = {
     { week_number: 32, scheme_code: 'MSME', total_collected: 15 },
   ],
 };
+
+test('plain chart renders values without result cards or generated summary', () => {
+  const chart = {
+    ...groupedChart,
+    chart_type: 'kpi',
+    series: [{ field: 'total_collected', label: 'Collected', unit: 'inr' }],
+    rows: [{ total_collected: 19 }],
+    summary: 'Heatmap derived from query example:q1.',
+  };
+  const { markup } = renderChart(chart, { plain: true, hideSummary: true });
+
+  assert.match(markup, /Collected/);
+  assert.doesNotMatch(markup, /What this shows|Heatmap derived from query|rounded-2xl border/);
+});
 
 test('grouped bars render one series per group against shared categories', () => {
   const rendered = renderChart(groupedChart);

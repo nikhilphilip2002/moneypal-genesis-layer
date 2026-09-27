@@ -35,6 +35,7 @@ type Props = {
   onDrilldown?: (spec: NonNullable<ChartSpec['drilldown']>) => void;
   hideHeader?: boolean;
   hideSummary?: boolean;
+  plain?: boolean;
 };
 
 type TooltipDatum = Record<string, unknown>;
@@ -52,7 +53,7 @@ type TooltipContent = {
   payload?: readonly TooltipEntry[];
 };
 
-export default function ChartRenderer({ chart, onDrilldown, hideHeader = false, hideSummary = false }: Props) {
+export default function ChartRenderer({ chart, onDrilldown, hideHeader = false, hideSummary = false, plain = false }: Props) {
   const [asTable, setAsTable] = useState(false);
   const [expanded, setExpanded] = useState(false);
   const [expandedAsTable, setExpandedAsTable] = useState(false);
@@ -103,11 +104,11 @@ export default function ChartRenderer({ chart, onDrilldown, hideHeader = false, 
       )}
 
       {chart.rows.length === 0 ? (
-        <EmptyState summary={chart.summary} />
+        <EmptyState summary={chart.summary} plain={plain} />
       ) : showTable ? (
-        <TableView chart={chart} />
+        <TableView chart={chart} plain={plain} />
       ) : (
-        <ChartBody chart={chart} mode={mode} onDrilldown={onDrilldown} />
+        <ChartBody chart={chart} mode={mode} onDrilldown={onDrilldown} plain={plain} />
       )}
 
       {chart.summary && !hideSummary && (
@@ -149,9 +150,9 @@ export default function ChartRenderer({ chart, onDrilldown, hideHeader = false, 
           <div className="min-h-0 flex-1 overflow-auto p-5 sm:p-7">
             <div className="mx-auto w-full max-w-6xl">
               {expandedAsTable ? (
-                <TableView chart={chart} />
+                <TableView chart={chart} plain={plain} />
               ) : (
-                <ChartBody chart={chart} mode={mode} onDrilldown={onDrilldown} />
+                <ChartBody chart={chart} mode={mode} onDrilldown={onDrilldown} plain={plain} />
               )}
               {chart.summary && !hideSummary && (
                 <p className="mt-5 rounded-xl border border-border/60 bg-muted/40 px-4 py-3 text-sm leading-6 text-foreground/90">
@@ -167,11 +168,11 @@ export default function ChartRenderer({ chart, onDrilldown, hideHeader = false, 
 }
 
 function ChartBody({
-  chart, mode, onDrilldown,
+  chart, mode, onDrilldown, plain,
 }: Props & { mode: 'light' | 'dark' }) {
   switch (chart.chart_type) {
     case 'kpi':
-      return <KpiTiles chart={chart} />;
+      return <KpiTiles chart={chart} plain={plain} />;
     case 'line':
     case 'area':
     case 'stacked_area':
@@ -180,11 +181,11 @@ function ChartBody({
     case 'ranking':
     case 'grouped_bar':
     case 'stacked_bar':
-      return <BarView chart={chart} mode={mode} onDrilldown={onDrilldown} />;
+      return <BarView chart={chart} mode={mode} onDrilldown={onDrilldown} plain={plain} />;
     case 'donut':
-      return <DonutView chart={chart} mode={mode} />;
+      return <DonutView chart={chart} mode={mode} plain={plain} />;
     case 'variance':
-      return <VarianceView chart={chart} mode={mode} />;
+      return <VarianceView chart={chart} mode={mode} plain={plain} />;
     case 'waterfall':
       return <WaterfallView chart={chart} mode={mode} />;
     case 'dumbbell':
@@ -196,7 +197,7 @@ function ChartBody({
     case 'small_multiples':
       return <SmallMultiplesView chart={chart} mode={mode} />;
     case 'table':
-      return <TableView chart={chart} />;
+      return <TableView chart={chart} plain={plain} />;
     default:
       // A chart_type the backend knows and this renderer does not is a bug, not a
       // preference. It used to fall through to a table silently, which is how `heatmap`
@@ -204,7 +205,7 @@ function ChartBody({
       if (process.env.NODE_ENV !== 'production') {
         console.error(`ChartRenderer: no view for chart_type "${chart.chart_type}"`);
       }
-      return <TableView chart={chart} />;
+      return <TableView chart={chart} plain={plain} />;
   }
 }
 
@@ -282,16 +283,17 @@ function usePivot(chart: ChartSpec): Wide {
 // ─── KPI ───
 // A hero number, not a chart. No plot means no hover layer is owed.
 
-function KpiTiles({ chart }: { chart: ChartSpec }) {
+function KpiTiles({ chart, plain }: { chart: ChartSpec; plain?: boolean }) {
   const row = chart.rows[0] ?? {};
+  const Tile = plain ? 'div' : Card;
   return (
-    <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+    <div className={cn('grid', plain ? 'gap-x-6 gap-y-4 sm:grid-cols-2 lg:grid-cols-3' : 'gap-3 sm:grid-cols-2 xl:grid-cols-5')}>
       {chart.series.map((series) => (
-        <Card
+        <Tile
           key={series.field}
-          className="relative min-w-[12rem] overflow-hidden rounded-2xl border-border/60 bg-muted/20 p-5 shadow-sm"
+          className={cn('relative', plain ? 'min-w-0' : 'min-w-[12rem] overflow-hidden rounded-2xl border border-border/60 bg-muted/20 p-5 shadow-sm')}
         >
-          <span aria-hidden className="absolute inset-y-0 left-0 w-1 bg-muted-foreground/30" />
+          {!plain && <span aria-hidden className="absolute inset-y-0 left-0 w-1 bg-muted-foreground/30" />}
           <div className="text-[11px] font-semibold uppercase tracking-[0.13em] text-muted-foreground">
             {series.label}
           </div>
@@ -299,7 +301,7 @@ function KpiTiles({ chart }: { chart: ChartSpec }) {
             {formatValue(row[series.field], series.unit)}
           </div>
           {chart.subtitle && <div className="mt-3 text-xs text-muted-foreground">{chart.subtitle}</div>}
-        </Card>
+        </Tile>
       ))}
     </div>
   );
@@ -425,7 +427,7 @@ function FoldedNote({ folded }: { folded: number }) {
 // ─── Bar / ranking ───
 
 function BarView({
-  chart, mode, onDrilldown,
+  chart, mode, onDrilldown, plain,
 }: Props & { mode: 'light' | 'dark' }) {
   const palette = ink(mode);
   const { rows: pivotedRows, series, folded: foldedSeries } = usePivot(chart);
@@ -465,6 +467,7 @@ function BarView({
         value={rows[0]?.[item.field]}
         unit={item.unit}
         mode={mode}
+        plain={plain}
       />
     );
   }
@@ -567,12 +570,12 @@ function BarView({
 }
 
 function SingleCategoryView({
-  label, value, unit, mode,
-}: { label: string; value: unknown; unit: string; mode: 'light' | 'dark' }) {
+  label, value, unit, mode, plain,
+}: { label: string; value: unknown; unit: string; mode: 'light' | 'dark'; plain?: boolean }) {
   const color = seriesColor(0, mode);
   return (
     <div
-      className="overflow-hidden rounded-2xl border border-border/60 bg-muted/20 p-4 sm:p-5"
+      className={cn(!plain && 'overflow-hidden rounded-2xl border border-border/60 bg-muted/20 p-4 sm:p-5')}
       role="img"
       aria-label={`${label}: ${formatValue(value, unit)}`}
     >
@@ -599,7 +602,7 @@ function SingleCategoryView({
 // Part-to-whole at a glance, never for comparing close values — which is why the backend
 // only picks this when the question asked for a mix and there are six slices or fewer.
 
-function DonutView({ chart, mode }: { chart: ChartSpec; mode: 'light' | 'dark' }) {
+function DonutView({ chart, mode, plain }: { chart: ChartSpec; mode: 'light' | 'dark'; plain?: boolean }) {
   const palette = ink(mode);
   const field = chart.series[0]?.field ?? '';
   const unit = chart.series[0]?.unit ?? 'count';
@@ -615,7 +618,7 @@ function DonutView({ chart, mode }: { chart: ChartSpec; mode: 'light' | 'dark' }
   const compressed = hasCompressedValues(data, ['value']);
 
   return (
-    <div className="flex flex-col items-center gap-4 rounded-2xl border border-border/60 bg-muted/20 p-3 sm:flex-row sm:items-center sm:p-4">
+    <div className={cn('flex flex-col items-center gap-4 sm:flex-row sm:items-center', !plain && 'rounded-2xl border border-border/60 bg-muted/20 p-3 sm:p-4')}>
       <div className="relative h-[260px] w-full max-w-[320px]">
         <ResponsiveContainer width="100%" height="100%">
           <PieChart>
@@ -682,7 +685,7 @@ function DonutView({ chart, mode }: { chart: ChartSpec; mode: 'light' | 'dark' }
 // Change against a baseline is polarity, so it takes the diverging pair and a zero rule.
 // Grey at zero: the midpoint has to read as "nothing happened".
 
-function VarianceView({ chart, mode }: { chart: ChartSpec; mode: 'light' | 'dark' }) {
+function VarianceView({ chart, mode, plain }: { chart: ChartSpec; mode: 'light' | 'dark'; plain?: boolean }) {
   const palette = ink(mode);
   const field = chart.series[0]?.field ?? 'delta';
   const unit = chart.series[0]?.unit ?? 'count';
@@ -690,7 +693,7 @@ function VarianceView({ chart, mode }: { chart: ChartSpec; mode: 'light' | 'dark
   const compressed = hasCompressedValues(chart.rows, [field]);
 
   if (chart.rows.length === 1) {
-    return <SingleVarianceView chart={chart} mode={mode} />;
+    return <SingleVarianceView chart={chart} mode={mode} plain={plain} />;
   }
 
   // Long category names go horizontal; time never does — twelve months read left to right
@@ -891,8 +894,8 @@ function WaterfallTooltip({
 }
 
 function SingleVarianceView({
-  chart, mode,
-}: { chart: ChartSpec; mode: 'light' | 'dark' }) {
+  chart, mode, plain,
+}: { chart: ChartSpec; mode: 'light' | 'dark'; plain?: boolean }) {
   const row = chart.rows[0] ?? {};
   const unit = chart.series[0]?.unit ?? 'count';
   const previous = typeof row.previous === 'number' ? row.previous : null;
@@ -917,7 +920,7 @@ function SingleVarianceView({
 
   return (
     <div
-      className="rounded-xl border border-border/60 bg-muted/25 p-4"
+      className={cn(!plain && 'rounded-xl border border-border/60 bg-muted/25 p-4')}
       role="img"
       aria-label={`${previousLabel}: ${formatValue(previous, unit)}; ${currentLabel}: ${formatValue(current, unit)}; change: ${changeText}`}
     >
@@ -1352,7 +1355,7 @@ function ChartTooltip({
 
 const TABLE_PREVIEW_ROWS = 25;
 
-function TableView({ chart }: { chart: ChartSpec }) {
+function TableView({ chart, plain }: { chart: ChartSpec; plain?: boolean }) {
   const [expanded, setExpanded] = useState(false);
   const folded = Math.max(0, chart.rows.length - TABLE_PREVIEW_ROWS);
   const rows = expanded || folded === 0 ? chart.rows : chart.rows.slice(0, TABLE_PREVIEW_ROWS);
@@ -1362,7 +1365,7 @@ function TableView({ chart }: { chart: ChartSpec }) {
     // from the transcript's — two bars, and no way to tell which one moves the page. The
     // table grows with its rows instead, and a long one is folded until asked for.
     <div className="space-y-2">
-      <div className="overflow-x-auto rounded-xl border border-border/60">
+      <div className={cn('overflow-x-auto', !plain && 'rounded-xl border border-border/60')}>
         <Table>
           <TableHeader className="bg-muted/80">
             <TableRow>
@@ -1434,9 +1437,9 @@ function deltaTone(value: unknown): string {
   return value > 0 ? 'text-emerald-700 dark:text-emerald-400' : 'text-red-700 dark:text-red-400';
 }
 
-function EmptyState({ summary }: { summary: string }) {
+function EmptyState({ summary, plain }: { summary: string; plain?: boolean }) {
   return (
-    <div className="rounded-xl border border-dashed border-border/60 p-6 text-center">
+    <div className={cn('text-center', !plain && 'rounded-xl border border-dashed border-border/60 p-6')}>
       <p className="text-sm text-muted-foreground">{summary || 'No rows matched this question.'}</p>
     </div>
   );

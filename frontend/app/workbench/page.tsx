@@ -452,7 +452,7 @@ export default function WorkbenchPage() {
   return (
     // Fixed rather than merely full-height: the shell owns its own scrolling region, so
     // taking it out of document flow guarantees the page behind it can never scroll too.
-    <div className="fixed inset-0 flex flex-col overflow-hidden bg-background">
+    <div className="fixed inset-0 flex flex-col overflow-hidden bg-white dark:bg-background">
       <WorkbenchHeader
         user={user}
         externalSourcesEnabled={externalSourcesEnabled}
@@ -481,11 +481,11 @@ export default function WorkbenchPage() {
                 )}
               </div>
             </div>
-            <div className="shrink-0 bg-background pb-[calc(env(safe-area-inset-bottom,0px)+12px)] pt-2 sm:pb-4">
+            <div className="shrink-0 bg-white pb-[calc(env(safe-area-inset-bottom,0px)+12px)] pt-2 dark:bg-background sm:pb-4">
               <div className="mx-auto w-full max-w-4xl px-4 sm:px-6">
                 {composer}
                 <p className="mt-2 text-center text-[11px] text-muted-foreground">
-                  Private by default. Verify important decisions against the cited source.
+                  AI-generated answers may be inaccurate. Verify important figures against cited sources or SQL.
                 </p>
               </div>
             </div>
@@ -733,13 +733,9 @@ function EmptyState({
               key={label}
               type="button"
               onClick={() => view ? onOpenWorkspace(view) : question && onAsk(question)}
-              className={`group flex items-center gap-3 rounded-xl border px-3.5 py-3 text-left text-sm transition hover:border-primary/25 hover:text-foreground ${
-                featured
-                  ? 'border-primary/20 bg-primary/[0.045] text-foreground sm:col-span-2'
-                  : 'border-border/70 bg-card text-muted-foreground hover:bg-accent/50'
-              }`}
+              className={`group flex items-center gap-3 py-3 text-left text-sm text-muted-foreground transition hover:text-foreground ${featured ? 'sm:col-span-2' : ''}`}
             >
-              <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-muted text-primary transition group-hover:bg-primary group-hover:text-primary-foreground">
+              <span className="flex size-8 shrink-0 items-center justify-center text-primary">
                 <Icon className="size-4" />
               </span>
               <span className="min-w-0">
@@ -761,7 +757,7 @@ function EmptyState({
               key={tool.id}
               type="button"
               onClick={() => onOpenWorkspace(tool.id)}
-              className="inline-flex items-center gap-2 rounded-full border border-border/70 bg-card px-3 py-1.5 text-xs font-medium text-foreground transition hover:border-primary/30 hover:bg-accent/50"
+              className="inline-flex items-center gap-2 py-1.5 pr-3 text-xs font-medium text-foreground transition hover:text-primary"
             >
               <tool.icon className="size-3.5 text-primary" />
               {tool.label}

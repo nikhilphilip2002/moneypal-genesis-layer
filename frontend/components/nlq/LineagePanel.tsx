@@ -9,31 +9,66 @@ import { ChevronDown, Copy, Download, Info, ShieldAlert, TriangleAlert } from 'l
 import { cn } from '@/lib/utils';
 import { SECTION_GAP, SOURCE_BADGE } from '@/lib/workbench-ui';
 
-// Every number traceable: SQL, source tables, formula, row count, as-of date.
-//
-// Non-negotiable per the build plan — it is the difference between a demo and a tool a CFO
-// will sign off on. The collapsed state still shows the warnings, because a caveat the user
-// has to click to discover is a caveat they will not see.
-//
-// This is a nested panel, never a second card: a light border, no shadow of its own, and
-// internal dividers a shade weaker than the parent card's. The card that contains it owns
-// the outer edge.
-
 export default function LineagePanel({
   chart,
   lineage: suppliedLineage,
   sourceLabel,
   className,
+  plain = false,
+  queryId,
 }: {
   chart?: ChartSpec;
   lineage?: ChartSpec['lineage'];
   sourceLabel?: string;
   className?: string;
+  plain?: boolean;
+  queryId?: string;
 }) {
   const [open, setOpen] = useState(false);
   const lineage = suppliedLineage ?? chart?.lineage;
   if (!lineage) return null;
   const displayedSql = lineage.display_sql || lineage.sql;
+
+  if (plain) {
+    return (
+      <div className={cn(SECTION_GAP, className)}>
+        <button
+          type="button"
+          onClick={() => setOpen((value) => !value)}
+          aria-expanded={open}
+          className="inline-flex items-center gap-1.5 py-1 text-xs text-muted-foreground hover:text-foreground"
+        >
+          <ChevronDown aria-hidden className={cn('size-3.5 transition-transform', open && 'rotate-180')} />
+          {queryId ? `View SQL · ${queryId}` : 'View SQL'}
+        </button>
+        {open && (
+          <div className="ml-1 mt-2 space-y-2 border-l-2 border-border/70 pl-4 text-xs">
+            {lineage.requires_signoff.length > 0 && (
+              <p className="text-amber-600 dark:text-amber-400">
+                Definition pending sign-off: {lineage.requires_signoff.join(', ')}.
+              </p>
+            )}
+            {lineage.warnings.filter((warning) => !warning.startsWith('Visualization derived from query ')).map((warning, index) => (
+              <p key={index} className="text-muted-foreground">{warning}</p>
+            ))}
+            <pre className="max-h-80 overflow-auto whitespace-pre-wrap break-all font-mono text-[11px] leading-5 text-foreground">
+              <code>{displayedSql}</code>
+            </pre>
+            <div className="flex gap-3">
+              <button type="button" onClick={() => navigator.clipboard?.writeText(displayedSql)} className="inline-flex items-center gap-1 text-muted-foreground hover:text-foreground">
+                <Copy className="size-3" /> Copy SQL
+              </button>
+              {chart && (
+                <button type="button" onClick={() => downloadCsv(chart)} className="inline-flex items-center gap-1 text-muted-foreground hover:text-foreground">
+                  <Download className="size-3" /> Export CSV
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div

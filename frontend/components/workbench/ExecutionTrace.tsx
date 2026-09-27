@@ -29,7 +29,7 @@ export default function ExecutionTrace({
   startedAt?: number;
   totalMs?: number;
 }) {
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(active);
   const [now, setNow] = useState(() => Date.now());
   const steps = useMemo(() => visibleTraceSteps(updates, active), [updates, active]);
 
@@ -45,12 +45,12 @@ export default function ExecutionTrace({
   const failures = steps.filter((step) => step.status === 'error').length;
 
   return (
-    <div className="overflow-hidden rounded-xl border border-border/60 bg-muted/15">
+    <div>
       <button
         type="button"
         onClick={() => setOpen((value) => !value)}
         aria-expanded={open}
-        className="flex min-h-11 w-full items-center gap-2.5 px-3 py-2 text-left transition-colors hover:bg-muted/25"
+        className="flex min-h-8 max-w-full items-center gap-2 py-1 text-left text-muted-foreground transition-colors hover:text-foreground"
       >
         {active ? (
           <Loader2 className="size-4 shrink-0 animate-spin text-primary" />
@@ -60,8 +60,8 @@ export default function ExecutionTrace({
           <CheckCircle2 className="size-4 shrink-0 text-emerald-500" />
         )}
         <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2 text-xs font-medium text-foreground">
-            <span>{active ? 'Working' : 'Execution trace'}</span>
+          <div className="flex items-center gap-2 text-xs font-medium">
+            <span>{active ? 'Working…' : 'How this answer was prepared'}</span>
             <span className="font-mono text-[10px] font-normal tabular-nums text-muted-foreground">
               {formatDuration(elapsed)}
             </span>
@@ -76,7 +76,7 @@ export default function ExecutionTrace({
       </button>
 
       {open && (
-        <div className="space-y-3 border-t border-border/60 px-3 py-3">
+        <div className="ml-2 space-y-3 border-l-2 border-border/70 py-2 pl-4">
           {steps.length === 0 ? (
             <p className="text-xs text-muted-foreground">Waiting for the first model step…</p>
           ) : steps.map((step) => {
@@ -109,11 +109,8 @@ export default function ExecutionTrace({
                     </p>
                   )}
                   {step.reasoning && (
-                    <div className="mt-1.5 rounded-lg border border-border/50 bg-muted/25 p-2">
-                      <p className="mb-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-                        Model reasoning
-                      </p>
-                      <p className="max-h-64 overflow-auto whitespace-pre-wrap break-words text-[11px] leading-4 text-foreground/90">
+                    <div className="mt-1.5">
+                      <p className="whitespace-pre-wrap break-words text-xs leading-5 text-muted-foreground">
                         {step.reasoning}
                       </p>
                     </div>
@@ -124,10 +121,7 @@ export default function ExecutionTrace({
                         Model tool calls
                       </p>
                       {step.tool_calls.map((call) => (
-                        <div
-                          key={`${call.index}-${call.id ?? ''}`}
-                          className="flex items-center gap-1.5 rounded-md bg-muted/30 px-2 py-1 font-mono text-[10px] text-foreground"
-                        >
+                        <div key={`${call.index}-${call.id ?? ''}`} className="flex items-center gap-1.5 font-mono text-[10px] text-foreground">
                           <Wrench className="size-3 shrink-0 text-muted-foreground" />
                           <span>{call.name || 'Receiving tool call…'}</span>
                         </div>
@@ -139,7 +133,7 @@ export default function ExecutionTrace({
                       <summary className="cursor-pointer select-none text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
                         Arguments
                       </summary>
-                      <pre className="mt-1 max-h-64 overflow-auto whitespace-pre-wrap break-all rounded-lg bg-muted/40 p-2 font-mono text-[10px] leading-4 text-foreground">
+                      <pre className="mt-1 max-h-64 overflow-auto whitespace-pre-wrap break-all font-mono text-[10px] leading-4 text-foreground">
                         {JSON.stringify(step.arguments, null, 2)}
                       </pre>
                     </details>
@@ -148,9 +142,6 @@ export default function ExecutionTrace({
               </div>
             );
           })}
-          <p className="border-t border-border/50 pt-2 text-[10px] leading-4 text-muted-foreground">
-            Shows reasoning returned by the model and sanitized tool activity. Reasoning the provider keeps private is not available.
-          </p>
         </div>
       )}
     </div>
