@@ -25,14 +25,14 @@ export const SERIES_LIGHT = [
 ] as const;
 
 export const SERIES_DARK = [
-  '#3987e5',
-  '#d95926',
-  '#199e70',
-  '#c98500',
-  '#d55181',
-  '#008300',
-  '#9085e9',
-  '#e66767',
+  '#8bb5da',
+  '#d8ac88',
+  '#8fc9b2',
+  '#d1c48c',
+  '#d5a0ba',
+  '#a7ca92',
+  '#b5a4d8',
+  '#d59b9b',
 ] as const;
 
 // Past eight series, colour stops being an identity channel. The renderer folds the tail
@@ -46,10 +46,8 @@ export const MAX_SERIES = 8;
 // adjacent heat classes start to blur.
 //   node scripts/validate_palette.js "#86b6ef,#3987e5,#256abf,#184f95,#0d366b" \
 //     --mode light --ordinal   → monotone PASS · ΔL PASS · light-end 2.06:1 PASS · hue spread 4° PASS
-//   node scripts/validate_palette.js "#cde2fb,#9ec5f4,#6da7ec,#3987e5,#184f95" \
-//     --mode dark  --ordinal   → monotone PASS · ΔL PASS · light-end 2.15:1 PASS · hue spread 4° PASS
 export const SEQUENTIAL_LIGHT = ['#86b6ef', '#3987e5', '#256abf', '#184f95', '#0d366b'] as const;
-export const SEQUENTIAL_DARK = ['#cde2fb', '#9ec5f4', '#6da7ec', '#3987e5', '#184f95'] as const;
+export const SEQUENTIAL_DARK = ['#d5e3f0', '#a8c0d9', '#7295bd', '#426b99', '#244b78'] as const;
 export const SEQUENTIAL_BINS = 5;
 
 // ─── Diverging (polarity: variance, waterfall) ───
@@ -57,10 +55,9 @@ export const SEQUENTIAL_BINS = 5;
 // The midpoint is neutral grey, never a hue. Aqua was not considered for the negative arm
 // precisely because blue↔aqua are both cool and the zero point stops meaning zero.
 //   node scripts/validate_palette.js "#2a78d6,#e34948" --mode light → all PASS (CVD ΔE 21.6)
-//   node scripts/validate_palette.js "#3987e5,#e66767" --mode dark  → all PASS (CVD ΔE 19.2)
 export const DIVERGING = {
   light: { positive: '#2a78d6', negative: '#e34948', neutral: '#f0efec' },
-  dark: { positive: '#3987e5', negative: '#e66767', neutral: '#383835' },
+  dark: { positive: '#8bb5da', negative: '#d59b9b', neutral: '#383835' },
 } as const;
 
 export type Mode = 'light' | 'dark';

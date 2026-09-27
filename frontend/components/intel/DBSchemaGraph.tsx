@@ -159,21 +159,17 @@ const levelLabel: Record<string, string> = {
   related_agent: 'Linked Agent',
 };
 
-/**
- * Vibrant pastel chart color tokens (chart-1 through chart-10) using shadcn variable naming scheme.
- * Enhanced saturation with high brightness for crisp entity pop and clear contrast.
- */
 const chartColorsDark: Record<string, string> = {
-  'chart-1': '#a78bfa', // Vibrant Pastel Lavender / Mauve
-  'chart-2': '#60a5fa', // Vibrant Pastel Sky Blue
-  'chart-3': '#38bdf8', // Vibrant Pastel Ice Aqua
-  'chart-4': '#34d399', // Vibrant Pastel Seafoam Mint
-  'chart-5': '#4ade80', // Vibrant Pastel Spring Green
-  'chart-6': '#22d3ee', // Vibrant Pastel Cyan Sky
-  'chart-7': '#818cf8', // Vibrant Pastel Periwinkle
-  'chart-8': '#fb923c', // Vibrant Pastel Peach / Warm Apricot
-  'chart-9': '#facc15', // Vibrant Pastel Sunny Butter
-  'chart-10': '#f472b6', // Vibrant Pastel Blush Rose
+  'chart-1': '#b5a4d8',
+  'chart-2': '#8bb5da',
+  'chart-3': '#8dc6d3',
+  'chart-4': '#8fc9b2',
+  'chart-5': '#a7ca92',
+  'chart-6': '#85bfcc',
+  'chart-7': '#9ca9da',
+  'chart-8': '#d8ac88',
+  'chart-9': '#d1c48c',
+  'chart-10': '#d5a0ba',
 };
 
 const chartColorsLight: Record<string, string> = {
@@ -206,7 +202,7 @@ const levelToChartVariable: Record<string, keyof typeof chartColorsDark> = {
 function getNodeColor(type: string, isDark: boolean): string {
   const chartVar = levelToChartVariable[type] || 'chart-1';
   const palette = isDark ? chartColorsDark : chartColorsLight;
-  return palette[chartVar] || (isDark ? '#64748b' : '#475569');
+  return palette[chartVar] || (isDark ? '#9ca3af' : '#475569');
 }
 
 function formatMoney(raw?: number): string {
@@ -314,8 +310,6 @@ function MetricStat({ label, value, icon }: { label: string; value: string; icon
 }
 
 export default function DBSchemaGraph({ contained = false }: { contained?: boolean }) {
-  // forcedTheme wins over the stored theme, so a stale `dark` in localStorage must not
-  // paint a near-black canvas inside the light app shell.
   const { resolvedTheme, forcedTheme } = useTheme();
   const graphRef = useRef<ForceGraphMethods<NodeObject, LinkObject<NodeObject>> | undefined>(undefined);
   const canvasRef = useRef<HTMLDivElement>(null);

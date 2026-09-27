@@ -46,7 +46,7 @@ export default function LoginPage() {
                 src="/moneypal.png"
                 alt="Moneypal"
                 fill
-                className="object-contain"
+                className="object-contain dark:brightness-0 dark:invert dark:opacity-90"
                 priority
               />
             </div>
