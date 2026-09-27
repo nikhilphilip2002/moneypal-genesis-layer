@@ -60,9 +60,7 @@ export default function ChartRenderer({ chart, onDrilldown, hideHeader = false, 
   const mode = useChartMode();
   const showTable = asTable || chart.chart_type === 'table';
   const canToggle = chart.chart_type !== 'table';
-  const controlsAlignment = hideHeader
-    ? (plain ? 'justify-start' : 'justify-end')
-    : 'justify-between';
+  const controlsAlignment = hideHeader ? 'justify-end' : 'justify-between';
 
   return (
     <div className="w-full">
@@ -1377,10 +1375,10 @@ function TableView({ chart, plain }: { chart: ChartSpec; plain?: boolean }) {
     <div className="space-y-2">
       <div className={cn(!plain && 'overflow-x-auto rounded-xl border border-border/60')}>
         <Table>
-          <TableHeader className={plain ? undefined : 'bg-muted/80'}>
+          <TableHeader className="bg-muted/70">
             <TableRow>
               {chart.columns.map((column) => (
-                <TableHead key={column.name} className={cn(alignNumericRight && isNumeric(column) && 'text-right')}>
+                <TableHead key={column.name} className={cn('border-r border-border/70 last:border-r-0', alignNumericRight && isNumeric(column) && 'text-right')}>
                   {column.label}
                   {column.masked && (
                     <Badge
@@ -1401,6 +1399,7 @@ function TableView({ chart, plain }: { chart: ChartSpec; plain?: boolean }) {
                   <TableCell
                     key={column.name}
                     className={cn(
+                      'border-r border-border/70 last:border-r-0',
                       !plain && 'text-foreground',
                       isNumeric(column) && (alignNumericRight ? 'text-right tabular-nums' : 'tabular-nums'),
                       column.name === 'delta' && deltaTone(row[column.name]),

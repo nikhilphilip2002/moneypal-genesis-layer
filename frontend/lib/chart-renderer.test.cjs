@@ -99,8 +99,8 @@ test('plain chart renders values without result cards or generated summary', () 
   const { markup } = renderChart(chart, { plain: true, hideSummary: true });
 
   assert.match(markup, /Collected/);
-  assert.match(markup, /justify-start/);
-  assert.doesNotMatch(markup, /justify-end/);
+  assert.match(markup, /justify-end/);
+  assert.doesNotMatch(markup, /justify-start/);
   assert.equal((markup.match(/data-variant="ghost"/g) ?? []).length, 2);
   assert.equal((markup.match(/border border-border bg-transparent shadow-none/g) ?? []).length, 2);
   assert.doesNotMatch(markup, /What this shows|Heatmap derived from query|rounded-2xl border/);
@@ -120,17 +120,17 @@ test('Workbench KPI table keeps numeric columns left aligned', () => {
   assert.match(markup, /<th[^>]*>Balance<\/th>/);
   assert.match(markup, /<td[^>]*>42<\/td>/);
   assert.doesNotMatch(markup, /text-right/);
-  assert.match(markup, /justify-start/);
+  assert.match(markup, /justify-end/);
 });
 
-test('Workbench non-KPI chart controls also align left', () => {
+test('Workbench non-KPI chart controls also align right', () => {
   const { markup } = renderChart(groupedChart, { plain: true });
 
-  assert.match(markup, /justify-start/);
-  assert.doesNotMatch(markup, /justify-end/);
+  assert.match(markup, /justify-end/);
+  assert.doesNotMatch(markup, /justify-start/);
 });
 
-test('Workbench table uses the shadcn table without custom panel or row styling', () => {
+test('Workbench table uses the shadcn table with muted header and column dividers', () => {
   const chart = {
     chart_type: 'table',
     title: 'Accounts',
@@ -146,6 +146,9 @@ test('Workbench table uses the shadcn table without custom panel or row styling'
   assert.match(markup, /Account/);
   assert.match(markup, /A001/);
   assert.match(markup, /42/);
+  assert.match(markup, /<thead class="bg-muted\/70">/);
+  assert.match(markup, /<th class="border-r border-border\/70 last:border-r-0">Account<\/th>/);
+  assert.match(markup, /<td class="border-r border-border\/70 last:border-r-0">A001<\/td>/);
   assert.doesNotMatch(markup, /rounded-xl border border-border\/60|bg-muted\/80|odd:bg-muted/);
 });
 

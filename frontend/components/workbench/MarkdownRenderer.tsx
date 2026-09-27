@@ -70,10 +70,10 @@ const components: Components = {
     <thead className={cn('bg-muted/70 text-foreground', className)} {...props} />
   ),
   th: ({ className, ...props }: ComponentPropsWithoutRef<'th'>) => (
-    <th className={cn('border-b border-border/70 px-3 py-2 font-semibold', className)} {...props} />
+    <th className={cn('border-b border-r border-border/70 px-3 py-2 font-semibold last:border-r-0', className)} {...props} />
   ),
   td: ({ className, ...props }: ComponentPropsWithoutRef<'td'>) => (
-    <td className={cn('border-b border-border/40 px-3 py-2 align-top last:border-b-0', className)} {...props} />
+    <td className={cn('border-b border-r border-border/40 px-3 py-2 align-top last:border-b-0 last:border-r-0', className)} {...props} />
   ),
   hr: ({ className, ...props }: ComponentPropsWithoutRef<'hr'>) => (
     <hr className={cn('border-border/70', className)} {...props} />
