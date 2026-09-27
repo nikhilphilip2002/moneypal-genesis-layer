@@ -1,4 +1,5 @@
 import { formatCompactINR, formatINR } from '@/lib/formatters';
+import { useTheme } from 'next-themes';
 
 // Chart theme for the NLQ layer.
 //
@@ -159,9 +160,6 @@ export function formatTick(value: unknown, unit: string): string {
 }
 
 export function useChartMode(): Mode {
-  if (typeof document === 'undefined') return 'light';
-  const stamped = document.documentElement.getAttribute('data-theme');
-  if (stamped === 'dark') return 'dark';
-  if (stamped === 'light') return 'light';
-  return document.documentElement.classList.contains('dark') ? 'dark' : 'light';
+  const { resolvedTheme } = useTheme();
+  return resolvedTheme === 'dark' ? 'dark' : 'light';
 }

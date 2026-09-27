@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
+import { useTheme } from 'next-themes';
 import {
   BarChart3,
   Clock3,
@@ -10,8 +11,10 @@ import {
   LayoutDashboard,
   Loader2,
   LogOut,
+  Moon,
   Plus,
   Scale,
+  Sun,
   TrendingUp,
   UserRound,
   Wrench,
@@ -525,6 +528,7 @@ function WorkbenchHeader({
   onOpenWorkspace: (view: WorkspaceView) => void;
   onLogout: () => void;
 }) {
+  const { resolvedTheme, setTheme } = useTheme();
   const name = user?.full_name || user?.username || 'User';
   const initials = name.split(' ').map((part) => part[0]).join('').toUpperCase().slice(0, 2);
   const roleLabel = user?.role
@@ -630,6 +634,19 @@ function WorkbenchHeader({
               )}
             </DropdownMenuContent>
           </DropdownMenu>
+
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            onClick={() => setTheme(resolvedTheme === 'dark' ? 'light' : 'dark')}
+            className="size-9 rounded-xl text-muted-foreground shadow-none hover:bg-muted hover:text-foreground"
+            aria-label="Toggle dark mode"
+            title="Toggle dark mode"
+          >
+            <Moon className="size-4 dark:hidden" aria-hidden="true" />
+            <Sun className="hidden size-4 dark:block" aria-hidden="true" />
+          </Button>
 
           <DropdownMenu>
             <DropdownMenuTrigger asChild>

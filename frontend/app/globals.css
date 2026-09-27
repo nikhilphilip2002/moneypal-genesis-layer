@@ -69,8 +69,8 @@
     --card-foreground: 210 20% 94%;
     --popover: 204 9% 7%;
     --popover-foreground: 210 20% 94%;
-    --primary: 207 90% 45%;
-    --primary-foreground: 0 0% 100%;
+    --primary: 207 90% 50%;
+    --primary-foreground: 204 9% 5%;
     --secondary: 204 9% 12%;
     --secondary-foreground: 210 20% 94%;
     --muted: 204 9% 12%;
@@ -94,8 +94,8 @@
     --chart-10: 330 81% 60%;  /* Vibrant Pastel Blush Rose: #f472b6 */
     --sidebar-background: 204 9% 5%;
     --sidebar-foreground: 210 20% 94%;
-    --sidebar-primary: 207 90% 45%;
-    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-primary: 207 90% 50%;
+    --sidebar-primary-foreground: 204 9% 5%;
     --sidebar-accent: 211 60% 18%;
     --sidebar-accent-foreground: 217 100% 87%;
     --sidebar-border: 204 9% 17%;
