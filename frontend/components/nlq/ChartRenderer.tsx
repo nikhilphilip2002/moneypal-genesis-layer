@@ -1371,9 +1371,9 @@ function TableView({ chart, plain }: { chart: ChartSpec; plain?: boolean }) {
     // from the transcript's — two bars, and no way to tell which one moves the page. The
     // table grows with its rows instead, and a long one is folded until asked for.
     <div className="space-y-2">
-      <div className={cn('overflow-x-auto', !plain && 'rounded-xl border border-border/60')}>
+      <div className={cn(!plain && 'overflow-x-auto rounded-xl border border-border/60')}>
         <Table>
-          <TableHeader className="bg-muted/80">
+          <TableHeader className={plain ? undefined : 'bg-muted/80'}>
             <TableRow>
               {chart.columns.map((column) => (
                 <TableHead key={column.name} className={cn(isNumeric(column) && 'text-right')}>
@@ -1392,12 +1392,12 @@ function TableView({ chart, plain }: { chart: ChartSpec; plain?: boolean }) {
           </TableHeader>
           <TableBody>
             {rows.map((row, index) => (
-              <TableRow key={index} className="odd:bg-muted/[0.18] hover:bg-muted/45">
+              <TableRow key={index} className={plain ? undefined : 'odd:bg-muted/[0.18] hover:bg-muted/45'}>
                 {chart.columns.map((column) => (
                   <TableCell
                     key={column.name}
                     className={cn(
-                      'text-foreground',
+                      !plain && 'text-foreground',
                       isNumeric(column) && 'text-right tabular-nums',
                       column.name === 'delta' && deltaTone(row[column.name]),
                     )}

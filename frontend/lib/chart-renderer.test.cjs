@@ -85,6 +85,25 @@ test('plain chart renders values without result cards or generated summary', () 
   assert.doesNotMatch(markup, /What this shows|Heatmap derived from query|rounded-2xl border/);
 });
 
+test('Workbench table uses the shadcn table without custom panel or row styling', () => {
+  const chart = {
+    chart_type: 'table',
+    title: 'Accounts',
+    columns: [
+      { name: 'account', label: 'Account', unit: 'text' },
+      { name: 'balance', label: 'Balance', unit: 'count' },
+    ],
+    rows: [{ account: 'A001', balance: 42 }],
+    summary: '',
+  };
+  const { markup } = renderChart(chart, { plain: true, hideSummary: true });
+
+  assert.match(markup, /Account/);
+  assert.match(markup, /A001/);
+  assert.match(markup, /42/);
+  assert.doesNotMatch(markup, /rounded-xl border border-border\/60|bg-muted\/80|odd:bg-muted/);
+});
+
 test('grouped bars render one series per group against shared categories', () => {
   const rendered = renderChart(groupedChart);
 
