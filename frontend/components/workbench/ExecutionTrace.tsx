@@ -17,12 +17,6 @@ function formatDuration(ms: number) {
   return `${(ms / 1000).toFixed(ms < 10_000 ? 1 : 0)} s`;
 }
 
-function traceLabel(step: WorkbenchTraceStep) {
-  return step.status === 'running' && typeof step.prompt_progress_percent === 'number'
-    ? `Prompt Processing ${step.prompt_progress_percent}%`
-    : step.label;
-}
-
 export default function ExecutionTrace({
   updates,
   active,
@@ -47,6 +41,9 @@ export default function ExecutionTrace({
   const streamedElapsed = Math.max(0, ...updates.map((step) => step.elapsed_ms || 0));
   const elapsed = totalMs ?? (active && startedAt ? now - startedAt : streamedElapsed);
   const running = [...steps].reverse().find((step) => step.status === 'running');
+  const promptProgress = running?.kind === 'model' && typeof running.prompt_progress_percent === 'number'
+    ? `Prompt Processing ${running.prompt_progress_percent}%`
+    : null;
   const failures = steps.filter((step) => step.status === 'error').length;
 
   return (
@@ -64,14 +61,11 @@ export default function ExecutionTrace({
         )} aria-hidden />
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2 text-xs font-medium">
-            <span>{active ? 'Working…' : 'How this answer was prepared'}</span>
+            <span>{active ? promptProgress ?? 'Working…' : 'How this answer was prepared'}</span>
             <span className="font-mono text-[10px] font-normal tabular-nums text-muted-foreground">
               {formatDuration(elapsed)}
             </span>
           </div>
-          <p className="truncate text-[11px] text-muted-foreground">
-            {running ? traceLabel(running) : `${steps.length} model and tool step${steps.length === 1 ? '' : 's'}`}
-          </p>
         </div>
       </button>
 
@@ -95,7 +89,7 @@ export default function ExecutionTrace({
                 <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5">
                     <span className="font-mono text-[11px] font-medium text-foreground">
-                      {traceLabel(step)}
+                      {step.label}
                     </span>
                     <span className="font-mono text-[10px] tabular-nums text-muted-foreground">
                       {step.duration_ms !== undefined

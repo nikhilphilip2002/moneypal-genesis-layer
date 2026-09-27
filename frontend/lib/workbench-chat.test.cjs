@@ -45,20 +45,25 @@ test('active trace streams inline and completed trace starts collapsed', () => {
   assert.doesNotMatch(complete, /Checking the result/);
 });
 
-test('active model trace shows prompt progress and returns to its label after generation starts', () => {
+test('active trace shows prompt progress in the header and the model label once inside the trace', () => {
   const ExecutionTrace = loadComponent(`${__dirname}/../components/workbench/ExecutionTrace.tsx`);
   const step = {
     id: 'model', kind: 'model', status: 'running', label: 'Model deciding next action',
     elapsed_ms: 10, prompt_progress_percent: 42,
   };
+  const starting = renderToStaticMarkup(React.createElement(ExecutionTrace, {
+    updates: [{ ...step, prompt_progress_percent: 0 }], active: true,
+  }));
   const processing = renderToStaticMarkup(React.createElement(ExecutionTrace, { updates: [step], active: true }));
   const generating = renderToStaticMarkup(React.createElement(ExecutionTrace, {
     updates: [{ ...step, prompt_progress_percent: undefined }], active: true,
   }));
 
+  assert.match(starting, /Prompt Processing 0%/);
   assert.match(processing, /Prompt Processing 42%/);
-  assert.doesNotMatch(processing, /Model deciding next action/);
-  assert.match(generating, /Model deciding next action/);
+  assert.equal(processing.match(/Prompt Processing 42%/g)?.length, 1);
+  assert.equal(processing.match(/Model deciding next action/g)?.length, 1);
+  assert.equal(generating.match(/Model deciding next action/g)?.length, 1);
   assert.doesNotMatch(generating, /Prompt Processing/);
 });
 
