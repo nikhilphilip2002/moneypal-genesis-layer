@@ -77,10 +77,13 @@ export default function ChartRenderer({ chart, onDrilldown, hideHeader = false, 
             {canToggle && (
               <Button
                 type="button"
-                variant="outline"
+                variant={plain ? 'ghost' : 'outline'}
                 size="sm"
                 onClick={() => setAsTable((v) => !v)}
-                className="h-8 shrink-0 gap-1.5 rounded-lg border-border/70 bg-background/70 px-2.5 text-xs font-medium text-muted-foreground shadow-sm hover:text-foreground"
+                className={cn(
+                  'h-8 shrink-0 gap-1.5 px-2.5 text-xs font-medium text-muted-foreground hover:text-foreground',
+                  plain ? 'border-0 bg-transparent shadow-none' : 'rounded-lg border-border/70 bg-background/70 shadow-sm',
+                )}
               >
                 {asTable ? <BarChart3 className="size-3.5" /> : <Table2 className="size-3.5" />}
                 {asTable ? 'Chart' : 'Table'}

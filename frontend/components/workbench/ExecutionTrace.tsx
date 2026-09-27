@@ -3,8 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
   Bot,
-  CheckCircle2,
-  ChevronDown,
+  ChevronRight,
   CircleAlert,
   Loader2,
   Wrench,
@@ -52,13 +51,11 @@ export default function ExecutionTrace({
         aria-expanded={open}
         className="flex min-h-8 max-w-full items-center gap-2 py-1 text-left text-muted-foreground transition-colors hover:text-foreground"
       >
-        {active ? (
-          <Loader2 className="size-4 shrink-0 animate-spin text-primary" />
-        ) : failures ? (
-          <CircleAlert className="size-4 shrink-0 text-amber-500" />
-        ) : (
-          <CheckCircle2 className="size-4 shrink-0 text-emerald-500" />
-        )}
+        <ChevronRight className={cn(
+          'size-4 shrink-0 transition-transform',
+          open && 'rotate-90',
+          active ? 'text-primary' : failures ? 'text-amber-500' : 'text-emerald-500',
+        )} aria-hidden />
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2 text-xs font-medium">
             <span>{active ? 'Working…' : 'How this answer was prepared'}</span>
@@ -70,9 +67,6 @@ export default function ExecutionTrace({
             {running?.label || `${steps.length} model and tool step${steps.length === 1 ? '' : 's'}`}
           </p>
         </div>
-        <ChevronDown className={cn(
-          'size-4 shrink-0 text-muted-foreground transition-transform', open && 'rotate-180',
-        )} />
       </button>
 
       {open && (

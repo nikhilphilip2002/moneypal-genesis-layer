@@ -35,6 +35,9 @@ function renderChart(chart, props = {}) {
       process,
       require: (name) => {
         if (name === 'recharts') return recharts;
+        if (name === '@/components/ui/button') {
+          return { Button: ({ children, className }) => React.createElement('button', { className }, children) };
+        }
         if (name.startsWith('@/components/ui/')) {
           return new Proxy({}, {
             get: (_, component) => (props) => component === 'Dialog' ? null : props.children,
@@ -76,6 +79,7 @@ test('plain chart renders values without result cards or generated summary', () 
   const { markup } = renderChart(chart, { plain: true, hideSummary: true });
 
   assert.match(markup, /Collected/);
+  assert.match(markup, /border-0 bg-transparent shadow-none/);
   assert.doesNotMatch(markup, /What this shows|Heatmap derived from query|rounded-2xl border/);
 });
 

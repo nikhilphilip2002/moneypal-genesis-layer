@@ -485,7 +485,7 @@ export default function WorkbenchPage() {
               <div className="mx-auto w-full max-w-4xl px-4 sm:px-6">
                 {composer}
                 <p className="mt-2 text-center text-[11px] text-muted-foreground">
-                  AI-generated answers may be inaccurate. Verify important figures against cited sources or SQL.
+                  AI-generated answers may be inaccurate.
                 </p>
               </div>
             </div>

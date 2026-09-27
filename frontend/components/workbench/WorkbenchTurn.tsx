@@ -235,10 +235,11 @@ export default function WorkbenchTurn({ turn, onAsk }: { turn: WorkbenchTurnData
           {turn.done && turn.route && turn.route.sources.length > 0 && (
             <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
               <span className="text-[11px] leading-5 text-muted-foreground">Sources</span>
-              {(turn.answer?.sources.length ? turn.answer.sources : turn.route.sources).map((source) => (
-                <Badge key={source} variant="outline" className={`${SOURCE_BADGE} text-muted-foreground`}>
+              {(turn.answer?.sources.length ? turn.answer.sources : turn.route.sources).map((source, index) => (
+                <span key={source} className="text-xs text-muted-foreground">
+                  {index > 0 && <span aria-hidden className="mr-1.5">·</span>}
                   {sourceLabel(source)}
-                </Badge>
+                </span>
               ))}
             </div>
           )}

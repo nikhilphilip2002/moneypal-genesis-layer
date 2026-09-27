@@ -38,8 +38,10 @@ test('active trace streams inline and completed trace starts collapsed', () => {
   const complete = renderToStaticMarkup(React.createElement(ExecutionTrace, { updates, active: false }));
 
   assert.match(active, /Checking the result/);
+  assert.match(active, /lucide-chevron-right/);
   assert.match(active, /border-l-2/);
   assert.doesNotMatch(active, /rounded-xl border border-border\/60 bg-muted\/15/);
+  assert.doesNotMatch(complete, /lucide-circle-check|lucide-circle-alert/);
   assert.doesNotMatch(complete, /Checking the result/);
 });
 
