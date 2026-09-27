@@ -472,7 +472,7 @@ export default function WorkbenchPage() {
               className="min-h-0 flex-1 overflow-y-auto py-6 sm:py-8"
               onScroll={handleTranscriptScroll}
             >
-              <div className="mx-auto w-full max-w-4xl space-y-8 px-4 sm:px-6">
+              <div className="mx-auto w-full max-w-5xl space-y-8 px-4 sm:px-6">
                 {turns.map((turn) => (
                   <WorkbenchTurn key={turn.id} turn={turn} onAsk={ask} />
                 ))}
