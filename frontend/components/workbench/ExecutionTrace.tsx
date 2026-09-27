@@ -54,6 +54,7 @@ export default function ExecutionTrace({
   const promptProgress = running?.kind === 'model' && typeof running.prompt_progress_percent === 'number'
     ? `Prompt Processing ${running.prompt_progress_percent}%`
     : null;
+  const activeLabel = running?.kind === 'status' ? running.label : promptProgress ?? 'Working…';
   const failures = steps.filter((step) => step.status === 'error').length;
 
   return (
@@ -71,7 +72,7 @@ export default function ExecutionTrace({
         )} aria-hidden />
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2 text-xs font-medium">
-            <span>{active ? promptProgress ?? 'Working…' : 'How this answer was prepared'}</span>
+            <span>{active ? activeLabel : 'How this answer was prepared'}</span>
             <span className="font-mono text-[10px] font-normal tabular-nums text-muted-foreground">
               {formatDuration(elapsed)}
             </span>

@@ -75,6 +75,11 @@ def setup(monkeypatch):
 async def test_compacts_oldest_prefix_keeps_recent_exchanges_and_reuses_checkpoint():
     client = CountingClient()
     state = {}
+    events: list[str] = []
+
+    async def on_compaction(status: str) -> None:
+        events.append(status)
+
     current: ChatMessage = {
         "role": "user",
         "content": "Compare with last month",
@@ -97,7 +102,9 @@ async def test_compacts_oldest_prefix_keeps_recent_exchanges_and_reuses_checkpoi
         tools,
         current_question=current,
         has_inflight=True,
+        on_compaction=on_compaction,
     )
+    assert events == ["running", "complete"]
     assert prepared[0] == messages[0]
     assert prepared[-4:] == [current, *recent, messages[-1]]
     assert not any(m.get("tool_call_id") == "q1" for m in prepared)
@@ -114,9 +121,11 @@ async def test_compacts_oldest_prefix_keeps_recent_exchanges_and_reuses_checkpoi
         tools,
         current_question=current,
         has_inflight=True,
+        on_compaction=on_compaction,
     )
     assert again == prepared
     assert len(client.summaries) == summaries
+    assert events == ["running", "complete"]
 
 
 @pytest.mark.anyio
@@ -174,6 +183,11 @@ async def test_summary_failure_keeps_history_intact():
 
     turn = history.begin_turn("c", "u", "question")
     state = {"conversation_id": "c", "user": "u", "turn_id": turn}
+    events: list[str] = []
+
+    async def on_compaction(status: str) -> None:
+        events.append(status)
+
     record = history.get("c", user="u")
     assert record is not None
     before = json.dumps(record.turns)
@@ -191,7 +205,9 @@ async def test_summary_failure_keeps_history_intact():
             [],
             current_question=current,
             has_inflight=False,
+            on_compaction=on_compaction,
         )
+    assert events == ["running", "error"]
     assert "_request_compaction" not in state
     record = history.get("c", user="u")
     assert record is not None

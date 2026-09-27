@@ -1472,12 +1472,14 @@ async def test_select_recovers_context_overflow_with_compacted_input(
         {"role": "user", "content": "Old question"},
         {"role": "assistant", "content": "old evidence " * 6500},
     ]
+    state["emit"] = asyncio.Queue()
     state["_agent_budget"] = agent.TurnBudget(5, 5, time.perf_counter() + 60)
     if failure == "output_limit":
         with pytest.raises(LLMIncomplete):
             await agent._select(state)
         assert len(client.requests) == 1
         assert client.summaries == []
+        assert not state.get("trace")
         return
     if failure == "repeated":
         with pytest.raises(LLMContextOverflow):
@@ -1487,6 +1489,11 @@ async def test_select_recovers_context_overflow_with_compacted_input(
         assert result.text == "Recovered answer"
     assert len(client.requests) == 2
     assert client.summaries
+    assert [step["status"] for step in state["trace"]] == ["running", "complete"]
+    assert state["trace"][0]["label"] == "Compacting conversation…"
+    assert all(
+        state["emit"].get_nowait().startswith("event: trace\n") for _ in range(2)
+    )
     assert len(json.dumps(client.requests[-1]["messages"])) < len(
         json.dumps(client.requests[0]["messages"])
     )

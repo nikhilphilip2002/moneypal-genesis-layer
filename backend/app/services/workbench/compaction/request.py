@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
-from typing import Any
+from typing import Any, Awaitable, Callable
 
 from app.core.config import settings
 from app.services.nlq.llm.client import LLMContextOverflow, LLMError, LLMIncomplete
@@ -115,6 +115,7 @@ async def prepare_request(
     has_inflight: bool,
     force: bool = False,
     timeout_s: float | None = None,
+    on_compaction: Callable[[str], Awaitable[None]] | None = None,
 ) -> tuple[list[ChatMessage], int, int]:
     window = await client.context_window()
     output_tokens = max(1, min(settings.workbench_reserve_tokens, window // 4))
@@ -255,48 +256,57 @@ async def prepare_request(
         for index, message in enumerate(body[cut:chosen], start=cut)
         if index != question_index
     ]
-    summary = await summarize_messages(
-        client,
-        older,
-        previous=summary,
-        window=window,
-        max_output_tokens=summary_room,
-        timeout_s=timeout_s,
-    )
-    prepared = request(chosen, summary)
-    tokens_after = await client.count_input_tokens(prepared, tools)
-    if tokens_after > limit or tokens_after >= tokens_before:
-        raise LLMContextOverflow(
-            "context window still exceeded after compaction"
+    if on_compaction is not None:
+        await on_compaction("running")
+    try:
+        summary = await summarize_messages(
+            client,
+            older,
+            previous=summary,
+            window=window,
+            max_output_tokens=summary_room,
+            timeout_s=timeout_s,
         )
-    state["_request_compaction"] = {
-        "cut": chosen,
-        "summary": summary,
-        "fingerprint": _fingerprint(body[:chosen]),
-    }
-    state["context_tokens"] = tokens_after
-    from app.services.workbench import history
+        prepared = request(chosen, summary)
+        tokens_after = await client.count_input_tokens(prepared, tools)
+        if tokens_after > limit or tokens_after >= tokens_before:
+            raise LLMContextOverflow(
+                "context window still exceeded after compaction"
+            )
+        state["_request_compaction"] = {
+            "cut": chosen,
+            "summary": summary,
+            "fingerprint": _fingerprint(body[:chosen]),
+        }
+        state["context_tokens"] = tokens_after
+        from app.services.workbench import history
 
-    checkpoint: list[ChatMessage] = [
-        {
-            "role": "system",
-            "content": "Conversation checkpoint:\n\n" + summary,
-        },
-        *retained(chosen),
-    ]
-    if (
-        state.get("turn_id")
-        and state.get("conversation_id")
-        and state.get("user")
-    ):
-        history.set_request_checkpoint(
-            state["conversation_id"],
-            state["user"],
-            state["turn_id"],
-            checkpoint,
-            tokens_before=tokens_before,
-            tokens_after=tokens_after,
-        )
+        checkpoint: list[ChatMessage] = [
+            {
+                "role": "system",
+                "content": "Conversation checkpoint:\n\n" + summary,
+            },
+            *retained(chosen),
+        ]
+        if (
+            state.get("turn_id")
+            and state.get("conversation_id")
+            and state.get("user")
+        ):
+            history.set_request_checkpoint(
+                state["conversation_id"],
+                state["user"],
+                state["turn_id"],
+                checkpoint,
+                tokens_before=tokens_before,
+                tokens_after=tokens_after,
+            )
+    except Exception:
+        if on_compaction is not None:
+            await on_compaction("error")
+        raise
+    if on_compaction is not None:
+        await on_compaction("complete")
     logger.info(
         "Workbench request compacted: input_tokens=%d -> %d, summarized_messages=%d, kept_messages=%d",
         tokens_before,

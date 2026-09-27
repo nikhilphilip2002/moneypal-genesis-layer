@@ -67,6 +67,31 @@ test('active trace shows prompt progress in the header and the model label once 
   assert.doesNotMatch(generating, /Prompt Processing/);
 });
 
+test('compaction takes the active header until model prompt processing resumes', () => {
+  const ExecutionTrace = loadComponent(`${__dirname}/../components/workbench/ExecutionTrace.tsx`);
+  const model = {
+    id: 'model-1', kind: 'model', status: 'running',
+    label: 'Model deciding next action', elapsed_ms: 10, prompt_progress_percent: 0,
+  };
+  const compacting = renderToStaticMarkup(React.createElement(ExecutionTrace, {
+    updates: [model, {
+      id: 'compaction-1', kind: 'status', status: 'running',
+      label: 'Compacting conversation…', elapsed_ms: 20,
+    }], active: true,
+  }));
+  const resumed = renderToStaticMarkup(React.createElement(ExecutionTrace, {
+    updates: [{ ...model, prompt_progress_percent: 42 }, {
+      id: 'compaction-1', kind: 'status', status: 'complete',
+      label: 'Conversation compacted', elapsed_ms: 30,
+    }], active: true,
+  }));
+
+  assert.match(compacting, /<span>Compacting conversation…<\/span>/);
+  assert.doesNotMatch(compacting, /Prompt Processing 0%/);
+  assert.match(resumed, /<span>Prompt Processing 42%<\/span>/);
+  assert.match(resumed, /Conversation compacted/);
+});
+
 test('model trace shows its start time in IST instead of elapsed duration', () => {
   const ExecutionTrace = loadComponent(`${__dirname}/../components/workbench/ExecutionTrace.tsx`);
   const step = {

@@ -328,6 +328,29 @@ async def _select(
                 prepared = messages
                 counted = 0
                 if can_count:
+                    compaction_trace_id = f"compaction-{trace_id or budget.rounds_used}-{attempt}"
+                    compaction_started_at = 0.0
+
+                    async def on_compaction(status: str) -> None:
+                        nonlocal compaction_started_at
+                        if status == "running":
+                            compaction_started_at = time.perf_counter()
+                        step: dict[str, Any] = {
+                            "id": compaction_trace_id,
+                            "kind": "status",
+                            "status": status,
+                            "label": {
+                                "running": "Compacting conversation…",
+                                "complete": "Conversation compacted",
+                                "error": "Compaction failed",
+                            }[status],
+                        }
+                        if status != "running":
+                            step["duration_ms"] = int(
+                                (time.perf_counter() - compaction_started_at) * 1000
+                            )
+                        await _emit_trace(state, step)
+
                     prepared, output_tokens, counted = await prepare_request(
                         state,
                         client,
@@ -337,6 +360,9 @@ async def _select(
                         has_inflight=bool(repair_messages),
                         force=bool(attempt),
                         timeout_s=budget.remaining_s(settings.llm_timeout_s),
+                        on_compaction=on_compaction
+                        if state.get("emit")
+                        else None,
                     )
                     extra["max_output_tokens"] = output_tokens
                 if not selecting:
