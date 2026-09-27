@@ -180,7 +180,7 @@ export default function Composer({
   return (
     <div
       ref={shellRef}
-      className="relative rounded-2xl border border-border/80 bg-card shadow-[0_10px_35px_rgba(0,69,129,0.08)] transition-colors focus-within:border-foreground/25 focus-within:ring-2 focus-within:ring-foreground/[0.07]">
+      className="relative rounded-3xl border border-border/80 bg-card shadow-[0_10px_35px_rgba(0,69,129,0.08)] transition-colors focus-within:border-foreground/25 focus-within:ring-2 focus-within:ring-foreground/[0.07]">
       {completionsOpen && (
         <ul
           ref={listRef}
