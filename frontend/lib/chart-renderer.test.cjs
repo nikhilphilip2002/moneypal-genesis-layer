@@ -9,7 +9,7 @@ const { renderToStaticMarkup } = require('react-dom/server');
 function renderChart(chart, props = {}) {
   const { startAsTable = false, ...chartProps } = props;
   let firstStateCall = true;
-  const rendered = { bars: [], lines: [], areas: [], charts: [], legends: [] };
+  const rendered = { bars: [], lines: [], areas: [], charts: [], legends: [], tooltips: [] };
   const recharts = new Proxy({}, {
     get: (_, name) => (props) => {
       if (name === 'Bar') rendered.bars.push(props);
@@ -17,6 +17,7 @@ function renderChart(chart, props = {}) {
       if (name === 'Area') rendered.areas.push(props);
       if (['BarChart', 'LineChart', 'AreaChart'].includes(name)) rendered.charts.push(props);
       if (name === 'Legend') rendered.legends.push(props);
+      if (name === 'Tooltip') rendered.tooltips.push(props);
       return props.children ?? null;
     },
   });
@@ -195,6 +196,50 @@ test('grouped bars render numeric measures as side-by-side series', () => {
   assert.equal(rendered.charts[0].layout, 'horizontal');
   assert.equal(rendered.legends.length, 1);
   assert.ok(rendered.bars.every((bar) => bar.stackId === undefined));
+});
+
+test('mixed-unit scheme bars plot rupees alone and keep receipt counts in the tooltip and table', () => {
+  const rows = Array.from({ length: 12 }, (_, index) => ({
+    scheme: `Scheme ${index + 1}`,
+    receipt_count: index === 0 ? 42 : index + 1,
+    total_collected: (12 - index) * 10_000_000,
+  }));
+  const chart = {
+    chart_type: 'grouped_bar', title: 'Collections by scheme', subtitle: null,
+    x: { field: 'scheme', label: 'Scheme', unit: 'text' }, series_by: null,
+    series: [
+      { field: 'receipt_count', label: 'Receipt Event Count', unit: 'count' },
+      { field: 'total_collected', label: 'Total Collected INR', unit: 'inr' },
+    ],
+    columns: [
+      { name: 'scheme', label: 'Scheme', unit: 'text' },
+      { name: 'receipt_count', label: 'Receipt Event Count', unit: 'count' },
+      { name: 'total_collected', label: 'Total Collected INR', unit: 'inr' },
+    ],
+    rows,
+  };
+  const rendered = renderChart(chart);
+  const table = renderChart(chart, { startAsTable: true });
+  const tooltip = renderToStaticMarkup(React.cloneElement(rendered.tooltips[0].content, {
+    active: true,
+    label: rows[0].scheme,
+    payload: [{ dataKey: 'total_collected', name: 'Total Collected INR',
+      value: rows[0].total_collected, payload: rows[0] }],
+  }));
+
+  assert.deepEqual(rendered.bars.map((bar) => bar.dataKey), ['total_collected']);
+  assert.equal(rendered.bars[0].minPointSize, 0);
+  assert.equal(rendered.charts[0].layout, 'vertical');
+  assert.equal(rendered.charts[0].data.length, 10);
+  assert.equal(rendered.charts[0].data[0].scheme, 'Scheme 1');
+  assert.equal(rendered.legends.length, 0);
+  assert.match(rendered.markup, /Showing the top 10 of 12 categories/);
+  assert.match(tooltip, /Receipt Event Count/);
+  assert.match(tooltip, /42/);
+  assert.match(table.markup, /Scheme 12/);
+  assert.deepEqual(renderChart({ ...chart, rows: rows.slice(0, 1) }).bars.map((bar) => bar.dataKey), [
+    'total_collected',
+  ]);
 });
 
 test('ordinary bars preserve their rows and compact single-series layout', () => {

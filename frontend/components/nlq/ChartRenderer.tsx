@@ -438,13 +438,23 @@ function BarView({
 }: Props & { mode: 'light' | 'dark' }) {
   const palette = ink(mode);
   const { rows: pivotedRows, series, folded: foldedSeries } = usePivot(chart);
-  const unit = series[0]?.unit ?? 'count';
+  const mixedUnits = !chart.series_by && new Set(series.map((item) => item.unit)).size > 1;
+  const primarySeries = mixedUnits ? series.find((item) => item.unit === 'inr') ?? series[0] : undefined;
+  const plottedSeries = primarySeries ? [primarySeries] : series;
+  const tooltipSeries = primarySeries ? series.filter((item) => item.field !== primarySeries.field) : [];
+  const unit = plottedSeries[0]?.unit ?? 'count';
   const xKey = chart.x?.field ?? 'x';
 
   // Past MAX_SERIES categories, fold the tail into "Other" rather than inventing hues.
-  const { rows, folded } = useMemo(() => {
+  const { rows, folded, hidden } = (() => {
+    if (primarySeries) {
+      const ranked = [...pivotedRows].sort(
+        (left, right) => Number(right[primarySeries.field] ?? 0) - Number(left[primarySeries.field] ?? 0),
+      );
+      return { rows: ranked.slice(0, 10), folded: 0, hidden: Math.max(0, ranked.length - 10) };
+    }
     if (chart.chart_type !== 'ranking' || pivotedRows.length <= MAX_SERIES) {
-      return { rows: pivotedRows, folded: 0 };
+      return { rows: pivotedRows, folded: 0, hidden: 0 };
     }
     const head = pivotedRows.slice(0, MAX_SERIES);
     const tail = pivotedRows.slice(MAX_SERIES);
@@ -452,22 +462,22 @@ function BarView({
     const total = tail.reduce(
       (sum, row) => sum + (typeof row[field] === 'number' ? (row[field] as number) : 0), 0,
     );
-    return { rows: [...head, { [xKey]: `Other (${tail.length})`, [field]: total }], folded: tail.length };
-  }, [chart.chart_type, pivotedRows, series, xKey]);
+    return { rows: [...head, { [xKey]: `Other (${tail.length})`, [field]: total }], folded: tail.length, hidden: 0 };
+  })();
 
-  const single = series.length === 1;
+  const single = plottedSeries.length === 1;
   // A lone vertical column expands to fill the plot and makes a simple result look much
   // more dramatic than it is. Short category comparisons are also easier to scan as a
   // labelled list, so keep one-to-six single-series results compact and horizontal.
   const compactCategories = single && rows.length <= 6;
-  const horizontal = chart.chart_type === 'ranking' || compactCategories;
+  const horizontal = mixedUnits || chart.chart_type === 'ranking' || compactCategories;
   const height = horizontal
     ? Math.max(compactCategories ? 112 : 220, rows.length * 42 + 36)
     : 280;
-  const compressed = hasCompressedValues(rows, series.map((item) => item.field));
+  const compressed = !mixedUnits && hasCompressedValues(rows, plottedSeries.map((item) => item.field));
 
-  if (single && rows.length === 1) {
-    const item = series[0];
+  if (single && rows.length === 1 && !mixedUnits) {
+    const item = plottedSeries[0];
     return (
       <SingleCategoryView
         label={String(rows[0]?.[xKey] ?? 'Not recorded')}
@@ -505,7 +515,7 @@ function BarView({
                 tick={{ fill: palette.secondary, fontSize: 12 }}
                 tickLine={false}
                 axisLine={false}
-                width={150}
+                width={mixedUnits ? 280 : 150}
                 tickFormatter={(value) => formatCategory(value, chart.x?.unit)}
               />
             </>
@@ -531,11 +541,11 @@ function BarView({
               />
             </>
           )}
-          <Tooltip content={<ChartTooltip chart={chart} />} cursor={{ fill: palette.grid }} />
-          {series.length > 1 && (
+          <Tooltip content={<ChartTooltip chart={chart} extraSeries={tooltipSeries} />} cursor={{ fill: palette.grid }} />
+          {plottedSeries.length > 1 && (
             <Legend wrapperStyle={{ fontSize: 12, color: palette.secondary }} />
           )}
-          {series.slice(0, MAX_SERIES).map((series, seriesIndex) => (
+          {plottedSeries.slice(0, MAX_SERIES).map((series, seriesIndex) => (
             <Bar
               key={series.field}
               dataKey={series.field}
@@ -572,6 +582,11 @@ function BarView({
       </ResponsiveContainer>
       <VisibilityFloorNote show={compressed} form="bars" />
       <FoldedNote folded={folded + foldedSeries} />
+      {hidden > 0 && (
+        <p className="mt-1 text-xs text-muted-foreground">
+          Showing the top 10 of {pivotedRows.length} categories. Switch to the table for all values.
+        </p>
+      )}
     </>
   );
 }
@@ -1299,6 +1314,7 @@ function SmallMultiplesView({ chart, mode }: { chart: ChartSpec; mode: 'light' |
 
 function ChartTooltip({
   chart,
+  extraSeries = [],
   active,
   payload,
   label,
@@ -1306,6 +1322,7 @@ function ChartTooltip({
   labelKey,
 }: TooltipContent & {
   chart: ChartSpec;
+  extraSeries?: SeriesSpec[];
   label?: unknown;
   total?: number;
   labelKey?: string;
@@ -1350,6 +1367,19 @@ function ChartTooltip({
             <span className="ml-auto font-medium tabular-nums text-foreground">
               {formatValue(entry.value, unit)}
               {share}
+            </span>
+          </div>
+        );
+      })}
+      {extraSeries.map((series) => {
+        const value = payload[0]?.payload?.[series.field];
+        if (value == null) return null;
+        return (
+          <div key={series.field} className="flex items-center gap-2">
+            <span className="inline-block h-2 w-2 rounded-full bg-muted-foreground/40" />
+            <span className="text-muted-foreground">{series.label}</span>
+            <span className="ml-auto font-medium tabular-nums text-foreground">
+              {formatValue(value, series.unit)}
             </span>
           </div>
         );
