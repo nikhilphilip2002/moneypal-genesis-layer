@@ -17,6 +17,16 @@ function formatDuration(ms: number) {
   return `${(ms / 1000).toFixed(ms < 10_000 ? 1 : 0)} s`;
 }
 
+const istClock = new Intl.DateTimeFormat('en-IN', {
+  timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true,
+});
+
+function formatIstTime(timestamp?: string) {
+  if (!timestamp) return null;
+  const date = new Date(timestamp);
+  return Number.isNaN(date.getTime()) ? null : istClock.format(date);
+}
+
 export default function ExecutionTrace({
   updates,
   active,
@@ -75,9 +85,7 @@ export default function ExecutionTrace({
             <p className="text-xs text-muted-foreground">Waiting for the first model step…</p>
           ) : steps.map((step) => {
             const Icon = step.kind === 'tool' ? Wrench : Bot;
-            const durationMs = step.duration_ms ?? (step.status === 'running' && active && startedAt
-              ? Math.max(0, elapsed - step.elapsed_ms)
-              : undefined);
+            const time = formatIstTime(step.started_at);
             return (
               <div key={step.id} className="flex gap-2.5">
                 <div className="pt-0.5">
@@ -94,9 +102,9 @@ export default function ExecutionTrace({
                     <span className="font-mono text-[11px] font-medium text-foreground">
                       {step.label}
                     </span>
-                    {durationMs !== undefined && (
+                    {time && (
                       <span className="font-mono text-[10px] tabular-nums text-muted-foreground">
-                        {formatDuration(durationMs)}
+                        at {time} IST
                       </span>
                     )}
                   </div>

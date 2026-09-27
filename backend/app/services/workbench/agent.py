@@ -15,6 +15,7 @@ import json
 import logging
 import time
 from dataclasses import dataclass, replace
+from datetime import UTC, datetime
 from typing import Any
 
 from app.core.config import settings
@@ -227,7 +228,15 @@ async def _emit_trace(state: dict[str, Any], step: dict[str, Any]) -> None:
     """Stream and retain safe, user-visible model and tool activity."""
     from app.services.workbench.graph import sse
 
-    payload = {**step, "elapsed_ms": _elapsed_ms(state)}
+    payload = {
+        **step,
+        "elapsed_ms": _elapsed_ms(state),
+        **(
+            {"started_at": datetime.now(UTC).isoformat()}
+            if step["status"] == "running"
+            else {}
+        ),
+    }
     state.setdefault("trace", []).append(payload)
     await state["emit"].put(sse("trace", payload))
 

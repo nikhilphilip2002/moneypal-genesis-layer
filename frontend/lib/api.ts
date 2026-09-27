@@ -1013,6 +1013,7 @@ export type WorkbenchTraceStep = {
   arguments?: Record<string, unknown>;
   elapsed_ms: number;
   duration_ms?: number;
+  started_at?: string;
   prompt_progress_percent?: number;
   reasoning?: string;
   tool_calls?: WorkbenchTraceToolCall[];

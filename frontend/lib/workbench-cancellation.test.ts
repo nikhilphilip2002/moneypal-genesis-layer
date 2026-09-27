@@ -66,3 +66,18 @@ test('saved traces never animate unfinished steps', () => {
   assert.equal(visibleTraceSteps(updates, false)[1].detail, 'Interrupted');
   assert.equal(visibleTraceSteps(updates, false)[0].status, 'complete');
 });
+
+test('completed model trace keeps the clock time recorded when it started', () => {
+  const steps = visibleTraceSteps([
+    {
+      id: 'model-1', kind: 'model', status: 'running', label: 'Model deciding next action',
+      elapsed_ms: 82, started_at: '2026-09-27T12:22:33+00:00',
+    },
+    {
+      id: 'model-1', kind: 'model', status: 'complete', label: 'Model deciding next action',
+      elapsed_ms: 500, duration_ms: 418,
+    },
+  ], false);
+
+  assert.equal(steps[0].started_at, '2026-09-27T12:22:33+00:00');
+});

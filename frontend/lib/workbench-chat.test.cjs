@@ -67,11 +67,11 @@ test('active trace shows prompt progress in the header and the model label once 
   assert.doesNotMatch(generating, /Prompt Processing/);
 });
 
-test('model trace shows step duration instead of the turn timestamp', () => {
+test('model trace shows its start time in IST instead of elapsed duration', () => {
   const ExecutionTrace = loadComponent(`${__dirname}/../components/workbench/ExecutionTrace.tsx`);
   const step = {
     id: 'model-1', kind: 'model', status: 'running', label: 'Model deciding next action',
-    elapsed_ms: 82,
+    elapsed_ms: 82, started_at: '2026-09-27T12:22:33+00:00',
   };
   const active = renderToStaticMarkup(React.createElement(ExecutionTrace, {
     updates: [step], active: true, startedAt: Date.now() - 2000,
@@ -81,9 +81,10 @@ test('model trace shows step duration instead of the turn timestamp', () => {
   }));
 
   assert.match(active, /Model deciding next action/);
-  assert.match(active, /1\.9 s/);
+  assert.match(active, /at 05:52:33 pm IST/);
   assert.doesNotMatch(active, /at 82 ms/);
-  assert.match(complete, /250 ms/);
+  assert.match(complete, /at 05:52:33 pm IST/);
+  assert.doesNotMatch(complete, /250 ms/);
   assert.doesNotMatch(complete, /at 82 ms/);
 });
 

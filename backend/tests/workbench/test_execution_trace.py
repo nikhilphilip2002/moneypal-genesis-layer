@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import time
+from datetime import datetime
 
 import pytest
 
@@ -232,6 +233,8 @@ async def test_cancelled_model_selection_finalizes_trace(monkeypatch):
 
     model_trace = [step for step in state["trace"] if step["id"] == "model-1"]
     assert [step["status"] for step in model_trace] == ["running", "error"]
+    assert datetime.fromisoformat(model_trace[0]["started_at"]).tzinfo is not None
+    assert "started_at" not in model_trace[-1]
     assert "detail" not in model_trace[0]
     assert model_trace[-1]["detail"] == "Stopped by user"
     assert model_trace[-1]["duration_ms"] >= 0
