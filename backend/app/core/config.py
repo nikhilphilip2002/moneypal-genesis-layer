@@ -192,6 +192,9 @@ class Settings:
             or "qwen3.6-32b-instruct-q4_K_M"
         )
         self.llm_timeout_s = float(get("LLM_TIMEOUT", "300") or "300")
+        self.llm_prompt_progress_enabled = (
+            get("LLM_RETURN_PROGRESS", "true") or "true"
+        ).lower() in ("1", "true", "yes", "on")
         # Disk slot snapshots contain real conversation content and stay disabled until
         # the deployed model/server has demonstrated reuse after save and restore.
         self.llama_slot_snapshots_enabled = (

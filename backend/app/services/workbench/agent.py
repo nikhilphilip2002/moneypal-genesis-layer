@@ -1440,6 +1440,11 @@ async def run(state: dict[str, Any]) -> None:
                 "kind": "model",
                 "status": "running",
                 "label": model_label,
+                **(
+                    {"prompt_progress_percent": 0}
+                    if settings.llm_prompt_progress_enabled
+                    else {}
+                ),
                 "detail": f"Round {round_number}",
             },
         )

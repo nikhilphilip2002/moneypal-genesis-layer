@@ -245,6 +245,9 @@ export default function WorkbenchPage() {
               }
               executionTrace[traceIndex] = {
                 ...step,
+                ...(event.prompt_progress_percent !== undefined
+                  ? { prompt_progress_percent: event.prompt_progress_percent ?? undefined }
+                  : {}),
                 reasoning: `${step.reasoning ?? ''}${event.reasoning_delta ?? ''}` || undefined,
                 tool_calls: toolCalls.length ? toolCalls : undefined,
               };

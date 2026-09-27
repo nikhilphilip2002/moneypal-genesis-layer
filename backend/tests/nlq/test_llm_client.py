@@ -65,6 +65,7 @@ def _client(
     supports_native_tools=True,
     name="llamacpp",
     max_retries=1,
+    supports_prompt_progress=False,
 ):
     profile = _ProviderProfile(
         name=name,
@@ -72,6 +73,7 @@ def _client(
         api_key="k",
         supports_json_schema=supports_json_schema,
         supports_native_tools=supports_native_tools,
+        supports_prompt_progress=supports_prompt_progress,
     )
     client = OpenAICompatibleClient(
         profile=profile,
@@ -181,6 +183,39 @@ def _sse_chunk(delta=None, finish_reason=None, **extra):
         )
         + "\r\n\r\n"
     )
+
+
+@pytest.mark.anyio
+async def test_llamacpp_prompt_progress_streams_until_generation():
+    requests = []
+    progress = []
+    frames = [
+        _sse_chunk(prompt_progress={"total": 100, "cache": 20, "processed": 20, "time_ms": 0}),
+        _sse_chunk(prompt_progress={"total": 100, "cache": 20, "processed": 60, "time_ms": 50}),
+        _sse_chunk(prompt_progress={"total": 100, "cache": 20, "processed": 100, "time_ms": 100}),
+        _sse_chunk({"content": "Done"}),
+        _sse_chunk(finish_reason="stop"),
+        "data: [DONE]\n\n",
+    ]
+
+    def handler(request):
+        requests.append(json.loads(request.content))
+        return httpx.Response(
+            200,
+            headers={"content-type": "text/event-stream"},
+            content="".join(frames),
+        )
+
+    async def on_prompt_progress(percent):
+        progress.append(percent)
+
+    result = await _client(handler, supports_prompt_progress=True).complete(
+        messages=[], on_prompt_progress=on_prompt_progress
+    )
+
+    assert requests[0]["return_progress"] is True
+    assert progress == [0, 50, 100, None]
+    assert result.text == "Done"
 
 
 @pytest.mark.anyio

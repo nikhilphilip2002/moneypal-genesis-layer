@@ -226,6 +226,7 @@ async def _read_completion_stream(
     on_text: Callable[[str], Awaitable[None]] | None = None,
     on_reasoning: Callable[[str], Awaitable[None]] | None = None,
     on_tool_call: Callable[[dict[str, Any]], Awaitable[None]] | None = None,
+    on_prompt_progress: Callable[[int | None], Awaitable[None]] | None = None,
 ) -> dict[str, Any]:
     """Assemble SDK chunks while forwarding public text and model activity."""
     message: dict[str, Any] = {"role": "assistant", "content": None}
@@ -234,6 +235,7 @@ async def _read_completion_stream(
     }
     calls: dict[int, dict[str, Any]] = {}
     finished = False
+    processing_prompt = True
     async for event in stream:
         try:
             chunk = event.model_dump(exclude_none=True)
@@ -249,10 +251,26 @@ async def _read_completion_stream(
                 body["model"] = chunk["model"]
             if chunk.get("usage"):
                 body["usage"] = chunk["usage"]
+            progress = chunk.get("prompt_progress")
+            if processing_prompt and on_prompt_progress and isinstance(progress, dict):
+                total = progress.get("total")
+                cache = progress.get("cache")
+                processed = progress.get("processed")
+                if all(type(value) is int for value in (total, cache, processed)) and total > 0:
+                    remaining = total - cache
+                    percent = 100 if remaining <= 0 else 100 * (processed - cache) // remaining
+                    await on_prompt_progress(max(0, min(100, percent)))
             for choice in chunk.get("choices", []):
                 if choice.get("index", 0) != 0:
                     continue
                 delta = choice.get("delta") or {}
+                if processing_prompt and (
+                    any(delta.get(key) for key in ("content", "reasoning_content", "reasoning"))
+                    or delta.get("tool_calls")
+                ):
+                    processing_prompt = False
+                    if on_prompt_progress:
+                        await on_prompt_progress(None)
                 for key in ("content", "reasoning_content", "reasoning"):
                     value = delta.get(key)
                     if value is not None:
@@ -422,6 +440,7 @@ class LLMClient(Protocol):
         on_reasoning: Callable[[str], Awaitable[None]] | None = None,
         on_tool_call: Callable[[dict[str, Any]], Awaitable[None]]
         | None = None,
+        on_prompt_progress: Callable[[int | None], Awaitable[None]] | None = None,
     ) -> LLMResult: ...
 
     async def health(self) -> dict[str, Any]: ...
@@ -434,6 +453,7 @@ class _ProviderProfile:
     api_key: str | None
     supports_json_schema: bool
     supports_native_tools: bool
+    supports_prompt_progress: bool = False
 
 
 def _native_tool_names(tools: list[dict[str, Any]]) -> set[str]:
@@ -765,6 +785,7 @@ class OpenAICompatibleClient:
         on_reasoning: Callable[[str], Awaitable[None]] | None = None,
         on_tool_call: Callable[[dict[str, Any]], Awaitable[None]]
         | None = None,
+        on_prompt_progress: Callable[[int | None], Awaitable[None]] | None = None,
     ) -> LLMResult:
         if tools is not None and json_schema is not None:
             raise LLMError(
@@ -793,6 +814,8 @@ class OpenAICompatibleClient:
             "stream": True,
             "stream_options": {"include_usage": True},
         }
+        if on_prompt_progress is not None and self.profile.supports_prompt_progress:
+            payload["extra_body"] = {"return_progress": True}
         if max_output_tokens is not None:
             payload["max_tokens"] = max(1, int(max_output_tokens))
         response_format = self._response_format(json_schema)
@@ -846,6 +869,7 @@ class OpenAICompatibleClient:
                             on_text=emit_text,
                             on_reasoning=emit_reasoning,
                             on_tool_call=emit_tool_call,
+                            on_prompt_progress=on_prompt_progress,
                         )
                     except (
                         APIError,
@@ -1283,6 +1307,7 @@ def _profile() -> _ProviderProfile:
         api_key=settings.llm_api_key,
         supports_json_schema=True,
         supports_native_tools=True,
+        supports_prompt_progress=settings.llm_prompt_progress_enabled,
     )
 
 

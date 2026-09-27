@@ -48,9 +48,23 @@ test('yields fragmented answer text before the stream closes, then the final ans
   const pending = events.next();
   assert.equal(requestedUrl, '/api/workbench/ask');
   controller.enqueue(frame('trace_delta', {
+    id: 'model-1', prompt_progress_percent: 42,
+  }));
+  const progress = (await pending).value;
+  assert.equal(progress.type, 'trace_delta');
+  assert.equal(progress.prompt_progress_percent, 42);
+  const clearPending = events.next();
+  controller.enqueue(frame('trace_delta', {
+    id: 'model-1', prompt_progress_percent: null,
+  }));
+  const cleared = (await clearPending).value;
+  assert.equal(cleared.type, 'trace_delta');
+  assert.equal(cleared.prompt_progress_percent, null);
+  const reasoningPending = events.next();
+  controller.enqueue(frame('trace_delta', {
     id: 'model-1', reasoning_delta: 'Checking available data…',
   }));
-  const reasoning = (await pending).value;
+  const reasoning = (await reasoningPending).value;
   assert.equal(reasoning.type, 'trace_delta');
   assert.equal(reasoning.reasoning_delta, 'Checking available data…');
   const toolPending = events.next();

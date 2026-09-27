@@ -8,6 +8,28 @@ from app.services.workbench.streaming import complete_answer
 
 
 @pytest.mark.anyio
+async def test_prompt_progress_is_forwarded_to_the_model_trace():
+    queue = asyncio.Queue()
+
+    class Client:
+        profile = type("Profile", (), {"supports_prompt_progress": True})()
+
+        async def complete(self, *, on_text, on_reasoning, on_tool_call, on_prompt_progress):
+            await on_prompt_progress(42)
+            await on_prompt_progress(None)
+            return LLMResult(text="Done", model="m", provider="llm")
+
+    await complete_answer(Client(), {"emit": queue}, trace_id="model-1")
+
+    frames = [queue.get_nowait() for _ in range(3)]
+    assert frames[0].startswith("event: answer_start\n")
+    assert [json.loads(frame.split("data: ")[1]) for frame in frames[1:]] == [
+        {"id": "model-1", "prompt_progress_percent": 42},
+        {"id": "model-1", "prompt_progress_percent": None},
+    ]
+
+
+@pytest.mark.anyio
 @pytest.mark.parametrize("outcome", ["answer", "tools", "error", "cancel"])
 async def test_answer_deltas_are_live_and_never_retracted(outcome):
     queue = asyncio.Queue()

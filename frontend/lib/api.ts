@@ -1013,6 +1013,7 @@ export type WorkbenchTraceStep = {
   arguments?: Record<string, unknown>;
   elapsed_ms: number;
   duration_ms?: number;
+  prompt_progress_percent?: number;
   reasoning?: string;
   tool_calls?: WorkbenchTraceToolCall[];
 };
@@ -1025,6 +1026,7 @@ export type WorkbenchTraceToolCall = {
 
 export type WorkbenchTraceDelta = {
   id: string;
+  prompt_progress_percent?: number | null;
   reasoning_delta?: string;
   tool_call?: WorkbenchTraceToolCall;
 };
@@ -1209,6 +1211,11 @@ export const workbench = {
               yield {
                 type: 'trace_delta',
                 id: stringValue(payload.id),
+                prompt_progress_percent: payload.prompt_progress_percent === null
+                  ? null
+                  : typeof payload.prompt_progress_percent === 'number' && Number.isFinite(payload.prompt_progress_percent)
+                    ? payload.prompt_progress_percent
+                    : undefined,
                 reasoning_delta: optionalString(payload.reasoning_delta),
                 tool_call: isRecord(payload.tool_call)
                   ? payload.tool_call as WorkbenchTraceToolCall

@@ -39,13 +39,28 @@ async def complete_answer(
                 )
             )
 
+    async def on_prompt_progress(percent: int | None) -> None:
+        if trace_id is not None:
+            await emit.put(
+                sse(
+                    "trace_delta",
+                    {"id": trace_id, "prompt_progress_percent": percent},
+                )
+            )
+
     # A model response is a permanent message, even when it also contains a native tool
     # call. The client reports the boundary so the UI can preserve separate messages; it
     # never clears or reclassifies content after seeing how the response finishes.
     await emit.put(sse("answer_start", {}))
+    progress_kwargs = (
+        {"on_prompt_progress": on_prompt_progress}
+        if getattr(getattr(client, "profile", None), "supports_prompt_progress", False)
+        else {}
+    )
     return await client.complete(
         **kwargs,
         on_text=on_text,
         on_reasoning=on_reasoning,
         on_tool_call=on_tool_call,
+        **progress_kwargs,
     )
