@@ -75,6 +75,9 @@ export default function ExecutionTrace({
             <p className="text-xs text-muted-foreground">Waiting for the first model step…</p>
           ) : steps.map((step) => {
             const Icon = step.kind === 'tool' ? Wrench : Bot;
+            const durationMs = step.duration_ms ?? (step.status === 'running' && active && startedAt
+              ? Math.max(0, elapsed - step.elapsed_ms)
+              : undefined);
             return (
               <div key={step.id} className="flex gap-2.5">
                 <div className="pt-0.5">
@@ -91,11 +94,11 @@ export default function ExecutionTrace({
                     <span className="font-mono text-[11px] font-medium text-foreground">
                       {step.label}
                     </span>
-                    <span className="font-mono text-[10px] tabular-nums text-muted-foreground">
-                      {step.duration_ms !== undefined
-                        ? formatDuration(step.duration_ms)
-                        : `at ${formatDuration(step.elapsed_ms)}`}
-                    </span>
+                    {durationMs !== undefined && (
+                      <span className="font-mono text-[10px] tabular-nums text-muted-foreground">
+                        {formatDuration(durationMs)}
+                      </span>
+                    )}
                   </div>
                   {step.detail && (
                     <p className="mt-0.5 break-words text-[11px] leading-4 text-muted-foreground">

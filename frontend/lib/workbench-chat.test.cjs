@@ -67,6 +67,26 @@ test('active trace shows prompt progress in the header and the model label once 
   assert.doesNotMatch(generating, /Prompt Processing/);
 });
 
+test('model trace shows step duration instead of the turn timestamp', () => {
+  const ExecutionTrace = loadComponent(`${__dirname}/../components/workbench/ExecutionTrace.tsx`);
+  const step = {
+    id: 'model-1', kind: 'model', status: 'running', label: 'Model deciding next action',
+    elapsed_ms: 82,
+  };
+  const active = renderToStaticMarkup(React.createElement(ExecutionTrace, {
+    updates: [step], active: true, startedAt: Date.now() - 2000,
+  }));
+  const complete = renderToStaticMarkup(React.createElement(ExecutionTrace, {
+    updates: [{ ...step, status: 'complete', duration_ms: 250 }], active: true,
+  }));
+
+  assert.match(active, /Model deciding next action/);
+  assert.match(active, /1\.9 s/);
+  assert.doesNotMatch(active, /at 82 ms/);
+  assert.match(complete, /250 ms/);
+  assert.doesNotMatch(complete, /at 82 ms/);
+});
+
 test('Workbench SQL disclosure omits generated-query boilerplate', () => {
   const LineagePanel = loadComponent(`${__dirname}/../components/nlq/LineagePanel.tsx`);
   const lineage = {

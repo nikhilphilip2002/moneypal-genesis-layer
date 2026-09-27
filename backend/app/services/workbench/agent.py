@@ -1445,7 +1445,6 @@ async def run(state: dict[str, Any]) -> None:
                     if settings.llm_prompt_progress_enabled
                     else {}
                 ),
-                "detail": f"Round {round_number}",
             },
         )
         try:
