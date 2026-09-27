@@ -60,11 +60,14 @@ export default function ChartRenderer({ chart, onDrilldown, hideHeader = false, 
   const mode = useChartMode();
   const showTable = asTable || chart.chart_type === 'table';
   const canToggle = chart.chart_type !== 'table';
+  const controlsAlignment = hideHeader
+    ? (plain && chart.chart_type === 'kpi' ? 'justify-start' : 'justify-end')
+    : 'justify-between';
 
   return (
     <div className="w-full">
       {(!hideHeader || canToggle) && (
-        <div className={cn('mb-3 flex items-start justify-between gap-3', hideHeader && 'justify-end')}>
+        <div className={cn('mb-3 flex items-start gap-3', controlsAlignment)}>
           {!hideHeader && (
             <div className="min-w-0">
               <h3 className="truncate text-base font-semibold tracking-tight text-foreground">{chart.title}</h3>
@@ -77,12 +80,12 @@ export default function ChartRenderer({ chart, onDrilldown, hideHeader = false, 
             {canToggle && (
               <Button
                 type="button"
-                variant={plain ? 'ghost' : 'outline'}
+                variant="outline"
                 size="sm"
                 onClick={() => setAsTable((v) => !v)}
                 className={cn(
                   'h-8 shrink-0 gap-1.5 px-2.5 text-xs font-medium text-muted-foreground hover:text-foreground',
-                  plain ? 'border-0 bg-transparent shadow-none' : 'rounded-lg border-border/70 bg-background/70 shadow-sm',
+                  plain ? 'border border-border/70 bg-transparent shadow-none' : 'rounded-lg border-border/70 bg-background/70 shadow-sm',
                 )}
               >
                 {asTable ? <BarChart3 className="size-3.5" /> : <Table2 className="size-3.5" />}

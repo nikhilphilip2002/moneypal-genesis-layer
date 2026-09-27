@@ -79,7 +79,9 @@ test('plain chart renders values without result cards or generated summary', () 
   const { markup } = renderChart(chart, { plain: true, hideSummary: true });
 
   assert.match(markup, /Collected/);
-  assert.match(markup, /border-0 bg-transparent shadow-none/);
+  assert.match(markup, /justify-start/);
+  assert.doesNotMatch(markup, /justify-end/);
+  assert.match(markup, /border border-border\/70 bg-transparent shadow-none/);
   assert.doesNotMatch(markup, /What this shows|Heatmap derived from query|rounded-2xl border/);
 });
 
