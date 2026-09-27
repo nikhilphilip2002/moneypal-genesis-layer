@@ -20,27 +20,25 @@ class TestLoads:
     def test_catalog_loads_and_validates(self, catalog):
         assert catalog.metrics and catalog.dimensions and catalog.tables
         assert (
-            catalog.metrics["agent_linked_loans"].base_table == "gold.agents"
+            catalog.metrics["agent_linked_loans"].base_table == "gold.loan_accounts"
         )
         assert catalog.dimensions["agent"].table == "gold.loan_accounts"
         assert catalog.dimensions["loan_agent"].decode == "agent_identity"
-        assert catalog.dimensions["agent_profile"].column == "agent_code"
+        assert catalog.dimensions["agent_profile"].table == "gold.loan_accounts"
 
-    def test_agent_catalog_exposes_current_postgres_limitations(self, catalog):
+    def test_agent_catalog_uses_populated_loan_links(self, catalog):
         loans = catalog.table_by_name("gold.loan_accounts")
         agents = catalog.table_by_name("gold.agents")
 
-        assert (
-            loans is not None
-            and "no populated agent_code" in loans.coverage_warning
-        )
-        assert "Do not use this table" in loans.restrictions
+        assert loans is not None
+        assert "company_code and customer_id" in loans.restrictions
         assert (
             agents is not None
-            and "linked customer counts are zero" in agents.coverage_warning
+            and "do not reconcile" in agents.coverage_warning
         )
-        assert "it has no company_code" in agents.restrictions
-        assert "entirely null" in catalog.dimensions["agent"].description
+        assert "Use gold.loan_accounts" in agents.restrictions
+        assert "filter or group loans" in catalog.dimensions["agent"].description
+        assert "company_code" in catalog.metrics["customer_count"].expression
 
     def test_version_is_content_addressed(self, catalog):
         assert len(catalog.version) == 12

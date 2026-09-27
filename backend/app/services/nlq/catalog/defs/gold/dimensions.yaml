@@ -112,8 +112,8 @@
   decode: agent_identity
   synonyms: [loan agent code, assigned loan agent]
   description: >
-    Reserved per-loan agent code. It is entirely null in the current PostgreSQL load; do
-    not use it to filter, group, count, or list loans, borrowers, or customers by agent.
+    Agent assigned to each loan account. Use this code to filter or group loans and
+    borrowers by agent; identify borrowers by company_code and customer_id together.
 
 - id: loan_agent
   label: Agent
@@ -123,8 +123,8 @@
   decode: agent_identity
   synonyms: [loan agent]
   description: >
-    Reserved per-loan agent identity. agent_code is entirely null in the current PostgreSQL
-    load, so borrower/customer/loan analysis by agent is unavailable from loan_accounts.
+    Agent assigned to each loan account. Borrower and loan analysis by agent uses
+    gold.loan_accounts, with company_code and customer_id together for borrower identity.
 
 - id: borrower
   label: Borrower
@@ -169,7 +169,7 @@
 
 - id: agent_profile
   label: Agent
-  table: gold.agents
+  table: gold.loan_accounts
   column: agent_code
   type: categorical
   decode: agent_identity
@@ -177,9 +177,9 @@
     [agent, agent name, field agent, field agents, sales staff, top agents,
      agents by linked loan count, loans by agent, agent performance]
   description: >
-    Standalone agent directory identity keyed only by agent_code. Use the pre-aggregated
-    linked_loan_count for agent loan totals; do not join this table to loans or customers.
-  cardinality: 159
+    Agent identity on loan accounts, decoded through the agent directory. Count loans and
+    borrowers from loan accounts instead of the directory's pre-aggregated linked counts.
+  cardinality: 158
 
 - id: gl_account
   label: GL account

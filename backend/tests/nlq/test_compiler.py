@@ -55,6 +55,23 @@ class TestGeneratedSql:
         )
         assert "company_code" in out
 
+    def test_customer_count_uses_company_and_customer_identity(self):
+        out = sql_for(metrics=["customer_count"], dimensions=["agent"])
+        assert "COUNT(DISTINCT (loan.company_code, loan.customer_id))" in out
+
+    def test_agent_loan_count_reads_loan_accounts(self):
+        out = compile_spec(
+            QuerySpec(
+                metrics=["agent_linked_loans"],
+                dimensions=["agent_profile"],
+                period=Period(relative="today"),
+            ),
+            today=TODAY,
+        ).sql
+        assert "FROM gold.loan_accounts AS loan" in out
+        assert "COUNT(*) AS agent_linked_loans" in out
+        assert "gold.agents" not in out
+
     def test_every_value_is_a_bound_parameter(self):
         compiled = compile_spec(
             spec(

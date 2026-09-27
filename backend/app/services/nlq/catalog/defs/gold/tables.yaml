@@ -15,8 +15,7 @@
   date_columns: {sanction: approved_on, first_disbursement: first_amount_given_on, repayment_start: repayment_start_date, repayment_end: repayment_end_date, last_payment: last_payment_date, asset_classification: loan_health_marked_on, npa: bad_loan_marked_on, closure: closed_on}
   description: Account-level loan facts, reporting attributes, borrower identity, and cumulative values.
   notes: Cumulative fields are current values, not period event flows.
-  coverage_warning: The current PostgreSQL load has no populated agent_code values in this table.
-  restrictions: Do not use this table for loans, borrowers, or customers by agent until agent_code is populated.
+  restrictions: Identify borrowers by company_code and customer_id together when counting or listing them by agent.
 
 - id: semantic_customer_profile
   table: gold.customers
@@ -76,8 +75,8 @@
   synonyms: [agents, agent directory, field agents, staff, sourcing agents, collection agents]
   date_columns: {joined: joined_on}
   description: Governed staff and field-agent directory with pre-aggregated relationship counts.
-  coverage_warning: Linked loan counts are pre-aggregated, but linked customer counts are zero in the current PostgreSQL load.
-  restrictions: Standalone directory keyed only by agent_code; it has no company_code. Do not join it to loan or customer tables. Use linked_loan_count for agent loan totals, and do not claim or list customers by agent from the current Gold layer.
+  coverage_warning: Pre-aggregated linked loan and customer counts do not reconcile with the current loan account rows.
+  restrictions: Directory keyed only by agent_code with no company_code. Use gold.loan_accounts for loan and customer counts by agent; do not join this directory directly to customers or use its linked counts for reporting.
 
 - id: semantic_organization_hierarchy
   table: gold.staff_reporting_structure

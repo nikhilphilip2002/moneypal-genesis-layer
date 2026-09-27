@@ -472,7 +472,10 @@ def test_agent_customers_are_distinct_and_use_the_governed_loan_relation():
     assert attempt.validated
     assert "FROM gold.loan_accounts AS reporting" in attempt.sql
     assert "LOWER(reporting.agent_code) = 'agnt45'" in attempt.sql
-    assert "GROUP BY" in attempt.sql and "reporting.customer_id" in attempt.sql
+    assert "AS company_code" in attempt.sql
+    group_by = attempt.sql.split("GROUP BY", 1)[1].split("ORDER BY", 1)[0]
+    assert "reporting.company_code" in group_by
+    assert "reporting.customer_id" in group_by
     assert (
         "COUNT(DISTINCT reporting.loan_account_number) AS linked_loan_count"
         in attempt.sql

@@ -1602,7 +1602,8 @@ def _agent_customers(plan: LookupPlan, catalog: Catalog) -> ValidatedSql:
     ]
     selected = ", " + ", ".join(projections) if projections else ""
     sql = (
-        "SELECT reporting.customer_id::text AS customer_id, "
+        "SELECT reporting.company_code::text AS company_code, "
+        "reporting.customer_id::text AS customer_id, "
         + "MIN("
         + display_name
         + ") AS borrower_name, "
@@ -1614,14 +1615,15 @@ def _agent_customers(plan: LookupPlan, catalog: Catalog) -> ValidatedSql:
         "WHERE LOWER(reporting.agent_code) = "
         + value
         + " AND reporting.approved_on <= CURRENT_DATE "
-        "GROUP BY reporting.customer_id "
-        "ORDER BY borrower_name, customer_id LIMIT 500"
+        "GROUP BY reporting.company_code, reporting.customer_id "
+        "ORDER BY borrower_name, company_code, customer_id LIMIT 500"
     )
     return _validated_attempt(
         sql,
         catalog=catalog,
         explanation="Distinct governed borrowers linked to the requested agent code.",
         units={
+            "company_code": "text",
             "customer_id": "text",
             "borrower_name": "text",
             "linked_loan_count": "count",

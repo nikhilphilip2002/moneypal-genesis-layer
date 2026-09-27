@@ -56,8 +56,8 @@
   grain: flow
   base_table: gold.loan_accounts
   date_column: approved_on
-  expression: COUNT(DISTINCT {t}.customer_id)
-  formula: Distinct borrowers with an account sanctioned in the period
+  expression: COUNT(DISTINCT ({t}.company_code, {t}.customer_id))
+  formula: Distinct company and borrower pairs with an account sanctioned in the period
   synonyms:
     [customers, borrowers, unique customers, how many borrowers, clients,
      customer count by agent, highest customer count, agents with most customers,
@@ -109,9 +109,9 @@
   label: Linked loans
   unit: count
   grain: point_in_time
-  base_table: gold.agents
-  expression: SUM({t}.linked_loan_count)
-  formula: Sum of loan accounts linked to each governed agent
+  base_table: gold.loan_accounts
+  expression: COUNT(*)
+  formula: Count of loan account rows linked to each agent
   synonyms:
     [top agents, agent ranking, loans by agent, agent performance, linked loans,
      linked loan count, most loan accounts, more loan accounts, agent loan account count]
