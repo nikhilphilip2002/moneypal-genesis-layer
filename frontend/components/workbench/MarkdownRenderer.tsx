@@ -62,7 +62,7 @@ const components: Components = {
     />
   ),
   table: ({ className, ...props }: ComponentPropsWithoutRef<'table'>) => (
-    <div className="max-w-full overflow-x-auto rounded-lg border border-border/60">
+    <div className="max-w-full overflow-x-auto rounded-md border border-border/70">
       <table className={cn('w-full border-collapse text-left text-xs', className)} {...props} />
     </div>
   ),

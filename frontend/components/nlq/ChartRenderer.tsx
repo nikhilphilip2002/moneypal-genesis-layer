@@ -1373,7 +1373,7 @@ function TableView({ chart, plain }: { chart: ChartSpec; plain?: boolean }) {
     // from the transcript's — two bars, and no way to tell which one moves the page. The
     // table grows with its rows instead, and a long one is folded until asked for.
     <div className="space-y-2">
-      <div className={cn(!plain && 'overflow-x-auto rounded-xl border border-border/60')}>
+      <div className="overflow-x-auto rounded-md border border-border/70">
         <Table>
           <TableHeader className="bg-muted/70">
             <TableRow>

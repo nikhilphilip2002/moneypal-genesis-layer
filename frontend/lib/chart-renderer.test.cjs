@@ -130,7 +130,7 @@ test('Workbench non-KPI chart controls also align right', () => {
   assert.doesNotMatch(markup, /justify-start/);
 });
 
-test('Workbench table uses the shadcn table with muted header and column dividers', () => {
+test('Workbench table uses the shadcn table with a subtle border and muted header', () => {
   const chart = {
     chart_type: 'table',
     title: 'Accounts',
@@ -146,10 +146,11 @@ test('Workbench table uses the shadcn table with muted header and column divider
   assert.match(markup, /Account/);
   assert.match(markup, /A001/);
   assert.match(markup, /42/);
+  assert.match(markup, /overflow-x-auto rounded-md border border-border\/70/);
   assert.match(markup, /<thead class="bg-muted\/70">/);
   assert.match(markup, /<th class="border-r border-border\/70 last:border-r-0">Account<\/th>/);
   assert.match(markup, /<td class="border-r border-border\/70 last:border-r-0">A001<\/td>/);
-  assert.doesNotMatch(markup, /rounded-xl border border-border\/60|bg-muted\/80|odd:bg-muted/);
+  assert.doesNotMatch(markup, /bg-muted\/80|odd:bg-muted/);
 });
 
 test('grouped bars render one series per group against shared categories', () => {
