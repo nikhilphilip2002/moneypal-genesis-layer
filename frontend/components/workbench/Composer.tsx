@@ -50,7 +50,7 @@ type Props = {
 };
 
 const actionButtonClassName = cn(
-  'size-9 shrink-0 rounded-full shadow-none disabled:opacity-100',
+  'h-8 w-8 shrink-0 rounded-full shadow-none disabled:opacity-100',
   'bg-zinc-900 text-zinc-50 hover:bg-zinc-800 hover:text-zinc-50 focus-visible:ring-zinc-500 disabled:bg-zinc-800 disabled:text-zinc-300',
   'dark:bg-zinc-200 dark:text-zinc-950 dark:hover:bg-zinc-300 dark:hover:text-zinc-950 dark:focus-visible:ring-zinc-400 dark:disabled:bg-zinc-300 dark:disabled:text-zinc-600',
 );
@@ -320,8 +320,6 @@ export default function Composer({
           )}
         </div>
 
-        {/* Send and stop are the same control in two states — same 36×36 target, same
-            icon-only treatment — so the composer does not reflow when a run starts. */}
         {busy ? (
           <Button
             type="button"
