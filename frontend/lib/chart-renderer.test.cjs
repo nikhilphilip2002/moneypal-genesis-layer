@@ -7,6 +7,8 @@ const React = require('react');
 const { renderToStaticMarkup } = require('react-dom/server');
 
 function renderChart(chart, props = {}) {
+  const { startAsTable = false, ...chartProps } = props;
+  let firstStateCall = true;
   const rendered = { bars: [], lines: [], areas: [], charts: [], legends: [] };
   const recharts = new Proxy({}, {
     get: (_, name) => (props) => {
@@ -35,8 +37,26 @@ function renderChart(chart, props = {}) {
       process,
       require: (name) => {
         if (name === 'recharts') return recharts;
+        if (name === 'react' && startAsTable) {
+          return {
+            ...React,
+            useState: (initial) => {
+              if (firstStateCall) {
+                firstStateCall = false;
+                return [true, () => {}];
+              }
+              return React.useState(initial);
+            },
+          };
+        }
         if (name === '@/components/ui/button') {
-          return { Button: ({ children, className }) => React.createElement('button', { className }, children) };
+          return { Button: ({ children, className, variant }) => React.createElement('button', { className, 'data-variant': variant }, children) };
+        }
+        if (name === '@/components/ui/table') {
+          return Object.fromEntries(Object.entries({
+            Table: 'table', TableHeader: 'thead', TableBody: 'tbody',
+            TableRow: 'tr', TableHead: 'th', TableCell: 'td',
+          }).map(([component, tag]) => [component, ({ children, className }) => React.createElement(tag, { className }, children)]));
         }
         if (name.startsWith('@/components/ui/')) {
           return new Proxy({}, {
@@ -51,7 +71,7 @@ function renderChart(chart, props = {}) {
     return exports;
   }
   const ChartRenderer = load(`${__dirname}/../components/nlq/ChartRenderer.tsx`).default;
-  rendered.markup = renderToStaticMarkup(React.createElement(ChartRenderer, { chart, hideHeader: true, ...props }));
+  rendered.markup = renderToStaticMarkup(React.createElement(ChartRenderer, { chart, hideHeader: true, ...chartProps }));
   return rendered;
 }
 
@@ -81,8 +101,33 @@ test('plain chart renders values without result cards or generated summary', () 
   assert.match(markup, /Collected/);
   assert.match(markup, /justify-start/);
   assert.doesNotMatch(markup, /justify-end/);
-  assert.match(markup, /border border-border\/70 bg-transparent shadow-none/);
+  assert.equal((markup.match(/data-variant="ghost"/g) ?? []).length, 2);
+  assert.equal((markup.match(/border border-border bg-transparent shadow-none/g) ?? []).length, 2);
   assert.doesNotMatch(markup, /What this shows|Heatmap derived from query|rounded-2xl border/);
+});
+
+test('Workbench KPI table keeps numeric columns left aligned', () => {
+  const chart = {
+    chart_type: 'kpi',
+    title: 'Portfolio',
+    columns: [{ name: 'balance', label: 'Balance', unit: 'count' }],
+    series: [{ field: 'balance', label: 'Balance', unit: 'count' }],
+    rows: [{ balance: 42 }],
+    summary: '',
+  };
+  const { markup } = renderChart(chart, { plain: true, startAsTable: true });
+
+  assert.match(markup, /<th[^>]*>Balance<\/th>/);
+  assert.match(markup, /<td[^>]*>42<\/td>/);
+  assert.doesNotMatch(markup, /text-right/);
+  assert.match(markup, /justify-start/);
+});
+
+test('Workbench non-KPI chart controls also align left', () => {
+  const { markup } = renderChart(groupedChart, { plain: true });
+
+  assert.match(markup, /justify-start/);
+  assert.doesNotMatch(markup, /justify-end/);
 });
 
 test('Workbench table uses the shadcn table without custom panel or row styling', () => {

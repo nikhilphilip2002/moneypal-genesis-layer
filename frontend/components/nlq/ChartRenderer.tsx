@@ -61,7 +61,7 @@ export default function ChartRenderer({ chart, onDrilldown, hideHeader = false, 
   const showTable = asTable || chart.chart_type === 'table';
   const canToggle = chart.chart_type !== 'table';
   const controlsAlignment = hideHeader
-    ? (plain && chart.chart_type === 'kpi' ? 'justify-start' : 'justify-end')
+    ? (plain ? 'justify-start' : 'justify-end')
     : 'justify-between';
 
   return (
@@ -80,12 +80,12 @@ export default function ChartRenderer({ chart, onDrilldown, hideHeader = false, 
             {canToggle && (
               <Button
                 type="button"
-                variant="outline"
+                variant={plain ? 'ghost' : 'outline'}
                 size="sm"
                 onClick={() => setAsTable((v) => !v)}
                 className={cn(
                   'h-8 shrink-0 gap-1.5 px-2.5 text-xs font-medium text-muted-foreground hover:text-foreground',
-                  plain ? 'border border-border/70 bg-transparent shadow-none' : 'rounded-lg border-border/70 bg-background/70 shadow-sm',
+                  plain ? 'rounded-lg border border-border bg-transparent shadow-none' : 'rounded-lg border-border/70 bg-background/70 shadow-sm',
                 )}
               >
                 {asTable ? <BarChart3 className="size-3.5" /> : <Table2 className="size-3.5" />}
@@ -95,10 +95,13 @@ export default function ChartRenderer({ chart, onDrilldown, hideHeader = false, 
             {!asTable && chart.chart_type !== 'table' && (
               <Button
                 type="button"
-                variant="outline"
+                variant={plain ? 'ghost' : 'outline'}
                 size="icon"
                 onClick={() => setExpanded(true)}
-                className="size-8 rounded-lg border-border/70 bg-background/70 text-muted-foreground shadow-sm hover:text-foreground"
+                className={cn(
+                  'size-8 rounded-lg text-muted-foreground hover:text-foreground',
+                  plain ? 'border border-border bg-transparent shadow-none' : 'border-border/70 bg-background/70 shadow-sm',
+                )}
                 aria-label={`Expand ${chart.title}`}
                 title="Expand chart"
               >
@@ -1365,6 +1368,7 @@ function TableView({ chart, plain }: { chart: ChartSpec; plain?: boolean }) {
   const [expanded, setExpanded] = useState(false);
   const folded = Math.max(0, chart.rows.length - TABLE_PREVIEW_ROWS);
   const rows = expanded || folded === 0 ? chart.rows : chart.rows.slice(0, TABLE_PREVIEW_ROWS);
+  const alignNumericRight = !(plain && chart.chart_type === 'kpi');
 
   return (
     // A capped height would give a 300-row record list its own vertical scrollbar, inches
@@ -1376,7 +1380,7 @@ function TableView({ chart, plain }: { chart: ChartSpec; plain?: boolean }) {
           <TableHeader className={plain ? undefined : 'bg-muted/80'}>
             <TableRow>
               {chart.columns.map((column) => (
-                <TableHead key={column.name} className={cn(isNumeric(column) && 'text-right')}>
+                <TableHead key={column.name} className={cn(alignNumericRight && isNumeric(column) && 'text-right')}>
                   {column.label}
                   {column.masked && (
                     <Badge
@@ -1398,7 +1402,7 @@ function TableView({ chart, plain }: { chart: ChartSpec; plain?: boolean }) {
                     key={column.name}
                     className={cn(
                       !plain && 'text-foreground',
-                      isNumeric(column) && 'text-right tabular-nums',
+                      isNumeric(column) && (alignNumericRight ? 'text-right tabular-nums' : 'tabular-nums'),
                       column.name === 'delta' && deltaTone(row[column.name]),
                     )}
                   >
