@@ -49,6 +49,12 @@ type Props = {
   onCompletionHeightChange?: (height: number) => void;
 };
 
+const actionButtonClassName = cn(
+  'size-9 shrink-0 rounded-full shadow-none disabled:opacity-100',
+  'bg-zinc-900 text-zinc-50 hover:bg-zinc-800 hover:text-zinc-50 focus-visible:ring-zinc-500 disabled:bg-zinc-800 disabled:text-zinc-300',
+  'dark:bg-zinc-200 dark:text-zinc-950 dark:hover:bg-zinc-300 dark:hover:text-zinc-950 dark:focus-visible:ring-zinc-400 dark:disabled:bg-zinc-300 dark:disabled:text-zinc-600',
+);
+
 export default function Composer({
   onAsk,
   busy,
@@ -321,7 +327,7 @@ export default function Composer({
             type="button"
             size="icon"
             variant="ghost"
-            className="size-9 shrink-0 rounded-full bg-muted text-primary shadow-none hover:bg-muted/80"
+            className={actionButtonClassName}
             onClick={onCancel}
             aria-label="Stop response"
           >
@@ -332,7 +338,7 @@ export default function Composer({
             type="button"
             size="icon"
             variant="ghost"
-            className="size-9 shrink-0 rounded-full bg-muted text-primary shadow-none hover:bg-muted/80"
+            className={actionButtonClassName}
             onClick={submit}
             disabled={!value.trim()}
             aria-label="Send message"
