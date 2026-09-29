@@ -371,7 +371,7 @@ async def _select(
                     result = await complete(
                         messages=prepared,
                         tools=definitions,
-                        parallel_tool_calls=False,
+                        tool_choice=tool_choice,
                         timeout_s=budget.remaining_s(settings.llm_timeout_s),
                         call_purpose=_PURPOSES[tool_choice],
                         call_kind="repair"

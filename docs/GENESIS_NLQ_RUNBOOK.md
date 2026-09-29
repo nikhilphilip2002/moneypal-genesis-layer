@@ -86,7 +86,7 @@ Current llama.cpp hybrid/recurrent builds may restore a slot successfully but re
 tokens. Leave disk snapshots off if that occurs.
 
 Workbench sends only policy-permitted definitions in the `tools` list on each chat
-request. It omits `tool_choice` because the deployed llama-server does not support it.
+request, alongside `tool_choice` to enforce required tool routing or continuation.
 The backend also checks every call at execution.
 
 `NLQ_LLM_THINKING` must stay `false` for any hybrid-reasoning model (the Qwen3 family, and

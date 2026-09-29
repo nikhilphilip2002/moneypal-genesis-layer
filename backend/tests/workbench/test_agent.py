@@ -613,8 +613,8 @@ async def test_tools_are_filtered_across_source_toggle(scripted):
     await agent._select(on, tool_choice="auto")
 
     off_request, on_request = client.requests
-    assert "tool_choice" not in off_request
-    assert "tool_choice" not in on_request
+    assert off_request["tool_choice"] == "auto"
+    assert on_request["tool_choice"] == "auto"
     off_names = {item["function"]["name"] for item in off_request["tools"]}
     on_names = {item["function"]["name"] for item in on_request["tools"]}
     assert "query" in off_names
@@ -669,7 +669,7 @@ async def test_strict_final_answer_tool_drives_reconciled_answer(scripted):
     assert answer["query_id"] == 1
     assert answer["view"] == "kpi"
     assert answer["attribution_fallback_used"] is False
-    assert "tool_choice" not in client.requests[-1]
+    assert client.requests[-1]["tool_choice"] == "auto"
 
 
 @pytest.mark.anyio
@@ -887,7 +887,8 @@ async def test_last_round_result_is_shown_without_forcing_synthesis(
     state = _run_state("min-rounds")
     await agent.run(state)
 
-    assert all("tool_choice" not in call for call in client.requests)
+    assert client.requests[0]["tool_choice"] == "required"
+    assert client.requests[1]["tool_choice"] == "auto"
     assert client.requests[1]["call_purpose"] == "agent_continue"
     synthesis_messages = client.requests[1]["messages"]
     assert any(
@@ -923,7 +924,7 @@ async def test_failure_path_spends_exactly_max_rounds_requests(
     with pytest.raises(agent.BudgetExhausted):
         await agent.run(state)
 
-    assert all("tool_choice" not in call for call in client.requests)
+    assert all(call["tool_choice"] in {"required", "auto"} for call in client.requests)
     assert [
         sum(
             1
@@ -1272,7 +1273,7 @@ async def test_outbound_policy_denial_gets_one_native_repair(
     state = _run_state("web-repair", "Search")
     await agent.run(state)
 
-    assert all("tool_choice" not in request for request in client.requests)
+    assert all(request["tool_choice"] in {"required", "auto"} for request in client.requests)
     denial = next(
         json.loads(message["content"])
         for message in client.requests[1]["messages"]
@@ -1328,7 +1329,7 @@ async def test_unresolved_policy_denial_ends_with_an_application_refusal(
     frames = _frames(state)
 
     assert len(client.requests) == 3
-    assert all("tool_choice" not in request for request in client.requests)
+    assert all(request["tool_choice"] in {"required", "auto"} for request in client.requests)
     refusal = next(
         json.loads(frame.split("data: ", 1)[1])
         for frame in frames

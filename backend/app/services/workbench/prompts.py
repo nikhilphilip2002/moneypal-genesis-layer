@@ -650,7 +650,6 @@ def build_agent_prompt(
                 {
                     "type": "text",
                     "text": build_agent_system_prompt(catalog),
-                    "prompt_cache_breakpoint": {"mode": "explicit"},
                 }
             ],
         }
