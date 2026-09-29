@@ -486,6 +486,12 @@ def _choice_tool_names(
     """Validate an allowed_tools choice and constrain accepted provider tool calls."""
     if tool_choice == "none":
         return set()
+    if isinstance(tool_choice, dict) and tool_choice.get("type") == "function":
+        function = tool_choice.get("function")
+        name = function.get("name") if isinstance(function, dict) else None
+        if not isinstance(name, str) or name not in offered_names:
+            raise LLMError("named tool_choice must reference an offered function")
+        return {name}
     if (
         not isinstance(tool_choice, dict)
         or tool_choice.get("type") != "allowed_tools"
@@ -816,6 +822,10 @@ class OpenAICompatibleClient:
         }
         if on_prompt_progress is not None and self.profile.supports_prompt_progress:
             payload["extra_body"] = {"return_progress": True}
+        if settings.llama_prompt_cache_enabled:
+            payload.setdefault("extra_body", {}).update(
+                cache_prompt=True, id_slot=settings.llama_slot_id,
+            )
         if max_output_tokens is not None:
             payload["max_tokens"] = max(1, int(max_output_tokens))
         response_format = self._response_format(json_schema)

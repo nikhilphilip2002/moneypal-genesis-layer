@@ -27,6 +27,7 @@ dependencies = [
     "lxml>=5.3.0",
     "APScheduler>=3.10,<4",
     "openai>=1.0,<2",
+    "langgraph==1.2.12",
 ]
 
 [dependency-groups]

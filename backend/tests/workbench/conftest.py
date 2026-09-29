@@ -17,6 +17,13 @@ def anyio_backend():
     return "asyncio"
 
 
+@pytest.fixture(autouse=True)
+def memory_history_for_unit_tests(monkeypatch):
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "workbench_history_require_durable", False)
+
+
 @dataclass
 class FakeResult:
     text: str

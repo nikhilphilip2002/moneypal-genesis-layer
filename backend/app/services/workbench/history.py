@@ -7,7 +7,9 @@ import json
 import logging
 import time
 import uuid
+from collections import OrderedDict
 from collections.abc import Mapping
+from copy import deepcopy
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Callable
@@ -25,12 +27,14 @@ CREATE TABLE IF NOT EXISTS {TABLE} (
     title           text NOT NULL,
     record_version  integer NOT NULL DEFAULT 2,
     record_json     jsonb NOT NULL,
+    revision        bigint NOT NULL DEFAULT 0,
     updated_at      timestamptz NOT NULL DEFAULT now()
 );
 """
 MIGRATIONS = (
     f"ALTER TABLE {TABLE} ADD COLUMN IF NOT EXISTS owner_username text NOT NULL DEFAULT 'legacy'",
     f"ALTER TABLE {TABLE} ADD COLUMN IF NOT EXISTS record_version integer NOT NULL DEFAULT 2",
+    f"ALTER TABLE {TABLE} ADD COLUMN IF NOT EXISTS revision bigint NOT NULL DEFAULT 0",
 )
 
 TITLE_MAX = 80
@@ -65,6 +69,10 @@ class ConversationRecord:
     # so dropping it only costs context, never data.
     compaction: dict[str, Any] | None = None
     external_sources_enabled: bool = False
+    revision: int = 0
+    cache_bytes: int = field(default=0, repr=False)
+    replay_key: tuple[Any, ...] | None = field(default=None, repr=False)
+    replay_messages: list[ChatMessage] = field(default_factory=list, repr=False)
 
 
 @dataclass(slots=True)
@@ -94,7 +102,31 @@ class UnknownRecordVersion(ValueError):
     """The record was written by a backend this module does not understand."""
 
 
-_MEMORY: dict[tuple[str, str], ConversationRecord] = {}
+class HistoryUnavailable(RuntimeError):
+    pass
+
+
+class HistoryConflict(HistoryUnavailable):
+    pass
+
+
+_MEMORY: OrderedDict[tuple[str, str], ConversationRecord] = OrderedDict()
+
+
+def _cache_record(record: ConversationRecord, encoded: str | None = None) -> None:
+    key = (record.owner_username, record.conversation_id)
+    _MEMORY.pop(key, None)
+    size = len((encoded or json.dumps(_record_payload(record), default=str)).encode("utf-8"))
+    size += len(json.dumps(record.replay_messages, default=str).encode("utf-8"))
+    record.cache_bytes = size
+    if size > settings.workbench_history_cache_bytes:
+        return
+    _MEMORY[key] = deepcopy(record)
+    while _MEMORY and (
+        len(_MEMORY) > settings.workbench_history_cache_entries
+        or sum(item.cache_bytes for item in _MEMORY.values()) > settings.workbench_history_cache_bytes
+    ):
+        _MEMORY.popitem(last=False)
 
 
 def _visible_owners(user: str) -> tuple[str, ...]:
@@ -131,7 +163,7 @@ def _ensure_table() -> bool:
     except Exception as exc:  # noqa: BLE001
         _table_retry_after = time.monotonic() + HISTORY_DB_RETRY_S
         logger.warning(
-            "workbench history table unavailable; using memory and retrying in %.0fs: %s",
+            "workbench history table unavailable; retrying in %.0fs: %s",
             HISTORY_DB_RETRY_S,
             exc,
         )
@@ -157,16 +189,25 @@ def _load(conversation_id: str, user: str) -> ConversationRecord | None:
 
             with db_cursor() as (conn, cur):
                 owners = _visible_owners(user)
+                cached = next((_MEMORY[(owner, conversation_id)] for owner in owners if (owner, conversation_id) in _MEMORY), None)
                 cur.execute(
-                    f"SELECT title, record_json, updated_at, owner_username, record_version "
+                    f"SELECT title, CASE WHEN revision = %s AND updated_at = %s "
+                    "THEN NULL ELSE record_json END, updated_at, owner_username, record_version, revision "
                     f"FROM {TABLE} WHERE conversation_id = %s AND owner_username = ANY(%s) "
                     "ORDER BY CASE WHEN owner_username = %s THEN 0 ELSE 1 END LIMIT 1",
-                    (conversation_id, list(owners), user),
+                    (cached.revision if cached else -1, cached.updated_at if cached else None, conversation_id, list(owners), user),
                 )
                 row = cur.fetchone()
                 conn.rollback()
             if row is None:
                 return None
+            if row[4] != RECORD_VERSION:
+                raise UnknownRecordVersion(
+                    f"conversation {conversation_id} has unsupported record version {row[4]!r}"
+                )
+            if row[1] is None and cached is not None and cached.owner_username == row[3]:
+                _MEMORY.move_to_end((cached.owner_username, conversation_id))
+                return deepcopy(cached)
             payload = (
                 row[1] if isinstance(row[1], dict) else json.loads(row[1])
             )
@@ -183,18 +224,24 @@ def _load(conversation_id: str, user: str) -> ConversationRecord | None:
                 turns=list(payload.get("turns", [])),
                 owner_username=row[3],
                 record_version=stored_version,
+                revision=row[5],
                 compaction=payload.get("compaction"),
                 external_sources_enabled=bool(
                     payload.get("external_sources_enabled", False)
                 ),
             )
+            _cache_record(record)
             return record
         except UnknownRecordVersion:
             raise
         except Exception as exc:  # noqa: BLE001
+            if settings.workbench_history_require_durable:
+                raise HistoryUnavailable("Conversation history could not be loaded.") from exc
             logger.warning(
                 "workbench history load failed, using memory: %s", exc
             )
+    if settings.workbench_history_require_durable:
+        raise HistoryUnavailable("Conversation storage is unavailable.")
     for owner in _visible_owners(user):
         record = _MEMORY.get((owner, conversation_id))
         if record is not None:
@@ -204,7 +251,8 @@ def _load(conversation_id: str, user: str) -> ConversationRecord | None:
                     f"{record.record_version!r}; this backend requires version "
                     f"{RECORD_VERSION}"
                 )
-            return record
+            _MEMORY.move_to_end((owner, conversation_id))
+            return deepcopy(record)
     return None
 
 
@@ -223,7 +271,11 @@ def exists(conversation_id: str) -> bool:
                 conn.rollback()
             return found
         except Exception as exc:  # noqa: BLE001
+            if settings.workbench_history_require_durable:
+                raise HistoryUnavailable("Conversation ownership could not be checked.") from exc
             logger.warning("workbench history existence check failed: %s", exc)
+    if settings.workbench_history_require_durable:
+        raise HistoryUnavailable("Conversation storage is unavailable.")
     return any(cid == conversation_id for _, cid in _MEMORY)
 
 
@@ -236,9 +288,15 @@ def _save(record: ConversationRecord) -> None:
             f"{record.record_version!r}; this backend understands versions "
             f"{RECORD_VERSION}"
         )
-    record.updated_at = _now()
-    _MEMORY[(record.owner_username, record.conversation_id)] = record
+    record.replay_key = None
+    record.replay_messages = []
+    encoded = json.dumps(_record_payload(record), default=str)
     if not _ensure_table():
+        if settings.workbench_history_require_durable:
+            raise HistoryUnavailable("Conversation storage is unavailable.")
+        record.revision += 1
+        record.updated_at = _now()
+        _cache_record(record, encoded)
         return
     try:
         from app.services.db_schema import db_cursor
@@ -246,25 +304,41 @@ def _save(record: ConversationRecord) -> None:
         with db_cursor() as (conn, cur):
             cur.execute(
                 f"INSERT INTO {TABLE} "
-                "(conversation_id, owner_username, title, record_version, record_json, updated_at) "
-                "VALUES (%s, %s, %s, %s, %s, now()) "
+                "(conversation_id, owner_username, title, record_version, record_json, updated_at, revision) "
+                "VALUES (%s, %s, %s, %s, %s, now(), 1) "
                 "ON CONFLICT (conversation_id) DO UPDATE SET "
                 "owner_username = EXCLUDED.owner_username, title = EXCLUDED.title, "
                 "record_version = EXCLUDED.record_version, record_json = EXCLUDED.record_json, "
-                "updated_at = now()",
+                f"updated_at = now(), revision = {TABLE}.revision + 1 "
+                f"WHERE {TABLE}.revision = %s AND {TABLE}.owner_username = EXCLUDED.owner_username "
+                "RETURNING revision, updated_at",
                 (
                     record.conversation_id,
                     record.owner_username,
                     record.title,
                     record.record_version,
-                    json.dumps(_record_payload(record), default=str),
+                    encoded,
+                    record.revision,
                 ),
             )
+            saved = cur.fetchone()
+            if saved is None:
+                conn.rollback()
+                _MEMORY.pop((record.owner_username, record.conversation_id), None)
+                raise HistoryConflict("Conversation changed while this turn was being saved.")
             conn.commit()
+            record.revision, record.updated_at = saved
+            _cache_record(record, encoded)
+    except HistoryConflict:
+        raise
     except Exception as exc:  # noqa: BLE001
-        logger.warning(
-            "workbench history write failed, retained in memory: %s", exc
-        )
+        if settings.workbench_history_require_durable:
+            _MEMORY.pop((record.owner_username, record.conversation_id), None)
+            raise HistoryUnavailable("Conversation history could not be saved.") from exc
+        record.revision += 1
+        record.updated_at = _now()
+        _cache_record(record, encoded)
+        logger.warning("workbench history write failed, retained in memory: %s", exc)
 
 
 def set_compaction(
@@ -323,11 +397,15 @@ def _mutate(
 ) -> None:
     record = _load(conversation_id, user)
     if record is None:
+        if settings.workbench_history_require_durable:
+            raise HistoryUnavailable("Conversation history was not found.")
         return
     turn = next(
         (item for item in record.turns if item.get("id") == turn_id), None
     )
     if turn is None:
+        if settings.workbench_history_require_durable:
+            raise HistoryUnavailable("Conversation turn was not found.")
         return
     mutation(turn)
     _save(record)
@@ -741,6 +819,10 @@ def set_answer(
     """Persist the one user-facing answer while keeping `synthesis` for old clients."""
 
     def apply(turn: dict[str, Any]) -> None:
+        if turn.get("answer") is not None:
+            if turn["answer"] != payload:
+                raise HistoryConflict("This turn already has a different final answer.")
+            return
         turn["answer"] = payload
         turn["synthesis"] = str(payload.get("text", "")) or None
         _append_turn_event(turn, "final_answer", {"answer": payload})
@@ -931,9 +1013,13 @@ def list_recent(
                     for r in cur.fetchall()
                 ]
         except Exception as exc:  # noqa: BLE001
+            if settings.workbench_history_require_durable:
+                raise HistoryUnavailable("Conversation history could not be listed.") from exc
             logger.warning(
                 "workbench history read failed, using memory: %s", exc
             )
+    if settings.workbench_history_require_durable:
+        raise HistoryUnavailable("Conversation storage is unavailable.")
     ordered = sorted(
         (
             record
@@ -1241,7 +1327,7 @@ def native_replay_group(turn: dict[str, Any]) -> list[ChatMessage]:
     tool_names: dict[str, str] = {}
     for event in turn_events(turn):
         payload = event.get("payload")
-        if event.get("type") == "request_compaction" and isinstance(
+        if event.get("type") in {"request_compaction", "model_request_context"} and isinstance(
             payload, dict
         ):
             checkpoint_messages: list[ChatMessage] = payload["messages"]
@@ -1324,9 +1410,18 @@ def live_turns(record: ConversationRecord) -> list[dict[str, Any]]:
 
 def _has_request_checkpoint(turn: dict[str, Any]) -> bool:
     return any(
-        event.get("type") == "request_compaction"
+        event.get("type") in {"request_compaction", "model_request_context"}
         for event in turn_events(turn)
     )
+
+
+def set_model_request_context(
+    conversation_id: str, user: str, turn_id: str, messages: list[ChatMessage]
+) -> None:
+    def apply(turn: dict[str, Any]) -> None:
+        _append_turn_event(turn, "model_request_context", {"messages": messages})
+
+    _mutate(conversation_id, user, turn_id, apply)
 
 
 def _measured_after(turn: dict[str, Any], checkpoint_created_at: str) -> bool:
@@ -1415,6 +1510,13 @@ def build_native_transcript(
     record = _load(conversation_id, user)
     if record is None:
         return []
+    replay_key = (
+        record.revision, limit, enforce_budget,
+        settings.workbench_agent_observation_max_chars,
+        settings.workbench_agent_observation_max_facts,
+    )
+    if record.replay_key == replay_key:
+        return deepcopy(record.replay_messages)
     messages: list[ChatMessage] = []
     spent = 0
     compaction = (
@@ -1455,6 +1557,9 @@ def build_native_transcript(
         kept.append(group)
         spent += cost
     messages.extend(message for group in reversed(kept) for message in group)
+    record.replay_key = replay_key
+    record.replay_messages = messages
+    _cache_record(record)
     return messages
 
 

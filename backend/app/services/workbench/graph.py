@@ -8,7 +8,7 @@ import json
 import logging
 import time
 import uuid
-from typing import Any, AsyncIterator, NotRequired, TypedDict
+from typing import Any, AsyncGenerator, AsyncIterator, NotRequired, TypedDict
 
 import anyio
 
@@ -159,6 +159,8 @@ def _native_error(exc: BaseException) -> tuple[str, str, bool]:
     from app.services.workbench.agent import BudgetExhausted
     from app.services.workbench.agent_tools import AgentToolAccessDenied
 
+    if isinstance(exc, history.HistoryUnavailable):
+        return "HISTORY_UNAVAILABLE", "Conversation history could not be saved or loaded. Please retry.", True
     if _is_context_overflow(exc):
         return CONTEXT_CAPACITY_CODE, CONTEXT_FULL_MESSAGE, False
     if isinstance(exc, BudgetExhausted):
@@ -236,6 +238,11 @@ _ANSWERABLE_CARD_TYPES = frozenset(
 )
 
 
+async def emit_answer(state: WorkbenchState, payload: dict[str, Any], *, event: str = "answer") -> None:
+    history.set_answer(state["conversation_id"], state["user"], state["turn_id"], payload)
+    await state["emit"].put(sse(event, payload))
+
+
 async def answer_results(state: WorkbenchState) -> dict[str, Any]:
     emit = state["emit"]
     decision = state.get("decision")
@@ -293,18 +300,11 @@ async def answer_results(state: WorkbenchState) -> dict[str, Any]:
             "limitations": [],
             "facts": [],
         }
-        await emit.put(sse("answer", payload))
         state["timing"].setdefault(
             "final_answer_ms",
             int((time.perf_counter() - state["timing"]["started_at"]) * 1000),
         )
-        _persist(
-            history.set_answer,
-            state["conversation_id"],
-            state["user"],
-            state["turn_id"],
-            payload,
-        )
+        await emit_answer(state, payload)
         _log_query_attribution(
             state,
             active=[],
@@ -338,7 +338,6 @@ async def answer_results(state: WorkbenchState) -> dict[str, Any]:
                 "visual_query_ids": [],
                 "excluded_queries": [],
             }
-            await emit.put(sse("answer", payload))
             state["timing"].setdefault(
                 "final_answer_ms",
                 int(
@@ -346,13 +345,7 @@ async def answer_results(state: WorkbenchState) -> dict[str, Any]:
                     * 1000
                 ),
             )
-            _persist(
-                history.set_answer,
-                state["conversation_id"],
-                state["user"],
-                state["turn_id"],
-                payload,
-            )
+            await emit_answer(state, payload)
         elif refusal is not None:
             payload = {
                 "schema_version": 1,
@@ -369,7 +362,6 @@ async def answer_results(state: WorkbenchState) -> dict[str, Any]:
                 "visual_query_ids": [],
                 "excluded_queries": [],
             }
-            await emit.put(sse("answer", payload))
             state["timing"].setdefault(
                 "final_answer_ms",
                 int(
@@ -377,13 +369,7 @@ async def answer_results(state: WorkbenchState) -> dict[str, Any]:
                     * 1000
                 ),
             )
-            _persist(
-                history.set_answer,
-                state["conversation_id"],
-                state["user"],
-                state["turn_id"],
-                payload,
-            )
+            await emit_answer(state, payload)
         else:
             first_error = next(
                 (r for r in all_results if r.card_type == "error"), None
@@ -465,8 +451,7 @@ async def answer_results(state: WorkbenchState) -> dict[str, Any]:
         if structured_synthesis is not None
         else []
     )
-    _persist(
-        history.set_query_registry,
+    history.set_query_registry(
         state["conversation_id"],
         state["user"],
         state["turn_id"],
@@ -522,18 +507,11 @@ async def answer_results(state: WorkbenchState) -> dict[str, Any]:
         "limitations": limitations,
         "facts": [],
     }
-    await emit.put(sse("answer", payload))
     state["timing"].setdefault(
         "final_answer_ms",
         int((time.perf_counter() - state["timing"]["started_at"]) * 1000),
     )
-    _persist(
-        history.set_answer,
-        state["conversation_id"],
-        state["user"],
-        state["turn_id"],
-        payload,
-    )
+    await emit_answer(state, payload)
     if result is not None:
         # The prompt this call carried is the best available measure of how full the
         # conversation's context has become; the transcript budget is built on it.
@@ -557,6 +535,31 @@ async def run_workbench(
     pinned: str | None = None,
     external_sources_enabled: bool = False,
 ) -> AsyncIterator[str]:
+    from app.services.workbench.conversation_lock import conversation_lock
+
+    try:
+        async with conversation_lock(conversation_id):
+            async with contextlib.aclosing(_run_workbench(
+                question=question, conversation_id=conversation_id, user=user,
+                role=role, pinned=pinned, external_sources_enabled=external_sources_enabled,
+            )) as stream:
+                async for frame in stream:
+                    yield frame
+    except (history.HistoryUnavailable, TimeoutError) as exc:
+        code, message, retryable = _native_error(exc)
+        yield sse("error", {"code": code, "message": message, "retryable": retryable})
+        yield sse("done", {"total_ms": 0})
+
+
+async def _run_workbench(
+    *,
+    question: str,
+    conversation_id: str,
+    user: str,
+    role: str,
+    pinned: str | None = None,
+    external_sources_enabled: bool = False,
+) -> AsyncGenerator[str, None]:
     """Run one turn, yielding SSE frames as the graph produces them."""
     started_at = time.perf_counter()
     emit: "asyncio.Queue[str | None]" = asyncio.Queue()
@@ -575,6 +578,8 @@ async def run_workbench(
             pinned=pinned,
             source_policy=source_policy.snapshot(),
         )
+    except history.HistoryUnavailable:
+        raise
     except Exception:  # noqa: BLE001
         logger.warning("workbench turn persistence unavailable", exc_info=True)
         turn_id = uuid.uuid4().hex[:12]

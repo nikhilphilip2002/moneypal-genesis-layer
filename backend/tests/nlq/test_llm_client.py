@@ -533,7 +533,8 @@ class TestThinkingModels:
             )
 
     @pytest.mark.anyio
-    async def test_request_has_no_server_specific_extensions(self):
+    async def test_request_pins_prompt_cache_to_configured_slot(self):
+        from app.core.config import settings
         seen = {}
 
         def handler(request):
@@ -544,7 +545,8 @@ class TestThinkingModels:
             messages=[{"role": "user", "content": "hi"}]
         )
         assert "chat_template_kwargs" not in seen
-        assert "cache_prompt" not in seen
+        assert seen["cache_prompt"] is True
+        assert seen["id_slot"] == settings.llama_slot_id
         assert "n_cache_reuse" not in seen
         assert "temperature" not in seen
         assert "max_tokens" not in seen

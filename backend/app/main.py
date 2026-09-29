@@ -12,6 +12,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 from app.api.routes import (
     admin,
@@ -32,7 +33,9 @@ from app.core.logging import bind_trace, start_logging, stop_logging
 async def _lifespan(_app: FastAPI):
     start_logging()
     from app.services.workbench.prompts import warm_agent_gold_schema
+    from app.services.workbench.workflow import get_workflow
 
+    get_workflow()
     catalog_version, schema_chars = warm_agent_gold_schema()
     _app.state.agent_gold_schema_version = catalog_version
     _app.state.agent_gold_schema_chars = schema_chars
@@ -65,11 +68,10 @@ async def _lifespan(_app: FastAPI):
             "PostgreSQL MCP startup initialization unavailable: %s",
             exc,
         )
-    # Workbench execution is intentionally not a rollout switch: every request uses the
-    # provider-native tool loop.
     logging.getLogger(__name__).info(
-        "workbench execution=native_only context_window=%d "
+        "workbench execution=%s context_window=%d "
         "compaction_enabled=%s observation_max_chars=%d llm_model=%s",
+        settings.workbench_engine,
         settings.workbench_context_window,
         settings.workbench_compaction_enabled,
         settings.workbench_agent_observation_max_chars,
@@ -105,6 +107,11 @@ def create_app() -> FastAPI:
     app = FastAPI(
         title="Moneypal Genesis Intelligence API", lifespan=_lifespan
     )
+    from app.services.workbench.history import HistoryUnavailable
+
+    @app.exception_handler(HistoryUnavailable)
+    async def history_unavailable(_request, _exc):
+        return JSONResponse(status_code=503, content={"detail": "Conversation storage is unavailable. Please retry."})
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_origins,

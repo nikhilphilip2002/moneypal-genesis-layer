@@ -181,6 +181,12 @@ _BUDGET_LIMITATION = {
 # tool exchange. ``required`` re-selects after a failure, ``auto`` lets the model choose
 # between more evidence and an answer, ``none`` is the reserved final synthesis round.
 _NUDGES = {
+    "final": (
+        "Finish this turn by calling submit_final_answer with a valid submission. "
+        "Select a successful query from this conversation and the requested view for "
+        "a database answer. If the evidence cannot answer the question, clarify or "
+        "refuse using the existing contract. Do not call another tool or return prose."
+    ),
     "required": (
         "Inspect the complete tool results above. Choose the next authorized capability "
         "needed to answer the original question or recover from the reported error. Do "
@@ -200,12 +206,13 @@ _NUDGES = {
     ),
 }
 _PURPOSES = {
+    "final": "agent_synthesize",
     "required": "agent_select",
     "auto": "agent_continue",
     "none": "agent_synthesize",
 }
 # The stage each request kind is recorded under in the turn's event stream.
-_STAGES = {"required": "route", "auto": "continue", "none": "synthesize"}
+_STAGES = {"required": "route", "auto": "continue", "none": "synthesize", "final": "synthesize"}
 
 
 def _elapsed_ms(state: dict[str, Any]) -> int:
@@ -310,6 +317,11 @@ async def _select(
         state["agent_synthesis_messages"] = messages
     client = models.client()
     extra: dict[str, Any] = {}
+    if tool_choice == "final":
+        extra["tool_choice"] = {
+            "type": "function",
+            "function": {"name": "submit_final_answer"},
+        }
     from app.services.workbench.streaming import complete_answer
 
     async def complete(**kwargs):
@@ -367,6 +379,7 @@ async def _select(
                     extra["max_output_tokens"] = output_tokens
                 if not selecting:
                     state["agent_synthesis_messages"] = prepared
+                state["_last_model_messages"] = prepared
                 try:
                     result = await complete(
                         messages=prepared,
@@ -378,6 +391,11 @@ async def _select(
                         if attempt or (repair_messages and selecting)
                         else "planned",
                         catalog_version=catalog.version,
+                        prefix_hash=hashlib.sha256(
+                            (prompts.build_agent_system_prompt(catalog) + json.dumps(
+                                definitions, sort_keys=True, separators=(",", ":")
+                            )).encode("utf-8")
+                        ).hexdigest(),
                         **extra,
                     )
                 except (LLMContextOverflow, LLMIncomplete) as exc:
@@ -426,18 +444,15 @@ async def _select(
     # A slot save captures real model input and output. Keep restore, completion, and save
     # under one gate so another conversation cannot replace this one-slot server's state.
     async with request_gate():
-        if not state.get("_slot_initialized"):
-            state["_slot_initialized"] = True
-            if not state.get("_slot_new_chat"):
-                try:
-                    await slot_action("restore", filename=filename)
-                except SlotCacheError:
-                    logger.info(
-                        "No reusable conversation slot snapshot was restored"
-                    )
+        if not state.get("_slot_new_chat") or state.get("_slot_saved"):
+            try:
+                await slot_action("restore", filename=filename)
+            except SlotCacheError:
+                logger.info("No reusable conversation slot snapshot was restored")
         result = await request()
         try:
             await slot_action("save", filename=filename)
+            state["_slot_saved"] = True
         except SlotCacheError:
             logger.warning(
                 "Conversation slot snapshot save failed", exc_info=True
@@ -638,6 +653,8 @@ def _persist_query_registry(state: dict[str, Any]) -> None:
             state["turn_id"],
             list(state.get("query_registry", [])),
         )
+    except history.HistoryUnavailable:
+        raise
     except Exception:  # noqa: BLE001 - execution must survive history outages
         logger.warning("query registry persistence failed", exc_info=True)
 
@@ -947,6 +964,8 @@ def _protocol_repair_message(
     )
     if tool_choice == "none":
         instruction = "Return a non-empty final answer and do not call a tool."
+    if tool_choice == "final":
+        instruction = _NUDGES["final"]
     return {
         "role": "user",
         "content": json.dumps(
@@ -1396,15 +1415,24 @@ async def _end_without_data(
         "visual_query_ids": [],
         "excluded_queries": [],
     }
-    await state["emit"].put(
-        sse("refusal" if outcome == "refuse" else "answer", answer)
-    )
     history.set_answer(
         state["conversation_id"], state["user"], state["turn_id"], answer
+    )
+    await state["emit"].put(
+        sse("refusal" if outcome == "refuse" else "answer", answer)
     )
 
 
 async def run(state: dict[str, Any]) -> None:
+    if settings.workbench_engine == "native":
+        await run_native(state)
+    else:
+        from app.services.workbench.workflow import run_workflow
+
+        await run_workflow(state)
+
+
+async def run_native(state: dict[str, Any]) -> None:
     """One bounded loop: request, observe, execute, repeat; then answer.
 
     Each iteration is one LLM request. The first round is ``auto`` so the agent can answer

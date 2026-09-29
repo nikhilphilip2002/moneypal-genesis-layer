@@ -201,6 +201,10 @@ class Settings:
             get("LLAMA_SLOT_SNAPSHOTS_ENABLED", "false") or "false"
         ).lower() in ("1", "true", "yes", "on")
         self.llama_slot_id = max(0, int(get("LLAMA_SLOT_ID", "0") or "0"))
+        self.llama_prompt_cache_enabled = (
+            get("LLAMA_PROMPT_CACHE_ENABLED", "true") or "true"
+        ).lower() in ("1", "true", "yes", "on")
+        self.llama_cache_epoch = get("LLAMA_CACHE_EPOCH", "1") or "1"
         self.llama_slot_cache_prefix = (
             get("LLAMA_SLOT_CACHE_PREFIX", "moneypal-workbench")
             or "moneypal-workbench"
@@ -298,9 +302,18 @@ class Settings:
         )
 
         # --- Workbench (unified chat orchestrator) ----------------------------------
-        # The Workbench has one execution architecture: provider-native tool calling.
-        # Model selection remains purpose-aware for privacy, but there is no behavioral
-        # router, legacy orchestrator, rollout mode, or percentage assignment.
+        self.workbench_engine = get("WORKBENCH_ENGINE", "langgraph") or "langgraph"
+        if self.workbench_engine not in {"langgraph", "native"}:
+            raise ValueError("WORKBENCH_ENGINE must be langgraph or native")
+        self.workbench_history_require_durable = (
+            get("WORKBENCH_HISTORY_REQUIRE_DURABLE", "true") or "true"
+        ).lower() in ("1", "true", "yes", "on")
+        self.workbench_history_cache_entries = max(
+            0, int(get("WORKBENCH_HISTORY_CACHE_ENTRIES", "32") or "32")
+        )
+        self.workbench_history_cache_bytes = max(
+            0, int(get("WORKBENCH_HISTORY_CACHE_BYTES", "33554432") or "33554432")
+        )
         # A round is one LLM request of any kind: selection, continuation, final
         # synthesis, or synthesis repair. The floor of 2 is one selection plus the
         # synthesis round that shows the model what that selection returned.

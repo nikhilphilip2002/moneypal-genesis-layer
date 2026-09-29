@@ -44,6 +44,9 @@ def test_snapshot_identity_is_conversation_scoped_and_safe(monkeypatch):
     )
     monkeypatch.setattr(settings, "llm_model", "other-model")
     assert first != snapshot_filename(**kwargs)
+    second = snapshot_filename(**kwargs)
+    monkeypatch.setattr(settings, "llama_cache_epoch", "new-template")
+    assert second != snapshot_filename(**kwargs)
 
 
 def test_slot_action_uses_server_root_and_filename(monkeypatch):

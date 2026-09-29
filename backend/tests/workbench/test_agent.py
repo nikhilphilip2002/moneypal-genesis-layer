@@ -372,6 +372,15 @@ def _text_response(text: str) -> LLMResult:
     )
 
 
+def _final_response(message: str, *, query_id: int = 1):
+    return _tool_response(NativeToolCall(
+        id="final-answer", name="submit_final_answer",
+        arguments={"submission": {
+            "outcome": "answer", "message": message, "query_id": query_id, "view": "table",
+        }},
+    ))
+
+
 class _ScriptedClient:
     """Returns ``script[i]`` for the i-th request, recording every request."""
 
@@ -490,7 +499,14 @@ def scripted(monkeypatch):
         client = _ScriptedClient(script)
         holder["client"] = client
         monkeypatch.setattr(models, "client", lambda: client)
-        monkeypatch.setattr(agent, "execute_agent_call", execute)
+        async def dispatch(call, context):
+            if call.name == "submit_final_answer":
+                from app.services.workbench.agent_executor import execute_agent_call
+
+                return await execute_agent_call(call, context)
+            return await execute(call, context)
+
+        monkeypatch.setattr(agent, "execute_agent_call", dispatch)
         return client
 
     return install
@@ -876,6 +892,7 @@ async def test_last_round_result_is_shown_without_forcing_synthesis(
     monkeypatch,
 ):
     """The model sees the tool result and remains free to call a tool or return content."""
+    monkeypatch.setattr(agent.settings, "workbench_engine", "native")
     monkeypatch.setattr(agent.settings, "workbench_agent_max_rounds", 2)
     client = scripted(
         [
@@ -968,24 +985,13 @@ async def test_execution_error_is_returned_to_llm_for_a_cross_tool_repair(
     async def execute(call, _ctx):
         if call.id == "failed_metric":
             raise RuntimeError("metric execution failed")
-        return ExecutedAgentCall(
-            call=call,
-            card=SourceResult(
-                source="db",
-                card_type="chart",
-                payload={"rows": [{"loan_account_number": "L1"}]},
-                summary="One governed loan.",
-                lineage={
-                    "sql": "SELECT loan_account_number FROM gold.loan_accounts LIMIT 1"
-                },
-            ),
-        )
+        return _raw(call)
 
     client = scripted(
         [
             _tool_response(failed),
             _tool_response(repaired),
-            _text_response("One governed loan."),
+            _final_response("One governed loan.", query_id=2),
         ],
         execute,
     )
@@ -995,7 +1001,7 @@ async def test_execution_error_is_returned_to_llm_for_a_cross_tool_repair(
     assert [request["call_purpose"] for request in client.requests] == [
         "agent_continue",
         "agent_continue",
-        "agent_continue",
+        "agent_synthesize",
     ]
     assert any(
         message.get("role") == "tool"
@@ -1003,7 +1009,7 @@ async def test_execution_error_is_returned_to_llm_for_a_cross_tool_repair(
         for message in client.requests[1]["messages"]
     )
     record = history.get("execution-repair", user="alice")
-    assert len(record.turns[0]["agent_exchanges"]) == 2
+    assert len(record.turns[0]["agent_exchanges"]) == 3
     replayed = str(record.turns[0]["agent_exchanges"])
     assert "metric execution failed" in replayed
     assert "repaired_detail" in replayed
@@ -1049,13 +1055,13 @@ async def test_catalog_context_is_recomputed_from_the_latest_tool_error(
     async def execute(call, _ctx):
         if call.id == "bad":
             raise RuntimeError("unknown column schemes; did you mean scheme")
-        return _card(call)
+        return _raw(call)
 
     client = scripted(
         [
             _tool_response(bad),
             _tool_response(good),
-            _text_response("Shown by scheme."),
+            _final_response("Shown by scheme.", query_id=2),
         ],
         execute,
     )
@@ -1113,13 +1119,13 @@ async def test_model_can_call_multiple_resource_tools_before_answering(
                 },
                 summary="PAR 30 definition.",
             )
-        return ExecutedAgentCall(call=call, card=result)
+        return _raw(call) if call.name == "query" else ExecutedAgentCall(call=call, card=result)
 
     client = scripted(
         [
             _tool_response(_PAR_30),
             _tool_response(concept),
-            _text_response(
+            _final_response(
                 "The portfolio result and definition are shown together."
             ),
         ],
@@ -1134,12 +1140,12 @@ async def test_model_can_call_multiple_resource_tools_before_answering(
         "agent_continue",
     ]
     record = history.get("multi-tool", user="alice")
-    assert len(record.turns[0]["agent_exchanges"]) == 2
+    assert len(record.turns[0]["agent_exchanges"]) == 3
     assert [
         exchange["calls"][0]["name"]
         for exchange in record.turns[0]["agent_exchanges"]
-    ] == ["query", "search_curated_knowledge"]
-    assert state["agent_final_result"].text.startswith("The portfolio result")
+    ] == ["query", "search_curated_knowledge", "submit_final_answer"]
+    assert state["agent_final_synthesis"].insights.startswith("The portfolio result")
 
 
 @pytest.mark.anyio
@@ -1162,9 +1168,9 @@ async def test_invalid_continuation_call_is_persisted_and_returned_to_model(
         [
             _tool_response(valid),
             _tool_response(invalid_next),
-            _text_response("PAR 30 is 4.2%."),
+            _final_response("PAR 30 is 4.2%."),
         ],
-        lambda call, _ctx: _async(_card(call)),
+        lambda call, _ctx: _async(_raw(call)),
     )
     state = _run_state("invalid-continuation")
     await agent.run(state)
@@ -1185,7 +1191,7 @@ async def test_invalid_continuation_call_is_persisted_and_returned_to_model(
     assert [
         exchange["calls"][0]["id"]
         for exchange in record.turns[0]["agent_exchanges"]
-    ] == ["valid", "invalid_next"]
+    ] == ["valid", "invalid_next", "final-answer"]
 
 
 @pytest.mark.anyio
@@ -1197,8 +1203,8 @@ async def test_partially_invalid_batch_keeps_replay_parity(
     monkeypatch.setattr(agent.settings, "workbench_agent_max_rounds", 3)
     invalid = NativeToolCall(id="bad", name="retired_query_tool", arguments={})
     client = scripted(
-        [_tool_response(_PAR_30, invalid), _text_response("PAR 30 is 4.2%.")],
-        lambda call, _ctx: _async(_card(call)),
+        [_tool_response(_PAR_30, invalid), _final_response("PAR 30 is 4.2%.")],
+        lambda call, _ctx: _async(_raw(call)),
     )
     state = _run_state("partial-batch")
     await agent.run(state)
@@ -1223,7 +1229,7 @@ async def test_partially_invalid_batch_keeps_replay_parity(
         "call_1",
         "bad",
     ]
-    assert state["_agent_budget"].calls_used == 2
+    assert state["_agent_budget"].calls_used == 3
 
 
 @pytest.mark.anyio
@@ -1387,6 +1393,7 @@ async def test_budget_spent_after_data_answers_from_the_result_with_a_limitation
 ):
     """Nothing is retrieved until the last round; the result still reaches the user,
     marked as answered without the model's synthesis."""
+    monkeypatch.setattr(agent.settings, "workbench_engine", "native")
     monkeypatch.setattr(agent.settings, "workbench_agent_max_rounds", 2)
     invalid = NativeToolCall(id="bad", name="retired_query_tool", arguments={})
     scripted(
@@ -1497,5 +1504,5 @@ async def test_select_recovers_context_overflow_with_compacted_input(
     assert len(json.dumps(client.requests[-1]["messages"])) < len(
         json.dumps(client.requests[0]["messages"])
     )
-    assert state["_agent_budget"].rounds_used == 1
+    assert state["_agent_budget"].rounds_used == 2
     assert state["question"] in client.requests[-1]["messages"][-1]["content"]

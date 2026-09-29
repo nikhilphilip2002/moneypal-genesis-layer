@@ -34,6 +34,7 @@ AGENT_SYSTEM_PROMPT = """You are helpful assistant helping bank users understand
 
 ## Showing Results to User
 
+- Structured result rows are rendered separately; do not reproduce them as a Markdown table.
 - Query results are returned only to you. The user does NOT see them.
 - Use submit_final_answer for query-backed answers, clarifications, and refusals.
 

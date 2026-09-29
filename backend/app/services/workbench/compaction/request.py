@@ -48,6 +48,7 @@ async def summarize_messages(
     window: int,
     max_output_tokens: int | None = None,
     timeout_s: float | None = None,
+    charge_round: Callable[[str], None] | None = None,
 ) -> str:
     source = messages
     if previous:
@@ -75,6 +76,8 @@ async def summarize_messages(
             tokens = await client.count_input_tokens(request)
             if tokens + output_tokens + 128 <= window:
                 try:
+                    if charge_round is not None:
+                        charge_round("conversation compaction")
                     result = await client.complete(
                         messages=request,
                         call_purpose="compaction",
@@ -266,6 +269,11 @@ async def prepare_request(
             window=window,
             max_output_tokens=summary_room,
             timeout_s=timeout_s,
+            charge_round=(
+                state["_agent_budget"].charge_round
+                if state.get("_agent_budget") is not None
+                else None
+            ),
         )
         prepared = request(chosen, summary)
         tokens_after = await client.count_input_tokens(prepared, tools)
