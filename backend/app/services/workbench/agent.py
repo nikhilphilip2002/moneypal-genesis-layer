@@ -285,6 +285,12 @@ async def _select(
     definitions = await mcp_catalog.model_tool_definitions(
         state["source_policy"]
     )
+    if tool_choice == "final":
+        definitions = [
+            definition
+            for definition in definitions
+            if definition["function"]["name"] == "submit_final_answer"
+        ]
     if not definitions:
         raise LLMError("no native tools are authorized for this request")
     prompt = prompts.build_agent_prompt(
@@ -318,10 +324,7 @@ async def _select(
     client = models.client()
     extra: dict[str, Any] = {}
     if tool_choice == "final":
-        extra["tool_choice"] = {
-            "type": "function",
-            "function": {"name": "submit_final_answer"},
-        }
+        extra["tool_choice"] = "required"
     from app.services.workbench.streaming import complete_answer
 
     async def complete(**kwargs):

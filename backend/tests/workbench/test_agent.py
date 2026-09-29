@@ -902,10 +902,10 @@ async def test_last_round_submission_renders_the_query_result(
     state = _run_state("min-rounds")
     await agent.run(state)
 
-    assert client.requests[1]["tool_choice"] == {
-        "type": "function",
-        "function": {"name": "submit_final_answer"},
-    }
+    assert client.requests[1]["tool_choice"] == "required"
+    assert [
+        tool["function"]["name"] for tool in client.requests[1]["tools"]
+    ] == ["submit_final_answer"]
     assert client.requests[1]["call_purpose"] == "agent_synthesize"
     synthesis_messages = client.requests[1]["messages"]
     assert any(

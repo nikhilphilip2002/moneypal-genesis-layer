@@ -57,8 +57,8 @@ Keep the native message dictionaries and their tool-call IDs and provider fields
 
 1. All normal completion branches enter a final-outcome validator. No model-response node has a direct edge to successful `END`.
 2. A valid model-emitted final submission proceeds directly to the existing final handler, without another model call.
-3. If a database-backed response omits submission, the graph enters a dedicated finalization request. Prefer a named `submit_final_answer` tool choice using the existing authorized tool definitions, after verifying support on the deployed server. Forward the choice through the current client and reject other calls in this phase.
-4. If that server cannot enforce named tool choice reliably, use its validated structured-output mode with the existing submission schema. Select this implementation during the compatibility step; do not add repeated speculative provider fallbacks to every request. The current client treats tools and JSON-schema mode as mutually exclusive.
+3. If a database-backed response omits submission, the graph enters a dedicated finalization request using the string `tool_choice: "required"` and only the authorized `submit_final_answer` tool definition. Preserve earlier tool exchanges in history and reject other calls in this phase. The deployed llama.cpp server ignores named tool-choice objects.
+4. Verify required tool calling with the deployed model and chat template. If it cannot enforce that mode reliably, evaluate validated structured output with the existing submission schema before rollout; do not add repeated speculative provider fallbacks to every request. The current client treats tools and JSON-schema mode as mutually exclusive.
 5. The application invokes the same final-submission business handler after validating the generated arguments. Routing and invocation no longer depend on the model deciding to call the tool voluntarily. Record application-origin actions truthfully; do not fabricate assistant tool calls in native history.
 6. Validate query existence, ownership, success, data availability, permissions, and view compatibility using current logic. Resolve prior-turn query IDs through the existing registry, including “show the previous result as a chart” without unnecessary SQL execution.
 7. Keep plain-text and external-source outcomes on their existing answer path under the mandatory validator. Do not manufacture a database query ID for them.
@@ -102,7 +102,7 @@ Python caching and LangGraph persistence do not themselves reduce LLM prefill wo
 - Preserve a stable order: system instructions and schema, authorized tool definitions as rendered by the model template, retained conversation context, current question/hints, and current exchanges.
 - Keep schema text, tool order, JSON serialization, and native replay stable when their meaning has not changed. Keep variable timestamps and trace IDs out of the shared prefix.
 - Compare the provider's rendered/tokenized prompt across continuation requests and across turns. Current hint insertion, synthetic nudges, reasoning replay, and system-message coalescing can change the common prefix; verify actual reuse rather than inferring it from Python message order.
-- Keep the same tool definitions during finalization where the server permits it. Measure whether named tool choice or JSON-schema mode changes the rendered prefix.
+- Finalization offers only `submit_final_answer` to support llama.cpp's string tool-choice mode. Include the changed tool list in cache identities and measure KV-cache reuse when entering or leaving finalization, especially when the chat template puts tool definitions before the schema.
 - Invalidate cache identities when catalog, prompt, tool policy/schema, model artifact, tokenizer/chat template, or context configuration changes. A stable model alias alone is insufficient to identify model compatibility.
 
 ### Slot reuse and snapshots

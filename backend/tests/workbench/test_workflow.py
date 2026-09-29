@@ -6,6 +6,7 @@ import pytest
 
 from app.services.nlq.llm import LLMProtocolError
 from app.services.workbench import agent, history
+from ..nlq.test_llm_client import _client, _ok, _tool_ok
 from .test_agent import (
     _PAR_30,
     _async,
@@ -23,6 +24,63 @@ __all__ = ["_settings", "scripted"]
 
 
 @pytest.mark.anyio
+async def test_finalization_sends_string_choice_through_http_client(
+    scripted, monkeypatch
+):
+    scripted([], lambda call, _ctx: _async(_raw(call)))
+    monkeypatch.setattr(agent.settings, "workbench_agent_max_rounds", 3)
+    requests = []
+    query_message = _tool_response(_PAR_30).assistant_message
+    final_message = _final_response("PAR 30 is 4.2%.").assistant_message
+    assert query_message is not None
+    assert final_message is not None
+    query = query_message["tool_calls"][0]
+    final = final_message["tool_calls"][0]
+
+    def handler(request):
+        payload = json.loads(request.content)
+        requests.append(payload)
+        assert isinstance(payload.get("tool_choice", "auto"), str)
+        if len(requests) == 1:
+            assert "query" in {
+                tool["function"]["name"] for tool in payload["tools"]
+            }
+            return _tool_ok(query)
+        if len(requests) == 2:
+            return _ok("PAR 30 is 4.2%.")
+        assert payload["tool_choice"] == "required"
+        assert [
+            tool["function"]["name"] for tool in payload["tools"]
+        ] == ["submit_final_answer"]
+        assert any(
+            query in message.get("tool_calls", [])
+            for message in payload["messages"]
+        )
+        assert any(
+            message.get("role") == "tool"
+            and message.get("tool_call_id") == _PAR_30.id
+            for message in payload["messages"]
+        )
+        return _tool_ok(final)
+
+    client = _client(handler)
+    monkeypatch.setattr(client, "count_input_tokens", None)
+    monkeypatch.setattr(agent.models, "client", lambda: client)
+    state = _run_state("graph-string-choice")
+    await agent.run(state)
+
+    assert len(requests) == 3
+    answers = [
+        json.loads(frame.split("data: ", 1)[1])
+        for frame in _frames(state)
+        if frame.startswith("event: answer\n")
+    ]
+    assert len(answers) == 1
+    assert answers[0]["query_id"] == 1
+    assert answers[0]["view"] == "table"
+
+
+@pytest.mark.anyio
 async def test_missing_submission_routes_to_finalization_and_renders(scripted):
     client = scripted(
         [
@@ -36,10 +94,14 @@ async def test_missing_submission_routes_to_finalization_and_renders(scripted):
     await agent.run(state)
 
     assert len(client.requests) == 3
-    assert client.requests[-1]["tool_choice"] == {
-        "type": "function",
-        "function": {"name": "submit_final_answer"},
+    assert client.requests[-1]["tool_choice"] == "required"
+    assert [
+        tool["function"]["name"] for tool in client.requests[-1]["tools"]
+    ] == ["submit_final_answer"]
+    assert "query" in {
+        tool["function"]["name"] for tool in client.requests[0]["tools"]
     }
+    assert client.requests[0]["messages"][0] == client.requests[-1]["messages"][0]
     answers = [
         json.loads(frame.split("data: ", 1)[1])
         for frame in _frames(state)
@@ -63,10 +125,10 @@ async def test_last_round_is_reserved_for_submission(scripted, monkeypatch):
     )
     await agent.run(_run_state("graph-reserved-final"))
     assert client.requests[-1]["call_purpose"] == "agent_synthesize"
-    assert (
-        client.requests[-1]["tool_choice"]["function"]["name"]
-        == "submit_final_answer"
-    )
+    assert client.requests[-1]["tool_choice"] == "required"
+    assert [
+        tool["function"]["name"] for tool in client.requests[-1]["tools"]
+    ] == ["submit_final_answer"]
 
 
 @pytest.mark.anyio

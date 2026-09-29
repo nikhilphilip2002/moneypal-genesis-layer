@@ -2,6 +2,8 @@
 
 Workbench uses LangGraph for all turns. The previous orchestration loop and engine selection setting have been removed. The graph uses the existing model client, MCP tools, API/SSE events, and final-answer renderer. Successful database-backed turns require validated final submission; missing or invalid submission triggers bounded finalization, then an explicit error if recovery fails. Plain-text and external-source answers retain their existing paths.
 
+Finalization sends the string `tool_choice: "required"` with only the authorized `submit_final_answer` tool definition. It does not send a named tool-choice object, which the deployed llama.cpp server ignores. Earlier query calls and their results remain in the message history; the reduced tool list limits the next model response. The graph still rejects other tools and validates the final submission before rendering.
+
 ## Storage
 
 Production defaults to `WORKBENCH_HISTORY_REQUIRE_DURABLE=true`. PostgreSQL history must be reachable. Initialization adds a `revision bigint NOT NULL DEFAULT 0` column to `public.workbench_conversations`; existing version 9 conversation records remain supported. Revision checks reject stale writes and ownership changes. Same-conversation requests are serialized using locks under the existing shared `NLQ_LLM_LOCK_PATH` parent directory. All API workers must share that filesystem, as the current Docker Compose services do.
@@ -15,6 +17,8 @@ The final answer is saved before its authoritative SSE event is emitted. Network
 `LLAMA_PROMPT_CACHE_ENABLED=true` explicitly sends `cache_prompt=true` and `id_slot=LLAMA_SLOT_ID`. Disable it for a server that does not accept llama.cpp request extensions. Keep the current server `--parallel 1 --cache-prompt` configuration on constrained hardware and the shared model request lock for all callers.
 
 The full governed schema remains cached by catalog version. Final model request context is retained for replay, including catalog hints and native messages, to preserve the common prompt prefix across follow-ups. Compaction continues to retain full historical events while reducing model context. Its model requests now count against the turn budget.
+
+The finalization tool list differs from the normal request tool list. Prefix and snapshot identities include that list. The system schema text and history remain intact, but the chat template can place tool definitions ahead of them, reducing KV-cache reuse when entering or leaving finalization. Measure this transition on the deployed server; application schema/history caching does not guarantee a KV-cache hit.
 
 `LLAMA_SLOT_SNAPSHOTS_ENABLED=false` remains the default until actual reuse is verified on the deployed model/server. When enabled, each model request restores its own conversation snapshot, calls the model, then saves under the shared gate. This prevents a per-turn initialization flag from incorrectly assuming the slot still belongs to that conversation after other work runs.
 
@@ -43,7 +47,7 @@ With a deployed API and model reachable, set `WORKBENCH_API_TOKEN` and run:
 
 This performs an initial database question, a follow-up, another conversation, and a return to the first conversation. It writes timing and token-usage results without answer rows. A positive cached-token count is only a minimum smoke check: inspect per-call counts and server prefill logs to confirm reuse of most of the eligible schema/history prefix. Compare cold/warm runs, compaction, cache-epoch changes, and returning to saved conversations after a server restart. Measure memory and snapshot disk usage on the target host.
 
-Run the existing `scripts.verify_workbench_rollout` smoke test for source permissions, tool contracts, and representative answers, and verify query/chart rendering and cancellation in the browser. The graph's forced named tool choice must be exercised against the actual model and chat template before production rollout.
+Run the existing `scripts.verify_workbench_rollout` smoke test for source permissions, tool contracts, and representative answers, and verify query/chart rendering and cancellation in the browser. Exercise finalization with `tool_choice: "required"` and the single final-answer tool against the actual model and chat template before production rollout.
 
 If final rendering, history replay, or latency regresses, redeploy the previous application release. Keep the additive history column. Older application binaries will ignore request-context events and can lose the prompt-prefix performance improvement; retained native exchanges and full history remain available.
 
