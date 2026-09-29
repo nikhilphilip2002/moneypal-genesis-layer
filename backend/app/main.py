@@ -69,9 +69,8 @@ async def _lifespan(_app: FastAPI):
             exc,
         )
     logging.getLogger(__name__).info(
-        "workbench execution=%s context_window=%d "
+        "workbench execution=langgraph context_window=%d "
         "compaction_enabled=%s observation_max_chars=%d llm_model=%s",
-        settings.workbench_engine,
         settings.workbench_context_window,
         settings.workbench_compaction_enabled,
         settings.workbench_agent_observation_max_chars,

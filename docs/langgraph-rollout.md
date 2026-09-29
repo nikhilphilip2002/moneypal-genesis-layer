@@ -1,6 +1,6 @@
 # Workbench LangGraph rollout
 
-Workbench now defaults to `WORKBENCH_ENGINE=langgraph`. `WORKBENCH_ENGINE=native` selects the previous loop for rollback. The graph uses the existing model client, MCP tools, API/SSE events, and final-answer renderer. Successful database-backed turns require validated final submission; missing or invalid submission triggers bounded finalization, then an explicit error if recovery fails. Plain-text and external-source answers retain their existing paths.
+Workbench uses LangGraph for all turns. The previous orchestration loop and engine selection setting have been removed. The graph uses the existing model client, MCP tools, API/SSE events, and final-answer renderer. Successful database-backed turns require validated final submission; missing or invalid submission triggers bounded finalization, then an explicit error if recovery fails. Plain-text and external-source answers retain their existing paths.
 
 ## Storage
 
@@ -45,7 +45,7 @@ This performs an initial database question, a follow-up, another conversation, a
 
 Run the existing `scripts.verify_workbench_rollout` smoke test for source permissions, tool contracts, and representative answers, and verify query/chart rendering and cancellation in the browser. The graph's forced named tool choice must be exercised against the actual model and chat template before production rollout.
 
-If final rendering, history replay, or latency regresses, set `WORKBENCH_ENGINE=native` and restart the backend. Keep the additive history column. This flag rollback uses the new history reader and retains the request-context events. A rollback to older application binaries will ignore those new events and can lose the prompt-prefix performance improvement; retained native exchanges and full history remain available.
+If final rendering, history replay, or latency regresses, redeploy the previous application release. Keep the additive history column. Older application binaries will ignore request-context events and can lose the prompt-prefix performance improvement; retained native exchanges and full history remain available.
 
 ## Verification status during implementation
 

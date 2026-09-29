@@ -887,25 +887,26 @@ async def test_invalid_final_answer_contract_is_repaired_once(
 
 
 @pytest.mark.anyio
-async def test_last_round_result_is_shown_without_forcing_synthesis(
+async def test_last_round_submission_renders_the_query_result(
     scripted,
     monkeypatch,
 ):
-    """The model sees the tool result and remains free to call a tool or return content."""
-    monkeypatch.setattr(agent.settings, "workbench_engine", "native")
     monkeypatch.setattr(agent.settings, "workbench_agent_max_rounds", 2)
     client = scripted(
         [
             _tool_response(_PAR_30),
-            _text_response("PAR 30 stands at 4.2% this month."),
+            _final_response("PAR 30 stands at 4.2% this month."),
         ],
-        lambda call, _ctx: _async(_card(call)),
+        lambda call, _ctx: _async(_raw(call)),
     )
     state = _run_state("min-rounds")
     await agent.run(state)
 
-    assert all("tool_choice" not in call for call in client.requests)
-    assert client.requests[1]["call_purpose"] == "agent_continue"
+    assert client.requests[1]["tool_choice"] == {
+        "type": "function",
+        "function": {"name": "submit_final_answer"},
+    }
+    assert client.requests[1]["call_purpose"] == "agent_synthesize"
     synthesis_messages = client.requests[1]["messages"]
     assert any(
         message.get("role") == "tool"
@@ -913,13 +914,14 @@ async def test_last_round_result_is_shown_without_forcing_synthesis(
         and "4.2" in message.get("content", "")
         for message in synthesis_messages
     )
-    assert (
-        state["agent_final_result"].text == "PAR 30 stands at 4.2% this month."
-    )
-    assert any(
-        "event: answer" in frame and "stands at 4.2%" in frame
+    answers = [
+        json.loads(frame.split("data: ", 1)[1])
         for frame in _frames(state)
-    )
+        if frame.startswith("event: answer\n")
+    ]
+    assert len(answers) == 1
+    assert answers[0]["query_id"] == 1
+    assert answers[0]["view"] == "table"
     assert state["_agent_budget"].rounds_used == 2
 
 
@@ -1387,30 +1389,25 @@ async def test_model_refusal_keeps_its_origin(scripted):
 
 
 @pytest.mark.anyio
-async def test_budget_spent_after_data_answers_from_the_result_with_a_limitation(
+async def test_budget_spent_after_data_requires_valid_final_submission(
     scripted,
     monkeypatch,
 ):
-    """Nothing is retrieved until the last round; the result still reaches the user,
-    marked as answered without the model's synthesis."""
-    monkeypatch.setattr(agent.settings, "workbench_engine", "native")
     monkeypatch.setattr(agent.settings, "workbench_agent_max_rounds", 2)
     invalid = NativeToolCall(id="bad", name="retired_query_tool", arguments={})
-    scripted(
+    client = scripted(
         [_tool_response(invalid), _tool_response(_PAR_30)],
-        lambda call, _ctx: _async(_card(call)),
+        lambda call, _ctx: _async(_raw(call)),
     )
     state = _run_state("late-data")
-    await agent.run(state)
+    with pytest.raises(LLMProtocolError, match="Final submission"):
+        await agent.run(state)
 
-    answer = next(
-        json.loads(frame.split("data: ", 1)[1])
-        for frame in _frames(state)
-        if "event: answer" in frame and '"status"' in frame
+    assert len(client.requests) == 2
+    assert state["query_registry"]
+    assert not any(
+        frame.startswith("event: answer\n") for frame in _frames(state)
     )
-    assert answer["status"] == "partial"
-    assert answer["text"] == "PAR 30 is 4.2%."
-    assert any(item["source"] == "agent" for item in answer["limitations"])
     assert "agent_final_result" not in state
 
 

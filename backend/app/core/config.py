@@ -302,9 +302,6 @@ class Settings:
         )
 
         # --- Workbench (unified chat orchestrator) ----------------------------------
-        self.workbench_engine = get("WORKBENCH_ENGINE", "langgraph") or "langgraph"
-        if self.workbench_engine not in {"langgraph", "native"}:
-            raise ValueError("WORKBENCH_ENGINE must be langgraph or native")
         self.workbench_history_require_durable = (
             get("WORKBENCH_HISTORY_REQUIRE_DURABLE", "true") or "true"
         ).lower() in ("1", "true", "yes", "on")

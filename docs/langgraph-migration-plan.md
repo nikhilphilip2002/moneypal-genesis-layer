@@ -124,14 +124,14 @@ Complete and verify each step before beginning the next.
 | Step | Changes | Verification gate |
 | --- | --- | --- |
 | 1. Capture baseline | Record current SSE/API payloads, feature scenarios, history replay, model-call counts, and cold/warm timings. Reproduce a query followed by text without submission. Probe forced finalization and slot reuse on the deployed server. | Failure reproduction and provider capability results recorded; supported final-output mode selected. |
-| 2. Introduce graph | Add compatible pinned LangGraph dependency to `pyproject.toml`, `requirements.txt`, and lockfile. Add a typed workflow module and replace orchestration under an internal engine flag. Reuse existing helpers; retain current behavior initially. | Existing behavior scenarios pass through graph nodes, including cancellation and multi-tool exchanges. |
+| 2. Introduce graph | Add compatible pinned LangGraph dependency to `pyproject.toml`, `requirements.txt`, and lockfile. Add a typed workflow module and replace the previous orchestration loop. Reuse existing helpers and make LangGraph the only execution path. | Existing behavior scenarios pass through graph nodes, including cancellation and multi-tool exchanges. |
 | 3. Enforce finalization | Add mandatory validation, dedicated finalization, bounded repair, budget reserves, and idempotent terminal handling. Make the shared final handler callable without pretending the model emitted a tool call. | Missing submission, invalid query/view, exhausted budget, and valid direct submission all produce the specified terminal behavior. |
 | 4. Verify durable history | Preserve version 9 replay; add required write acknowledgement, conversation concurrency protection, and bounded revision-aware replay caching. | Restart/reload, cross-worker access, cache eviction, database outage, prior-query reuse, and no cross-user history leakage. |
 | 5. Verify inference caching | Preserve stable prefixes; make server-specific cache/slot configuration explicit; validate ownership, invalidation, and snapshot lifecycle. | Real schema and history cache hits on the target hardware, including interleaved conversations and compaction. |
 | 6. Prove feature parity | Run existing relevant backend/frontend tests and representative live conversations. Add only critical missing regressions. | No unintended changes to tools, permissions, query/chart behavior, citations, streaming, or cancellation. |
-| 7. Roll out | Enable graph for an internal cohort, inspect terminal errors and latency, then make it default. Retain the old engine for a short rollback window. | Gates below met; existing conversations work under both engines during rollback window. |
+| 7. Roll out | Verify the graph in staging, inspect terminal errors and latency, then deploy. Retain the previous application release for deployment rollback. | Gates below met; existing conversations work after upgrading. |
 
-Use deterministic recorded or scripted model/tool outputs for engine comparisons. Avoid executing both live engines for every user request on the low-end server.
+Use deterministic recorded or scripted model/tool outputs to compare the graph with recorded baseline behavior.
 
 ## Files expected to change
 
@@ -141,7 +141,7 @@ Use deterministic recorded or scripted model/tool outputs for engine comparisons
 - `agent_executor.py`, `agent_contracts.py`, and `mcp/workbench_server.py`: minimal shared finalization integration if needed; preserve public tool schemas.
 - `history.py`: acknowledgement, idempotency, revision/concurrency handling, and bounded replay caching.
 - `prompts.py`, `compaction/request.py`, `nlq/llm/client.py`, and `slot_cache.py`: only changes required for enforced final output, correct budgets, and verified cache reuse.
-- `core/config.py` and application startup: engine flag and graph lifecycle; cache settings only where needed.
+- `core/config.py` and application startup: graph lifecycle; cache settings only where needed.
 - Dependency files, focused existing tests, and rollout documentation.
 
 Frontend implementation changes are not expected because current SSE and rendering contracts remain intact. Existing frontend tests and browser smoke checks still form part of acceptance.
@@ -158,7 +158,7 @@ Frontend implementation changes are not expected because current SSE and renderi
 
 **Verification:** Run targeted critical regressions while implementing, then the relevant Workbench/NLQ suite, frontend `npm test`, browser rendering checks, and the repository-required backend `ruff check` and `ty check`. Record pre-existing failures separately and introduce no new diagnostics in changed code.
 
-**Rollback:** The engine flag selects the implementation at turn start. Roll back for missing terminal results, corrupted replay, feature regressions, or sustained cache/latency regressions. Keep history format and additive database changes compatible with both engines. Cache invalidation on rollback may cause cold requests but must not lose history.
+**Rollback:** Redeploy the previous application release for missing terminal results, corrupted replay, feature regressions, or sustained cache/latency regressions. Keep history format and additive database changes compatible with the previous release. Cache invalidation on rollback may cause cold requests but must not lose history.
 
 ## Documentation references
 
