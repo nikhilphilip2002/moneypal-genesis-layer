@@ -14,6 +14,7 @@ import hashlib
 import json
 import logging
 import time
+from copy import deepcopy
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from typing import Any
@@ -177,36 +178,11 @@ _BUDGET_LIMITATION = {
     ),
 }
 
-# One nudge per request kind, appended only when the transcript already holds this turn's
-# tool exchange. ``required`` re-selects after a failure, ``auto`` lets the model choose
-# between more evidence and an answer, ``none`` is the reserved final synthesis round.
-_NUDGES = {
-    "required": (
-        "Inspect the complete tool results above. Choose the next authorized capability "
-        "needed to answer the original question or recover from the reported error. Do "
-        "not repeat a failed call unchanged."
-    ),
-    "auto": (
-        "Review the original question and every complete tool result above. If more "
-        "evidence or a corrected query is needed, call the appropriate authorized function "
-        "with complete arguments. Otherwise answer the original question now using only "
-        "those tool results."
-    ),
-    "none": (
-        "Answer the original question now using only the tool results above. Do not call "
-        "another tool. Do not introduce unsupported numbers. For a large result table, "
-        "summarize the leading result and tell the user the full rows are in the table; "
-        "do not enumerate the table in prose."
-    ),
-}
 _PURPOSES = {
     "required": "agent_select",
     "auto": "agent_continue",
     "none": "agent_synthesize",
 }
-# The stage each request kind is recorded under in the turn's event stream.
-_STAGES = {"required": "route", "auto": "continue", "none": "synthesize"}
-
 
 def _elapsed_ms(state: dict[str, Any]) -> int:
     started_at = state.get("timing", {}).get("started_at", time.perf_counter())
@@ -241,27 +217,40 @@ async def _emit_trace(state: dict[str, Any], step: dict[str, Any]) -> None:
     await state["emit"].put(sse("trace", payload))
 
 
+def _append_messages(state, messages) -> None:
+    if _persistable(state):
+        history.append_messages(
+            state["conversation_id"], state["user"], state["turn_id"], messages
+        )
+    state.setdefault("messages", []).extend(deepcopy(messages))
+
+
+def _initialize_messages(state, catalog) -> None:
+    if state.get("_messages_initialized"):
+        return
+    system = prompts.build_agent_system_prompt(catalog)
+    question = {"role": "user", "content": state["question"]}
+    if _persistable(state):
+        record = history.start_turn_messages(
+            state["conversation_id"], state["user"], state["turn_id"], system, question
+        )
+        state["messages"] = deepcopy(record.messages)
+        state["_request_compaction"] = deepcopy(record.compaction)
+    else:
+        state["messages"] = [system, question]
+    state["current_question"] = state["messages"][-1]
+    state["_messages_initialized"] = True
+
+
 async def _select(
     state: dict[str, Any],
     *,
-    repair_messages=None,
     tool_choice: str = "required",
-    supplement: str = "",
     trace_id: str | None = None,
 ):
-    """Make one provider request with the policy's permitted tool-call subset.
-
-    The catalog context is recomputed from the question plus the latest tool error so a
-    dimension or table named in an error can surface as a candidate. Rounds are charged by
-    the caller so selection-only callers and the full loop share one accounting.
-    """
     budget: TurnBudget = state["_agent_budget"]
     catalog = state.setdefault("_agent_catalog", get_catalog())
-    catalog_context = prompts.build_agent_catalog_context(
-        state["question"],
-        catalog,
-        supplement=supplement,
-    )
+    _initialize_messages(state, catalog)
     from app.mcp.tool_catalog import catalog as mcp_catalog
 
     if not mcp_catalog.names(owner="postgres"):
@@ -280,34 +269,8 @@ async def _select(
     )
     if not definitions:
         raise LLMError("no native tools are authorized for this request")
-    prompt = prompts.build_agent_prompt(
-        question=state["question"],
-        history_messages=[
-            message
-            for message in state.get("agent_history_messages", [])
-            if message.get("role") != "system"
-        ],
-        catalog=catalog,
-        catalog_context=catalog_context,
-    )
-    messages = [
-        *prompt.messages[:-1],
-        *(
-            message
-            for message in state.get("agent_history_messages", [])
-            if message.get("role") == "system"
-        ),
-        prompt.messages[-1],
-        *(repair_messages or []),
-    ]
-    if repair_messages:
-        messages.append({"role": "user", "content": _NUDGES[tool_choice]})
-        _persist_nudge(state, tool_choice)
+    messages = state["messages"]
     selecting = tool_choice == "required"
-    if not selecting:
-        # The exact context of the answering request, so a synthesis repair in
-        # graph.answer_results replays what the model actually saw.
-        state["agent_synthesis_messages"] = messages
     client = models.client()
     extra: dict[str, Any] = {}
     from app.services.workbench.streaming import complete_answer
@@ -356,8 +319,7 @@ async def _select(
                         client,
                         messages,
                         definitions,
-                        current_question=prompt.messages[-1],
-                        has_inflight=bool(repair_messages),
+                        current_question=state["current_question"],
                         force=bool(attempt),
                         timeout_s=budget.remaining_s(settings.llm_timeout_s),
                         on_compaction=on_compaction
@@ -365,23 +327,23 @@ async def _select(
                         else None,
                     )
                     extra["max_output_tokens"] = output_tokens
-                if not selecting:
-                    state["agent_synthesis_messages"] = prepared
                 try:
                     result = await complete(
-                        messages=prepared,
+                        messages=deepcopy(prepared),
                         tools=definitions,
                         tool_choice=tool_choice,
                         timeout_s=budget.remaining_s(settings.llm_timeout_s),
                         call_purpose=_PURPOSES[tool_choice],
                         call_kind="repair"
-                        if attempt or (repair_messages and selecting)
+                        if attempt
                         else "planned",
                         catalog_version=catalog.version,
                         **extra,
                     )
                 except (LLMContextOverflow, LLMIncomplete) as exc:
                     if isinstance(exc, LLMIncomplete):
+                        if exc.output_emitted:
+                            raise
                         if can_count:
                             client.observe_input_tokens(
                                 counted, exc.prompt_tokens
@@ -420,7 +382,7 @@ async def _select(
     filename = snapshot_filename(
         user=state["user"],
         conversation_id=state["conversation_id"],
-        system_prompt=prompts.build_agent_system_prompt(catalog),
+        system_prompt=json.dumps(messages[0], sort_keys=True),
         tool_schema_hash=schema_hash,
     )
     # A slot save captures real model input and output. Keep restore, completion, and save
@@ -451,7 +413,7 @@ def _preflight(result, state: dict[str, Any]) -> list[tuple[str, str, str]]:
     terminals = [
         call
         for call in result.tool_calls
-        if call.name == "submit_final_answer"
+        if call.name == "submit_final_answer" and call.error is None
     ]
     if terminals and len(result.tool_calls) != 1:
         failures.extend(
@@ -463,6 +425,9 @@ def _preflight(result, state: dict[str, Any]) -> list[tuple[str, str, str]]:
             for call in terminals
         )
     for call in result.tool_calls:
+        if call.error is not None:
+            failures.append((call.id, call.error["message"], call.error["code"]))
+            continue
         if terminals and len(result.tool_calls) != 1 and call in terminals:
             continue
         try:
@@ -564,46 +529,20 @@ def _failure_observation(
     }
 
 
-def _repair_messages(
-    result,
-    failures: list[tuple[str, str, str]],
-    *,
-    executed: list[ExecutedAgentCall] | tuple[ExecutedAgentCall, ...] = (),
-    state: dict[str, Any] | None = None,
-    durable: bool = False,
-):
-    """The assistant message plus exactly one tool message per call it contains.
-
-    Failed calls carry their typed error; executed calls carry their real observation
-    (bounded for the model, complete when ``durable``), so replay parity always holds.
-    """
-    if result.assistant_message is None:
-        raise LLMProtocolError(
-            "native tool response cannot be replayed for repair"
-        )
+def _tool_messages(result, failures, executed=(), state=None):
     failed = {call_id: (message, code) for call_id, message, code in failures}
     items = {item.call.id: item for item in executed}
-    messages = [result.assistant_message]
+    messages = []
     for call in result.tool_calls:
         if call.id in failed:
             message, code = failed[call.id]
             messages.append(_failure_observation(call, message, code, state))
         elif call.id in items:
-            item = items[call.id]
-            messages.append(
-                item.replay_message()
-                if durable
-                else item.observation_message()
-            )
+            messages.append(items[call.id].observation_message())
         else:
-            messages.append(
-                _failure_observation(
-                    call,
-                    "the call was not executed",
-                    "SOURCE_UNAVAILABLE",
-                    state,
-                )
-            )
+            messages.append(_failure_observation(
+                call, "The call was not executed.", "SOURCE_UNAVAILABLE", state
+            ))
     return messages
 
 
@@ -614,12 +553,6 @@ def _raise_first_failure(failures: list[tuple[str, str, str]]) -> None:
     if code == "TOOL_NOT_FOUND":
         raise AgentToolNotFound(message)
     raise AgentToolArgumentsInvalid(message)
-
-
-def _stored_arguments(
-    state: dict[str, Any], call, failed: bool
-) -> dict[str, Any]:
-    return call.arguments
 
 
 def _persistable(state) -> bool:
@@ -868,136 +801,22 @@ async def finalize_running_traces(state: dict[str, Any]) -> None:
         await _emit_trace(state, terminal)
 
 
-def _persist_exchange(
-    state, result, failures, executed, *, stage: str = "route"
-) -> None:
-    """One write per round: the assistant message, its calls, their complete results,
-    and the rendered cards the client was streamed. The ``tool_result`` events carry
-    the cards' content, so the cards get no event of their own."""
-    if result.assistant_message is None:
-        return
-    if not _persistable(state):
-        return
-    failed_ids = {call_id for call_id, _message, _code in failures}
-    history.add_agent_exchange(
-        state["conversation_id"],
-        state["user"],
-        state["turn_id"],
-        assistant_message=result.assistant_message,
-        calls=[
-            {
-                "id": call.id,
-                "name": call.name,
-                "arguments": _stored_arguments(
-                    state, call, call.id in failed_ids
-                ),
-            }
-            for call in result.tool_calls
-        ],
-        tool_messages=_repair_messages(
-            result,
-            failures,
-            executed=executed,
-            state=state,
-            durable=True,
-        )[1:],
-        stage=stage,
-        cards=[
-            {
-                "source": item.card.source,
-                "card_type": item.card.card_type,
-                "payload": item.card.payload,
-                "call_id": item.call.id,
-                "query_id": item.query_id,
-                "attempt_id": item.attempt_id,
-            }
-            for item in executed
-            if item.card is not None
-        ],
-    )
-
-
-def _persist_nudge(state, tool_choice: str) -> None:
-    """The nudge is part of the transcript the model saw; the record says so."""
-    if not _persistable(state):
-        return
-    budget = state.get("_agent_budget")
-    try:
-        history.add_system_message(
-            state["conversation_id"],
-            state["user"],
-            state["turn_id"],
-            content=_NUDGES[tool_choice],
-            kind="nudge",
-            stage=_STAGES[tool_choice],
-            round_number=budget.rounds_used if budget is not None else 0,
-        )
-    except Exception:  # noqa: BLE001 - persistence is best effort
-        logger.warning("native nudge persistence failed", exc_info=True)
-
-
-def _protocol_repair_message(
-    exc: BaseException, tool_choice: str
-) -> dict[str, str]:
-    instruction = (
-        "Return one valid native tool call with a unique call ID, an authorized function "
-        "name, and JSON-object arguments."
-        if tool_choice == "required"
-        else "Return either a valid authorized native tool call or a non-empty final answer."
-    )
-    if tool_choice == "none":
-        instruction = "Return a non-empty final answer and do not call a tool."
-    return {
-        "role": "user",
-        "content": json.dumps(
-            {
-                "status": "error",
-                "code": "MODEL_PROTOCOL_ERROR",
-                "message": str(exc)[:500],
-                "instruction": instruction,
-            },
-            separators=(",", ":"),
-        ),
-    }
-
-
-def _persist_protocol_repair(
-    state: dict[str, Any],
-    message: dict[str, str],
-    tool_choice: str,
-) -> None:
-    if not _persistable(state):
-        return
-    budget = state.get("_agent_budget")
-    try:
-        history.add_system_message(
-            state["conversation_id"],
-            state["user"],
-            state["turn_id"],
-            content=message["content"],
-            kind="protocol_repair",
-            stage=_STAGES[tool_choice],
-            round_number=budget.rounds_used if budget is not None else 0,
-        )
-    except Exception:  # noqa: BLE001 - persistence is best effort
-        logger.warning(
-            "native protocol repair persistence failed", exc_info=True
-        )
-
-
-def _queue_protocol_repair(
-    state: dict[str, Any],
-    exchange: list[dict[str, Any]],
-    exc: BaseException,
-    tool_choice: str,
-    *,
-    assistant_message: dict[str, Any] | None = None,
-) -> None:
-    if assistant_message is not None:
-        exchange.append(assistant_message)
-    feedback = _protocol_repair_message(exc, tool_choice)
-    exchange.append(feedback)
-    _persist_protocol_repair(state, feedback, tool_choice)
+def _record_tool_results(state, result, failures, executed) -> None:
+    _append_messages(state, _tool_messages(result, failures, executed, state))
+    if _persistable(state):
+        for item in executed:
+            if item.card is not None:
+                history.add_card(
+                    state["conversation_id"], state["user"], state["turn_id"],
+                    {
+                        "source": item.card.source,
+                        "card_type": item.card.card_type,
+                        "payload": item.card.payload,
+                        "call_id": item.call.id,
+                        "query_id": item.query_id,
+                        "attempt_id": item.attempt_id,
+                    },
+                )
 
 
 def _denial(failures, executed) -> dict[str, Any] | None:
@@ -1020,56 +839,23 @@ def _denial(failures, executed) -> dict[str, Any] | None:
     return latest
 
 
-def _latest_error(failures, executed) -> str:
-    text = ""
-    for _call_id, message, _code in failures:
-        text = message
-    for item in executed:
-        if item.error is not None:
-            text = str(item.error.get("message", ""))
-    return text
-
-
 async def select_calls(state: dict[str, Any]):
-    """Select without executing for the offline native-call evaluator.
-
-    Preflight failures are returned to the model as observations while the budget lasts;
-    when it runs out the first failure is raised so the caller can classify it.
-    """
     budget = _budget(state)
-    exchange: list[dict[str, Any]] = []
     while True:
         budget.charge_round("agent_select")
-        try:
-            result = await _select(state, repair_messages=exchange or None)
-        except LLMProtocolError as exc:
-            if not budget.rounds_remaining:
-                raise
-            _queue_protocol_repair(state, exchange, exc, "required")
-            continue
+        result = await _select(state)
+        if result.assistant_message is None:
+            raise LLMProtocolError("missing assistant message")
+        _append_messages(state, [result.assistant_message])
         if not result.tool_calls:
-            exc = LLMProtocolError(
-                "native selection returned no tool_calls; assistant content is not executable"
-            )
-            if not budget.rounds_remaining:
-                raise exc
-            _persist_exchange(state, result, (), ())
-            _queue_protocol_repair(
-                state,
-                exchange,
-                exc,
-                "required",
-                assistant_message=result.assistant_message,
-            )
-            continue
+            raise LLMProtocolError("native selection returned no tool_calls")
         budget.charge_call(len(result.tool_calls))
         failures = _preflight(result, state)
         if not failures:
             return result
+        _record_tool_results(state, result, failures, ())
         if not budget.rounds_remaining:
             _raise_first_failure(failures)
-        _persist_exchange(state, result, failures, ())
-        exchange.extend(_repair_messages(result, failures, state=state))
 
 
 async def _execute_one(
@@ -1229,8 +1015,6 @@ async def _stream_item(state: dict[str, Any], item: ExecutedAgentCall) -> None:
         "first_card_ms",
         int((time.perf_counter() - state["timing"]["started_at"]) * 1000),
     )
-    # Not persisted here: the round's ``tool_result`` event already carries this card,
-    # and `_persist_exchange` records the rendered view in the same write.
 
 
 async def _execute_batch(
@@ -1297,6 +1081,7 @@ async def _execute_batch(
             for task in asyncio.as_completed(tasks):
                 index, item = await task
                 output[index] = item
+                state.setdefault("_completed_tool_results", {})[item.call.id] = item
                 await _finalize_query_record(
                     state,
                     query_records.get(item.call.id),
@@ -1314,16 +1099,18 @@ async def _execute_batch(
             await asyncio.gather(*tasks, return_exceptions=True)
     try:
         for index, call in serial:
-            output[index] = await _execute_one(
+            item = await _execute_one(
                 state,
                 context,
                 call,
                 query_records.get(call.id),
             )
+            output[index] = item
+            state.setdefault("_completed_tool_results", {})[call.id] = item
             await _finalize_query_record(
-                state, query_records.get(call.id), output[index]
+                state, query_records.get(call.id), item
             )
-            await _stream_item(state, output[index])
+            await _stream_item(state, item)
     except asyncio.CancelledError:
         await finalize_running_queries(state)
         await finalize_running_traces(state)
@@ -1404,7 +1191,7 @@ async def _end_without_data(
     )
 
 
-async def run(state: dict[str, Any]) -> None:
+async def _run(state: dict[str, Any]) -> None:
     """One bounded loop: request, observe, execute, repeat; then answer.
 
     Each iteration is one LLM request. The first round is ``auto`` so the agent can answer
@@ -1431,13 +1218,9 @@ async def run(state: dict[str, Any]) -> None:
     )
     await emit.put(sse("stage", {"stage": "routing", "agent": "native"}))
 
-    exchange: list[
-        dict[str, Any]
-    ] = []  # this turn's assistant and tool messages
     executed: list[ExecutedAgentCall] = []
     final = None
     denial: dict[str, Any] | None = None
-    last_error = ""
     while budget.rounds_remaining and not budget.expired:
         if (
             state.get("attribution_repairs", 0)
@@ -1485,9 +1268,7 @@ async def run(state: dict[str, Any]) -> None:
         try:
             result = await _select(
                 state,
-                repair_messages=exchange or None,
                 tool_choice=tool_choice,
-                supplement=last_error,
                 trace_id=model_trace_id,
             )
         except asyncio.CancelledError:
@@ -1530,13 +1311,7 @@ async def run(state: dict[str, Any]) -> None:
                     ),
                 },
             )
-            if not budget.rounds_remaining:
-                if has_data:
-                    break
-                raise
-            last_error = str(exc)
-            _queue_protocol_repair(state, exchange, exc, tool_choice)
-            continue
+            raise
         except Exception as exc:
             await _emit_trace(
                 state,
@@ -1552,6 +1327,9 @@ async def run(state: dict[str, Any]) -> None:
                 },
             )
             raise
+        if result.assistant_message is None:
+            raise LLMProtocolError("missing assistant message")
+        _append_messages(state, [result.assistant_message])
         model_detail = (
             f"Selected {len(result.tool_calls)} tool call(s)"
             if result.tool_calls
@@ -1580,65 +1358,17 @@ async def run(state: dict[str, Any]) -> None:
             ]
         await _emit_trace(state, model_trace)
         if not result.tool_calls:
-            if tool_choice == "required":
-                exc = LLMProtocolError(
-                    "native selection returned no tool_calls; assistant content is not executable"
-                )
-                if not budget.rounds_remaining:
-                    raise exc
-                _persist_exchange(
-                    state, result, (), (), stage=_STAGES[tool_choice]
-                )
-                _queue_protocol_repair(
-                    state,
-                    exchange,
-                    exc,
-                    tool_choice,
-                    assistant_message=result.assistant_message,
-                )
-                last_error = str(exc)
-                continue
             if not result.text.strip():
-                exc = LLMProtocolError(
-                    "native continuation returned neither tool calls nor an answer"
-                )
-                if not budget.rounds_remaining:
-                    break
-                _persist_exchange(
-                    state, result, (), (), stage=_STAGES[tool_choice]
-                )
-                _queue_protocol_repair(
-                    state,
-                    exchange,
-                    exc,
-                    tool_choice,
-                    assistant_message=result.assistant_message,
-                )
-                last_error = str(exc)
-                continue
+                raise LLMProtocolError("model returned neither tool calls nor an answer")
             final = result
             break
-        if tool_choice == "none":
-            exc = LLMProtocolError(
-                "tool call returned during final synthesis phase"
-            )
-            if not budget.rounds_remaining:
-                break
-            _persist_exchange(
-                state, result, (), (), stage=_STAGES[tool_choice]
-            )
-            _queue_protocol_repair(
-                state,
-                exchange,
-                exc,
-                tool_choice,
-                assistant_message=result.assistant_message,
-            )
-            last_error = str(exc)
-            continue
         try:
             budget.charge_call(len(result.tool_calls))
         except BudgetExhausted:
+            _record_tool_results(state, result, [
+                (call.id, "Tool call budget exhausted.", "BUDGET_EXHAUSTED")
+                for call in result.tool_calls
+            ], ())
             if not has_data:
                 raise
             break
@@ -1684,15 +1414,9 @@ async def run(state: dict[str, Any]) -> None:
             context,
             [call for call in result.tool_calls if call.id not in failed_ids],
         )
-        _persist_exchange(
-            state, result, failures, items, stage=_STAGES[tool_choice]
-        )
-        exchange.extend(
-            _repair_messages(result, failures, executed=items, state=state)
-        )
+        _record_tool_results(state, result, failures, items)
         executed.extend(items)
         denial = _denial(failures, items) or denial
-        last_error = _latest_error(failures, items)
     logger.info("native agent turn budget %s", budget.snapshot())
 
     terminal = next(
@@ -1720,15 +1444,6 @@ async def run(state: dict[str, Any]) -> None:
     ]
     if final is not None:
         state["agent_final_result"] = final
-        # The candidate as the model wrote it; `answer_results` records the final text.
-        history.set_synthesis(
-            state["conversation_id"],
-            state["user"],
-            state["turn_id"],
-            final.text,
-            message=final.assistant_message,
-            stage="synthesize",
-        )
     elif not cards and not raw_results:
         if budget.expired:
             raise TimeoutError("Workbench request deadline exhausted")
@@ -1757,6 +1472,21 @@ async def run(state: dict[str, Any]) -> None:
         state["decision"].limitations.append(dict(_BUDGET_LIMITATION))
     state["results"] = cards
     await answer_results(state)
+
+
+async def run(state: dict[str, Any]) -> None:
+    try:
+        await _run(state)
+    finally:
+        completed = state.pop("_completed_tool_results", {})
+        pending = history.pending_tool_calls(state.get("messages", []))
+        if pending:
+            _append_messages(state, [
+                completed[call_id].observation_message()
+                if call_id in completed
+                else history.interrupted_tool_result(call_id)
+                for call_id in pending
+            ])
 
 
 __all__ = [

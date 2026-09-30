@@ -343,9 +343,6 @@ class Settings:
         self.workbench_reserve_tokens = int(
             get("WORKBENCH_RESERVE_TOKENS", "8192") or "8192"
         )
-        self.workbench_keep_recent_turns = int(
-            get("WORKBENCH_KEEP_RECENT_TURNS", "6") or "6"
-        )
         self.workbench_compaction_enabled = (
             get("WORKBENCH_COMPACTION_ENABLED", "true") or "true"
         ).lower() in ("1", "true", "yes", "on")
@@ -355,9 +352,6 @@ class Settings:
             if raw_compaction_max_tokens
             else None
         )
-        self.workbench_history_write_legacy_exchanges = (
-            get("WORKBENCH_HISTORY_WRITE_LEGACY_EXCHANGES", "true") or "true"
-        ).lower() in ("1", "true", "yes", "on")
         # --- Rotating Logging Subsystem ---------------------------------------------
         self.log_dir = Path(
             get("LOG_DIR", str(DATA_DIR / "logs")) or DATA_DIR / "logs"

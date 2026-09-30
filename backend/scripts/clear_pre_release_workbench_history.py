@@ -19,13 +19,13 @@ def clear(*, apply: bool) -> int:
     with db_cursor() as (conn, cur):
         cur.execute(
             f"SELECT count(*) FROM {history.TABLE} WHERE record_version < %s",
-            (history.RECORD_VERSION,),
+            (min(history.KNOWN_RECORD_VERSIONS),),
         )
         count = int(cur.fetchone()[0])
         if apply:
             cur.execute(
                 f"DELETE FROM {history.TABLE} WHERE record_version < %s",
-                (history.RECORD_VERSION,),
+                (min(history.KNOWN_RECORD_VERSIONS),),
             )
             conn.commit()
         else:

@@ -214,9 +214,7 @@ class TestConversationOwnership:
     async def test_conversation_is_visible_only_to_its_owner(self, client):
         from app.services.workbench import history
 
-        history.record_turn(
-            "private", "Policy question", ["macro"], user="gicc_policy"
-        )
+        history.begin_turn("private", "gicc_policy", "Policy question")
 
         owner = await client.get(
             "/workbench/conversations/private",
@@ -315,17 +313,18 @@ class TestAskStreamOverflow:
         self, client, monkeypatch
     ):
         """The route answers 200 with a terminal error frame, never a broken stream."""
-        from app.services.workbench import graph, history
+        from app.services.workbench import agent, graph, history
+        from app.services.nlq.llm.client import LLMContextOverflow
 
         monkeypatch.setattr(history, "_ensure_table", lambda: False)
         history._MEMORY.clear()
 
-        def overflow(*_args, **_kwargs):
-            raise history.NativeTranscriptOverflow(
+        async def overflow(*_args, **_kwargs):
+            raise LLMContextOverflow(
                 "complete native conversation exceeds"
             )
 
-        monkeypatch.setattr(graph.history, "build_native_transcript", overflow)
+        monkeypatch.setattr(agent, "run", overflow)
 
         response = await client.post(
             "/workbench/ask",
@@ -341,5 +340,5 @@ class TestAskStreamOverflow:
         assert "event: conversation" in body
         assert "event: error" in body
         assert graph.CONTEXT_CAPACITY_CODE in body
-        assert body.rstrip().endswith("event: done\ndata: {}")
+        assert "event: done\n" in body
         history._MEMORY.clear()

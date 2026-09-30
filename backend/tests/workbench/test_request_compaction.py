@@ -7,10 +7,15 @@ from types import SimpleNamespace
 import pytest
 
 from app.core.config import settings
-from app.services.nlq.llm.client import LLMContextOverflow, LLMError, LLMIncomplete
+from app.services.nlq.llm.client import (
+    LLMContextOverflow,
+    LLMError,
+    LLMIncomplete,
+)
 from app.services.nlq.llm.messages import ChatMessage
 from app.services.workbench import history
 from app.services.workbench.compaction.request import (
+    active_messages,
     exchange_boundaries,
     prepare_request,
     summarize_messages,
@@ -101,7 +106,6 @@ async def test_compacts_oldest_prefix_keeps_recent_exchanges_and_reuses_checkpoi
         messages,
         tools,
         current_question=current,
-        has_inflight=True,
         on_compaction=on_compaction,
     )
     assert events == ["running", "complete"]
@@ -120,7 +124,6 @@ async def test_compacts_oldest_prefix_keeps_recent_exchanges_and_reuses_checkpoi
         messages,
         tools,
         current_question=current,
-        has_inflight=True,
         on_compaction=on_compaction,
     )
     assert again == prepared
@@ -129,25 +132,17 @@ async def test_compacts_oldest_prefix_keeps_recent_exchanges_and_reuses_checkpoi
 
 
 @pytest.mark.anyio
-async def test_compacts_within_current_turn_and_replays_durable_checkpoint():
-    old_turn = history.begin_turn("c", "u", "older question")
-    history.set_synthesis("c", "u", old_turn, "older answer")
-    history.complete_turn("c", "u", old_turn)
+async def test_compaction_survives_reload_and_followup_without_changing_messages():
     turn = history.begin_turn("c", "u", "current question")
     current: ChatMessage = {"role": "user", "content": "current question"}
-    state = {"conversation_id": "c", "user": "u", "turn_id": turn}
-    recent = exchange("new", "latest observation")
     messages: list[ChatMessage] = [
         {"role": "system", "content": "System"},
-        {
-            "role": "system",
-            "content": "Previous summary: preserve this objective",
-        },
         current,
         *exchange("old", "large old tool result " * 1000),
-        *recent,
-        {"role": "user", "content": "Continue"},
+        *exchange("new", "latest observation"),
     ]
+    history.append_messages("c", "u", turn, messages)
+    state = {"conversation_id": "c", "user": "u", "turn_id": turn}
     client = CountingClient()
     prepared, _, _ = await prepare_request(
         state,
@@ -155,24 +150,31 @@ async def test_compacts_within_current_turn_and_replays_durable_checkpoint():
         messages,
         [],
         current_question=current,
-        has_inflight=True,
     )
-    assert current in prepared
-    assert "preserve this objective" in json.dumps(client.summaries)
-    assert "current question" not in json.dumps(client.summaries)
-    history.set_synthesis("c", "u", turn, "new final answer")
-    history.complete_turn("c", "u", turn)
-    replay = history.build_native_transcript(
-        "c", user="u", enforce_budget=False
-    )
-    assert replay == [
-        *prepared[1:],
-        {"role": "assistant", "content": "new final answer"},
-    ]
+    assert prepared[-3:] == [current, *messages[-2:]]
+    assert history.load_messages("c", user="u") == messages
     record = history.get("c", user="u")
     assert record is not None
-    assert len(record.turns) == 2
-    assert "older answer" not in json.dumps(replay)
+    assert active_messages(record.messages, record.compaction) == prepared
+    assert record.compaction is not None
+    assert "messages" not in record.compaction
+    final: ChatMessage = {"role": "assistant", "content": "original answer "}
+    history.append_messages("c", "u", turn, [final])
+    history.complete_turn("c", "u", turn)
+    followup = history.begin_turn("c", "u", "followup")
+    question: ChatMessage = {"role": "user", "content": "followup"}
+    history.start_turn_messages("c", "u", followup, messages[0], question)
+    record = history.get("c", user="u")
+    assert record is not None
+    again, _, _ = await prepare_request(
+        {"_request_compaction": record.compaction},
+        client,
+        record.messages,
+        [],
+        current_question=question,
+    )
+    assert again == [*prepared, final, question]
+    assert record.messages == [*messages, final, question]
 
 
 @pytest.mark.anyio
@@ -190,6 +192,7 @@ async def test_summary_failure_keeps_history_intact():
 
     record = history.get("c", user="u")
     assert record is not None
+    assert record is not None
     before = json.dumps(record.turns)
     current: ChatMessage = {"role": "user", "content": "question"}
     messages: list[ChatMessage] = [
@@ -204,12 +207,12 @@ async def test_summary_failure_keeps_history_intact():
             messages,
             [],
             current_question=current,
-            has_inflight=False,
             on_compaction=on_compaction,
         )
     assert events == ["running", "error"]
     assert "_request_compaction" not in state
     record = history.get("c", user="u")
+    assert record is not None
     assert record is not None
     assert json.dumps(record.turns) == before
 
@@ -225,7 +228,6 @@ async def test_oversized_current_question_fails_without_dropping_it():
             [{"role": "system", "content": "policy"}, current],
             [],
             current_question=current,
-            has_inflight=False,
         )
     assert client.summaries == []
 
@@ -279,58 +281,41 @@ async def test_summarization_shrinks_chunks_after_incomplete_output():
 
 
 @pytest.mark.anyio
-async def test_later_turn_merges_checkpoint_and_does_not_restore_legacy_summary():
+async def test_repeated_compaction_summarizes_only_newly_removed_messages():
     client = CountingClient()
-    old_turn = history.begin_turn("c", "u", "initial question")
-    history.complete_turn("c", "u", old_turn)
-    history.set_compaction(
-        "c",
-        "u",
-        {
-            "summary": "legacy checkpoint",
-            "first_kept_turn_id": old_turn,
-        },
+    state = {}
+    current: ChatMessage = {"role": "user", "content": "initial objective"}
+    messages: list[ChatMessage] = [
+        {"role": "system", "content": "policy"},
+        current,
+        *exchange("first", "first evidence " * 1500),
+        *exchange("recent", "recent evidence"),
+    ]
+    await prepare_request(
+        state, client, messages, [], current_question=current
     )
-    for index in range(2):
-        previous = history.build_native_transcript(
-            "c", user="u", enforce_budget=False
-        )
-        turn = history.begin_turn("c", "u", f"question {index}")
-        current: ChatMessage = {"role": "user", "content": f"question {index}"}
-        state = {
-            "conversation_id": "c",
-            "user": "u",
-            "turn_id": turn,
-            "agent_history_messages": previous,
-        }
-        prepared, _, _ = await prepare_request(
-            state,
-            client,
-            [
-                {"role": "system", "content": "policy"},
-                *previous,
-                current,
-                *exchange(f"large-{index}", "older observation " * 1500),
-                *exchange(f"recent-{index}", "latest observation"),
-                {"role": "user", "content": "continue"},
-            ],
-            [],
-            current_question=current,
-            has_inflight=True,
-        )
-        history.complete_turn("c", "u", turn)
-        replay = history.build_native_transcript(
-            "c", user="u", enforce_budget=False
-        )
-        assert replay == prepared[1:]
-        assert (
-            len([message for message in replay if message["role"] == "system"])
-            == 1
-        )
-        assert "legacy checkpoint" not in json.dumps(replay)
-    record = history.get("c", user="u")
-    assert record is not None
-    assert len(record.turns) == 3
+    previous_count = len(client.summaries)
+    next_question: ChatMessage = {"role": "user", "content": "new objective"}
+    messages.extend(
+        [
+            {"role": "assistant", "content": "first answer"},
+            next_question,
+            *exchange("second", "second evidence " * 1500),
+            *exchange("latest", "latest result"),
+        ]
+    )
+    prepared, _, _ = await prepare_request(
+        state,
+        client,
+        messages,
+        [],
+        current_question=next_question,
+    )
+    summarized = json.dumps(client.summaries[previous_count:])
+    assert "first evidence" not in summarized
+    assert "initial objective" in summarized
+    assert "second evidence" in summarized
+    assert prepared[-3:] == [next_question, *messages[-2:]]
 
 
 @pytest.mark.anyio
@@ -344,7 +329,6 @@ async def test_incomplete_summary_does_not_advance_checkpoint():
     current: ChatMessage = {"role": "user", "content": "current question"}
     messages: list[ChatMessage] = [
         {"role": "system", "content": "policy"},
-        {"role": "system", "content": "existing checkpoint"},
         {"role": "user", "content": "unique old fact " * 1000},
         current,
     ]
@@ -355,7 +339,6 @@ async def test_incomplete_summary_does_not_advance_checkpoint():
             messages,
             [],
             current_question=current,
-            has_inflight=False,
         )
     assert "_request_compaction" not in state
 
@@ -370,7 +353,6 @@ async def test_unusable_summary_does_not_advance_checkpoint():
     current: ChatMessage = {"role": "user", "content": "current question"}
     messages: list[ChatMessage] = [
         {"role": "system", "content": "policy"},
-        {"role": "system", "content": "existing checkpoint"},
         {"role": "user", "content": "unique old fact " * 1000},
         current,
     ]
@@ -381,7 +363,6 @@ async def test_unusable_summary_does_not_advance_checkpoint():
             messages,
             [],
             current_question=current,
-            has_inflight=False,
         )
     assert "_request_compaction" not in state
 
@@ -405,7 +386,6 @@ async def test_compaction_protects_last_two_turns_from_summarizer():
         messages,
         [],
         current_question=current,
-        has_inflight=False,
     )
     assert client.summaries
     summarized_str = json.dumps(client.summaries)
@@ -436,7 +416,6 @@ async def test_compaction_allows_up_to_forty_percent_window(monkeypatch):
         messages,
         [],
         current_question=current,
-        has_inflight=False,
     )
     assert client.summaries
     assert client.summaries[0]["max_output_tokens"] == 4000
@@ -459,14 +438,15 @@ async def test_compaction_env_override_takes_precedence(monkeypatch):
         messages,
         [],
         current_question=current,
-        has_inflight=False,
     )
     assert client.summaries
     assert client.summaries[0]["max_output_tokens"] == 6000
 
 
 @pytest.mark.anyio
-async def test_summary_near_output_limit_still_fits_prepared_request(monkeypatch):
+async def test_summary_near_output_limit_still_fits_prepared_request(
+    monkeypatch,
+):
     monkeypatch.setattr(settings, "workbench_compaction_max_tokens", None)
 
     class LongSummaryClient(CountingClient):
@@ -490,44 +470,6 @@ async def test_summary_near_output_limit_still_fits_prepared_request(monkeypatch
         messages,
         [],
         current_question=current,
-        has_inflight=False,
     )
     assert client.summaries[0]["max_output_tokens"] == 4000
     assert tokens_after <= 10000 - 2500 - 256
-
-
-@pytest.mark.anyio
-async def test_summary_output_limit_shrinks_to_keep_recent_turns(monkeypatch):
-    monkeypatch.setattr(settings, "workbench_compaction_max_tokens", None)
-    monkeypatch.setattr(settings, "workbench_keep_recent_turns", 2)
-
-    class LongSummaryClient(CountingClient):
-        async def complete(self, **kwargs):
-            self.summaries.append(kwargs)
-            return SimpleNamespace(
-                text="S" * (kwargs["max_output_tokens"] * 4 - 100),
-                tool_calls=[],
-            )
-
-    client = LongSummaryClient(window=3000)
-    current: ChatMessage = {"role": "user", "content": "current question"}
-    recent: ChatMessage = {"role": "user", "content": "recent fact " * 500}
-    messages: list[ChatMessage] = [
-        {"role": "system", "content": "policy"},
-        {"role": "user", "content": "large old fact " * 1000},
-        {"role": "assistant", "content": "old answer"},
-        recent,
-        {"role": "assistant", "content": "recent answer"},
-        current,
-    ]
-    prepared, _, tokens_after = await prepare_request(
-        {},
-        client,
-        messages,
-        [],
-        current_question=current,
-        has_inflight=False,
-    )
-    assert client.summaries[0]["max_output_tokens"] < 1200
-    assert recent in prepared
-    assert tokens_after <= 3000 - 400 - 93

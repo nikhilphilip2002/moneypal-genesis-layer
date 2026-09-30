@@ -24,6 +24,38 @@ from app.services.workbench.results import SourceResult
 
 
 @pytest.mark.anyio
+async def test_conversation_turns_are_serialized_and_lock_is_released_after_failure(monkeypatch):
+    entered = asyncio.Event()
+    release = asyncio.Event()
+    seen = []
+
+    async def run(**kwargs):
+        seen.append(kwargs["question"])
+        if kwargs["question"] == "first":
+            entered.set()
+            await release.wait()
+            raise RuntimeError("failed turn")
+        yield "finished"
+
+    async def consume(question):
+        return [frame async for frame in graph.run_workbench(
+            conversation_id="serialized", user="alice", question=question,
+        )]
+
+    monkeypatch.setattr(graph, "_run_workbench", run)
+    first = asyncio.create_task(consume("first"))
+    await entered.wait()
+    second = asyncio.create_task(consume("second"))
+    await asyncio.sleep(0)
+    assert seen == ["first"]
+    release.set()
+    with pytest.raises(RuntimeError, match="failed turn"):
+        await first
+    assert await asyncio.wait_for(second, 1) == ["finished"]
+    assert seen == ["first", "second"]
+
+
+@pytest.mark.anyio
 async def test_stream_loads_previous_queries_into_turn_state(monkeypatch):
     from app.services.workbench import agent, history
 
@@ -198,7 +230,6 @@ async def test_disconnect_waits_for_llm_connection_close(
     disconnected = asyncio.Queue()
     turn = {}
     requests = []
-    compactions = []
 
     class Stream(httpx.AsyncByteStream):
         async def __aiter__(self):
@@ -236,9 +267,6 @@ async def test_disconnect_waits_for_llm_connection_close(
     async def select(*_args, **_kwargs):
         return await client.complete(messages=[])
 
-    async def compact(*args):
-        compactions.append(args)
-
     async def receive():
         return await disconnected.get()
 
@@ -249,10 +277,6 @@ async def test_disconnect_waits_for_llm_connection_close(
 
     monkeypatch.setattr(agent, "_select", select)
     monkeypatch.setattr(agent, "get_catalog", lambda: object())
-    monkeypatch.setattr(graph.settings, "workbench_compaction_enabled", True)
-    monkeypatch.setattr(
-        "app.services.workbench.compaction.maybe_compact", compact
-    )
     response = StreamingResponse(
         graph.run_workbench(
             question="cancel probe",
@@ -285,7 +309,6 @@ async def test_disconnect_waits_for_llm_connection_close(
             "Cancellation interrupted the upstream connection close"
         )
         assert len(requests) == 1
-        assert compactions == [], "Stop must not start another model request"
         assert not graph._active_turn_tasks
     finally:
         release_close.set()
@@ -528,30 +551,6 @@ async def test_only_first_message_marks_slot_as_new_chat(monkeypatch):
     await _run("second")
 
     assert flags == [True, False]
-
-
-@pytest.mark.anyio
-async def test_native_transcript_overflow_is_recorded_and_visible(monkeypatch):
-    def overflow(*_args, **_kwargs):
-        raise graph.history.NativeTranscriptOverflow(
-            "complete native conversation exceeds"
-        )
-
-    monkeypatch.setattr(graph.history, "build_native_transcript", overflow)
-    events = await _run("and by scheme?")
-
-    assert [name for name, _data in events] == [
-        "conversation",
-        "error",
-        "done",
-    ]
-    error = events[1][1]
-    assert error["message"] == graph.CONTEXT_FULL_MESSAGE
-    assert error["retryable"] is False
-    assert error["code"] == graph.CONTEXT_CAPACITY_CODE
-    record = graph.history.get("c1", user="alice")
-    assert record is not None
-    assert record.turns[-1]["error"] == graph.CONTEXT_FULL_MESSAGE
 
 
 @pytest.mark.anyio

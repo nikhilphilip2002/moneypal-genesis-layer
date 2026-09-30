@@ -163,6 +163,7 @@ class LLMIncomplete(LLMError):
 
     prompt_tokens: int = 0
     completion_tokens: int = 0
+    output_emitted: bool = False
 
 
 class LLMContextOverflow(LLMError):
@@ -304,9 +305,15 @@ async def _read_completion_stream(
                     if fragment.get("type"):
                         call["type"] = fragment["type"]
                     for key in ("name", "arguments"):
-                        call["function"][key] += (
+                        value = (
                             fragment.get("function") or {}
-                        ).get(key) or ""
+                        ).get(key)
+                        if value is not None:
+                            if not isinstance(value, str):
+                                raise LLMProtocolError(
+                                    f"tool delta {key} must be a string"
+                                )
+                            call["function"][key] += value
                     if on_tool_call:
                         # Arguments are deliberately not forwarded while incomplete. They
                         # can contain outbound text which must pass the workbench privacy
@@ -338,6 +345,7 @@ class NativeToolCall:
     id: str
     name: str
     arguments: dict[str, Any]
+    error: dict[str, str] | None = None
 
 
 @dataclass(slots=True)
@@ -561,28 +569,35 @@ def _parse_native_tool_calls(
             raise LLMProtocolError(
                 f"tool call {call_id!r} has no function name"
             )
-        if name not in allowed_names:
-            raise LLMProtocolError(
-                f"tool call {call_id!r} names unknown function {name!r}"
-            )
-
         raw_arguments = function.get("arguments")
         if not isinstance(raw_arguments, str):
             raise LLMProtocolError(
                 f"tool call {call_id!r} arguments must be a JSON-encoded string"
             )
-        try:
-            arguments = json.loads(raw_arguments)
-        except json.JSONDecodeError as exc:
-            raise LLMProtocolError(
-                f"tool call {call_id!r} arguments are not valid JSON"
-            ) from exc
-        if not isinstance(arguments, dict):
-            raise LLMProtocolError(
-                f"tool call {call_id!r} arguments must decode to an object"
-            )
+        error = None
+        arguments = {}
+        if name not in allowed_names:
+            error = {
+                "code": "TOOL_NOT_FOUND",
+                "message": f"Function {name!r} is not available for this request.",
+            }
+        else:
+            try:
+                decoded = json.loads(raw_arguments)
+                if isinstance(decoded, dict):
+                    arguments = decoded
+                else:
+                    error = {
+                        "code": "INVALID_TOOL_ARGUMENTS",
+                        "message": "Tool arguments must decode to a JSON object.",
+                    }
+            except (ValueError, RecursionError) as exc:
+                error = {
+                    "code": "INVALID_TOOL_ARGUMENTS",
+                    "message": f"Tool arguments could not be decoded as JSON: {exc}",
+                }
         parsed.append(
-            NativeToolCall(id=call_id, name=name, arguments=arguments)
+            NativeToolCall(id=call_id, name=name, arguments=arguments, error=error)
         )
     return parsed
 
@@ -661,6 +676,7 @@ class OpenAICompatibleClient:
                 ValueError,
                 KeyError,
                 TypeError,
+                RecursionError,
             ):
                 self._count_unavailable_until = time.monotonic() + 60
                 logger.warning(
@@ -1032,6 +1048,7 @@ class OpenAICompatibleClient:
                 LLMResponseBlocked,
             ) as exc:
                 if isinstance(exc, LLMIncomplete):
+                    exc.output_emitted = visible_output_emitted
                     exc.prompt_tokens = prompt_tokens
                     exc.completion_tokens = int(
                         usage.get("completion_tokens", 0) or 0

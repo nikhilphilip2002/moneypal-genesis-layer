@@ -126,7 +126,7 @@ def test_history_persists_latest_consent_and_turn_snapshot(monkeypatch):
 def test_old_history_defaults_consent_off(monkeypatch):
     monkeypatch.setattr(history, "_ensure_table", lambda: False)
     history._MEMORY.clear()
-    history.record_turn("old", "question", ["db"], user="alice")
+    history.begin_turn("old", "alice", "question")
     record = history.get("old", user="alice")
     assert record is not None
     assert record.external_sources_enabled is False

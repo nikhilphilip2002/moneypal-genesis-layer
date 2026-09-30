@@ -2,15 +2,18 @@
 
 from __future__ import annotations
 
-import hashlib
 import json
 import logging
 from typing import Any, Awaitable, Callable
 
 from app.core.config import settings
-from app.services.nlq.llm.client import LLMContextOverflow, LLMError, LLMIncomplete
+from app.services.nlq.llm.client import (
+    LLMContextOverflow,
+    LLMError,
+    LLMIncomplete,
+)
 from app.services.nlq.llm.messages import ChatMessage
-from app.services.workbench.compaction.budget import resolve_compaction_limit
+from app.services.workbench import history
 
 logger = logging.getLogger(__name__)
 
@@ -34,10 +37,31 @@ def exchange_boundaries(messages: list[ChatMessage]) -> list[int]:
     return boundaries
 
 
-def _fingerprint(messages: list[ChatMessage]) -> str:
-    return hashlib.sha256(
-        json.dumps(messages, sort_keys=True, default=str).encode()
-    ).hexdigest()
+def resolve_compaction_limit(
+    context_window: int, configured_limit: int | None = None
+) -> int:
+    return max(
+        1, min(context_window, configured_limit or int(context_window * 0.4))
+    )
+
+
+def active_messages(
+    messages: list[ChatMessage], checkpoint: dict[str, Any] | None
+) -> list[ChatMessage]:
+    if not checkpoint:
+        return list(messages)
+    body = messages[1:]
+    cut = checkpoint["cut"]
+    preserved = checkpoint.get("preserved_question")
+    return [
+        messages[0],
+        {
+            "role": "system",
+            "content": "Conversation checkpoint:\n\n" + checkpoint["summary"],
+        },
+        *([body[preserved]] if preserved is not None else []),
+        *body[cut:],
+    ]
 
 
 async def summarize_messages(
@@ -112,7 +136,6 @@ async def prepare_request(
     tools: list[dict[str, Any]],
     *,
     current_question: ChatMessage,
-    has_inflight: bool,
     force: bool = False,
     timeout_s: float | None = None,
     on_compaction: Callable[[str], Awaitable[None]] | None = None,
@@ -120,66 +143,33 @@ async def prepare_request(
     window = await client.context_window()
     output_tokens = max(1, min(settings.workbench_reserve_tokens, window // 4))
     limit = max(1, window - output_tokens - min(256, window // 32))
-    systems = [
-        message for message in messages if message.get("role") == "system"
-    ]
-    fixed = systems[:1]
-    previous_context = "\n\n".join(
-        content
-        if isinstance(content := message.get("content"), str)
-        else "\n".join(part.get("text", "") for part in content or [])
-        for message in systems[1:]
-    )
-    body = [
-        message
-        for message in messages
-        if message.get("role") not in {"system", "developer"}
-    ]
+    body = messages[1:]
     question_index = next(
         (
             index
-            for index, message in enumerate(body)
-            if message is current_question
+            for index in range(len(body) - 1, -1, -1)
+            if body[index] is current_question
+            or body[index] == current_question
         ),
         -1,
     )
-    if question_index < 0:
-        question_index = next(
-            (
-                index
-                for index, message in enumerate(body)
-                if message == current_question
-            ),
-            -1,
-        )
     cached = state.get("_request_compaction") or {}
     cut = int(cached.get("cut", 0))
     summary = str(cached.get("summary", ""))
-    if cut > len(body) or cached.get("fingerprint") != _fingerprint(
-        body[:cut]
-    ):
-        cut, summary = 0, previous_context
 
-    def retained(cut_at: int) -> list[ChatMessage]:
-        tail = body[cut_at:]
-        if 0 <= question_index < cut_at:
-            tail = [body[question_index], *tail]
-        return tail
+    def checkpoint(cut_at: int, text: str) -> dict[str, Any]:
+        return {
+            "cut": cut_at,
+            "summary": text,
+            "preserved_question": question_index
+            if 0 <= question_index < cut_at
+            else None,
+        }
 
-    def request(cut_at: int, checkpoint: str) -> list[ChatMessage]:
-        context: list[ChatMessage] = (
-            [
-                {
-                    "role": "system",
-                    "content": "Conversation checkpoint:\n\n" + checkpoint,
-                }
-            ]
-            if checkpoint
-            else []
-        )
-        return [*fixed, *context, *retained(cut_at)]
+    def request(cut_at: int, text: str) -> list[ChatMessage]:
+        return active_messages(messages, checkpoint(cut_at, text))
 
-    prepared = request(cut, summary)
+    prepared = active_messages(messages, cached)
     tokens_before = await client.count_input_tokens(prepared, tools)
     if force:
         limit = max(1, int(min(limit, tokens_before) * 0.7))
@@ -193,23 +183,12 @@ async def prepare_request(
         )
 
     boundaries = exchange_boundaries(body)
-    keep_groups = 2 if has_inflight else 1
-    user_starts = [
-        index
-        for index, message in enumerate(body)
-        if message.get("role") == "user"
-    ]
-    keep_turns = max(1, settings.workbench_keep_recent_turns)
-    max_cut = (
-        user_starts[-keep_turns]
-        if len(user_starts) >= keep_turns + 1
-        else (user_starts[-1] if user_starts else len(body))
-    )
+    max_cut = question_index
     preferred_candidates = [
-        index for index in boundaries[1:-keep_groups] if cut < index <= max_cut
+        index for index in boundaries[1:-1] if cut < index <= max_cut
     ]
     fallback_candidates = [
-        index for index in boundaries[1:-keep_groups] if index > max(cut, max_cut)
+        index for index in boundaries[1:-1] if index > max(cut, max_cut)
     ]
     if not preferred_candidates and not fallback_candidates:
         raise LLMContextOverflow(
@@ -227,7 +206,9 @@ async def prepare_request(
         while low <= high:
             middle = (low + high) // 2
             candidate = candidates[middle]
-            tokens = await client.count_input_tokens(request(candidate, ""), tools)
+            tokens = await client.count_input_tokens(
+                request(candidate, ""), tools
+            )
             if tokens + summary_room + 32 <= limit:
                 chosen_candidate = candidate
                 high = middle - 1
@@ -256,6 +237,9 @@ async def prepare_request(
         for index, message in enumerate(body[cut:chosen], start=cut)
         if index != question_index
     ]
+    preserved = cached.get("preserved_question")
+    if preserved is not None and preserved != question_index:
+        older.insert(0, body[preserved])
     if on_compaction is not None:
         await on_compaction("running")
     try:
@@ -273,34 +257,19 @@ async def prepare_request(
             raise LLMContextOverflow(
                 "context window still exceeded after compaction"
             )
-        state["_request_compaction"] = {
-            "cut": chosen,
-            "summary": summary,
-            "fingerprint": _fingerprint(body[:chosen]),
+        saved_checkpoint = {
+            **checkpoint(chosen, summary),
+            "tokens_before": tokens_before,
+            "tokens_after": tokens_after,
         }
-        state["context_tokens"] = tokens_after
-        from app.services.workbench import history
-
-        checkpoint: list[ChatMessage] = [
-            {
-                "role": "system",
-                "content": "Conversation checkpoint:\n\n" + summary,
-            },
-            *retained(chosen),
-        ]
-        if (
-            state.get("turn_id")
-            and state.get("conversation_id")
-            and state.get("user")
+        if all(
+            state.get(key) for key in ("conversation_id", "user", "turn_id")
         ):
-            history.set_request_checkpoint(
-                state["conversation_id"],
-                state["user"],
-                state["turn_id"],
-                checkpoint,
-                tokens_before=tokens_before,
-                tokens_after=tokens_after,
+            history.set_checkpoint(
+                state["conversation_id"], state["user"], saved_checkpoint
             )
+        state["_request_compaction"] = saved_checkpoint
+        state["context_tokens"] = tokens_after
     except Exception:
         if on_compaction is not None:
             await on_compaction("error")
@@ -312,6 +281,6 @@ async def prepare_request(
         tokens_before,
         tokens_after,
         len(older),
-        len(retained(chosen)),
+        len(prepared) - 2,
     )
     return prepared, output_tokens, tokens_after

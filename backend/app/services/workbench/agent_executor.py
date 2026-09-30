@@ -21,6 +21,7 @@ from app.services.workbench.agent_contracts import (
     SearchPublicWebArguments,
 )
 from app.services.workbench.agent_tools import (
+    AgentToolArgumentsInvalid,
     authorize_local_tool_call,
     get_runtime_tool_policy,
 )
@@ -114,7 +115,7 @@ class ExecutedAgentCall:
             return reference
         return {"query_id": query_id}
 
-    def replay_payload(self) -> dict[str, Any]:
+    def result_payload(self) -> dict[str, Any]:
         query_reference = (
             self._local_reference(self.query_id, self.attempt_id)
             if self.query_id and self.attempt_id
@@ -176,23 +177,12 @@ class ExecutedAgentCall:
             payload["row_count"] = row_count
         return payload
 
-    def replay_message(self) -> dict[str, str]:
-        """The complete, durable tool result. Never shaped."""
-        return {
-            "role": "tool",
-            "tool_call_id": self.call.id,
-            "content": json.dumps(
-                self.replay_payload(), default=str, separators=(",", ":")
-            ),
-        }
-
     def observation_message(self) -> dict[str, str]:
-        """The bounded tool result the model sees in this and later turns."""
         return {
             "role": "tool",
             "tool_call_id": self.call.id,
             "content": shape_observation_text(
-                self.replay_message()["content"],
+                json.dumps(self.result_payload(), default=str, separators=(",", ":")),
                 tool_name=self.call.name,
             ),
         }
@@ -223,7 +213,7 @@ def shape_observation(
     limit_chars: int,
     max_facts: int | None = None,
 ) -> dict[str, Any]:
-    """Bound a replay payload for the model without touching the durable copy.
+    """Bound a tool result before it is added to the model transcript.
 
     Reductions are applied in order and each one is recorded under ``truncated`` so the
     model knows what it is not seeing: nested SQL prompts are always dropped, facts are
@@ -519,6 +509,8 @@ async def execute_agent_call(
     ctx: AgentExecutionContext,
 ) -> ExecutedAgentCall:
     """Validate, reauthorize, bound, and execute exactly one native call."""
+    if call.error is not None:
+        raise AgentToolArgumentsInvalid(call.error["message"])
     from app.mcp import postgres_client
 
     from app.mcp.tool_catalog import catalog as mcp_catalog

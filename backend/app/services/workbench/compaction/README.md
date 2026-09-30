@@ -30,15 +30,27 @@ Endpoint formats: [llama.cpp server documentation](https://github.com/ggml-org/l
 
 ## Persistence and recovery
 
-A successful compaction appends a `request_compaction` event to the current turn. It stores
-one checkpoint plus the retained message suffix and before/after token counts. Replay
-starts with the latest such snapshot, then includes subsequent events and turns. Original
-turns, query records, and tool results remain stored. Further compactions merge the prior
-checkpoint into the new one. Older record-level checkpoints remain readable.
+Conversation records contain one append-only `messages` list. A successful compaction
+stores a summary, the cut position in that list after its leading system message, and
+an optional pointer to the current question when compaction occurs within a turn. The
+retained suffix is read directly from the original list. The checkpoint also records
+before/after token counts. No original message is replaced or shaped again on reload.
+
+At a new turn, changed agent instructions or Gold schema refresh the leading system
+message. The turn records the previous system message for inspection. This deliberately
+changes the request prefix; original user, assistant, and tool messages and checkpoint
+positions are preserved. The two system text parts contain the agent instructions and
+Gold schema. User messages contain the original question without catalog hints.
+
+Further compactions summarize only newly removed messages and the previous checkpoint.
+Version-9 records are migrated once to the canonical transcript; their original events
+and old checkpoint remain available as archived data. Missing original prompt context
+or redacted arguments cannot be recovered. Migration starts a new active context view.
 
 A context rejection triggers one retry with a smaller input target. A generation ending
 with `finish_reason=length` before reaching its requested output cap also triggers this
-recovery when prompt usage is available. Truncated tool arguments are never executed.
+recovery when prompt usage is available and no output has been streamed to the user.
+Truncated tool arguments are never executed.
 An ordinary output-token limit is reported as incomplete, without a compaction retry.
 The recovery consumes a model round and stays within the original turn deadline.
 
@@ -56,9 +68,8 @@ WORKBENCH_COMPACTION_ENABLED=true
 # WORKBENCH_COMPACTION_MAX_TOKENS=4096 # optional override; defaults to 40% of context window
 ```
 
-`WORKBENCH_KEEP_RECENT_TURNS` only applies to the older explicit `compact_now` helper.
-The native request path chooses retained history by token size. It no longer schedules
-background compaction after a completed turn.
+The request path chooses retained history by token size. The older turn-based compaction
+helpers and `WORKBENCH_KEEP_RECENT_TURNS` setting have been removed.
 
-Regression coverage lives in `test_request_compaction.py`, `test_agent.py`,
-`test_compaction_budget.py`, `test_compaction_integration.py`, and `test_llm_client.py`.
+Focused coverage lives in `test_request_compaction.py`, `test_message_transcript.py`,
+`test_agent.py`, and `test_llm_client.py`.

@@ -2,12 +2,11 @@
 
 from __future__ import annotations
 
-import hashlib
 import json
 import logging
 import time
 import uuid
-from collections.abc import Mapping
+from copy import deepcopy
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Callable
@@ -34,19 +33,8 @@ MIGRATIONS = (
 )
 
 TITLE_MAX = 80
-# v6 added an ordered execution event stream and lossless native tool-result replay.
-# v7 makes that stream the only representation: every turn carries `events`, readers
-# derive everything from them, and older turns are migrated rather than read sideways.
-# v8 stored automatically inferred query cards. v9 stores raw qN evidence and only
-# explicitly requested vN presentation cards. This is a pre-release hard cutover: old
-# records are intentionally unsupported rather than normalized into the new contract.
-RECORD_VERSION = 9
-KNOWN_RECORD_VERSIONS = frozenset({RECORD_VERSION})
-CARD_ROWS_IN_CONTEXT = 20
-# Replay policy: which event kinds of a turn are sent back to the provider. Nudges and
-# other synthetic user messages are stored so the record is the exact transcript, but
-# they are not resent — the next turn's own nudge is appended live.
-REPLAYED_SYSTEM_MESSAGE_KINDS: frozenset[str] = frozenset()
+RECORD_VERSION = 10
+KNOWN_RECORD_VERSIONS = frozenset({9, RECORD_VERSION})
 _table_ready = False
 HISTORY_DB_RETRY_S = 10.0
 _table_retry_after = 0.0
@@ -60,11 +48,10 @@ class ConversationRecord:
     turns: list[dict[str, Any]] = field(default_factory=list)
     owner_username: str = "anonymous"
     record_version: int = RECORD_VERSION
-    # Checkpoint written by the compaction pass. None until a conversation grows past
-    # the token budget, and safe to delete at any time — the turns themselves are kept,
-    # so dropping it only costs context, never data.
     compaction: dict[str, Any] | None = None
     external_sources_enabled: bool = False
+    messages: list[ChatMessage] = field(default_factory=list)
+    migration: dict[str, Any] | None = None
 
 
 @dataclass(slots=True)
@@ -73,21 +60,6 @@ class ConversationSummary:
     title: str
     updated_at: datetime
     turn_count: int
-
-
-class NativeTranscriptOverflow(RuntimeError):
-    """The exact native transcript cannot fit without silently dropping history.
-
-    ``reason`` says which remedy can help: ``conversation_exceeds_budget`` means older
-    turns could be checkpointed; ``single_turn_exceeds_budget`` means the newest turn
-    alone is too large and only a fresh conversation helps.
-    """
-
-    def __init__(
-        self, message: str, *, reason: str = "conversation_exceeds_budget"
-    ) -> None:
-        super().__init__(f"{message} (reason: {reason})")
-        self.reason = reason
 
 
 class UnknownRecordVersion(ValueError):
@@ -143,6 +115,8 @@ def _record_payload(record: ConversationRecord) -> dict[str, Any]:
         "version": record.record_version,
         "title": record.title,
         "turns": record.turns,
+        "messages": record.messages,
+        "migration": record.migration,
     }
     if record.compaction:
         payload["compaction"] = record.compaction
@@ -171,7 +145,7 @@ def _load(conversation_id: str, user: str) -> ConversationRecord | None:
                 row[1] if isinstance(row[1], dict) else json.loads(row[1])
             )
             stored_version = row[4] or payload.get("version", 1)
-            if stored_version != RECORD_VERSION:
+            if stored_version not in KNOWN_RECORD_VERSIONS:
                 raise UnknownRecordVersion(
                     f"conversation {conversation_id} is record version {stored_version!r}; "
                     f"this backend requires version {RECORD_VERSION}"
@@ -187,7 +161,10 @@ def _load(conversation_id: str, user: str) -> ConversationRecord | None:
                 external_sources_enabled=bool(
                     payload.get("external_sources_enabled", False)
                 ),
+                messages=list(payload.get("messages", [])),
+                migration=payload.get("migration"),
             )
+            _migrate_record(record)
             return record
         except UnknownRecordVersion:
             raise
@@ -198,14 +175,142 @@ def _load(conversation_id: str, user: str) -> ConversationRecord | None:
     for owner in _visible_owners(user):
         record = _MEMORY.get((owner, conversation_id))
         if record is not None:
-            if record.record_version != RECORD_VERSION:
+            if record.record_version not in KNOWN_RECORD_VERSIONS:
                 raise UnknownRecordVersion(
                     f"conversation {conversation_id} is record version "
                     f"{record.record_version!r}; this backend requires version "
                     f"{RECORD_VERSION}"
                 )
+            _migrate_record(record)
             return record
     return None
+
+
+def _migrate_record(record: ConversationRecord) -> None:
+    if record.record_version == RECORD_VERSION:
+        return
+    from app.services.workbench.history_migration import migrate_messages
+
+    record.messages = migrate_messages(record.turns)
+    record.migration = {
+        "from_version": record.record_version,
+        "message_count": len(record.messages),
+        "previous_compaction": record.compaction,
+    }
+    record.compaction = None
+    record.record_version = RECORD_VERSION
+    _save(record)
+
+
+def append_messages(
+    conversation_id: str,
+    user: str,
+    turn_id: str,
+    messages: list[ChatMessage],
+) -> None:
+    record = _load(conversation_id, user)
+    if record is None:
+        raise ValueError("conversation does not exist")
+    turn = next(item for item in record.turns if item["id"] == turn_id)
+    pending = pending_tool_calls(record.messages)
+    for message in messages:
+        if message["role"] == "tool":
+            if not pending or message.get("tool_call_id") != pending[0]:
+                raise ValueError(
+                    "tool results must match pending calls in order"
+                )
+            pending.pop(0)
+        else:
+            if pending:
+                raise ValueError(
+                    "pending tool calls require results before continuation"
+                )
+            pending = [call["id"] for call in message.get("tool_calls") or []]
+            if len(pending) != len(set(pending)):
+                raise ValueError(
+                    "duplicate tool call IDs in assistant message"
+                )
+    start = len(record.messages)
+    turn.setdefault("message_start", start)
+    record.messages.extend(deepcopy(messages))
+    turn["message_end"] = len(record.messages)
+    _save(record)
+
+
+def load_messages(conversation_id: str, *, user: str) -> list[ChatMessage]:
+    record = _load(conversation_id, user)
+    return deepcopy(record.messages) if record is not None else []
+
+
+def set_checkpoint(
+    conversation_id: str, user: str, checkpoint: dict[str, Any]
+) -> None:
+    record = _load(conversation_id, user)
+    if record is None:
+        raise ValueError("conversation does not exist")
+    record.compaction = deepcopy(checkpoint)
+    _save(record)
+
+
+def pending_tool_calls(messages: list[ChatMessage]) -> list[str]:
+    pending: dict[str, None] = {}
+    for message in messages:
+        for call in message.get("tool_calls") or []:
+            pending[call["id"]] = None
+        if message.get("role") == "tool":
+            pending.pop(str(message.get("tool_call_id", "")), None)
+    return list(pending)
+
+
+def interrupted_tool_result(call_id: str) -> ChatMessage:
+    return {
+        "role": "tool",
+        "tool_call_id": call_id,
+        "content": json.dumps(
+            {
+                "status": "error",
+                "code": "INTERRUPTED",
+                "message": "Execution was interrupted; no result was recorded.",
+            },
+            separators=(",", ":"),
+        ),
+    }
+
+
+def start_turn_messages(
+    conversation_id: str,
+    user: str,
+    turn_id: str,
+    system: ChatMessage,
+    question: ChatMessage,
+) -> ConversationRecord:
+    record = _load(conversation_id, user)
+    if record is None:
+        raise ValueError("conversation does not exist")
+    turn = next(item for item in record.turns if item["id"] == turn_id)
+    if not record.messages or record.messages[0]["role"] != "system":
+        record.messages.insert(0, deepcopy(system))
+        for previous in record.turns:
+            for key in ("message_start", "message_end"):
+                if key in previous:
+                    previous[key] += 1
+    elif record.messages[0] != system:
+        turn["previous_system_message"] = deepcopy(record.messages[0])
+        record.messages[0] = deepcopy(system)
+    record.messages.extend(
+        interrupted_tool_result(call_id)
+        for call_id in pending_tool_calls(record.messages)
+    )
+    for previous in record.turns:
+        if previous["id"] != turn_id and previous.get("status") == "running":
+            previous["status"] = "partial"
+            previous["completed_at"] = _now().isoformat()
+            previous["message_end"] = len(record.messages)
+    turn["message_start"] = len(record.messages)
+    record.messages.append(deepcopy(question))
+    turn["message_end"] = len(record.messages)
+    _save(record)
+    return record
 
 
 def exists(conversation_id: str) -> bool:
@@ -267,54 +372,6 @@ def _save(record: ConversationRecord) -> None:
         )
 
 
-def set_compaction(
-    conversation_id: str,
-    user: str,
-    payload: dict[str, Any] | None,
-    *,
-    replaced_turn_ids: list[str] | tuple[str, ...] = (),
-) -> None:
-    """Store (or clear) the conversation checkpoint.
-
-    The checkpoint pointer on the record is what replay consults; the summary itself is
-    also appended as a ``compaction_summary`` event on the newest turn it replaces, naming
-    every turn it stands in for. No event is ever removed: compaction adds a view, it
-    never edits the durable record.
-
-    Passing None discards the pointer. That is the recovery path if a checkpoint ever
-    proves misleading: the turns are all still present, so the next transcript simply
-    rebuilds from them.
-    """
-    record = _load(conversation_id, user)
-    if record is None:
-        return
-    record.compaction = payload
-    replaced = [str(turn_id) for turn_id in replaced_turn_ids if turn_id]
-    if payload and replaced:
-        anchor = next(
-            (
-                turn
-                for turn in reversed(record.turns)
-                if turn.get("id") == replaced[-1]
-            ),
-            None,
-        )
-        if anchor is not None:
-            _append_turn_event(
-                anchor,
-                "compaction_summary",
-                {
-                    "summary": str(payload.get("summary", "")),
-                    "replaces_turn_ids": replaced,
-                    "first_kept_turn_id": str(
-                        payload.get("first_kept_turn_id", "")
-                    ),
-                    "created_at": str(payload.get("created_at", "")),
-                },
-            )
-    _save(record)
-
-
 def _mutate(
     conversation_id: str,
     user: str,
@@ -331,89 +388,6 @@ def _mutate(
         return
     mutation(turn)
     _save(record)
-
-
-def _append_turn_event(
-    turn: dict[str, Any],
-    event_type: str,
-    payload: dict[str, Any],
-    *,
-    timestamp: str | None = None,
-    derived: bool = False,
-) -> dict[str, Any]:
-    """Append one ordered, lossless conversation execution event."""
-    events = turn.setdefault("events", [])
-    event: dict[str, Any] = {
-        "sequence": len(events),
-        "type": event_type,
-        "timestamp": timestamp or _now().isoformat(),
-        "payload": payload,
-    }
-    if derived:
-        # Reconstructed by the version-7 migration from the older per-field copies, not
-        # observed live; the timestamp is the turn's, not the event's.
-        event["derived"] = True
-    events.append(event)
-    return event
-
-
-def turn_has_events(turn: dict[str, Any]) -> bool:
-    events = turn.get("events")
-    return isinstance(events, list) and len(events) > 0
-
-
-def turn_events(turn: dict[str, Any]) -> list[dict[str, Any]]:
-    """Return the ordered event stream required by the current record contract."""
-    events = turn.get("events")
-    if not isinstance(events, list):
-        raise ValueError("current Workbench turns require an events list")
-    return [event for event in events if isinstance(event, dict)]
-
-
-def _append_native_exchange_events(
-    turn: dict[str, Any],
-    *,
-    assistant: ChatMessage,
-    calls: list[dict[str, Any]],
-    tool_messages: list[dict[str, Any]],
-    stage: str,
-    timestamp: str | None = None,
-    derived: bool = False,
-) -> None:
-    """Append one assistant message, its tool calls, and the corresponding results."""
-    _append_turn_event(
-        turn,
-        "llm_assistant_message",
-        {
-            "execution_path": "native",
-            "stage": stage,
-            "message": assistant,
-        },
-        timestamp=timestamp,
-        derived=derived,
-    )
-    for call in calls:
-        _append_turn_event(
-            turn,
-            "tool_call",
-            {
-                "execution_path": "native",
-                "call": call,
-            },
-            timestamp=timestamp,
-            derived=derived,
-        )
-    for message in tool_messages:
-        _append_turn_event(
-            turn,
-            "tool_result",
-            {
-                "execution_path": "native",
-                "message": dict(message),
-            },
-            timestamp=timestamp,
-            derived=derived,
-        )
 
 
 def begin_turn(
@@ -454,18 +428,8 @@ def begin_turn(
             "sources": [],  # compatibility with version-1 clients
             "cards": [],
             "query_registry": [],
-            "agent_exchanges": [],
-            "events": [
-                {
-                    "sequence": 0,
-                    "type": "user_message",
-                    "timestamp": created_at.isoformat(),
-                    "payload": {"role": "user", "content": question},
-                }
-            ],
             "answer": None,
             "synthesis": None,
-            "model_messages": [],
             "refusal": None,
             "error": None,
             "error_details": None,
@@ -500,7 +464,6 @@ def set_route(
             "effective_sources": list(effective_sources),
             "tools": list(tools),
         }
-        _append_turn_event(turn, "route_decision", dict(turn["route"]))
 
     _mutate(conversation_id, user, turn_id, apply)
 
@@ -524,213 +487,8 @@ def set_query_registry(
 def add_card(
     conversation_id: str, user: str, turn_id: str, card: dict[str, Any]
 ) -> None:
-    """Persist a card produced by the legacy source handlers.
-
-    Legacy sources have no native tool exchange, so the rendered card is the only record
-    of what they returned and gets its own ``tool_result`` event. Native results must not
-    come through here: their ``tool_result`` event already carries the card, and
-    `add_agent_exchange` fills the History rail's ``cards`` view from it.
-    """
-
     def apply(turn: dict[str, Any]) -> None:
-        turn.setdefault("cards", []).append(card)
-        _append_turn_event(
-            turn,
-            "tool_result",
-            {
-                "execution_path": "legacy_or_rendered",
-                "card": card,
-            },
-        )
-
-    _mutate(conversation_id, user, turn_id, apply)
-
-
-def add_agent_exchange(
-    conversation_id: str,
-    user: str,
-    turn_id: str,
-    *,
-    assistant_message: ChatMessage,
-    calls: list[dict[str, Any]],
-    tool_messages: list[ChatMessage],
-    stage: str = "route",
-    cards: list[dict[str, Any]] | tuple[dict[str, Any], ...] = (),
-) -> None:
-    """Persist one complete native exchange; never leave calls without tool results.
-
-    ``stage`` names the request the assistant message answered (``route`` for the
-    selection request, ``continue`` for a later tool round). ``cards`` are the rendered
-    views the client was streamed for this round; they are kept on the turn for the
-    History rail in the same write as the events, and get no event of their own because
-    the ``tool_result`` events already carry the complete results.
-    """
-    if len(calls) != len(tool_messages):
-        raise ValueError("every persisted native call needs one tool result")
-    call_ids = [str(call.get("id", "")) for call in calls]
-    result_ids = [
-        str(message.get("tool_call_id", "")) for message in tool_messages
-    ]
-    assistant_ids = [
-        str(call.get("id", ""))
-        for call in assistant_message.get("tool_calls", [])
-        if isinstance(call, dict)
-    ]
-    if (
-        not all(call_ids)
-        or call_ids != result_ids
-        or call_ids != assistant_ids
-    ):
-        raise ValueError(
-            "native call IDs must match assistant and tool-result messages"
-        )
-    safe_calls = [_sanitize_agent_call(call) for call in calls]
-    safe_assistant = _sanitize_assistant_tool_calls(assistant_message)
-    safe_tools = [dict(message) for message in tool_messages]
-    rendered = [dict(card) for card in cards if isinstance(card, dict)]
-
-    def apply(turn: dict[str, Any]) -> None:
-        if settings.workbench_history_write_legacy_exchanges:
-            turn.setdefault("agent_exchanges", []).append(
-                {
-                    "assistant": safe_assistant,
-                    "calls": safe_calls,
-                    "tools": safe_tools,
-                }
-            )
-        _append_native_exchange_events(
-            turn,
-            assistant=safe_assistant,
-            calls=safe_calls,
-            tool_messages=safe_tools,
-            stage=stage,
-        )
-        content = safe_assistant.get("content")
-        if isinstance(content, str) and content:
-            turn.setdefault("model_messages", []).append(content)
-        if rendered:
-            turn.setdefault("cards", []).extend(rendered)
-
-    _mutate(conversation_id, user, turn_id, apply)
-
-
-def add_system_message(
-    conversation_id: str,
-    user: str,
-    turn_id: str,
-    *,
-    content: str,
-    kind: str,
-    stage: str = "",
-    round_number: int = 0,
-) -> None:
-    """Record a message the application injected into the model's context.
-
-    Nudges and similar synthetic user messages are stored so the event stream is the
-    exact transcript the model saw; whether they are ever resent is a replay decision
-    (`REPLAYED_SYSTEM_MESSAGE_KINDS`), not a storage one.
-    """
-
-    def apply(turn: dict[str, Any]) -> None:
-        _append_turn_event(
-            turn,
-            "system_message",
-            {
-                "execution_path": "native",
-                "kind": kind,
-                "stage": stage,
-                "round": int(round_number),
-                "synthetic": True,
-                "message": {"role": "user", "content": content},
-            },
-        )
-
-    _mutate(conversation_id, user, turn_id, apply)
-
-
-def _sanitize_agent_call(call: dict[str, Any]) -> dict[str, Any]:
-    safe = dict(call)
-    if safe.get("name") == "search_public_web":
-        arguments = (
-            safe.get("arguments")
-            if isinstance(safe.get("arguments"), dict)
-            else {}
-        )
-        query = str(arguments.get("search_query", ""))
-        safe["arguments"] = {
-            "search_query": "[redacted after policy evaluation]",
-            "query_hash": hashlib.sha256(query.encode()).hexdigest()
-            if query
-            else "",
-        }
-    return safe
-
-
-def _sanitize_assistant_tool_calls(message: ChatMessage) -> ChatMessage:
-    safe: ChatMessage = {
-        "role": "assistant",
-        "content": message.get("content"),
-    }
-    if "reasoning_content" in message:
-        safe["reasoning_content"] = message.get("reasoning_content") or ""
-    sanitized = []
-    for raw in message.get("tool_calls", []) or []:
-        if not isinstance(raw, dict):
-            continue
-        call = dict(raw)
-        function = dict(call.get("function") or {})
-        if function.get("name") == "search_public_web":
-            function["arguments"] = json.dumps(
-                {
-                    "search_query": "[redacted after policy evaluation]",
-                },
-                separators=(",", ":"),
-            )
-        call["function"] = function
-        sanitized.append(call)
-    if sanitized:
-        safe["tool_calls"] = sanitized
-    return safe
-
-
-def set_synthesis(
-    conversation_id: str,
-    user: str,
-    turn_id: str,
-    text: str,
-    *,
-    message: ChatMessage | None = None,
-    stage: str = "synthesize",
-) -> None:
-    """Record what the model wrote before grounding and repair touched it.
-
-    This is the candidate, not the answer: `set_answer` records the text the user was
-    shown, which may be a repaired or extractive replacement. When the two are the same
-    text the record still holds one model output and one user-facing answer, not the
-    same event twice.
-    """
-    stored: ChatMessage = (
-        _sanitize_assistant_tool_calls(message)
-        if isinstance(message, dict)
-        else {"role": "assistant", "content": text}
-    )
-
-    def apply(turn: dict[str, Any]) -> None:
-        turn["synthesis"] = text
-        if text:
-            messages = turn.setdefault("model_messages", [])
-            if not messages or messages[-1] != text:
-                messages.append(text)
-        _append_turn_event(
-            turn,
-            "llm_assistant_message",
-            {
-                "execution_path": "synthesis",
-                "stage": stage,
-                "candidate": True,
-                "message": stored,
-            },
-        )
+        turn.setdefault("cards", []).append(deepcopy(card))
 
     _mutate(conversation_id, user, turn_id, apply)
 
@@ -743,7 +501,6 @@ def set_answer(
     def apply(turn: dict[str, Any]) -> None:
         turn["answer"] = payload
         turn["synthesis"] = str(payload.get("text", "")) or None
-        _append_turn_event(turn, "final_answer", {"answer": payload})
 
     _mutate(conversation_id, user, turn_id, apply)
 
@@ -855,7 +612,6 @@ def set_refusal(
 ) -> None:
     def apply(turn: dict[str, Any]) -> None:
         turn["refusal"] = payload
-        _append_turn_event(turn, "final_answer", {"refusal": payload})
 
     _mutate(conversation_id, user, turn_id, apply)
 
@@ -879,7 +635,6 @@ def set_error(
             **({"reason": reason} if reason else {}),
         }
         turn["error_details"] = details
-        _append_turn_event(turn, "execution_error", details)
 
     _mutate(conversation_id, user, turn_id, apply)
 
@@ -894,18 +649,6 @@ def complete_turn(
     _mutate(conversation_id, user, turn_id, apply)
 
 
-def record_turn(
-    conversation_id: str,
-    question: str,
-    sources: list[str],
-    user: str = "anonymous",
-) -> None:
-    """Compatibility helper for callers/tests using the old one-shot API."""
-    turn_id = begin_turn(conversation_id, user, question)
-    set_route(conversation_id, user, turn_id, sources=sources, intent=question)
-    complete_turn(conversation_id, user, turn_id)
-
-
 def list_recent(
     limit: int = 50, *, user: str = "anonymous"
 ) -> list[ConversationSummary]:
@@ -917,9 +660,13 @@ def list_recent(
                 cur.execute(
                     f"SELECT conversation_id, title, updated_at, "
                     f"jsonb_array_length(record_json->'turns') FROM {TABLE} "
-                    "WHERE owner_username = ANY(%s) AND record_version = %s "
+                    "WHERE owner_username = ANY(%s) AND record_version = ANY(%s) "
                     "ORDER BY updated_at DESC LIMIT %s",
-                    (list(_visible_owners(user)), RECORD_VERSION, limit),
+                    (
+                        list(_visible_owners(user)),
+                        sorted(KNOWN_RECORD_VERSIONS),
+                        limit,
+                    ),
                 )
                 return [
                     ConversationSummary(
@@ -939,7 +686,7 @@ def list_recent(
             record
             for (owner, _), record in _MEMORY.items()
             if owner in _visible_owners(user)
-            and record.record_version == RECORD_VERSION
+            and record.record_version in KNOWN_RECORD_VERSIONS
         ),
         key=lambda record: record.updated_at,
         reverse=True,
@@ -989,9 +736,13 @@ def private_entities(conversation_id: str, *, user: str) -> tuple[str, ...]:
     if record is None:
         return ()
     values: list[str] = []
-    for turn in record.turns:
-        for call in native_tool_calls(turn):
-            arguments = call.get("arguments")
+    for message in record.messages:
+        for raw_call in message.get("tool_calls") or []:
+            call = raw_call["function"]
+            try:
+                arguments = json.loads(call["arguments"])
+            except (ValueError, TypeError):
+                continue
             if not isinstance(arguments, dict):
                 continue
             if (
@@ -1021,630 +772,3 @@ def private_entities(conversation_id: str, *, user: str) -> tuple[str, ...]:
                     "could not extract private literals from historical MCP SQL"
                 )
     return tuple(dict.fromkeys(values[-20:]))
-
-
-def native_tool_calls(turn: dict[str, Any]) -> list[dict[str, Any]]:
-    """Every native tool call of a turn, in execution order, read from its events."""
-    calls: list[dict[str, Any]] = []
-    for event in turn_events(turn):
-        payload = event.get("payload")
-        if event.get("type") != "tool_call" or not isinstance(payload, dict):
-            continue
-        call = payload.get("call")
-        if isinstance(call, dict):
-            calls.append(call)
-    return calls
-
-
-@dataclass(slots=True)
-class Transcript:
-    """The model-facing view of a conversation, plus how tight the fit was."""
-
-    messages: list[dict[str, str]] = field(default_factory=list)
-    tokens: int = 0
-    budget: int = 0
-    # True when even the newest turn alone had to be clipped to fit. At that point the
-    # conversation can no longer carry its own most recent exchange intact, and the only
-    # real remedy is a fresh session.
-    overflow: bool = False
-
-
-def build_transcript(
-    conversation_id: str,
-    *,
-    user: str,
-    token_budget: int | None = None,
-) -> Transcript:
-    """Assemble the next model call's messages from this conversation and no other.
-
-    Three layers, cheapest and most reliable first:
-
-    1. the compaction summary, when one has been written (prose, may be lossy);
-    2. the mechanically extracted session state — figures, sources, refusals — which is
-       exact and is rebuilt from the turns on every call, so it never degrades;
-    3. the most recent turns verbatim, as many as the token budget allows.
-
-    Layers 1 and 2 precede every live turn, so each is capped at a share of the budget
-    rather than given an open claim on it — otherwise the summary of a conversation could
-    crowd out the conversation. Older turns that fit nowhere are dropped whole rather than
-    clipped mid-sentence: whatever mattered about them is in layer 2.
-    """
-    from app.services.workbench.compaction import (
-        budget,
-        state as session_state,
-    )
-
-    limit = budget.budget_tokens() if token_budget is None else token_budget
-    result = Transcript(budget=limit)
-
-    record = _load(conversation_id, user)
-    if record is None:
-        return result
-    complete = [
-        turn for turn in record.turns if turn.get("status") != "running"
-    ]
-    if not complete:
-        return result
-
-    messages: list[dict[str, str]] = []
-    spent = 0
-
-    compaction = (
-        record.compaction if isinstance(record.compaction, dict) else None
-    )
-    first_kept = (
-        str(compaction.get("first_kept_turn_id", "")) if compaction else ""
-    )
-    summary = str(compaction.get("summary", "")).strip() if compaction else ""
-    if summary:
-        summary = budget.clip_to_tokens(
-            summary, int(limit * budget.SUMMARY_SHARE)
-        )
-        messages.append(
-            {
-                "role": "system",
-                "content": "Conversation checkpoint:\n\n" + summary,
-            }
-        )
-        spent += budget.estimate_tokens(summary)
-
-    # Turns already folded into the checkpoint are not replayed verbatim.
-    _, live = _split_at_turn(complete, first_kept)
-    # Recomputed from every turn rather than read back from the checkpoint: turns are
-    # never deleted, so this is always exact and cannot go stale against a summary.
-    state = session_state.from_turns(complete, _assistant_text)
-    state = session_state.trim_to_fit(
-        state,
-        max(0, int(limit * budget.COMPRESSED_SHARE) - spent),
-        budget.estimate_tokens,
-    )
-    rendered = session_state.render(state)
-    if rendered:
-        messages.append({"role": "system", "content": rendered})
-        spent += budget.estimate_tokens(rendered)
-
-    pairs = [
-        (str(turn.get("question", "")).strip(), _assistant_text(turn))
-        for turn in live
-    ]
-    pairs = [
-        (question, answer) for question, answer in pairs if question and answer
-    ]
-
-    # Fill the remaining budget from the newest turn backwards, then restore order.
-    kept: list[tuple[str, str]] = []
-    for question, answer in reversed(pairs):
-        cost = budget.estimate_tokens(question) + budget.estimate_tokens(
-            answer
-        )
-        if kept and spent + cost > limit:
-            break
-        if not kept and spent + cost > limit:
-            # The newest turn does not fit even on its own. Keep it — a transcript
-            # without the current exchange is useless — but clip it so the request stays
-            # inside the window, and flag that this conversation has run out of room.
-            room = max(0, limit - spent - budget.estimate_tokens(question))
-            answer = budget.clip_to_tokens(answer, room)
-            cost = budget.estimate_tokens(question) + budget.estimate_tokens(
-                answer
-            )
-            result.overflow = True
-        kept.append((question, answer))
-        spent += cost
-    for question, answer in reversed(kept):
-        messages.append({"role": "user", "content": question})
-        messages.append({"role": "assistant", "content": answer})
-
-    result.messages = messages
-    result.tokens = spent
-    return result
-
-
-def transcript(
-    conversation_id: str,
-    *,
-    user: str,
-    token_budget: int | None = None,
-) -> list[dict[str, str]]:
-    """Messages only. See `build_transcript` for the budget and overflow detail."""
-    return build_transcript(
-        conversation_id, user=user, token_budget=token_budget
-    ).messages
-
-
-def _tool_names_in(assistant_message: Mapping[str, Any]) -> dict[str, str]:
-    names: dict[str, str] = {}
-    for call in assistant_message.get("tool_calls") or []:
-        if isinstance(call, dict):
-            function = (
-                call.get("function")
-                if isinstance(call.get("function"), dict)
-                else {}
-            )
-            names[str(call.get("id", ""))] = str(function.get("name", ""))
-    return names
-
-
-def _observation(
-    tool_message: dict[str, Any], tool_names: dict[str, str]
-) -> ChatMessage:
-    """Replay a stored tool result bounded the same way a live observation is."""
-    from app.services.workbench.agent_executor import shape_observation_text
-
-    message = dict(tool_message)
-    content = message.get("content")
-    if isinstance(content, str):
-        message["content"] = shape_observation_text(
-            content,
-            tool_name=tool_names.get(str(message.get("tool_call_id", "")))
-            or None,
-        )
-    return message
-
-
-def set_request_checkpoint(
-    conversation_id: str,
-    user: str,
-    turn_id: str,
-    messages: list[ChatMessage],
-    *,
-    tokens_before: int,
-    tokens_after: int,
-) -> None:
-    def apply(turn: dict[str, Any]) -> None:
-        _append_turn_event(
-            turn,
-            "request_compaction",
-            {
-                "messages": messages,
-                "tokens_before": tokens_before,
-                "tokens_after": tokens_after,
-            },
-        )
-
-    _mutate(conversation_id, user, turn_id, apply)
-
-
-def native_replay_group(turn: dict[str, Any]) -> list[ChatMessage]:
-    """What one turn contributes to the provider transcript, read from its events.
-
-    The question, every native assistant message with the bounded observation of each
-    of its tool results, any stored system message the replay policy admits, and the
-    final assistant text. Empty when the turn has no question. This is the one place the
-    replay shape is defined: `build_native_transcript` sends it and the compaction
-    trigger measures it.
-    """
-    question = str(turn.get("question", "")).strip()
-    if not question:
-        return []
-    group: list[ChatMessage] = [{"role": "user", "content": question}]
-    tool_names: dict[str, str] = {}
-    for event in turn_events(turn):
-        payload = event.get("payload")
-        if event.get("type") == "request_compaction" and isinstance(
-            payload, dict
-        ):
-            checkpoint_messages: list[ChatMessage] = payload["messages"]
-            group = [message.copy() for message in checkpoint_messages]
-            tool_names = {}
-            for checkpoint_message in group:
-                tool_names.update(_tool_names_in(checkpoint_message))
-            continue
-        if (
-            not isinstance(payload, dict)
-            or payload.get("execution_path") != "native"
-        ):
-            continue
-        kind = event.get("type")
-        message = payload.get("message")
-        if not isinstance(message, dict):
-            continue
-        if kind == "llm_assistant_message":
-            tool_names.update(_tool_names_in(message))
-            group.append(dict(message))
-        elif kind == "tool_result":
-            group.append(_observation(message, tool_names))
-        elif (
-            kind == "system_message"
-            and payload.get("kind") in REPLAYED_SYSTEM_MESSAGE_KINDS
-        ):
-            group.append(dict(message))
-    answer = _assistant_text(turn)
-    if answer:
-        group.append({"role": "assistant", "content": answer})
-    return group
-
-
-def replay_group_tokens(group: list[ChatMessage]) -> int:
-    """The estimated cost of one replay group, as the transcript budget counts it."""
-    from app.services.workbench.compaction import budget
-
-    if not group:
-        return 0
-    return budget.estimate_tokens(
-        json.dumps(group, default=str, ensure_ascii=False)
-    )
-
-
-@dataclass(slots=True)
-class NativeReplayMeasure:
-    """How large the native replay of a conversation would be, before any budget cut.
-
-    ``tokens`` follows the budget module's rule: trust the provider where it has spoken,
-    estimate only what came after. When a live turn carries a measured prompt size that
-    postdates the checkpoint, that measurement anchors the count and only that turn's
-    completion and the turns after it are estimated; otherwise every live turn's replay
-    group is estimated as `build_native_transcript` would send it.
-    """
-
-    tokens: int = 0
-    summary_tokens: int = 0
-    newest_turn_tokens: int = 0
-    measured_turn_id: str = ""
-    turn_ids: list[str] = field(default_factory=list)
-
-
-def live_turns(record: ConversationRecord) -> list[dict[str, Any]]:
-    """The completed turns replayed verbatim: everything after the checkpoint."""
-    complete = [
-        turn for turn in record.turns if turn.get("status") != "running"
-    ]
-    compaction = (
-        record.compaction if isinstance(record.compaction, dict) else None
-    )
-    first_kept = (
-        str(compaction.get("first_kept_turn_id", "")) if compaction else ""
-    )
-    _, live = _split_at_turn(complete, first_kept)
-    for index in range(len(live) - 1, -1, -1):
-        if _has_request_checkpoint(live[index]):
-            return live[index:]
-    return live
-
-
-def _has_request_checkpoint(turn: dict[str, Any]) -> bool:
-    return any(
-        event.get("type") == "request_compaction"
-        for event in turn_events(turn)
-    )
-
-
-def _measured_after(turn: dict[str, Any], checkpoint_created_at: str) -> bool:
-    """Whether a turn's measured prompt saw the current checkpoint rather than the
-    verbatim turns it later replaced. Timestamps are UTC ISO-8601, so they order
-    lexically; a turn without one is treated as older than any checkpoint."""
-    if not checkpoint_created_at:
-        return True
-    completed_at = str(turn.get("completed_at") or "")
-    return bool(completed_at) and completed_at >= checkpoint_created_at
-
-
-def measure_replay_turns(
-    turns: list[dict[str, Any]],
-    *,
-    checkpoint_created_at: str = "",
-) -> NativeReplayMeasure:
-    """Measure the native replay of these turns (running turns skipped)."""
-    from app.services.workbench.compaction import budget
-
-    measure = NativeReplayMeasure()
-    complete = [turn for turn in turns if turn.get("status") != "running"]
-    anchor = -1
-    for index in range(len(complete) - 1, -1, -1):
-        if budget.measured_prompt_tokens(
-            complete[index]
-        ) is not None and _measured_after(
-            complete[index], checkpoint_created_at
-        ):
-            anchor = index
-            break
-    for index, turn in enumerate(complete):
-        group = native_replay_group(turn)
-        if not group:
-            continue
-        cost = replay_group_tokens(group)
-        measure.newest_turn_tokens = cost
-        measure.turn_ids.append(str(turn.get("id", "")))
-        if index < anchor:
-            continue
-        if index == anchor:
-            # The measured prompt covers everything up to this turn's last request; its
-            # final text was the completion and is only in the *next* transcript.
-            measure.measured_turn_id = str(turn.get("id", ""))
-            measure.tokens += int(budget.measured_prompt_tokens(turn) or 0)
-            measure.tokens += budget.estimate_tokens(_assistant_text(turn))
-            continue
-        measure.tokens += cost
-    return measure
-
-
-def measure_native_replay(record: ConversationRecord) -> NativeReplayMeasure:
-    """Measure what `build_native_transcript` would send for this record."""
-    from app.services.workbench.compaction import budget
-
-    compaction = (
-        record.compaction if isinstance(record.compaction, dict) else None
-    )
-    created_at = str(compaction.get("created_at", "")) if compaction else ""
-    live = live_turns(record)
-    measure = measure_replay_turns(live, checkpoint_created_at=created_at)
-    summary = str(compaction.get("summary", "")).strip() if compaction else ""
-    if summary and not any(_has_request_checkpoint(turn) for turn in live):
-        limit = budget.budget_tokens()
-        summary = budget.clip_to_tokens(
-            summary, int(limit * budget.SUMMARY_SHARE)
-        )
-        measure.summary_tokens = budget.estimate_tokens(summary)
-        if not measure.measured_turn_id:
-            # A measured prompt taken after the checkpoint already contained it.
-            measure.tokens += measure.summary_tokens
-    return measure
-
-
-def build_native_transcript(
-    conversation_id: str,
-    *,
-    user: str,
-    token_budget: int | None = None,
-    enforce_budget: bool = True,
-) -> list[ChatMessage]:
-    """Replay complete native exchanges or fail rather than silently clipping them."""
-    from app.services.workbench.compaction import budget
-
-    limit = budget.budget_tokens() if token_budget is None else token_budget
-    record = _load(conversation_id, user)
-    if record is None:
-        return []
-    messages: list[ChatMessage] = []
-    spent = 0
-    compaction = (
-        record.compaction if isinstance(record.compaction, dict) else None
-    )
-    summary = str(compaction.get("summary", "")).strip() if compaction else ""
-    live = live_turns(record)
-    if summary and not any(_has_request_checkpoint(turn) for turn in live):
-        summary = budget.clip_to_tokens(
-            summary, int(limit * budget.SUMMARY_SHARE)
-        )
-        messages.append(
-            {
-                "role": "system",
-                "content": "Conversation checkpoint:\n\n" + summary,
-            }
-        )
-        spent += budget.estimate_tokens(summary)
-
-    groups = [group for turn in live if (group := native_replay_group(turn))]
-    kept: list[list[ChatMessage]] = []
-    for group in reversed(groups):
-        cost = replay_group_tokens(group)
-        if enforce_budget and spent + cost > limit:
-            if not kept:
-                # The newest turn does not fit even on its own. Compaction summarizes
-                # older turns and cannot shrink this one; only a new conversation helps.
-                raise NativeTranscriptOverflow(
-                    "the most recent turn alone exceeds the context window; "
-                    "start a new conversation",
-                    reason="single_turn_exceeds_budget",
-                )
-            raise NativeTranscriptOverflow(
-                "complete native conversation exceeds the context window; "
-                "start a new conversation or enable explicit compaction",
-                reason="conversation_exceeds_budget",
-            )
-        kept.append(group)
-        spent += cost
-    messages.extend(message for group in reversed(kept) for message in group)
-    return messages
-
-
-def _split_at_turn(
-    turns: list[dict[str, Any]], first_kept_turn_id: str
-) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
-    """Split turns into (already checkpointed, still replayed verbatim)."""
-    if not first_kept_turn_id:
-        return [], turns
-    for index, turn in enumerate(turns):
-        if turn.get("id") == first_kept_turn_id:
-            return turns[:index], turns[index:]
-    # The pointer names a turn we no longer have; replaying everything is the safe miss.
-    return [], turns
-
-
-def assistant_text(turn: dict[str, Any]) -> str:
-    """The model-facing rendering of a turn's answer.
-
-    Public because compaction needs exactly the view the model was given — including the
-    row cap in `_card_text` — rather than a second, subtly different flattening.
-    """
-    return _assistant_text(turn)
-
-
-def _assistant_text(turn: dict[str, Any]) -> str:
-    answer = turn.get("answer")
-    if isinstance(answer, dict) and answer.get("text"):
-        # The final answer already combines the source findings. Replaying source cards as
-        # additional assistant prose duplicates facts and biases follow-up synthesis.
-        return str(answer["text"])
-    parts: list[str] = []
-    if turn.get("synthesis"):
-        parts.append(str(turn["synthesis"]))
-    for card in turn.get("cards", []) or []:
-        text = _card_text(card)
-        if text:
-            parts.append(text)
-    refusal = turn.get("refusal")
-    if isinstance(refusal, dict) and refusal.get("message"):
-        parts.append(str(refusal["message"]))
-    if turn.get("error"):
-        parts.append(f"Error: {turn['error']}")
-    if not parts and not turn.get("cards") and turn.get("sources"):
-        # Version-1 records retained only question/source stubs.
-        return "The answer from this older turn was not retained."
-    return "\n\n".join(dict.fromkeys(parts))
-
-
-def _card_text(card: dict[str, Any]) -> str:
-    source = str(card.get("source", "source"))
-    card_type = str(card.get("card_type", ""))
-    payload = (
-        card.get("payload") if isinstance(card.get("payload"), dict) else {}
-    )
-    if card_type == "chart":
-        title = str(payload.get("title") or "Result")
-        subtitle = str(payload.get("subtitle") or "")
-        summary = str(payload.get("summary") or "")
-        chart_type = str(payload.get("chart_type") or "")
-        columns = (
-            payload.get("columns")
-            if isinstance(payload.get("columns"), list)
-            else []
-        )
-        fields = [
-            str(column.get("name"))
-            for column in columns
-            if isinstance(column, dict) and column.get("name")
-        ]
-        chart_context = ""
-        if chart_type or fields:
-            chart_context = (
-                f"Chart context: type={chart_type or 'unspecified'}; "
-                f"fields={','.join(fields) or 'unspecified'}"
-            )
-        rows = (
-            payload.get("rows")
-            if isinstance(payload.get("rows"), list)
-            else []
-        )
-        row_lines = [
-            json.dumps(row, default=str, ensure_ascii=False)
-            for row in rows[:CARD_ROWS_IN_CONTEXT]
-        ]
-        omitted = len(rows) - len(row_lines)
-        body = "\n".join(row_lines)
-        if omitted > 0:
-            body += f"\n[{omitted} additional rows omitted from model context]"
-        return "\n".join(
-            part
-            for part in [
-                f"[{source}] {title}",
-                subtitle,
-                chart_context,
-                body,
-                summary,
-            ]
-            if part
-        )
-    if card_type == "analysis":
-        # An analysis carries its whole answer in the findings, not in a row grid. Falling
-        # through to the generic branch below returned "" for every one of them, so a
-        # compacted thread lost the briefing entirely — and the follow-up "why is that?"
-        # then had nothing to refer back to.
-        title = str(payload.get("title") or "Analysis")
-        headline = str(payload.get("headline") or "")
-        findings = (
-            payload.get("findings")
-            if isinstance(payload.get("findings"), list)
-            else []
-        )
-        lines = [
-            f"- {finding.get('label')}: {finding.get('text')}"
-            for finding in findings
-            if isinstance(finding, dict) and finding.get("text")
-        ]
-        narrative = str(payload.get("narrative") or "")
-        return "\n".join(
-            part
-            for part in [f"[{source}] {title}", headline, *lines, narrative]
-            if part
-        )
-    if card_type == "briefing":
-        # The headline and the signals. The analyses underneath are already summarised by
-        # their own headlines, and copying every chart row of a five-section briefing into
-        # model context spends the whole budget on one turn.
-        headline = str(payload.get("headline") or "")
-        signals = (
-            payload.get("signals")
-            if isinstance(payload.get("signals"), list)
-            else []
-        )
-        analyses = (
-            payload.get("analyses")
-            if isinstance(payload.get("analyses"), list)
-            else []
-        )
-        lines = [
-            f"- {s.get('text')}"
-            for s in signals
-            if isinstance(s, dict) and s.get("text")
-        ]
-        lines += [
-            f"- {a.get('title')}: {a.get('headline')}"
-            for a in analyses
-            if isinstance(a, dict) and a.get("headline")
-        ]
-        return "\n".join(
-            part
-            for part in [
-                f"[{source}] {payload.get('label', 'Briefing')}",
-                headline,
-                *lines,
-            ]
-            if part
-        )
-    if card_type == "worklist":
-        # The top of the list and the shape of the rest. A worklist can run to fifty named
-        # borrowers, and copying all of them into model context spends the budget on PII to
-        # no benefit — the follow-up questions are about the pattern, not the roster.
-        title = str(payload.get("title") or "Worklist")
-        items = (
-            payload.get("items")
-            if isinstance(payload.get("items"), list)
-            else []
-        )
-        head = [
-            f"- #{item.get('rank')} {item.get('account')} ({item.get('severity')}): "
-            + " ".join(str(r) for r in (item.get("reasons") or []))
-            for item in items[:5]
-            if isinstance(item, dict)
-        ]
-        rest = len(items) - len(head)
-        lines = [f"[{source}] {title}: {len(items)} accounts", *head]
-        if rest > 0:
-            lines.append(
-                f"[{rest} further accounts omitted from model context]"
-            )
-        return "\n".join(lines)
-    if card_type == "brief":
-        summary = str(payload.get("summary") or "")
-        points = (
-            payload.get("key_points")
-            if isinstance(payload.get("key_points"), list)
-            else []
-        )
-        return "\n".join(
-            [f"[{source}] {summary}", *(f"- {point}" for point in points)]
-        )
-    if card_type == "schema":
-        return f"[{source}] Schema: {payload.get('node_count', 0)} tables, {payload.get('edge_count', 0)} relationships."
-    return str(payload.get("message") or payload.get("question") or "")

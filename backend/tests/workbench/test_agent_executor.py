@@ -84,12 +84,12 @@ async def test_validated_call_dispatches_and_replay_is_lossless(monkeypatch):
         _context(),
     )
 
-    replay = executed.replay_payload()
+    replay = executed.result_payload()
     assert replay["status"] == "ok"
     assert replay["summary"] == "PAR 30 is 4.2%."
     assert replay["payload"]["rows"] == [{"private": "never replay this"}]
     assert replay["lineage"] == {"sql": "never replay this"}
-    assert executed.replay_message()["tool_call_id"] == "call_1"
+    assert executed.observation_message()["tool_call_id"] == "call_1"
 
 
 @pytest.mark.anyio
@@ -393,7 +393,7 @@ def test_observation_is_bounded_while_durable_replay_keeps_every_row(
     )
     executed = _large_lookup()
 
-    durable = json.loads(executed.replay_message()["content"])
+    durable = executed.result_payload()
     observation = json.loads(executed.observation_message()["content"])
 
     assert len(durable["payload"]["rows"]) == 5000
@@ -418,7 +418,7 @@ def test_observation_is_bounded_while_durable_replay_keeps_every_row(
 def test_small_results_replay_unchanged():
     executed = _large_lookup(rows=30)
 
-    durable = json.loads(executed.replay_message()["content"])
+    durable = executed.result_payload()
     text = executed.observation_message()["content"]
     observation = json.loads(text)
 

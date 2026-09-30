@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from copy import deepcopy
 import json
 import time
 
@@ -115,14 +116,14 @@ async def test_invalid_arguments_receive_one_native_repair(monkeypatch):
     ]
     repair_seen = []
 
-    async def select(_state, *, repair_messages=None):
-        repair_seen.append(repair_messages)
+    async def select(_state):
+        repair_seen.append(deepcopy(_state.get("messages", [])))
         return responses.pop(0)
 
     monkeypatch.setattr(agent, "_select", select)
     result = await agent.select_calls(_state())
     assert result.tool_calls[0].id == "good"
-    assert repair_seen[0] is None
+    assert repair_seen[0] == []
     assert repair_seen[1][-1]["tool_call_id"] == "bad"
     assert "TOOL_NOT_FOUND" in repair_seen[1][-1]["content"]
 
@@ -144,8 +145,8 @@ async def test_grouped_null_filter_receives_native_repair(monkeypatch):
     responses = [_result(bad), _result(good)]
     repair_seen = []
 
-    async def select(_state, *, repair_messages=None):
-        repair_seen.append(repair_messages)
+    async def select(_state):
+        repair_seen.append(deepcopy(_state.get("messages", [])))
         return responses.pop(0)
 
     monkeypatch.setattr(agent, "_select", select)
@@ -268,7 +269,8 @@ async def test_unauthorized_domain_is_a_policy_observation_then_fails(
     attempts = 0
     observed = []
 
-    async def select(_state, *, repair_messages=None):
+    async def select(_state):
+        repair_messages = _state.get("messages", [])
         nonlocal attempts
         attempts += 1
         if repair_messages is not None:
@@ -309,7 +311,8 @@ async def test_forged_tool_name_is_a_model_visible_observation_then_fails(
     attempts = 0
     observed = []
 
-    async def select(_state, *, repair_messages=None):
+    async def select(_state):
+        repair_messages = _state.get("messages", [])
         nonlocal attempts
         attempts += 1
         if repair_messages is not None:
@@ -380,7 +383,7 @@ class _ScriptedClient:
         self.requests = []
 
     async def complete(self, **kwargs):
-        self.requests.append(kwargs)
+        self.requests.append({**kwargs, "messages": deepcopy(kwargs["messages"])})
         step = self.script[len(self.requests) - 1]
         return step(kwargs) if callable(step) else step
 
@@ -447,7 +450,6 @@ def _raw(call):
 def _run_state(
     conversation_id: str, question: str = "Show PAR 30", *, external=True
 ):
-    history._MEMORY.clear()
     turn_id = history.begin_turn(conversation_id, "alice", question)
     return {
         "question": question,
@@ -456,7 +458,6 @@ def _run_state(
         "role": "admin",
         "turn_id": turn_id,
         "history_messages": [],
-        "agent_history_messages": [],
         "emit": asyncio.Queue(),
         "source_policy": access.build_policy(
             role="admin", external_sources_enabled=external
@@ -719,10 +720,6 @@ async def test_final_answer_reuses_previous_turn_query_without_sql(
         {
             "question": "Show that as a table",
             "turn_id": followup_id,
-            "agent_history_messages": history.build_native_transcript(
-                state["conversation_id"],
-                user="alice",
-            ),
             "query_registry": [],
             "prior_query_registry": prior_registry,
             "results": [],
@@ -887,7 +884,7 @@ async def test_last_round_result_is_shown_without_forcing_synthesis(
     state = _run_state("min-rounds")
     await agent.run(state)
 
-    assert client.requests[0]["tool_choice"] == "required"
+    assert client.requests[0]["tool_choice"] == "auto"
     assert client.requests[1]["tool_choice"] == "auto"
     assert client.requests[1]["call_purpose"] == "agent_continue"
     synthesis_messages = client.requests[1]["messages"]
@@ -1004,8 +1001,9 @@ async def test_execution_error_is_returned_to_llm_for_a_cross_tool_repair(
         for message in client.requests[1]["messages"]
     )
     record = history.get("execution-repair", user="alice")
-    assert len(record.turns[0]["agent_exchanges"]) == 2
-    replayed = str(record.turns[0]["agent_exchanges"])
+    assert record is not None
+    assert sum(bool(m.get("tool_calls")) for m in record.messages) == 2
+    replayed = str(record.messages)
     assert "metric execution failed" in replayed
     assert "repaired_detail" in replayed
     frames = _frames(state)
@@ -1018,20 +1016,11 @@ async def test_execution_error_is_returned_to_llm_for_a_cross_tool_repair(
 
 
 @pytest.mark.anyio
-async def test_catalog_context_is_recomputed_from_the_latest_tool_error(
+async def test_tool_error_preserves_prompt_and_prior_messages(
     scripted,
     monkeypatch,
 ):
-    """B4: an error naming an unknown dimension surfaces the governed one next round."""
     monkeypatch.setattr(agent.settings, "workbench_agent_max_rounds", 3)
-    seen = []
-    original = agent.prompts.build_agent_catalog_context
-
-    def spy(question, catalog=None, *, supplement=""):
-        seen.append(supplement)
-        return original(question, catalog, supplement=supplement)
-
-    monkeypatch.setattr(agent.prompts, "build_agent_catalog_context", spy)
     bad = NativeToolCall(
         id="bad",
         name="query",
@@ -1060,23 +1049,30 @@ async def test_catalog_context_is_recomputed_from_the_latest_tool_error(
         ],
         execute,
     )
-    state = _run_state("error-context", "interest collected")
+    state = _run_state("error-context", "  interest collected\n")
     await agent.run(state)
 
-    def hints(request):
-        return next(
-            message["content"]
-            for message in request["messages"]
-            if message.get("role") == "user"
-            and "USER QUESTION" in message.get("content", "")
-        )
-
-    assert seen[0] == ""
-    assert seen[1].startswith("unknown column schemes")
-    assert seen[2] == ""  # the successful round clears the supplement
-    assert hints(client.requests[0]) != hints(client.requests[1])
-    assert "must appear in `dimensions`" in hints(client.requests[1])
-    # The observation itself carries the governed list, so the model can repair.
+    assert client.requests[0]["messages"][-1] == {
+        "role": "user", "content": state["question"],
+    }
+    assert client.requests[0]["messages"][0] == {
+        "role": "system", "content": [
+            {"type": "text", "text": agent.prompts.AGENT_SYSTEM_PROMPT},
+            {"type": "text", "text": agent.prompts.build_agent_gold_schema()},
+        ],
+    }
+    for previous, current in zip(client.requests, client.requests[1:]):
+        assert current["messages"][:len(previous["messages"])] == previous["messages"]
+    assert [m["role"] for m in client.requests[-1]["messages"]] == [
+        "system", "user", "assistant", "tool", "assistant", "tool",
+    ]
+    stored = history.load_messages("error-context", user="alice")
+    assert stored[:-1] == client.requests[-1]["messages"]
+    followup = history.begin_turn("error-context", "alice", "What next?")
+    next_state = {**_state(), "conversation_id": "error-context", "user": "alice",
+                  "turn_id": followup, "question": "What next?"}
+    agent._initialize_messages(next_state, agent.get_catalog())
+    assert next_state["messages"][:-1] == stored
     observation = next(
         json.loads(message["content"])
         for message in client.requests[1]["messages"]
@@ -1084,6 +1080,117 @@ async def test_catalog_context_is_recomputed_from_the_latest_tool_error(
     )
     assert observation["code"] == "SOURCE_UNAVAILABLE"
     assert "scheme" in observation["message"]
+
+
+@pytest.mark.anyio
+async def test_cancelled_batch_preserves_finished_results_and_closes_pending_calls(scripted):
+    pending_call = NativeToolCall(id="pending", name="query", arguments={"sql": "SELECT 1"})
+    response = _tool_response(_PAR_30, pending_call)
+
+    async def execute(call, _context):
+        stored = history.load_messages("cancel-batch", user="alice")
+        assert stored[-1] == response.assistant_message
+        if call.id == "pending":
+            raise asyncio.CancelledError
+        return _card(call)
+
+    scripted([response], execute)
+    state = _run_state("cancel-batch")
+    with pytest.raises(asyncio.CancelledError):
+        await agent.run(state)
+    messages = history.load_messages("cancel-batch", user="alice")
+    assert [message["tool_call_id"] for message in messages[-2:]] == ["call_1", "pending"]
+    assert json.loads(str(messages[-2]["content"]))["status"] == "ok"
+    assert json.loads(str(messages[-1]["content"]))["code"] == "INTERRUPTED"
+    assert history.pending_tool_calls(messages) == []
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    ("name", "arguments", "code"),
+    [
+        ("query", '{"sql":', "INVALID_TOOL_ARGUMENTS"),
+        ("submit_final_answer", "[]", "INVALID_TOOL_ARGUMENTS"),
+        ("unknown_tool", "{}", "TOOL_NOT_FOUND"),
+    ],
+)
+async def test_tool_parse_error_is_replayed_and_corrected(
+    scripted, monkeypatch, name, arguments, code
+):
+    import httpx
+
+    from tests.nlq.test_llm_client import _client, _ok, _raw_tool_call, _tool_ok
+
+    raw_calls = [
+        _raw_tool_call(call_id="bad", name=name, arguments=arguments),
+        _raw_tool_call(
+            call_id="good", name="query", arguments=json.dumps(_PAR_30.arguments)
+        ),
+    ]
+    responses = [
+        _tool_ok(*raw_calls),
+        _tool_ok(_raw_tool_call(
+            call_id="corrected", name="query", arguments=json.dumps(_PAR_30.arguments)
+        )),
+        _ok("PAR 30 is 4.2%."),
+    ]
+    requests = []
+    executed = []
+
+    def handler(request):
+        if request.url.path.endswith("count_tokens"):
+            return httpx.Response(200, json={"input_tokens": 100})
+        if not request.url.path.endswith("chat/completions"):
+            return httpx.Response(404)
+        requests.append(json.loads(request.content))
+        return responses.pop(0)
+
+    async def execute(call, _ctx):
+        executed.append(call.id)
+        return _card(call)
+
+    scripted([], execute)
+    client = _client(handler)
+    monkeypatch.setattr(models, "client", lambda: client)
+    conversation_id = f"parse-error-{name}"
+    try:
+        await agent.run(_run_state(conversation_id))
+    finally:
+        await client.aclose()
+
+    assert executed == ["good", "corrected"]
+    assert len(requests) == 3
+    replay = requests[1]["messages"]
+    assert replay[2]["tool_calls"] == raw_calls
+    assert [message["role"] for message in replay] == [
+        "system", "user", "assistant", "tool", "tool",
+    ]
+    assert [message["tool_call_id"] for message in replay[3:]] == ["bad", "good"]
+    failure = json.loads(replay[3]["content"])
+    assert failure["status"] == "error"
+    assert failure["code"] == code
+    assert failure["message"]
+    if arguments == '{"sql":':
+        assert "decoded as JSON" in failure["message"]
+    stored = history.load_messages(conversation_id, user="alice")
+    assert stored[2:5] == replay[2:]
+    assert requests[2]["messages"][:len(replay)] == replay
+    assert stored[:-1] == requests[2]["messages"]
+    assert history.pending_tool_calls(stored) == []
+
+
+@pytest.mark.anyio
+async def test_protocol_error_surfaces_without_synthetic_prompts(scripted):
+    def malformed(_request):
+        raise LLMProtocolError("missing tool call ID")
+
+    client = scripted([malformed], lambda *_: pytest.fail("must not execute"))
+    state = _run_state("malformed")
+    with pytest.raises(LLMProtocolError, match="missing tool call ID"):
+        await agent.run(state)
+    assert len(client.requests) == 1
+    assert history.load_messages("malformed", user="alice") == client.requests[0]["messages"]
+    assert [message["role"] for message in client.requests[0]["messages"]] == ["system", "user"]
 
 
 @pytest.mark.anyio
@@ -1135,10 +1242,11 @@ async def test_model_can_call_multiple_resource_tools_before_answering(
         "agent_continue",
     ]
     record = history.get("multi-tool", user="alice")
-    assert len(record.turns[0]["agent_exchanges"]) == 2
+    assert record is not None
+    assert sum(bool(m.get("tool_calls")) for m in record.messages) == 2
     assert [
-        exchange["calls"][0]["name"]
-        for exchange in record.turns[0]["agent_exchanges"]
+        call["function"]["name"]
+        for message in record.messages for call in message.get("tool_calls", [])
     ] == ["query", "search_curated_knowledge"]
     assert state["agent_final_result"].text.startswith("The portfolio result")
 
@@ -1183,9 +1291,10 @@ async def test_invalid_continuation_call_is_persisted_and_returned_to_model(
         for message in continuation_requests[2]["messages"]
     )
     record = history.get("invalid-continuation", user="alice")
+    assert record is not None
     assert [
-        exchange["calls"][0]["id"]
-        for exchange in record.turns[0]["agent_exchanges"]
+        call["id"]
+        for message in record.messages for call in message.get("tool_calls", [])
     ] == ["valid", "invalid_next"]
 
 
@@ -1205,15 +1314,16 @@ async def test_partially_invalid_batch_keeps_replay_parity(
     await agent.run(state)
 
     record = history.get("partial-batch", user="alice")
-    exchange = record.turns[0]["agent_exchanges"][0]
+    assert record is not None
+    exchange = {"calls": record.messages[2]["tool_calls"], "tools": [m for m in record.messages if m["role"] == "tool"]}
     assert [call["id"] for call in exchange["calls"]] == ["call_1", "bad"]
     assert [message["tool_call_id"] for message in exchange["tools"]] == [
         "call_1",
         "bad",
     ]
-    assert json.loads(exchange["tools"][0]["content"])["status"] == "ok"
+    assert json.loads(str(exchange["tools"][0]["content"]))["status"] == "ok"
     assert (
-        json.loads(exchange["tools"][1]["content"])["code"] == "TOOL_NOT_FOUND"
+        json.loads(str(exchange["tools"][1]["content"]))["code"] == "TOOL_NOT_FOUND"
     )
     observed = [
         message
@@ -1288,8 +1398,9 @@ async def test_outbound_policy_denial_gets_one_native_repair(
     }
     assert "submit_final_answer" in denial["authorized_tools"]
     record = history.get("web-repair", user="alice")
-    assert len(record.turns[0]["agent_exchanges"]) == 2
-    assert "secret-42" not in str(record.turns[0]["agent_exchanges"])
+    assert record is not None
+    assert sum(bool(m.get("tool_calls")) for m in record.messages) == 2
+    assert "secret-42" in str(record.messages)
     # A privacy denial is not an error card the user sees; the repaired search is.
     frames = _frames(state)
     assert not any('"card_type": "error"' in frame for frame in frames)
@@ -1339,12 +1450,13 @@ async def test_unresolved_policy_denial_ends_with_an_application_refusal(
     assert refusal["origin"] == "application"
     assert refusal["reason"] == "POLICY_DENIED"
     record = history.get("web-refuse", user="alice")
+    assert record is not None
     assert record.turns[0]["answer"]["origin"] == "application"
-    assert len(record.turns[0]["agent_exchanges"]) == 3
+    assert sum(bool(m.get("tool_calls")) for m in record.messages) == 3
     assert all(
-        call["name"] == "search_public_web"
-        for exchange in record.turns[0]["agent_exchanges"]
-        for call in exchange["calls"]
+        call["function"]["name"] == "search_public_web"
+        for message in record.messages
+        for call in message.get("tool_calls", [])
     )
 
 
@@ -1424,7 +1536,7 @@ async def test_deadline_is_checked_in_the_loop_condition(
 
 @pytest.mark.anyio
 @pytest.mark.parametrize(
-    "failure", ["context", "generation", "output_limit", "repeated"]
+    "failure", ["context", "generation", "visible_generation", "output_limit", "repeated"]
 )
 async def test_select_recovers_context_overflow_with_compacted_input(
     monkeypatch, failure
@@ -1451,11 +1563,12 @@ async def test_select_recovers_context_overflow_with_compacted_input(
             if kwargs.get("call_purpose") == "compaction":
                 self.summaries.append(kwargs)
                 return _result(content="Older task: query q1 showed 42 loans.")
-            self.requests.append(kwargs)
+            self.requests.append({**kwargs, "messages": deepcopy(kwargs["messages"])})
             if len(self.requests) == 1 or failure == "repeated":
                 if failure in {"context", "repeated"}:
                     raise LLMContextOverflow("context length exceeded")
                 error = LLMIncomplete("truncated output")
+                error.output_emitted = failure == "visible_generation"
                 error.prompt_tokens = 30000
                 error.completion_tokens = (
                     kwargs["max_output_tokens"]
@@ -1469,13 +1582,14 @@ async def test_select_recovers_context_overflow_with_compacted_input(
     client = ContextClient()
     monkeypatch.setattr(models, "client", lambda: client)
     state = _state()
-    state["agent_history_messages"] = [
+    agent._initialize_messages(state, agent.get_catalog())
+    state["messages"][1:1] = [
         {"role": "user", "content": "Old question"},
         {"role": "assistant", "content": "old evidence " * 6500},
     ]
     state["emit"] = asyncio.Queue()
     state["_agent_budget"] = agent.TurnBudget(5, 5, time.perf_counter() + 60)
-    if failure == "output_limit":
+    if failure in {"output_limit", "visible_generation"}:
         with pytest.raises(LLMIncomplete):
             await agent._select(state)
         assert len(client.requests) == 1

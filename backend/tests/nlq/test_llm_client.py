@@ -813,12 +813,13 @@ class TestNativeTools:
                 ],
             },
         }
-        with pytest.raises(LLMProtocolError, match="unknown function"):
-            await _client(lambda _: _tool_ok(_raw_tool_call())).complete(
-                messages=[{"role": "user", "content": "hi"}],
-                tools=TOOLS,
-                tool_choice=choice,
-            )
+        result = await _client(lambda _: _tool_ok(_raw_tool_call())).complete(
+            messages=[{"role": "user", "content": "hi"}],
+            tools=TOOLS,
+            tool_choice=choice,
+        )
+        assert result.tool_calls[0].error is not None
+        assert result.tool_calls[0].error["code"] == "TOOL_NOT_FOUND"
 
     @pytest.mark.anyio
     async def test_native_tool_fields_are_passed_exactly(self):
@@ -1075,9 +1076,6 @@ class TestNativeTools:
                 "duplicate tool call ID",
             ),
             ([_raw_tool_call() | {"type": "custom"}], "not type 'function'"),
-            ([_raw_tool_call(name="not_registered")], "unknown function"),
-            ([_raw_tool_call(arguments="not-json")], "not valid JSON"),
-            ([_raw_tool_call(arguments="[]")], "decode to an object"),
             (
                 [
                     {
@@ -1086,7 +1084,7 @@ class TestNativeTools:
                         "function": {"name": "query_metrics", "arguments": {}},
                     }
                 ],
-                "valid JSON|JSON-encoded string|malformed completion stream",
+                "tool delta arguments must be a string",
             ),
         ],
     )
@@ -1129,12 +1127,57 @@ class TestNativeTools:
         assert "par_30" not in str(calls[0].to_dict())
 
     @pytest.mark.anyio
+    @pytest.mark.parametrize(
+        ("name", "arguments", "code"),
+        [
+            ("query_metrics", "not-json", "INVALID_TOOL_ARGUMENTS"),
+            ("query_metrics", "[]", "INVALID_TOOL_ARGUMENTS"),
+            ("query_metrics", "[" * 2000, "INVALID_TOOL_ARGUMENTS"),
+            ("not_registered", "{}", "TOOL_NOT_FOUND"),
+        ],
+    )
+    async def test_invalid_call_preserves_raw_arguments_and_valid_sibling(
+        self, name, arguments, code
+    ):
+        raw_calls = [
+            _raw_tool_call(call_id="bad", name=name, arguments=arguments),
+            _raw_tool_call(call_id="good"),
+        ]
+        def handler(request):
+            if request.url.path.endswith("count_tokens"):
+                return httpx.Response(400, json={"error": "invalid input"})
+            return _tool_ok(*raw_calls)
+
+        client = _client(handler)
+        with collect_calls() as calls:
+            result = await client.complete(
+                messages=[{"role": "user", "content": "Show PAR 30"}],
+                tools=TOOLS,
+            )
+
+        assert result.assistant_message is not None
+        assert result.assistant_message["tool_calls"] == raw_calls
+        failed, valid = result.tool_calls
+        assert failed.error is not None
+        assert failed.error["code"] == code
+        assert failed.arguments == {}
+        assert valid.error is None
+        assert valid.arguments == {"metric": "par_30"}
+        assert calls[0].tool_call_count == 2
+        assert calls[0].finish_reason == "tool_calls"
+        assert "arguments" not in str(calls[0].to_dict())
+        if code == "INVALID_TOOL_ARGUMENTS":
+            client._count_unavailable_until = 0
+            assert await client.count_input_tokens([result.assistant_message], TOOLS) > 0
+        await client.aclose()
+
+    @pytest.mark.anyio
     async def test_protocol_failure_is_recorded_without_raw_arguments(self):
         with collect_calls() as calls:
             with pytest.raises(LLMProtocolError):
                 await _client(
                     lambda _request: _tool_ok(
-                        _raw_tool_call(arguments="not-json")
+                        _raw_tool_call(call_id="", arguments="not-json")
                     )
                 ).complete(
                     messages=[{"role": "user", "content": "Show PAR 30"}],
@@ -1481,7 +1524,8 @@ async def test_context_overflow_is_not_retried_with_identical_request():
 
 
 @pytest.mark.anyio
-async def test_truncated_tool_arguments_are_incomplete_and_preserve_usage():
+@pytest.mark.parametrize("stream_to_user", [False, True])
+async def test_truncated_tool_arguments_are_incomplete_and_preserve_usage(stream_to_user):
     body = _tool_body(
         {
             "id": "q1",
@@ -1492,12 +1536,18 @@ async def test_truncated_tool_arguments_are_incomplete_and_preserve_usage():
     body["choices"][0]["finish_reason"] = "length"
     body["usage"] = {"prompt_tokens": 31000, "completion_tokens": 100}
     client = _client(lambda request: _stream_response(body))
+
+    async def on_tool_call(_call):
+        pass
+
     with collect_calls() as calls, pytest.raises(LLMIncomplete) as error:
         await client.complete(
-            messages=[{"role": "user", "content": "query"}], tools=TOOLS
+            messages=[{"role": "user", "content": "query"}], tools=TOOLS,
+            on_tool_call=on_tool_call if stream_to_user else None,
         )
     assert error.value.prompt_tokens == 31000
     assert error.value.completion_tokens == 100
+    assert error.value.output_emitted is stream_to_user
     assert calls[-1].finish_reason == "length"
     await client.aclose()
 

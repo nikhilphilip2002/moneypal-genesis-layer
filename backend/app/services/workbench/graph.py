@@ -8,11 +8,11 @@ import json
 import logging
 import time
 import uuid
-from typing import Any, AsyncIterator, NotRequired, TypedDict
+from typing import Any, AsyncGenerator, AsyncIterator, NotRequired, TypedDict
+from weakref import WeakValueDictionary
 
 import anyio
 
-from app.core.config import settings
 from app.services.nlq.llm.telemetry import collect_calls, summarize_calls
 from app.services.workbench import access, history
 from app.services.workbench.results import ExecutionDecision, SourceResult
@@ -142,6 +142,10 @@ _CONTEXT_ERROR_MARKERS = (
 
 
 def _is_context_overflow(exc: BaseException) -> bool:
+    from app.services.nlq.llm.client import LLMContextOverflow
+
+    if isinstance(exc, LLMContextOverflow):
+        return True
     text = str(exc).lower()
     return any(marker in text for marker in _CONTEXT_ERROR_MARKERS)
 
@@ -214,8 +218,7 @@ class WorkbenchState(TypedDict):
     user: str
     role: str
     turn_id: str
-    agent_history_messages: NotRequired[list[dict[str, Any]]]
-    _restore_system_slot: NotRequired[bool]
+    _slot_new_chat: NotRequired[bool]
     agent_private_entities: NotRequired[tuple[str, ...]]
     emit: "asyncio.Queue[str | None]"
     pinned: NotRequired[str | None]
@@ -224,7 +227,6 @@ class WorkbenchState(TypedDict):
     results: NotRequired[list[SourceResult]]
     timing: dict[str, Any]
     trace: NotRequired[list[dict[str, Any]]]
-    agent_synthesis_messages: NotRequired[list[dict[str, Any]]]
     agent_final_synthesis: NotRequired[Any]
     attribution_repairs: NotRequired[int]
     query_registry: NotRequired[list[dict[str, Any]]]
@@ -548,7 +550,7 @@ async def answer_results(state: WorkbenchState) -> dict[str, Any]:
     return {}
 
 
-async def run_workbench(
+async def _run_workbench(
     *,
     question: str,
     conversation_id: str,
@@ -556,7 +558,7 @@ async def run_workbench(
     role: str,
     pinned: str | None = None,
     external_sources_enabled: bool = False,
-) -> AsyncIterator[str]:
+) -> AsyncGenerator[str, None]:
     """Run one turn, yielding SSE frames as the graph produces them."""
     started_at = time.perf_counter()
     emit: "asyncio.Queue[str | None]" = asyncio.Queue()
@@ -609,15 +611,7 @@ async def run_workbench(
                 "turn_id": turn_id,
             },
         )
-        # The native transcript is loaded only after the turn exists and the client has
-        # the conversation id, so a transcript that cannot fit becomes a recorded,
-        # user-visible error rather than a dropped stream.
         try:
-            agent_history_messages = history.build_native_transcript(
-                conversation_id,
-                user=user,
-                enforce_budget=not settings.workbench_compaction_enabled,
-            )
             prior_query_registry = history.previous_query_registry(
                 conversation_id,
                 user=user,
@@ -626,56 +620,7 @@ async def run_workbench(
             agent_private_entities = history.private_entities(
                 conversation_id, user=user
             )
-        except history.NativeTranscriptOverflow as exc:
-            logger.warning(
-                "workbench native transcript overflow: conversation=%s turn=%s: %s",
-                conversation_id,
-                turn_id,
-                exc,
-            )
-            log_app_event(
-                "Workbench turn refused: native transcript exceeds the context window",
-                event="workbench_turn_completed",
-                outcome="error",
-                error=str(exc),
-                data={"code": CONTEXT_CAPACITY_CODE, "reason": exc.reason},
-            )
-            _persist(
-                history.set_error,
-                conversation_id,
-                user,
-                turn_id,
-                CONTEXT_FULL_MESSAGE,
-                code=CONTEXT_CAPACITY_CODE,
-                retryable=False,
-                reason=exc.reason,
-            )
-            _persist(
-                history.complete_turn,
-                conversation_id,
-                user,
-                turn_id,
-                partial=True,
-            )
-            # `reason` says whether compaction could have helped
-            # (conversation_exceeds_budget) or the newest turn alone is too large
-            # (single_turn_exceeds_budget); the message to the user is the same.
-            yield sse(
-                "error",
-                {
-                    "message": CONTEXT_FULL_MESSAGE,
-                    "retryable": False,
-                    "code": CONTEXT_CAPACITY_CODE,
-                    "reason": exc.reason,
-                },
-            )
-            yield sse("done", {})
-            return
         except Exception as exc:  # noqa: BLE001
-            # Anything but overflow means the durable record could not be read. Handing
-            # the agent the 20-row prose transcript instead would answer from a
-            # different history than the one the user can see, so the turn fails
-            # visibly and retryably.
             logger.exception(
                 "workbench native transcript load failed: conversation=%s turn=%s",
                 conversation_id,
@@ -731,7 +676,6 @@ async def run_workbench(
         "user": user,
         "role": role,
         "turn_id": turn_id,
-        "agent_history_messages": agent_history_messages,
         "_slot_new_chat": is_new_chat,
         "agent_private_entities": agent_private_entities,
         "emit": emit,
@@ -873,3 +817,18 @@ async def run_workbench(
     yield sse(
         "done", {"total_ms": int((time.perf_counter() - started_at) * 1000)}
     )
+
+
+_turn_locks: WeakValueDictionary[tuple[str, str], asyncio.Lock] = WeakValueDictionary()
+
+
+async def run_workbench(**kwargs) -> AsyncIterator[str]:
+    key = (kwargs["user"], kwargs["conversation_id"])
+    lock = _turn_locks.setdefault(key, asyncio.Lock())
+    async with lock:
+        stream = _run_workbench(**kwargs)
+        try:
+            async for event in stream:
+                yield event
+        finally:
+            await stream.aclose()
