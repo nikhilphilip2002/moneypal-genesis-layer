@@ -39,6 +39,7 @@ import {
 type Props = {
   onAsk: (question: string) => Promise<boolean>;
   busy?: boolean;
+  toolsDisabled?: boolean;
   onCancel?: () => void;
   pinned: string | null;
   onPin: (source: string | null) => void;
@@ -58,6 +59,7 @@ const actionButtonClassName = cn(
 export default function Composer({
   onAsk,
   busy,
+  toolsDisabled,
   onCancel,
   pinned,
   onPin,
@@ -78,6 +80,7 @@ export default function Composer({
   const [focused, setFocused] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const completionRequestRef = useRef(0);
+  const submittingRef = useRef(false);
   const listRef = useRef<HTMLUListElement>(null);
   const shellRef = useRef<HTMLDivElement>(null);
   const [listMaxHeight, setListMaxHeight] = useState(288);
@@ -155,12 +158,17 @@ export default function Composer({
 
   const submit = async () => {
     const question = value.trim();
-    if (!question || busy) return;
-    const accepted = await onAsk(question);
-    if (!accepted) return;
-    setValue('');
-    setCompletionState({ key: '', results: [] });
-    if (textareaRef.current) textareaRef.current.style.height = '72px';
+    if (!question || submittingRef.current) return;
+    submittingRef.current = true;
+    try {
+      const accepted = await onAsk(question);
+      if (!accepted) return;
+      setValue((current) => current.trim() === question ? '' : current);
+      setCompletionState({ key: '', results: [] });
+      if (textareaRef.current) textareaRef.current.style.height = '72px';
+    } finally {
+      submittingRef.current = false;
+    }
   };
 
   const acceptCompletion = (item: WorkbenchCompletion) => {
@@ -251,7 +259,7 @@ export default function Composer({
             setCompletionState({ key: '', results: [] });
             return;
           }
-          if (event.key === 'Enter' && !event.shiftKey) {
+          if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
             event.preventDefault();
             submit();
           }
@@ -282,6 +290,7 @@ export default function Composer({
             onOpenWorkspace={onOpenWorkspace}
             onOpen={loadData}
             externalSourcesEnabled={externalSourcesEnabled}
+            toolsDisabled={toolsDisabled}
           />
 
           <label
@@ -320,18 +329,19 @@ export default function Composer({
           )}
         </div>
 
-        {busy ? (
-          <Button
-            type="button"
-            size="icon"
-            variant="ghost"
-            className={actionButtonClassName}
-            onClick={onCancel}
-            aria-label="Stop response"
-          >
-            <Square className="size-3.5 fill-current" />
-          </Button>
-        ) : (
+        <div className="flex shrink-0 items-center gap-1.5">
+          {busy && (
+            <Button
+              type="button"
+              size="icon"
+              variant="ghost"
+              className={actionButtonClassName}
+              onClick={onCancel}
+              aria-label="Stop response"
+            >
+              <Square className="size-3.5 fill-current" />
+            </Button>
+          )}
           <Button
             type="button"
             size="icon"
@@ -339,11 +349,11 @@ export default function Composer({
             className={actionButtonClassName}
             onClick={submit}
             disabled={!value.trim()}
-            aria-label="Send message"
+            aria-label={busy ? 'Add to queue' : 'Send message'}
           >
             <ArrowUp className="size-4" />
           </Button>
-        )}
+        </div>
       </div>
     </div>
   );
@@ -422,6 +432,7 @@ function PlusMenu({
   onOpenWorkspace,
   onOpen,
   externalSourcesEnabled,
+  toolsDisabled,
 }: {
   sources: WorkbenchSource[];
   tools: WorkbenchTool[];
@@ -431,6 +442,7 @@ function PlusMenu({
   onOpenWorkspace: (view: WorkspaceView) => void;
   onOpen: () => void;
   externalSourcesEnabled: boolean;
+  toolsDisabled?: boolean;
 }) {
   return (
     <DropdownMenu onOpenChange={(open) => open && onOpen()}>
@@ -475,7 +487,7 @@ function PlusMenu({
                 className="cursor-pointer flex-col items-start gap-0.5 rounded-lg py-2"
                 onClick={() => onRunTool(tool)}
                 disabled={
-                  !sources.find((source) => source.id === tool.source_id)?.deployment_available
+                  toolsDisabled || !sources.find((source) => source.id === tool.source_id)?.deployment_available
                   || (!externalSourcesEnabled
                     && Boolean(sources.find((source) => source.id === tool.source_id)?.requires_external_consent))
                 }

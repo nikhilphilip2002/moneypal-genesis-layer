@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useReducer, useRef, useState } from 'react';
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import { useTheme } from 'next-themes';
@@ -31,7 +31,14 @@ import {
 import { ROLE_LABELS } from '@/lib/useUserRole';
 import { errorMessage, isAbortError } from '@/lib/errors';
 import { finishInterruptedTurn } from '@/lib/workbench-cancellation';
+import {
+  emptyMessageQueue,
+  nextQueuedMessage,
+  updateMessageQueue,
+  type QueuedMessage,
+} from '@/lib/workbench-queue';
 import Composer from '@/components/workbench/Composer';
+import QueuedMessages from '@/components/workbench/QueuedMessages';
 import WorkbenchTurn, { type WorkbenchTurnData } from '@/components/workbench/WorkbenchTurn';
 import HistoryRail from '@/components/workbench/HistoryRail';
 import WorkbenchWorkspace, {
@@ -65,6 +72,7 @@ export default function WorkbenchPage() {
   const [turns, setTurns] = useState<WorkbenchTurnData[]>([]);
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [queue, changeQueue] = useReducer(updateMessageQueue, emptyMessageQueue);
   const [pinned, setPinned] = useState<string | null>(null);
   const [externalSourcesEnabled, setExternalSourcesEnabled] = useState(false);
   const [conversations, setConversations] = useState<WorkbenchConversation[]>([]);
@@ -72,6 +80,10 @@ export default function WorkbenchPage() {
   const [workspaceView, setWorkspaceView] = useState<WorkspaceView | null>(null);
   const [completionsHeight, setCompletionsHeight] = useState(0);
   const abortRef = useRef<AbortController | null>(null);
+  const operationRef = useRef<object | null>(null);
+  const sessionRef = useRef(0);
+  const turnSequenceRef = useRef(0);
+  const loadingConversationRef = useRef(false);
   const activeTurnRef = useRef<{
     conversationId: string;
     turnId: string;
@@ -101,6 +113,21 @@ export default function WorkbenchPage() {
     abortRef.current?.abort();
   }, []);
 
+  const resetQueue = useCallback(() => {
+    sessionRef.current += 1;
+    stopActiveTurn();
+    abortRef.current = null;
+    operationRef.current = null;
+    loadingConversationRef.current = false;
+    changeQueue({ type: 'clear' });
+    setBusy(false);
+  }, [stopActiveTurn]);
+
+  useEffect(() => () => {
+    sessionRef.current += 1;
+    stopActiveTurn();
+  }, [stopActiveTurn]);
+
   useEffect(() => {
     auth.me()
       .then((currentUser) => {
@@ -112,21 +139,22 @@ export default function WorkbenchPage() {
   }, [router, refreshHistory]);
 
   const newConversation = useCallback(() => {
-    stopActiveTurn();
+    resetQueue();
     autoFollowRef.current = true;
     setTurns([]);
     setConversationId(null);
-    setBusy(false);
     setPinned(null);
     setExternalSourcesEnabled(false);
-  }, [stopActiveTurn]);
+  }, [resetQueue]);
 
   const openConversation = useCallback(async (id: string) => {
-    stopActiveTurn();
-    setBusy(false);
+    resetQueue();
+    const session = sessionRef.current;
+    loadingConversationRef.current = true;
     autoFollowRef.current = true;
     try {
       const record = await workbench.conversation(id);
+      if (sessionRef.current !== session) return;
       setTurns(record.turns.map((turn) => ({
         id: turn.id,
         question: turn.question,
@@ -151,8 +179,10 @@ export default function WorkbenchPage() {
       setExternalSourcesEnabled(record.external_sources_enabled ?? false);
     } catch {
       // Keep the current conversation visible when a saved thread cannot be loaded.
+    } finally {
+      if (sessionRef.current === session) loadingConversationRef.current = false;
     }
-  }, [stopActiveTurn]);
+  }, [resetQueue]);
 
   useEffect(() => {
     if (!autoFollowRef.current) return;
@@ -169,14 +199,15 @@ export default function WorkbenchPage() {
     }
   }, [externalSourcesEnabled, workspaceView]);
 
-  const ask = useCallback(async (question: string): Promise<boolean> => {
+  const executeMessage = useCallback(async ({ id, text: question }: QueuedMessage) => {
+    const session = sessionRef.current;
     autoFollowRef.current = true;
     setBusy(true);
 
     const controller = new AbortController();
     abortRef.current = controller;
+    operationRef.current = controller;
 
-    const id = `t-${Date.now()}`;
     setTurns((previous) => [
       ...previous,
       {
@@ -186,16 +217,18 @@ export default function WorkbenchPage() {
     ]);
 
     const patch = (changes: Partial<WorkbenchTurnData>) =>
-      setTurns((previous) => previous.map((turn) => turn.id === id ? { ...turn, ...changes } : turn));
+      setTurns((previous) => sessionRef.current === session
+        ? previous.map((turn) => turn.id === id ? { ...turn, ...changes } : turn) : previous);
     const patchWith = (update: (turn: WorkbenchTurnData) => WorkbenchTurnData) =>
-      setTurns((previous) => previous.map((turn) => turn.id === id ? update(turn) : turn));
+      setTurns((previous) => sessionRef.current === session
+        ? previous.map((turn) => turn.id === id ? update(turn) : turn) : previous);
 
-    void (async () => {
+    await (async () => {
       try {
         for await (const event of workbench.ask(
           question, conversationId, pinned, externalSourcesEnabled, controller.signal,
         )) {
-          if (controller.signal.aborted) {
+          if (controller.signal.aborted || sessionRef.current !== session) {
             throw new DOMException('Response stopped.', 'AbortError');
           }
           switch (event.type) {
@@ -363,8 +396,11 @@ export default function WorkbenchPage() {
         patchWith((turn) => finishInterruptedTurn(turn, aborted, message));
       } finally {
         if (abortRef.current === controller) {
-          setBusy(false);
           abortRef.current = null;
+        }
+        if (operationRef.current === controller) {
+          operationRef.current = null;
+          setBusy(false);
         }
         if (activeTurnRef.current?.controller === controller) {
           activeTurnRef.current = null;
@@ -372,12 +408,31 @@ export default function WorkbenchPage() {
         refreshHistory();
       }
     })();
-    return true;
   }, [conversationId, pinned, externalSourcesEnabled, refreshHistory]);
 
+  const ask = useCallback(async (question: string): Promise<boolean> => {
+    const text = question.trim();
+    if (!text || loadingConversationRef.current) return false;
+    const id = `t-${Date.now()}-${++turnSequenceRef.current}`;
+    changeQueue({ type: 'enqueue', message: { id, text } });
+    return true;
+  }, []);
+
+  useEffect(() => {
+    if (operationRef.current || loadingConversationRef.current) return;
+    const message = nextQueuedMessage(queue);
+    if (!message) return;
+    changeQueue({ type: 'remove', id: message.id });
+    void executeMessage(message);
+  }, [queue, busy, executeMessage]);
+
   const runTool = useCallback(async (tool: WorkbenchTool) => {
+    if (operationRef.current || loadingConversationRef.current || queue.messages.length > 0) return;
+    const operation = {};
+    const session = sessionRef.current;
+    operationRef.current = operation;
     autoFollowRef.current = true;
-    const id = `t-${Date.now()}`;
+    const id = `t-${Date.now()}-${++turnSequenceRef.current}`;
     setTurns((previous) => [
       ...previous,
       {
@@ -392,7 +447,8 @@ export default function WorkbenchPage() {
     setBusy(true);
 
     const patch = (changes: Partial<WorkbenchTurnData>) =>
-      setTurns((previous) => previous.map((turn) => turn.id === id ? { ...turn, ...changes } : turn));
+      setTurns((previous) => sessionRef.current === session
+        ? previous.map((turn) => turn.id === id ? { ...turn, ...changes } : turn) : previous);
 
     try {
       const card = await workbench.runTool(tool.id, {}, externalSourcesEnabled);
@@ -400,9 +456,12 @@ export default function WorkbenchPage() {
     } catch (error: unknown) {
       patch({ error: { message: errorMessage(error, 'The tool failed.') }, done: true });
     } finally {
-      setBusy(false);
+      if (operationRef.current === operation) {
+        operationRef.current = null;
+        setBusy(false);
+      }
     }
-  }, [externalSourcesEnabled]);
+  }, [externalSourcesEnabled, queue.messages.length]);
 
   const openWorkspace = useCallback((view: WorkspaceView) => {
     if (EXTERNAL_WORKSPACES.has(view) && !externalSourcesEnabled) {
@@ -428,6 +487,7 @@ export default function WorkbenchPage() {
   }, [externalSourcesEnabled]);
 
   const logout = async () => {
+    resetQueue();
     await auth.logout();
     router.replace('/login');
   };
@@ -441,18 +501,22 @@ export default function WorkbenchPage() {
   }
 
   const composer = (
-    <Composer
-      onAsk={ask}
-      busy={busy}
-      onCancel={stopActiveTurn}
-      pinned={pinned}
-      onPin={setPinned}
-      onRunTool={runTool}
-      onOpenWorkspace={openWorkspace}
-      externalSourcesEnabled={externalSourcesEnabled}
-      onExternalSourcesEnabled={setExternalSourcesEnabled}
-      onCompletionHeightChange={setCompletionsHeight}
-    />
+    <>
+      <QueuedMessages queue={queue} onChange={changeQueue} />
+      <Composer
+        onAsk={ask}
+        busy={busy}
+        toolsDisabled={busy || queue.messages.length > 0}
+        onCancel={stopActiveTurn}
+        pinned={pinned}
+        onPin={setPinned}
+        onRunTool={runTool}
+        onOpenWorkspace={openWorkspace}
+        externalSourcesEnabled={externalSourcesEnabled}
+        onExternalSourcesEnabled={setExternalSourcesEnabled}
+        onCompletionHeightChange={setCompletionsHeight}
+      />
+    </>
   );
 
   return (

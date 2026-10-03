@@ -23,13 +23,34 @@ function loadComponent(filename) {
       if (name === '@/lib/workbench-cancellation') return { visibleTraceSteps: (updates) => updates };
       if (name.startsWith('@/components/ui/')) {
         const Component = ({ children }) => children;
-        return { default: Component, Badge: Component, Button: Component };
+        const Button = ({ children, disabled, 'aria-label': label }) =>
+          React.createElement('button', { disabled, 'aria-label': label }, children);
+        return { default: Component, Badge: Component, Button };
       }
       return require(name);
     },
   }, { filename });
   return exports.default;
 }
+
+test('queued messages show edit, remove, clear, and the hold from the edited entry', () => {
+  const QueuedMessages = loadComponent(`${__dirname}/../components/workbench/QueuedMessages.tsx`);
+  const queue = {
+    messages: ['B', 'C', 'D'].map((text) => ({ id: text, text })), editingId: 'C',
+  };
+  const markup = renderToStaticMarkup(React.createElement(QueuedMessages, { queue, onChange() {} }));
+
+  assert.match(markup, /3 queued/);
+  assert.match(markup, /Clear queue/);
+  assert.match(markup, /Edit queued message 1/);
+  assert.match(markup, /Remove queued message 3/);
+  assert.match(markup, /Save/);
+  assert.match(markup, /Cancel/);
+  assert.equal(markup.match(/Waiting for edit/g)?.length, 2);
+  assert.equal(renderToStaticMarkup(React.createElement(QueuedMessages, {
+    queue: { messages: [], editingId: null }, onChange() {},
+  })), '');
+});
 
 test('active trace streams inline and completed trace starts collapsed', () => {
   const ExecutionTrace = loadComponent(`${__dirname}/../components/workbench/ExecutionTrace.tsx`);
