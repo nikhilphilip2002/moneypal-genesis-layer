@@ -6,7 +6,7 @@ const React = require('react');
 const { renderToStaticMarkup } = require('react-dom/server');
 const ts = require('typescript');
 
-function loadComponent(filename) {
+function loadComponent(filename, react = React, modules = {}) {
   const exports = {};
   const compiled = ts.transpileModule(readFileSync(filename, 'utf8'), {
     compilerOptions: {
@@ -18,6 +18,8 @@ function loadComponent(filename) {
   vm.runInNewContext(compiled, {
     exports,
     require: (name) => {
+      if (modules[name]) return modules[name];
+      if (name === 'react') return react;
       if (name === '@/lib/utils') return { cn: (...values) => values.filter(Boolean).join(' ') };
       if (name === '@/lib/workbench-ui') return { SECTION_GAP: 'mt-4', SOURCE_BADGE: '' };
       if (name === '@/lib/workbench-cancellation') return { visibleTraceSteps: (updates) => updates };
@@ -40,16 +42,94 @@ test('queued messages show edit, remove, clear, and the hold from the edited ent
   };
   const markup = renderToStaticMarkup(React.createElement(QueuedMessages, { queue, onChange() {} }));
 
-  assert.match(markup, /3 queued/);
+  assert.doesNotMatch(markup, /\d+ queued|>\d+\.</);
+  assert.equal(markup.match(/bg-muted/g)?.length, 3);
+  assert.equal(markup.match(/rounded-br-md/g)?.length, 3);
   assert.match(markup, /Clear queue/);
+  assert.ok(markup.indexOf('Clear queue') < markup.indexOf('<ul'));
+  assert.match(markup, /absolute inset-0 size-full resize-none/);
+  assert.doesNotMatch(markup, /min-h-20|resize-y|focus-visible:ring/);
   assert.match(markup, /Edit queued message 1/);
   assert.match(markup, /Remove queued message 3/);
-  assert.match(markup, /Save/);
-  assert.match(markup, /Cancel/);
+  assert.ok(markup.indexOf('Remove queued message 1') > markup.indexOf('bg-muted'));
+  assert.doesNotMatch(markup, /min-w-\[/);
+  assert.match(markup, /group relative max-w-\[88%\]/);
+  assert.match(markup, /absolute left-full top-2\.5/);
+  assert.match(markup, /py-2\.5 text-right/);
+  assert.match(markup, /p-0 text-right/);
+  assert.doesNotMatch(markup, /justify-end pr-\[4\.25rem\]/);
+  assert.match(markup, /opacity-0 group-hover:opacity-100/);
+  assert.doesNotMatch(markup, />Save<|>Cancel</);
+  assert.doesNotMatch(markup, /Enter to save|Esc to cancel|queued-message-edit-shortcuts/);
+  assert.equal(markup.match(/border border-border\/50 bg-muted/g)?.length, 3);
+  assert.match(markup, /flex justify-end py-2 text-right/);
   assert.equal(markup.match(/Waiting for edit/g)?.length, 2);
   assert.equal(renderToStaticMarkup(React.createElement(QueuedMessages, {
     queue: { messages: [], editingId: null }, onChange() {},
   })), '');
+});
+
+test('autocomplete keeps stable unique keys for borrowers sharing a name', () => {
+  const results = [
+    { kind: 'borrower', value: 'SHEELA', label: 'SHEELA', detail: 'Customer 101 · Account ending 1234' },
+    { kind: 'borrower', value: 'SHEELA', label: 'SHEELA', detail: 'Customer 202 · Account ending 5678' },
+  ];
+  function suggestionKeys(suggestions) {
+    const states = [
+      'loans for SHE', [], [], { key: 'borrower\u0000SHE', results: suggestions }, 0, true, 288,
+    ];
+    let stateIndex = 0;
+    const Composer = loadComponent(`${__dirname}/../components/workbench/Composer.tsx`, {
+      ...React,
+      useState: () => [states[stateIndex++], () => {}],
+      useRef: () => ({ current: null }),
+      useEffect: () => {},
+      useMemo: (compute) => compute(),
+    }, {
+      '@/lib/api': {},
+      '@/components/workbench/WorkbenchWorkspace': { WORKSPACE_TOOLS: [] },
+    });
+    const tree = Composer({ pinned: null, externalSourcesEnabled: false });
+    const list = tree.props.children[0];
+    assert.equal(list.props.children.length, 2);
+    return list.props.children.map((item) => item.key);
+  }
+  const keys = suggestionKeys(results);
+  assert.equal(new Set(keys).size, 2);
+  assert.deepEqual(suggestionKeys([...results].reverse()), [...keys].reverse());
+});
+
+test('queued message edits save with Enter and cancel with Escape', () => {
+  const QueuedMessages = loadComponent(`${__dirname}/../components/workbench/QueuedMessages.tsx`, {
+    ...React, useState: () => ['Revised question', () => {}],
+  });
+  const actions = [];
+  const tree = QueuedMessages({
+    queue: { messages: [{ id: 'C', text: 'Original question' }], editingId: 'C' },
+    onChange: (action) => actions.push(JSON.parse(JSON.stringify(action))),
+  });
+  function findTextarea(element) {
+    if (element?.type === 'textarea') return element;
+    return React.Children.toArray(element?.props?.children)
+      .map(findTextarea).find(Boolean);
+  }
+  const textarea = findTextarea(tree);
+  let prevented = 0;
+  const keydown = (key, shiftKey = false, isComposing = false) => textarea.props.onKeyDown({
+    key, shiftKey, nativeEvent: { isComposing }, preventDefault: () => { prevented += 1; },
+  });
+
+  keydown('Enter', true);
+  keydown('Enter', false, true);
+  assert.deepEqual(actions, []);
+  assert.equal(prevented, 0);
+  keydown('Enter');
+  keydown('Escape');
+  assert.deepEqual(actions, [
+    { type: 'save', id: 'C', text: 'Revised question' },
+    { type: 'cancelEdit' },
+  ]);
+  assert.equal(prevented, 2);
 });
 
 test('active trace streams inline and completed trace starts collapsed', () => {

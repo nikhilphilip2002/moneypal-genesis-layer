@@ -204,7 +204,7 @@ export default function Composer({
           className="absolute bottom-full left-0 z-50 mb-2 w-full overflow-y-auto rounded-xl border border-border bg-popover p-1 shadow-xl"
         >
           {completions.map((item, index) => (
-            <li key={`${item.kind}-${item.value}`} role="option" aria-selected={index === completionIndex}>
+            <li key={JSON.stringify([item.kind, item.value, item.detail])} role="option" aria-selected={index === completionIndex}>
               <button
                 id={`workbench-completion-${index}`}
                 type="button"

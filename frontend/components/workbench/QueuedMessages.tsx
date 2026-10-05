@@ -14,65 +14,64 @@ export default function QueuedMessages({ queue, onChange }: {
   const editingIndex = queue.messages.findIndex((message) => message.id === queue.editingId);
 
   return (
-    <section aria-label="Queued messages" className="mb-3 rounded-2xl border border-border bg-card">
-      <div className="flex items-center justify-between px-4 py-2">
-        <span className="text-xs font-medium text-muted-foreground" role="status">
-          {queue.messages.length} queued
-        </span>
-        <Button type="button" variant="ghost" size="sm" onClick={() => onChange({ type: 'clear' })}>
+    <section aria-label="Queued messages" className="w-full">
+      <div className="flex justify-end py-2 text-right">
+        <Button type="button" variant="ghost" size="sm" className="px-0" onClick={() => onChange({ type: 'clear' })}>
           Clear queue
         </Button>
       </div>
-      <ol className="max-h-[35svh] overflow-y-auto px-4 pb-3">
+      <ul className="space-y-3">
         {queue.messages.map((message, index) => (
-          <li key={message.id} className="border-t border-border/60 py-2">
-            <div className="flex items-start gap-2">
-              <span className="mt-1 text-xs text-muted-foreground">{index + 1}.</span>
-              <div className="min-w-0 flex-1">
-                {queue.editingId === message.id ? (
-                  <>
+          <li key={message.id} className="flex justify-end">
+            <div className="group relative max-w-[88%] sm:max-w-[78%]">
+              <div className="rounded-2xl rounded-br-md border border-border/50 bg-muted px-4 py-2.5 text-right text-sm leading-6 text-foreground shadow-none">
+                <div className="relative min-w-0 flex-1">
+                  <p className={`whitespace-pre-wrap break-words${queue.editingId === message.id ? ' invisible' : ''}`}>
+                    {message.text}
+                  </p>
+                  {queue.editingId === message.id && (
                     <textarea
                       autoFocus
                       aria-label="Edit queued message"
                       value={draft}
                       onChange={(event) => setDraft(event.target.value)}
-                      className="min-h-20 w-full resize-y rounded-lg border border-border bg-background p-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      onKeyDown={(event) => {
+                        if (event.nativeEvent.isComposing) return;
+                        if (event.key === 'Enter' && !event.shiftKey) {
+                          event.preventDefault();
+                          onChange({ type: 'save', id: message.id, text: draft });
+                        } else if (event.key === 'Escape') {
+                          event.preventDefault();
+                          onChange({ type: 'cancelEdit' });
+                        }
+                      }}
+                      className="queued-message-editor absolute inset-0 size-full resize-none overflow-auto appearance-none bg-transparent p-0 text-right text-sm leading-6"
                     />
-                    <div className="mt-2 flex gap-2">
-                      <Button type="button" size="sm" disabled={!draft.trim()}
-                        onClick={() => onChange({ type: 'save', id: message.id, text: draft })}>
-                        Save
-                      </Button>
-                      <Button type="button" size="sm" variant="ghost"
-                        onClick={() => onChange({ type: 'cancelEdit' })}>
-                        Cancel
-                      </Button>
-                    </div>
-                  </>
-                ) : (
-                  <p className="whitespace-pre-wrap break-words text-sm">{message.text}</p>
-                )}
-                {editingIndex >= 0 && index >= editingIndex && (
-                  <p className="mt-1 text-xs text-muted-foreground">Waiting for edit</p>
-                )}
+                  )}
+                  {editingIndex >= 0 && index >= editingIndex && (
+                    <p className="sr-only">Waiting for edit</p>
+                  )}
+                </div>
               </div>
-              <Button type="button" size="icon" variant="ghost" className="size-7 shrink-0"
-                aria-label={`Edit queued message ${index + 1}`} disabled={queue.editingId !== null}
-                onClick={() => {
-                  setDraft(message.text);
-                  onChange({ type: 'edit', id: message.id });
-                }}>
-                <Pencil className="size-3.5" />
-              </Button>
-              <Button type="button" size="icon" variant="ghost" className="size-7 shrink-0"
-                aria-label={`Remove queued message ${index + 1}`}
-                onClick={() => onChange({ type: 'remove', id: message.id })}>
-                <X className="size-3.5" />
-              </Button>
+              <div className="absolute left-full top-2.5 flex items-center gap-1 pl-2 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 [@media(hover:none)]:opacity-100">
+                <Button type="button" size="icon" variant="ghost" className="size-7 shrink-0"
+                  aria-label={`Edit queued message ${index + 1}`} disabled={queue.editingId !== null}
+                  onClick={() => {
+                    setDraft(message.text);
+                    onChange({ type: 'edit', id: message.id });
+                  }}>
+                  <Pencil className="size-3.5" />
+                </Button>
+                <Button type="button" size="icon" variant="ghost" className="size-7 shrink-0"
+                  aria-label={`Remove queued message ${index + 1}`}
+                  onClick={() => onChange({ type: 'remove', id: message.id })}>
+                  <X className="size-3.5" />
+                </Button>
+              </div>
             </div>
           </li>
         ))}
-      </ol>
+      </ul>
     </section>
   );
 }

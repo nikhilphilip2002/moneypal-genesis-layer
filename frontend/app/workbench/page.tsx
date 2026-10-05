@@ -191,7 +191,7 @@ export default function WorkbenchPage() {
       if (transcript) transcript.scrollTop = transcript.scrollHeight;
     });
     return () => cancelAnimationFrame(frame);
-  }, [turns, completionsHeight]);
+  }, [turns, completionsHeight, queue]);
 
   useEffect(() => {
     if (!externalSourcesEnabled && workspaceView && EXTERNAL_WORKSPACES.has(workspaceView)) {
@@ -501,22 +501,19 @@ export default function WorkbenchPage() {
   }
 
   const composer = (
-    <>
-      <QueuedMessages queue={queue} onChange={changeQueue} />
-      <Composer
-        onAsk={ask}
-        busy={busy}
-        toolsDisabled={busy || queue.messages.length > 0}
-        onCancel={stopActiveTurn}
-        pinned={pinned}
-        onPin={setPinned}
-        onRunTool={runTool}
-        onOpenWorkspace={openWorkspace}
-        externalSourcesEnabled={externalSourcesEnabled}
-        onExternalSourcesEnabled={setExternalSourcesEnabled}
-        onCompletionHeightChange={setCompletionsHeight}
-      />
-    </>
+    <Composer
+      onAsk={ask}
+      busy={busy}
+      toolsDisabled={busy || queue.messages.length > 0}
+      onCancel={stopActiveTurn}
+      pinned={pinned}
+      onPin={setPinned}
+      onRunTool={runTool}
+      onOpenWorkspace={openWorkspace}
+      externalSourcesEnabled={externalSourcesEnabled}
+      onExternalSourcesEnabled={setExternalSourcesEnabled}
+      onCompletionHeightChange={setCompletionsHeight}
+    />
   );
 
   return (
@@ -542,10 +539,11 @@ export default function WorkbenchPage() {
               className="min-h-0 flex-1 overflow-y-auto py-6 sm:py-8"
               onScroll={handleTranscriptScroll}
             >
-              <div className="mx-auto w-full max-w-6xl space-y-8 px-4 sm:px-6">
+              <div className="mx-auto w-full max-w-6xl space-y-8 pl-4 pr-20 sm:pl-6 sm:pr-24">
                 {turns.map((turn) => (
                   <WorkbenchTurn key={turn.id} turn={turn} onAsk={ask} />
                 ))}
+                <QueuedMessages queue={queue} onChange={changeQueue} />
                 {completionsHeight > 0 && (
                   <div aria-hidden style={{ height: completionsHeight }} />
                 )}

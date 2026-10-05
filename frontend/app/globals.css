@@ -375,6 +375,15 @@ body {
   outline: none;
 }
 
+.queued-message-editor,
+.queued-message-editor:focus,
+.queued-message-editor:focus-visible {
+  border: 0;
+  border-radius: 0;
+  outline: none;
+  box-shadow: none;
+}
+
 /* ═══════════════════════════════════════════════════════════════════════════
    AUTH PAGE WRAPPER
 ═══════════════════════════════════════════════════════════════════════════ */
