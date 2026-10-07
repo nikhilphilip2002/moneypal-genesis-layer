@@ -2,7 +2,6 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  ArrowUp,
   Check,
   Database,
   Filter,
@@ -342,17 +341,6 @@ export default function Composer({
               <Square className="size-3.5 fill-current" />
             </Button>
           )}
-          <Button
-            type="button"
-            size="icon"
-            variant="ghost"
-            className={actionButtonClassName}
-            onClick={submit}
-            disabled={!value.trim()}
-            aria-label={busy ? 'Add to queue' : 'Send message'}
-          >
-            <ArrowUp className="size-4" />
-          </Button>
         </div>
       </div>
     </div>
