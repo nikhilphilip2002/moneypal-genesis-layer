@@ -27,7 +27,7 @@ class TestListTools:
         r = await client.get("/workbench/tools", headers=_auth("moneypal_admin"))
         assert r.status_code == 200
         ids = {t["id"] for t in r.json()["tools"]}
-        assert ids == {"competitor_landscape", "macro_brief", "regulatory_alerts"}
+        assert ids == {"competitor_landscape", "macro_brief", "regulatory_alerts", "mailbox_recent"}
 
     @pytest.mark.anyio
     async def test_policy_maker_does_not_see_the_schema_tool(self, client):

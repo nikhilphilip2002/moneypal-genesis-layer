@@ -136,6 +136,30 @@ SOURCES: dict[str, Source] = {
             "how is PAR 30 calculated",
         ),
     ),
+    "email": Source(
+        id="email",
+        label="Mailbox",
+        # Mail is the bank's own correspondence, so it is sensitive exactly like the loan
+        # book. It is grouped as external_indexed rather than internal_data because it is
+        # served from a separate Qdrant collection owned by the email ingestion service.
+        sensitive=True,
+        roles=None,
+        describes=(
+            "The bank's own ingested mailbox: message bodies and attachment text from "
+            "Microsoft 365, with the sender, subject and received time preserved on every "
+            "passage. Use it for what was asked, sent, approved or requested over email — "
+            "loan and vehicle loan requests and the documents borrowers were told to "
+            "submit, leave requests and approvals, vendor and operational correspondence, "
+            "and undeliverable notices. It holds the bank's correspondence, never the "
+            "internals of a repayment posting."
+        ),
+        example_intents=(
+            "who asked for the vehicle loan details and what documents were requested",
+            "show me recent leave requests",
+            "any undeliverable emails this week",
+            "what did the customer say about required documents",
+        ),
+    ),
     "web": Source(
         id="web",
         label="Live web",
@@ -156,7 +180,7 @@ SOURCES: dict[str, Source] = {
     ),
 }
 
-EXTERNAL_CONNECTOR_SOURCES = frozenset({"macro", "competitive", "regulatory", "web"})
+EXTERNAL_CONNECTOR_SOURCES = frozenset({"macro", "competitive", "regulatory", "email", "web"})
 
 
 def visible_sources(

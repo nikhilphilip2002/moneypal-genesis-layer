@@ -75,6 +75,15 @@ async def _regulatory_alerts(params: dict, policy: "SourceAccessPolicy") -> Sour
     )
 
 
+async def _mailbox_recent(params: dict, policy: "SourceAccessPolicy") -> SourceResult:
+    from app.services.workbench import nodes
+
+    return await nodes.run_email(
+        "recent loan requests, leave requests and required document requests by email",
+        policy=policy,
+    )
+
+
 TOOLS: dict[str, Tool] = {
     "competitor_landscape": Tool(
         id="competitor_landscape",
@@ -102,6 +111,15 @@ TOOLS: dict[str, Tool] = {
         handler=_regulatory_alerts,
         source_id="regulatory",
         roles=frozenset({"admin", "gicc_admin", "gicc_policy"}),
+    ),
+    "mailbox_recent": Tool(
+        id="mailbox_recent",
+        label="Email transactions",
+        description="Pull loan, document and leave requests from the ingested mailbox.",
+        kind="card",
+        handler=_mailbox_recent,
+        source_id="email",
+        roles=None,
     ),
 }
 

@@ -10,6 +10,7 @@ import {
   LayoutDashboard,
   Loader2,
   LogOut,
+  Mail,
   Plus,
   Scale,
   TrendingUp,
@@ -62,6 +63,7 @@ export default function WorkbenchPage() {
   const [busy, setBusy] = useState(false);
   const [pinned, setPinned] = useState<string | null>(null);
   const [externalSourcesEnabled, setExternalSourcesEnabled] = useState(false);
+  const [emailEnabled, setEmailEnabled] = useState(false);
   const [conversations, setConversations] = useState<WorkbenchConversation[]>([]);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [workspaceView, setWorkspaceView] = useState<WorkspaceView | null>(null);
@@ -100,6 +102,7 @@ export default function WorkbenchPage() {
     setBusy(false);
     setPinned(null);
     setExternalSourcesEnabled(false);
+    setEmailEnabled(false);
   }, []);
 
   const openConversation = useCallback(async (id: string) => {
@@ -129,6 +132,7 @@ export default function WorkbenchPage() {
       })));
       setConversationId(id);
       setExternalSourcesEnabled(record.external_sources_enabled ?? false);
+      setEmailEnabled(record.email_enabled ?? false);
     } catch {
       // Keep the current conversation visible when a saved thread cannot be loaded.
     }
@@ -173,7 +177,7 @@ export default function WorkbenchPage() {
     void (async () => {
       try {
         for await (const event of workbench.ask(
-          question, conversationId, pinned, externalSourcesEnabled, controller.signal,
+          question, conversationId, pinned, externalSourcesEnabled, controller.signal, emailEnabled,
         )) {
           switch (event.type) {
           case 'conversation':
@@ -293,7 +297,7 @@ export default function WorkbenchPage() {
       }
     })();
     return true;
-  }, [conversationId, pinned, externalSourcesEnabled, refreshHistory]);
+  }, [conversationId, pinned, externalSourcesEnabled, emailEnabled, refreshHistory]);
 
   const runTool = useCallback(async (tool: WorkbenchTool) => {
     autoFollowRef.current = true;
@@ -371,6 +375,8 @@ export default function WorkbenchPage() {
       onOpenWorkspace={openWorkspace}
       externalSourcesEnabled={externalSourcesEnabled}
       onExternalSourcesEnabled={setExternalSourcesEnabled}
+      emailEnabled={emailEnabled}
+      onEmailEnabled={setEmailEnabled}
       onCompletionHeightChange={setCompletionsHeight}
     />
   );
@@ -389,6 +395,14 @@ export default function WorkbenchPage() {
       />
 
       <main className="flex min-h-0 w-full flex-1 flex-col">
+        {emailEnabled && (
+          <div className="shrink-0 border-b border-primary/20 bg-primary/5">
+            <p className="mx-auto flex w-full max-w-4xl items-center justify-center gap-1.5 px-4 py-1.5 text-[11px] text-primary sm:px-6">
+              <Mail className="size-3 shrink-0" />
+              Email extraction is enabled — you can ask anything from the email.
+            </p>
+          </div>
+        )}
         {turns.length === 0 ? (
           <EmptyState onAsk={ask} onOpenWorkspace={openWorkspace}>{composer}</EmptyState>
         ) : (

@@ -1,5 +1,6 @@
-from functools import lru_cache
+import json
 import os
+from functools import lru_cache
 from pathlib import Path
 
 
@@ -29,6 +30,17 @@ def _load_env_file() -> dict[str, str]:
     return values
 
 
+def _json_object(raw: str | None) -> dict:
+    """Parse an optional JSON object from configuration, ignoring anything malformed."""
+    if not raw:
+        return {}
+    try:
+        parsed = json.loads(raw)
+    except (TypeError, ValueError):
+        return {}
+    return parsed if isinstance(parsed, dict) else {}
+
+
 class Settings:
     def __init__(self) -> None:
         env_file = _load_env_file()
@@ -43,6 +55,56 @@ class Settings:
         self.embedding_model = get("EMBEDDING_MODEL", "BAAI/bge-m3") or "BAAI/bge-m3"
         self.vector_size = int(get("VECTOR_SIZE", "1024") or "1024")
         self.collection_prefix = get("COLLECTION_PREFIX", "reg_") or "reg_"
+
+        # --- Email intelligence (mailbox) ---------------------------------------------
+        # A self-contained vector space owned by the email ingestion service. It is
+        # deliberately NOT Genesis's macro/regulatory space: that one is bge-m3 at 1024
+        # dimensions, while the mailbox collection is embedded by a smaller model, so a
+        # query vector from one can never be scored against points in the other. These
+        # settings mirror the email service's own .env; EMAIL_EMBEDDING_MODEL and
+        # EMAIL_VECTOR_SIZE must stay in step with whatever wrote the collection.
+        self.email_qdrant_url = get("EMAIL_QDRANT_URL", "http://localhost:6333") or "http://localhost:6333"
+        self.email_qdrant_api_key = get("EMAIL_QDRANT_API_KEY")
+        self.email_qdrant_timeout = float(get("EMAIL_QDRANT_TIMEOUT", "20.0") or "20.0")
+        self.email_collection = get("EMAIL_QDRANT_COLLECTION", "email_chunks") or "email_chunks"
+        self.email_embedding_model = get("EMAIL_EMBEDDING_MODEL", "BAAI/bge-small-en-v1.5") or "BAAI/bge-small-en-v1.5"
+        self.email_vector_size = int(get("EMAIL_VECTOR_SIZE", "384") or "384")
+        # Retrieval rails. Mail chunks are short, so a lower floor than the document
+        # sources keeps a genuine but weakly-matching email visible instead of silently
+        # returning nothing.
+        self.email_top_k = int(get("EMAIL_TOP_K", "8") or "8")
+        self.email_min_score = float(get("EMAIL_MIN_SCORE", "0.35") or "0.35")
+        self.email_max_chunks = int(get("EMAIL_MAX_CHUNKS", "12") or "12")
+
+        # Where the ingestion service keeps the original binaries (PDF / image / DOCX) for
+        # the attachments it indexed. It serves these itself on /files, but that port is not
+        # reachable from another machine, so Genesis streams them for the console's viewer.
+        # Resolution is always confined to this directory: a payload-supplied path is
+        # untrusted input and must not be able to walk out of it.
+        self.email_files_dir = get("EMAIL_FILES_DIR", r"D:\email-rag\data\projects") or (
+            r"D:\email-rag\data\projects"
+        )
+
+        # --- Mailbox answer generation -------------------------------------------------
+        # The mailbox console turns retrieved passages into prose, so it needs a chat model.
+        # Credentials mirror the email service's own .env. Defaults match the NVIDIA block
+        # there, which is the effective one (its .env defines LLM_PROVIDER/LLM_MODEL twice
+        # and the last definition wins, so the earlier Groq block is dead config).
+        self.email_llm_provider = get("EMAIL_LLM_PROVIDER", "nvidia") or "nvidia"
+        self.email_llm_model = get(
+            "EMAIL_LLM_MODEL", "nvidia/nemotron-3-ultra-550b-a55b"
+        ) or "nvidia/nemotron-3-ultra-550b-a55b"
+        self.email_llm_base_url = get(
+            "EMAIL_LLM_BASE_URL", "https://integrate.api.nvidia.com/v1"
+        ) or "https://integrate.api.nvidia.com/v1"
+        self.email_llm_api_key = get("EMAIL_LLM_API_KEY") or get("NVIDIA_API_KEY")
+        self.email_llm_timeout = float(get("EMAIL_LLM_TIMEOUT", "90.0") or "90.0")
+        self.email_llm_max_tokens = int(get("EMAIL_LLM_MAX_TOKENS", "700") or "700")
+        # Second provider from the same .env. NVIDIA answers 503 under load often enough
+        # that a console with no fallback silently loses its narrative.
+        self.groq_api_key = get("GROQ_API_KEY")
+        self.groq_base_url = get("GROQ_BASE_URL")
+        self.groq_model = get("GROQ_MODEL", "openai/gpt-oss-20b") or "openai/gpt-oss-20b"
 
         # --- Macro intelligence ingestion pipeline ----------------------------------
         # Point MACRO_COLLECTION at a scratch collection to exercise the refresh/purge
@@ -106,9 +168,13 @@ class Settings:
         # Every feature uses this one endpoint. Keep it inside the deployment's trusted
         # network whenever prompts can contain private banking data.
         self.llm_base_url = get("LLM_BASE_URL", "http://localhost:8080/v1") or "http://localhost:8080/v1"
-        self.llm_api_key = get("LLM_API_KEY")
+        self.llm_api_key = get("LLM_API_KEY") or get("EMAIL_LLM_API_KEY")
         self.llm_model = get("LLM_MODEL", "qwen3.6-32b-instruct-q4_K_M") or "qwen3.6-32b-instruct-q4_K_M"
         self.llm_timeout_s = float(get("LLM_TIMEOUT", "300") or "300")
+        # Extra provider-specific request fields merged into every LLM payload. Reasoning
+        # models otherwise spend the whole output budget thinking and never reach the tool
+        # call, which surfaces as MODEL_INCOMPLETE after tens of seconds.
+        self.llm_extra_body = _json_object(get("LLM_EXTRA_BODY_JSON"))
         # llama.cpp slot snapshots hold only the initial Workbench system prompt. The
         # filename identity is the exact prompt text plus LLM_MODEL.
         self.llama_slot_id = max(0, int(get("LLAMA_SLOT_ID", "0") or "0"))
@@ -122,6 +188,12 @@ class Settings:
             or "moneypal-workbench"
         )
         self.nlq_llm_max_retries = int(get("NLQ_LLM_MAX_RETRIES", "4") or "4")
+        # Total wall-clock allowed for retrying one LLM request. Cloud endpoints (e.g. NVIDIA
+        # NIM) intermittently answer 503 while a model cold-starts, and 5xx is retryable, so
+        # this budget must be long enough to ride that out or every turn fails.
+        self.nlq_llm_retry_budget_s = float(
+            get("NLQ_LLM_RETRY_BUDGET_S", "30") or "30"
+        )
         # Every local request is serialized across the API and PostgreSQL MCP containers.
         # Qwen3.5/3.6 use recurrent state and llama-server can invalidate their reusable
         # prompt state when concurrent requests move between slots. Both containers mount
@@ -162,6 +234,12 @@ class Settings:
 
         self.postgres_mcp_url = get("POSTGRES_MCP_URL", "http://postgres-mcp:8001/mcp") or "http://postgres-mcp:8001/mcp"
         self.postgres_mcp_timeout_s = float(get("POSTGRES_MCP_TIMEOUT_S", "30") or "30")
+        # Independently gated like Exa. A deployment that answers purely from Qdrant-backed
+        # sources (e.g. the mailbox) sets this false so the agent never spends the MCP
+        # timeout probing an unreachable governed database on every single turn.
+        self.postgres_mcp_enabled = (
+            get("POSTGRES_MCP_ENABLED", "true") or "true"
+        ).lower() in ("1", "true", "yes", "on")
         self.postgres_mcp_model_tools = tuple(
             name.strip()
             for name in (get("POSTGRES_MCP_MODEL_TOOLS", "query") or "query").split(",")
@@ -290,3 +368,4 @@ settings = get_settings()
 
 MACRO_COLLECTION = settings.macro_collection
 EXTERNAL_CUSTOMER_COLLECTION = "External_customer_details"
+EMAIL_COLLECTION = settings.email_collection

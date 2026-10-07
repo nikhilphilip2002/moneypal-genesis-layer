@@ -299,6 +299,7 @@ async def _search_curated(
         "macro": lambda: nodes.run_macro(args.query, policy=ctx.source_policy),
         "competitive": lambda: nodes.run_competitive(args.query, policy=ctx.source_policy),
         "regulatory": lambda: nodes.run_regulatory(args.query, policy=ctx.source_policy),
+        "email": lambda: nodes.run_email(args.query, policy=ctx.source_policy),
     }
     return await handlers[args.domain]()
 

@@ -1,9 +1,10 @@
 'use client';
 
+import { useState } from 'react';
 import { AlertTriangle, Ban, HelpCircle } from 'lucide-react';
 import { nlq, type AnalysisResult, type ChartSpec, type QuerySpec, type Briefing, type Worklist,
   type WorkbenchAnswer, type WorkbenchCard as CardData, type WorkbenchError,
-  type WorkbenchRoute, type WorkbenchTraceStep } from '@/lib/api';
+  type WorkbenchRoute, type WorkbenchTraceStep, type EmailCardSource } from '@/lib/api';
 import AnalysisCard from '@/components/nlq/AnalysisCard';
 import ChartRenderer from '@/components/nlq/ChartRenderer';
 import NextQuestions from '@/components/nlq/NextQuestions';
@@ -11,6 +12,7 @@ import BriefingCard from '@/components/nlq/BriefingCard';
 import WorklistCard from '@/components/nlq/WorklistCard';
 import LineagePanel from '@/components/nlq/LineagePanel';
 import BriefRenderer from '@/components/intel/BriefRenderer';
+import { EmailSourceRow, EmailSourceViewer } from '@/components/email/EmailSourceViewer';
 import MarkdownRenderer from './MarkdownRenderer';
 import WorkbenchCard from './WorkbenchCard';
 import ExecutionTrace from './ExecutionTrace';
@@ -54,13 +56,16 @@ export type WorkbenchTurnData = {
 
 const BRIEF_TITLES: Record<string, string> = {
   macro: 'Macro brief', competitive: 'Competitive brief', regulatory: 'Regulatory brief',
-  knowledge: 'Concept explained', web: 'Live web intelligence',
+  knowledge: 'Concept explained', web: 'Live web intelligence', email: 'Email transactions',
 };
 
 export default function WorkbenchTurn({ turn, onAsk }: { turn: WorkbenchTurnData; onAsk: (q: string) => void }) {
   const hasFinalAnswer = Boolean(turn.answer || turn.synthesis);
   const supportingCards = turn.cards.filter((card) =>
+    // Email cards carry the answer's own citation trail, so they stay on screen even when a
+    // narrative is present; the other non-listed types only matter when nothing else answered.
     STREAM_RENDERABLE_CARD_TYPES.has(card.card_type)
+    || card.source === 'email'
     || (!hasFinalAnswer && turn.done),
   );
   const modelMessages = (turn.modelMessages ?? []).filter(Boolean);
@@ -230,7 +235,43 @@ async function exportWorklist(worklist: Worklist) {
   URL.revokeObjectURL(url);
 }
 
+// Email cards open a message/attachment viewer, so they carry their own open/close state.
+// A cited message is a row, not a doc badge: clicking it reveals the body and the original
+// attachment, which is the whole point of answering from the mailbox inside the console.
+function EmailBriefCard({ card }: { card: CardData }) {
+  const [viewing, setViewing] = useState<EmailCardSource | null>(null);
+  const { summary, sources } = card.payload as {
+    summary: string;
+    sources?: EmailCardSource[];
+  };
+  const rows = sources ?? [];
+
+  return (
+    <>
+      <WorkbenchCard source={card.source} title={BRIEF_TITLES[card.source] ?? 'Email'}>
+        <BriefRenderer content={summary} />
+        {rows.length > 0 && (
+          <div className={`${BLOCK_GAP} space-y-1.5`}>
+            {rows.map((source, i) => (
+              <EmailSourceRow
+                key={`${source.subject}-${source.sender}-${i}`}
+                source={source}
+                onOpen={setViewing}
+              />
+            ))}
+          </div>
+        )}
+      </WorkbenchCard>
+      {viewing && <EmailSourceViewer source={viewing} onClose={() => setViewing(null)} />}
+    </>
+  );
+}
+
 function CardBody({ card, onAsk }: { card: CardData; onAsk: (q: string) => void }) {
+  if (card.source === 'email' && card.card_type === 'brief') {
+    return <EmailBriefCard card={card} />;
+  }
+
   if (card.card_type === 'chart') {
     const chart = card.payload as ChartSpec;
     return (

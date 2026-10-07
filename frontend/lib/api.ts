@@ -246,6 +246,14 @@ export type PlatformStatus = {
   qdrant: { ok: boolean; host: string; port: number };
   llm: { model: string; configured: boolean };
   embeddings: { model: string };
+  email: {
+    model: string;
+    collection: string;
+    dimensions: number;
+    url: string;
+    ok: boolean;
+    points: number | null;
+  };
   registries: { institutions: number; regulations: number };
   collections: Array<{
     collection: string;
@@ -419,6 +427,44 @@ export const regulatory = {
     return url;
   },
 };
+
+// ─── Mailbox attachments (email source) ───
+//
+// Mail is answered through the main console's /workbench/ask (see the email toggle), not a
+// dedicated page. The console's email cards reuse EmailAttachment to render a preview.
+
+export interface EmailAttachment {
+  filename: string;
+  path: string;
+  url: string;
+  download_url: string;
+  content_type: string;
+  /** How the console presents it: image, pdf, text or binary. */
+  kind: 'image' | 'pdf' | 'text' | 'binary';
+  size: number;
+  inline: boolean;
+}
+
+/**
+ * Fetch an original attachment's bytes with the bearer token.
+ *
+ * The console renders attachments from a blob URL rather than pointing an <img>/<object>
+ * straight at the route, for two reasons: a subresource load (image, PDF, download link)
+ * does not carry an Authorization header, so an authenticated route would reject it; and
+ * the route lives behind the same-origin proxy, so the browser must go through /api. The
+ * caller is responsible for revoking the object URL it makes from the returned blob.
+ */
+async function fetchEmailAttachmentBlob(path: string): Promise<Blob> {
+  const token = getToken();
+  const res = await fetch(
+    `${API_URL}/email/attachment?path=${encodeURIComponent(path)}`,
+    { headers: token ? { Authorization: `Bearer ${token}` } : {} },
+  );
+  if (!res.ok) throw new Error(`Attachment unavailable (${res.status})`);
+  return res.blob();
+}
+
+export const emailAttachment = { fetchBlob: fetchEmailAttachmentBlob };
 
 
 
@@ -900,6 +946,22 @@ export type WorkbenchCard = {
   payload: unknown;
 };
 
+/**
+ * One cited mailbox message on an email `brief` card. `attachment` is null when the message
+ * had no attachment, or when the original cannot be served; `body` is the message text and
+ * `chunk_text` is the passage that actually matched.
+ */
+export type EmailCardSource = {
+  document?: string | null;
+  subject?: string | null;
+  sender?: string | null;
+  date?: string | null;
+  score?: number | null;
+  body?: string | null;
+  chunk_text?: string | null;
+  attachment?: EmailAttachment | null;
+};
+
 export type WorkbenchVerifiedFact = {
   id: string;
   label: string;
@@ -1040,6 +1102,7 @@ export const workbench = {
     updated_at: string;
     record_version: number;
     external_sources_enabled: boolean;
+    email_enabled?: boolean;
     turns: {
       id: string;
       question: string;
@@ -1083,6 +1146,7 @@ export const workbench = {
     pinnedSource?: string | null,
     externalSourcesEnabled = false,
     signal?: AbortSignal,
+    emailEnabled = false,
   ): AsyncGenerator<WorkbenchStreamEvent> {
     const token = getToken();
     const res = await fetch(`${API_URL}/workbench/ask`, {
@@ -1096,6 +1160,7 @@ export const workbench = {
         conversation_id: conversationId,
         pinned_source: pinnedSource ?? null,
         external_sources_enabled: externalSourcesEnabled,
+        email_enabled: emailEnabled,
       }),
       signal,
     });

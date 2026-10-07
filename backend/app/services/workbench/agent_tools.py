@@ -43,7 +43,10 @@ CURATED_DOMAIN_SOURCES: dict[str, str] = {
     "macro": "macro",
     "competitive": "competitive",
     "regulatory": "regulatory",
-    "customer": "External_customer_details",
+    # The customer card is primarily the internal governed database profile; the external
+    # (Qdrant) passages are an optional enrichment gated separately inside run_customer.
+    "customer": "db",
+    "email": "email",
 }
 
 
@@ -72,8 +75,13 @@ AGENT_TOOLS: dict[str, AgentTool] = {
         name="search_curated_knowledge",
         description=(
             "Search policy documents, definitions, catalog documentation, macro, competitive, "
-            "or regulatory evidence. Never use this to query customer, KYC, loan, agent, or "
-            "other database rows named in Gold TABLE hints."
+            "or regulatory evidence, retrieve the governed profile for a named customer "
+            "(domain=customer), or search the bank's own ingested mailbox (domain=email) for "
+            "what was asked, sent, approved or requested over email — loan and vehicle loan "
+            "requests, required documents, leave requests, vendor correspondence, undeliverable "
+            "notices. For customer, KYC, loan, agent, or other database detail "
+            "questions that demand a fresh governed record, prefer domain=customer; never "
+            "invent customer details from memory."
         ),
         arguments_model=SearchCuratedKnowledgeArguments,
         handler_key="search_curated_knowledge",

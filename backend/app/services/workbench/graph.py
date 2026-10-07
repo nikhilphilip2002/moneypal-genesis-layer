@@ -323,14 +323,14 @@ def _spawn_background(coro) -> None:
 
 async def run_workbench(
     *, question: str, conversation_id: str, user: str, role: str, pinned: str | None = None,
-    external_sources_enabled: bool = False,
+    external_sources_enabled: bool = False, email_enabled: bool = False,
 ) -> AsyncIterator[str]:
     """Run one turn, yielding SSE frames as the graph produces them."""
     started_at = time.perf_counter()
     emit: "asyncio.Queue[str | None]" = asyncio.Queue()
     source_policy = access.build_policy(
         role=role, external_sources_enabled=external_sources_enabled,
-        pinned_source=pinned,
+        email_enabled=email_enabled, pinned_source=pinned,
     )
     is_new_chat = False
     try:

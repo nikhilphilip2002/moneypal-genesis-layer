@@ -15,7 +15,7 @@ class AgentArguments(BaseModel):
 
 
 class SearchCuratedKnowledgeArguments(AgentArguments):
-    domain: Literal["concepts", "macro", "competitive", "regulatory"]
+    domain: Literal["concepts", "macro", "competitive", "regulatory", "customer", "email"]
     query: str = Field(min_length=1, max_length=1000)
 
 

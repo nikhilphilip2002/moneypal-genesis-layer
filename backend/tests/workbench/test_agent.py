@@ -8,6 +8,7 @@ import time
 import pytest
 
 from app.services.nlq.llm import LLMProtocolError, LLMResult, NativeToolCall
+from app.services.nlq.llm.slot_cache import SlotCacheError
 from app.services.workbench import access, agent, history, models, outbound_policy
 from app.services.workbench.agent_tools import AgentToolAccessDenied
 from app.services.workbench.agent_executor import ExecutedAgentCall
@@ -20,6 +21,11 @@ def _settings(monkeypatch):
 
     monkeypatch.setattr(access.settings, "workbench_external_connectors_enabled", True)
     monkeypatch.setattr(access.settings, "exa_mcp_enabled", True)
+    # Pin the connector switches so these tests describe agent behaviour rather than
+    # whatever the deployment .env happens to configure. Tests that exercise a disabled
+    # connector override this explicitly.
+    monkeypatch.setattr(agent.settings, "postgres_mcp_enabled", True)
+    monkeypatch.setattr(agent.settings, "llama_slot_cache_enabled", True)
     monkeypatch.setattr(agent.settings, "workbench_agent_max_tool_calls", 6)
     monkeypatch.setitem(
         postgres_client._model_tools,
@@ -432,12 +438,102 @@ async def test_new_chat_restores_system_slot_before_first_model_call(scripted, m
     monkeypatch.setattr(agent, "build_warmup_bundle", build_bundle)
     monkeypatch.setattr(agent, "restore_or_warm", restore)
     monkeypatch.setattr(agent, "request_gate", gate)
+    # The slot cache is off for every non-llama.cpp provider, so this test must opt in
+    # rather than inherit whatever the deployment .env happens to configure.
+    monkeypatch.setattr(agent.settings, "llama_slot_cache_enabled", True)
 
     await agent.run(state)
 
     assert order == ["cache", "model"]
     assert "_restore_system_slot" not in state
     assert len(client.requests) == 1
+
+
+@pytest.mark.anyio
+async def test_slot_cache_failure_still_answers(scripted, monkeypatch):
+    """A model server without /slots must not turn every question into an internal error."""
+    order = []
+
+    def response(_kwargs):
+        order.append("model")
+        return _text_response("Hello!")
+
+    client = scripted([response], lambda _call, _ctx: None)
+    state = _run_state("slot-down")
+    state["_restore_system_slot"] = True
+
+    async def build_bundle():
+        return object()
+
+    async def restore(bundle):
+        raise SlotCacheError("llama-server slot erase failed: connection refused")
+
+    @contextlib.asynccontextmanager
+    async def gate():
+        yield
+
+    monkeypatch.setattr(agent, "build_warmup_bundle", build_bundle)
+    monkeypatch.setattr(agent, "restore_or_warm", restore)
+    monkeypatch.setattr(agent, "request_gate", gate)
+    monkeypatch.setattr(agent.settings, "llama_slot_cache_enabled", True)
+
+    await agent.run(state)
+
+    assert order == ["model"]
+    assert len(client.requests) == 1
+
+
+@pytest.mark.anyio
+async def test_disabled_postgres_mcp_skips_connector_probe(scripted, monkeypatch):
+    """A Qdrant-only deployment must not burn the MCP timeout probing PostgreSQL."""
+    contacted = []
+
+    class _Postgres:
+        @staticmethod
+        def model_tool_definitions():
+            return []
+
+        @staticmethod
+        async def discover_model_tools():
+            contacted.append(True)
+            raise AssertionError("must not contact PostgreSQL when disabled")
+
+    monkeypatch.setattr(agent.settings, "postgres_mcp_enabled", False)
+    monkeypatch.setattr("app.mcp.postgres_client", _Postgres)
+
+    client = scripted([lambda _k: _text_response("Answered from the mailbox.")], lambda _c, _x: None)
+    state = _run_state("qdrant-only")
+
+    await agent.run(state)
+
+    assert contacted == []
+    assert len(client.requests) == 1
+
+
+@pytest.mark.anyio
+async def test_enabled_postgres_mcp_still_exposes_db_tools(scripted, monkeypatch):
+    class _Postgres:
+        @staticmethod
+        def model_tool_definitions():
+            return [{
+                "type": "function",
+                "function": {"name": "query", "description": "run sql", "parameters": {}},
+            }]
+
+        @staticmethod
+        async def discover_model_tools():
+            raise AssertionError("definitions already present")
+
+    monkeypatch.setattr(agent.settings, "postgres_mcp_enabled", True)
+    monkeypatch.setattr("app.mcp.postgres_client", _Postgres)
+
+    client = scripted([lambda _k: _text_response("Answered with the database.")], lambda _c, _x: None)
+    state = _run_state("with-db")
+
+    await agent.run(state)
+
+    tool_names = {t["function"]["name"] for t in client.requests[0].get("tools", [])}
+    assert "query" in tool_names
 
 
 @pytest.mark.anyio

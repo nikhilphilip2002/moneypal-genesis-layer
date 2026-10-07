@@ -20,7 +20,11 @@ from app.core.config import settings
 from app.services.nlq.catalog import get_catalog
 from app.services.nlq.llm import LLMError, LLMProtocolError, LLMTimeout
 from app.services.nlq.llm.client import request_gate
-from app.services.nlq.llm.slot_cache import build_warmup_bundle, restore_or_warm
+from app.services.nlq.llm.slot_cache import (
+    SlotCacheError,
+    build_warmup_bundle,
+    restore_or_warm,
+)
 from app.services.workbench import history, models, prompts
 from app.services.workbench.agent_executor import (
     AgentExecutionContext,
@@ -117,6 +121,7 @@ def _budget(state: dict[str, Any]) -> TurnBudget:
 _CURATED_SOURCES = {
     "concepts": "knowledge", "macro": "macro",
     "competitive": "competitive", "regulatory": "regulatory",
+    "customer": "db", "email": "email",
 }
 
 
@@ -225,7 +230,11 @@ async def _select(
     )
     definitions = native_tool_definitions(state["source_policy"], catalog=catalog)
     db_available = True
-    if state["source_policy"].allows("db"):
+    if not settings.postgres_mcp_enabled:
+        # The governed database is switched off for this deployment. Report it as
+        # unavailable so the turn states the limitation instead of silently ignoring it.
+        db_available = False
+    if state["source_policy"].allows("db") and settings.postgres_mcp_enabled:
         from app.mcp import postgres_client
         from app.mcp.postgres_client import PostgresMCPError
 
@@ -290,9 +299,17 @@ async def _select(
         # Keep restore/warm and the first real completion in one serialized section. The
         # nested client calls recognize that the gate is already held, so no lock is
         # reacquired and no other chat can replace slot 0 between these operations.
+        #
+        # The slot snapshot only saves prompt-eval time; it is not needed for a correct
+        # answer. If the model server is down, restarting, or does not implement the
+        # llama.cpp /slots API, fall through and answer normally instead of failing the
+        # whole turn with an opaque internal error.
         async with request_gate():
             cache_started = time.perf_counter()
-            await restore_or_warm(await build_warmup_bundle())
+            try:
+                await restore_or_warm(await build_warmup_bundle())
+            except SlotCacheError as exc:
+                logger.warning("system-prompt slot cache unavailable: %s", exc)
             budget.deadline += time.perf_counter() - cache_started
             return await request()
     return await request()

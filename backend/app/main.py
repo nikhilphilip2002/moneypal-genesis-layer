@@ -12,9 +12,21 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api.routes import admin, auth, competitive, macro, nlq, policy, regulatory, review, workbench
+from app.api.routes import admin, auth, competitive, email, macro, nlq, policy, regulatory, review, workbench
 from app.core.config import settings
 from app.core.logging import bind_trace, start_logging, stop_logging
+
+
+def _warm_email_encoder() -> None:
+    """Load the mailbox sentence-transformer off the request path."""
+    logger = logging.getLogger(__name__)
+    try:
+        from app.services.email_intel import get_embedder
+
+        get_embedder()
+        logger.info("mailbox encoder warmed model=%s", settings.email_embedding_model)
+    except Exception as exc:  # noqa: BLE001 - a cold mailbox must not block startup
+        logger.warning("mailbox encoder warmup skipped: %s", exc)
 
 
 @asynccontextmanager
@@ -32,17 +44,27 @@ async def _lifespan(_app: FastAPI):
 
     from app.mcp import postgres_client
 
-    try:
-        # Container dependency ordering does not guarantee service readiness. Bound startup
-        # discovery so unrelated APIs can still start; a later Workbench request retries it.
-        mcp_status = await asyncio.wait_for(postgres_client.initialize(), timeout=10.0)
+    if not settings.postgres_mcp_enabled:
         logging.getLogger(__name__).info(
-            "PostgreSQL MCP initialized tools=%s", mcp_status["tools"],
+            "PostgreSQL MCP disabled by configuration; this deployment answers from "
+            "Qdrant-backed sources only",
         )
-    except Exception as exc:  # noqa: BLE001 - readiness remains visible and retryable
-        logging.getLogger(__name__).warning(
-            "PostgreSQL MCP startup initialization unavailable: %s", exc,
-        )
+    else:
+        try:
+            # Container dependency ordering does not guarantee service readiness. Bound startup
+            # discovery so unrelated APIs can still start; a later Workbench request retries it.
+            mcp_status = await asyncio.wait_for(postgres_client.initialize(), timeout=10.0)
+            logging.getLogger(__name__).info(
+                "PostgreSQL MCP initialized tools=%s", mcp_status["tools"],
+            )
+        except Exception as exc:  # noqa: BLE001 - readiness remains visible and retryable
+            logging.getLogger(__name__).warning(
+                "PostgreSQL MCP startup initialization unavailable: %s", exc,
+            )
+
+    # Loading the mailbox sentence-transformer costs ~30s. Do it off the request path so the
+    # first email question is not charged for it.
+    warm_email_task = asyncio.create_task(asyncio.to_thread(_warm_email_encoder))
     # Workbench execution is intentionally not a rollout switch: every request uses the
     # provider-native tool loop.
     logging.getLogger(__name__).info(
@@ -63,11 +85,16 @@ async def _lifespan(_app: FastAPI):
 
     yield
 
+    for task in (warm_email_task, warm_graph_task):
+        if task is not None and not task.done():
+            task.cancel()
+        if task is not None:
+            try:
+                await task
+            except (asyncio.CancelledError, Exception):  # noqa: BLE001 - shutdown only
+                pass
+
     await signal_scheduler.stop(scan_task)
-    if warm_graph_task is not None and not warm_graph_task.done():
-        warm_graph_task.cancel()
-        with contextlib.suppress(asyncio.CancelledError):
-            await warm_graph_task
     from app.services.nlq import db as nlq_db
 
     nlq_db.close_pool()
@@ -94,6 +121,7 @@ def create_app() -> FastAPI:
     app.include_router(auth.router)
     app.include_router(macro.router)
     app.include_router(competitive.router)
+    app.include_router(email.router)
     app.include_router(regulatory.router)
     app.include_router(admin.router)
     app.include_router(review.router)

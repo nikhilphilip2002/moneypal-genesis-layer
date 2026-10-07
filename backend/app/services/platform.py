@@ -6,7 +6,6 @@ from genesis_core.config import settings
 from app.core.config import MACRO_COLLECTION
 from app.services import institution_loader as il
 from app.services import reg_loader as rl
-
 # GICC onboarding journey — Genesis phases from the developer brief (section 9).
 ONBOARDING = {
     "client": "GICC",
@@ -31,6 +30,29 @@ def _all_collections() -> list[tuple[str, str, str]]:
     for reg in rl.load_all():
         out.append((reg["qdrant_collection"], reg["display_name"], "Regulatory"))
     out.append(("External_customer_details", "External Customer Details", "External Customer"))
+    return out
+
+
+def _email_status() -> dict:
+    """The mailbox retrieval model, which lives in its own vector space and its own
+    Qdrant instance, so it is reported separately from the genesis_core collections."""
+    from app.core.config import settings as app_settings
+
+    out = {
+        "model": app_settings.email_embedding_model,
+        "collection": app_settings.email_collection,
+        "dimensions": app_settings.email_vector_size,
+        "url": app_settings.email_qdrant_url,
+        "ok": False,
+        "points": None,
+    }
+    try:
+        from app.services import email_intel
+
+        out["ok"] = email_intel.is_available()
+        out["points"] = email_intel.stats().get("points")
+    except Exception:
+        pass
     return out
 
 
@@ -63,6 +85,7 @@ def status() -> dict:
         "qdrant": {"ok": qdrant_ok, "host": settings.qdrant_host, "port": settings.qdrant_port},
         "llm": {"model": settings.llm_model, "configured": bool(settings.llm_base_url)},
         "embeddings": {"model": settings.embed_model},
+        "email": _email_status(),
         "registries": {"institutions": len(il.load_all()), "regulations": len(rl.load_all())},
         "collections": collections,
         "onboarding": ONBOARDING,

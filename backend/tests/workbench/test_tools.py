@@ -13,15 +13,19 @@ from app.services.workbench import tools
 
 def test_the_phase3_tools_are_registered():
     assert set(tools.TOOLS) == {
-        "competitor_landscape", "macro_brief", "regulatory_alerts",
+        "competitor_landscape", "macro_brief", "regulatory_alerts", "mailbox_recent",
     }
 
 
 def test_visible_tools_respect_role():
     director = {t.id for t in tools.visible_tools("gicc_director")}
     policy = {t.id for t in tools.visible_tools("gicc_policy")}
-    assert director == {"macro_brief"}
-    assert policy == {"competitor_landscape", "macro_brief", "regulatory_alerts"}
+    # The mailbox tool has no role restriction, so it reaches every role; running it still
+    # requires external-source consent (see test_the_registry_refuses_a_denied_tool).
+    assert director == {"macro_brief", "mailbox_recent"}
+    assert policy == {
+        "competitor_landscape", "macro_brief", "regulatory_alerts", "mailbox_recent",
+    }
 
 
 def test_get_tool_returns_none_for_an_unknown_id():

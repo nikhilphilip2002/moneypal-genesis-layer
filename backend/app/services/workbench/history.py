@@ -63,6 +63,9 @@ class ConversationRecord:
     # so dropping it only costs context, never data.
     compaction: dict[str, Any] | None = None
     external_sources_enabled: bool = False
+    # Mail consent, stored alongside the external switch so reopening a conversation
+    # restores the toggles exactly as they were when it was asked.
+    email_enabled: bool = False
 
 
 @dataclass(slots=True)
@@ -143,6 +146,7 @@ def _record_payload(record: ConversationRecord) -> dict[str, Any]:
     if record.compaction:
         payload["compaction"] = record.compaction
     payload["external_sources_enabled"] = record.external_sources_enabled
+    payload["email_enabled"] = record.email_enabled
     return payload
 
 
@@ -174,6 +178,7 @@ def _load(conversation_id: str, user: str) -> ConversationRecord | None:
                 # Absent on v1/v2 rows; those conversations simply have no checkpoint yet.
                 compaction=payload.get("compaction"),
                 external_sources_enabled=bool(payload.get("external_sources_enabled", False)),
+                email_enabled=bool(payload.get("email_enabled", False)),
             )
             # Older turns are given their event stream in memory so every reader sees one
             # representation; the next write persists it and stamps the version.
@@ -476,6 +481,7 @@ def begin_turn(
         record.external_sources_enabled = bool(
             source_policy.get("external_sources_enabled", False)
         )
+        record.email_enabled = bool(source_policy.get("email_enabled", False))
     created_at = _now()
     record.turns.append({
         "id": turn_id,

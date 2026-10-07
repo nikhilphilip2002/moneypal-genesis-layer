@@ -298,6 +298,25 @@ export default function AdminPage() {
                             ),
                           },
                           { label: 'Embeddings', value: <span className="font-mono text-xs">{status.data.embeddings.model}</span> },
+                          {
+                            label: 'Email model',
+                            value: (() => {
+                              const mail = status.data.email;
+                              if (!mail) return <span className="text-xs text-muted-foreground">not reported</span>;
+                              return (
+                                <span className="flex items-center gap-1.5 font-mono text-xs">
+                                  <StatusDot ok={mail.ok} />
+                                  {mail.model} · {mail.dimensions}d
+                                  <span className="text-muted-foreground">
+                                    · {mail.collection}
+                                    {mail.points === null
+                                      ? ' · unreachable'
+                                      : ` · ${mail.points} chunks`}
+                                  </span>
+                                </span>
+                              );
+                            })(),
+                          },
                           { label: 'Institution configs', value: <span className="font-mono text-xs">{status.data.registries.institutions}</span> },
                           { label: 'Regulation configs', value: <span className="font-mono text-xs">{status.data.registries.regulations}</span> },
                         ].map((row, i, arr) => (

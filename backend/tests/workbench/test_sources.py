@@ -8,7 +8,7 @@ from app.services.workbench import sources
 from app.core.config import settings
 
 
-ALL_IDS = {"db", "macro", "competitive", "regulatory", "knowledge", "web"}
+ALL_IDS = {"db", "macro", "competitive", "regulatory", "knowledge", "customer", "email", "web"}
 
 
 @pytest.fixture(autouse=True)
@@ -30,18 +30,27 @@ def test_director_sees_loan_book_sources_but_not_market_or_regulatory():
     # The director's workspace is the portfolio and public macro, not competitive or
     # regulatory, which they have no module access to.
     visible = {s.id for s in sources.visible_sources("gicc_director")}
-    assert visible == {"db", "macro", "knowledge", "web"}
+    assert visible == {"db", "macro", "knowledge", "customer", "email", "web"}
 
 
 def test_policy_maker_sees_loan_book_during_open_access_rollout():
     visible = {s.id for s in sources.visible_sources("gicc_policy")}
-    assert visible == {"db", "macro", "competitive", "regulatory", "knowledge", "web"}
+    assert visible == {"db", "macro", "competitive", "regulatory", "knowledge", "customer", "email", "web"}
 
 
-def test_loan_book_is_sensitive_public_intelligence_is_not():
+def test_loan_book_and_mailbox_are_sensitive_public_intelligence_is_not():
     assert sources.SOURCES["db"].sensitive is True
+    # Mail is the bank's own correspondence, so it is sensitive like the loan book even
+    # though it is retrieved from a vector store.
+    assert sources.SOURCES["email"].sensitive is True
     for public in ("macro", "competitive", "regulatory", "knowledge", "web"):
         assert sources.SOURCES[public].sensitive is False
+
+
+def test_mailbox_is_gated_behind_external_consent():
+    without = sources.visible_sources("admin", allowed_source_ids=None)
+    assert "email" in {s.id for s in without}
+    assert sources.SOURCES["email"].id in sources.EXTERNAL_CONNECTOR_SOURCES
 
 
 def test_web_source_disappears_when_feature_flag_is_off(monkeypatch):

@@ -24,6 +24,7 @@ SOURCE_GROUPS: dict[str, SourceGroup] = {
     "customer": SourceGroup.EXTERNAL_INDEXED,
     "competitive": SourceGroup.EXTERNAL_INDEXED,
     "regulatory": SourceGroup.EXTERNAL_INDEXED,
+    "email": SourceGroup.EXTERNAL_INDEXED,
     "web": SourceGroup.LIVE_EXTERNAL,
 }
 EXTERNAL_GROUPS = frozenset({SourceGroup.EXTERNAL_INDEXED, SourceGroup.LIVE_EXTERNAL})
@@ -56,6 +57,10 @@ class SourceAccessPolicy:
     deployment_sources: tuple[str, ...]
     effective_sources: tuple[str, ...]
     pinned_source: str | None = None
+    # Mail is the bank's own correspondence, so it is gated by a dedicated consent switch
+    # rather than the broad "external" one. The OR below keeps the historic path working:
+    # anyone who already granted external consent still reaches the mailbox.
+    email_enabled: bool = False
     version: str = POLICY_VERSION
 
     def allows(self, source_id: str) -> bool:
@@ -70,6 +75,7 @@ class SourceAccessPolicy:
         return {
             "version": self.version,
             "external_sources_enabled": self.external_sources_enabled,
+            "email_enabled": self.email_enabled,
             "deployment_external_connectors_enabled": self.deployment_external_connectors_enabled,
             "effective_sources": list(self.effective_sources),
             "pinned_source": self.pinned_source,
@@ -77,7 +83,8 @@ class SourceAccessPolicy:
 
 
 def build_policy(
-    *, role: str, external_sources_enabled: bool = False, pinned_source: str | None = None,
+    *, role: str, external_sources_enabled: bool = False, email_enabled: bool = False,
+    pinned_source: str | None = None,
 ) -> SourceAccessPolicy:
     ordered_ids = tuple(SOURCES)
     role_sources = tuple(source_id for source_id in ordered_ids if SOURCES[source_id].visible_to(role))
@@ -90,12 +97,19 @@ def build_policy(
         )
         and (source_id != "web" or settings.exa_mcp_enabled)
     )
+
+    def consented(source_id: str) -> bool:
+        if source_id == "email":
+            # Dedicated switch, or the legacy broad consent that used to cover mail.
+            return email_enabled or external_sources_enabled
+        return external_sources_enabled or not is_external(source_id)
+
     effective_sources = tuple(
         source_id
         for source_id in ordered_ids
         if source_id in role_sources
         and source_id in deployment_sources
-        and (external_sources_enabled or not is_external(source_id))
+        and consented(source_id)
         and (pinned_source is None or source_id == pinned_source)
     )
     return SourceAccessPolicy(
@@ -106,6 +120,7 @@ def build_policy(
         deployment_sources=deployment_sources,
         effective_sources=effective_sources,
         pinned_source=pinned_source,
+        email_enabled=bool(email_enabled),
     )
 
 

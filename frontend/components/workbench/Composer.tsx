@@ -46,6 +46,8 @@ type Props = {
   onOpenWorkspace: (view: WorkspaceView) => void;
   externalSourcesEnabled: boolean;
   onExternalSourcesEnabled: (enabled: boolean) => void;
+  emailEnabled: boolean;
+  onEmailEnabled: (enabled: boolean) => void;
   onCompletionHeightChange?: (height: number) => void;
 };
 
@@ -59,6 +61,8 @@ export default function Composer({
   onOpenWorkspace,
   externalSourcesEnabled,
   onExternalSourcesEnabled,
+  emailEnabled,
+  onEmailEnabled,
   onCompletionHeightChange,
 }: Props) {
   const [value, setValue] = useState('');
@@ -279,6 +283,7 @@ export default function Composer({
             onOpenWorkspace={onOpenWorkspace}
             onOpen={loadData}
             externalSourcesEnabled={externalSourcesEnabled}
+            emailEnabled={emailEnabled}
           />
 
           <label
@@ -298,6 +303,24 @@ export default function Composer({
             </span>
             <span id="workbench-external-sources-description" className="sr-only">
               Enables macro, competitive, regulatory, and live web sources together.
+            </span>
+          </label>
+
+          <label
+            htmlFor="workbench-email-sources"
+            className="flex cursor-pointer items-center gap-2 rounded-lg px-1.5 py-1 text-[11px] text-muted-foreground"
+            title="Let the console answer from the ingested mailbox"
+          >
+            <Switch
+              id="workbench-email-sources"
+              checked={emailEnabled}
+              onCheckedChange={onEmailEnabled}
+              className="h-5 w-9 data-[state=checked]:bg-primary"
+              aria-describedby="workbench-email-sources-description"
+            />
+            <span className="hidden sm:inline">Email</span>
+            <span id="workbench-email-sources-description" className="sr-only">
+              Enables the mailbox as an answer source for this conversation.
             </span>
           </label>
 
@@ -421,6 +444,7 @@ function PlusMenu({
   onOpenWorkspace,
   onOpen,
   externalSourcesEnabled,
+  emailEnabled,
 }: {
   sources: WorkbenchSource[];
   tools: WorkbenchTool[];
@@ -430,7 +454,18 @@ function PlusMenu({
   onOpenWorkspace: (view: WorkspaceView) => void;
   onOpen: () => void;
   externalSourcesEnabled: boolean;
+  emailEnabled: boolean;
 }) {
+  // The mailbox answers when either its own switch or the broad external switch is on, and
+  // the backend policy now agrees. Mirror that here so the menu never greys out a source the
+  // request would actually be allowed to use.
+  const sourceUsable = (source: WorkbenchSource | undefined): boolean => {
+    if (!source?.deployment_available) return false;
+    if (!source.requires_external_consent) return true;
+    if (source.id === 'email') return emailEnabled || externalSourcesEnabled;
+    return externalSourcesEnabled;
+  };
+
   return (
     <DropdownMenu onOpenChange={(open) => open && onOpen()}>
       <DropdownMenuTrigger asChild>
@@ -473,11 +508,7 @@ function PlusMenu({
                 key={tool.id}
                 className="cursor-pointer flex-col items-start gap-0.5 rounded-lg py-2"
                 onClick={() => onRunTool(tool)}
-                disabled={
-                  !sources.find((source) => source.id === tool.source_id)?.deployment_available
-                  || (!externalSourcesEnabled
-                    && Boolean(sources.find((source) => source.id === tool.source_id)?.requires_external_consent))
-                }
+                disabled={!sourceUsable(sources.find((source) => source.id === tool.source_id))}
               >
                 <span className="text-sm font-medium text-foreground">{tool.label}</span>
                 <span className="text-[11px] leading-4 text-muted-foreground">{tool.description}</span>
@@ -502,9 +533,7 @@ function PlusMenu({
                 key={source.id}
                 className="gap-2 rounded-lg"
                 onClick={() => onPin(source.id)}
-                disabled={!source.deployment_available || (
-                  source.requires_external_consent && !externalSourcesEnabled
-                )}
+                disabled={!sourceUsable(source)}
               >
                 <Check className={cn('size-4', pinned === source.id ? 'opacity-100' : 'opacity-0')} />
                 {source.label}

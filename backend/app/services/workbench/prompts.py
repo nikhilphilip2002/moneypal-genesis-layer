@@ -41,13 +41,16 @@ AGENT_SYSTEM_PROMPT = (
 )
 
 DB_UNAVAILABLE_CONTRACT = (
-    "The governed PostgreSQL database connector is UNAVAILABLE, so nothing stored in the "
-    "bank's systems can be read this turn. Any request that needs customer, account, loan, "
-    "transaction, repayment, collection, branch, staff, or other stored records, figures, or "
-    "observables CANNOT be answered. If the user's request depends on the database, call "
-    "finish_without_data with outcome=refuse and a reason_code explaining the database "
-    "connector is unavailable. Never answer record-level or figure questions from memory and "
-    "never invent customer details, balances, or transaction data."
+    "The ad-hoc PostgreSQL MCP connector is UNAVAILABLE this turn, so you cannot write or "
+    "run a fresh SQL SELECT against the governed Gold warehouse. Any request that needs "
+    "newly computed aggregates, joins, or ad-hoc record queries CANNOT be answered. "
+    "Exception: the governed customer-profile lookup behind search_curated_knowledge "
+    "with domain=customer is served directly from the read-only governed pool and remains "
+    "available, so route named-customer profile questions there instead of refusing. For "
+    "everything else that depends on the database, call finish_without_data with "
+    "outcome=refuse and a reason_code explaining the database connector is unavailable. "
+    "Never answer record-level or figure questions from memory and never invent customer "
+    "details, balances, or transaction data."
 )
 
 

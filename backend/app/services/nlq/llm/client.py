@@ -192,6 +192,21 @@ def _validate_finish_reason(
         raise LLMProtocolError(f"unsupported finish_reason {finish_reason!r}")
 
 
+def _stream_error_code(error: Any) -> int | None:
+    """Best-effort HTTP status from an error object inlined in a stream body."""
+    if not isinstance(error, dict):
+        return None
+    for key in ("code", "status", "status_code", "http_status"):
+        value = error.get(key)
+        if isinstance(value, bool):
+            continue
+        if isinstance(value, int):
+            return value
+        if isinstance(value, str) and value.isdigit():
+            return int(value)
+    return None
+
+
 async def _read_completion_stream(
     stream: AsyncStream[ChatCompletionChunk],
     on_text: Callable[[str], Awaitable[None]] | None = None,
@@ -207,7 +222,19 @@ async def _read_completion_stream(
         try:
             chunk = event.model_dump(exclude_none=True)
             if chunk.get("error"):
-                raise LLMProtocolError(f"completion stream error: {chunk['error']}")
+                # Some providers answer HTTP 200 and inline the failure in the stream body,
+                # e.g. NVIDIA NIM cold-starting returns
+                # {"error":{"code":503,"message":"Service temporarily overloaded"}}
+                # followed by [DONE]. A 5xx there is transient capacity pressure, not a
+                # protocol violation, so it must stay retryable instead of ending the turn.
+                error = chunk["error"]
+                code = _stream_error_code(error)
+                message = error.get("message") if isinstance(error, dict) else str(error)
+                if code is not None and code >= 500:
+                    raise LLMUnavailable(
+                        f"completion stream error HTTP {code}: {str(message)[:200]}"
+                    )
+                raise LLMProtocolError(f"completion stream error: {error}")
             if chunk.get("model"):
                 body["model"] = chunk["model"]
             if chunk.get("usage"):
@@ -453,6 +480,10 @@ class OpenAICompatibleClient:
     retry_base_delay_s: float = 2.0
     retry_max_delay_s: float = 30.0
     retry_budget_s: float = 30.0
+    # Provider-specific request fields merged into every payload, e.g. NVIDIA NIM's
+    # chat_template_kwargs to turn off reasoning for latency-sensitive tool calls.
+    # Explicitly constructed keys above always win over these defaults.
+    extra_body: dict[str, Any] = field(default_factory=dict)
     _client: AsyncOpenAI | None = field(default=None, repr=False)
 
     @property
@@ -623,6 +654,7 @@ class OpenAICompatibleClient:
                     stream = await self._openai().chat.completions.create(
                         **payload,
                         timeout=effective_timeout_s,
+                        **({"extra_body": self.extra_body} if self.extra_body else {}),
                     )
                     try:
                         body = await _read_completion_stream(
@@ -635,6 +667,18 @@ class OpenAICompatibleClient:
                         raise LLMProtocolError("malformed completion stream") from exc
                     finally:
                         await stream.close()
+                except LLMUnavailable as exc:
+                    # A transient provider failure reported inside a 200 response body.
+                    # Retry while nothing has been shown to the user, so a cold-starting
+                    # cloud model does not surface as a failed turn.
+                    last_exc = exc
+                    logger.warning("NLQ LLM unavailable (attempt %d): %s", attempt + 1, exc)
+                    if (
+                        visible_output_emitted
+                        or attempt >= self.max_retries
+                        or not await self._wait_before_retry(attempt, retry_deadline)
+                    ):
+                        break
                 except LLMProtocolError as exc:
                     last_exc = exc
                     break
@@ -973,5 +1017,7 @@ def get_llm_client() -> OpenAICompatibleClient:
             model=settings.llm_model,
             timeout_s=settings.llm_timeout_s,
             max_retries=settings.nlq_llm_max_retries,
+            retry_budget_s=settings.nlq_llm_retry_budget_s,
+            extra_body=settings.llm_extra_body,
         )
     return _cached

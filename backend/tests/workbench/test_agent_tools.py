@@ -85,7 +85,9 @@ def test_policy_omits_live_web_and_filters_curated_domains_without_consent():
     definitions = _definitions(external=False)
     assert "search_public_web" not in definitions
     domains = definitions["search_curated_knowledge"]["parameters"]["properties"]["domain"]
-    assert domains["enum"] == ["concepts"]
+    # The customer domain is offered without external consent because it is backed by the
+    # internal governed database (its Qdrant passages are gated separately at run time).
+    assert domains["enum"] == ["concepts", "customer"]
 
 
 def test_role_policy_removes_forbidden_curated_domains():

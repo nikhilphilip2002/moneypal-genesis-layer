@@ -60,6 +60,7 @@ def _client(
     supports_native_tools=True,
     name="llamacpp",
     max_retries=1,
+    extra_body=None,
 ):
     profile = _ProviderProfile(
         name=name,
@@ -73,6 +74,7 @@ def _client(
         model="m",
         max_retries=max_retries,
         retry_base_delay_s=0,
+        extra_body=extra_body or {},
     )
     client._client = AsyncOpenAI(
         api_key="k",
@@ -113,6 +115,27 @@ def _stream_response(body):
 
 def _ok(content="{}"):
     return _stream_response(_completion_body(content))
+
+
+@pytest.mark.anyio
+async def test_extra_body_is_merged_into_every_request():
+    """NVIDIA needs chat_template_kwargs to stop reasoning models stalling on tool calls."""
+    sent = {}
+
+    def handler(request):
+        sent.update(json.loads(request.content))
+        return _ok()
+
+    client = _client(
+        handler,
+        extra_body={"chat_template_kwargs": {"enable_thinking": False}},
+    )
+    await client.complete(messages=[{"role": "user", "content": "hi"}])
+
+    assert sent["chat_template_kwargs"] == {"enable_thinking": False}
+    # The explicit contract fields must still be present and unoverwritten.
+    assert sent["model"] == "m"
+    assert sent["stream"] is True
 
 
 def _tool_body(*calls, content=None):

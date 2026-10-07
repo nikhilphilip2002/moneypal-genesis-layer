@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import re
+import time
 from typing import TYPE_CHECKING, Any
 
 from genesis_core import rag
@@ -17,6 +18,7 @@ from genesis_core import rag
 from app.core.config import MACRO_COLLECTION, EXTERNAL_CUSTOMER_COLLECTION
 from app.services.nlq.catalog import get_catalog
 from app.services.nlq.catalog.retrieval import retrieve
+from app.services.nlq.db import readonly_cursor
 from app.services.nlq.normalization import normalize_lending_question
 from app.services.workbench.results import Evidence, SourceResult
 
@@ -29,6 +31,249 @@ if TYPE_CHECKING:
 def _require_external(policy: "SourceAccessPolicy | None", source_id: str) -> None:
     if policy is not None:
         policy.require(source_id)
+
+
+_CUSTOMER_ID_RE = re.compile(
+    r"\b(?:customer|borrower|client)\s*(?:id|number|no\.?|#)\s*"
+    r"(?:is|was|=|:|-)?\s*(?P<value>[0-9][0-9,]*(?:\.0+)?)\b",
+    re.IGNORECASE,
+)
+_CUSTOMER_NUMBER_RE = re.compile(
+    r"\b(?:customer|borrower|client)\s+(?P<value>\d{3,})\b",
+    re.IGNORECASE,
+)
+
+# Application-owned read-only query over the governed `gold.*` views. The `nlq_readonly`
+# role can only SELECT and the pool re-applies `default_transaction_read_only = on` on
+# every checkout, so a customer profile can never be mutated from the Workbench.
+_CUSTOMER_DB_SQL = (
+    "SELECT customer.customer_id::text AS customer_id, "
+    "customer.full_name AS customer_name, customer.customer_status, "
+    "CONCAT_WS(', ', NULLIF(TRIM(customer.address_line1), ''), "
+    "NULLIF(TRIM(customer.address_line2), ''), "
+    "NULLIF(TRIM(customer.additional_address), '')) AS address, "
+    "customer.city, customer.state, "
+    "COALESCE(NULLIF(TRIM(customer.occupation_name), ''), "
+    "NULLIF(TRIM(customer.occupation_type), ''), "
+    "NULLIF(TRIM(customer.occupation_nature), '')) AS occupation, "
+    "customer.home_branch_code, customer.home_branch_name, "
+    "customer.agency_code, customer.agency_name, "
+    "loan.loan_account_number::text AS loan_account_number, "
+    "loan.product_name AS loan_product, "
+    "loan.approved_amount AS approved_amount, loan.approved_on AS approved_on "
+    "FROM gold.customers AS customer "
+    "LEFT JOIN gold.loan_accounts AS loan "
+    "ON customer.company_code = loan.company_code "
+    "AND customer.customer_id = loan.customer_id "
+    "WHERE LOWER(REGEXP_REPLACE(customer.customer_id::text, '\\.0+$', '')) = %s "
+    "ORDER BY loan.approved_on DESC, loan.loan_account_number LIMIT 200"
+)
+
+
+def _clean_customer_id(value: str) -> str:
+    text = str(value or "").strip().replace(",", "")
+    if re.fullmatch(r"\d+\.0+", text):
+        return text.split(".", 1)[0]
+    return text
+
+
+def _extract_customer_id(intent: str) -> str | None:
+    """Pull a customer id out of e.g. "show me the details of customer id 10455"."""
+    match = _CUSTOMER_ID_RE.search(intent) or _CUSTOMER_NUMBER_RE.search(intent)
+    if not match:
+        return None
+    value = _clean_customer_id(match.group("value"))
+    return value if value.isdigit() else None
+
+
+def _read_customer_rows(customer_id: str) -> tuple[list[dict[str, Any]], int]:
+    """Read the customer profile and linked loan accounts via the read-only pool."""
+    started = time.perf_counter()
+    with readonly_cursor() as (_conn, cur):
+        cur.execute(_CUSTOMER_DB_SQL, (customer_id,))
+        columns = [desc[0] for desc in cur.description] if cur.description else []
+        rows = [dict(zip(columns, row)) for row in cur.fetchall()]
+    return rows, int((time.perf_counter() - started) * 1000)
+
+
+def _rupee(value: Any) -> str:
+    if value in (None, ""):
+        return "—"
+    try:
+        from app.services.nlq.narrator import format_value
+        return format_value(float(value), "inr")
+    except (TypeError, ValueError):
+        return str(value)
+
+
+def _as_date(value: Any) -> str:
+    if value in (None, ""):
+        return "—"
+    return str(value)[:10]
+
+
+def _branch_label(code: Any, name: Any) -> str:
+    parts = [part for part in (str(name or "").strip(), str(code or "").strip()) if part]
+    return " · ".join(parts) or "—"
+
+
+def _agency_label(code: Any, name: Any) -> str:
+    parts = [part for part in (str(name or "").strip(), str(code or "").strip()) if part]
+    return " · ".join(parts) or "—"
+
+
+def _customer_card_components(
+    *, customer_id: str, db_rows: list[dict[str, Any]] | None,
+    db_duration_ms: int, chunks: list[dict], db_unavailable: bool,
+) -> tuple[dict[str, Any], str, bool, str]:
+    """Compose the combined database + external (Qdrant) customer card.
+
+    Returns (chart payload, narration, complete, limitation). The database section and the
+    external section are separate rows of one table, so where a fact came from is always
+    visible. When the database has the customer but Qdrant has nothing, a note row carries
+    the "no external data on this customer" caveat into the rendered table too.
+    """
+    rows: list[dict[str, Any]] = []
+    db_found = bool(db_rows)
+    ext_found = bool(chunks)
+    name = ""
+    loan_rows: list[dict[str, Any]] = []
+
+    if db_found:
+        first = db_rows[0]
+        name = str(first.get("customer_name") or "").strip()
+        title = name or f"Customer {customer_id}"
+        profile = [
+            ("Customer ID", str(first.get("customer_id") or customer_id)),
+            ("Name", name or "—"),
+            ("Status", str(first.get("customer_status") or "—")),
+            ("Address", str(first.get("address") or "—")),
+            ("City", str(first.get("city") or "—")),
+            ("State", str(first.get("state") or "—")),
+            ("Occupation", str(first.get("occupation") or "—")),
+            ("Home branch", _branch_label(first.get("home_branch_code"), first.get("home_branch_name"))),
+            ("Agency", _agency_label(first.get("agency_code"), first.get("agency_name"))),
+        ]
+        for field, value in profile:
+            rows.append({"section": "Database", "field": field, "value": value})
+        loan_rows = [row for row in db_rows if str(row.get("loan_account_number") or "").strip()]
+        for index, loan in enumerate(loan_rows[:6], start=1):
+            rows.extend([
+                {
+                    "section": "Database",
+                    "field": f"Linked loan {index} · account number",
+                    "value": str(loan.get("loan_account_number") or "—"),
+                },
+                {
+                    "section": "Database",
+                    "field": f"Linked loan {index} · product",
+                    "value": str(loan.get("loan_product") or "—"),
+                },
+                {
+                    "section": "Database",
+                    "field": f"Linked loan {index} · sanctioned amount",
+                    "value": _rupee(loan.get("approved_amount")),
+                },
+                {
+                    "section": "Database",
+                    "field": f"Linked loan {index} · sanctioned on",
+                    "value": _as_date(loan.get("approved_on")),
+                },
+            ])
+        extra = len(loan_rows) - 6
+        if extra > 0:
+            rows.append({
+                "section": "Database",
+                "field": "Remaining loans",
+                "value": f"{extra} additional linked loan account(s) in the database record.",
+            })
+
+    accounts = len({
+        str(row.get("loan_account_number")) for row in loan_rows
+        if str(row.get("loan_account_number") or "").strip()
+    })
+
+    for index, chunk in enumerate(chunks[:5], start=1):
+        document = str(chunk.get("document") or chunk.get("source") or "External source")
+        excerpt = " ".join(str(chunk.get("text") or "").split())
+        rows.append({
+            "section": "External (Qdrant)",
+            "field": f"External evidence {index} · {document}",
+            "value": excerpt[:600] or "—",
+        })
+
+    limitation = ""
+    if db_found and not ext_found:
+        title = name or f"Customer {customer_id}"
+        rows.append({
+            "section": "External (Qdrant)",
+            "field": "External data",
+            "value": "No external data available on this customer.",
+        })
+        limitation = "No external data available on this customer."
+        summary = (
+            f"Customer {customer_id} ({name}) is present in the database with {accounts:,} "
+            f"linked loan account(s). No external data available on this customer."
+        )
+    elif db_found and ext_found:
+        summary = (
+            f"Customer {customer_id} ({name}) is present in the database with {accounts:,} "
+            f"linked loan account(s); {len(chunks)} external (Qdrant) passage(s) were also "
+            "retrieved and are listed separately below."
+        )
+    else:
+        title = f"Customer {customer_id} — external evidence"
+        limitation = (
+            "The governed database record could not be read for this customer."
+            if db_unavailable
+            else "No governed database record was found for this customer id."
+        )
+        summary = (
+            f"No database record{' could be read' if db_unavailable else ' was found'} for "
+            f"customer {customer_id}; retrieved {len(chunks)} external (Qdrant) passage(s)."
+        )
+
+    payload = {
+        "chart_type": "table",
+        "title": title,
+        "subtitle": "Database record and external (Qdrant) evidence, shown separately.",
+        "x": None,
+        "series_by": None,
+        "series": [],
+        "columns": [
+            {
+                "name": "section", "label": "Source", "unit": "text", "format": None,
+                "sensitivity": "internal", "masked": False,
+            },
+            {
+                "name": "field", "label": "Attribute / evidence", "unit": "text",
+                "format": None, "sensitivity": "internal", "masked": False,
+            },
+            {
+                "name": "value", "label": "Value", "unit": "text", "format": None,
+                "sensitivity": "pii" if db_found else "internal", "masked": False,
+            },
+        ],
+        "rows": rows,
+        "summary": summary,
+        "drilldown": None,
+        "next_steps": [],
+        "lineage": {
+            "path": "validated_sql",
+            "sql": _CUSTOMER_DB_SQL,
+            "display_sql": _CUSTOMER_DB_SQL,
+            "parameters": {"customer_id": customer_id},
+            "source_tables": ["gold.customers", "gold.loan_accounts"],
+            "formulas": {},
+            "row_count": len(db_rows or []),
+            "duration_ms": db_duration_ms,
+            "as_of": None,
+            "warnings": [],
+            "unverified": False,
+            "requires_signoff": [],
+        },
+    }
+    return payload, summary, db_found and ext_found, limitation
 
 
 _INCOMPLETE_ANSWER_RE = re.compile(
@@ -99,6 +344,149 @@ async def run_macro(
         sources=sources,
         evidence=evidence,
     )
+
+
+async def run_email(
+    intent: str, *, policy: "SourceAccessPolicy | None" = None,
+) -> SourceResult:
+    """Retrieve mailbox evidence; the native agent owns all prose.
+
+    Reads the ingested email collection through `email_intel`, which carries its own
+    embedder and Qdrant client. Mail is the bank's own correspondence, so every hit is
+    treated as internal evidence: the card is marked sensitive and the passages are never
+    eligible for a public web synthesis.
+    """
+    _require_external(policy, "email")
+    from app.services import email_intel
+
+    # The question as written, plus a data-seeking phrasing with question words stripped.
+    # Mail chunks are short, so a single literal question frequently misses a message
+    # whose wording differs.
+    queries = [intent]
+    keywords = " ".join(
+        word for word in intent.split() if word.lower() not in _EMAIL_QUERY_STOPWORDS
+    )
+    if keywords.strip():
+        queries.append(keywords.strip())
+
+    try:
+        # The embedder and Qdrant client are synchronous; keep them off the event loop so a
+        # cold model load cannot freeze every active workbench stream.
+        chunks = await asyncio.to_thread(email_intel.search_multi, queries)
+    except Exception as exc:  # noqa: BLE001 - external retrieval must degrade per source
+        logger.warning("workbench email retrieval failed: %s", exc)
+        return SourceResult(
+            source="email",
+            card_type="error",
+            payload={
+                "message": "Email intelligence is temporarily unavailable. The mailbox index did not respond.",
+                "retryable": True,
+            },
+            sensitive=True,
+        )
+    if not chunks:
+        return SourceResult(
+            source="email",
+            card_type="brief",
+            payload={"summary": "No mailbox messages matched that question.", "sources": []},
+            summary="No email context available.",
+            complete=False,
+            limitation="No mailbox messages matched the question.",
+            sensitive=True,
+        )
+
+    sources = _email_source_refs(chunks)
+    evidence = _chunk_evidence(chunks)
+    messages = len({hit.get("email_id") for hit in chunks if hit.get("email_id")})
+    summary = (
+        f"Retrieved {len(evidence)} passage{'s' if len(evidence) != 1 else ''} "
+        f"from {messages or len(chunks)} mailbox message{'s' if (messages or 1) != 1 else ''}."
+    )
+    # The card the console renders is richer than the citations the model reads: it carries
+    # each cited message's body and its attachment so a citation can open a preview. The
+    # lean `sources` above stay as they are — full bodies would bloat the model's evidence.
+    card_sources = await asyncio.to_thread(_email_card_sources, chunks)
+    return SourceResult(
+        source="email",
+        card_type="brief",
+        payload={"summary": summary, "sources": card_sources},
+        summary=summary,
+        sources=sources,
+        evidence=evidence,
+        sensitive=True,
+    )
+
+
+_EMAIL_QUERY_STOPWORDS = {
+    "a", "an", "and", "any", "are", "as", "at", "be", "did", "do", "does", "for", "from",
+    "has", "have", "how", "i", "in", "is", "it", "me", "my", "of", "on", "or", "our", "please",
+    "show", "that", "the", "their", "them", "there", "these", "they", "this", "to", "us",
+    "was", "we", "were", "what", "when", "where", "which", "who", "why", "will", "with",
+    "you", "your",
+}
+
+
+def _email_source_refs(chunks: list[dict]) -> list[dict]:
+    """Cite a message, not a passage, so citations stay readable in an answer."""
+    refs: list[dict] = []
+    seen: set[tuple[str, str]] = set()
+    for chunk in chunks:
+        key = (str(chunk.get("email_id") or ""), str(chunk.get("document") or ""))
+        if key in seen:
+            continue
+        seen.add(key)
+        received = chunk.get("received_at") or ""
+        refs.append({
+            "document": chunk.get("document") or "email",
+            "subject": chunk.get("subject") or "",
+            "sender": chunk.get("sender") or "",
+            "date": str(received)[:10],
+            "page": None,
+            "score": round(float(chunk.get("score", 0.0)), 3),
+        })
+        if len(refs) >= 6:
+            break
+    return refs
+
+
+def _email_card_sources(chunks: list[dict]) -> list[dict]:
+    """Per-cited-message view data for the console's attachment/message viewer.
+
+    One row per message, capped like the citations. For each it fetches the full body (an
+    attachment hit's own text is the document's contents, not the mail, so the body is read
+    separately) and describes the original attachment if there is one. Bodies are read once
+    per message, so a message contributing several chunks costs one lookup, not one per
+    chunk. Synchronous by design: the caller runs it in a worker thread.
+    """
+    from app.services import email_files, email_intel
+
+    refs: list[dict] = []
+    seen: set[tuple[str, str]] = set()
+    body_cache: dict[str, str] = {}
+    for chunk in chunks:
+        email_id = str(chunk.get("email_id") or "")
+        key = (email_id, str(chunk.get("document") or ""))
+        if key in seen:
+            continue
+        seen.add(key)
+        if email_id and email_id not in body_cache:
+            body_cache[email_id] = email_intel.email_body(email_id)
+        received = chunk.get("received_at") or ""
+        refs.append({
+            "document": chunk.get("document") or "email",
+            "subject": chunk.get("subject") or "",
+            "sender": chunk.get("sender") or "",
+            "date": str(received)[:10],
+            "score": round(float(chunk.get("score", 0.0)), 3),
+            "body": body_cache.get(email_id, ""),
+            "chunk_text": chunk.get("text") or "",
+            "attachment": email_files.describe(
+                chunk.get("file_path") or "", chunk.get("filename")
+            ),
+        })
+        if len(refs) >= 6:
+            break
+    return refs
 
 
 async def run_web(
@@ -450,24 +838,65 @@ def _chunk_evidence(chunks: list[dict]) -> list[Evidence]:
 async def run_customer(
     intent: str, *, policy: "SourceAccessPolicy | None" = None,
 ) -> SourceResult:
-    """Retrieve customer evidence from the externally indexed Qdrant store; the native
-    agent owns all prose and the consent gate governs every retrieval."""
-    _require_external(policy, "customer")
-    try:
-        # Qdrant and sentence-transformers are synchronous. Keep them off the event loop so
-        # a slow remote vector store does not freeze every active workbench stream.
-        chunks = await asyncio.to_thread(rag.search_multi, EXTERNAL_CUSTOMER_COLLECTION, [intent])
-    except Exception as exc:  # noqa: BLE001 - external retrieval must degrade per source
-        logger.warning("workbench customer retrieval failed: %s", exc)
-        return SourceResult(
-            source="customer",
-            card_type="error",
-            payload={
-                "message": "Customer intelligence is temporarily unavailable. The vector store did not respond.",
-                "retryable": True,
-            },
-        )
-    if not chunks:
+    """Answer customer detail questions from the governed database and the externally
+    indexed Qdrant store, read-only.
+
+    The database profile and the external passages are rendered as separate sections of one
+    table so the origin of every fact is visible. Both accesses are strictly read-only: the
+    Qdrant search never mutates, and the database query runs on the `nlq_readonly` pool,
+    which re-applies `default_transaction_read_only = on` on every checkout.
+
+    The governed database profile is internal data, so it is returned whenever the `db`
+    source is allowed. The external (Qdrant) passages are consent-gated: when external
+    source consent is not granted, the card degrades to the database-only section with a
+    visible "no external data" note rather than failing the turn.
+    """
+    if policy is not None:
+        policy.require("db")
+    external_allowed = policy is None or policy.allows("customer")
+    chunks: list[dict] = []
+    if external_allowed:
+        try:
+            # Qdrant and sentence-transformers are synchronous. Keep them off the event
+            # loop so a slow remote vector store does not freeze every active workbench
+            # stream.
+            chunks = await asyncio.to_thread(rag.search_multi, EXTERNAL_CUSTOMER_COLLECTION, [intent])
+        except Exception as exc:  # noqa: BLE001 - external retrieval must degrade per source
+            logger.warning("workbench customer retrieval failed: %s", exc)
+            return SourceResult(
+                source="customer",
+                card_type="error",
+                payload={
+                    "message": "Customer intelligence is temporarily unavailable. The vector store did not respond.",
+                    "retryable": True,
+                },
+            )
+
+    customer_id = _extract_customer_id(intent)
+    db_rows: list[dict[str, Any]] | None = None
+    db_duration_ms = 0
+    db_unavailable = False
+    if customer_id is not None:
+        try:
+            db_rows, db_duration_ms = await asyncio.to_thread(_read_customer_rows, customer_id)
+        except Exception as exc:  # noqa: BLE001 - the DB must degrade per source, never fail the turn
+            logger.warning("workbench customer DB lookup failed for %s: %s", customer_id, exc)
+            db_rows = None
+            db_unavailable = True
+
+    if not chunks and not db_rows:
+        if db_unavailable:
+            return SourceResult(
+                source="customer",
+                card_type="brief",
+                payload={
+                    "summary": "The governed database record could not be read for this customer.",
+                    "sources": [],
+                },
+                summary="The customer database record could not be read.",
+                complete=False,
+                limitation="The governed database record could not be read for this customer.",
+            )
         return SourceResult(
             source="customer",
             card_type="brief",
@@ -477,14 +906,21 @@ async def run_customer(
             limitation="No customer sources matched the question.",
         )
 
-    sources = _source_refs(chunks)
-    evidence = _chunk_evidence(chunks)
-    summary = f"Retrieved {len(evidence)} relevant customer passage{'s' if len(evidence) != 1 else ''}."
+    payload, summary, complete, limitation = _customer_card_components(
+        customer_id=customer_id or "",
+        db_rows=db_rows,
+        db_duration_ms=db_duration_ms,
+        chunks=chunks,
+        db_unavailable=db_unavailable,
+    )
     return SourceResult(
         source="customer",
-        card_type="brief",
-        payload={"summary": summary, "sources": sources},
+        card_type="chart",
+        payload=payload,
         summary=summary,
-        sources=sources,
-        evidence=evidence,
+        sources=_source_refs(chunks),
+        evidence=_chunk_evidence(chunks),
+        complete=complete,
+        limitation=limitation,
+        sensitive=bool(db_rows),
     )

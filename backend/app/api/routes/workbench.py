@@ -101,6 +101,8 @@ class AskRequest(BaseModel):
     # "+" -> Pin a source. Policy narrows the native tool set to that authorized source.
     pinned_source: str | None = None
     external_sources_enabled: bool = False
+    # Dedicated mail consent, so the console can switch the mailbox on by itself.
+    email_enabled: bool = False
 
 
 @router.get("/sources")
@@ -137,6 +139,7 @@ async def get_conversation(conversation_id: str, authorization: str | None = Hea
         "updated_at": rec.updated_at.isoformat(),
         "record_version": rec.record_version,
         "external_sources_enabled": rec.external_sources_enabled,
+        "email_enabled": rec.email_enabled,
         "turns": [_turn_for_api(turn) for turn in rec.turns],
     }
 
@@ -263,6 +266,7 @@ async def ask(req: AskRequest, authorization: str | None = Header(default=None))
             role=role,
             pinned=req.pinned_source,
             external_sources_enabled=req.external_sources_enabled,
+            email_enabled=req.email_enabled,
         ),
         media_type="text/event-stream",
         headers={
