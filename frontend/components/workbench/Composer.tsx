@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
+  ArrowUp,
   Check,
   Database,
   Filter,
@@ -329,18 +330,19 @@ export default function Composer({
         </div>
 
         <div className="flex shrink-0 items-center gap-1.5">
-          {busy && (
-            <Button
-              type="button"
-              size="icon"
-              variant="ghost"
-              className={actionButtonClassName}
-              onClick={onCancel}
-              aria-label="Stop response"
-            >
-              <Square className="size-3.5 fill-current" />
-            </Button>
-          )}
+          <Button
+            type="button"
+            size="icon"
+            variant="ghost"
+            className={actionButtonClassName}
+            onClick={busy ? onCancel : submit}
+            disabled={!busy && !value.trim()}
+            aria-label={busy ? 'Stop response' : 'Send message'}
+          >
+            {busy
+              ? <Square className="size-3.5 fill-current" />
+              : <ArrowUp className="size-4" />}
+          </Button>
         </div>
       </div>
     </div>
