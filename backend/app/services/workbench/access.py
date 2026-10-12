@@ -80,6 +80,15 @@ class SourceAccessPolicy:
             "pinned_source": self.pinned_source,
         }
 
+    def require_customer_details(self) -> None:
+        """Private Qdrant enrichment follows the Loan book + external switch."""
+        self.require("db")
+        # A Loan book pin must still permit its supplemental private evidence.
+        if "knowledge" not in self.role_sources or "knowledge" not in self.deployment_sources:
+            raise SourceAccessDenied("knowledge: source is unavailable")
+        if not self.external_sources_enabled or not self.deployment_external_connectors_enabled:
+            raise SourceAccessDenied("Customer details require Loan book + external to be enabled")
+
 
 def build_policy(
     *,

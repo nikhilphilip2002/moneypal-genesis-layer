@@ -124,6 +124,18 @@ npm run dev
 ```
 Open [http://localhost:3000](http://localhost:3000) in your browser.
 
+For customer or agent detail questions, **Loan book + external** also enables
+`search_customer_360`. It retrieves exact-ID matches from the private Qdrant
+`External_customer_details` collection and displays supplemental evidence beside the
+PostgreSQL result. Empty matches display "Couldn't find external data for this customer"
+(or agent); connection failures are reported as unavailable. Names are resolved to IDs
+through PostgreSQL first. Standard roles receive masked evidence with document text hidden.
+Set `CUSTOMER_DETAILS_COLLECTION` to override the collection and optionally
+`CUSTOMER_DETAILS_QDRANT_URL` for a separate private Qdrant endpoint; otherwise it uses
+`QDRANT_URL`. The current payload uses `customer_id`, `customer_name`, `occupation`,
+`city`, `district`, `channel`, `source_name`, and `scraped_snippet`; agent records must
+carry `agent_id`. The lookup is read-only and does not need to load an embedding model.
+
 ### 5. Run the Complete Docker Stack
 
 ```bash

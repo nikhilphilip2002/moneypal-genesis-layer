@@ -143,6 +143,8 @@ def _is_postgres_tool(name: str) -> bool:
 
 
 def _source_for_call(call) -> str | None:
+    if call.name == "search_customer_360":
+        return "db"
     if _is_postgres_tool(call.name):
         return "db"
     if call.name == "search_public_web":

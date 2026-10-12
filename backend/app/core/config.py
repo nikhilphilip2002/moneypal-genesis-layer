@@ -36,11 +36,22 @@ class Settings:
         def get(name: str, default: str | None = None) -> str | None:
             return os.environ.get(name) or env_file.get(name) or default
 
+        # Share the same environment/.env precedence across both database adapters.
+        self.postgres_host = (get("POSTGRES_HOST", "192.168.1.183") or "192.168.1.183").removeprefix("http://").rstrip("/")
+        self.postgres_port = int(get("POSTGRES_PORT", "5432") or "5432")
+        self.postgres_db = get("POSTGRES_DB", "moneypaldb") or "moneypaldb"
+        self.postgres_user = get("POSTGRES_USER", "moneypal") or "moneypal"
+        self.postgres_password = get("POSTGRES_PASSWORD", "moneypal123") or "moneypal123"
+
         self.qdrant_url = (
             get("QDRANT_URL", "http://localhost:6333")
             or "http://localhost:6333"
         )
         self.qdrant_api_key = get("QDRANT_API_KEY")
+        self.customer_details_collection = get(
+            "CUSTOMER_DETAILS_COLLECTION", "External_customer_details"
+        ) or "External_customer_details"
+        self.customer_details_qdrant_url = get("CUSTOMER_DETAILS_QDRANT_URL") or self.qdrant_url
         self.qdrant_timeout = float(get("QDRANT_TIMEOUT", "20.0") or "20.0")
 
         self.embedding_model = (

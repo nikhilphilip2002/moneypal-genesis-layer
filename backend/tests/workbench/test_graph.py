@@ -624,6 +624,25 @@ def _successful_query(query_id: str = "turn-answer:q1") -> dict:
 
 
 @pytest.mark.anyio
+async def test_customer_360_card_does_not_mark_loan_book_unavailable():
+    state = _answer_state("The loan-book customer was found.", [_successful_query()])
+    state["results"].append(
+        SourceResult(
+            source="db",
+            card_type="customer_360",
+            payload={"status": "found", "message": "Found external evidence.", "records": [{}]},
+            summary="Found external evidence.",
+        )
+    )
+
+    await graph.answer_results(state)
+
+    answer = json.loads(state["emit"].get_nowait().split("data: ", 1)[1])
+    assert answer["status"] == "answered"
+    assert answer["unavailable_sources"] == []
+
+
+@pytest.mark.anyio
 async def test_answer_results_reconciles_structured_query_references():
     state = _answer_state(
         json.dumps(

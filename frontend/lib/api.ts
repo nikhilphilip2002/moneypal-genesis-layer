@@ -911,7 +911,7 @@ export type WorkbenchCard = {
   source: string;
   card_type:
     | 'chart' | 'analysis' | 'worklist' | 'briefing' | 'brief' | 'schema' | 'catalog'
-    | 'clarify' | 'refusal' | 'error';
+    | 'customer_360' | 'clarify' | 'refusal' | 'error';
   payload: unknown;
   query_id?: string;
   attempt_id?: string;

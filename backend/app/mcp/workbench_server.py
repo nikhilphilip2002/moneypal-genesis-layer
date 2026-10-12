@@ -136,6 +136,31 @@ async def search_public_web(
     return success(_card_data(await _search_public_web(args, execution_ctx)))
 
 
+@mcp.tool(description=(
+    "Retrieve supplemental external customer or agent details from the private Qdrant "
+    "collection when Loan book + external is enabled. Use lookup_by='id' with the exact "
+    "customer_id or agent_id resolved by PostgreSQL. If PostgreSQL has no named match, use "
+    "lookup_by='name' with the user's name to search the external collection. Keep querying "
+    "PostgreSQL for relational facts. This returns an evidence card, including an explicit "
+    "not-found message; it does not replace the loan book query."
+))
+async def search_customer_360(
+    customer_id: Annotated[str, Field(min_length=1, max_length=100, pattern=r".*\S.*")],
+    ctx: Context,
+    entity_type: Literal["customer", "agent"] = "customer",
+    lookup_by: Literal["id", "name"] = "id",
+) -> dict[str, Any]:
+    from app.services.workbench.customer_details import search_customer_details
+
+    execution_ctx = _execution_context(ctx)
+    execution_ctx.source_policy.require_customer_details()
+    card = await search_customer_details(
+        customer_id, entity_type=entity_type, role=execution_ctx.role,
+        policy=execution_ctx.source_policy, lookup_by=lookup_by,
+    )
+    return success(_card_data(card))
+
+
 @mcp.tool()
 async def submit_final_answer(
     submission: FinalSubmissionArguments,

@@ -274,6 +274,33 @@ async function exportWorklist(worklist: Worklist) {
 }
 
 function CardBody({ card, onAsk }: { card: CardData; onAsk: (q: string) => void }) {
+  if (card.card_type === 'customer_360') {
+    const data = card.payload as {
+      entity_type: string; message: string; limitation?: string;
+      records: { details: Record<string, string>; snippet: string; source: string }[];
+    };
+    return (
+      <WorkbenchCard source={card.source} title={`External ${data.entity_type} details`} subtitle="Qdrant evidence">
+        <p className="text-sm text-muted-foreground">{data.message}</p>
+        {data.records.map((record, index) => (
+          <div key={index} className="space-y-2 rounded-lg border border-border p-3">
+            <dl className="grid gap-2 sm:grid-cols-2">
+              {Object.entries(record.details).map(([key, value]) => (
+                <div key={key}>
+                  <dt className="text-xs capitalize text-muted-foreground">{key.replaceAll('_', ' ')}</dt>
+                  <dd className="break-words text-sm">{value}</dd>
+                </div>
+              ))}
+            </dl>
+            {record.snippet && <p className="whitespace-pre-wrap break-words text-sm">{record.snippet}</p>}
+            <p className="text-xs text-muted-foreground">Source: {record.source}</p>
+          </div>
+        ))}
+        {data.limitation && <p className="text-xs text-muted-foreground">{data.limitation}</p>}
+      </WorkbenchCard>
+    );
+  }
+
   if (card.card_type === 'chart') {
     const chart = card.payload as ChartSpec;
     return (

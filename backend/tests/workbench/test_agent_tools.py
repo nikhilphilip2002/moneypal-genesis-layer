@@ -49,6 +49,7 @@ def _walk(value: Any):
 
 def test_registry_contains_runtime_policy_only():
     assert list(RUNTIME_TOOL_POLICIES) == [
+        "search_customer_360",
         "search_curated_knowledge",
         "search_public_web",
         "submit_final_answer",

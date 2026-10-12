@@ -258,7 +258,11 @@ async def answer_results(state: WorkbenchState) -> dict[str, Any]:
             ),
         }
         for r in all_results
+        # Customer 360 is a supplemental Qdrant card. Whether it found evidence,
+        # found nothing, or is temporarily unavailable, the card itself states that
+        # outcome. It must not be reported as an unavailable Loan book source.
         if r not in results
+        and r.card_type != "customer_360"
     ]
     limitations = list(
         decision.limitations if decision is not None else []

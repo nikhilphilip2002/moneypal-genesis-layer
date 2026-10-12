@@ -296,7 +296,7 @@ export default function Composer({
           <label
             htmlFor="workbench-external-sources"
             className="flex cursor-pointer items-center gap-2 rounded-lg px-1.5 py-1 text-[11px] text-muted-foreground"
-            title="Allow macro, competitive, regulatory, and web sources for this conversation"
+            title="Allow external customer and agent details, macro, competitive, regulatory, and web sources for this conversation"
           >
             <Switch
               id="workbench-external-sources"
@@ -309,7 +309,7 @@ export default function Composer({
               {externalSourcesEnabled ? 'Loan book + external' : 'Loan book only'}
             </span>
             <span id="workbench-external-sources-description" className="sr-only">
-              Enables macro, competitive, regulatory, and live web sources together.
+              Enables external customer and agent details, macro, competitive, regulatory, and live web sources together.
             </span>
           </label>
 

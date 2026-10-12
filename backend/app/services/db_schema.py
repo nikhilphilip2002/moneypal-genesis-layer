@@ -7,7 +7,6 @@ than filled with a plausible-looking placeholder.
 
 import contextlib
 import logging
-import os
 from typing import (
     Any,
     Callable,
@@ -18,6 +17,8 @@ from typing import (
     Sequence,
     Tuple,
 )
+
+from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -73,24 +74,12 @@ def get_connection():
         raise RuntimeError(
             "No PostgreSQL driver available. Install psycopg2-binary (preferred) or pg8000."
         )
-    host = os.environ.get("POSTGRES_HOST", "192.168.1.183")
-
-    if host.startswith("http://"):
-        host = host[7:]
-    if host.endswith("/"):
-        host = host[:-1]
-
-    port = int(os.environ.get("POSTGRES_PORT", "5432"))
-    dbname = os.environ.get("POSTGRES_DB", "moneypaldb")
-    user = os.environ.get("POSTGRES_USER", "moneypal")
-    password = os.environ.get("POSTGRES_PASSWORD", "moneypal123")
-
     kwargs: Dict[str, Any] = {
-        "host": host,
-        "port": port,
-        "database": dbname,
-        "user": user,
-        "password": password,
+        "host": settings.postgres_host,
+        "port": settings.postgres_port,
+        "database": settings.postgres_db,
+        "user": settings.postgres_user,
+        "password": settings.postgres_password,
     }
     # The two drivers spell the connect timeout differently.
     kwargs[

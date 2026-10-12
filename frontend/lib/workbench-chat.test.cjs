@@ -35,6 +35,48 @@ function loadComponent(filename, react = React, modules = {}) {
   return exports.default;
 }
 
+test('customer evidence renders alongside the selected PostgreSQL result and reports missing data', () => {
+  const Passthrough = ({ children }) => children;
+  const WorkbenchTurn = loadComponent(`${__dirname}/../components/workbench/WorkbenchTurn.tsx`, React, {
+    '@/lib/api': {},
+    '@/lib/workbench-ui': {
+      STREAM_RENDERABLE_CARD_TYPES: new Set(['chart', 'customer_360']), sourceLabel: (s) => s,
+    },
+    '@/components/nlq/AnalysisCard': { default: Passthrough },
+    '@/components/nlq/ChartRenderer': { default: () => 'Existing loan result' },
+    '@/components/nlq/NextQuestions': { default: () => null },
+    '@/components/nlq/BriefingCard': { default: Passthrough },
+    '@/components/nlq/WorklistCard': { default: Passthrough },
+    '@/components/nlq/LineagePanel': { default: () => null },
+    '@/components/intel/BriefRenderer': { default: Passthrough },
+    './MarkdownRenderer': { default: () => null },
+    './WorkbenchCard': { default: ({ title, children }) => React.createElement('section', null, title, children) },
+    './ExecutionTrace': { default: () => null },
+  });
+  const turn = {
+    id: 'turn', question: 'Customer details', pending: [], done: true,
+    answer: { text: 'Answer', visual_query_ids: ['q1'], citations: [] },
+    cards: [
+      { source: 'db', card_type: 'chart', query_id: 'q1', payload: { title: 'Loans' } },
+      { source: 'db', card_type: 'customer_360', payload: {
+        entity_type: 'customer', message: 'External evidence found', records: [{
+          details: { occupation: 'Farmer' }, snippet: 'Credit notes <script>alert(1)</script>', source: 'Field report',
+        }],
+      } },
+    ],
+  };
+  const markup = renderToStaticMarkup(React.createElement(WorkbenchTurn, { turn, onAsk() {} }));
+  assert.match(markup, /Existing loan result/);
+  assert.match(markup, /External customer details/);
+  assert.match(markup, /Farmer/);
+  assert.match(markup, /Source: .*Field report/);
+  assert.doesNotMatch(markup, /<script>/);
+  turn.cards[1].payload = { entity_type: 'customer', message: "Couldn't find external data for this customer.", records: [] };
+  const missing = renderToStaticMarkup(React.createElement(WorkbenchTurn, { turn, onAsk() {} }));
+  assert.match(missing, /find external data for this customer/);
+  assert.match(missing, /Existing loan result/);
+});
+
 test('queued messages show edit, remove, clear, and the hold from the edited entry', () => {
   const QueuedMessages = loadComponent(`${__dirname}/../components/workbench/QueuedMessages.tsx`);
   const queue = {

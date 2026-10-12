@@ -58,6 +58,10 @@ class RuntimeToolPolicy:
 
 
 RUNTIME_TOOL_POLICIES: dict[str, RuntimeToolPolicy] = {
+    "search_customer_360": RuntimeToolPolicy(
+        source_id="db", sensitivity="internal", timeout_s=25.0,
+        max_result_chars=12_000,
+    ),
     "search_curated_knowledge": RuntimeToolPolicy(
         source_id=None,
         sensitivity="internal",
@@ -91,6 +95,11 @@ def allowed_curated_domains(policy: SourceAccessPolicy) -> list[str]:
 def visible_runtime_tool_names(policy: SourceAccessPolicy) -> list[str]:
     visible: list[str] = []
     for name, runtime_policy in RUNTIME_TOOL_POLICIES.items():
+        if name == "search_customer_360":
+            try:
+                policy.require_customer_details()
+            except SourceAccessDenied:
+                continue
         if runtime_policy.source_id is not None and not policy.allows(
             runtime_policy.source_id
         ):
@@ -118,6 +127,11 @@ def authorize_local_tool_call(
 ) -> None:
     """Apply policy only; FastMCP remains the sole argument-validation boundary."""
     runtime_policy = get_runtime_tool_policy(name)
+    if name == "search_customer_360":
+        try:
+            policy.require_customer_details()
+        except SourceAccessDenied as exc:
+            raise AgentToolAccessDenied(str(exc)) from exc
     if not isinstance(arguments, dict):
         raise AgentToolArgumentsInvalid(
             "MCP tool arguments must be a JSON object"
