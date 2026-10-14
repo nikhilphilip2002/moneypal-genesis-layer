@@ -171,6 +171,9 @@ async def submit_final_answer(
 ) -> ToolResult:
     """Submit the final answer with evidence references and visuals.
 
+    Prefer visualized results. Submit an answer without visualization only when
+    visualization is not possible.
+
     Use query_id from the query results and card_reference IDs from successful knowledge/web results. 
     """
 
