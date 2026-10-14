@@ -16,6 +16,8 @@ from datetime import date, datetime
 from decimal import Decimal
 from typing import Any
 
+import sqlglot
+
 from app.core.config import settings
 from app.services.nlq import cache
 from app.services.nlq import db as nlq_db
@@ -166,24 +168,41 @@ def execute(
     return result
 
 
-def execute_raw(sql: str, *, explain_gate: bool = True) -> QueryResult:
+def execute_raw(
+    sql: str,
+    *,
+    explain_gate: bool = True,
+    automatic_row_limit: int | None = None,
+) -> QueryResult:
     """Execute a statement that has already passed `validator.validate`.
 
     Separate from `execute` so the type system makes the difference visible: this takes a
     bare string and therefore must only ever be called with validator output. It carries no
     parameters because the validator receives a complete literal statement.
+
+    When automatic_row_limit is supplied, fetch one extra row to detect
+    incomplete results and return at most that limit.
     """
     started = time.perf_counter()
+    execution_sql = sql
+    if automatic_row_limit is not None:
+        execution_sql = (
+            sqlglot.parse_one(sql, read="postgres")
+            .limit(automatic_row_limit + 1)
+            .sql(dialect="postgres")
+        )
     try:
         with nlq_db.readonly_cursor() as (conn, cur):
-            plan_cost = _explain(conn, cur, sql, []) if explain_gate else None
+            plan_cost = (
+                _explain(conn, cur, execution_sql, []) if explain_gate else None
+            )
             if plan_cost is not None and plan_cost > MAX_PLAN_COST:
                 raise ExecutionError(
                     "That question is too broad to answer quickly. Try narrowing the "
                     "period or adding a filter.",
                     detail=f"estimated plan cost {plan_cost:,.0f}",
                 )
-            cur.execute(sql)
+            cur.execute(execution_sql)
             columns = [d[0] for d in cur.description] if cur.description else []
             raw_rows = cur.fetchall()
             conn.rollback()
@@ -203,6 +222,11 @@ def execute_raw(sql: str, *, explain_gate: bool = True) -> QueryResult:
             detail=f"{type(exc).__name__}: {exc}",
         ) from exc
 
+    truncated = (
+        automatic_row_limit is not None and len(raw_rows) > automatic_row_limit
+    )
+    if truncated:
+        raw_rows = raw_rows[:automatic_row_limit]
     rows = [
         dict(zip(columns, _coerce_row(row), strict=False)) for row in raw_rows
     ]
@@ -213,7 +237,16 @@ def execute_raw(sql: str, *, explain_gate: bool = True) -> QueryResult:
         duration_ms=int((time.perf_counter() - started) * 1000),
         sql=sql,
         row_count=len(rows),
+        truncated=truncated,
         plan_cost=plan_cost,
+        warnings=(
+            [
+                f"This result contains the first {automatic_row_limit:,} rows. "
+                "More rows match the query."
+            ]
+            if truncated
+            else []
+        ),
     )
 
 

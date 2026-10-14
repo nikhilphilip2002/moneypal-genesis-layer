@@ -18,8 +18,8 @@ from app.services.nlq import pii
 from app.services.nlq.catalog import get_catalog
 from app.services.nlq.executor import ExecutionError, execute_raw
 from app.services.nlq.sql_execution import infer_column_units
+from app.services.nlq.validator import MAX_LIMIT, validate
 from app.services.nlq.validator import ValidationError as SqlValidationError
-from app.services.nlq.validator import validate
 
 mcp = FastMCP(
     "Moneypal PostgreSQL",
@@ -74,7 +74,10 @@ def _query(sql: str, meta: dict[str, Any]) -> dict[str, Any]:
         )
 
     try:
-        result = execute_raw(checked.sql)
+        if checked.limit_injected:
+            result = execute_raw(checked.sql, automatic_row_limit=MAX_LIMIT)
+        else:
+            result = execute_raw(checked.sql)
     except ExecutionError as exc:
         return failure(
             exc.code,
