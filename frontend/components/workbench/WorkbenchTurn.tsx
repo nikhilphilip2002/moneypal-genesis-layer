@@ -67,7 +67,7 @@ export default function WorkbenchTurn({ turn, onAsk }: { turn: WorkbenchTurnData
               card && STREAM_RENDERABLE_CARD_TYPES.has(card.card_type),
             )),
           ...turn.cards.filter((card) =>
-            !card.query_id && STREAM_RENDERABLE_CARD_TYPES.has(card.card_type),
+            !turn.answer?.evidence && !card.query_id && STREAM_RENDERABLE_CARD_TYPES.has(card.card_type),
           ),
         ]
       : turn.done
@@ -98,7 +98,7 @@ export default function WorkbenchTurn({ turn, onAsk }: { turn: WorkbenchTurnData
   }
   // Model deltas are provisional. During generation the execution trace carries progress;
   // after finalization the reconciled answer is the only user-facing narrative.
-  const modelMessages = turn.done && !turn.answer && !turn.synthesis
+  const modelMessages = turn.done && !turn.answer && !turn.synthesis && turn.error?.code !== 'FINAL_ANSWER_NOT_SUBMITTED'
     ? (turn.modelMessages ?? []).filter(Boolean)
     : [];
   const answerText = modelMessages.length === 0
@@ -177,9 +177,17 @@ export default function WorkbenchTurn({ turn, onAsk }: { turn: WorkbenchTurnData
             </div>
           )}
 
-          {turn.answer?.citations.some((citation) => citation.url) && (
+          {turn.answer?.evidence?.some((reference) => reference.query_id !== undefined) && (
+            <div className="flex flex-wrap gap-1.5" aria-label="Supporting queries">
+              {turn.answer.evidence.filter((reference) => reference.query_id !== undefined).map((reference) => (
+                <Badge key={reference.query_id} variant="outline">Query {reference.query_id}</Badge>
+              ))}
+            </div>
+          )}
+
+          {Boolean(turn.answer?.citations.length) && (
             <div className="flex flex-wrap gap-1.5">
-              {turn.answer.citations.filter((citation) => citation.url).map((citation, index) => (
+              {turn.answer?.citations.map((citation, index) => citation.url ? (
                 <a
                   key={citation.url ?? index}
                   href={citation.url}
@@ -191,6 +199,11 @@ export default function WorkbenchTurn({ turn, onAsk }: { turn: WorkbenchTurnData
                   <span className="truncate">{citation.title || citation.document}</span>
                   {citation.primary ? <span className="ml-1 text-[9px] uppercase">Official</span> : null}
                 </a>
+              ) : (
+                <span key={`${citation.document}-${index}`} className={SOURCE_BADGE}>
+                  {citation.title || citation.document}
+                  {citation.page != null ? ` · p. ${citation.page}` : ''}
+                </span>
               ))}
             </div>
           )}

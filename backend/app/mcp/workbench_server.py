@@ -141,23 +141,33 @@ async def submit_final_answer(
     submission: FinalSubmissionArguments,
     ctx: Context,
 ) -> ToolResult:
-    """Display the selected query result to the user.
+    """Submit the complete Markdown answer, evidence references, and optional visuals.
 
-    Submit an answer, clarification, or refusal as the only tool in the final response.
-    For answers, use a successful query's numeric query_id from this conversation and choose
-    its view. Keep the message concise; result rows are displayed separately.
+    Use query_id references from successful database results and card_reference IDs
+    from successful knowledge/web results. Each visual selects its own query and view.
+    Legacy single-query answers, clarifications, and refusals remain supported.
+    Submit as the only tool in the final response.
     """
 
     if isinstance(submission, SubmitAnswerArguments):
-        _execution_context(ctx).source_policy.require("db")
+        if any(
+            ref.query_id is not None
+            for ref in submission.evidence_references()
+        ):
+            _execution_context(ctx).source_policy.require("db")
         synthesis = FinalSynthesis(
             insights=submission.message,
             query_id=submission.query_id,
             view=submission.view,
+            evidence=submission.evidence,
+            visuals=submission.visuals,
         )
         terminal = {
             "outcome": "answer",
-            "synthesis": synthesis.model_dump(mode="json"),
+            "synthesis": {
+                **synthesis.model_dump(mode="json", exclude_defaults=True),
+                "insights": synthesis.insights,
+            },
         }
     else:
         terminal = submission.model_dump(mode="json")

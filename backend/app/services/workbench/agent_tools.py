@@ -132,6 +132,13 @@ def authorize_local_tool_call(
         name == "submit_final_answer"
         and isinstance(submission, dict)
         and submission.get("outcome") == "answer"
+        and (
+            submission.get("query_id") is not None
+            or any(
+                isinstance(ref, dict) and ref.get("query_id") is not None
+                for ref in submission.get("evidence", [])
+            )
+        )
     ):
         try:
             policy.require("db")

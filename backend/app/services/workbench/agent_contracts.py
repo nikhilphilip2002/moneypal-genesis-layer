@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class AgentArguments(BaseModel):
@@ -100,14 +100,70 @@ class ExcludedQueryReference(BaseModel):
     reason: str = Field(default="", max_length=500)
 
 
-class FinalSynthesis(BaseModel):
-    """The deliberately small model-authored contract for a query-backed answer."""
+class EvidenceReference(AgentArguments):
+    query_id: int | None = Field(default=None, ge=1)
+    card_reference: str | None = Field(
+        default=None, min_length=1, max_length=500
+    )
 
-    model_config = ConfigDict(extra="forbid")
+    @model_validator(mode="after")
+    def require_one_reference(self):
+        if (self.query_id is None) == (self.card_reference is None):
+            raise ValueError(
+                "Provide exactly one of query_id or card_reference"
+            )
+        return self
 
-    insights: str = Field(default="", max_length=20_000)
+
+class AnswerVisual(AgentArguments):
     query_id: int = Field(ge=1)
     view: VisualizationChartType
+
+
+class AnswerPresentation(AgentArguments):
+    query_id: int | None = Field(default=None, ge=1)
+    view: VisualizationChartType | None = None
+    evidence: list[EvidenceReference] = Field(
+        default_factory=list, max_length=30
+    )
+    visuals: list[AnswerVisual] = Field(default_factory=list, max_length=10)
+
+    @model_validator(mode="after")
+    def validate_presentation(self):
+        if (self.query_id is None) != (self.view is None):
+            raise ValueError(
+                "Legacy query_id and view must be provided together"
+            )
+        if self.query_id is not None and (self.evidence or self.visuals):
+            raise ValueError(
+                "Use evidence and visuals, or legacy query_id and view"
+            )
+        if len({visual.query_id for visual in self.visuals}) != len(
+            self.visuals
+        ):
+            raise ValueError("Provide at most one visual per query")
+        evidence_queries = {ref.query_id for ref in self.evidence}
+        if any(
+            visual.query_id not in evidence_queries for visual in self.visuals
+        ):
+            raise ValueError(
+                "Each visual query_id must also appear in evidence"
+            )
+        return self
+
+    def evidence_references(self) -> list[EvidenceReference]:
+        if self.query_id is not None:
+            return [EvidenceReference(query_id=self.query_id)]
+        return self.evidence
+
+    def requested_visuals(self) -> list[AnswerVisual]:
+        if self.query_id is not None and self.view is not None:
+            return [AnswerVisual(query_id=self.query_id, view=self.view)]
+        return self.visuals
+
+
+class FinalSynthesis(AnswerPresentation):
+    insights: str = Field(default="", max_length=20_000)
 
 
 class SearchCuratedKnowledgeArguments(AgentArguments):
@@ -128,13 +184,15 @@ class VisualizeQueryResultArguments(AgentArguments):
     aggregation: VisualizationAggregation
 
 
-class SubmitAnswerArguments(AgentArguments):
-    """Submit one successful database query for final presentation."""
-
+class SubmitAnswerArguments(AnswerPresentation):
     outcome: Literal["answer"]
     message: str = Field(max_length=20_000)
-    query_id: int = Field(ge=1)
-    view: VisualizationChartType
+
+    @model_validator(mode="after")
+    def require_answer_content(self):
+        if self.query_id is None and not self.message.strip():
+            raise ValueError("A composed answer requires a Markdown message")
+        return self
 
 
 class SubmitClarificationArguments(AgentArguments):

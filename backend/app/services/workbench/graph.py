@@ -317,7 +317,7 @@ async def answer_results(state: WorkbenchState) -> dict[str, Any]:
         )
         return {}
 
-    if not results:
+    if not results and state.get("agent_final_synthesis") is None:
         refusal = next(
             (r for r in all_results if r.card_type == "refusal"), None
         )
@@ -430,7 +430,7 @@ async def answer_results(state: WorkbenchState) -> dict[str, Any]:
             )
         return {}
 
-    text = results[0].summary.strip()
+    text = results[0].summary.strip() if results else ""
     result = final_result
     structured_synthesis = state.get("agent_final_synthesis")
     if result is not None and result.text:
@@ -463,7 +463,11 @@ async def answer_results(state: WorkbenchState) -> dict[str, Any]:
     if structured_synthesis is not None:
         text = structured_synthesis.insights.strip()
     proposed = (
-        [f"q{structured_synthesis.query_id}"]
+        [
+            f"q{ref.query_id}"
+            for ref in structured_synthesis.evidence_references()
+            if ref.query_id is not None
+        ]
         if structured_synthesis is not None
         else []
     )
@@ -485,7 +489,16 @@ async def answer_results(state: WorkbenchState) -> dict[str, Any]:
 
     citations: list[dict[str, Any]] = []
     seen_citations: set[tuple[str, str]] = set()
-    for item in results:
+    citation_results = results
+    if structured_synthesis is not None:
+        citation_results = [
+            state.get("_completed_tool_results", {})[ref.card_reference].card
+            for ref in structured_synthesis.evidence_references()
+            if ref.card_reference in state.get("_completed_tool_results", {})
+        ]
+    for item in citation_results:
+        if item is None:
+            continue
         for citation in item.sources:
             key = (
                 str(citation.get("url") or citation.get("document", "")),
@@ -518,7 +531,26 @@ async def answer_results(state: WorkbenchState) -> dict[str, Any]:
         "model_active_query_ids": proposed,
         "invalid_query_ids": attribution.invalid_query_ids,
         "attribution_fallback_used": attribution.fallback_used,
-        "sources": list(dict.fromkeys(r.source for r in results)),
+        "evidence": [
+            ref.model_dump(exclude_none=True)
+            for ref in structured_synthesis.evidence_references()
+        ]
+        if structured_synthesis
+        else [],
+        "visuals": [
+            visual.model_dump()
+            for visual in structured_synthesis.requested_visuals()
+        ]
+        if structured_synthesis
+        else [],
+        "sources": list(
+            dict.fromkeys(
+                [
+                    *(["db"] if attribution.active_query_ids else []),
+                    *(r.source for r in citation_results if r is not None),
+                ]
+            )
+        ),
         "citations": citations,
         "unavailable_sources": unavailable,
         "limitations": limitations,

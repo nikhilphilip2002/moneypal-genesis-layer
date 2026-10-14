@@ -868,11 +868,11 @@ async def test_invalid_final_answer_contract_is_repaired_once(
 
 
 @pytest.mark.anyio
-async def test_last_round_result_is_shown_without_forcing_synthesis(
+async def test_last_round_text_reports_submission_failure(
     scripted,
     monkeypatch,
 ):
-    """The model sees the tool result and remains free to call a tool or return content."""
+    """An exhausted round budget prevents submission recovery."""
     monkeypatch.setattr(agent.settings, "workbench_agent_max_rounds", 2)
     client = scripted(
         [
@@ -894,12 +894,9 @@ async def test_last_round_result_is_shown_without_forcing_synthesis(
         and "4.2" in message.get("content", "")
         for message in synthesis_messages
     )
-    assert (
-        state["agent_final_result"].text == "PAR 30 stands at 4.2% this month."
-    )
+    assert "agent_final_result" not in state
     assert any(
-        "event: answer" in frame and "stands at 4.2%" in frame
-        for frame in _frames(state)
+        "FINAL_ANSWER_NOT_SUBMITTED" in frame for frame in _frames(state)
     )
     assert state["_agent_budget"].rounds_used == 2
 
@@ -1010,7 +1007,7 @@ async def test_execution_error_is_returned_to_llm_for_a_cross_tool_repair(
     assert not any('"card_type": "error"' in frame for frame in frames)
     assert any("event: query_failed" in frame for frame in frames)
     assert any(
-        "event: answer" in frame and "One governed loan" in frame
+        "event: error" in frame and "FINAL_ANSWER_NOT_SUBMITTED" in frame
         for frame in frames
     )
 
@@ -1117,6 +1114,7 @@ async def test_cancelled_batch_preserves_finished_results_and_closes_pending_cal
 async def test_tool_parse_error_is_replayed_and_corrected(
     scripted, monkeypatch, name, arguments, code
 ):
+    monkeypatch.setattr(agent.settings, "workbench_agent_max_rounds", 3)
     import httpx
 
     from tests.nlq.test_llm_client import _client, _ok, _raw_tool_call, _tool_ok
@@ -1197,7 +1195,7 @@ async def test_protocol_error_surfaces_without_synthetic_prompts(scripted):
 async def test_model_can_call_multiple_resource_tools_before_answering(
     scripted, monkeypatch
 ):
-    monkeypatch.setattr(agent.settings, "workbench_agent_max_rounds", 4)
+    monkeypatch.setattr(agent.settings, "workbench_agent_max_rounds", 3)
     concept = NativeToolCall(
         id="concept",
         name="search_curated_knowledge",
@@ -1248,7 +1246,9 @@ async def test_model_can_call_multiple_resource_tools_before_answering(
         call["function"]["name"]
         for message in record.messages for call in message.get("tool_calls", [])
     ] == ["query", "search_curated_knowledge"]
-    assert state["agent_final_result"].text.startswith("The portfolio result")
+    assert any(
+        "FINAL_ANSWER_NOT_SUBMITTED" in frame for frame in _frames(state)
+    )
 
 
 @pytest.mark.anyio
@@ -1256,7 +1256,7 @@ async def test_invalid_continuation_call_is_persisted_and_returned_to_model(
     scripted,
     monkeypatch,
 ):
-    monkeypatch.setattr(agent.settings, "workbench_agent_max_rounds", 4)
+    monkeypatch.setattr(agent.settings, "workbench_agent_max_rounds", 3)
     valid = NativeToolCall(
         id="valid",
         name="query",
@@ -1304,7 +1304,7 @@ async def test_partially_invalid_batch_keeps_replay_parity(
 ):
     """B2: a batch with one valid and one invalid call persists one tool message per
     call; the valid call is executed and gets its real observation."""
-    monkeypatch.setattr(agent.settings, "workbench_agent_max_rounds", 3)
+    monkeypatch.setattr(agent.settings, "workbench_agent_max_rounds", 2)
     invalid = NativeToolCall(id="bad", name="retired_query_tool", arguments={})
     client = scripted(
         [_tool_response(_PAR_30, invalid), _text_response("PAR 30 is 4.2%.")],
@@ -1494,12 +1494,11 @@ async def test_model_refusal_keeps_its_origin(scripted):
 
 
 @pytest.mark.anyio
-async def test_budget_spent_after_data_answers_from_the_result_with_a_limitation(
+async def test_budget_spent_after_data_reports_completion_failure(
     scripted,
     monkeypatch,
 ):
-    """Nothing is retrieved until the last round; the result still reaches the user,
-    marked as answered without the model's synthesis."""
+    """Retrieval on the last round is distinguished from retrieval failure."""
     monkeypatch.setattr(agent.settings, "workbench_agent_max_rounds", 2)
     invalid = NativeToolCall(id="bad", name="retired_query_tool", arguments={})
     scripted(
@@ -1509,14 +1508,10 @@ async def test_budget_spent_after_data_answers_from_the_result_with_a_limitation
     state = _run_state("late-data")
     await agent.run(state)
 
-    answer = next(
-        json.loads(frame.split("data: ", 1)[1])
-        for frame in _frames(state)
-        if "event: answer" in frame and '"status"' in frame
+    assert any(
+        "FINAL_ANSWER_NOT_SUBMITTED" in frame for frame in _frames(state)
     )
-    assert answer["status"] == "partial"
-    assert answer["text"] == "PAR 30 is 4.2%."
-    assert any(item["source"] == "agent" for item in answer["limitations"])
+    assert not any("event: answer" in frame for frame in _frames(state))
     assert "agent_final_result" not in state
 
 
@@ -1614,3 +1609,304 @@ async def test_select_recovers_context_overflow_with_compacted_input(
     )
     assert state["_agent_budget"].rounds_used == 1
     assert state["question"] in client.requests[-1]["messages"][-1]["content"]
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("with_visuals", [False, True])
+@pytest.mark.parametrize("source", ["knowledge", "web"])
+async def test_composed_answer_persists_multiple_queries_and_source(
+    scripted, with_visuals, source
+):
+    from app.services.workbench import agent_executor
+
+    second_query = NativeToolCall(
+        id="query-two", name="query", arguments={"sql": "SELECT 2 AS value"}
+    )
+    retrieval = NativeToolCall(
+        id="source-evidence",
+        name="search_public_web"
+        if source == "web"
+        else "search_curated_knowledge",
+        arguments={"search_query": "policy"}
+        if source == "web"
+        else {"domain": "concepts", "query": "policy"},
+    )
+    evidence = [
+        {"query_id": 1},
+        {"query_id": 2},
+        {"card_reference": retrieval.id},
+    ]
+    visuals = (
+        [{"query_id": 1, "view": "table"}, {"query_id": 2, "view": "kpi"}]
+        if with_visuals
+        else []
+    )
+    message = "## Comparison\n\n**Two queries** support this conclusion alongside the policy."
+    final = NativeToolCall(
+        id="composed-final",
+        name="submit_final_answer",
+        arguments={
+            "submission": {
+                "outcome": "answer",
+                "message": message,
+                "evidence": evidence,
+                "visuals": visuals,
+            }
+        },
+    )
+    citation = (
+        {"document": "Policy", "url": "https://example.org/policy"}
+        if source == "web"
+        else {"document": "Policy", "page": 2}
+    )
+
+    async def execute(call, context):
+        if call.name == "query":
+            return _raw(call)
+        if call.id == retrieval.id:
+            return ExecutedAgentCall(
+                call=call,
+                card=SourceResult(
+                    source=source,
+                    card_type="brief",
+                    payload={},
+                    summary="Policy evidence",
+                    sources=[citation],
+                ),
+            )
+        return await agent_executor.execute_agent_call(call, context)
+
+    scripted(
+        [
+            _tool_response(_PAR_30, second_query, retrieval),
+            _tool_response(final),
+        ],
+        execute,
+    )
+    state = _run_state(f"composed-{source}-{with_visuals}")
+    await agent.run(state)
+    answer = next(
+        json.loads(frame.split("data: ", 1)[1])
+        for frame in _frames(state)
+        if frame.startswith("event: answer\n")
+    )
+    assert answer["text"] == message
+    assert answer["evidence"] == evidence
+    assert answer["citations"] == [citation]
+    assert answer["sources"] == ["db", source]
+    assert answer["active_query_ids"] == [
+        f"{state['turn_id']}:q1",
+        f"{state['turn_id']}:q2",
+    ]
+    assert answer["visual_query_ids"] == (
+        answer["active_query_ids"] if with_visuals else []
+    )
+    saved = history.get(state["conversation_id"], user="alice").turns[-1]
+    assert saved["answer"] == answer
+    assert len([card for card in saved["cards"] if card.get("query_id")]) == (
+        2 if with_visuals else 0
+    )
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    "recovery", ["success", "text", "invalid", "deadline", "calls", "rounds"]
+)
+async def test_submission_recovery_is_bounded(scripted, monkeypatch, recovery):
+    from app.services.workbench import agent_executor
+
+    monkeypatch.setattr(
+        agent.settings,
+        "workbench_agent_max_rounds",
+        2 if recovery == "rounds" else 6,
+    )
+    monkeypatch.setattr(
+        agent.settings,
+        "workbench_agent_max_tool_calls",
+        1 if recovery == "calls" else 6,
+    )
+    monkeypatch.setattr(agent.settings, "workbench_agent_synthesis_repairs", 0)
+    state = _run_state(f"recover-{recovery}")
+
+    def draft(request):
+        if recovery == "deadline":
+            state["_agent_budget"].deadline = time.perf_counter() - 1
+        return _text_response("## Draft\n\nThe result is **4.2%**.")
+
+    def submit(request):
+        assert (
+            "Submit your complete Markdown answer"
+            in request["messages"][-1]["content"]
+        )
+        assert request["messages"][-2]["content"].startswith("## Draft")
+        if recovery == "text":
+            return _text_response("Still ordinary text.")
+        return _tool_response(
+            NativeToolCall(
+                id="recovered",
+                name="submit_final_answer",
+                arguments={
+                    "submission": {
+                        "outcome": "answer",
+                        "message": "## Result\n\n**4.2%**.",
+                        "evidence": [
+                            {"query_id": 99 if recovery == "invalid" else 1}
+                        ],
+                        "visuals": [],
+                    }
+                },
+            )
+        )
+
+    async def execute(call, context):
+        if call.name == "query":
+            return _raw(call)
+        return await agent_executor.execute_agent_call(call, context)
+
+    client = scripted([_tool_response(_PAR_30), draft, submit], execute)
+    await agent.run(state)
+    assert len(client.requests) == (
+        2 if recovery in {"deadline", "calls", "rounds"} else 3
+    )
+    saved = history.get(state["conversation_id"], user="alice").turns[-1]
+    frames = _frames(state)
+    if recovery == "success":
+        assert saved["answer"]["text"] == "## Result\n\n**4.2%**."
+        assert saved["answer"]["visual_query_ids"] == []
+    else:
+        assert any("FINAL_ANSWER_NOT_SUBMITTED" in frame for frame in frames)
+        assert not any(
+            "NO_USABLE_RESULT" in frame or "event: answer\n" in frame
+            for frame in frames
+        )
+        assert "Evidence was retrieved" in str(saved)
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    "reference",
+    [
+        {"query_id": 2},
+        {"query_id": 99},
+        {"card_reference": "missing"},
+        {"card_reference": "failed"},
+    ],
+)
+async def test_composed_reference_feedback_can_be_repaired(
+    scripted, reference
+):
+    from app.services.workbench import agent_executor
+
+    failed_query = NativeToolCall(
+        id="failed-query", name="query", arguments={"sql": "SELECT 2"}
+    )
+    failed = NativeToolCall(
+        id="failed",
+        name="search_public_web",
+        arguments={"search_query": "policy"},
+    )
+
+    def final(reference, call_id):
+        return _tool_response(
+            NativeToolCall(
+                id=call_id,
+                name="submit_final_answer",
+                arguments={
+                    "submission": {
+                        "outcome": "answer",
+                        "message": "**4.2%**.",
+                        "evidence": [reference],
+                        "visuals": [],
+                    }
+                },
+            )
+        )
+
+    def repair(request):
+        error = json.loads(request["messages"][-1]["content"])
+        assert error["code"] == "INVALID_TOOL_ARGUMENTS"
+        assert "reference" in error["message"]
+        return final({"query_id": 1}, "repaired")
+
+    async def execute(call, context):
+        if call.id == "failed-query":
+            return ExecutedAgentCall(
+                call=call,
+                error={"code": "QUERY_FAILED", "message": "Query failed"},
+            )
+        if call.name == "query":
+            return _raw(call)
+        if call.id == "failed":
+            return ExecutedAgentCall(
+                call=call,
+                error={"code": "SOURCE_UNAVAILABLE", "message": "Unavailable"},
+            )
+        return await agent_executor.execute_agent_call(call, context)
+
+    scripted(
+        [
+            _tool_response(_PAR_30, failed_query, failed),
+            final(reference, "invalid"),
+            repair,
+        ],
+        execute,
+    )
+    state = _run_state(f"reference-repair-{reference}")
+    await agent.run(state)
+    saved = history.get(state["conversation_id"], user="alice").turns[-1]
+    assert saved["answer"]["evidence"] == [{"query_id": 1}]
+    assert saved["answer"]["text"] == "**4.2%**."
+
+
+@pytest.mark.anyio
+async def test_knowledge_only_submission_without_database_access(scripted):
+    from app.services.workbench import agent_executor
+
+    state = _run_state("knowledge-only")
+    state["source_policy"] = access.build_policy(
+        role="admin", external_sources_enabled=False, pinned_source="knowledge"
+    )
+    retrieval = NativeToolCall(
+        id="definition",
+        name="search_curated_knowledge",
+        arguments={"domain": "concepts", "query": "PAR 30"},
+    )
+    submission = NativeToolCall(
+        id="final",
+        name="submit_final_answer",
+        arguments={
+            "submission": {
+                "outcome": "answer",
+                "message": "**PAR 30** definition.",
+                "evidence": [{"card_reference": "definition"}],
+            }
+        },
+    )
+
+    async def execute(call, context):
+        if call.id == retrieval.id:
+            return ExecutedAgentCall(
+                call=call,
+                card=SourceResult(
+                    source="knowledge",
+                    card_type="brief",
+                    payload={},
+                    summary="PAR 30 definition.",
+                    sources=[{"document": "Glossary"}],
+                ),
+            )
+        return await agent_executor.execute_agent_call(call, context)
+
+    scripted(
+        [
+            _tool_response(retrieval),
+            _text_response("PAR 30 definition."),
+            _tool_response(submission),
+        ],
+        execute,
+    )
+    await agent.run(state)
+    saved = history.get(state["conversation_id"], user="alice").turns[-1]
+    assert saved["answer"]["sources"] == ["knowledge"]
+    assert saved["answer"]["active_query_ids"] == []
+    assert saved["answer"]["citations"] == [{"document": "Glossary"}]

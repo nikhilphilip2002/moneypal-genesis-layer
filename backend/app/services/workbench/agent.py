@@ -19,6 +19,8 @@ from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from typing import Any
 
+from pydantic import ValidationError
+
 from app.core.config import settings
 from app.services.nlq.catalog import get_catalog
 from app.services.nlq.llm import LLMError, LLMProtocolError, LLMTimeout
@@ -447,45 +449,82 @@ def _preflight(result, state: dict[str, Any]) -> list[tuple[str, str, str]]:
                 and isinstance(submission, dict)
                 and submission.get("outcome") == "answer"
             ):
-                query_number = submission.get("query_id")
-                if not isinstance(query_number, int) or isinstance(
-                    query_number, bool
-                ):
-                    continue
+                from app.services.workbench.agent_contracts import (
+                    SubmitAnswerArguments,
+                )
                 from app.services.workbench.attribution import (
                     resolve_current_query,
                 )
 
-                selected = resolve_current_query(
-                    list(state.get("query_registry", [])),
-                    query_number,
-                    prior_registry=state.get("prior_query_registry", []),
-                )
-                if selected is None:
-                    raise AgentToolArgumentsInvalid(
-                        f"query_id {query_number} does not reference a query in this conversation"
-                    )
+                answer = SubmitAnswerArguments.model_validate(submission)
                 if (
-                    selected.get("status") != "success"
-                    or selected.get("has_data") is not True
-                    or not _is_postgres_tool(
-                        str(selected.get("tool_name") or "")
+                    not answer.evidence_references()
+                    and _has_retrieved_evidence(
+                        list(state.get("_completed_tool_results", {}).values())
                     )
                 ):
                     raise AgentToolArgumentsInvalid(
-                        f"query_id {query_number} must reference a successful database query"
+                        "Include evidence references from the successful retrievals"
                     )
-                if selected in state.get(
-                    "prior_query_registry", []
-                ) and not isinstance(selected.get("result_payload"), dict):
-                    raise AgentToolArgumentsInvalid(
-                        f"query_id {query_number} has no stored result to reuse"
+                for reference in answer.evidence_references():
+                    if reference.card_reference is not None:
+                        item = state.get("_completed_tool_results", {}).get(
+                            reference.card_reference
+                        )
+                        if (
+                            item is None
+                            or item.call.name
+                            not in {
+                                "search_curated_knowledge",
+                                "search_public_web",
+                            }
+                            or item.error is not None
+                            or item.card is None
+                            or item.card.card_type
+                            not in {"brief", "briefing", "schema"}
+                            or not (
+                                item.card.evidence
+                                or item.card.sources
+                                or item.card.summary.strip()
+                            )
+                        ):
+                            raise AgentToolArgumentsInvalid(
+                                f"card_reference {reference.card_reference} must reference a successful retrieval"
+                            )
+                        state["source_policy"].require(item.card.source)
+                        continue
+                    query_number = reference.query_id
+                    assert query_number is not None
+                    selected = resolve_current_query(
+                        list(state.get("query_registry", [])),
+                        query_number,
+                        prior_registry=state.get("prior_query_registry", []),
                     )
+                    if selected is None:
+                        raise AgentToolArgumentsInvalid(
+                            f"query_id {query_number} does not reference a query in this conversation"
+                        )
+                    if (
+                        selected.get("status") != "success"
+                        or selected.get("has_data") is not True
+                        or not _is_postgres_tool(
+                            str(selected.get("tool_name") or "")
+                        )
+                    ):
+                        raise AgentToolArgumentsInvalid(
+                            f"query_id {query_number} must reference a successful database query"
+                        )
+                    if selected in state.get(
+                        "prior_query_registry", []
+                    ) and not isinstance(selected.get("result_payload"), dict):
+                        raise AgentToolArgumentsInvalid(
+                            f"query_id {query_number} has no stored result to reuse"
+                        )
         except AgentToolAccessDenied as exc:
             failures.append((call.id, str(exc), "POLICY_DENIED"))
         except AgentToolNotFound as exc:
             failures.append((call.id, str(exc), "TOOL_NOT_FOUND"))
-        except AgentToolArgumentsInvalid as exc:
+        except (AgentToolArgumentsInvalid, ValidationError) as exc:
             failures.append((call.id, str(exc), "INVALID_TOOL_ARGUMENTS"))
         except Exception as exc:  # noqa: BLE001 - every call failure is model-repairable
             logger.exception("native tool preflight failed for %s", call.name)
@@ -804,7 +843,11 @@ async def finalize_running_traces(state: dict[str, Any]) -> None:
 def _record_tool_results(state, result, failures, executed) -> None:
     _append_messages(state, _tool_messages(result, failures, executed, state))
     if _persistable(state):
-        for item in executed:
+        for item in [
+            entry
+            for result_item in executed
+            for entry in [result_item, *result_item.additional_visuals]
+        ]:
             if item.card is not None:
                 history.add_card(
                     state["conversation_id"], state["user"], state["turn_id"],
@@ -890,23 +933,35 @@ async def _execute_one(
             synthesis = FinalSynthesis.model_validate(
                 item.terminal.get("synthesis")
             )
-            selected = resolve_current_query(
-                list(state.get("query_registry", [])),
-                synthesis.query_id,
-                prior_registry=state.get("prior_query_registry", []),
-            )
-            if selected is None:
-                raise AgentToolArgumentsInvalid(
-                    f"query_id {synthesis.query_id} does not reference a query in this conversation"
+            visual_items = []
+            for visual in synthesis.requested_visuals():
+                selected = resolve_current_query(
+                    list(state.get("query_registry", [])),
+                    visual.query_id,
+                    prior_registry=state.get("prior_query_registry", []),
                 )
-            internal_query_id = str(selected["query_id"])
-            item.card = build_inferred_visual(
-                selected,
-                query_id=internal_query_id,
-                view=synthesis.view,
-            )
-            item.query_id = internal_query_id
-            item.attempt_id = str(selected["attempt_id"])
+                if selected is None:
+                    raise AgentToolArgumentsInvalid(
+                        f"query_id {visual.query_id} does not reference a query in this conversation"
+                    )
+                internal_query_id = str(selected["query_id"])
+                visual_items.append(
+                    ExecutedAgentCall(
+                        call=call,
+                        card=build_inferred_visual(
+                            selected,
+                            query_id=internal_query_id,
+                            view=visual.view,
+                        ),
+                        query_id=internal_query_id,
+                        attempt_id=str(selected["attempt_id"]),
+                    )
+                )
+            if visual_items:
+                item.card = visual_items[0].card
+                item.query_id = visual_items[0].query_id
+                item.attempt_id = visual_items[0].attempt_id
+                item.additional_visuals = visual_items[1:]
     except Exception as exc:  # noqa: BLE001 - isolate independent calls
         logger.warning("native tool %s failed: %s", call.name, exc)
         code = getattr(exc, "code", "SOURCE_UNAVAILABLE")
@@ -993,6 +1048,8 @@ async def _stream_item(state: dict[str, Any], item: ExecutedAgentCall) -> None:
             "duration_ms": item.duration_ms,
         },
     )
+    for visual_item in item.additional_visuals:
+        await _stream_item(state, visual_item)
     if item.raw_result is not None:
         state["timing"]["source_completions"].append("db")
     if item.card is None:
@@ -1191,14 +1248,34 @@ async def _end_without_data(
     )
 
 
-async def _run(state: dict[str, Any]) -> None:
-    """One bounded loop: request, observe, execute, repeat; then answer.
+def _has_retrieved_evidence(executed: list[ExecutedAgentCall]) -> bool:
+    return any(
+        item.error is None
+        and (
+            (item.raw_result is not None and item.raw_result.row_count > 0)
+            or (
+                item.card is not None
+                and item.card.card_type
+                in {
+                    "chart",
+                    "analysis",
+                    "worklist",
+                    "briefing",
+                    "brief",
+                    "schema",
+                }
+                and bool(
+                    item.card.summary.strip()
+                    or item.card.evidence
+                    or item.card.sources
+                )
+            )
+        )
+        for item in executed
+    )
 
-    Each iteration is one LLM request. The first round is ``auto`` so the agent can answer
-    schema and conceptual questions from supplied context, while its system contract requires
-    PostgreSQL MCP evidence for loan-book figures and records. The last evidence-backed round
-    is ``none`` so a result executed on the previous tool round is still synthesized.
-    """
+
+async def _run(state: dict[str, Any]) -> None:
     from app.services.workbench.graph import answer_results, sse
 
     emit = state["emit"]
@@ -1221,11 +1298,14 @@ async def _run(state: dict[str, Any]) -> None:
     executed: list[ExecutedAgentCall] = []
     final = None
     denial: dict[str, Any] | None = None
+    submission_recovery_requested = False
     while budget.rounds_remaining and not budget.expired:
         if (
             state.get("attribution_repairs", 0)
             > settings.workbench_agent_synthesis_repairs
         ):
+            if _has_retrieved_evidence(executed):
+                break
             raise LLMProtocolError(
                 "native agent exceeded its final-synthesis repair limit "
                 f"({settings.workbench_agent_synthesis_repairs})"
@@ -1360,6 +1440,25 @@ async def _run(state: dict[str, Any]) -> None:
         if not result.tool_calls:
             if not result.text.strip():
                 raise LLMProtocolError("model returned neither tool calls nor an answer")
+            if _has_retrieved_evidence(executed):
+                if (
+                    not submission_recovery_requested
+                    and budget.rounds_remaining
+                    and budget.calls_remaining
+                    and not budget.expired
+                ):
+                    submission_recovery_requested = True
+                    _append_messages(
+                        state,
+                        [
+                            {
+                                "role": "user",
+                                "content": "Evidence was successfully retrieved. Submit your complete Markdown answer now using submit_final_answer as the only tool call. Include evidence references from the successful tool responses (query_id or card_reference), and optional visuals. Do not retrieve more evidence or return ordinary text.",
+                            }
+                        ],
+                    )
+                    continue
+                break
             final = result
             break
         try:
@@ -1432,11 +1531,32 @@ async def _run(state: dict[str, Any]) -> None:
             )
             state["agent_final_synthesis"] = structured
             state["results"] = [
-                item.card for item in executed if item.card is not None
+                entry.card
+                for item in executed
+                for entry in [item, *item.additional_visuals]
+                if entry.card is not None
             ]
             await answer_results(state)
         else:
             await _end_without_data(state, terminal_payload, origin="model")
+        return
+    if _has_retrieved_evidence(executed):
+        message = (
+            "Evidence was retrieved, but the answer could not be finalized."
+        )
+        code = "FINAL_ANSWER_NOT_SUBMITTED"
+        if _persistable(state):
+            history.set_error(
+                state["conversation_id"],
+                state["user"],
+                state["turn_id"],
+                message,
+                code=code,
+                retryable=True,
+            )
+        await emit.put(
+            sse("error", {"code": code, "message": message, "retryable": True})
+        )
         return
     cards = [item.card for item in executed if item.card is not None]
     raw_results = [

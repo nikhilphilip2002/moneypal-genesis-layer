@@ -127,3 +127,23 @@ test('cancels the response when the consumer stops early', async () => {
   assert.equal(cancelled, true);
   assert.equal(body.locked, false);
 });
+
+test('keeps composed answer references and visuals through streaming', async () => {
+  const answer = {
+    status: 'answered', text: '## Comparison',
+    evidence: [{ query_id: 1 }, { query_id: 2 }, { card_reference: 'web-result' }],
+    visuals: [{ query_id: 1, view: 'table' }, { query_id: 2, view: 'bar' }],
+    active_query_ids: ['turn:q1', 'turn:q2'], visual_query_ids: ['turn:q1', 'turn:q2'],
+    sources: ['db', 'web'], citations: [{ document: 'Report', url: 'https://example.org/report' }],
+    limitations: [], unavailable_sources: [],
+  };
+  const body = new ReadableStream({ start(controller) {
+    controller.enqueue(frame('answer', answer));
+    controller.close();
+  } });
+  const events = clientFor(body).workbench.ask('question', null);
+  const result = (await events.next()).value.answer;
+  assert.equal(JSON.stringify(result.evidence), JSON.stringify(answer.evidence));
+  assert.equal(JSON.stringify(result.visuals), JSON.stringify(answer.visuals));
+  await events.return();
+});

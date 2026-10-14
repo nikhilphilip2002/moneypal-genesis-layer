@@ -98,6 +98,7 @@ class ExecutedAgentCall:
     raw_result: RawQueryResult | None = None
     terminal: dict[str, Any] | None = None
     error: dict[str, Any] | None = None
+    additional_visuals: list[ExecutedAgentCall] = field(default_factory=list)
     duration_ms: int = 0
     query_id: str | None = None
     attempt_id: str | None = None

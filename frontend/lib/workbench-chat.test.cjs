@@ -228,3 +228,56 @@ test('Workbench SQL disclosure omits generated-query boilerplate', () => {
   assert.match(markup, /View SQL/);
   assert.doesNotMatch(markup, /Generated query|Visualization derived|rounded-xl border/);
 });
+
+test('composed answers render Markdown, selected visuals, and document references after reload', async () => {
+  const MarkdownRenderer = loadComponent(`${__dirname}/../components/workbench/MarkdownRenderer.tsx`, React, {
+    'react-markdown': await import('react-markdown'),
+    'remark-gfm': await import('remark-gfm'),
+  });
+  const empty = { default: () => null };
+  const modules = {
+    '@/lib/api': {},
+    '@/lib/workbench-ui': { SOURCE_BADGE: '', STREAM_RENDERABLE_CARD_TYPES: new Set(['chart', 'brief']) },
+    './MarkdownRenderer': { default: MarkdownRenderer },
+    './WorkbenchCard': { default: ({ children }) => children },
+    './ExecutionTrace': empty,
+    '@/components/nlq/ChartRenderer': { default: ({ chart }) => React.createElement('div', null, chart.title) },
+  };
+  for (const name of ['AnalysisCard', 'NextQuestions', 'BriefingCard', 'WorklistCard', 'LineagePanel']) {
+    modules[`@/components/nlq/${name}`] = empty;
+  }
+  modules['@/components/intel/BriefRenderer'] = empty;
+  const WorkbenchTurn = loadComponent(`${__dirname}/../components/workbench/WorkbenchTurn.tsx`, React, modules);
+  const turn = JSON.parse(JSON.stringify({
+    id: 'turn', question: 'Compare', pending: [], done: true,
+    cards: [1, 2, 3].map((id) => ({
+      source: 'db', card_type: 'chart', query_id: `turn:q${id}`, payload: { title: `Visual ${id}` },
+    })),
+    answer: {
+      status: 'answered', text: '## Comparison\n\n**Supported** by both queries.\n\n| Query | Value |\n| --- | --- |\n| 1 | 42 |',
+      evidence: [{ query_id: 1 }, { query_id: 2 }, { card_reference: 'policy' }],
+      active_query_ids: ['turn:q1', 'turn:q2'], visual_query_ids: ['turn:q1', 'turn:q2'],
+      sources: ['db', 'knowledge'], citations: [{ document: 'Policy handbook', page: 2 }],
+      unavailable_sources: [], limitations: [],
+    },
+  }));
+  const render = () => renderToStaticMarkup(React.createElement(WorkbenchTurn, { turn, onAsk() {} }));
+  const markup = render();
+  assert.match(markup, /<h2[^>]*>Comparison<\/h2>/);
+  assert.match(markup, /<strong[^>]*>Supported<\/strong>/);
+  assert.match(markup, /<table/);
+  assert.match(markup, /Query 1/);
+  assert.match(markup, /Query 2/);
+  assert.match(markup, /Policy handbook · p. 2/);
+  assert.match(markup, /Visual 1/);
+  assert.match(markup, /Visual 2/);
+  assert.doesNotMatch(markup, /Visual 3/);
+  turn.answer.visual_query_ids = [];
+  assert.doesNotMatch(render(), /Visual [123]/);
+  delete turn.answer;
+  turn.cards = [];
+  turn.modelMessages = ['Unsubmitted draft'];
+  turn.error = { code: 'FINAL_ANSWER_NOT_SUBMITTED', message: 'Evidence was retrieved, but the answer could not be finalized.' };
+  assert.match(render(), /Evidence was retrieved/);
+  assert.doesNotMatch(render(), /Unsubmitted draft/);
+});

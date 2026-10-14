@@ -950,11 +950,17 @@ export type WorkbenchVerifiedFact = {
   formula?: string | null;
 };
 
+export type WorkbenchEvidenceReference =
+  | { query_id: number; card_reference?: never }
+  | { card_reference: string; query_id?: never };
+
 export type WorkbenchAnswer = {
   schema_version?: number;
   status: 'answered' | 'partial' | 'clarify' | 'refused';
   text: string;
   insights?: string;
+  evidence?: WorkbenchEvidenceReference[];
+  visuals?: { query_id: number; view: ChartType }[];
   query_id?: number;
   view?: ChartType;
   sources: string[];

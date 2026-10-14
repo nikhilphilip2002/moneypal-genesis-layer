@@ -123,25 +123,30 @@ def reconcile_query_attribution(
         for record in records.values()
         if record.get("supersedes_query_id")
     }
-    selected_record = resolve_current_query(
-        registry,
-        synthesis.query_id,
-        prior_registry=prior_registry,
-    )
-    selected_id = (
-        str(selected_record.get("query_id"))
-        if selected_record is not None
-        else ""
-    )
-    valid_selection = (
-        selected_record is not None
-        and selected_record.get("status") == "success"
-        and selected_record.get("has_data") is True
-    )
-    invalid = [] if valid_selection else [f"q{synthesis.query_id}"]
-    active = [selected_id] if valid_selection else []
-    # The final-answer tool creates the single card directly from the selected query.
-    visual = list(active)
+    active: list[str] = []
+    invalid: list[str] = []
+    visual: list[str] = []
+    visual_numbers = {item.query_id for item in synthesis.requested_visuals()}
+    for reference in synthesis.evidence_references():
+        if reference.query_id is None:
+            continue
+        selected_record = resolve_current_query(
+            registry,
+            reference.query_id,
+            prior_registry=prior_registry,
+        )
+        if (
+            selected_record is None
+            or selected_record.get("status") != "success"
+            or selected_record.get("has_data") is not True
+        ):
+            invalid.append(f"q{reference.query_id}")
+            continue
+        selected_id = str(selected_record["query_id"])
+        if selected_id not in active:
+            active.append(selected_id)
+        if reference.query_id in visual_numbers and selected_id not in visual:
+            visual.append(selected_id)
 
     excluded: list[ExcludedQueryReference] = []
     for query_id, record in records.items():

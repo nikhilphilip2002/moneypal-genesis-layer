@@ -166,7 +166,14 @@ async def test_final_answer_schema_supports_all_terminal_outcomes():
     for variant in variants:
         assert variant["additionalProperties"] is False
         assert variant["required"] == list(variant["properties"])
-    assert list(answer) == ["outcome", "message", "query_id", "view"]
+    assert set(answer) == {
+        "outcome",
+        "message",
+        "query_id",
+        "view",
+        "evidence",
+        "visuals",
+    }
     assert answer["outcome"]["enum"] == ["answer"]
     assert answer["view"]["enum"] == [
         "kpi",
