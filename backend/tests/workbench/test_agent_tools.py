@@ -196,7 +196,7 @@ async def test_final_answer_schema_supports_all_terminal_outcomes():
     for variant in variants:
         message = variant["properties"]["message"]
         assert message["minLength"] == 1
-        assert message["pattern"] == r"\S"
+        assert "pattern" not in message
     for variant, model in zip(
         variants,
         (SubmitAnswerArguments, SubmitClarificationArguments, SubmitRefusalArguments),

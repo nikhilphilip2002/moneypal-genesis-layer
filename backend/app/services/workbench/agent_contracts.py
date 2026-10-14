@@ -187,7 +187,6 @@ class SubmitAnswerArguments(AnswerPresentation):
     message: str = Field(
         min_length=1,
         max_length=20_000,
-        pattern=r"\S",
         description="The answer shown to the user in Markdown.",
     )
 
@@ -201,7 +200,6 @@ class SubmitClarificationArguments(AgentArguments):
     message: str = Field(
         min_length=1,
         max_length=500,
-        pattern=r"\S",
         description="The clarification question shown to the user.",
     )
     suggestions: list[str] = Field(
@@ -219,7 +217,6 @@ class SubmitRefusalArguments(AgentArguments):
     message: str = Field(
         min_length=1,
         max_length=500,
-        pattern=r"\S",
         description="The refusal explanation shown to the user.",
     )
     reason_code: Literal[
