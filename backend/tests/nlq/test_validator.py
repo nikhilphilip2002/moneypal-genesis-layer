@@ -216,8 +216,11 @@ class TestUncontrolledEgress:
     )
     def test_select_star_is_rejected(self, sql):
         """56 columns of customer master, several of them PII."""
-        with pytest.raises(ValidationError):
+        with pytest.raises(ValidationError) as exc_info:
             validate(sql)
+        assert str(exc_info.value) == (
+            "Including all columns using * is prohibited specify the needed colums."
+        )
 
     def test_pii_columns_are_rejected_without_permission(self):
         sql = "SELECT full_name, date_of_birth FROM gold.customers LIMIT 5"

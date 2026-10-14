@@ -150,7 +150,7 @@ def test_query_tool_classifies_sql_validation_as_compile_rejected(monkeypatch):
 
     def rejected(*_args, **_kwargs):
         raise ValidationError(
-            "SELECT * is not allowed; name the columns explicitly"
+            "Including all columns using * is prohibited specify the needed colums."
         )
 
     monkeypatch.setattr(postgres_server, "validate", rejected)
@@ -160,4 +160,6 @@ def test_query_tool_classifies_sql_validation_as_compile_rejected(monkeypatch):
     assert payload["success"] is False
     assert payload["error"]["code"] == "COMPILE_REJECTED"
     assert payload["error"]["retryable"] is True
-    assert "name the columns explicitly" in payload["error"]["message"]
+    assert payload["error"]["message"] == (
+        "Including all columns using * is prohibited specify the needed colums."
+    )

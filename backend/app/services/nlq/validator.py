@@ -319,12 +319,12 @@ def _check_no_star(tree: exp.Expression) -> None:
     """`SELECT *` is uncontrolled PII egress — a customer table has 56 columns."""
     for _node in tree.find_all(exp.Star):
         raise ValidationError(
-            "SELECT * is not allowed; name the columns explicitly"
+            "Including all columns using * is prohibited specify the needed colums."
         )
     for node in tree.find_all(exp.Column):
         if isinstance(node.this, exp.Star):
             raise ValidationError(
-                "table.* is not allowed; name the columns explicitly"
+                "Including all columns using * is prohibited specify the needed colums."
             )
 
 
