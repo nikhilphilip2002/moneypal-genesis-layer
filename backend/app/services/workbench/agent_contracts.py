@@ -198,7 +198,7 @@ class SubmitAnswerArguments(AnswerEvidence):
     message: str = Field(
         min_length=1,
         max_length=20_000,
-        description="The answer shown to the user in Markdown.",
+        description="Final answer.",
     )
 
 
@@ -207,8 +207,7 @@ class SubmitVisualAnswerArguments(SubmitAnswerArguments, AnswerPresentation):
         min_length=1,
         max_length=1_000,
         description=(
-            "A short summary of key findings from the accompanying visuals. "
-            "The tool will displays the referenced query results."
+            "Short summary of key findings."
         ),
     )
     visuals: list[AnswerVisual] = Field(

@@ -193,7 +193,7 @@ async def test_final_answer_schema_supports_all_terminal_outcomes():
     assert answer["visuals"]["minItems"] == 1
     assert answer["message"]["maxLength"] == 1_000
     assert markdown["message"]["maxLength"] == 20_000
-    assert "short summary" in answer["message"]["description"]
+    assert "short summary" in answer["message"]["description"].lower()
     assert markdown["message"]["description"] == (
         SubmitMarkdownAnswerArguments.model_fields["message"].description
     )
