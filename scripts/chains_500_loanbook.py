@@ -7,6 +7,7 @@ Every chain is 5 sequential turns without prompt hints.
 """
 
 from __future__ import annotations
+
 from dataclasses import dataclass
 
 

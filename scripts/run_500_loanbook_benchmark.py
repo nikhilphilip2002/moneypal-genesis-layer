@@ -171,9 +171,7 @@ def parse_events(
 
 
 class PostgresReconciler:
-    def __init__(
-        self, host: str, port: int, db: str, user: str, password: str
-    ):
+    def __init__(self, host: str, port: int, db: str, user: str, password: str):
         self.host = host
         self.port = port
         self.db = db

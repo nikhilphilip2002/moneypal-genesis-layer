@@ -76,14 +76,10 @@ def stream_sse(
             event_name = ""
             data_lines: list[str] = []
             for raw_line in response:
-                line = raw_line.decode("utf-8", errors="replace").rstrip(
-                    "\r\n"
-                )
+                line = raw_line.decode("utf-8", errors="replace").rstrip("\r\n")
                 if not line:
                     if event_name:
-                        events.append(
-                            (event_name, decode_sse_data(data_lines))
-                        )
+                        events.append((event_name, decode_sse_data(data_lines)))
                         if event_name == "done":
                             break
                     event_name, data_lines = "", []

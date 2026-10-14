@@ -47,3 +47,6 @@ genesis-core = { workspace = true }
 [tool.pytest.ini_options]
 pythonpath = ["backend"]
 testpaths = ["backend/tests"]
+
+[tool.ty.src]
+exclude = ["scripts/", "backend/scripts/"]

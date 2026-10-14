@@ -181,7 +181,7 @@ def ingest_files(
 
         vectors = embed_batch([s[1] for s in segments])
         points = []
-        for (page_no, ch), vec in zip(segments, vectors):
+        for (page_no, ch), vec in zip(segments, vectors, strict=False):
             payload = {"text": ch, "source": p.name, "page": page_no}
             if extra_payload:
                 payload.update(extra_payload)

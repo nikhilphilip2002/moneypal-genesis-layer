@@ -1190,9 +1190,7 @@ def _select_questions(
         return [indexed[item_id] for item_id in ids]
     if args.sample is not None:
         if not 1 <= args.sample <= len(all_questions):
-            parser.error(
-                f"--sample must be between 1 and {len(all_questions)}"
-            )
+            parser.error(f"--sample must be between 1 and {len(all_questions)}")
         return sorted(
             random.Random(args.seed).sample(all_questions, args.sample),
             key=lambda item: item.id,
@@ -1241,15 +1239,11 @@ def main(argv: list[str] | None = None) -> int:
 
     env = load_env_file(Path(args.env_file) if args.env_file else None)
     base_url = (
-        args.url
-        or env.get("BENCHMARK_BASE_URL")
-        or "http://100.70.118.31:4321"
+        args.url or env.get("BENCHMARK_BASE_URL") or "http://100.70.118.31:4321"
     )
     timeout_s = args.timeout or int(env.get("NLQ_REQUEST_BUDGET_S", "120"))
     token = (
-        args.token
-        or env.get("BENCHMARK_AUTH_TOKEN")
-        or "mock-token-gicc_admin"
+        args.token or env.get("BENCHMARK_AUTH_TOKEN") or "mock-token-gicc_admin"
     )
     output = Path(args.output_md)
     all_questions = build_questions()
