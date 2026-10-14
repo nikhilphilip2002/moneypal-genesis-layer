@@ -14,7 +14,8 @@ from app.core.tool_names import (
 from app.services.workbench import access
 from app.mcp.tool_catalog import ToolCatalog
 from app.services.workbench.agent_contracts import (
-    SubmitAnswerArguments,
+    SubmitVisualAnswerArguments,
+    SubmitMarkdownAnswerArguments,
     SubmitClarificationArguments,
     SubmitRefusalArguments,
 )
@@ -173,8 +174,10 @@ async def test_final_answer_schema_supports_all_terminal_outcomes():
     schema = (await _definitions())[SUBMIT_ANSWER]["parameters"]
     assert list(schema["properties"]) == ["submission"]
     variants = schema["properties"]["submission"]["anyOf"]
-    assert len(variants) == 3
-    answer, clarify, refuse = (variant["properties"] for variant in variants)
+    assert len(variants) == 4
+    answer, markdown, clarify, refuse = (
+        variant["properties"] for variant in variants
+    )
     for variant in variants:
         assert variant["additionalProperties"] is False
         assert variant["required"] == list(variant["properties"])
@@ -185,6 +188,14 @@ async def test_final_answer_schema_supports_all_terminal_outcomes():
         "visuals",
     }
     assert answer["outcome"]["enum"] == ["answer"]
+    assert markdown["outcome"]["enum"] == ["answer"]
+    assert set(markdown) == set(answer)
+    assert answer["visuals"]["minItems"] == 1
+    assert markdown["visuals"]["maxItems"] == 0
+    assert answer["message"]["maxLength"] == 1_000
+    assert markdown["message"]["maxLength"] == 20_000
+    assert "short summary" in answer["message"]["description"]
+    assert "complete answer" in markdown["message"]["description"]
     references = answer["evidence"]["items"]["anyOf"]
     assert [set(ref["properties"]) for ref in references] == [
         {"query_id"},
@@ -199,7 +210,12 @@ async def test_final_answer_schema_supports_all_terminal_outcomes():
         assert "pattern" not in message
     for variant, model in zip(
         variants,
-        (SubmitAnswerArguments, SubmitClarificationArguments, SubmitRefusalArguments),
+        (
+            SubmitVisualAnswerArguments,
+            SubmitMarkdownAnswerArguments,
+            SubmitClarificationArguments,
+            SubmitRefusalArguments,
+        ),
         strict=True,
     ):
         assert set(variant["required"]) == {

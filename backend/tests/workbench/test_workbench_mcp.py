@@ -174,7 +174,8 @@ async def test_web_tool_executes_through_in_memory_client(monkeypatch):
 
 
 @pytest.mark.anyio
-async def test_submit_final_answer_executes_through_in_memory_client():
+@pytest.mark.parametrize("visuals", [[], [{"query_id": 1, "view": "table"}]])
+async def test_submit_final_answer_executes_through_in_memory_client(visuals):
     async with Client(workbench_server.mcp, mode="legacy") as client:
         result = await client.call_tool(
             SUBMIT_ANSWER,
@@ -183,7 +184,7 @@ async def test_submit_final_answer_executes_through_in_memory_client():
                     "outcome": "answer",
                     "message": "Answer",
                     "evidence": [{"query_id": 1}],
-                    "visuals": [{"query_id": 1, "view": "table"}],
+                    "visuals": visuals,
                 }
             },
             meta=workbench_client.execution_meta(_context()),
@@ -194,7 +195,7 @@ async def test_submit_final_answer_executes_through_in_memory_client():
     assert terminal["synthesis"] == {
         "insights": "Answer",
         "evidence": [{"query_id": 1}],
-        "visuals": [{"query_id": 1, "view": "table"}],
+        "visuals": visuals,
     }
     assert json.loads(result.content[0].text) == {"success": True}
 

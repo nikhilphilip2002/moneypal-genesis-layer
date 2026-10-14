@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Discriminator, Field, Tag, model_validator
 
 
 class AgentArguments(BaseModel):
@@ -191,6 +191,34 @@ class SubmitAnswerArguments(AnswerPresentation):
     )
 
 
+class SubmitVisualAnswerArguments(SubmitAnswerArguments):
+    message: str = Field(
+        min_length=1,
+        max_length=1_000,
+        description=(
+            "A short summary of key findings from the accompanying visuals. "
+            "The application displays the referenced query results separately."
+        ),
+    )
+    visuals: list[AnswerVisual] = Field(
+        min_length=1,
+        max_length=10,
+        description="Tables, KPIs, or charts accompanying the summary.",
+    )
+
+
+class SubmitMarkdownAnswerArguments(SubmitAnswerArguments):
+    message: str = Field(
+        min_length=1,
+        max_length=20_000,
+        description="The complete answer shown to the user.",
+    )
+    visuals: list[AnswerVisual] = Field(
+        max_length=0,
+        description="An empty list for an answer presented entirely in Markdown.",
+    )
+
+
 class SubmitClarificationArguments(AgentArguments):
     """Ask for missing or ambiguous information needed to answer the request."""
 
@@ -230,12 +258,34 @@ class SubmitRefusalArguments(AgentArguments):
     )
 
 
+def _submission_variant(submission: Any) -> str | None:
+    outcome = (
+        submission.get("outcome")
+        if isinstance(submission, dict)
+        else getattr(submission, "outcome", None)
+    )
+    if outcome == "answer":
+        visuals = (
+            submission.get("visuals")
+            if isinstance(submission, dict)
+            else getattr(submission, "visuals", None)
+        )
+        return "visual_answer" if visuals else "markdown_answer"
+    return outcome
+
+
+def _submission_any_of_schema(schema: dict[str, Any]) -> None:
+    schema["anyOf"] = schema.pop("oneOf")
+
+
 FinalSubmissionArguments = Annotated[
-    SubmitAnswerArguments
-    | SubmitClarificationArguments
-    | SubmitRefusalArguments,
+    Annotated[SubmitVisualAnswerArguments, Tag("visual_answer")]
+    | Annotated[SubmitMarkdownAnswerArguments, Tag("markdown_answer")]
+    | Annotated[SubmitClarificationArguments, Tag("clarify")]
+    | Annotated[SubmitRefusalArguments, Tag("refuse")],
+    Discriminator(_submission_variant),
     Field(
-        discriminator="outcome",
+        json_schema_extra=_submission_any_of_schema,
         description="The final answer, clarification, or refusal shown to the user.",
     ),
 ]
@@ -248,6 +298,8 @@ __all__ = [
     "EvidenceReference",
     "FinalSubmissionArguments",
     "SubmitAnswerArguments",
+    "SubmitVisualAnswerArguments",
+    "SubmitMarkdownAnswerArguments",
     "SubmitClarificationArguments",
     "SubmitRefusalArguments",
     "ExcludedQueryReference",
