@@ -145,12 +145,9 @@ def authorize_local_tool_call(
         name == SUBMIT_ANSWER
         and isinstance(submission, dict)
         and submission.get("outcome") == "answer"
-        and (
-            submission.get("query_id") is not None
-            or any(
-                isinstance(ref, dict) and ref.get("query_id") is not None
-                for ref in submission.get("evidence", [])
-            )
+        and any(
+            isinstance(ref, dict) and ref.get("query_id") is not None
+            for ref in submission.get("evidence", [])
         )
     ):
         try:

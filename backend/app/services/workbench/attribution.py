@@ -8,6 +8,7 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.services.workbench.agent_contracts import (
+    QueryEvidenceReference,
     ExcludedQueryReference,
     FinalSynthesis,
 )
@@ -126,9 +127,9 @@ def reconcile_query_attribution(
     active: list[str] = []
     invalid: list[str] = []
     visual: list[str] = []
-    visual_numbers = {item.query_id for item in synthesis.requested_visuals()}
-    for reference in synthesis.evidence_references():
-        if reference.query_id is None:
+    visual_numbers = {item.query_id for item in synthesis.visuals}
+    for reference in synthesis.evidence:
+        if not isinstance(reference, QueryEvidenceReference):
             continue
         selected_record = resolve_current_query(
             registry,

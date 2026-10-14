@@ -961,8 +961,6 @@ export type WorkbenchAnswer = {
   insights?: string;
   evidence?: WorkbenchEvidenceReference[];
   visuals?: { query_id: number; view: ChartType }[];
-  query_id?: number;
-  view?: ChartType;
   sources: string[];
   // Verified facts the answer's numeric claims were checked against; rendered separately
   // from the prose so observations and recommendations stay visibly distinct from data.
@@ -1297,8 +1295,6 @@ export const workbench = {
                   ...answer,
                   schema_version: optionalNumber(payload.schema_version),
                   insights: optionalString(payload.insights),
-                  query_id: optionalNumber(payload.query_id),
-                  view: optionalString(payload.view) as ChartType | undefined,
                   active_query_ids: Array.isArray(payload.active_query_ids)
                     ? stringArray(payload.active_query_ids)
                     : undefined,

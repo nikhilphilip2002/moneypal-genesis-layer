@@ -185,8 +185,8 @@ async def test_final_answer_call_is_strict_terminal_contract():
                 "submission": {
                     "outcome": "answer",
                     "message": "PAR 30 is 4.2%.",
-                    "query_id": 1,
-                    "view": "kpi",
+                    "evidence": [{"query_id": 1}],
+                    "visuals": [{"query_id": 1, "view": "kpi"}],
                 }
             },
         ),
@@ -197,8 +197,8 @@ async def test_final_answer_call_is_strict_terminal_contract():
     assert executed.terminal["outcome"] == "answer"
     assert executed.terminal["synthesis"] == {
         "insights": "PAR 30 is 4.2%.",
-        "query_id": 1,
-        "view": "kpi",
+        "evidence": [{"query_id": 1}],
+        "visuals": [{"query_id": 1, "view": "kpi"}],
     }
     assert json.loads(executed.observation_message()["content"]) == {
         "success": True

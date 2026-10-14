@@ -75,6 +75,20 @@ async def test_discovery_is_the_model_contract_source():
         if tool.name == SUBMIT_ANSWER
     )
     assert submit["description"] == discovered_submit.description
+    submission_schema = submit["parameters"]["properties"]["submission"]
+    assert submission_schema["description"]
+
+    def assert_field_descriptions(schema):
+        if isinstance(schema, dict):
+            for field in schema.get("properties", {}).values():
+                assert field.get("description")
+            for value in schema.values():
+                assert_field_descriptions(value)
+        elif isinstance(schema, list):
+            for value in schema:
+                assert_field_descriptions(value)
+
+    assert_field_descriptions(submission_schema)
 
 
 @pytest.mark.anyio
@@ -167,9 +181,9 @@ async def test_submit_final_answer_executes_through_in_memory_client():
             {
                 "submission": {
                     "outcome": "answer",
-                    "message": "",
-                    "query_id": 1,
-                    "view": "table",
+                    "message": "Answer",
+                    "evidence": [{"query_id": 1}],
+                    "visuals": [{"query_id": 1, "view": "table"}],
                 }
             },
             meta=workbench_client.execution_meta(_context()),
@@ -178,9 +192,9 @@ async def test_submit_final_answer_executes_through_in_memory_client():
     terminal = result.data["data"]["terminal"]
     assert terminal["outcome"] == "answer"
     assert terminal["synthesis"] == {
-        "insights": "",
-        "query_id": 1,
-        "view": "table",
+        "insights": "Answer",
+        "evidence": [{"query_id": 1}],
+        "visuals": [{"query_id": 1, "view": "table"}],
     }
     assert json.loads(result.content[0].text) == {"success": True}
 
@@ -197,6 +211,18 @@ async def test_fastmcp_rejects_extra_and_cross_field_invalid_arguments():
                         "message": "Which period?",
                         "suggestions": [],
                         "unexpected": True,
+                    }
+                },
+            )
+        with pytest.raises((ToolError, MCPError)):
+            await client.call_tool(
+                SUBMIT_ANSWER,
+                {
+                    "submission": {
+                        "outcome": "answer",
+                        "message": "Answer",
+                        "query_id": 1,
+                        "view": "table",
                     }
                 },
             )
@@ -229,8 +255,8 @@ async def test_fastmcp_rejects_extra_and_cross_field_invalid_arguments():
                     "submission": {
                         "outcome": "answer",
                         "message": "Which period?",
-                        "query_id": 1,
-                        "view": "table",
+                        "evidence": [{"query_id": 1}],
+                        "visuals": [{"query_id": 1, "view": "table"}],
                         "suggestions": ["This month"],
                     }
                 },

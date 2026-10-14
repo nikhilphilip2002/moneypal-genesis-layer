@@ -2,7 +2,11 @@ import pytest
 from pydantic import ValidationError
 
 from app.core.tool_names import QUERY
-from app.services.workbench.agent_contracts import FinalSynthesis
+from app.services.workbench.agent_contracts import (
+    AnswerVisual,
+    QueryEvidenceReference,
+    FinalSynthesis,
+)
 from app.services.workbench.attribution import reconcile_query_attribution
 
 
@@ -22,12 +26,12 @@ def _record(query_id, *, status="success", has_data=True, purpose="answer"):
     }
 
 
-def test_final_synthesis_is_three_fields_and_allows_empty_insights():
+def test_final_synthesis_uses_evidence_and_visuals_and_allows_empty_insights():
     synthesis = FinalSynthesis.model_validate(
         {
             "insights": "",
-            "query_id": 1,
-            "view": "table",
+            "evidence": [{"query_id": 1}],
+            "visuals": [{"query_id": 1, "view": "table"}],
         }
     )
     assert synthesis.insights == ""
@@ -35,8 +39,8 @@ def test_final_synthesis_is_three_fields_and_allows_empty_insights():
         FinalSynthesis.model_validate(
             {
                 "insights": "Answer",
-                "query_id": 1,
-                "view": "table",
+                "evidence": [{"query_id": 1}],
+                "visuals": [{"query_id": 1, "view": "table"}],
                 "schema_version": 1,
             }
         )
@@ -46,7 +50,7 @@ def test_reconciliation_selects_one_local_query_and_derives_exclusions():
     registry = [_record("turn:q1", purpose="discovery"), _record("turn:q2")]
     result = reconcile_query_attribution(
         registry,
-        FinalSynthesis(insights="Answer", query_id=2, view="bar"),
+        FinalSynthesis(insights="Answer", evidence=[QueryEvidenceReference(query_id=2)], visuals=[AnswerVisual(query_id=2, view="bar")]),
     )
 
     assert result.active_query_ids == ["turn:q2"]
@@ -60,11 +64,11 @@ def test_reconciliation_rejects_unknown_or_unsuccessful_selection():
     registry = [_record("turn:q1", status="error", has_data=False)]
     failed = reconcile_query_attribution(
         registry,
-        FinalSynthesis(insights="", query_id=1, view="table"),
+        FinalSynthesis(insights="", evidence=[QueryEvidenceReference(query_id=1)], visuals=[AnswerVisual(query_id=1, view="table")]),
     )
     missing = reconcile_query_attribution(
         registry,
-        FinalSynthesis(insights="", query_id=2, view="table"),
+        FinalSynthesis(insights="", evidence=[QueryEvidenceReference(query_id=2)], visuals=[AnswerVisual(query_id=2, view="table")]),
     )
 
     assert failed.active_query_ids == []
@@ -78,7 +82,7 @@ def test_reconciliation_attributes_prior_query_without_excluding_old_executions(
 
     result = reconcile_query_attribution(
         current,
-        FinalSynthesis(insights="", query_id=1, view="table"),
+        FinalSynthesis(insights="", evidence=[QueryEvidenceReference(query_id=1)], visuals=[AnswerVisual(query_id=1, view="table")]),
         prior_registry=previous,
     )
 

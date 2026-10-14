@@ -40,6 +40,7 @@ from app.services.nlq.llm.slot_cache import (
     snapshot_filename,
 )
 from app.services.workbench import history, models, prompts
+from app.services.workbench.agent_contracts import CardEvidenceReference
 from app.services.workbench.agent_executor import (
     AgentExecutionContext,
     ExecutedAgentCall,
@@ -463,7 +464,7 @@ def _preflight(result, state: dict[str, Any]) -> list[tuple[str, str, str]]:
 
                 answer = SubmitAnswerArguments.model_validate(submission)
                 if (
-                    not answer.evidence_references()
+                    not answer.evidence
                     and _has_retrieved_evidence(
                         list(state.get("_completed_tool_results", {}).values())
                     )
@@ -471,8 +472,8 @@ def _preflight(result, state: dict[str, Any]) -> list[tuple[str, str, str]]:
                     raise AgentToolArgumentsInvalid(
                         "Include evidence references from the successful retrievals"
                     )
-                for reference in answer.evidence_references():
-                    if reference.card_reference is not None:
+                for reference in answer.evidence:
+                    if isinstance(reference, CardEvidenceReference):
                         item = state.get("_completed_tool_results", {}).get(
                             reference.card_reference
                         )
@@ -939,7 +940,7 @@ async def _execute_one(
                 item.terminal.get("synthesis")
             )
             visual_items = []
-            for visual in synthesis.requested_visuals():
+            for visual in synthesis.visuals:
                 selected = resolve_current_query(
                     list(state.get("query_registry", [])),
                     visual.query_id,

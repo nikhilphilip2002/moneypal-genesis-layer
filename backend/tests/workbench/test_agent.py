@@ -646,8 +646,8 @@ async def test_strict_final_answer_tool_drives_reconciled_answer(scripted):
                     "submission": {
                         "outcome": "answer",
                         "message": "PAR 30 is 4.2%.",
-                        "query_id": 1,
-                        "view": "kpi",
+                        "evidence": [{"query_id": 1}],
+                        "visuals": [{"query_id": 1, "view": "kpi"}],
                     }
                 },
             )
@@ -673,8 +673,8 @@ async def test_strict_final_answer_tool_drives_reconciled_answer(scripted):
     assert answer["text"] == "PAR 30 is 4.2%."
     assert answer["active_query_ids"] == [f"{state['turn_id']}:q1"]
     assert answer["visual_query_ids"] == [f"{state['turn_id']}:q1"]
-    assert answer["query_id"] == 1
-    assert answer["view"] == "kpi"
+    assert answer["evidence"][0]["query_id"] == 1
+    assert answer["visuals"][0]["view"] == "kpi"
     assert answer["attribution_fallback_used"] is False
     assert client.requests[-1]["tool_choice"] == "auto"
 
@@ -745,8 +745,8 @@ async def test_final_answer_reuses_previous_turn_query_without_sql(
             "submission": {
                 "outcome": "answer",
                 "message": "PAR 30 is 4.2%.",
-                "query_id": 1,
-                "view": "table",
+                "evidence": [{"query_id": 1}],
+                "visuals": [{"query_id": 1, "view": "table"}],
             }
         },
     )
@@ -768,7 +768,7 @@ async def test_final_answer_reuses_previous_turn_query_without_sql(
     assert answer["active_query_ids"] == [prior_id]
     assert answer["visual_query_ids"] == [prior_id]
     assert answer["invalid_query_ids"] == []
-    assert answer["view"] == "table"
+    assert answer["visuals"][0]["view"] == "table"
     assert state["query_registry"] == []
     assert (
         history.get(state["conversation_id"], user="alice").turns[-1][
@@ -812,9 +812,9 @@ async def test_invalid_final_answer_contract_is_repaired_once(
         arguments={
             "submission": {
                 "outcome": "answer",
-                "message": "",
-                "query_id": 99,
-                "view": "kpi",
+                "message": "PAR 30 is 4.2%.",
+                "evidence": [{"query_id": 99}],
+                "visuals": [{"query_id": 99, "view": "kpi"}],
             }
         },
     )
@@ -836,9 +836,9 @@ async def test_invalid_final_answer_contract_is_repaired_once(
                 arguments={
                     "submission": {
                         "outcome": "answer",
-                        "message": "",
-                        "query_id": 1,
-                        "view": "kpi",
+                        "message": "PAR 30 is 4.2%.",
+                        "evidence": [{"query_id": 1}],
+                        "visuals": [{"query_id": 1, "view": "kpi"}],
                     }
                 },
             )
@@ -869,8 +869,8 @@ async def test_invalid_final_answer_contract_is_repaired_once(
         if frame.startswith("event: answer\n")
     )
     answer = json.loads(answer_frame.split("data: ", 1)[1])
-    assert answer["text"] == ""
-    assert answer["query_id"] == 1
+    assert answer["text"] == "PAR 30 is 4.2%."
+    assert answer["evidence"][0]["query_id"] == 1
 
 
 @pytest.mark.anyio
@@ -1885,6 +1885,7 @@ async def test_knowledge_only_submission_without_database_access(scripted):
                 "outcome": "answer",
                 "message": "**PAR 30** definition.",
                 "evidence": [{"card_reference": "definition"}],
+                "visuals": [],
             }
         },
     )

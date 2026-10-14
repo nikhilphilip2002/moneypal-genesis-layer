@@ -100,49 +100,55 @@ class ExcludedQueryReference(BaseModel):
     reason: str = Field(default="", max_length=500)
 
 
-class EvidenceReference(AgentArguments):
-    query_id: int | None = Field(default=None, ge=1)
-    card_reference: str | None = Field(
-        default=None, min_length=1, max_length=500
+class QueryEvidenceReference(AgentArguments):
+    query_id: int = Field(
+        ge=1,
+        description="ID of a successful database query supporting the answer.",
     )
 
-    @model_validator(mode="after")
-    def require_one_reference(self):
-        if (self.query_id is None) == (self.card_reference is None):
-            raise ValueError(
-                "Provide exactly one of query_id or card_reference"
-            )
-        return self
+
+class CardEvidenceReference(AgentArguments):
+    card_reference: str = Field(
+        min_length=1,
+        max_length=500,
+        description="ID of a successful knowledge or web search result supporting the answer.",
+    )
+
+
+EvidenceReference = QueryEvidenceReference | CardEvidenceReference
 
 
 class AnswerVisual(AgentArguments):
-    query_id: int = Field(ge=1)
-    view: VisualizationChartType
+    query_id: int = Field(
+        ge=1,
+        description="ID of the database query result shown in the visual.",
+    )
+    view: VisualizationChartType = Field(
+        description="Table, KPI, or chart type of the visual.",
+    )
 
 
 class AnswerPresentation(AgentArguments):
-    query_id: int | None = Field(default=None, ge=1)
-    view: VisualizationChartType | None = None
     evidence: list[EvidenceReference] = Field(
-        default_factory=list, max_length=30
+        max_length=30,
+        description="References to retrieved results supporting the answer.",
     )
-    visuals: list[AnswerVisual] = Field(default_factory=list, max_length=10)
+    visuals: list[AnswerVisual] = Field(
+        max_length=10,
+        description="Tables, KPIs, or charts accompanying the answer.",
+    )
 
     @model_validator(mode="after")
     def validate_presentation(self):
-        if (self.query_id is None) != (self.view is None):
-            raise ValueError(
-                "Legacy query_id and view must be provided together"
-            )
-        if self.query_id is not None and (self.evidence or self.visuals):
-            raise ValueError(
-                "Use evidence and visuals, or legacy query_id and view"
-            )
         if len({visual.query_id for visual in self.visuals}) != len(
             self.visuals
         ):
             raise ValueError("Provide at most one visual per query")
-        evidence_queries = {ref.query_id for ref in self.evidence}
+        evidence_queries = {
+            ref.query_id
+            for ref in self.evidence
+            if isinstance(ref, QueryEvidenceReference)
+        }
         if any(
             visual.query_id not in evidence_queries for visual in self.visuals
         ):
@@ -150,16 +156,6 @@ class AnswerPresentation(AgentArguments):
                 "Each visual query_id must also appear in evidence"
             )
         return self
-
-    def evidence_references(self) -> list[EvidenceReference]:
-        if self.query_id is not None:
-            return [EvidenceReference(query_id=self.query_id)]
-        return self.evidence
-
-    def requested_visuals(self) -> list[AnswerVisual]:
-        if self.query_id is not None and self.view is not None:
-            return [AnswerVisual(query_id=self.query_id, view=self.view)]
-        return self.visuals
 
 
 class FinalSynthesis(AnswerPresentation):
@@ -185,46 +181,74 @@ class VisualizeQueryResultArguments(AgentArguments):
 
 
 class SubmitAnswerArguments(AnswerPresentation):
-    outcome: Literal["answer"]
-    message: str = Field(max_length=20_000)
-
-    @model_validator(mode="after")
-    def require_answer_content(self):
-        if self.query_id is None and not self.message.strip():
-            raise ValueError("A composed answer requires a Markdown message")
-        return self
+    outcome: Literal["answer"] = Field(
+        description="Completed answer outcome.",
+    )
+    message: str = Field(
+        min_length=1,
+        max_length=20_000,
+        pattern=r"\S",
+        description="The answer shown to the user in Markdown.",
+    )
 
 
 class SubmitClarificationArguments(AgentArguments):
     """Ask for missing or ambiguous information needed to answer the request."""
 
-    outcome: Literal["clarify"]
-    message: str = Field(min_length=1, max_length=500)
-    suggestions: list[str] = Field(default_factory=list, max_length=3)
+    outcome: Literal["clarify"] = Field(
+        description="Clarification outcome.",
+    )
+    message: str = Field(
+        min_length=1,
+        max_length=500,
+        pattern=r"\S",
+        description="The clarification question shown to the user.",
+    )
+    suggestions: list[str] = Field(
+        max_length=3,
+        description="Suggested responses to the clarification question.",
+    )
 
 
 class SubmitRefusalArguments(AgentArguments):
     """Decline an unsupported or prohibited request with a governed reason."""
 
-    outcome: Literal["refuse"]
-    message: str = Field(min_length=1, max_length=500)
+    outcome: Literal["refuse"] = Field(
+        description="Refusal outcome.",
+    )
+    message: str = Field(
+        min_length=1,
+        max_length=500,
+        pattern=r"\S",
+        description="The refusal explanation shown to the user.",
+    )
     reason_code: Literal[
         "out_of_scope",
         "not_in_data",
         "predictive",
         "advice",
         "unsafe",
-    ]
+    ] = Field(
+        description="The reason category for declining the request.",
+    )
 
 
 FinalSubmissionArguments = Annotated[
-    SubmitAnswerArguments | SubmitClarificationArguments | SubmitRefusalArguments,
-    Field(discriminator="outcome"),
+    SubmitAnswerArguments
+    | SubmitClarificationArguments
+    | SubmitRefusalArguments,
+    Field(
+        discriminator="outcome",
+        description="The final answer, clarification, or refusal shown to the user.",
+    ),
 ]
 
 
 __all__ = [
     "AgentArguments",
+    "QueryEvidenceReference",
+    "CardEvidenceReference",
+    "EvidenceReference",
     "FinalSubmissionArguments",
     "SubmitAnswerArguments",
     "SubmitClarificationArguments",

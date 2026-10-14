@@ -18,6 +18,7 @@ from app.mcp.results import success
 from app.services.nlq.catalog import get_catalog
 from app.services.workbench.access import SourceAccessDenied, build_policy
 from app.services.workbench.agent_contracts import (
+    QueryEvidenceReference,
     FinalSynthesis,
     FinalSubmissionArguments,
     SearchCuratedKnowledgeArguments,
@@ -168,24 +169,19 @@ async def submit_final_answer(
     submission: FinalSubmissionArguments,
     ctx: Context,
 ) -> ToolResult:
-    """Submit the complete Markdown answer, evidence references, and optional visuals.
+    """Submit the final answer with evidence references and visuals.
 
-    Use query_id references from successful database results and card_reference IDs
-    from successful knowledge/web results. Each visual selects its own query and view.
-    Legacy single-query answers, clarifications, and refusals remain supported.
-    Submit as the only tool in the final response.
+    Use query_id from the query results and card_reference IDs from successful knowledge/web results. 
     """
 
     if isinstance(submission, SubmitAnswerArguments):
         if any(
-            ref.query_id is not None
-            for ref in submission.evidence_references()
+            isinstance(ref, QueryEvidenceReference)
+            for ref in submission.evidence
         ):
             _execution_context(ctx).source_policy.require("db")
         synthesis = FinalSynthesis(
             insights=submission.message,
-            query_id=submission.query_id,
-            view=submission.view,
             evidence=submission.evidence,
             visuals=submission.visuals,
         )

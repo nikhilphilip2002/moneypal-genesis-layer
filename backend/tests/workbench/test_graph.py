@@ -630,8 +630,8 @@ async def test_answer_results_reconciles_structured_query_references():
         json.dumps(
             {
                 "insights": "The value is one.",
-                "query_id": 1,
-                "view": "table",
+                "evidence": [{"query_id": 1}],
+                "visuals": [{"query_id": 1, "view": "table"}],
             }
         ),
         [_successful_query()],
@@ -645,8 +645,8 @@ async def test_answer_results_reconciles_structured_query_references():
     assert answer["text"] == "The value is one."
     assert answer["active_query_ids"] == ["turn-answer:q1"]
     assert answer["visual_query_ids"] == ["turn-answer:q1"]
-    assert answer["query_id"] == 1
-    assert answer["view"] == "table"
+    assert answer["evidence"][0]["query_id"] == 1
+    assert answer["visuals"][0]["view"] == "table"
     assert answer["invalid_query_ids"] == []
     assert answer["attribution_fallback_used"] is False
 

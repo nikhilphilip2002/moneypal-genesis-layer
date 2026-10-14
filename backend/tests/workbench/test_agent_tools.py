@@ -13,6 +13,11 @@ from app.core.tool_names import (
 )
 from app.services.workbench import access
 from app.mcp.tool_catalog import ToolCatalog
+from app.services.workbench.agent_contracts import (
+    SubmitAnswerArguments,
+    SubmitClarificationArguments,
+    SubmitRefusalArguments,
+)
 from app.services.workbench.agent_tools import (
     RUNTIME_TOOL_POLICIES,
     AgentToolAccessDenied,
@@ -155,8 +160,8 @@ def test_final_answer_requires_database_only_for_query_answer():
                 "submission": {
                     "outcome": "answer",
                     "message": "",
-                    "query_id": 1,
-                    "view": "table",
+                    "evidence": [{"query_id": 1}],
+                    "visuals": [{"query_id": 1, "view": "table"}],
                 }
             },
             policy=policy,
@@ -176,13 +181,31 @@ async def test_final_answer_schema_supports_all_terminal_outcomes():
     assert set(answer) == {
         "outcome",
         "message",
-        "query_id",
-        "view",
         "evidence",
         "visuals",
     }
     assert answer["outcome"]["enum"] == ["answer"]
-    assert answer["view"]["enum"] == [
+    references = answer["evidence"]["items"]["anyOf"]
+    assert [set(ref["properties"]) for ref in references] == [
+        {"query_id"},
+        {"card_reference"},
+    ]
+    for reference in references:
+        assert reference["required"] == list(reference["properties"])
+        assert reference["additionalProperties"] is False
+    for variant in variants:
+        message = variant["properties"]["message"]
+        assert message["minLength"] == 1
+        assert message["pattern"] == r"\S"
+    for variant, model in zip(
+        variants,
+        (SubmitAnswerArguments, SubmitClarificationArguments, SubmitRefusalArguments),
+        strict=True,
+    ):
+        assert set(variant["required"]) == {
+            name for name, field in model.model_fields.items() if field.is_required()
+        }
+    assert answer["visuals"]["items"]["properties"]["view"]["enum"] == [
         "kpi",
         "line",
         "area",

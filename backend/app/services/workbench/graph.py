@@ -15,6 +15,10 @@ import anyio
 
 from app.services.nlq.llm.telemetry import collect_calls, summarize_calls
 from app.services.workbench import access, history
+from app.services.workbench.agent_contracts import (
+    CardEvidenceReference,
+    QueryEvidenceReference,
+)
 from app.services.workbench.results import ExecutionDecision, SourceResult
 
 logger = logging.getLogger(__name__)
@@ -465,8 +469,8 @@ async def answer_results(state: WorkbenchState) -> dict[str, Any]:
     proposed = (
         [
             f"q{ref.query_id}"
-            for ref in structured_synthesis.evidence_references()
-            if ref.query_id is not None
+            for ref in structured_synthesis.evidence
+            if isinstance(ref, QueryEvidenceReference)
         ]
         if structured_synthesis is not None
         else []
@@ -493,8 +497,9 @@ async def answer_results(state: WorkbenchState) -> dict[str, Any]:
     if structured_synthesis is not None:
         citation_results = [
             state.get("_completed_tool_results", {})[ref.card_reference].card
-            for ref in structured_synthesis.evidence_references()
-            if ref.card_reference in state.get("_completed_tool_results", {})
+            for ref in structured_synthesis.evidence
+            if isinstance(ref, CardEvidenceReference)
+            and ref.card_reference in state.get("_completed_tool_results", {})
         ]
     for item in citation_results:
         if item is None:
@@ -512,16 +517,6 @@ async def answer_results(state: WorkbenchState) -> dict[str, Any]:
         "status": "partial" if unavailable or limitations else "answered",
         "text": text,
         "insights": text,
-        "query_id": (
-            structured_synthesis.query_id
-            if structured_synthesis is not None
-            else None
-        ),
-        "view": (
-            structured_synthesis.view
-            if structured_synthesis is not None
-            else None
-        ),
         "active_query_ids": attribution.active_query_ids,
         "visual_query_ids": attribution.visual_query_ids,
         "excluded_queries": [
@@ -533,13 +528,13 @@ async def answer_results(state: WorkbenchState) -> dict[str, Any]:
         "attribution_fallback_used": attribution.fallback_used,
         "evidence": [
             ref.model_dump(exclude_none=True)
-            for ref in structured_synthesis.evidence_references()
+            for ref in structured_synthesis.evidence
         ]
         if structured_synthesis
         else [],
         "visuals": [
             visual.model_dump()
-            for visual in structured_synthesis.requested_visuals()
+            for visual in structured_synthesis.visuals
         ]
         if structured_synthesis
         else [],
