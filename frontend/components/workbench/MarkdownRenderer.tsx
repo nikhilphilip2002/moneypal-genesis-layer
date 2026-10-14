@@ -63,7 +63,7 @@ const components: Components = {
   ),
   table: ({ className, ...props }: ComponentPropsWithoutRef<'table'>) => (
     <div className="max-w-full overflow-x-auto rounded-md border border-border/70">
-      <table className={cn('w-full border-collapse text-left text-xs', className)} {...props} />
+      <table className={cn('w-full border-collapse text-left text-xs [&_tbody>tr:last-child>td]:border-b-0', className)} {...props} />
     </div>
   ),
   thead: ({ className, ...props }: ComponentPropsWithoutRef<'thead'>) => (
@@ -73,7 +73,7 @@ const components: Components = {
     <th className={cn('border-b border-r border-border/70 px-3 py-2 font-semibold last:border-r-0', className)} {...props} />
   ),
   td: ({ className, ...props }: ComponentPropsWithoutRef<'td'>) => (
-    <td className={cn('border-b border-r border-border/40 px-3 py-2 align-top last:border-b-0 last:border-r-0', className)} {...props} />
+    <td className={cn('border-b border-r border-border/40 px-3 py-2 align-top last:border-r-0', className)} {...props} />
   ),
   hr: ({ className, ...props }: ComponentPropsWithoutRef<'hr'>) => (
     <hr className={cn('border-border/70', className)} {...props} />
