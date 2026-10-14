@@ -136,6 +136,25 @@ async def search_public_web(
     return success(_card_data(await _search_public_web(args, execution_ctx)))
 
 
+@mcp.tool(description=(
+    "Continue an oversized tool result by its output ID and character offset. "
+    "Page size is controlled by the server."
+))
+async def read_tool_output(
+    id: Annotated[str, Field(min_length=1)],
+    offset: Annotated[int, Field(ge=0, strict=True)],
+    ctx: Context,
+) -> dict[str, Any]:
+    from app.services.workbench import history
+
+    execution_ctx = _execution_context(ctx)
+    page = history.read_tool_output(
+        execution_ctx.conversation_id, execution_ctx.user, id, offset,
+        execution_ctx.source_policy,
+    )
+    return success({"kind": "tool_output", "page": page})
+
+
 @mcp.tool()
 async def submit_final_answer(
     submission: FinalSubmissionArguments,

@@ -71,6 +71,7 @@ class RawQueryResult:
     row_count: int
     complete: bool = True
     sensitive: bool = False
+    observation_payload: dict[str, Any] | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -98,6 +99,9 @@ class ExecutedAgentCall:
     raw_result: RawQueryResult | None = None
     terminal: dict[str, Any] | None = None
     error: dict[str, Any] | None = None
+    output_page: dict[str, Any] | None = None
+    observation_card: dict[str, Any] | None = None
+    context: AgentExecutionContext | None = None
     additional_visuals: list[ExecutedAgentCall] = field(default_factory=list)
     duration_ms: int = 0
     query_id: str | None = None
@@ -117,6 +121,8 @@ class ExecutedAgentCall:
         return {"query_id": query_id}
 
     def result_payload(self) -> dict[str, Any]:
+        if self.output_page is not None:
+            return self.output_page
         query_reference = (
             self._local_reference(self.query_id, self.attempt_id)
             if self.query_id and self.attempt_id
@@ -136,7 +142,11 @@ class ExecutedAgentCall:
                 "status": "ok",
                 "source": "db",
                 "result_type": "raw_query",
-                "payload": self.raw_result.payload,
+                "payload": (
+                    self.raw_result.observation_payload
+                    if self.raw_result.observation_payload is not None
+                    else self.raw_result.payload
+                ),
                 "summary": self.raw_result.summary,
                 "complete": self.raw_result.complete,
                 "lineage": self.raw_result.lineage,
@@ -171,6 +181,11 @@ class ExecutedAgentCall:
                 for fact in facts.from_results([self.card], max_per_result=100)
             ],
         }
+        if self.observation_card is not None:
+            original = dict(self.observation_card)
+            original["card_type"] = original.pop("kind", self.card.card_type)
+            original["citations"] = original.pop("sources", self.card.sources)
+            payload.update(original)
         if query_reference is not None:
             payload["query_reference"] = query_reference
         row_count = (self.card.lineage or {}).get("row_count")
@@ -179,14 +194,37 @@ class ExecutedAgentCall:
         return payload
 
     def observation_message(self) -> dict[str, str]:
-        return {
-            "role": "tool",
-            "tool_call_id": self.call.id,
-            "content": shape_observation_text(
-                json.dumps(self.result_payload(), default=str, separators=(",", ":")),
-                tool_name=self.call.name,
-            ),
-        }
+        content = json.dumps(
+            self.result_payload(), default=str, separators=(",", ":")
+        )
+        limit = observation_limit_chars(self.call.name)
+        if self.output_page is None and len(content) > limit:
+            if self.context is None:
+                raise AgentExecutionError(
+                    "Oversized tool output requires conversation context"
+                )
+            from app.services.workbench import history
+
+            history.store_tool_output(
+                self.context.conversation_id, self.context.user,
+                self.call.id, content
+            )
+            offset = min(limit, settings.workbench_tool_output_page_chars)
+            while True:
+                metadata = json.dumps({
+                    "output_id": self.call.id,
+                    "total_length": len(content),
+                    "next_offset": offset,
+                }, separators=(",", ":"))
+                footer = (
+                    "\n\n[Tool output clipped] " + metadata
+                    + "\nContinue with read_tool_output(id=output_id, offset=next_offset)."
+                )
+                if offset + len(footer) <= limit or offset == 0:
+                    break
+                offset = max(0, limit - len(footer))
+            content = content[:offset] + footer
+        return {"role": "tool", "tool_call_id": self.call.id, "content": content}
 
 
 def observation_limit_chars(tool_name: str | None) -> int:
@@ -439,6 +477,7 @@ async def _execute_postgres_mcp(
         lineage=lineage,
         row_count=result.row_count,
         complete=not result.truncated,
+        observation_payload=payload,
     )
 
 
@@ -505,7 +544,7 @@ def _source_result_from_mcp(data: dict[str, Any]) -> SourceResult:
     )
 
 
-async def execute_agent_call(
+async def _execute_agent_call(
     call: NativeToolCall,
     ctx: AgentExecutionContext,
 ) -> ExecutedAgentCall:
@@ -556,6 +595,8 @@ async def execute_agent_call(
         raise AgentToolTimeout(
             f"{call.name} exceeded its execution deadline"
         ) from exc
+    if data.get("kind") == "tool_output":
+        return ExecutedAgentCall(call=call, output_page=data["page"])
     if data.get("kind") == "terminal":
         terminal = data.get("terminal")
         if not isinstance(terminal, dict):
@@ -589,7 +630,17 @@ async def execute_agent_call(
                 )[:500],
             },
         )
-    return ExecutedAgentCall(call=call, card=card)
+    return ExecutedAgentCall(
+        call=call, card=card, observation_card=data["card"]
+    )
+
+
+async def execute_agent_call(
+    call: NativeToolCall, ctx: AgentExecutionContext
+) -> ExecutedAgentCall:
+    result = await _execute_agent_call(call, ctx)
+    result.context = ctx
+    return result
 
 
 __all__ = [

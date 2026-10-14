@@ -18,6 +18,7 @@ async def test_database_tools_are_not_defined_in_the_local_registry():
         {"query_metrics", "run_validated_query", "query"} & set(offered)
     )
     assert set(offered) == {
+        "read_tool_output",
         "search_curated_knowledge",
         "submit_final_answer",
     }

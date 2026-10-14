@@ -110,6 +110,8 @@ async def test_database_query_reference_reaches_mcp_and_observation(
             "row_count": 1,
             "duration_ms": 2,
             "validated_sql": "SELECT 1",
+            "citations": [{"document": "original"}],
+            "lineage": {"upstream": "original"},
         }
 
     monkeypatch.setattr(postgres_client, "call_tool", call_tool)
@@ -140,6 +142,11 @@ async def test_database_query_reference_reaches_mcp_and_observation(
         "query_id": 1,
         "attempt": 1,
     }
+
+    observation = json.loads(executed.observation_message()["content"])
+    assert observation["payload"]["citations"] == [{"document": "original"}]
+    assert observation["payload"]["lineage"] == {"upstream": "original"}
+    assert observation["payload"]["validated_sql"] == "SELECT 1"
 
 
 @pytest.mark.anyio
@@ -393,26 +400,19 @@ def test_observation_is_bounded_while_durable_replay_keeps_every_row(
     )
     executed = _large_lookup()
 
-    durable = executed.result_payload()
-    observation = json.loads(executed.observation_message()["content"])
+    from app.services.workbench import history
 
-    assert len(durable["payload"]["rows"]) == 5000
-    assert len(executed.observation_message()["content"]) <= 5_000
-    kept = observation["payload"]["rows"]
-    assert 0 < len(kept) < 5000
-    assert kept == durable["payload"]["rows"][: len(kept)]
-    assert observation["truncated"]["reason"] == "observation_limit"
-    assert observation["truncated"]["rows_total"] == 5000
-    assert observation["truncated"]["rows_omitted"] == 5000 - len(kept)
-    assert observation["summary"] == durable["summary"]
-    assert (
-        observation["query_reference"]
-        if "query_reference" in observation
-        else True
-    )
-    if "lineage" in observation:
-        assert observation["lineage"] == durable["lineage"]
-    assert executed.observation_message()["tool_call_id"] == "call_big"
+    monkeypatch.setattr(history, "_ensure_table", lambda: False)
+    monkeypatch.setattr(history, "_MEMORY", {})
+    history.begin_turn("c1", "alice", "Question")
+    executed.context = _context()
+    durable = json.dumps(executed.result_payload(), default=str, separators=(",", ":"))
+    content, footer = executed.observation_message()["content"].split("\n\n[Tool output clipped] ")
+    metadata = json.loads(footer.splitlines()[0])
+    assert len(executed.observation_message()["content"]) <= 5000
+    assert content == durable[:len(content)]
+    assert metadata == {"output_id": "call_big", "total_length": len(durable), "next_offset": len(content)}
+    assert history._MEMORY[("alice", "c1")].tool_outputs == {"call_big": durable}
 
 
 def test_small_results_replay_unchanged():

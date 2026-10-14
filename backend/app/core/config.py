@@ -325,6 +325,9 @@ class Settings:
                 get("WORKBENCH_AGENT_OBSERVATION_MAX_CHARS", "5000") or "5000"
             ),
         )
+        self.workbench_tool_output_page_chars = max(
+            1, int(get("WORKBENCH_TOOL_OUTPUT_PAGE_CHARS", "5000") or "5000")
+        )
         self.workbench_agent_observation_max_facts = max(
             0, int(get("WORKBENCH_AGENT_OBSERVATION_MAX_FACTS", "40") or "40")
         )

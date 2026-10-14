@@ -59,6 +59,12 @@ class RuntimeToolPolicy:
 
 
 RUNTIME_TOOL_POLICIES: dict[str, RuntimeToolPolicy] = {
+    "read_tool_output": RuntimeToolPolicy(
+        source_id=None,
+        sensitivity="internal",
+        timeout_s=10.0,
+        max_result_chars=settings.workbench_tool_output_page_chars,
+    ),
     "search_curated_knowledge": RuntimeToolPolicy(
         source_id=None,
         sensitivity="internal",

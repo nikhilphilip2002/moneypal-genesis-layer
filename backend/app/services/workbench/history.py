@@ -13,6 +13,7 @@ from typing import Any, Callable
 
 from app.core.config import settings
 from app.services.nlq.llm.messages import ChatMessage
+from app.services.workbench.access import SourceAccessPolicy
 
 logger = logging.getLogger(__name__)
 
@@ -52,6 +53,7 @@ class ConversationRecord:
     external_sources_enabled: bool = False
     messages: list[ChatMessage] = field(default_factory=list)
     migration: dict[str, Any] | None = None
+    tool_outputs: dict[str, str] = field(default_factory=dict)
 
 
 @dataclass(slots=True)
@@ -117,6 +119,7 @@ def _record_payload(record: ConversationRecord) -> dict[str, Any]:
         "turns": record.turns,
         "messages": record.messages,
         "migration": record.migration,
+        "tool_outputs": record.tool_outputs,
     }
     if record.compaction:
         payload["compaction"] = record.compaction
@@ -163,6 +166,7 @@ def _load(conversation_id: str, user: str) -> ConversationRecord | None:
                 ),
                 messages=list(payload.get("messages", [])),
                 migration=payload.get("migration"),
+                tool_outputs=dict(payload.get("tool_outputs", {})),
             )
             _migrate_record(record)
             return record
@@ -772,3 +776,45 @@ def private_entities(conversation_id: str, *, user: str) -> tuple[str, ...]:
                     "could not extract private literals from historical MCP SQL"
                 )
     return tuple(dict.fromkeys(values[-20:]))
+
+
+def store_tool_output(
+    conversation_id: str, user: str, output_id: str, content: str
+) -> None:
+    record = _load(conversation_id, user)
+    if record is None:
+        raise ValueError("Conversation is unavailable or access is denied")
+    existing = record.tool_outputs.get(output_id)
+    if existing is not None and existing != content:
+        raise ValueError("Tool output ID already exists with different content")
+    record.tool_outputs[output_id] = content
+    _save(record)
+
+
+def read_tool_output(
+    conversation_id: str,
+    user: str,
+    output_id: str,
+    offset: int,
+    policy: SourceAccessPolicy,
+) -> dict[str, Any]:
+    record = _load(conversation_id, user)
+    if record is None:
+        raise ValueError("Conversation is unavailable or access is denied")
+    content = record.tool_outputs.get(output_id)
+    if content is None:
+        raise ValueError(f"Unknown tool output ID: {output_id}")
+    source = json.loads(content).get("source")
+    if not source:
+        raise ValueError("Tool output source permissions cannot be verified")
+    policy.require(source)
+    if type(offset) is not int or offset < 0 or offset > len(content):
+        raise ValueError(
+            f"Invalid offset: expected a character offset from 0 to {len(content)}"
+        )
+    end = min(len(content), offset + settings.workbench_tool_output_page_chars)
+    return {
+        "content": content[offset:end],
+        "next_offset": end,
+        "has_more": end < len(content),
+    }
