@@ -91,10 +91,13 @@ def assert_mcp_catalog(health: dict[str, Any]) -> None:
 
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
     from app.core.tool_names import (
+        ASK_CLARIFICATION,
         QUERY,
+        READ_TOOL_OUTPUT,
+        REFUSE_REQUEST,
         SEARCH_CURATED_KNOWLEDGE,
         SEARCH_PUBLIC_WEB,
-        SUBMIT_ANSWER,
+        VISUALIZE_RESULT,
     )
 
     workbench = health.get("workbench") or {}
@@ -105,7 +108,10 @@ def assert_mcp_catalog(health: dict[str, Any]) -> None:
     expected_local = {
         SEARCH_CURATED_KNOWLEDGE,
         SEARCH_PUBLIC_WEB,
-        SUBMIT_ANSWER,
+        VISUALIZE_RESULT,
+        ASK_CLARIFICATION,
+        REFUSE_REQUEST,
+        READ_TOOL_OUTPUT,
     }
     if catalog.get("status") != "ok":
         raise AssertionError(f"MCP catalog is not ready: {catalog}")

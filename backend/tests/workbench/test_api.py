@@ -261,7 +261,7 @@ class TestConversationOwnership:
         )
 
     @pytest.mark.anyio
-    async def test_model_content_survives_reload_alongside_submitted_answer(
+    async def test_model_content_survives_reload_alongside_visual_answer(
         self, client
     ):
         from app.services.workbench import history
@@ -282,7 +282,7 @@ class TestConversationOwnership:
                             "id": "submit",
                             "type": "function",
                             "function": {
-                                "name": "submit_final_answer",
+                                "name": "visualize_result",
                                 "arguments": "Internal tool arguments",
                             },
                         }

@@ -6,10 +6,11 @@ import json
 import pytest
 
 from app.core.tool_names import (
+    ASK_CLARIFICATION,
     QUERY,
     SEARCH_CURATED_KNOWLEDGE,
     SEARCH_PUBLIC_WEB,
-    SUBMIT_ANSWER,
+    VISUALIZE_RESULT,
 )
 from app.services.nlq.catalog import get_catalog
 from app.services.nlq.llm import NativeToolCall
@@ -162,14 +163,8 @@ async def test_terminal_call_executes_no_data_handler():
     executed = await agent_executor.execute_agent_call(
         NativeToolCall(
             id="call_2",
-            name=SUBMIT_ANSWER,
-            arguments={
-                "submission": {
-                    "outcome": "clarify",
-                    "message": "Which period?",
-                    "suggestions": ["This month"],
-                }
-            },
+            name=ASK_CLARIFICATION,
+            arguments={'suggestions': ['This month'], 'question': 'Which period?'},
         ),
         _context(),
     )
@@ -179,34 +174,20 @@ async def test_terminal_call_executes_no_data_handler():
 
 
 @pytest.mark.anyio
-async def test_final_answer_call_is_strict_terminal_contract():
+async def test_visualization_call_is_nonterminal():
     executed = await agent_executor.execute_agent_call(
         NativeToolCall(
             id="call-final",
-            name=SUBMIT_ANSWER,
-            arguments={
-                "submission": {
-                    "outcome": "answer",
-                    "message": "PAR 30 is 4.2%.",
-                    "evidence": [{"query_id": 1}],
-                    "visuals": [{"query_id": 1, "view": "kpi"}],
-                }
-            },
+            name=VISUALIZE_RESULT,
+            arguments={'query_id': 1, 'view': 'kpi'},
         ),
         _context(),
     )
 
     assert executed.card is None
-    assert executed.terminal is not None
-    assert executed.terminal["outcome"] == "answer"
-    assert executed.terminal["synthesis"] == {
-        "insights": "PAR 30 is 4.2%.",
-        "evidence": [{"query_id": 1}],
-        "visuals": [{"query_id": 1, "view": "kpi"}],
-    }
-    assert json.loads(executed.observation_message()["content"]) == {
-        "success": True
-    }
+    assert executed.terminal is None
+    assert executed.visual == {"query_id": 1, "view": "kpi"}
+    assert json.loads(executed.observation_message()["content"]) == {"success": True}
 
 
 @pytest.mark.anyio
@@ -400,8 +381,10 @@ def _large_lookup(rows: int = 5000) -> agent_executor.ExecutedAgentCall:
     )
 
 
-def test_observation_is_bounded_while_durable_replay_keeps_every_row(
-    monkeypatch,
+@pytest.mark.parametrize("large_cell", [False, True])
+@pytest.mark.parametrize("complete", [False, True])
+def test_query_preview_keeps_reference_and_durable_rows(
+    monkeypatch, large_cell, complete,
 ):
     monkeypatch.setattr(
         agent_executor.settings,
@@ -410,6 +393,23 @@ def test_observation_is_bounded_while_durable_replay_keeps_every_row(
         raising=False,
     )
     executed = _large_lookup()
+    executed.query_id = "t1:q1"
+    executed.attempt_id = "t1:q1:a1"
+    assert executed.raw_result is not None
+    original = executed.raw_result
+    if large_cell:
+        original.payload["rows"][0]["borrower_name"] = "x" * 10000
+    executed.raw_result = RawQueryResult(
+        payload=original.payload,
+        summary=original.summary,
+        lineage=original.lineage,
+        row_count=original.row_count,
+        complete=complete,
+        observation_payload={
+            **original.payload,
+            "warnings": [] if complete else ["More rows match the query."],
+        },
+    )
 
     from app.services.workbench import history
 
@@ -420,16 +420,26 @@ def test_observation_is_bounded_while_durable_replay_keeps_every_row(
     durable = json.dumps(
         executed.result_payload(), default=str, separators=(",", ":")
     )
-    content, footer = executed.observation_message()["content"].split(
-        "\n\n[Tool output clipped] "
+    content = executed.observation_message()["content"]
+    observation = json.loads(content)
+    assert len(content) <= 2000
+    assert observation["query_reference"] == {"query_id": 1, "attempt": 1}
+    assert observation["row_count"] == 5000
+    assert observation["complete"] is complete
+    assert observation["preview_only"] is True
+    assert len(observation["payload"]["rows"]) <= 5
+    assert observation["payload"]["columns"] == original.payload["columns"]
+    assert observation["payload"]["warnings"] == (
+        [] if complete else ["More rows match the query."]
     )
-    metadata = json.loads(footer.splitlines()[0])
-    assert len(executed.observation_message()["content"]) <= 5000
-    assert content == durable[: len(content)]
-    assert metadata == {
-        "output_id": "call_big",
+    assert observation["presentation"]["query_id"] == 1
+    assert observation["presentation"]["view"] == "table"
+    assert observation["presentation"]["uses_full_stored_result"] is True
+    assert observation["output_reference"] == {
+        "tool": "read_tool_output",
+        "id": "call_big",
         "total_length": len(durable),
-        "next_offset": len(content),
+        "offset": 0,
     }
     assert history._MEMORY[("alice", "c1")].tool_outputs == {
         "call_big": durable
@@ -437,7 +447,7 @@ def test_observation_is_bounded_while_durable_replay_keeps_every_row(
 
 
 def test_small_results_replay_unchanged():
-    executed = _large_lookup(rows=30)
+    executed = _large_lookup(rows=3)
 
     durable = executed.result_payload()
     text = executed.observation_message()["content"]

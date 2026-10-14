@@ -40,7 +40,7 @@ const components: Components = {
     <a
       className={cn('font-medium text-primary underline decoration-primary/35 underline-offset-4 hover:decoration-primary', className)}
       href={href}
-      target="_blank"
+      target={href?.startsWith("#") ? undefined : "_blank"}
       rel="noopener noreferrer"
       {...props}
     />

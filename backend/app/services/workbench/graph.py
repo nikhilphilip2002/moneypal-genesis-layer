@@ -111,9 +111,7 @@ def _log_query_attribution(
             "unused_by_tool": unused_by_tool,
             "invalid_model_references": len(invalid),
             "filtered_execution_references": filtered_execution_references,
-            "structured_output_repairs": int(
-                state.get("attribution_repairs", 0)
-            ),
+            "completion_repairs": int(state.get("completion_repairs", 0)),
             "fallback_used": fallback_used,
             "data_bearing_answer_empty_attribution": successful > 0
             and not active,
@@ -233,7 +231,6 @@ class WorkbenchState(TypedDict):
     timing: dict[str, Any]
     trace: NotRequired[list[dict[str, Any]]]
     agent_final_synthesis: NotRequired[Any]
-    attribution_repairs: NotRequired[int]
     query_registry: NotRequired[list[dict[str, Any]]]
     prior_query_registry: NotRequired[list[dict[str, Any]]]
 
@@ -274,51 +271,6 @@ async def answer_results(state: WorkbenchState) -> dict[str, Any]:
         for r in results
         if not r.complete
     ]
-
-    final_result = state.get("agent_final_result")
-    if (
-        not results
-        and final_result is not None
-        and final_result.text.strip()
-        and not state.get("query_registry")
-    ):
-        payload = {
-            "schema_version": 1,
-            "status": "answered",
-            "text": final_result.text.strip(),
-            "active_query_ids": [],
-            "visual_query_ids": [],
-            "excluded_queries": [],
-            "model_active_query_ids": [],
-            "invalid_query_ids": [],
-            "attribution_fallback_used": False,
-            "sources": [],
-            "citations": [],
-            "unavailable_sources": [],
-            "limitations": [],
-            "facts": [],
-        }
-        await emit.put(sse("answer", payload))
-        state["timing"].setdefault(
-            "final_answer_ms",
-            int((time.perf_counter() - state["timing"]["started_at"]) * 1000),
-        )
-        _persist(
-            history.set_answer,
-            state["conversation_id"],
-            state["user"],
-            state["turn_id"],
-            payload,
-        )
-        _log_query_attribution(
-            state,
-            active=[],
-            visual=[],
-            invalid=[],
-            proposed=[],
-            fallback_used=False,
-        )
-        return {}
 
     if not results and state.get("agent_final_synthesis") is None:
         refusal = next(
@@ -432,19 +384,7 @@ async def answer_results(state: WorkbenchState) -> dict[str, Any]:
         return {}
 
     text = results[0].summary.strip() if results else ""
-    result = final_result
     structured_synthesis = state.get("agent_final_synthesis")
-    if result is not None and result.text:
-        # Preserve the model's content verbatim. Tool calls and tool results remain
-        # separate messages, and the agent loop alone decides whether to continue.
-        text = result.text
-        try:
-            from app.services.workbench.agent_contracts import FinalSynthesis
-
-            structured_synthesis = FinalSynthesis.model_validate(result.json())
-            text = structured_synthesis.insights or text
-        except Exception:  # noqa: BLE001 - invalid output fails closed below
-            structured_synthesis = None
 
     from app.services.workbench.attribution import (
         ReconciledAttribution,
@@ -559,17 +499,6 @@ async def answer_results(state: WorkbenchState) -> dict[str, Any]:
         state["turn_id"],
         payload,
     )
-    if result is not None:
-        # The prompt this call carried is the best available measure of how full the
-        # conversation's context has become; the transcript budget is built on it.
-        _persist(
-            history.set_usage,
-            state["conversation_id"],
-            state["user"],
-            state["turn_id"],
-            prompt_tokens=getattr(result, "prompt_tokens", 0),
-            completion_tokens=getattr(result, "completion_tokens", 0),
-        )
     return {}
 
 

@@ -1,0 +1,143 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1800" height="1030" viewBox="0 0 1800 1030" role="img" aria-labelledby="title description">
+  <title id="title">Moneypal system architecture</title>
+  <desc id="description">Browser traffic enters nginx, which serves Next.js and forwards API requests to FastAPI. FastAPI runs feature APIs and Workbench. Workbench uses in-process tools and a separate governed PostgreSQL MCP service. External dependencies are PostgreSQL, Qdrant, a model endpoint, Exa, and public macro sources. A scheduled macro worker and manual document ingestion populate Qdrant.</desc>
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto" markerUnits="strokeWidth">
+      <path d="M1 1 L9 5 L1 9 Z" fill="#58728b"/>
+    </marker>
+    <marker id="teal-arrow" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto" markerUnits="strokeWidth">
+      <path d="M1 1 L9 5 L1 9 Z" fill="#0d9488"/>
+    </marker>
+    <style>
+      text { font-family: DejaVu Sans, Arial, sans-serif; fill: #17324d; }
+      .heading { font-size: 34px; font-weight: 700; fill: #fff; }
+      .subtitle { font-size: 17px; fill: #bed0dc; }
+      .section { font-size: 16px; font-weight: 700; letter-spacing: 1.5px; fill: #678097; }
+      .name { font-size: 20px; font-weight: 700; }
+      .detail { font-size: 14px; fill: #60758a; }
+      .small { font-size: 13px; fill: #60758a; }
+      .edge { fill: none; stroke: #58728b; stroke-width: 2.6; stroke-linejoin: round; marker-end: url(#arrow); }
+      .edge-teal { fill: none; stroke: #0d9488; stroke-width: 2.8; stroke-linejoin: round; marker-end: url(#teal-arrow); }
+      .edge-dashed { fill: none; stroke: #0d9488; stroke-width: 2.6; stroke-dasharray: 9 6; stroke-linejoin: round; marker-end: url(#teal-arrow); }
+      .node { fill: #fff; stroke: #bdcede; stroke-width: 2; }
+      .node-blue { fill: #f1f7ff; stroke: #94b8da; stroke-width: 2; }
+      .node-teal { fill: #eafaf7; stroke: #74c6ba; stroke-width: 2; }
+      .node-external { fill: #fff; stroke: #cbd8e3; stroke-width: 2; }
+    </style>
+  </defs>
+
+  <rect width="1800" height="1030" fill="#f8fbfd"/>
+  <rect width="1800" height="102" fill="#10283f"/>
+  <text x="58" y="52" class="heading" fill="#fff">Moneypal architecture</text>
+  <text x="60" y="82" class="subtitle" fill="#bed0dc">Runtime services, governed data access, and ingestion flows</text>
+
+  <rect x="345" y="132" width="900" height="850" rx="24" fill="#edf4f9" stroke="#c9dbe8" stroke-width="2"/>
+  <text x="375" y="168" class="section">DOCKER COMPOSE STACK</text>
+  <rect x="625" y="302" width="590" height="385" rx="20" fill="#fff" stroke="#d2e1eb" stroke-width="2"/>
+  <text x="650" y="331" class="section">FASTAPI APPLICATION</text>
+  <rect x="1328" y="132" width="425" height="850" rx="24" fill="#f2f7f5" stroke="#cfdfd8" stroke-width="2"/>
+  <text x="1358" y="168" class="section">EXTERNAL SERVICES AND SOURCES</text>
+
+  <path class="edge" d="M295 270 H385"/>
+  <path class="edge" d="M575 238 H610 V217 H655"/>
+  <path class="edge" d="M575 277 H600 V375 H650"/>
+  <path class="edge" d="M725 420 V463"/>
+  <path class="edge" d="M800 386 H1025 V463"/>
+  <path class="edge" d="M760 553 V587"/>
+  <path class="edge" d="M1050 553 V587"/>
+  <path class="edge" d="M935 632 H875"/>
+  <path class="edge" d="M935 508 H903 V791 H870"/>
+  <path class="edge" d="M800 357 H1225 V235 H1370"/>
+  <path class="edge" d="M800 387 H1370"/>
+  <path class="edge" d="M870 791 H1304 V410 H1370"/>
+  <path class="edge-teal" d="M760 678 V705 H1265 V524 H1370"/>
+  <path class="edge-teal" d="M1165 632 H1290 V660 H1370"/>
+  <path class="edge-teal" d="M1165 791 H1370"/>
+  <path class="edge-teal" d="M1080 837 V849"/>
+  <path class="edge-teal" d="M1165 808 H1315 V545 H1370"/>
+  <path class="edge" d="M650 505 H602 V895 H650"/>
+  <path class="edge-dashed" d="M295 791 H321 V957 H1340 V565 H1370"/>
+
+  <rect x="65" y="220" width="230" height="100" rx="16" class="node-blue"/>
+  <text x="89" y="260" class="name">Browser</text>
+  <text x="89" y="286" class="detail">Pages and /api requests</text>
+
+  <rect x="385" y="218" width="190" height="104" rx="16" class="node-blue"/>
+  <text x="407" y="258" class="name">nginx</text>
+  <text x="407" y="284" class="detail">Public entry :4321</text>
+
+  <rect x="655" y="177" width="210" height="80" rx="15" class="node"/>
+  <text x="678" y="211" class="name">Next.js</text>
+  <text x="678" y="237" class="detail">Frontend :3000</text>
+
+  <rect x="650" y="345" width="150" height="75" rx="14" class="node-blue"/>
+  <text x="672" y="376" class="name">FastAPI</text>
+  <text x="672" y="401" class="detail">:8000</text>
+
+  <rect x="650" y="463" width="220" height="90" rx="14" class="node"/>
+  <text x="672" y="498" class="name">Feature APIs</text>
+  <text x="672" y="524" class="detail">Reports, NLQ, intelligence</text>
+
+  <rect x="935" y="463" width="230" height="90" rx="14" class="node-blue"/>
+  <text x="957" y="498" class="name">Workbench</text>
+  <text x="957" y="524" class="detail">Agent and source policy</text>
+
+  <rect x="650" y="587" width="220" height="91" rx="14" class="node-teal"/>
+  <text x="672" y="622" class="name">genesis_core</text>
+  <text x="672" y="648" class="detail">RAG and shared schemas</text>
+
+  <rect x="935" y="587" width="230" height="91" rx="14" class="node-teal"/>
+  <text x="957" y="622" class="name">Local MCP tools</text>
+  <text x="957" y="648" class="detail">In-process source access</text>
+
+  <rect x="650" y="746" width="220" height="91" rx="14" class="node-blue"/>
+  <text x="672" y="782" class="name">PostgreSQL MCP</text>
+  <text x="672" y="808" class="detail">Validated read-only SQL</text>
+
+  <rect x="945" y="746" width="220" height="91" rx="14" class="node-teal"/>
+  <text x="967" y="782" class="name">Macro worker</text>
+  <text x="967" y="808" class="detail">Scheduled refresh</text>
+
+  <rect x="650" y="849" width="220" height="91" rx="14" class="node"/>
+  <text x="672" y="885" class="name">SQLite</text>
+  <text x="672" y="911" class="detail">Generated brief cache</text>
+
+  <rect x="945" y="849" width="220" height="91" rx="14" class="node"/>
+  <text x="967" y="885" class="name">Macro volume</text>
+  <text x="967" y="911" class="detail">Downloads and run state</text>
+
+  <rect x="65" y="746" width="230" height="91" rx="14" class="node-teal"/>
+  <text x="87" y="782" class="name">Document ingest</text>
+  <text x="87" y="808" class="detail">Manual scripts · PDFs/files</text>
+
+  <rect x="1370" y="190" width="340" height="90" rx="15" class="node-external"/>
+  <text x="1393" y="226" class="name">LLM endpoint</text>
+  <text x="1393" y="252" class="detail">OpenAI-compatible API</text>
+
+  <rect x="1370" y="342" width="340" height="90" rx="15" class="node-external"/>
+  <text x="1393" y="378" class="name">PostgreSQL</text>
+  <text x="1393" y="404" class="detail">Gold views, loan book, app records</text>
+
+  <rect x="1370" y="479" width="340" height="90" rx="15" class="node-external"/>
+  <text x="1393" y="515" class="name">Qdrant</text>
+  <text x="1393" y="541" class="detail">Regulatory, competitor, macro vectors</text>
+
+  <rect x="1370" y="615" width="340" height="90" rx="15" class="node-external"/>
+  <text x="1393" y="651" class="name">Exa hosted MCP</text>
+  <text x="1393" y="677" class="detail">Optional public web evidence</text>
+
+  <rect x="1370" y="746" width="340" height="90" rx="15" class="node-external"/>
+  <text x="1393" y="782" class="name">Public macro sources</text>
+  <text x="1393" y="808" class="detail">Crawled by the scheduled worker</text>
+
+  <text x="315" y="251" class="small">pages + API</text>
+  <text x="585" y="210" class="small">pages</text>
+  <text x="581" y="348" class="small">/api, SSE</text>
+  <text x="935" y="329" class="small">model calls</text>
+  <text x="1060" y="379" class="small">app data</text>
+  <text x="1040" y="736" class="small">governed SQL via MCP</text>
+  <text x="1169" y="601" class="small">public web</text>
+  <text x="1185" y="776" class="small">crawl</text>
+  <text x="724" y="728" class="small">semantic retrieval</text>
+  <text x="870" y="949" class="small">manual ingestion to Qdrant</text>
+</svg>

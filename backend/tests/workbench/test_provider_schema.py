@@ -68,23 +68,23 @@ def test_projects_refs_nullable_nested_objects_and_constraints_deterministically
 
 
 @pytest.mark.parametrize("union_keyword", ["anyOf", "oneOf"])
-def test_projects_nested_object_union(union_keyword):
+def test_rejects_nested_object_union(union_keyword):
     raw = {
         "type": "object",
         "properties": {
-            "submission": {
+            "value": {
                 union_keyword: [
                     {
                         "type": "object",
                         "properties": {
-                            "outcome": {"type": "string", "const": "answer"},
+                            "kind": {"type": "string", "const": "answer"},
                             "query_id": {"type": "integer", "minimum": 1},
                         },
                     },
                     {
                         "type": "object",
                         "properties": {
-                            "outcome": {
+                            "kind": {
                                 "type": "string",
                                 "enum": ["clarify", "refuse"],
                             },
@@ -96,15 +96,8 @@ def test_projects_nested_object_union(union_keyword):
         },
     }
 
-    projected = provider_schema(raw)
-    variants = projected["properties"]["submission"]["anyOf"]
-    assert [variant["required"] for variant in variants] == [
-        ["outcome", "query_id"],
-        ["outcome", "message"],
-    ]
-    assert all(variant["additionalProperties"] is False for variant in variants)
-    assert variants[0]["properties"]["outcome"]["enum"] == ["answer"]
-    assert "oneOf" not in projected["properties"]["submission"]
+    with pytest.raises(ProviderSchemaError):
+        provider_schema(raw)
 
 
 @pytest.mark.parametrize(
@@ -158,15 +151,15 @@ def test_projects_nested_object_union(union_keyword):
             {
                 "type": "object",
                 "properties": {
-                    "submission": {
+                    "value": {
                         "oneOf": [
                             {
                                 "type": "object",
-                                "properties": {"outcome": {"const": "answer"}},
+                                "properties": {"kind": {"const": "answer"}},
                             },
                             {
                                 "type": "object",
-                                "properties": {"outcome": {"const": "answer"}},
+                                "properties": {"kind": {"const": "answer"}},
                             },
                         ]
                     }

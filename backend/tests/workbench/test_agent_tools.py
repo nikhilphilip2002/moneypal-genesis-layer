@@ -9,16 +9,12 @@ from app.core.tool_names import (
     READ_TOOL_OUTPUT,
     SEARCH_CURATED_KNOWLEDGE,
     SEARCH_PUBLIC_WEB,
-    SUBMIT_ANSWER,
+    VISUALIZE_RESULT,
+    ASK_CLARIFICATION,
+    REFUSE_REQUEST,
 )
 from app.mcp.tool_catalog import ToolCatalog
 from app.services.workbench import access
-from app.services.workbench.agent_contracts import (
-    SubmitClarificationArguments,
-    SubmitMarkdownAnswerArguments,
-    SubmitRefusalArguments,
-    SubmitVisualAnswerArguments,
-)
 from app.services.workbench.agent_tools import (
     RUNTIME_TOOL_POLICIES,
     AgentToolAccessDenied,
@@ -64,7 +60,9 @@ def test_registry_contains_runtime_policy_only():
         READ_TOOL_OUTPUT,
         SEARCH_CURATED_KNOWLEDGE,
         SEARCH_PUBLIC_WEB,
-        SUBMIT_ANSWER,
+        VISUALIZE_RESULT,
+        ASK_CLARIFICATION,
+        REFUSE_REQUEST,
     ]
     assert "query_loan_book" not in RUNTIME_TOOL_POLICIES
     for policy in RUNTIME_TOOL_POLICIES.values():
@@ -143,109 +141,28 @@ def test_forged_curated_domain_is_reauthorized_at_validation_time():
         )
 
 
-def test_final_answer_requires_database_only_for_query_answer():
+def test_visualization_requires_database_but_terminal_tools_do_not():
     policy = access.build_policy(
         role="admin", external_sources_enabled=False, pinned_source="knowledge"
     )
-    authorize_local_tool_call(
-        SUBMIT_ANSWER,
-        {"submission": {"outcome": "clarify", "message": "Which period?"}},
-        policy=policy,
-    )
-    with pytest.raises(
-        AgentToolAccessDenied, match="db: source is unavailable"
-    ):
-        authorize_local_tool_call(
-            SUBMIT_ANSWER,
-            {
-                "submission": {
-                    "outcome": "answer",
-                    "message": "",
-                    "evidence": [{"query_id": 1}],
-                    "visuals": [{"query_id": 1, "view": "table"}],
-                }
-            },
-            policy=policy,
-        )
+    authorize_local_tool_call(ASK_CLARIFICATION, {"question": "Which period?", "suggestions": []}, policy=policy)
+    authorize_local_tool_call(REFUSE_REQUEST, {"message": "Unavailable", "reason_code": "not_in_data"}, policy=policy)
+    with pytest.raises(AgentToolAccessDenied, match="db: source is unavailable"):
+        authorize_local_tool_call(VISUALIZE_RESULT, {"query_id": 1, "view": "table"}, policy=policy)
 
 
 @pytest.mark.anyio
-async def test_final_answer_schema_supports_all_terminal_outcomes():
-    schema = (await _definitions())[SUBMIT_ANSWER]["parameters"]
-    assert list(schema["properties"]) == ["submission"]
-    variants = schema["properties"]["submission"]["anyOf"]
-    assert len(variants) == 4
-    answer, markdown, clarify, refuse = (
-        variant["properties"] for variant in variants
-    )
-    for variant in variants:
-        assert variant["additionalProperties"] is False
-        assert variant["required"] == list(variant["properties"])
-    assert set(answer) == {
-        "outcome",
-        "message",
-        "evidence",
-        "visuals",
-    }
-    assert answer["outcome"]["enum"] == ["answer"]
-    assert markdown["outcome"]["enum"] == ["answer"]
-    assert set(markdown) == {"outcome", "message", "evidence"}
-    assert answer["visuals"]["minItems"] == 1
-    assert answer["message"]["maxLength"] == 1_000
-    assert markdown["message"]["maxLength"] == 20_000
-    assert "short summary" in answer["message"]["description"].lower()
-    assert markdown["message"]["description"] == (
-        SubmitMarkdownAnswerArguments.model_fields["message"].description
-    )
-    references = answer["evidence"]["items"]["anyOf"]
-    assert [set(ref["properties"]) for ref in references] == [
-        {"query_id"},
-        {"card_reference"},
-    ]
-    for reference in references:
-        assert reference["required"] == list(reference["properties"])
-        assert reference["additionalProperties"] is False
-    for variant in variants:
-        message = variant["properties"]["message"]
-        assert message["minLength"] == 1
-        assert "pattern" not in message
-    for variant, model in zip(
-        variants,
-        (
-            SubmitVisualAnswerArguments,
-            SubmitMarkdownAnswerArguments,
-            SubmitClarificationArguments,
-            SubmitRefusalArguments,
-        ),
-        strict=True,
-    ):
-        assert set(variant["required"]) == {
-            name
-            for name, field in model.model_fields.items()
-            if field.is_required()
-        }
-    assert answer["visuals"]["items"]["properties"]["view"]["enum"] == [
-        "kpi",
-        "line",
-        "area",
-        "stacked_area",
-        "bar",
-        "grouped_bar",
-        "table",
-        "donut",
-        "scatter",
-        "heatmap",
-    ]
-    assert list(clarify) == ["outcome", "message", "suggestions"]
-    assert clarify["outcome"]["enum"] == ["clarify"]
-    assert clarify["suggestions"]["maxItems"] == 3
-    assert list(refuse) == ["outcome", "message", "reason_code"]
-    assert refuse["outcome"]["enum"] == ["refuse"]
-    assert refuse["reason_code"]["type"] == "string"
-    assert refuse["reason_code"]["enum"] == [
-        "out_of_scope",
-        "not_in_data",
-        "predictive",
-        "advice",
-        "unsafe",
-    ]
+async def test_separate_presentation_tool_schemas():
+    definitions = await _definitions()
+    assert "submit_final_answer" not in definitions
+    for name, fields in [
+        (VISUALIZE_RESULT, {"query_id", "view"}),
+        (ASK_CLARIFICATION, {"question", "suggestions"}),
+        (REFUSE_REQUEST, {"message", "reason_code"}),
+    ]:
+        schema = definitions[name]["parameters"]
+        assert set(schema["properties"]) == fields
+        assert set(schema["required"]) == fields
+        assert not any("anyOf" in node for node in _walk(schema) if isinstance(node, dict))
+    assert definitions[ASK_CLARIFICATION]["parameters"]["properties"]["suggestions"]["maxItems"] == 3
+    assert definitions[VISUALIZE_RESULT]["parameters"]["properties"]["query_id"]["minimum"] == 1

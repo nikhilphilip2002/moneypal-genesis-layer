@@ -4,7 +4,9 @@ from app.core.tool_names import (
     QUERY,
     READ_TOOL_OUTPUT,
     SEARCH_CURATED_KNOWLEDGE,
-    SUBMIT_ANSWER,
+    VISUALIZE_RESULT,
+    ASK_CLARIFICATION,
+    REFUSE_REQUEST,
 )
 
 
@@ -25,5 +27,7 @@ async def test_database_tools_are_not_defined_in_the_local_registry():
     assert set(offered) == {
         READ_TOOL_OUTPUT,
         SEARCH_CURATED_KNOWLEDGE,
-        SUBMIT_ANSWER,
+        VISUALIZE_RESULT,
+    ASK_CLARIFICATION,
+    REFUSE_REQUEST,
     }

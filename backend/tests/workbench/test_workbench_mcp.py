@@ -13,7 +13,9 @@ from fastmcp.exceptions import MCPError, ToolError
 from app.core.tool_names import (
     SEARCH_CURATED_KNOWLEDGE,
     SEARCH_PUBLIC_WEB,
-    SUBMIT_ANSWER,
+    VISUALIZE_RESULT,
+    ASK_CLARIFICATION,
+    REFUSE_REQUEST,
 )
 from app.mcp import workbench_client, workbench_server
 from app.mcp.tool_catalog import ToolCatalog
@@ -64,80 +66,78 @@ async def test_discovery_is_the_model_contract_source():
     submit = next(
         item["function"]
         for item in definitions
-        if item["function"]["name"] == SUBMIT_ANSWER
+        if item["function"]["name"] == VISUALIZE_RESULT
     )
     discovered_submit = next(
         tool
         for tool in await workbench_client.list_tools()
-        if tool.name == SUBMIT_ANSWER
+        if tool.name == VISUALIZE_RESULT
     )
     assert submit["description"] == discovered_submit.description
-    submission_schema = submit["parameters"]["properties"]["submission"]
-    assert submission_schema["description"]
-
-    def assert_field_descriptions(schema):
-        if isinstance(schema, dict):
-            for field in schema.get("properties", {}).values():
-                assert field.get("description")
-            for value in schema.values():
-                assert_field_descriptions(value)
-        elif isinstance(schema, list):
-            for value in schema:
-                assert_field_descriptions(value)
-
-    assert_field_descriptions(submission_schema)
+    assert set(submit["parameters"]["properties"]) == {"query_id", "view"}
 
 
 @pytest.mark.anyio
-@pytest.mark.parametrize(
-    "submission",
-    [
-        {
-            "outcome": "clarify",
-            "message": "Which period?",
-            "suggestions": ["This month"],
-        },
-        {
-            "outcome": "refuse",
-            "message": "That is unavailable.",
-            "reason_code": "not_in_data",
-        },
-    ],
-)
-async def test_owned_tool_content_contains_one_json_envelope(submission):
+@pytest.mark.parametrize("name,arguments,outcome", [
+    (ASK_CLARIFICATION, {"question": "Which period?", "suggestions": ["This month"]}, "clarify"),
+    (REFUSE_REQUEST, {"message": "Unavailable", "reason_code": "not_in_data"}, "refuse"),
+])
+async def test_terminal_tools_return_one_envelope(name, arguments, outcome):
     async with Client(workbench_server.mcp, mode="legacy") as client:
-        result = await client.call_tool(
-            SUBMIT_ANSWER,
-            {"submission": submission},
-        )
-
+        result = await client.call_tool(name, arguments)
     assert result.data["success"] is True
-    assert set(result.data) == {"success", "data"}
-    content_payload = json.loads(result.content[0].text)
-    assert content_payload == {"success": True}
-    assert result.data["data"]["terminal"] == submission
-    assert "text" not in content_payload
+    assert json.loads(result.content[0].text) == {"success": True}
+    assert result.data["data"]["terminal"]["outcome"] == outcome
 
 
 @pytest.mark.anyio
 async def test_in_memory_client_supports_concurrent_calls():
-    async def invoke(index: int):
+    async def invoke(index):
         return await workbench_client.call_tool(
-            SUBMIT_ANSWER,
-            {
-                "submission": {
-                    "outcome": "clarify",
-                    "message": f"Question {index}?",
-                    "suggestions": [],
-                }
-            },
-            context=_context(),
+            ASK_CLARIFICATION, {"question": f"Question {index}?", "suggestions": []}, context=_context(),
         )
-
     results = await asyncio.gather(*(invoke(index) for index in range(5)))
-    assert [item["terminal"]["message"] for item in results] == [
-        f"Question {index}?" for index in range(5)
-    ]
+    assert [item["terminal"]["message"] for item in results] == [f"Question {index}?" for index in range(5)]
+
+
+@pytest.mark.anyio
+async def test_visualization_is_nonterminal():
+    result = await workbench_client.call_tool(
+        VISUALIZE_RESULT, {"query_id": 1, "view": "table"}, context=_context(),
+    )
+    assert result == {"kind": "visual", "visual": {"query_id": 1, "view": "table"}}
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("name,arguments", [
+    (VISUALIZE_RESULT, {"query_id": 1, "view": "table", "message": "extra"}),
+    (VISUALIZE_RESULT, {"query_id": 1, "view": "table", "outcome": "answer"}),
+    (VISUALIZE_RESULT, {"query_id": 0, "view": "table"}),
+    (VISUALIZE_RESULT, {"query_id": 1, "view": "unknown"}),
+    (ASK_CLARIFICATION, {"question": "", "suggestions": []}),
+    (ASK_CLARIFICATION, {"question": "Which?", "suggestions": [], "reason_code": "unsafe"}),
+    (ASK_CLARIFICATION, {"question": "Which?", "suggestions": ["a", "b", "c", "d"]}),
+    (REFUSE_REQUEST, {"message": "No", "reason_code": "unknown"}),
+    (REFUSE_REQUEST, {"message": "No", "reason_code": "unsafe", "suggestions": []}),
+])
+async def test_tools_reject_invalid_or_mixed_arguments(name, arguments):
+    async with Client(workbench_server.mcp, mode="legacy") as client:
+        with pytest.raises((ToolError, MCPError)):
+            await client.call_tool(name, arguments, meta=workbench_client.execution_meta(_context()))
+
+
+
+
+@pytest.mark.anyio
+async def test_direct_forged_web_call_is_reauthorized_inside_server():
+    context = _context(external=False)
+    async with Client(workbench_server.mcp, mode="legacy") as client:
+        with pytest.raises(ToolError, match="external source consent"):
+            await client.call_tool(
+                SEARCH_PUBLIC_WEB,
+                {"search_query": "latest RBI repo rate"},
+                meta=workbench_client.execution_meta(context),
+            )
 
 
 @pytest.mark.anyio
@@ -151,6 +151,7 @@ async def test_curated_tool_executes_through_in_memory_client():
     assert data["kind"] == "card"
     assert data["card"]["source"] == "knowledge"
     assert "principal outstanding" in data["card"]["summary"]
+
 
 
 @pytest.mark.anyio
@@ -168,223 +169,3 @@ async def test_web_tool_executes_through_in_memory_client(monkeypatch):
         context=_context(),
     )
     assert web["card"]["summary"] == "web result"
-
-
-@pytest.mark.anyio
-@pytest.mark.parametrize(
-    "submission,expected_synthesis",
-    [
-        (
-            {
-                "outcome": "answer",
-                "message": "Answer",
-                "evidence": [{"query_id": 1}],
-            },
-            {"insights": "Answer", "evidence": [{"query_id": 1}]},
-        ),
-        (
-            {
-                "outcome": "answer",
-                "message": "Answer",
-                "evidence": [{"query_id": 1}],
-                "visuals": [{"query_id": 1, "view": "table"}],
-            },
-            {
-                "insights": "Answer",
-                "evidence": [{"query_id": 1}],
-                "visuals": [{"query_id": 1, "view": "table"}],
-            },
-        ),
-    ],
-)
-async def test_submit_final_answer_executes_through_in_memory_client(
-    submission, expected_synthesis
-):
-    async with Client(workbench_server.mcp, mode="legacy") as client:
-        result = await client.call_tool(
-            SUBMIT_ANSWER,
-            {"submission": submission},
-            meta=workbench_client.execution_meta(_context()),
-        )
-
-    terminal = result.data["data"]["terminal"]
-    assert terminal["outcome"] == "answer"
-    assert terminal["synthesis"] == expected_synthesis
-    assert json.loads(result.content[0].text) == {"success": True}
-
-
-@pytest.mark.anyio
-@pytest.mark.parametrize(
-    "visuals,error",
-    [
-        ([], "extra_forbidden"),
-        ([{"query_id": 2, "view": "table"}], "must also appear in evidence"),
-        (
-            [{"query_id": 1, "view": "table"}, {"query_id": 1, "view": "kpi"}],
-            "at most one visual per query",
-        ),
-    ],
-)
-async def test_final_answer_rejects_invalid_visuals(visuals, error):
-    async with Client(workbench_server.mcp, mode="legacy") as client:
-        with pytest.raises(ToolError, match=error):
-            await client.call_tool(
-                SUBMIT_ANSWER,
-                {
-                    "submission": {
-                        "outcome": "answer",
-                        "message": "Answer",
-                        "evidence": [{"query_id": 1}],
-                        "visuals": visuals,
-                    }
-                },
-                meta=workbench_client.execution_meta(_context()),
-            )
-
-
-@pytest.mark.anyio
-async def test_fastmcp_rejects_extra_and_cross_field_invalid_arguments():
-    async with Client(workbench_server.mcp, mode="legacy") as client:
-        with pytest.raises(ToolError):
-            await client.call_tool(
-                SUBMIT_ANSWER,
-                {
-                    "submission": {
-                        "outcome": "clarify",
-                        "message": "Which period?",
-                        "suggestions": [],
-                        "unexpected": True,
-                    }
-                },
-            )
-        with pytest.raises((ToolError, MCPError)):
-            await client.call_tool(
-                SUBMIT_ANSWER,
-                {
-                    "submission": {
-                        "outcome": "answer",
-                        "message": "Answer",
-                        "query_id": 1,
-                        "view": "table",
-                    }
-                },
-            )
-        with pytest.raises((ToolError, MCPError)):
-            await client.call_tool(
-                SUBMIT_ANSWER,
-                {
-                    "submission": {
-                        "outcome": "refuse",
-                        "message": "I cannot do that.",
-                        "reason_code": None,
-                    }
-                },
-            )
-        with pytest.raises((ToolError, MCPError)):
-            await client.call_tool(
-                SUBMIT_ANSWER,
-                {
-                    "submission": {
-                        "outcome": "clarify",
-                        "message": "Which period?",
-                        "query_id": 1,
-                    }
-                },
-            )
-        with pytest.raises((ToolError, MCPError)):
-            await client.call_tool(
-                SUBMIT_ANSWER,
-                {
-                    "submission": {
-                        "outcome": "answer",
-                        "message": "Which period?",
-                        "evidence": [{"query_id": 1}],
-                        "visuals": [{"query_id": 1, "view": "table"}],
-                        "suggestions": ["This month"],
-                    }
-                },
-            )
-        with pytest.raises((ToolError, MCPError)):
-            await client.call_tool(
-                SUBMIT_ANSWER,
-                {"submission": {"outcome": "clarify", "message": ""}},
-            )
-        with pytest.raises((ToolError, MCPError)):
-            await client.call_tool(
-                SUBMIT_ANSWER,
-                {
-                    "submission": {
-                        "outcome": "refuse",
-                        "message": "x" * 501,
-                        "reason_code": "unsafe",
-                    }
-                },
-            )
-
-
-@pytest.mark.anyio
-async def test_clarification_with_refusal_reason_reports_only_the_selected_branch():
-    submission = {
-        "outcome": "clarify",
-        "message": (
-            "No loan accounts were found associated with the customer name "
-            "'sheelavathi' in the governed Gold schema tables. This could be due "
-            "to a mismatch in the name provided or the customer not having any "
-            "loan accounts in the system."
-        ),
-        "suggestions": [
-            "Verify the spelling of the customer name 'sheelavathi'",
-            "Check if the customer is linked to any loan accounts in the system",
-            "Provide an alternative customer identifier such as customer_id for a more targeted search",
-        ],
-        "reason_code": "not_in_data",
-    }
-    async with Client(workbench_server.mcp, mode="legacy") as client:
-        with pytest.raises(ToolError) as error:
-            await client.call_tool(SUBMIT_ANSWER, {"submission": submission})
-        message = str(error.value)
-        assert "1 validation error" in message
-        assert "submission.clarify.reason_code" in message
-        assert "extra_forbidden" in message
-        assert "query_id" not in message
-        submission.pop("reason_code")
-        result = await client.call_tool(
-            SUBMIT_ANSWER, {"submission": submission}
-        )
-        assert result.data["data"]["terminal"] == submission
-
-
-@pytest.mark.anyio
-@pytest.mark.parametrize(
-    "fields",
-    [
-        {},
-        {"reason_code": "unknown"},
-        {"reason_code": "unsafe", "suggestions": []},
-    ],
-)
-async def test_refusal_rejects_missing_invalid_or_mixed_fields(fields):
-    async with Client(workbench_server.mcp, mode="legacy") as client:
-        with pytest.raises(ToolError):
-            await client.call_tool(
-                SUBMIT_ANSWER,
-                {
-                    "submission": {
-                        "outcome": "refuse",
-                        "message": "Unavailable.",
-                        **fields,
-                    }
-                },
-            )
-
-
-@pytest.mark.anyio
-async def test_direct_forged_web_call_is_reauthorized_inside_server():
-    context = _context(external=False)
-    async with Client(workbench_server.mcp, mode="legacy") as client:
-        with pytest.raises(ToolError, match="external source consent"):
-            await client.call_tool(
-                SEARCH_PUBLIC_WEB,
-                {"search_query": "latest RBI repo rate"},
-                meta=workbench_client.execution_meta(context),
-            )

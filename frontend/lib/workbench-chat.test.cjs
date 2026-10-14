@@ -283,7 +283,8 @@ test('composed answers keep streamed text, Markdown, selected visuals, and docum
   delete turn.answer;
   turn.done = false;
   assert.match(render(), /A detailed explanation that accompanies the chart\./);
-  assert.doesNotMatch(render(), /Visual [123]/);
+  assert.match(render(), /Visual 1/);
+  assert.match(render(), /Visual 2/);
   turn.answer = answer;
   turn.modelMessages = [answer.text];
   assert.equal(render().match(/<h2[^>]*>Comparison<\/h2>/g)?.length, 1);
@@ -292,8 +293,8 @@ test('composed answers keep streamed text, Markdown, selected visuals, and docum
   assert.doesNotMatch(render(), /Visual [123]/);
   delete turn.answer;
   turn.cards = [];
-  turn.modelMessages = ['Unsubmitted draft'];
-  turn.error = { code: 'FINAL_ANSWER_NOT_SUBMITTED', message: 'Evidence was retrieved, but the answer could not be finalized.' };
+  turn.modelMessages = ['Streamed explanation'];
+  turn.error = { code: 'ANSWER_INCOMPLETE', message: 'Evidence was retrieved, but the answer could not be finalized.' };
   assert.match(render(), /Evidence was retrieved/);
-  assert.doesNotMatch(render(), /Unsubmitted draft/);
+  assert.match(render(), /Streamed explanation/);
 });

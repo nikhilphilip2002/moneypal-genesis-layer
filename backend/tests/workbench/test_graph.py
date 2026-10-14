@@ -16,11 +16,11 @@ from app.services.nlq.llm import (
     LLMIncomplete,
     LLMProtocolError,
     LLMResponseBlocked,
-    LLMResult,
     LLMUnavailable,
 )
 from app.services.workbench import graph
 from app.services.workbench.agent import BudgetExhausted
+from app.services.workbench.agent_contracts import FinalSynthesis
 from app.services.workbench.results import SourceResult
 
 
@@ -606,12 +606,7 @@ def _answer_state(model_text: str, registry: list[dict]):
             )
         ],
         "query_registry": registry,
-        "agent_final_result": LLMResult(
-            text=model_text,
-            model="m",
-            provider="test",
-            assistant_message={"role": "assistant", "content": model_text},
-        ),
+        "agent_final_synthesis": FinalSynthesis(insights=model_text, evidence=[]),
     }
 
 
@@ -632,16 +627,12 @@ def _successful_query(query_id: str = "turn-answer:q1") -> dict:
 
 @pytest.mark.anyio
 async def test_answer_results_reconciles_structured_query_references():
-    state = _answer_state(
-        json.dumps(
-            {
-                "insights": "The value is one.",
-                "evidence": [{"query_id": 1}],
-                "visuals": [{"query_id": 1, "view": "table"}],
-            }
-        ),
-        [_successful_query()],
-    )
+    state = _answer_state("The value is one.", [_successful_query()])
+    state["agent_final_synthesis"] = FinalSynthesis.model_validate({
+        "insights": "The value is one.",
+        "evidence": [{"query_id": 1}],
+        "visuals": [{"query_id": 1, "view": "table"}],
+    })
 
     await graph.answer_results(state)
 

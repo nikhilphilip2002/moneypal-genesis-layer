@@ -6,14 +6,12 @@ validation and cross-field business rules immediately before execution.
 
 from __future__ import annotations
 
-from typing import Annotated, Any, Literal
+from typing import Any, Literal
 
 from pydantic import (
     BaseModel,
     ConfigDict,
-    Discriminator,
     Field,
-    Tag,
     model_validator,
 )
 
@@ -191,105 +189,8 @@ class VisualizeQueryResultArguments(AgentArguments):
     aggregation: VisualizationAggregation
 
 
-class SubmitAnswerArguments(AnswerEvidence):
-    outcome: Literal["answer"] = Field(
-        description="Completed answer outcome.",
-    )
-    message: str = Field(
-        min_length=1,
-        max_length=20_000,
-        description="Final answer.",
-    )
-
-
-class SubmitVisualAnswerArguments(SubmitAnswerArguments, AnswerPresentation):
-    message: str = Field(
-        min_length=1,
-        max_length=1_000,
-        description=("Short summary of key findings."),
-    )
-    visuals: list[AnswerVisual] = Field(
-        min_length=1,
-        max_length=10,
-        description="Visualization type",
-    )
-
-
-class SubmitMarkdownAnswerArguments(SubmitAnswerArguments):
-    message: str = Field(
-        min_length=1,
-        max_length=20_000,
-        description="Final answer",
-    )
-
-
-class SubmitClarificationArguments(AgentArguments):
-    """Ask for missing or ambiguous information needed to answer the request."""
-
-    outcome: Literal["clarify"] = Field(
-        description="Clarification outcome.",
-    )
-    message: str = Field(
-        min_length=1,
-        max_length=500,
-        description="The clarification question shown to the user.",
-    )
-    suggestions: list[str] = Field(
-        max_length=3,
-        description="Suggested responses to the clarification question.",
-    )
-
-
-class SubmitRefusalArguments(AgentArguments):
-    """Decline an unsupported or prohibited request with a governed reason."""
-
-    outcome: Literal["refuse"] = Field(description="Refusal outcome.")
-    message: str = Field(
-        min_length=1,
-        max_length=500,
-        description="The refusal reason.",
-    )
-    reason_code: Literal[
-        "out_of_scope",
-        "not_in_data",
-        "predictive",
-        "advice",
-        "unsafe",
-    ] = Field(
-        description="The reason category for declining the request.",
-    )
-
-
-def _submission_variant(submission: Any) -> str | None:
-    outcome = (
-        submission.get("outcome")
-        if isinstance(submission, dict)
-        else getattr(submission, "outcome", None)
-    )
-    if outcome == "answer":
-        visuals = (
-            submission.get("visuals")
-            if isinstance(submission, dict)
-            else getattr(submission, "visuals", None)
-        )
-        return "visual_answer" if visuals else "markdown_answer"
-    return outcome
-
-
-def _submission_any_of_schema(schema: dict[str, Any]) -> None:
-    schema["anyOf"] = schema.pop("oneOf")
-
-
-FinalSubmissionArguments = Annotated[
-    Annotated[SubmitVisualAnswerArguments, Tag("visual_answer")]
-    | Annotated[SubmitMarkdownAnswerArguments, Tag("markdown_answer")]
-    | Annotated[SubmitClarificationArguments, Tag("clarify")]
-    | Annotated[SubmitRefusalArguments, Tag("refuse")],
-    Discriminator(_submission_variant),
-    Field(
-        json_schema_extra=_submission_any_of_schema,
-        description="The final answer, clarification, or refusal shown to the user.",
-    ),
+RefusalReason = Literal[
+    "out_of_scope", "not_in_data", "predictive", "advice", "unsafe"
 ]
 
 
@@ -298,12 +199,6 @@ __all__ = [
     "QueryEvidenceReference",
     "CardEvidenceReference",
     "EvidenceReference",
-    "FinalSubmissionArguments",
-    "SubmitAnswerArguments",
-    "SubmitVisualAnswerArguments",
-    "SubmitMarkdownAnswerArguments",
-    "SubmitClarificationArguments",
-    "SubmitRefusalArguments",
     "ExcludedQueryReference",
     "FinalSynthesis",
     "QueryExecutionRecord",

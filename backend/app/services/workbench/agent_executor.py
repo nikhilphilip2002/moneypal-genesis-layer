@@ -11,7 +11,7 @@ from datetime import date
 from typing import Any, Awaitable, Callable
 
 from app.core.config import settings
-from app.core.tool_names import READ_TOOL_OUTPUT, SUBMIT_ANSWER
+from app.core.tool_names import READ_TOOL_OUTPUT, VISUALIZE_RESULT
 from app.services.nlq.catalog import Catalog
 from app.services.nlq.executor import QueryResult
 from app.services.nlq.llm import NativeToolCall
@@ -106,7 +106,7 @@ class ExecutedAgentCall:
     output_page: dict[str, Any] | None = None
     observation_card: dict[str, Any] | None = None
     context: AgentExecutionContext | None = None
-    additional_visuals: list[ExecutedAgentCall] = field(default_factory=list)
+    visual: dict[str, Any] | None = None
     duration_ms: int = 0
     query_id: str | None = None
     attempt_id: str | None = None
@@ -137,10 +137,8 @@ class ExecutedAgentCall:
             if query_reference is not None:
                 payload["query_reference"] = query_reference
             return payload
-        if self.terminal is not None:
-            if self.call.name == SUBMIT_ANSWER:
-                return {"success": True}
-            return {"status": "terminal", **self.terminal}
+        if self.visual is not None or self.terminal is not None:
+            return {"success": True}
         if self.raw_result is not None:
             payload = {
                 "status": "ok",
@@ -198,10 +196,11 @@ class ExecutedAgentCall:
         return payload
 
     def observation_message(self) -> dict[str, str]:
-        content = json.dumps(
-            self.result_payload(), default=str, separators=(",", ":")
-        )
+        payload = self.result_payload()
+        content = json.dumps(payload, default=str, separators=(",", ":"))
         limit = observation_limit_chars(self.call.name)
+        if self.raw_result is not None:
+            limit = min(limit, 2_000)
         if self.output_page is None and len(content) > limit:
             if self.context is None:
                 raise AgentExecutionError(
@@ -215,6 +214,18 @@ class ExecutedAgentCall:
                 self.call.id,
                 content,
             )
+            if self.raw_result is not None:
+                preview = self._query_preview(payload, len(content))
+                content = json.dumps(
+                    shape_observation(preview, limit_chars=limit),
+                    default=str,
+                    separators=(",", ":"),
+                )
+                return {
+                    "role": "tool",
+                    "tool_call_id": self.call.id,
+                    "content": content,
+                }
             offset = min(limit, settings.workbench_tool_output_page_chars)
             while True:
                 metadata = json.dumps(
@@ -239,6 +250,41 @@ class ExecutedAgentCall:
             "tool_call_id": self.call.id,
             "content": content,
         }
+
+    def _query_preview(
+        self, payload: dict[str, Any], total_length: int
+    ) -> dict[str, Any]:
+        query_reference = payload.get("query_reference")
+        query_payload = payload["payload"]
+        preview = {
+            "status": payload["status"],
+            "source": "db",
+            "result_type": "raw_query",
+            "query_reference": query_reference,
+            "row_count": payload["row_count"],
+            "complete": payload["complete"],
+            "preview_only": True,
+            "output_reference": {
+                "tool": READ_TOOL_OUTPUT,
+                "id": self.call.id,
+                "offset": 0,
+                "total_length": total_length,
+            },
+            "payload": {
+                "columns": query_payload.get("columns", []),
+                "rows": query_payload.get("rows", [])[:5],
+                "warnings": query_payload.get("warnings", []),
+            },
+        }
+        if query_reference is not None:
+            reference = {"query_id": query_reference["query_id"]}
+            preview["presentation"] = {
+                "tool": VISUALIZE_RESULT,
+                **reference,
+                "view": "table",
+                "uses_full_stored_result": True,
+            }
+        return preview
 
 
 def observation_limit_chars(tool_name: str | None) -> int:
@@ -610,6 +656,8 @@ async def _execute_agent_call(
         ) from exc
     if data.get("kind") == "tool_output":
         return ExecutedAgentCall(call=call, output_page=data["page"])
+    if data.get("kind") == "visual":
+        return ExecutedAgentCall(call=call, visual=data["visual"])
     if data.get("kind") == "terminal":
         terminal = data.get("terminal")
         if not isinstance(terminal, dict):

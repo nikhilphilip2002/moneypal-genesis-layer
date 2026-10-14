@@ -9,21 +9,21 @@ from fastmcp.tools import ToolResult
 from pydantic import Field
 
 from app.core.tool_names import (
+    ASK_CLARIFICATION,
     READ_TOOL_OUTPUT,
+    REFUSE_REQUEST,
     SEARCH_CURATED_KNOWLEDGE,
     SEARCH_PUBLIC_WEB,
-    SUBMIT_ANSWER,
+    VISUALIZE_RESULT,
 )
 from app.mcp.results import success
 from app.services.nlq.catalog import get_catalog
 from app.services.workbench.access import SourceAccessDenied, build_policy
 from app.services.workbench.agent_contracts import (
-    FinalSubmissionArguments,
-    FinalSynthesis,
-    QueryEvidenceReference,
+    RefusalReason,
     SearchCuratedKnowledgeArguments,
     SearchPublicWebArguments,
-    SubmitAnswerArguments,
+    VisualizationChartType,
 )
 
 mcp = FastMCP(
@@ -169,41 +169,90 @@ async def read_tool_output(
     return success({"kind": "tool_output", "page": page})
 
 
-@mcp.tool(name=SUBMIT_ANSWER)
-async def submit_final_answer(
-    submission: FinalSubmissionArguments,
+@mcp.tool(name=VISUALIZE_RESULT)
+async def visualize_result(
+    query_id: Annotated[
+        int,
+        Field(ge=1, description="ID of a successful stored database query."),
+    ],
+    view: Annotated[
+        VisualizationChartType,
+        Field(
+            description="Visualization type; use table when no chart is suitable."
+        ),
+    ],
     ctx: Context,
 ) -> ToolResult:
-    """Submit the final answer with evidence references and visuals.
+    """Render a query result using all stored rows, including rows omitted from previews.
 
-    Prefer visualized results. Submit an answer without visualization only when
-    visualization is not possible.
-
-    Use query_id from the query results and card_reference IDs from successful knowledge/web results.
+    Use for query results. Continue explaining in ordinary assistant content afterward.
     """
-    if isinstance(submission, SubmitAnswerArguments):
-        if any(
-            isinstance(ref, QueryEvidenceReference)
-            for ref in submission.evidence
-        ):
-            _execution_context(ctx).source_policy.require("db")
-        synthesis = FinalSynthesis(
-            insights=submission.message,
-            **submission.model_dump(exclude={"outcome", "message"}),
-        )
-        terminal = {
-            "outcome": "answer",
-            "synthesis": {
-                **synthesis.model_dump(mode="json", exclude_defaults=True),
-                "insights": synthesis.insights,
-            },
-        }
-    else:
-        terminal = submission.model_dump(mode="json")
-    structured = success({"kind": "terminal", "terminal": terminal})
+    _execution_context(ctx).source_policy.require("db")
     return ToolResult(
         content={"success": True},
-        structured_content=structured,
+        structured_content=success(
+            {"kind": "visual", "visual": {"query_id": query_id, "view": view}}
+        ),
+    )
+
+
+@mcp.tool(name=ASK_CLARIFICATION)
+async def ask_clarification(
+    question: Annotated[
+        str,
+        Field(
+            min_length=1,
+            max_length=500,
+            description="Question shown to the user.",
+        ),
+    ],
+    suggestions: Annotated[
+        list[str], Field(max_length=3, description="Suggested replies.")
+    ],
+) -> ToolResult:
+    """Ask for missing information, end the turn, and wait for the user's reply."""
+    return ToolResult(
+        content={"success": True},
+        structured_content=success(
+            {
+                "kind": "terminal",
+                "terminal": {
+                    "outcome": "clarify",
+                    "message": question,
+                    "suggestions": suggestions,
+                },
+            }
+        ),
+    )
+
+
+@mcp.tool(name=REFUSE_REQUEST)
+async def refuse_request(
+    message: Annotated[
+        str,
+        Field(
+            min_length=1,
+            max_length=500,
+            description="Refusal shown to the user.",
+        ),
+    ],
+    reason_code: Annotated[
+        RefusalReason, Field(description="Reason for declining the request.")
+    ],
+) -> ToolResult:
+    """Display a refusal and end the turn without requiring a visualization."""
+    return ToolResult(
+        content={"success": True},
+        structured_content=success(
+            {
+                "kind": "terminal",
+                "terminal": {
+                    "outcome": "refuse",
+                    "message": message,
+                    "reason_code": reason_code,
+                },
+            }
+        ),
     )
 
 

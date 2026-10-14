@@ -58,7 +58,7 @@ export default function WorkbenchTurn({ turn, onAsk }: { turn: WorkbenchTurnData
     turn.cards.filter((card) => card.query_id).map((card) => [card.query_id as string, card]),
   );
   const supportingCards = !hasFinalAnswer && !turn.done
-    ? []
+    ? turn.cards.filter((card) => card.query_id && STREAM_RENDERABLE_CARD_TYPES.has(card.card_type))
     : hasAttribution
       ? [
           ...visualQueryIds
@@ -97,11 +97,9 @@ export default function WorkbenchTurn({ turn, onAsk }: { turn: WorkbenchTurnData
     }
   }
   const answerText = turn.answer?.text || turn.synthesis;
-  const modelMessages = turn.error?.code === 'FINAL_ANSWER_NOT_SUBMITTED'
-    ? []
-    : (turn.modelMessages ?? []).filter((message) =>
-        message.trim() && message.trim() !== answerText?.trim(),
-      );
+  const modelMessages = (turn.modelMessages ?? []).filter((message) =>
+    message.trim() && message.trim() !== (answerText ?? turn.refusal?.message)?.trim(),
+  );
   return (
     <section className="space-y-5">
       <div className="flex justify-end">
@@ -179,6 +177,16 @@ export default function WorkbenchTurn({ turn, onAsk }: { turn: WorkbenchTurnData
             <div className="flex flex-wrap gap-1.5" aria-label="Supporting queries">
               {turn.answer.evidence.filter((reference) => reference.query_id !== undefined).map((reference) => (
                 <Badge key={reference.query_id} variant="outline">Query {reference.query_id}</Badge>
+              ))}
+            </div>
+          )}
+
+          {turn.answer?.evidence?.some((reference) => reference.card_reference) && (
+            <div className="flex flex-wrap gap-1.5">
+              {turn.answer.evidence.filter((reference) => reference.card_reference).map((reference, index) => (
+                <span key={reference.card_reference} id={`evidence-${reference.card_reference}`} className={SOURCE_BADGE}>
+                  Evidence {index + 1}
+                </span>
               ))}
             </div>
           )}

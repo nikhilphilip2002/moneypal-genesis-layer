@@ -8,7 +8,7 @@ from app.core.tool_names import (
     QUERY,
     SEARCH_CURATED_KNOWLEDGE,
     SEARCH_PUBLIC_WEB,
-    SUBMIT_ANSWER,
+    VISUALIZE_RESULT,
 )
 from app.mcp.tool_catalog import ToolCatalog, ToolCatalogError
 from app.services.workbench import access
@@ -57,7 +57,7 @@ async def test_catalog_filters_policy_without_mutating_canonical_definitions():
 async def test_catalog_rejects_duplicate_names_across_servers():
     catalog = ToolCatalog()
     await catalog.discover_local()
-    duplicate = deepcopy(catalog._entries[SUBMIT_ANSWER].definition)
+    duplicate = deepcopy(catalog._entries[VISUALIZE_RESULT].definition)
 
     with pytest.raises(ToolCatalogError, match="duplicate MCP tool name"):
         catalog.register_postgres_definitions([duplicate])

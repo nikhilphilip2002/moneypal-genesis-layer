@@ -11,10 +11,12 @@ from typing import Any
 
 from app.core.config import settings
 from app.core.tool_names import (
+    ASK_CLARIFICATION,
     READ_TOOL_OUTPUT,
+    REFUSE_REQUEST,
     SEARCH_CURATED_KNOWLEDGE,
     SEARCH_PUBLIC_WEB,
-    SUBMIT_ANSWER,
+    VISUALIZE_RESULT,
 )
 from app.services.workbench.access import (
     SourceAccessDenied,
@@ -89,7 +91,21 @@ RUNTIME_TOOL_POLICIES: dict[str, RuntimeToolPolicy] = {
         timeout_s=30.0,
         max_result_chars=12_000,
     ),
-    SUBMIT_ANSWER: RuntimeToolPolicy(
+    VISUALIZE_RESULT: RuntimeToolPolicy(
+        source_id="db",
+        sensitivity="internal",
+        timeout_s=1.0,
+        max_result_chars=2_000,
+        parallel_safe=False,
+    ),
+    ASK_CLARIFICATION: RuntimeToolPolicy(
+        source_id=None,
+        sensitivity="internal",
+        timeout_s=1.0,
+        max_result_chars=2_000,
+        parallel_safe=False,
+    ),
+    REFUSE_REQUEST: RuntimeToolPolicy(
         source_id=None,
         sensitivity="internal",
         timeout_s=1.0,
@@ -144,20 +160,6 @@ def authorize_local_tool_call(
     if runtime_policy.source_id is not None:
         try:
             policy.require(runtime_policy.source_id)
-        except SourceAccessDenied as exc:
-            raise AgentToolAccessDenied(str(exc)) from exc
-    submission = arguments.get("submission")
-    if (
-        name == SUBMIT_ANSWER
-        and isinstance(submission, dict)
-        and submission.get("outcome") == "answer"
-        and any(
-            isinstance(ref, dict) and ref.get("query_id") is not None
-            for ref in submission.get("evidence", [])
-        )
-    ):
-        try:
-            policy.require("db")
         except SourceAccessDenied as exc:
             raise AgentToolAccessDenied(str(exc)) from exc
     if name == SEARCH_CURATED_KNOWLEDGE:

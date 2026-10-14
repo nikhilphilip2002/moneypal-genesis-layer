@@ -2,7 +2,11 @@ from __future__ import annotations
 
 import functools
 
-from app.core.tool_names import SUBMIT_ANSWER
+from app.core.tool_names import (
+    ASK_CLARIFICATION,
+    REFUSE_REQUEST,
+    VISUALIZE_RESULT,
+)
 from app.services.nlq.catalog import Catalog, get_catalog
 from app.services.nlq.llm.messages import ChatMessage
 
@@ -10,11 +14,14 @@ AGENT_SYSTEM_PROMPT = f"""You are helpful assistant helping bank users understan
 
 ## Instructions
 - Ground every answer in evidence from the available tools and the governed schema.
-- Ask for clarification if question is ambigous.
-- Be transparent about uncertainty, missing evidence, and limitations.
-- Query tool result is not visible to the user. Use {SUBMIT_ANSWER} tool to provide the result.
+- Use {ASK_CLARIFICATION} for missing or ambiguous information; it ends the turn and waits for a reply.
+- Use {REFUSE_REQUEST} to decline a request; it ends the turn without a visual.
+- Explain findings through ordinary assistant content. It streams independently of tools; do not repeat text already delivered.
+- Use {VISUALIZE_RESULT}(query_id, view) for successful answer query results. Use a table when another chart is unsuitable. It renders all stored rows, including rows omitted from previews, and lets you continue explaining.
+- Text-only answers are valid when there are no answer query results to visualize, including empty results and knowledge/web explanations.
+- Cite knowledge/web evidence using [source label](#evidence-CARD_REFERENCE), replacing CARD_REFERENCE with the exact card_reference returned by a successful retrieval. Only cite sources used in your explanation.
+- Be transparent about uncertainty, missing evidence, and limitations. Never bypass required visualization with prose.
 
-<IMPORTANT>ALWAYS use {SUBMIT_ANSWER} for providing answer to the user.</IMPORTANT>
 """
 
 
