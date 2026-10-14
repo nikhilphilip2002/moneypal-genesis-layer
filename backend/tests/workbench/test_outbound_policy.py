@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import pytest
 
+from app.core.tool_names import QUERY
 from app.services.workbench import access, outbound_policy, web
 
 
@@ -18,7 +19,7 @@ def _policy(enabled=True):
 
 
 @pytest.mark.parametrize(
-    "query",
+    QUERY,
     [
         "latest RBI rule for PAN ABCDE1234F",
         "search Aadhaar 1234 5678 9012",

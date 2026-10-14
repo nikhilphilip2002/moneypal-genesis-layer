@@ -4,6 +4,7 @@ from copy import deepcopy
 
 import pytest
 
+from app.core.tool_names import QUERY, SEARCH_PUBLIC_WEB
 from app.services.nlq.llm.messages import ChatMessage
 from app.services import db_schema
 from app.services.workbench import history
@@ -31,7 +32,7 @@ def test_messages_survive_database_reload_without_rewriting_or_aliasing(
                     "id": "c1",
                     "type": "function",
                     "function": {
-                        "name": "search_public_web",
+                        "name": SEARCH_PUBLIC_WEB,
                         "arguments": '{ "search_query": "original query" }',
                     },
                 }
@@ -130,7 +131,7 @@ def test_pending_calls_block_invalid_results_and_are_closed_on_restart():
                 "id": "c1",
                 "type": "function",
                 "function": {
-                    "name": "query",
+                    "name": QUERY,
                     "arguments": json.dumps(
                         {
                             "sql": "SELECT * FROM gold.loan_accounts WHERE borrower_name = 'Asha Rao'"

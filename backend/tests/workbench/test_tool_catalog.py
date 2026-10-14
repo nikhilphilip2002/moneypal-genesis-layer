@@ -4,6 +4,12 @@ from copy import deepcopy
 
 import pytest
 
+from app.core.tool_names import (
+    QUERY,
+    SEARCH_CURATED_KNOWLEDGE,
+    SEARCH_PUBLIC_WEB,
+    SUBMIT_ANSWER,
+)
 from app.mcp.tool_catalog import ToolCatalog, ToolCatalogError
 from app.services.workbench import access
 
@@ -37,10 +43,10 @@ async def test_catalog_filters_policy_without_mutating_canonical_definitions():
     curated = next(
         item
         for item in definitions
-        if item["function"]["name"] == "search_curated_knowledge"
+        if item["function"]["name"] == SEARCH_CURATED_KNOWLEDGE
     )
 
-    assert "search_public_web" not in offered
+    assert SEARCH_PUBLIC_WEB not in offered
     assert curated["function"]["parameters"]["properties"]["domain"][
         "enum"
     ] == ["concepts"]
@@ -51,7 +57,7 @@ async def test_catalog_filters_policy_without_mutating_canonical_definitions():
 async def test_catalog_rejects_duplicate_names_across_servers():
     catalog = ToolCatalog()
     await catalog.discover_local()
-    duplicate = deepcopy(catalog._entries["submit_final_answer"].definition)
+    duplicate = deepcopy(catalog._entries[SUBMIT_ANSWER].definition)
 
     with pytest.raises(ToolCatalogError, match="duplicate MCP tool name"):
         catalog.register_postgres_definitions([duplicate])
@@ -83,11 +89,11 @@ async def test_catalog_fails_when_discovered_local_tool_has_no_runtime_policy(
 async def test_catalog_readiness_has_ownership_versions_and_fingerprint():
     catalog = ToolCatalog()
     await catalog.discover_local()
-    catalog.register_postgres_definitions([_definition("query")])
+    catalog.register_postgres_definitions([_definition(QUERY)])
 
     readiness = catalog.readiness()
     assert readiness["status"] == "ok"
-    assert readiness["owners"]["postgres"] == ["query"]
+    assert readiness["owners"]["postgres"] == [QUERY]
     assert readiness["owners"]["workbench"]
     assert len(readiness["schema_fingerprint"]) == 64
     assert readiness["mcp_sdk_version"].startswith("2.")

@@ -1,5 +1,12 @@
 import pytest
 
+from app.core.tool_names import (
+    QUERY,
+    READ_TOOL_OUTPUT,
+    SEARCH_CURATED_KNOWLEDGE,
+    SUBMIT_ANSWER,
+)
+
 
 @pytest.mark.anyio
 async def test_database_tools_are_not_defined_in_the_local_registry():
@@ -15,10 +22,10 @@ async def test_database_tools_are_not_defined_in_the_local_registry():
         )
     ]
     assert not (
-        {"query_metrics", "run_validated_query", "query"} & set(offered)
+        {"query_metrics", "run_validated_query", QUERY} & set(offered)
     )
     assert set(offered) == {
-        "read_tool_output",
-        "search_curated_knowledge",
-        "submit_final_answer",
+        READ_TOOL_OUTPUT,
+        SEARCH_CURATED_KNOWLEDGE,
+        SUBMIT_ANSWER,
     }

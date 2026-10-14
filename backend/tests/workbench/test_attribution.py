@@ -1,6 +1,7 @@
 import pytest
 from pydantic import ValidationError
 
+from app.core.tool_names import QUERY
 from app.services.workbench.agent_contracts import FinalSynthesis
 from app.services.workbench.attribution import reconcile_query_attribution
 
@@ -10,7 +11,7 @@ def _record(query_id, *, status="success", has_data=True, purpose="answer"):
         "query_id": query_id,
         "attempt_id": f"{query_id}:a1",
         "tool_call_id": f"call-{query_id}",
-        "tool_name": "query",
+        "tool_name": QUERY,
         "status": status,
         "purpose": purpose,
         "row_count": 1 if has_data else 0,

@@ -7,6 +7,12 @@ import time
 
 import pytest
 
+from app.core.tool_names import (
+    QUERY,
+    SEARCH_CURATED_KNOWLEDGE,
+    SEARCH_PUBLIC_WEB,
+    SUBMIT_ANSWER,
+)
 from app.services.nlq.llm import LLMProtocolError, LLMResult, NativeToolCall
 from app.services.workbench import (
     access,
@@ -34,11 +40,11 @@ def _settings(monkeypatch):
     monkeypatch.setattr(agent.settings, "workbench_agent_max_tool_calls", 6)
     monkeypatch.setitem(
         postgres_client._model_tools,
-        "query",
+        QUERY,
         {
             "type": "function",
             "function": {
-                "name": "query",
+                "name": QUERY,
                 "description": "Run governed read-only SQL.",
                 "parameters": {
                     "type": "object",
@@ -107,7 +113,7 @@ async def test_invalid_arguments_receive_one_native_repair(monkeypatch):
         _result(
             NativeToolCall(
                 id="good",
-                name="query",
+                name=QUERY,
                 arguments={
                     "sql": "SELECT par_30 FROM gold.daily_loan_status LIMIT 1"
                 },
@@ -137,7 +143,7 @@ async def test_grouped_null_filter_receives_native_repair(monkeypatch):
     )
     good = NativeToolCall(
         id="good",
-        name="query",
+        name=QUERY,
         arguments={
             "sql": "SELECT agent_code FROM gold.agents WHERE agent_code IS NOT NULL"
         },
@@ -161,7 +167,7 @@ async def test_grouped_null_filter_receives_native_repair(monkeypatch):
 def test_explicit_missing_value_request_allows_null_filter():
     call = NativeToolCall(
         id="missing_agent",
-        name="query",
+        name=QUERY,
         arguments={
             "sql": "SELECT agent_code FROM gold.agents WHERE agent_code IS NULL"
         },
@@ -178,7 +184,7 @@ async def test_invalid_duplicate_period_is_returned_for_native_repair_not_rewrit
 ):
     call = NativeToolCall(
         id="year",
-        name="query",
+        name=QUERY,
         arguments={
             "sql": "SELECT approved_on FROM gold.loan_accounts LIMIT 100"
         },
@@ -209,7 +215,7 @@ async def test_application_does_not_invent_a_missing_month_dimension(
 ):
     call = NativeToolCall(
         id="monthly",
-        name="query",
+        name=QUERY,
         arguments={
             "sql": "SELECT interest_collected FROM gold.loan_repayments LIMIT 100"
         },
@@ -238,7 +244,7 @@ async def test_application_does_not_rewrite_a_conflicting_lifetime_period(
 ):
     call = NativeToolCall(
         id="lifetime",
-        name="query",
+        name=QUERY,
         arguments={
             "sql": "SELECT amount_given FROM gold.loan_accounts LIMIT 5000"
         },
@@ -282,7 +288,7 @@ async def test_unauthorized_domain_is_a_policy_observation_then_fails(
         return _result(
             NativeToolCall(
                 id="forged",
-                name="search_curated_knowledge",
+                name=SEARCH_CURATED_KNOWLEDGE,
                 arguments={"domain": "regulatory", "query": "RBI rules"},
             )
         )
@@ -294,8 +300,8 @@ async def test_unauthorized_domain_is_a_policy_observation_then_fails(
     assert [item["code"] for item in observed] == ["POLICY_DENIED"]
     assert "external source consent" in observed[0]["message"]
     # The denial names what remains authorized so the model can choose again.
-    assert "query" in observed[0]["authorized_tools"]
-    assert "search_public_web" not in observed[0]["authorized_tools"]
+    assert QUERY in observed[0]["authorized_tools"]
+    assert SEARCH_PUBLIC_WEB not in observed[0]["authorized_tools"]
     assert state["_agent_budget"].rounds_used == 2
     assert state["_agent_budget"].calls_used == 2
 
@@ -393,7 +399,7 @@ class _ScriptedClient:
 
 _PAR_30 = NativeToolCall(
     id="call_1",
-    name="query",
+    name=QUERY,
     arguments={"sql": "SELECT par_30 FROM gold.daily_loan_status LIMIT 1"},
 )
 
@@ -618,9 +624,9 @@ async def test_tools_are_filtered_across_source_toggle(scripted):
     assert on_request["tool_choice"] == "auto"
     off_names = {item["function"]["name"] for item in off_request["tools"]}
     on_names = {item["function"]["name"] for item in on_request["tools"]}
-    assert "query" in off_names
-    assert "search_public_web" not in off_names
-    assert "search_public_web" in on_names
+    assert QUERY in off_names
+    assert SEARCH_PUBLIC_WEB not in off_names
+    assert SEARCH_PUBLIC_WEB in on_names
 
 
 @pytest.mark.anyio
@@ -635,7 +641,7 @@ async def test_strict_final_answer_tool_drives_reconciled_answer(scripted):
         return _tool_response(
             NativeToolCall(
                 id="final-answer",
-                name="submit_final_answer",
+                name=SUBMIT_ANSWER,
                 arguments={
                     "submission": {
                         "outcome": "answer",
@@ -650,7 +656,7 @@ async def test_strict_final_answer_tool_drives_reconciled_answer(scripted):
     from app.services.workbench import agent_executor
 
     async def execute(call, context):
-        if call.name == "query":
+        if call.name == QUERY:
             return _raw(call)
         return await agent_executor.execute_agent_call(call, context)
 
@@ -690,7 +696,7 @@ async def test_final_answer_reuses_previous_turn_query_without_sql(
                 "query_id": prior_id,
                 "attempt_id": f"{prior_id}:a1",
                 "tool_call_id": "prior-query",
-                "tool_name": "query",
+                "tool_name": QUERY,
                 "status": "success",
                 "has_data": True,
                 "result_payload": _raw(_PAR_30).raw_result.payload,
@@ -734,7 +740,7 @@ async def test_final_answer_reuses_previous_turn_query_without_sql(
     state.pop("decision", None)
     final_call = NativeToolCall(
         id="reuse-query",
-        name="submit_final_answer",
+        name=SUBMIT_ANSWER,
         arguments={
             "submission": {
                 "outcome": "answer",
@@ -747,7 +753,7 @@ async def test_final_answer_reuses_previous_turn_query_without_sql(
     from app.services.workbench import agent_executor
 
     def no_sql(call, context):
-        assert call.name == "submit_final_answer"
+        assert call.name == SUBMIT_ANSWER
         return agent_executor.execute_agent_call(call, context)
 
     scripted([_tool_response(final_call)], no_sql)
@@ -776,7 +782,7 @@ def test_new_query_number_continues_after_previous_turn(monkeypatch):
     from app.mcp import postgres_client
 
     monkeypatch.setattr(
-        postgres_client, "is_model_tool", lambda name: name == "query"
+        postgres_client, "is_model_tool", lambda name: name == QUERY
     )
     state = {
         "turn_id": "new-turn",
@@ -787,7 +793,7 @@ def test_new_query_number_continues_after_previous_turn(monkeypatch):
         ],
     }
     call = NativeToolCall(
-        id="new-query", name="query", arguments={"sql": "SELECT 1"}
+        id="new-query", name=QUERY, arguments={"sql": "SELECT 1"}
     )
 
     record = agent._register_database_queries(state, [call])[call.id]
@@ -802,7 +808,7 @@ async def test_invalid_final_answer_contract_is_repaired_once(
     monkeypatch.setattr(agent.settings, "workbench_agent_max_rounds", 4)
     invalid_final = NativeToolCall(
         id="invalid-final",
-        name="submit_final_answer",
+        name=SUBMIT_ANSWER,
         arguments={
             "submission": {
                 "outcome": "answer",
@@ -826,7 +832,7 @@ async def test_invalid_final_answer_contract_is_repaired_once(
         return _tool_response(
             NativeToolCall(
                 id="valid-final",
-                name="submit_final_answer",
+                name=SUBMIT_ANSWER,
                 arguments={
                     "submission": {
                         "outcome": "answer",
@@ -841,7 +847,7 @@ async def test_invalid_final_answer_contract_is_repaired_once(
     from app.services.workbench import agent_executor
 
     async def execute(call, context):
-        if call.name == "query":
+        if call.name == QUERY:
             return _raw(call)
         return await agent_executor.execute_agent_call(call, context)
 
@@ -938,7 +944,7 @@ async def test_failure_path_spends_exactly_max_rounds_requests(
         "calls_used": 3,
         "max_calls": 6,
     }
-    assert not any("submit_final_answer" in frame for frame in _frames(state))
+    assert not any(SUBMIT_ANSWER in frame for frame in _frames(state))
 
 
 @pytest.mark.anyio
@@ -949,12 +955,12 @@ async def test_execution_error_is_returned_to_llm_for_a_cross_tool_repair(
     monkeypatch.setattr(agent.settings, "workbench_agent_max_rounds", 3)
     failed = NativeToolCall(
         id="failed_metric",
-        name="query",
+        name=QUERY,
         arguments={"sql": "SELECT par_30 FROM gold.daily_loan_status LIMIT 1"},
     )
     repaired = NativeToolCall(
         id="repaired_detail",
-        name="query",
+        name=QUERY,
         arguments={
             "sql": "SELECT loan_account_number FROM gold.loan_accounts LIMIT 1"
         },
@@ -1020,14 +1026,14 @@ async def test_tool_error_preserves_prompt_and_prior_messages(
     monkeypatch.setattr(agent.settings, "workbench_agent_max_rounds", 3)
     bad = NativeToolCall(
         id="bad",
-        name="query",
+        name=QUERY,
         arguments={
             "sql": "SELECT schemes FROM gold.loan_repayments LIMIT 100"
         },
     )
     good = NativeToolCall(
         id="good",
-        name="query",
+        name=QUERY,
         arguments={
             "sql": "SELECT scheme_code FROM gold.loan_accounts LIMIT 100"
         },
@@ -1081,7 +1087,7 @@ async def test_tool_error_preserves_prompt_and_prior_messages(
 
 @pytest.mark.anyio
 async def test_cancelled_batch_preserves_finished_results_and_closes_pending_calls(scripted):
-    pending_call = NativeToolCall(id="pending", name="query", arguments={"sql": "SELECT 1"})
+    pending_call = NativeToolCall(id="pending", name=QUERY, arguments={"sql": "SELECT 1"})
     response = _tool_response(_PAR_30, pending_call)
 
     async def execute(call, _context):
@@ -1106,8 +1112,8 @@ async def test_cancelled_batch_preserves_finished_results_and_closes_pending_cal
 @pytest.mark.parametrize(
     ("name", "arguments", "code"),
     [
-        ("query", '{"sql":', "INVALID_TOOL_ARGUMENTS"),
-        ("submit_final_answer", "[]", "INVALID_TOOL_ARGUMENTS"),
+        (QUERY, '{"sql":', "INVALID_TOOL_ARGUMENTS"),
+        (SUBMIT_ANSWER, "[]", "INVALID_TOOL_ARGUMENTS"),
         ("unknown_tool", "{}", "TOOL_NOT_FOUND"),
     ],
 )
@@ -1122,13 +1128,13 @@ async def test_tool_parse_error_is_replayed_and_corrected(
     raw_calls = [
         _raw_tool_call(call_id="bad", name=name, arguments=arguments),
         _raw_tool_call(
-            call_id="good", name="query", arguments=json.dumps(_PAR_30.arguments)
+            call_id="good", name=QUERY, arguments=json.dumps(_PAR_30.arguments)
         ),
     ]
     responses = [
         _tool_ok(*raw_calls),
         _tool_ok(_raw_tool_call(
-            call_id="corrected", name="query", arguments=json.dumps(_PAR_30.arguments)
+            call_id="corrected", name=QUERY, arguments=json.dumps(_PAR_30.arguments)
         )),
         _ok("PAR 30 is 4.2%."),
     ]
@@ -1198,12 +1204,12 @@ async def test_model_can_call_multiple_resource_tools_before_answering(
     monkeypatch.setattr(agent.settings, "workbench_agent_max_rounds", 3)
     concept = NativeToolCall(
         id="concept",
-        name="search_curated_knowledge",
+        name=SEARCH_CURATED_KNOWLEDGE,
         arguments={"domain": "concepts", "query": "PAR 30 definition"},
     )
 
     async def execute(call, _ctx):
-        if call.name == "query":
+        if call.name == QUERY:
             result = SourceResult(
                 source="db",
                 card_type="chart",
@@ -1245,7 +1251,7 @@ async def test_model_can_call_multiple_resource_tools_before_answering(
     assert [
         call["function"]["name"]
         for message in record.messages for call in message.get("tool_calls", [])
-    ] == ["query", "search_curated_knowledge"]
+    ] == [QUERY, SEARCH_CURATED_KNOWLEDGE]
     assert any(
         "FINAL_ANSWER_NOT_SUBMITTED" in frame for frame in _frames(state)
     )
@@ -1259,7 +1265,7 @@ async def test_invalid_continuation_call_is_persisted_and_returned_to_model(
     monkeypatch.setattr(agent.settings, "workbench_agent_max_rounds", 3)
     valid = NativeToolCall(
         id="valid",
-        name="query",
+        name=QUERY,
         arguments={"sql": "SELECT par_30 FROM gold.daily_loan_status LIMIT 1"},
     )
     invalid_next = NativeToolCall(
@@ -1344,12 +1350,12 @@ async def test_outbound_policy_denial_gets_one_native_repair(
     monkeypatch.setattr(agent.settings, "workbench_agent_max_rounds", 3)
     web_bad = NativeToolCall(
         id="web_bad",
-        name="search_public_web",
+        name=SEARCH_PUBLIC_WEB,
         arguments={"search_query": "customer ID secret-42 latest news"},
     )
     web_good = NativeToolCall(
         id="web_good",
-        name="search_public_web",
+        name=SEARCH_PUBLIC_WEB,
         arguments={"search_query": "latest RBI repo rate"},
     )
 
@@ -1392,11 +1398,11 @@ async def test_outbound_policy_denial_gets_one_native_repair(
     )
     assert denial["code"] == "POLICY_DENIED"
     assert denial["denied"] == {
-        "tool": "search_public_web",
+        "tool": SEARCH_PUBLIC_WEB,
         "source": "web",
         "policy": "outbound_privacy",
     }
-    assert "submit_final_answer" in denial["authorized_tools"]
+    assert SUBMIT_ANSWER in denial["authorized_tools"]
     record = history.get("web-repair", user="alice")
     assert record is not None
     assert sum(bool(m.get("tool_calls")) for m in record.messages) == 2
@@ -1426,7 +1432,7 @@ async def test_unresolved_policy_denial_ends_with_an_application_refusal(
         return _tool_response(
             NativeToolCall(
                 id=f"bad_{counter}",
-                name="search_public_web",
+                name=SEARCH_PUBLIC_WEB,
                 arguments={"search_query": "customer ID secret-42"},
             )
         )
@@ -1454,7 +1460,7 @@ async def test_unresolved_policy_denial_ends_with_an_application_refusal(
     assert record.turns[0]["answer"]["origin"] == "application"
     assert sum(bool(m.get("tool_calls")) for m in record.messages) == 3
     assert all(
-        call["function"]["name"] == "search_public_web"
+        call["function"]["name"] == SEARCH_PUBLIC_WEB
         for message in record.messages
         for call in message.get("tool_calls", [])
     )
@@ -1464,7 +1470,7 @@ async def test_unresolved_policy_denial_ends_with_an_application_refusal(
 async def test_model_refusal_keeps_its_origin(scripted):
     finish = NativeToolCall(
         id="finish",
-        name="submit_final_answer",
+        name=SUBMIT_ANSWER,
         arguments={
             "submission": {
                 "outcome": "refuse",
@@ -1620,13 +1626,13 @@ async def test_composed_answer_persists_multiple_queries_and_source(
     from app.services.workbench import agent_executor
 
     second_query = NativeToolCall(
-        id="query-two", name="query", arguments={"sql": "SELECT 2 AS value"}
+        id="query-two", name=QUERY, arguments={"sql": "SELECT 2 AS value"}
     )
     retrieval = NativeToolCall(
         id="source-evidence",
-        name="search_public_web"
+        name=SEARCH_PUBLIC_WEB
         if source == "web"
-        else "search_curated_knowledge",
+        else SEARCH_CURATED_KNOWLEDGE,
         arguments={"search_query": "policy"}
         if source == "web"
         else {"domain": "concepts", "query": "policy"},
@@ -1644,7 +1650,7 @@ async def test_composed_answer_persists_multiple_queries_and_source(
     message = "## Comparison\n\n**Two queries** support this conclusion alongside the policy."
     final = NativeToolCall(
         id="composed-final",
-        name="submit_final_answer",
+        name=SUBMIT_ANSWER,
         arguments={
             "submission": {
                 "outcome": "answer",
@@ -1661,7 +1667,7 @@ async def test_composed_answer_persists_multiple_queries_and_source(
     )
 
     async def execute(call, context):
-        if call.name == "query":
+        if call.name == QUERY:
             return _raw(call)
         if call.id == retrieval.id:
             return ExecutedAgentCall(
@@ -1744,7 +1750,7 @@ async def test_submission_recovery_is_bounded(scripted, monkeypatch, recovery):
         return _tool_response(
             NativeToolCall(
                 id="recovered",
-                name="submit_final_answer",
+                name=SUBMIT_ANSWER,
                 arguments={
                     "submission": {
                         "outcome": "answer",
@@ -1759,7 +1765,7 @@ async def test_submission_recovery_is_bounded(scripted, monkeypatch, recovery):
         )
 
     async def execute(call, context):
-        if call.name == "query":
+        if call.name == QUERY:
             return _raw(call)
         return await agent_executor.execute_agent_call(call, context)
 
@@ -1798,11 +1804,11 @@ async def test_composed_reference_feedback_can_be_repaired(
     from app.services.workbench import agent_executor
 
     failed_query = NativeToolCall(
-        id="failed-query", name="query", arguments={"sql": "SELECT 2"}
+        id="failed-query", name=QUERY, arguments={"sql": "SELECT 2"}
     )
     failed = NativeToolCall(
         id="failed",
-        name="search_public_web",
+        name=SEARCH_PUBLIC_WEB,
         arguments={"search_query": "policy"},
     )
 
@@ -1810,7 +1816,7 @@ async def test_composed_reference_feedback_can_be_repaired(
         return _tool_response(
             NativeToolCall(
                 id=call_id,
-                name="submit_final_answer",
+                name=SUBMIT_ANSWER,
                 arguments={
                     "submission": {
                         "outcome": "answer",
@@ -1834,7 +1840,7 @@ async def test_composed_reference_feedback_can_be_repaired(
                 call=call,
                 error={"code": "QUERY_FAILED", "message": "Query failed"},
             )
-        if call.name == "query":
+        if call.name == QUERY:
             return _raw(call)
         if call.id == "failed":
             return ExecutedAgentCall(
@@ -1868,12 +1874,12 @@ async def test_knowledge_only_submission_without_database_access(scripted):
     )
     retrieval = NativeToolCall(
         id="definition",
-        name="search_curated_knowledge",
+        name=SEARCH_CURATED_KNOWLEDGE,
         arguments={"domain": "concepts", "query": "PAR 30"},
     )
     submission = NativeToolCall(
         id="final",
-        name="submit_final_answer",
+        name=SUBMIT_ANSWER,
         arguments={
             "submission": {
                 "outcome": "answer",

@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from importlib.metadata import version
 from typing import Any, Literal
 
+from app.core.tool_names import SEARCH_CURATED_KNOWLEDGE
 from app.services.workbench.agent_tools import (
     RUNTIME_TOOL_POLICIES,
     allowed_curated_domains,
@@ -159,7 +160,7 @@ class ToolCatalog:
             if entry.owner == "workbench" and name not in allowed_local:
                 continue
             definition = deepcopy(entry.definition)
-            if name == "search_curated_knowledge":
+            if name == SEARCH_CURATED_KNOWLEDGE:
                 definition["function"]["parameters"]["properties"]["domain"][
                     "enum"
                 ] = allowed_curated_domains(policy)

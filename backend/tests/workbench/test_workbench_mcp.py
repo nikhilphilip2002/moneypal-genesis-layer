@@ -10,6 +10,11 @@ import pytest
 from fastmcp import Client
 from fastmcp.exceptions import MCPError, ToolError
 
+from app.core.tool_names import (
+    SEARCH_CURATED_KNOWLEDGE,
+    SEARCH_PUBLIC_WEB,
+    SUBMIT_ANSWER,
+)
 from app.mcp import workbench_client, workbench_server
 from app.mcp.tool_catalog import ToolCatalog
 from app.services.workbench import access
@@ -62,12 +67,12 @@ async def test_discovery_is_the_model_contract_source():
     submit = next(
         item["function"]
         for item in definitions
-        if item["function"]["name"] == "submit_final_answer"
+        if item["function"]["name"] == SUBMIT_ANSWER
     )
     discovered_submit = next(
         tool
         for tool in await workbench_client.list_tools()
-        if tool.name == "submit_final_answer"
+        if tool.name == SUBMIT_ANSWER
     )
     assert submit["description"] == discovered_submit.description
 
@@ -91,7 +96,7 @@ async def test_discovery_is_the_model_contract_source():
 async def test_owned_tool_content_contains_one_json_envelope(submission):
     async with Client(workbench_server.mcp, mode="legacy") as client:
         result = await client.call_tool(
-            "submit_final_answer",
+            SUBMIT_ANSWER,
             {"submission": submission},
         )
 
@@ -107,7 +112,7 @@ async def test_owned_tool_content_contains_one_json_envelope(submission):
 async def test_in_memory_client_supports_concurrent_calls():
     async def invoke(index: int):
         return await workbench_client.call_tool(
-            "submit_final_answer",
+            SUBMIT_ANSWER,
             {
                 "submission": {
                     "outcome": "clarify",
@@ -127,7 +132,7 @@ async def test_in_memory_client_supports_concurrent_calls():
 @pytest.mark.anyio
 async def test_curated_tool_executes_through_in_memory_client():
     data = await workbench_client.call_tool(
-        "search_curated_knowledge",
+        SEARCH_CURATED_KNOWLEDGE,
         {"domain": "concepts", "query": "PAR 30"},
         context=_context(),
     )
@@ -147,7 +152,7 @@ async def test_web_tool_executes_through_in_memory_client(monkeypatch):
     monkeypatch.setattr(agent_executor, "_search_public_web", web_handler)
 
     web = await workbench_client.call_tool(
-        "search_public_web",
+        SEARCH_PUBLIC_WEB,
         {"search_query": "latest RBI repo rate"},
         context=_context(),
     )
@@ -158,7 +163,7 @@ async def test_web_tool_executes_through_in_memory_client(monkeypatch):
 async def test_submit_final_answer_executes_through_in_memory_client():
     async with Client(workbench_server.mcp, mode="legacy") as client:
         result = await client.call_tool(
-            "submit_final_answer",
+            SUBMIT_ANSWER,
             {
                 "submission": {
                     "outcome": "answer",
@@ -185,7 +190,7 @@ async def test_fastmcp_rejects_extra_and_cross_field_invalid_arguments():
     async with Client(workbench_server.mcp, mode="legacy") as client:
         with pytest.raises(ToolError):
             await client.call_tool(
-                "submit_final_answer",
+                SUBMIT_ANSWER,
                 {
                     "submission": {
                         "outcome": "clarify",
@@ -197,7 +202,7 @@ async def test_fastmcp_rejects_extra_and_cross_field_invalid_arguments():
             )
         with pytest.raises((ToolError, MCPError)):
             await client.call_tool(
-                "submit_final_answer",
+                SUBMIT_ANSWER,
                 {
                     "submission": {
                         "outcome": "refuse",
@@ -208,7 +213,7 @@ async def test_fastmcp_rejects_extra_and_cross_field_invalid_arguments():
             )
         with pytest.raises((ToolError, MCPError)):
             await client.call_tool(
-                "submit_final_answer",
+                SUBMIT_ANSWER,
                 {
                     "submission": {
                         "outcome": "clarify",
@@ -219,7 +224,7 @@ async def test_fastmcp_rejects_extra_and_cross_field_invalid_arguments():
             )
         with pytest.raises((ToolError, MCPError)):
             await client.call_tool(
-                "submit_final_answer",
+                SUBMIT_ANSWER,
                 {
                     "submission": {
                         "outcome": "answer",
@@ -232,12 +237,12 @@ async def test_fastmcp_rejects_extra_and_cross_field_invalid_arguments():
             )
         with pytest.raises((ToolError, MCPError)):
             await client.call_tool(
-                "submit_final_answer",
+                SUBMIT_ANSWER,
                 {"submission": {"outcome": "clarify", "message": ""}},
             )
         with pytest.raises((ToolError, MCPError)):
             await client.call_tool(
-                "submit_final_answer",
+                SUBMIT_ANSWER,
                 {
                     "submission": {
                         "outcome": "refuse",
@@ -268,7 +273,7 @@ async def test_clarification_with_refusal_reason_reports_only_the_selected_branc
     async with Client(workbench_server.mcp, mode="legacy") as client:
         with pytest.raises(ToolError) as error:
             await client.call_tool(
-                "submit_final_answer", {"submission": submission}
+                SUBMIT_ANSWER, {"submission": submission}
             )
         message = str(error.value)
         assert "1 validation error" in message
@@ -277,7 +282,7 @@ async def test_clarification_with_refusal_reason_reports_only_the_selected_branc
         assert "query_id" not in message
         submission.pop("reason_code")
         result = await client.call_tool(
-            "submit_final_answer", {"submission": submission}
+            SUBMIT_ANSWER, {"submission": submission}
         )
         assert result.data["data"]["terminal"] == submission
 
@@ -295,7 +300,7 @@ async def test_refusal_rejects_missing_invalid_or_mixed_fields(fields):
     async with Client(workbench_server.mcp, mode="legacy") as client:
         with pytest.raises(ToolError):
             await client.call_tool(
-                "submit_final_answer",
+                SUBMIT_ANSWER,
                 {
                     "submission": {
                         "outcome": "refuse",
@@ -312,7 +317,7 @@ async def test_direct_forged_web_call_is_reauthorized_inside_server():
     async with Client(workbench_server.mcp, mode="legacy") as client:
         with pytest.raises(ToolError, match="external source consent"):
             await client.call_tool(
-                "search_public_web",
+                SEARCH_PUBLIC_WEB,
                 {"search_query": "latest RBI repo rate"},
                 meta=workbench_client.execution_meta(context),
             )

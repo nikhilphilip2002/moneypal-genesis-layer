@@ -6,6 +6,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from app.core.tool_names import QUERY
 from app.core.config import settings
 from app.services.nlq.llm.client import (
     LLMContextOverflow,
@@ -57,7 +58,7 @@ def exchange(call_id, content) -> list[ChatMessage]:
                 {
                     "id": call_id,
                     "type": "function",
-                    "function": {"name": "query", "arguments": "{}"},
+                    "function": {"name": QUERY, "arguments": "{}"},
                 }
             ],
         },

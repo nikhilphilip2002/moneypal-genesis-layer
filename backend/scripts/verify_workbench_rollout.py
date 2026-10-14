@@ -87,15 +87,25 @@ def assert_required_llm(health: dict[str, Any]) -> None:
 
 
 def assert_mcp_catalog(health: dict[str, Any]) -> None:
+    from pathlib import Path
+
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+    from app.core.tool_names import (
+        QUERY,
+        SEARCH_CURATED_KNOWLEDGE,
+        SEARCH_PUBLIC_WEB,
+        SUBMIT_ANSWER,
+    )
+
     workbench = health.get("workbench") or {}
     catalog = workbench.get("tool_catalog") or {}
     owners = catalog.get("owners") or {}
     local = set(owners.get("workbench") or [])
     postgres = set(owners.get("postgres") or [])
     expected_local = {
-        "search_curated_knowledge",
-        "search_public_web",
-        "submit_final_answer",
+        SEARCH_CURATED_KNOWLEDGE,
+        SEARCH_PUBLIC_WEB,
+        SUBMIT_ANSWER,
     }
     if catalog.get("status") != "ok":
         raise AssertionError(f"MCP catalog is not ready: {catalog}")
@@ -103,7 +113,7 @@ def assert_mcp_catalog(health: dict[str, Any]) -> None:
         raise AssertionError(
             f"unexpected Workbench MCP tools: {sorted(local)}"
         )
-    if postgres != {"query"}:
+    if postgres != {QUERY}:
         raise AssertionError(
             f"unexpected PostgreSQL MCP tools: {sorted(postgres)}"
         )

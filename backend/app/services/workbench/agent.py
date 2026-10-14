@@ -21,6 +21,11 @@ from typing import Any
 
 from pydantic import ValidationError
 
+from app.core.tool_names import (
+    SEARCH_CURATED_KNOWLEDGE,
+    SEARCH_PUBLIC_WEB,
+    SUBMIT_ANSWER,
+)
 from app.core.config import settings
 from app.services.nlq.catalog import get_catalog
 from app.services.nlq.llm import LLMError, LLMProtocolError, LLMTimeout
@@ -147,9 +152,9 @@ def _is_postgres_tool(name: str) -> bool:
 def _source_for_call(call) -> str | None:
     if _is_postgres_tool(call.name):
         return "db"
-    if call.name == "search_public_web":
+    if call.name == SEARCH_PUBLIC_WEB:
         return "web"
-    if call.name == "search_curated_knowledge":
+    if call.name == SEARCH_CURATED_KNOWLEDGE:
         return _CURATED_SOURCES.get(str(call.arguments.get("domain", "")))
     return None
 
@@ -196,7 +201,7 @@ def _trace_arguments(call) -> dict[str, Any]:
     arguments = (
         dict(call.arguments) if isinstance(call.arguments, dict) else {}
     )
-    if call.name == "search_public_web" and "search_query" in arguments:
+    if call.name == SEARCH_PUBLIC_WEB and "search_query" in arguments:
         # A denied call can contain private material before outbound policy evaluation.
         arguments["search_query"] = "[redacted after policy evaluation]"
     return arguments
@@ -415,7 +420,7 @@ def _preflight(result, state: dict[str, Any]) -> list[tuple[str, str, str]]:
     terminals = [
         call
         for call in result.tool_calls
-        if call.name == "submit_final_answer" and call.error is None
+        if call.name == SUBMIT_ANSWER and call.error is None
     ]
     if terminals and len(result.tool_calls) != 1:
         failures.extend(
@@ -445,7 +450,7 @@ def _preflight(result, state: dict[str, Any]) -> list[tuple[str, str, str]]:
             )
             submission = call.arguments.get("submission")
             if (
-                call.name == "submit_final_answer"
+                call.name == SUBMIT_ANSWER
                 and isinstance(submission, dict)
                 and submission.get("outcome") == "answer"
             ):
@@ -475,8 +480,8 @@ def _preflight(result, state: dict[str, Any]) -> list[tuple[str, str, str]]:
                             item is None
                             or item.call.name
                             not in {
-                                "search_curated_knowledge",
-                                "search_public_web",
+                                SEARCH_CURATED_KNOWLEDGE,
+                                SEARCH_PUBLIC_WEB,
                             }
                             or item.error is not None
                             or item.card is None
@@ -918,7 +923,7 @@ async def _execute_one(
     try:
         item = await execute_agent_call(call, execution_context)
         if (
-            call.name == "submit_final_answer"
+            call.name == SUBMIT_ANSWER
             and item.terminal is not None
             and item.terminal.get("outcome") == "answer"
         ):
@@ -1453,7 +1458,7 @@ async def _run(state: dict[str, Any]) -> None:
                         [
                             {
                                 "role": "user",
-                                "content": "Evidence was successfully retrieved. Submit your complete Markdown answer now using submit_final_answer as the only tool call. Include evidence references from the successful tool responses (query_id or card_reference), and optional visuals. Do not retrieve more evidence or return ordinary text.",
+                                "content": f"Evidence was successfully retrieved. Submit your complete Markdown answer now using {SUBMIT_ANSWER} as the only tool call. Include evidence references from the successful tool responses (query_id or card_reference), and optional visuals. Do not retrieve more evidence or return ordinary text.",
                             }
                         ],
                     )
@@ -1482,7 +1487,7 @@ async def _run(state: dict[str, Any]) -> None:
             1
             for call_id in failed_ids
             if calls_by_id.get(call_id) is not None
-            and calls_by_id[call_id].name == "submit_final_answer"
+            and calls_by_id[call_id].name == SUBMIT_ANSWER
             and isinstance(
                 calls_by_id[call_id].arguments.get("submission"), dict
             )

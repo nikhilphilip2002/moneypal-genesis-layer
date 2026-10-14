@@ -11,6 +11,7 @@ import pytest
 from openai import AsyncOpenAI
 from starlette.responses import StreamingResponse
 
+from app.core.tool_names import QUERY
 from app.services.nlq.llm import (
     LLMIncomplete,
     LLMProtocolError,
@@ -613,7 +614,7 @@ def _successful_query(query_id: str = "turn-answer:q1") -> dict:
         "query_id": query_id,
         "attempt_id": f"{query_id}:a1",
         "tool_call_id": "call-1",
-        "tool_name": "query",
+        "tool_name": QUERY,
         "status": "success",
         "purpose": "answer",
         "row_count": 1,

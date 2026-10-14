@@ -8,6 +8,12 @@ from fastmcp import Context, FastMCP
 from fastmcp.tools import ToolResult
 from pydantic import Field
 
+from app.core.tool_names import (
+    READ_TOOL_OUTPUT,
+    SEARCH_CURATED_KNOWLEDGE,
+    SEARCH_PUBLIC_WEB,
+    SUBMIT_ANSWER,
+)
 from app.mcp.results import success
 from app.services.nlq.catalog import get_catalog
 from app.services.workbench.access import SourceAccessDenied, build_policy
@@ -95,6 +101,7 @@ def _card_data(card: Any) -> dict[str, Any]:
 
 
 @mcp.tool(
+    name=SEARCH_CURATED_KNOWLEDGE,
     description=(
         "Search policy documents, definitions, catalog documentation, macro, competitive, "
         "or regulatory evidence. Never use this to query customer, KYC, loan, agent, or "
@@ -122,6 +129,7 @@ async def search_curated_knowledge(
 
 
 @mcp.tool(
+    name=SEARCH_PUBLIC_WEB,
     description="Search the live public web; never include private bank or customer data."
 )
 async def search_public_web(
@@ -136,7 +144,7 @@ async def search_public_web(
     return success(_card_data(await _search_public_web(args, execution_ctx)))
 
 
-@mcp.tool(description=(
+@mcp.tool(name=READ_TOOL_OUTPUT, description=(
     "Continue an oversized tool result by its output ID and character offset. "
     "Page size is controlled by the server."
 ))
@@ -155,7 +163,7 @@ async def read_tool_output(
     return success({"kind": "tool_output", "page": page})
 
 
-@mcp.tool()
+@mcp.tool(name=SUBMIT_ANSWER)
 async def submit_final_answer(
     submission: FinalSubmissionArguments,
     ctx: Context,

@@ -10,6 +10,7 @@ from dataclasses import dataclass, field
 from datetime import date
 from typing import Any, Awaitable, Callable
 
+from app.core.tool_names import READ_TOOL_OUTPUT, SUBMIT_ANSWER
 from app.core.config import settings
 from app.services.nlq.catalog import Catalog
 from app.services.nlq.executor import QueryResult
@@ -134,7 +135,7 @@ class ExecutedAgentCall:
                 payload["query_reference"] = query_reference
             return payload
         if self.terminal is not None:
-            if self.call.name == "submit_final_answer":
+            if self.call.name == SUBMIT_ANSWER:
                 return {"success": True}
             return {"status": "terminal", **self.terminal}
         if self.raw_result is not None:
@@ -218,7 +219,7 @@ class ExecutedAgentCall:
                 }, separators=(",", ":"))
                 footer = (
                     "\n\n[Tool output clipped] " + metadata
-                    + "\nContinue with read_tool_output(id=output_id, offset=next_offset)."
+                    + f"\nContinue with {READ_TOOL_OUTPUT}(id=output_id, offset=next_offset)."
                 )
                 if offset + len(footer) <= limit or offset == 0:
                     break

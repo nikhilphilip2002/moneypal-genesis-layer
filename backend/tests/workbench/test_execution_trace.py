@@ -7,6 +7,7 @@ from datetime import datetime
 
 import pytest
 
+from app.core.tool_names import QUERY, SEARCH_PUBLIC_WEB
 from app.api.routes.workbench import _turn_for_api
 from app.services.nlq.llm import NativeToolCall
 from app.services.workbench import agent, history
@@ -27,22 +28,22 @@ def test_query_ids_distinguish_retry_attempts_from_corrected_sql(monkeypatch):
     from app.mcp import postgres_client
 
     monkeypatch.setattr(
-        postgres_client, "is_model_tool", lambda name: name == "query"
+        postgres_client, "is_model_tool", lambda name: name == QUERY
     )
     state = {"turn_id": "turn-retry", "query_registry": []}
     original = NativeToolCall(
-        id="call-1", name="query", arguments={"sql": "SELECT 1"}
+        id="call-1", name=QUERY, arguments={"sql": "SELECT 1"}
     )
     first = agent._register_database_queries(state, [original])["call-1"]
     first["status"] = "timeout"
 
     retry = NativeToolCall(
-        id="call-2", name="query", arguments={"sql": "SELECT 1"}
+        id="call-2", name=QUERY, arguments={"sql": "SELECT 1"}
     )
     second = agent._register_database_queries(state, [retry])["call-2"]
     second["status"] = "success"
     corrected = NativeToolCall(
-        id="call-3", name="query", arguments={"sql": "SELECT 2"}
+        id="call-3", name=QUERY, arguments={"sql": "SELECT 2"}
     )
     third = agent._register_database_queries(state, [corrected])["call-3"]
 
@@ -58,7 +59,7 @@ async def test_tool_trace_streams_running_then_completed_with_arguments(
     monkeypatch,
 ):
     call = NativeToolCall(
-        id="call-1", name="query", arguments={"sql": "SELECT 1"}
+        id="call-1", name=QUERY, arguments={"sql": "SELECT 1"}
     )
 
     async def execute(_call, _context):
@@ -99,7 +100,7 @@ async def test_tool_trace_streams_running_then_completed_with_arguments(
     from app.mcp import postgres_client
 
     monkeypatch.setattr(
-        postgres_client, "is_model_tool", lambda name: name == "query"
+        postgres_client, "is_model_tool", lambda name: name == QUERY
     )
 
     state = {
@@ -146,7 +147,7 @@ async def test_tool_trace_streams_running_then_completed_with_arguments(
 @pytest.mark.anyio
 async def test_cancelled_database_query_is_finalized_in_registry(monkeypatch):
     call = NativeToolCall(
-        id="call-cancel", name="query", arguments={"sql": "SELECT 1"}
+        id="call-cancel", name=QUERY, arguments={"sql": "SELECT 1"}
     )
     entered = asyncio.Event()
 
@@ -163,7 +164,7 @@ async def test_cancelled_database_query_is_finalized_in_registry(monkeypatch):
     from app.mcp import postgres_client
 
     monkeypatch.setattr(
-        postgres_client, "is_model_tool", lambda name: name == "query"
+        postgres_client, "is_model_tool", lambda name: name == QUERY
     )
     state = {
         "emit": asyncio.Queue(),
@@ -367,7 +368,7 @@ def test_saved_conversation_returns_query_registry(monkeypatch):
             "query_id": f"{turn_id}:q1",
             "attempt_id": f"{turn_id}:q1:a1",
             "tool_call_id": "provider-call",
-            "tool_name": "query",
+            "tool_name": QUERY,
             "status": "success",
             "purpose": "answer",
             "row_count": 1,
@@ -411,7 +412,7 @@ def test_history_api_preserves_exact_reconciled_visual_partition(monkeypatch):
             "query_id": q1,
             "attempt_id": f"{q1}:a1",
             "tool_call_id": "c1",
-            "tool_name": "query",
+            "tool_name": QUERY,
             "query_fingerprint": "1" * 64,
             "status": "success",
             "purpose": "answer",
@@ -428,7 +429,7 @@ def test_history_api_preserves_exact_reconciled_visual_partition(monkeypatch):
             "query_id": q2,
             "attempt_id": f"{q2}:a1",
             "tool_call_id": "c2",
-            "tool_name": "query",
+            "tool_name": QUERY,
             "query_fingerprint": "2" * 64,
             "status": "error",
             "purpose": "answer",
@@ -498,7 +499,7 @@ def test_history_api_preserves_exact_reconciled_visual_partition(monkeypatch):
 def test_public_web_trace_never_exposes_pre_policy_query_text():
     call = NativeToolCall(
         id="web-1",
-        name="search_public_web",
+        name=SEARCH_PUBLIC_WEB,
         arguments={"search_query": "private customer name and account"},
     )
 

@@ -3,6 +3,7 @@ import json
 
 import pytest
 
+from app.core.tool_names import READ_TOOL_OUTPUT, SEARCH_CURATED_KNOWLEDGE
 from app.core.config import Settings, settings
 from app.mcp import workbench_client
 from app.services.nlq.llm import NativeToolCall
@@ -42,7 +43,7 @@ def context(monkeypatch):
 def oversized(context):
     return ExecutedAgentCall(
         call=NativeToolCall(
-            id="large", name="search_curated_knowledge", arguments={}
+            id="large", name=SEARCH_CURATED_KNOWLEDGE, arguments={}
         ),
         context=context,
         card=SourceResult(
@@ -72,7 +73,7 @@ async def test_reconstruct_complete_content_through_mcp(context):
         result = await execute_agent_call(
             NativeToolCall(
                 id=f"page-{offset}",
-                name="read_tool_output",
+                name=READ_TOOL_OUTPUT,
                 arguments={"id": "large", "offset": offset},
             ),
             context,
@@ -122,7 +123,7 @@ async def test_reads_recheck_access(context, monkeypatch, change):
         )
     with pytest.raises(workbench_client.WorkbenchMCPError):
         await workbench_client.call_tool(
-            "read_tool_output", {"id": "large", "offset": 0}, context=context
+            READ_TOOL_OUTPUT, {"id": "large", "offset": 0}, context=context
         )
 
 
@@ -142,7 +143,7 @@ async def test_invalid_reads(context, arguments, message):
     oversized(context).observation_message()
     with pytest.raises(workbench_client.WorkbenchMCPError, match=message):
         await workbench_client.call_tool(
-            "read_tool_output", arguments, context=context
+            READ_TOOL_OUTPUT, arguments, context=context
         )
 
 
@@ -183,7 +184,7 @@ async def test_complete_mcp_card_survives_normalization(context, monkeypatch):
     result = await execute_agent_call(
         NativeToolCall(
             id="original",
-            name="search_curated_knowledge",
+            name=SEARCH_CURATED_KNOWLEDGE,
             arguments={"domain": "macro", "query": "test"},
         ),
         context,

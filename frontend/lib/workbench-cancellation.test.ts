@@ -1,3 +1,4 @@
+import { QUERY } from "./tool-names.ts";
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import type { WorkbenchTurnData } from '../components/workbench/WorkbenchTurn';
@@ -13,17 +14,17 @@ function activeTurn(): WorkbenchTurnData {
     ],
     queryRegistry: [
       {
-        query_id: 'q1', attempt_id: 'q1:a1', tool_call_id: 'call-1', tool_name: 'query',
+        query_id: 'q1', attempt_id: 'q1:a1', tool_call_id: 'call-1', tool_name: QUERY,
         status: 'success', purpose: 'answer', has_data: true, visual_available: true,
         duration_ms: 1,
       },
       {
-        query_id: 'q2', attempt_id: 'q2:a1', tool_call_id: 'call-2', tool_name: 'query',
+        query_id: 'q2', attempt_id: 'q2:a1', tool_call_id: 'call-2', tool_name: QUERY,
         status: 'running', purpose: 'answer', has_data: false, visual_available: false,
         duration_ms: 0,
       },
       {
-        query_id: 'q3', attempt_id: 'q3:a1', tool_call_id: 'call-3', tool_name: 'query',
+        query_id: 'q3', attempt_id: 'q3:a1', tool_call_id: 'call-3', tool_name: QUERY,
         status: 'pending', purpose: 'answer', has_data: false, visual_available: false,
         duration_ms: 0,
       },

@@ -11,6 +11,7 @@ from typing import Any
 
 from fastmcp import Context, FastMCP
 
+from app.core.tool_names import QUERY
 from app.mcp.results import failure, success
 from app.services.nlq import db as nlq_db, pii
 from app.services.nlq.catalog import get_catalog
@@ -108,7 +109,7 @@ def _query(sql: str, meta: dict[str, Any]) -> dict[str, Any]:
     )
 
 
-@mcp.tool
+@mcp.tool(name=QUERY)
 async def query(sql: str, ctx: Context) -> dict[str, Any]:
     """Query results are returned to the assistant and are not rendered to the user.
 

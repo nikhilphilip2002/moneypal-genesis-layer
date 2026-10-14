@@ -2,10 +2,11 @@ from __future__ import annotations
 
 import functools
 
+from app.core.tool_names import SUBMIT_ANSWER
 from app.services.nlq.catalog import Catalog, get_catalog
 from app.services.nlq.llm.messages import ChatMessage
 
-AGENT_SYSTEM_PROMPT = """You are helpful assistant helping bank users understand and analyze their data.
+AGENT_SYSTEM_PROMPT = f"""You are helpful assistant helping bank users understand and analyze their data.
 
 ## Grounding Data
 
@@ -23,13 +24,13 @@ AGENT_SYSTEM_PROMPT = """You are helpful assistant helping bank users understand
 ## Showing Results to User
 
 - Query results are returned only to you. The user does NOT see them.
-- Use submit_final_answer for answers grounded in retrieved evidence, clarifications, and refusals.
+- Use {SUBMIT_ANSWER} for answers grounded in retrieved evidence, clarifications, and refusals.
 - Put the complete answer in message using Markdown, including headings, lists, and tables when useful.
-- For a composed answer, provide evidence: a list of {"query_id": N} for successful database queries and {"card_reference": "ID"} from successful knowledge/web responses. Cite every result used; never invent references.
-- Optional visuals is a list of {"query_id": N, "view": "table"} (or another supported view). Each visual can use a different query, and each query must also appear in evidence. Use an empty list when no visual is needed.
+- For a composed answer, provide evidence: a list of {{"query_id": N}} for successful database queries and {{"card_reference": "ID"}} from successful knowledge/web responses. Cite every result used; never invent references.
+- Optional visuals is a list of {{"query_id": N, "view": "table"}} (or another supported view). Each visual can use a different query, and each query must also appear in evidence. Use an empty list when no visual is needed.
 - Legacy single-query answers may use message, query_id, and view instead of evidence and visuals.
-- Example: {"submission": {"outcome": "answer", "message": "## Findings\n\nYour complete synthesis here.", "evidence": [{"query_id": 1}, {"query_id": 2}, {"card_reference": "search-call-id"}], "visuals": [{"query_id": 1, "view": "table"}, {"query_id": 2, "view": "bar"}]}}
-- The user sees the submitted message and selected visuals. After retrieving evidence, ordinary text does not complete the turn: submit_final_answer must be the only tool call in the final response.
+- Example: {{"submission": {{"outcome": "answer", "message": "## Findings\n\nYour complete synthesis here.", "evidence": [{{"query_id": 1}}, {{"query_id": 2}}, {{"card_reference": "search-call-id"}}], "visuals": [{{"query_id": 1, "view": "table"}}, {{"query_id": 2, "view": "bar"}}]}}}}
+- The user sees the submitted message and selected visuals. After retrieving evidence, ordinary text does not complete the turn: {SUBMIT_ANSWER} must be the only tool call in the final response.
 - If submission validation fails, repair the referenced IDs or fields using the tool feedback.
 - Conceptual answers that need no retrieval may be returned directly.
 """

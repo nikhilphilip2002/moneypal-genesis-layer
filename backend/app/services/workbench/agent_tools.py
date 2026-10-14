@@ -9,6 +9,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+from app.core.tool_names import (
+    READ_TOOL_OUTPUT,
+    SEARCH_CURATED_KNOWLEDGE,
+    SEARCH_PUBLIC_WEB,
+    SUBMIT_ANSWER,
+)
 from app.core.config import settings
 from app.services.workbench.access import (
     SourceAccessDenied,
@@ -59,25 +65,25 @@ class RuntimeToolPolicy:
 
 
 RUNTIME_TOOL_POLICIES: dict[str, RuntimeToolPolicy] = {
-    "read_tool_output": RuntimeToolPolicy(
+    READ_TOOL_OUTPUT: RuntimeToolPolicy(
         source_id=None,
         sensitivity="internal",
         timeout_s=10.0,
         max_result_chars=settings.workbench_tool_output_page_chars,
     ),
-    "search_curated_knowledge": RuntimeToolPolicy(
+    SEARCH_CURATED_KNOWLEDGE: RuntimeToolPolicy(
         source_id=None,
         sensitivity="internal",
         timeout_s=settings.workbench_curated_timeout_s,
         max_result_chars=12_000,
     ),
-    "search_public_web": RuntimeToolPolicy(
+    SEARCH_PUBLIC_WEB: RuntimeToolPolicy(
         source_id="web",
         sensitivity="public",
         timeout_s=30.0,
         max_result_chars=12_000,
     ),
-    "submit_final_answer": RuntimeToolPolicy(
+    SUBMIT_ANSWER: RuntimeToolPolicy(
         source_id=None,
         sensitivity="internal",
         timeout_s=1.0,
@@ -102,7 +108,7 @@ def visible_runtime_tool_names(policy: SourceAccessPolicy) -> list[str]:
             runtime_policy.source_id
         ):
             continue
-        if name == "search_curated_knowledge" and not allowed_curated_domains(
+        if name == SEARCH_CURATED_KNOWLEDGE and not allowed_curated_domains(
             policy
         ):
             continue
@@ -136,7 +142,7 @@ def authorize_local_tool_call(
             raise AgentToolAccessDenied(str(exc)) from exc
     submission = arguments.get("submission")
     if (
-        name == "submit_final_answer"
+        name == SUBMIT_ANSWER
         and isinstance(submission, dict)
         and submission.get("outcome") == "answer"
         and (
@@ -151,7 +157,7 @@ def authorize_local_tool_call(
             policy.require("db")
         except SourceAccessDenied as exc:
             raise AgentToolAccessDenied(str(exc)) from exc
-    if name == "search_curated_knowledge":
+    if name == SEARCH_CURATED_KNOWLEDGE:
         source_id = CURATED_DOMAIN_SOURCES.get(arguments.get("domain"))
         if source_id is not None:
             try:

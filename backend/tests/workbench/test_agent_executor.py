@@ -4,6 +4,12 @@ import asyncio
 import json
 import pytest
 
+from app.core.tool_names import (
+    QUERY,
+    SEARCH_CURATED_KNOWLEDGE,
+    SEARCH_PUBLIC_WEB,
+    SUBMIT_ANSWER,
+)
 from app.services.nlq.catalog import get_catalog
 from app.services.nlq.llm import NativeToolCall
 from app.services.workbench import access, agent_executor
@@ -26,11 +32,11 @@ def _connectors(monkeypatch):
     monkeypatch.setattr(access.settings, "exa_mcp_enabled", True)
     monkeypatch.setitem(
         postgres_client._model_tools,
-        "query",
+        QUERY,
         {
             "type": "function",
             "function": {
-                "name": "query",
+                "name": QUERY,
                 "description": "Run governed read-only SQL.",
                 "parameters": {
                     "type": "object",
@@ -76,7 +82,7 @@ async def test_validated_call_dispatches_and_replay_is_lossless(monkeypatch):
     executed = await agent_executor.execute_agent_call(
         NativeToolCall(
             id="call_1",
-            name="query",
+            name=QUERY,
             arguments={
                 "sql": "SELECT par_30 FROM gold.daily_loan_status LIMIT 1"
             },
@@ -129,7 +135,7 @@ async def test_database_query_reference_reaches_mcp_and_observation(
     )
     executed = await agent_executor.execute_agent_call(
         NativeToolCall(
-            id="provider-call", name="query", arguments={"sql": "SELECT 1"}
+            id="provider-call", name=QUERY, arguments={"sql": "SELECT 1"}
         ),
         context,
     )
@@ -154,7 +160,7 @@ async def test_terminal_call_executes_no_data_handler():
     executed = await agent_executor.execute_agent_call(
         NativeToolCall(
             id="call_2",
-            name="submit_final_answer",
+            name=SUBMIT_ANSWER,
             arguments={
                 "submission": {
                     "outcome": "clarify",
@@ -174,7 +180,7 @@ async def test_final_answer_call_is_strict_terminal_contract():
     executed = await agent_executor.execute_agent_call(
         NativeToolCall(
             id="call-final",
-            name="submit_final_answer",
+            name=SUBMIT_ANSWER,
             arguments={
                 "submission": {
                     "outcome": "answer",
@@ -219,7 +225,7 @@ async def test_handler_timeout_is_typed(monkeypatch):
         await agent_executor.execute_agent_call(
             NativeToolCall(
                 id="call_3",
-                name="query",
+                name=QUERY,
                 arguments={"sql": "SELECT 1"},
             ),
             context,
@@ -243,7 +249,7 @@ async def test_postgres_statement_timeout_keeps_typed_retry_feedback(
 
     monkeypatch.setattr(postgres_client, "call_tool", timed_out)
     call = NativeToolCall(
-        id="call-timeout", name="query", arguments={"sql": "SELECT 1"}
+        id="call-timeout", name=QUERY, arguments={"sql": "SELECT 1"}
     )
 
     with pytest.raises(AgentExecutionError) as caught:
@@ -288,7 +294,7 @@ async def test_postgres_mcp_rejects_mismatched_returned_query_identity(
     ):
         await agent_executor.execute_agent_call(
             NativeToolCall(
-                id="call-mismatch", name="query", arguments={"sql": "SELECT 1"}
+                id="call-mismatch", name=QUERY, arguments={"sql": "SELECT 1"}
             ),
             context,
         )
@@ -309,7 +315,7 @@ async def test_web_call_is_reauthorized_before_handler(monkeypatch):
         await agent_executor.execute_agent_call(
             NativeToolCall(
                 id="call_4",
-                name="search_public_web",
+                name=SEARCH_PUBLIC_WEB,
                 arguments={"search_query": "latest RBI repo rate"},
             ),
             _context(external=False),
@@ -322,11 +328,11 @@ async def test_web_call_is_reauthorized_before_handler(monkeypatch):
     ("name", "arguments", "source"),
     [
         (
-            "search_curated_knowledge",
+            SEARCH_CURATED_KNOWLEDGE,
             {"domain": "concepts", "query": "PAR 30"},
             "knowledge",
         ),
-        ("search_public_web", {"search_query": "latest RBI repo rate"}, "web"),
+        (SEARCH_PUBLIC_WEB, {"search_query": "latest RBI repo rate"}, "web"),
     ],
 )
 async def test_each_nonterminal_tool_dispatches_through_in_memory_mcp(
@@ -384,7 +390,7 @@ def _large_lookup(rows: int = 5000) -> agent_executor.ExecutedAgentCall:
         row_count=rows,
     )
     return agent_executor.ExecutedAgentCall(
-        call=NativeToolCall(id="call_big", name="query", arguments={}),
+        call=NativeToolCall(id="call_big", name=QUERY, arguments={}),
         raw_result=raw_result,
     )
 

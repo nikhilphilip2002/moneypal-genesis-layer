@@ -2,6 +2,8 @@ from functools import lru_cache
 import os
 from pathlib import Path
 
+from app.core.tool_names import QUERY
+
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 
@@ -263,7 +265,7 @@ class Settings:
         self.postgres_mcp_model_tools = tuple(
             name.strip()
             for name in (
-                get("POSTGRES_MCP_MODEL_TOOLS", "query") or "query"
+                get("POSTGRES_MCP_MODEL_TOOLS", QUERY) or QUERY
             ).split(",")
             if name.strip()
         )
