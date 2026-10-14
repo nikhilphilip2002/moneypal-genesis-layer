@@ -261,6 +261,65 @@ class TestConversationOwnership:
         )
 
     @pytest.mark.anyio
+    async def test_model_content_survives_reload_alongside_submitted_answer(
+        self, client
+    ):
+        from app.services.workbench import history
+
+        turn_id = history.begin_turn("model-content", "gicc_policy", "Compare")
+        history.append_messages(
+            "model-content",
+            "gicc_policy",
+            turn_id,
+            [
+                {"role": "user", "content": "Compare"},
+                {
+                    "role": "assistant",
+                    "content": "A detailed explanation alongside the chart.",
+                    "reasoning_content": "Internal reasoning",
+                    "tool_calls": [
+                        {
+                            "id": "submit",
+                            "type": "function",
+                            "function": {
+                                "name": "submit_final_answer",
+                                "arguments": "Internal tool arguments",
+                            },
+                        }
+                    ],
+                },
+                {
+                    "role": "tool",
+                    "tool_call_id": "submit",
+                    "content": "Internal tool result",
+                },
+            ],
+        )
+        history.set_answer(
+            "model-content", "gicc_policy", turn_id,
+            {"text": "Chart summary.", "visual_query_ids": ["q1"]},
+        )
+        history.complete_turn("model-content", "gicc_policy", turn_id)
+        second_turn = history.begin_turn(
+            "model-content", "gicc_policy", "Another question"
+        )
+        history.append_messages(
+            "model-content", "gicc_policy", second_turn,
+            [{"role": "assistant", "content": "Another answer."}],
+        )
+        body = (
+            await client.get(
+                "/workbench/conversations/model-content",
+                headers=_auth("gicc_policy"),
+            )
+        ).json()
+        assert body["turns"][0]["model_messages"] == [
+            "A detailed explanation alongside the chart."
+        ]
+        assert body["turns"][0]["answer"]["text"] == "Chart summary."
+        assert body["turns"][1]["model_messages"] == ["Another answer."]
+
+    @pytest.mark.anyio
     async def test_route_tools_and_error_details_are_returned_for_ui_hydration(
         self,
         client,

@@ -21,6 +21,7 @@ from pydantic import BaseModel, Field
 
 from app.api.routes.auth import identity_from_authorization
 from app.services.nlq import lookup as record_lookup
+from app.services.nlq.llm.messages import ChatMessage
 from app.services.workbench import access, history, tools
 from app.services.workbench.graph import cancel_active_turn, run_workbench
 from app.services.workbench.sources import visible_sources
@@ -149,7 +150,7 @@ async def get_conversation(
         "updated_at": rec.updated_at.isoformat(),
         "record_version": rec.record_version,
         "external_sources_enabled": rec.external_sources_enabled,
-        "turns": [_turn_for_api(turn) for turn in rec.turns],
+        "turns": [_turn_for_api(turn, rec.messages) for turn in rec.turns],
     }
 
 
@@ -179,11 +180,16 @@ def _query_record_for_api(record: dict) -> dict:
     return public
 
 
-def _turn_for_api(turn: dict) -> dict:
+def _turn_for_api(
+    turn: dict, messages: list[ChatMessage] | None = None
+) -> dict:
     """Serialize one current-format Workbench turn."""
     question = str(turn.get("question", ""))
     sources = list(turn.get("sources", []) or [])
     route = turn.get("route") or {"sources": sources, "intent": question}
+    turn_messages = (messages or [])[
+        turn.get("message_start", 0) : turn.get("message_end", 0)
+    ]
     return {
         "id": turn.get("id"),
         "question": question,
@@ -197,6 +203,13 @@ def _turn_for_api(turn: dict) -> dict:
         ],
         "answer": turn.get("answer"),
         "synthesis": turn.get("synthesis"),
+        "model_messages": [
+            message["content"]
+            for message in turn_messages
+            if message["role"] == "assistant"
+            and isinstance(message.get("content"), str)
+            and message["content"]
+        ],
         "refusal": turn.get("refusal"),
         "error": turn.get("error"),
         "error_details": turn.get("error_details"),

@@ -96,14 +96,12 @@ export default function WorkbenchTurn({ turn, onAsk }: { turn: WorkbenchTurnData
       }
     }
   }
-  // Model deltas are provisional. During generation the execution trace carries progress;
-  // after finalization the reconciled answer is the only user-facing narrative.
-  const modelMessages = turn.done && !turn.answer && !turn.synthesis && turn.error?.code !== 'FINAL_ANSWER_NOT_SUBMITTED'
-    ? (turn.modelMessages ?? []).filter(Boolean)
-    : [];
-  const answerText = modelMessages.length === 0
-    ? (turn.answer?.text || turn.synthesis)
-    : undefined;
+  const answerText = turn.answer?.text || turn.synthesis;
+  const modelMessages = turn.error?.code === 'FINAL_ANSWER_NOT_SUBMITTED'
+    ? []
+    : (turn.modelMessages ?? []).filter((message) =>
+        message.trim() && message.trim() !== answerText?.trim(),
+      );
   return (
     <section className="space-y-5">
       <div className="flex justify-end">

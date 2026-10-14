@@ -229,7 +229,7 @@ test('Workbench SQL disclosure omits generated-query boilerplate', () => {
   assert.doesNotMatch(markup, /Generated query|Visualization derived|rounded-xl border/);
 });
 
-test('composed answers render Markdown, selected visuals, and document references after reload', async () => {
+test('composed answers keep streamed text, Markdown, selected visuals, and document references', async () => {
   const MarkdownRenderer = loadComponent(`${__dirname}/../components/workbench/MarkdownRenderer.tsx`, React, {
     'react-markdown': await import('react-markdown'),
     'remark-gfm': await import('remark-gfm'),
@@ -250,6 +250,7 @@ test('composed answers render Markdown, selected visuals, and document reference
   const WorkbenchTurn = loadComponent(`${__dirname}/../components/workbench/WorkbenchTurn.tsx`, React, modules);
   const turn = JSON.parse(JSON.stringify({
     id: 'turn', question: 'Compare', pending: [], done: true,
+    modelMessages: ['A detailed explanation that accompanies the chart.'],
     cards: [1, 2, 3].map((id) => ({
       source: 'db', card_type: 'chart', query_id: `turn:q${id}`, payload: { title: `Visual ${id}` },
     })),
@@ -263,6 +264,7 @@ test('composed answers render Markdown, selected visuals, and document reference
   }));
   const render = () => renderToStaticMarkup(React.createElement(WorkbenchTurn, { turn, onAsk() {} }));
   const markup = render();
+  assert.match(markup, /A detailed explanation that accompanies the chart\./);
   assert.match(markup, /<h2[^>]*>Comparison<\/h2>/);
   assert.match(markup, /<strong[^>]*>Supported<\/strong>/);
   assert.match(markup, /<table/);
@@ -272,6 +274,20 @@ test('composed answers render Markdown, selected visuals, and document reference
   assert.match(markup, /Visual 1/);
   assert.match(markup, /Visual 2/);
   assert.doesNotMatch(markup, /Visual 3/);
+  const text = turn.answer.text;
+  turn.answer.text = '';
+  assert.match(render(), /A detailed explanation that accompanies the chart\./);
+  assert.match(render(), /Visual 1/);
+  turn.answer.text = text;
+  const answer = turn.answer;
+  delete turn.answer;
+  turn.done = false;
+  assert.match(render(), /A detailed explanation that accompanies the chart\./);
+  assert.doesNotMatch(render(), /Visual [123]/);
+  turn.answer = answer;
+  turn.modelMessages = [answer.text];
+  assert.equal(render().match(/<h2[^>]*>Comparison<\/h2>/g)?.length, 1);
+  turn.done = true;
   turn.answer.visual_query_ids = [];
   assert.doesNotMatch(render(), /Visual [123]/);
   delete turn.answer;

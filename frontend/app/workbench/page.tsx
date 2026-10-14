@@ -353,9 +353,6 @@ export default function WorkbenchPage() {
             patch({
               answer: event.answer,
               synthesis: event.answer.text,
-              // Streamed model content is provisional. The authoritative answer event
-              // replaces it with the validated narrative rather than exposing JSON.
-              modelMessages: [],
             });
             break;
           case 'answer_start':
