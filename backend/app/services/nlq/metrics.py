@@ -18,8 +18,11 @@ from app.services.nlq.contracts import QuerySpec
 
 
 class MetricError(ValueError):
-    """A query that the metric registry refuses. The message is shown to the user, so it
-    explains what is wrong in business terms rather than naming a column."""
+    """A query that the metric registry refuses.
+
+    The message is shown to the user, so it explains what is wrong in business
+    terms rather than naming a column.
+    """
 
 
 @dataclass(frozen=True, slots=True)
@@ -170,10 +173,7 @@ def _check_dimension_compatibility(
         if cat.join_between(base_table, dim.table) is not None:
             continue
         if dim.table == hub or cat.join_between(base_table, hub) is not None:
-            if (
-                cat.join_between(hub, dim.table) is not None
-                or dim.table == hub
-            ):
+            if cat.join_between(hub, dim.table) is not None or dim.table == hub:
                 continue
         restriction = (base_entry.restrictions if base_entry else "") or (
             "there is no declared join between these tables"

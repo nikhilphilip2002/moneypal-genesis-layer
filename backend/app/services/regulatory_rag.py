@@ -7,9 +7,8 @@ import logging
 import re
 from typing import Any
 
-from genesis_core import rag
-
 from app.core.config import settings
+from genesis_core import rag
 
 logger = logging.getLogger(__name__)
 
@@ -87,9 +86,7 @@ def extractive_regulatory_summary(
 ) -> str:
     sentences = re.split(r"(?<=[.!?])\s+", context)
     selected = [
-        sentence.strip()
-        for sentence in sentences
-        if len(sentence.strip()) > 60
+        sentence.strip() for sentence in sentences if len(sentence.strip()) > 60
     ][:8]
     body = (
         " ".join(selected[:4])

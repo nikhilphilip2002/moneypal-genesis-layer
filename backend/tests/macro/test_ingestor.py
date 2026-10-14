@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-
 from scripts.macro_pipeline import ingestor
 
 
@@ -28,23 +27,15 @@ def _rows(
 
 def test_point_ids_are_stable_and_source_scoped():
     first = ingestor.point_id("indiabudget_gov_in", "echap01.pdf", 3, 7)
-    assert first == ingestor.point_id(
-        "indiabudget_gov_in", "echap01.pdf", 3, 7
-    )
+    assert first == ingestor.point_id("indiabudget_gov_in", "echap01.pdf", 3, 7)
     # Same filename from a different portal must not collide.
     assert first != ingestor.point_id("mospi_gov_in", "echap01.pdf", 3, 7)
-    assert first != ingestor.point_id(
-        "indiabudget_gov_in", "echap01.pdf", 4, 7
-    )
+    assert first != ingestor.point_id("indiabudget_gov_in", "echap01.pdf", 4, 7)
 
 
-def test_payload_carries_citable_source_and_page(
-    fake_qdrant, macro_collection
-):
+def test_payload_carries_citable_source_and_page(fake_qdrant, macro_collection):
     ingestor.ensure_collection()
-    ingestor.upsert_rows(
-        _rows("echap02.pdf", 2), "indiabudget_gov_in", "run-1"
-    )
+    ingestor.upsert_rows(_rows("echap02.pdf", 2), "indiabudget_gov_in", "run-1")
 
     payload = fake_qdrant.payloads()[0]
     # rag.search reads `source` for the citation label — it must be the document,
@@ -59,14 +50,10 @@ def test_reingesting_unchanged_document_does_not_duplicate(
     fake_qdrant, macro_collection
 ):
     ingestor.ensure_collection()
-    ingestor.upsert_rows(
-        _rows("echap02.pdf", 5), "indiabudget_gov_in", "run-1"
-    )
+    ingestor.upsert_rows(_rows("echap02.pdf", 5), "indiabudget_gov_in", "run-1")
     assert ingestor.count() == 5
 
-    ingestor.upsert_rows(
-        _rows("echap02.pdf", 5), "indiabudget_gov_in", "run-2"
-    )
+    ingestor.upsert_rows(_rows("echap02.pdf", 5), "indiabudget_gov_in", "run-2")
     assert ingestor.count() == 5, (
         "deterministic IDs should overwrite, not append"
     )
@@ -76,23 +63,17 @@ def test_shorter_revision_leaves_no_orphaned_chunk_tail(
     fake_qdrant, macro_collection
 ):
     ingestor.ensure_collection()
-    ingestor.upsert_rows(
-        _rows("echap02.pdf", 9), "indiabudget_gov_in", "run-1"
-    )
+    ingestor.upsert_rows(_rows("echap02.pdf", 9), "indiabudget_gov_in", "run-1")
     assert ingestor.count() == 9
 
     # The document shrank. Without the delete-first step the 4 trailing chunks of the
     # old revision would linger forever with stale content.
     ingestor.delete_document("echap02.pdf", "indiabudget_gov_in")
-    ingestor.upsert_rows(
-        _rows("echap02.pdf", 5), "indiabudget_gov_in", "run-2"
-    )
+    ingestor.upsert_rows(_rows("echap02.pdf", 5), "indiabudget_gov_in", "run-2")
     assert ingestor.count() == 5
 
 
-def test_delete_document_is_scoped_to_one_source(
-    fake_qdrant, macro_collection
-):
+def test_delete_document_is_scoped_to_one_source(fake_qdrant, macro_collection):
     ingestor.ensure_collection()
     ingestor.upsert_rows(_rows("shared.pdf", 3), "indiabudget_gov_in", "run-1")
     ingestor.upsert_rows(_rows("shared.pdf", 3), "mospi_gov_in", "run-1")
@@ -109,9 +90,7 @@ def test_restamp_moves_unchanged_points_onto_the_new_run(
     fake_qdrant, macro_collection
 ):
     ingestor.ensure_collection()
-    ingestor.upsert_rows(
-        _rows("echap02.pdf", 4), "indiabudget_gov_in", "run-1"
-    )
+    ingestor.upsert_rows(_rows("echap02.pdf", 4), "indiabudget_gov_in", "run-1")
 
     moved = ingestor.restamp_document(
         "echap02.pdf", "indiabudget_gov_in", "run-2"
@@ -184,9 +163,7 @@ class TestPurge:
             _rows("old.pdf", 10), "indiabudget_gov_in", "run-1"
         )
 
-        report = ingestor.purge_stale(
-            "run-2", stamped=0, before=10, safe=False
-        )
+        report = ingestor.purge_stale("run-2", stamped=0, before=10, safe=False)
 
         assert report["ran"] is False
         assert "failed" in report["reason"]
@@ -213,9 +190,7 @@ class TestPurge:
 
     def test_runs_on_first_ever_ingest(self, fake_qdrant, macro_collection):
         ingestor.ensure_collection()
-        ingestor.upsert_rows(
-            _rows("new.pdf", 5), "indiabudget_gov_in", "run-1"
-        )
+        ingestor.upsert_rows(_rows("new.pdf", 5), "indiabudget_gov_in", "run-1")
 
         # before=0 -> ratio guard must not divide by zero or block the first run.
         report = ingestor.purge_stale("run-1", stamped=5, before=0, safe=True)
@@ -230,9 +205,7 @@ class TestPurge:
 
         monkeypatch.setattr(settings, "macro_purge_stale", False)
         ingestor.ensure_collection()
-        ingestor.upsert_rows(
-            _rows("old.pdf", 3), "indiabudget_gov_in", "run-1"
-        )
+        ingestor.upsert_rows(_rows("old.pdf", 3), "indiabudget_gov_in", "run-1")
 
         report = ingestor.purge_stale("run-2", stamped=3, before=3, safe=True)
 
@@ -246,9 +219,7 @@ def test_migration_targets_only_legacy_unstamped_points(
     from .helpers import put_legacy_point
 
     ingestor.ensure_collection()
-    ingestor.upsert_rows(
-        _rows("current.pdf", 4), "indiabudget_gov_in", "run-1"
-    )
+    ingestor.upsert_rows(_rows("current.pdf", 4), "indiabudget_gov_in", "run-1")
     put_legacy_point(fake_qdrant, "legacy.pdf")
     put_legacy_point(fake_qdrant, "legacy2.pdf")
 

@@ -8,8 +8,8 @@ from typing import Any, Protocol
 from urllib.parse import urljoin, urlparse
 
 from pipeline_common import (
-    DEFAULT_CONFIG_PATH,
     DEFAULT_CONFIG_DIR,
+    DEFAULT_CONFIG_PATH,
     DEFAULT_RAW_ROOT,
     SKIP_EXTENSIONS,
     Institution,

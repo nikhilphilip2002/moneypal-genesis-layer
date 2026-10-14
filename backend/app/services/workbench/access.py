@@ -31,8 +31,11 @@ EXTERNAL_GROUPS = frozenset(
 POLICY_VERSION = "source-access-v1"
 
 
-class SourceAccessDenied(PermissionError):
+class SourceAccessDeniedError(PermissionError):
     pass
+
+
+SourceAccessDenied = SourceAccessDeniedError
 
 
 def source_group(source_id: str) -> SourceGroup:

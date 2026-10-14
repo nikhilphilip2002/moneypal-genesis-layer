@@ -11,13 +11,13 @@ from app.core.tool_names import (
     SEARCH_PUBLIC_WEB,
     SUBMIT_ANSWER,
 )
-from app.services.workbench import access
 from app.mcp.tool_catalog import ToolCatalog
+from app.services.workbench import access
 from app.services.workbench.agent_contracts import (
-    SubmitVisualAnswerArguments,
-    SubmitMarkdownAnswerArguments,
     SubmitClarificationArguments,
+    SubmitMarkdownAnswerArguments,
     SubmitRefusalArguments,
+    SubmitVisualAnswerArguments,
 )
 from app.services.workbench.agent_tools import (
     RUNTIME_TOOL_POLICIES,
@@ -117,18 +117,18 @@ async def test_every_authorized_tool_is_offered_with_its_full_schema():
 async def test_policy_omits_live_web_and_filters_curated_domains_without_consent():
     definitions = await _definitions(external=False)
     assert SEARCH_PUBLIC_WEB not in definitions
-    domains = definitions[SEARCH_CURATED_KNOWLEDGE]["parameters"][
-        "properties"
-    ]["domain"]
+    domains = definitions[SEARCH_CURATED_KNOWLEDGE]["parameters"]["properties"][
+        "domain"
+    ]
     assert domains["enum"] == ["concepts"]
 
 
 @pytest.mark.anyio
 async def test_role_policy_removes_forbidden_curated_domains():
     definitions = await _definitions(role="gicc_director", external=True)
-    domains = definitions[SEARCH_CURATED_KNOWLEDGE]["parameters"][
-        "properties"
-    ]["domain"]
+    domains = definitions[SEARCH_CURATED_KNOWLEDGE]["parameters"]["properties"][
+        "domain"
+    ]
     assert "macro" in domains["enum"]
     assert "competitive" not in domains["enum"]
     assert "regulatory" not in domains["enum"]
@@ -220,7 +220,9 @@ async def test_final_answer_schema_supports_all_terminal_outcomes():
         strict=True,
     ):
         assert set(variant["required"]) == {
-            name for name, field in model.model_fields.items() if field.is_required()
+            name
+            for name, field in model.model_fields.items()
+            if field.is_required()
         }
     assert answer["visuals"]["items"]["properties"]["view"]["enum"] == [
         "kpi",

@@ -5,10 +5,9 @@ import re
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
-from genesis_core import IntelligenceResponse
-
 from app.services import brief_cache, competitive
 from app.services import institution_loader as il
+from genesis_core import IntelligenceResponse
 
 router = APIRouter(prefix="/competitive", tags=["competitive"])
 

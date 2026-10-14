@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 import asyncio
-from copy import deepcopy
 import json
 import time
+from copy import deepcopy
 from typing import Any
 
 import pytest
@@ -22,11 +22,11 @@ from app.services.workbench import (
     models,
     outbound_policy,
 )
-from app.services.workbench.agent_tools import AgentToolAccessDenied
 from app.services.workbench.agent_executor import (
     ExecutedAgentCall,
     RawQueryResult,
 )
+from app.services.workbench.agent_tools import AgentToolAccessDenied
 from app.services.workbench.results import SourceResult
 
 
@@ -390,7 +390,9 @@ class _ScriptedClient:
         self.requests = []
 
     async def complete(self, **kwargs):
-        self.requests.append({**kwargs, "messages": deepcopy(kwargs["messages"])})
+        self.requests.append(
+            {**kwargs, "messages": deepcopy(kwargs["messages"])}
+        )
         step = self.script[len(self.requests) - 1]
         return step(kwargs) if callable(step) else step
 
@@ -556,9 +558,7 @@ async def test_new_chat_calls_model_without_synthetic_warmup(scripted):
 
 
 @pytest.mark.anyio
-async def test_enabled_snapshot_saves_after_real_request(
-    scripted, monkeypatch
-):
+async def test_enabled_snapshot_saves_after_real_request(scripted, monkeypatch):
     monkeypatch.setattr(agent.settings, "llama_slot_snapshots_enabled", True)
     order = []
 
@@ -666,9 +666,7 @@ async def test_strict_final_answer_tool_drives_reconciled_answer(scripted):
     await agent.run(state)
 
     answer_frame = next(
-        frame
-        for frame in _frames(state)
-        if frame.startswith("event: answer\n")
+        frame for frame in _frames(state) if frame.startswith("event: answer\n")
     )
     answer = json.loads(answer_frame.split("data: ", 1)[1])
     assert answer["text"] == "PAR 30 is 4.2%."
@@ -761,9 +759,7 @@ async def test_final_answer_reuses_previous_turn_query_without_sql(
     await agent.run(state)
 
     answer_frame = next(
-        frame
-        for frame in _frames(state)
-        if frame.startswith("event: answer\n")
+        frame for frame in _frames(state) if frame.startswith("event: answer\n")
     )
     answer = json.loads(answer_frame.split("data: ", 1)[1])
     assert answer["active_query_ids"] == [prior_id]
@@ -773,12 +769,7 @@ async def test_final_answer_reuses_previous_turn_query_without_sql(
     assert state["query_registry"] == []
     saved_record = history.get(state["conversation_id"], user="alice")
     assert saved_record is not None
-    assert (
-        saved_record.turns[-1][
-            "query_registry"
-        ]
-        == []
-    )
+    assert saved_record.turns[-1]["query_registry"] == []
 
 
 def test_new_query_number_continues_after_previous_turn(monkeypatch):
@@ -867,9 +858,7 @@ async def test_invalid_final_answer_contract_is_repaired_once(
 
     assert state["attribution_repairs"] == 1
     answer_frame = next(
-        frame
-        for frame in _frames(state)
-        if frame.startswith("event: answer\n")
+        frame for frame in _frames(state) if frame.startswith("event: answer\n")
     )
     answer = json.loads(answer_frame.split("data: ", 1)[1])
     assert answer["text"] == "PAR 30 is 4.2%."
@@ -927,7 +916,9 @@ async def test_failure_path_spends_exactly_max_rounds_requests(
     with pytest.raises(agent.BudgetExhausted):
         await agent.run(state)
 
-    assert all(call["tool_choice"] in {"required", "auto"} for call in client.requests)
+    assert all(
+        call["tool_choice"] in {"required", "auto"} for call in client.requests
+    )
     assert [
         sum(
             1
@@ -1030,9 +1021,7 @@ async def test_tool_error_preserves_prompt_and_prior_messages(
     bad = NativeToolCall(
         id="bad",
         name=QUERY,
-        arguments={
-            "sql": "SELECT schemes FROM gold.loan_repayments LIMIT 100"
-        },
+        arguments={"sql": "SELECT schemes FROM gold.loan_repayments LIMIT 100"},
     )
     good = NativeToolCall(
         id="good",
@@ -1059,24 +1048,39 @@ async def test_tool_error_preserves_prompt_and_prior_messages(
     await agent.run(state)
 
     assert client.requests[0]["messages"][-1] == {
-        "role": "user", "content": state["question"],
+        "role": "user",
+        "content": state["question"],
     }
     assert client.requests[0]["messages"][0] == {
-        "role": "system", "content": [
+        "role": "system",
+        "content": [
             {"type": "text", "text": agent.prompts.AGENT_SYSTEM_PROMPT},
             {"type": "text", "text": agent.prompts.build_agent_gold_schema()},
         ],
     }
     for previous, current in zip(client.requests, client.requests[1:]):
-        assert current["messages"][:len(previous["messages"])] == previous["messages"]
+        assert (
+            current["messages"][: len(previous["messages"])]
+            == previous["messages"]
+        )
     assert [m["role"] for m in client.requests[-1]["messages"]] == [
-        "system", "user", "assistant", "tool", "assistant", "tool",
+        "system",
+        "user",
+        "assistant",
+        "tool",
+        "assistant",
+        "tool",
     ]
     stored = history.load_messages("error-context", user="alice")
     assert stored[:-1] == client.requests[-1]["messages"]
     followup = history.begin_turn("error-context", "alice", "What next?")
-    next_state = {**_state(), "conversation_id": "error-context", "user": "alice",
-                  "turn_id": followup, "question": "What next?"}
+    next_state = {
+        **_state(),
+        "conversation_id": "error-context",
+        "user": "alice",
+        "turn_id": followup,
+        "question": "What next?",
+    }
     agent._initialize_messages(next_state, agent.get_catalog())
     assert next_state["messages"][:-1] == stored
     observation = next(
@@ -1089,8 +1093,12 @@ async def test_tool_error_preserves_prompt_and_prior_messages(
 
 
 @pytest.mark.anyio
-async def test_cancelled_batch_preserves_finished_results_and_closes_pending_calls(scripted):
-    pending_call = NativeToolCall(id="pending", name=QUERY, arguments={"sql": "SELECT 1"})
+async def test_cancelled_batch_preserves_finished_results_and_closes_pending_calls(
+    scripted,
+):
+    pending_call = NativeToolCall(
+        id="pending", name=QUERY, arguments={"sql": "SELECT 1"}
+    )
     response = _tool_response(_PAR_30, pending_call)
 
     async def execute(call, _context):
@@ -1105,7 +1113,10 @@ async def test_cancelled_batch_preserves_finished_results_and_closes_pending_cal
     with pytest.raises(asyncio.CancelledError):
         await agent.run(state)
     messages = history.load_messages("cancel-batch", user="alice")
-    assert [message["tool_call_id"] for message in messages[-2:]] == ["call_1", "pending"]
+    assert [message["tool_call_id"] for message in messages[-2:]] == [
+        "call_1",
+        "pending",
+    ]
     assert json.loads(str(messages[-2]["content"]))["status"] == "ok"
     assert json.loads(str(messages[-1]["content"]))["code"] == "INTERRUPTED"
     assert history.pending_tool_calls(messages) == []
@@ -1126,7 +1137,12 @@ async def test_tool_parse_error_is_replayed_and_corrected(
     monkeypatch.setattr(agent.settings, "workbench_agent_max_rounds", 3)
     import httpx
 
-    from tests.nlq.test_llm_client import _client, _ok, _raw_tool_call, _tool_ok
+    from tests.nlq.test_llm_client import (
+        _client,
+        _ok,
+        _raw_tool_call,
+        _tool_ok,
+    )
 
     raw_calls = [
         _raw_tool_call(call_id="bad", name=name, arguments=arguments),
@@ -1136,9 +1152,13 @@ async def test_tool_parse_error_is_replayed_and_corrected(
     ]
     responses = [
         _tool_ok(*raw_calls),
-        _tool_ok(_raw_tool_call(
-            call_id="corrected", name=QUERY, arguments=json.dumps(_PAR_30.arguments)
-        )),
+        _tool_ok(
+            _raw_tool_call(
+                call_id="corrected",
+                name=QUERY,
+                arguments=json.dumps(_PAR_30.arguments),
+            )
+        ),
         _ok("PAR 30 is 4.2%."),
     ]
     requests = []
@@ -1170,9 +1190,16 @@ async def test_tool_parse_error_is_replayed_and_corrected(
     replay = requests[1]["messages"]
     assert replay[2]["tool_calls"] == raw_calls
     assert [message["role"] for message in replay] == [
-        "system", "user", "assistant", "tool", "tool",
+        "system",
+        "user",
+        "assistant",
+        "tool",
+        "tool",
     ]
-    assert [message["tool_call_id"] for message in replay[3:]] == ["bad", "good"]
+    assert [message["tool_call_id"] for message in replay[3:]] == [
+        "bad",
+        "good",
+    ]
     failure = json.loads(replay[3]["content"])
     assert failure["status"] == "error"
     assert failure["code"] == code
@@ -1181,7 +1208,7 @@ async def test_tool_parse_error_is_replayed_and_corrected(
         assert "decoded as JSON" in failure["message"]
     stored = history.load_messages(conversation_id, user="alice")
     assert stored[2:5] == replay[2:]
-    assert requests[2]["messages"][:len(replay)] == replay
+    assert requests[2]["messages"][: len(replay)] == replay
     assert stored[:-1] == requests[2]["messages"]
     assert history.pending_tool_calls(stored) == []
 
@@ -1196,8 +1223,14 @@ async def test_protocol_error_surfaces_without_synthetic_prompts(scripted):
     with pytest.raises(LLMProtocolError, match="missing tool call ID"):
         await agent.run(state)
     assert len(client.requests) == 1
-    assert history.load_messages("malformed", user="alice") == client.requests[0]["messages"]
-    assert [message["role"] for message in client.requests[0]["messages"]] == ["system", "user"]
+    assert (
+        history.load_messages("malformed", user="alice")
+        == client.requests[0]["messages"]
+    )
+    assert [message["role"] for message in client.requests[0]["messages"]] == [
+        "system",
+        "user",
+    ]
 
 
 @pytest.mark.anyio
@@ -1253,7 +1286,8 @@ async def test_model_can_call_multiple_resource_tools_before_answering(
     assert sum(bool(m.get("tool_calls")) for m in record.messages) == 2
     assert [
         call["function"]["name"]
-        for message in record.messages for call in message.get("tool_calls", [])
+        for message in record.messages
+        for call in message.get("tool_calls", [])
     ] == [QUERY, SEARCH_CURATED_KNOWLEDGE]
     assert any(
         "FINAL_ANSWER_NOT_SUBMITTED" in frame for frame in _frames(state)
@@ -1303,7 +1337,8 @@ async def test_invalid_continuation_call_is_persisted_and_returned_to_model(
     assert record is not None
     assert [
         call["id"]
-        for message in record.messages for call in message.get("tool_calls", [])
+        for message in record.messages
+        for call in message.get("tool_calls", [])
     ] == ["valid", "invalid_next"]
 
 
@@ -1324,7 +1359,10 @@ async def test_partially_invalid_batch_keeps_replay_parity(
 
     record = history.get("partial-batch", user="alice")
     assert record is not None
-    exchange = {"calls": record.messages[2]["tool_calls"], "tools": [m for m in record.messages if m["role"] == "tool"]}
+    exchange = {
+        "calls": record.messages[2]["tool_calls"],
+        "tools": [m for m in record.messages if m["role"] == "tool"],
+    }
     assert [call["id"] for call in exchange["calls"]] == ["call_1", "bad"]
     assert [message["tool_call_id"] for message in exchange["tools"]] == [
         "call_1",
@@ -1332,7 +1370,8 @@ async def test_partially_invalid_batch_keeps_replay_parity(
     ]
     assert json.loads(str(exchange["tools"][0]["content"]))["status"] == "ok"
     assert (
-        json.loads(str(exchange["tools"][1]["content"]))["code"] == "TOOL_NOT_FOUND"
+        json.loads(str(exchange["tools"][1]["content"]))["code"]
+        == "TOOL_NOT_FOUND"
     )
     observed = [
         message
@@ -1392,7 +1431,10 @@ async def test_outbound_policy_denial_gets_one_native_repair(
     state = _run_state("web-repair", "Search")
     await agent.run(state)
 
-    assert all(request["tool_choice"] in {"required", "auto"} for request in client.requests)
+    assert all(
+        request["tool_choice"] in {"required", "auto"}
+        for request in client.requests
+    )
     denial = next(
         json.loads(message["content"])
         for message in client.requests[1]["messages"]
@@ -1449,7 +1491,10 @@ async def test_unresolved_policy_denial_ends_with_an_application_refusal(
     frames = _frames(state)
 
     assert len(client.requests) == 3
-    assert all(request["tool_choice"] in {"required", "auto"} for request in client.requests)
+    assert all(
+        request["tool_choice"] in {"required", "auto"}
+        for request in client.requests
+    )
     refusal = next(
         json.loads(frame.split("data: ", 1)[1])
         for frame in frames
@@ -1525,9 +1570,7 @@ async def test_budget_spent_after_data_reports_completion_failure(
 
 
 @pytest.mark.anyio
-async def test_deadline_is_checked_in_the_loop_condition(
-    scripted, monkeypatch
-):
+async def test_deadline_is_checked_in_the_loop_condition(scripted, monkeypatch):
     monkeypatch.setattr(agent.settings, "nlq_request_budget_s", 0.0)
     client = scripted(
         [_tool_response(_PAR_30)], lambda call, _ctx: _async(_card(call))
@@ -1540,12 +1583,20 @@ async def test_deadline_is_checked_in_the_loop_condition(
 
 @pytest.mark.anyio
 @pytest.mark.parametrize(
-    "failure", ["context", "generation", "visible_generation", "output_limit", "repeated"]
+    "failure",
+    [
+        "context",
+        "generation",
+        "visible_generation",
+        "output_limit",
+        "repeated",
+    ],
 )
 async def test_select_recovers_context_overflow_with_compacted_input(
     monkeypatch, failure
 ):
     import math
+
     from app.services.nlq.llm.client import LLMContextOverflow, LLMIncomplete
 
     class ContextClient:
@@ -1567,7 +1618,9 @@ async def test_select_recovers_context_overflow_with_compacted_input(
             if kwargs.get("call_purpose") == "compaction":
                 self.summaries.append(kwargs)
                 return _result(content="Older task: query q1 showed 42 loans.")
-            self.requests.append({**kwargs, "messages": deepcopy(kwargs["messages"])})
+            self.requests.append(
+                {**kwargs, "messages": deepcopy(kwargs["messages"])}
+            )
             if len(self.requests) == 1 or failure == "repeated":
                 if failure in {"context", "repeated"}:
                     raise LLMContextOverflow("context length exceeded")
@@ -1608,10 +1661,14 @@ async def test_select_recovers_context_overflow_with_compacted_input(
         assert result.text == "Recovered answer"
     assert len(client.requests) == 2
     assert client.summaries
-    assert [step["status"] for step in state["trace"]] == ["running", "complete"]
+    assert [step["status"] for step in state["trace"]] == [
+        "running",
+        "complete",
+    ]
     assert state["trace"][0]["label"] == "Compacting conversation…"
     assert all(
-        state["emit"].get_nowait().startswith("event: trace\n") for _ in range(2)
+        state["emit"].get_nowait().startswith("event: trace\n")
+        for _ in range(2)
     )
     assert len(json.dumps(client.requests[-1]["messages"])) < len(
         json.dumps(client.requests[0]["messages"])
@@ -1633,9 +1690,7 @@ async def test_composed_answer_persists_multiple_queries_and_source(
     )
     retrieval = NativeToolCall(
         id="source-evidence",
-        name=SEARCH_PUBLIC_WEB
-        if source == "web"
-        else SEARCH_CURATED_KNOWLEDGE,
+        name=SEARCH_PUBLIC_WEB if source == "web" else SEARCH_CURATED_KNOWLEDGE,
         arguments={"search_query": "policy"}
         if source == "web"
         else {"domain": "concepts", "query": "policy"},
@@ -1804,9 +1859,7 @@ async def test_submission_recovery_is_bounded(scripted, monkeypatch, recovery):
         {"card_reference": "failed"},
     ],
 )
-async def test_composed_reference_feedback_can_be_repaired(
-    scripted, reference
-):
+async def test_composed_reference_feedback_can_be_repaired(scripted, reference):
     from app.services.workbench import agent_executor
 
     failed_query = NativeToolCall(

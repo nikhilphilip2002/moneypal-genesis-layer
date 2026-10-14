@@ -1,6 +1,8 @@
-from genesis_core.schema import IntelligenceResponse as IntelligenceResponse
-from genesis_core.schema import SourceRef
 from pydantic import BaseModel, Field
+
+from genesis_core.schema import IntelligenceResponse, SourceRef
+
+__all__ = ["IntelligenceResponse", "SourceRef"]
 
 Source = SourceRef
 

@@ -183,9 +183,7 @@ def provider_schema(raw_schema: dict[str, Any]) -> dict[str, Any]:
 
     schema = project(raw)
     if not isinstance(schema, dict) or schema.get("type") != "object":
-        raise ProviderSchemaError(
-            "tool input schema is not a top-level object"
-        )
+        raise ProviderSchemaError("tool input schema is not a top-level object")
     return schema
 
 

@@ -8,20 +8,20 @@ from app.services.nlq.contracts import Lineage, LookupPlan
 from app.services.nlq.executor import QueryResult
 from app.services.nlq.lookup import (
     _agent_accounts,
-    _agent_customers,
-    _candidate_agents,
     _agent_count,
+    _agent_customers,
     _agent_details,
-    _shape_agent_details,
-    _branch_directory,
     _branch_customers,
+    _branch_directory,
+    _candidate_agents,
     _customer_summary,
     _gender_sample,
-    completions,
     _loan_details,
-    _repayment_history,
     _product_details,
+    _repayment_history,
+    _shape_agent_details,
     _shape_loan_details,
+    completions,
     detect,
     resolve_followup,
     run,
@@ -201,9 +201,7 @@ from app.services.nlq.lookup import (
         ),
     ],
 )
-def test_lookup_intent_is_phrase_independent(
-    question, selector, value, detail
-):
+def test_lookup_intent_is_phrase_independent(question, selector, value, detail):
     result = detect(question)
 
     assert result is not None
@@ -277,9 +275,7 @@ def test_single_loan_result_displays_only_the_requested_fact():
             sql="SELECT 1",
             row_count=1,
         ),
-        lineage=Lineage(
-            path="validated_sql", sql="SELECT 1", unverified=False
-        ),
+        lineage=Lineage(path="validated_sql", sql="SELECT 1", unverified=False),
         unit_hints={
             "customer_id": "text",
             "loan_account_number": "text",
@@ -407,9 +403,7 @@ def test_missing_agent_phone_is_reported_as_unavailable_not_as_an_unrelated_metr
             sql="SELECT 1",
             row_count=1,
         ),
-        lineage=Lineage(
-            path="validated_sql", sql="SELECT 1", unverified=False
-        ),
+        lineage=Lineage(path="validated_sql", sql="SELECT 1", unverified=False),
         unit_hints={"agent_code": "text", "mobile": "text"},
     )
     _shape_agent_details(
@@ -563,9 +557,7 @@ def test_agent_customer_table_accepts_add_and_misspelled_and_refinement():
 
 
 def test_agent_name_account_lookup_preserves_requested_fields_for_resolution():
-    plan_result = detect(
-        "borrowers name,sanctioned amount under agent vanitha"
-    )
+    plan_result = detect("borrowers name,sanctioned amount under agent vanitha")
 
     assert plan_result is not None
     assert plan_result.selector == "agent_name"
@@ -900,9 +892,7 @@ def test_numeric_identifiers_follow_text_units_in_rows_and_summary():
             sql="SELECT 1",
             row_count=1,
         ),
-        lineage=Lineage(
-            path="validated_sql", sql="SELECT 1", unverified=False
-        ),
+        lineage=Lineage(path="validated_sql", sql="SELECT 1", unverified=False),
         unit_hints={"customer_id": "text", "loan_account_number": "text"},
     )
 

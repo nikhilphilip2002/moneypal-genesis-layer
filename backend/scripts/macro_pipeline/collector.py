@@ -102,8 +102,7 @@ def load_sources() -> list[dict]:
 
     def slug_for(host: str) -> str:
         base = "".join(
-            c if c.isalnum() else "_"
-            for c in host.lower().removeprefix("www.")
+            c if c.isalnum() else "_" for c in host.lower().removeprefix("www.")
         )
         base = base.strip("_") or "source"
         index = seen.get(base, 0) + 1
@@ -235,9 +234,7 @@ def _download(
 
     if response.status_code == 304 and previous:
         response.close()
-        log.info(
-            "[collector] unchanged (304): %s", Path(previous["path"]).name
-        )
+        log.info("[collector] unchanged (304): %s", Path(previous["path"]).name)
         return DownloadRecord(
             url=url,
             path=Path(previous["path"]),
@@ -297,9 +294,7 @@ def _crawl_site(
     source: dict, seen_urls: set[str], known: dict[str, dict]
 ) -> CollectResult:
     """BFS one source. ``known`` maps download URL -> previous-run state entry."""
-    result = CollectResult(
-        source_slug=source["slug"], source_url=source["url"]
-    )
+    result = CollectResult(source_slug=source["slug"], source_url=source["url"])
     output_dir = settings.macro_data_dir / source["slug"]
     output_dir.mkdir(parents=True, exist_ok=True)
 

@@ -14,7 +14,9 @@ async def test_prompt_progress_is_forwarded_to_the_model_trace():
     class Client:
         profile = type("Profile", (), {"supports_prompt_progress": True})()
 
-        async def complete(self, *, on_text, on_reasoning, on_tool_call, on_prompt_progress):
+        async def complete(
+            self, *, on_text, on_reasoning, on_tool_call, on_prompt_progress
+        ):
             await on_prompt_progress(42)
             await on_prompt_progress(None)
             return LLMResult(text="Done", model="m", provider="llm")
@@ -72,9 +74,7 @@ async def test_answer_deltas_are_live_and_never_retracted(outcome):
         with pytest.raises(
             LLMTimeout if outcome == "error" else asyncio.CancelledError
         ):
-            await complete_answer(
-                Client(), {"emit": queue}, trace_id="model-1"
-            )
+            await complete_answer(Client(), {"emit": queue}, trace_id="model-1")
     else:
         result = await complete_answer(
             Client(), {"emit": queue}, trace_id="model-1"

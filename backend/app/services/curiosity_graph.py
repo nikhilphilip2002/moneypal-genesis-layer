@@ -206,7 +206,7 @@ def _agent_label(agent_code: Any, agent_name: Any) -> str:
 
 
 def _metrics(values: Iterable[Any]) -> dict[str, Any]:
-    row = dict(zip(METRIC_COLUMNS, values))
+    row = dict(zip(METRIC_COLUMNS, values, strict=False))
     outstanding = _money(row["principal_outstanding"])
     accounts = int(row["account_count"] or 0)
     covered = int(row["risk_covered_accounts"] or 0)
@@ -510,7 +510,7 @@ def _get_portfolio_data(entity_num: str = GICC_ENTITY) -> dict[str, Any]:
         cur.execute("SET LOCAL enable_nestloop = off")
         cur.execute(
             f"""
-            SELECT 
+            SELECT
                 l.loan_account_number::text,
                 l.customer_id::text,
                 l.customer_name,
@@ -699,9 +699,7 @@ def _calc_kpis(subset: list[dict[str, Any]]) -> dict[str, Any]:
     par30 = _money(
         sum(r["principal_outstanding"] for r in subset if r["is_par30"])
     )
-    npa = _money(
-        sum(r["principal_outstanding"] for r in subset if r["is_npa"])
-    )
+    npa = _money(sum(r["principal_outstanding"] for r in subset if r["is_npa"]))
     covered = sum(1 for r in subset if r["has_risk"])
     max_as_of = max(
         (r["data_as_of"] for r in subset if r["data_as_of"]), default=None

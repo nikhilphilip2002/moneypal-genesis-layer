@@ -6,8 +6,8 @@ Run (from backend/):  uvicorn app.main:app --port 8000 --reload
 """
 
 import asyncio
-import logging
 import contextlib
+import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -102,9 +102,7 @@ async def _lifespan(_app: FastAPI):
 
 
 def create_app() -> FastAPI:
-    app = FastAPI(
-        title="Moneypal Genesis Intelligence API", lifespan=_lifespan
-    )
+    app = FastAPI(title="Moneypal Genesis Intelligence API", lifespan=_lifespan)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_origins,

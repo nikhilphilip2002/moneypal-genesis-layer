@@ -8,7 +8,6 @@ import pytest
 
 from app.services import regulatory_reports as reports
 
-
 PAN_RE = re.compile(r"\b[A-Z]{5}\d{4}[A-Z]\b")
 EMAIL_RE = re.compile(r"[\w.+-]+@[\w-]+\.[\w.]+")
 

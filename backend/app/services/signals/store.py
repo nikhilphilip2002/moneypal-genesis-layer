@@ -56,8 +56,11 @@ class StoredSignal:
 
     @property
     def is_standing(self) -> bool:
-        """Seen on more than one scan. Worth showing differently: a problem that has been
-        there for a week is a different conversation from one that appeared last night."""
+        """Seen on more than one scan.
+
+        Worth showing differently: a problem that has been there for a week is a
+        different conversation from one that appeared last night.
+        """
         return self.first_seen_at != self.last_seen_at
 
 

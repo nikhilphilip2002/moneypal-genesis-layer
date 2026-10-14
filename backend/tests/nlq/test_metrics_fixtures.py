@@ -172,7 +172,9 @@ class TestPointInTimeMetrics:
             warehouse_cursor,
             QuerySpec(
                 metrics=["par_30"],
-                period=Period(start=date(2026, 1, 1), end=date.fromisoformat(AS_OF)),
+                period=Period(
+                    start=date(2026, 1, 1), end=date.fromisoformat(AS_OF)
+                ),
             ),
         )
         assert close(actual, expected, 0.0001)
@@ -184,7 +186,9 @@ class TestPointInTimeMetrics:
             warehouse_cursor,
             QuerySpec(
                 metrics=["par_30"],
-                period=Period(start=date(2026, 1, 1), end=date.fromisoformat(AS_OF)),
+                period=Period(
+                    start=date(2026, 1, 1), end=date.fromisoformat(AS_OF)
+                ),
             ),
         )
         assert correct is not None and correct > 0
@@ -198,7 +202,9 @@ class TestPointInTimeMetrics:
             warehouse_cursor,
             QuerySpec(
                 metrics=["principal_outstanding"],
-                period=Period(start=date(2026, 1, 1), end=date.fromisoformat(AS_OF)),
+                period=Period(
+                    start=date(2026, 1, 1), end=date.fromisoformat(AS_OF)
+                ),
             ),
         )
         assert close(actual, expected)
@@ -226,7 +232,9 @@ class TestPointInTimeMetrics:
             warehouse_cursor,
             QuerySpec(
                 metrics=["principal_outstanding"],
-                period=Period(start=date(2026, 1, 1), end=date.fromisoformat(AS_OF)),
+                period=Period(
+                    start=date(2026, 1, 1), end=date.fromisoformat(AS_OF)
+                ),
             ),
         )
         whole_book = scalar(
@@ -242,7 +250,9 @@ class TestPointInTimeMetrics:
         compiled = compile_spec(
             QuerySpec(
                 metrics=["principal_outstanding"],
-                period=Period(start=date(2026, 1, 1), end=date.fromisoformat(AS_OF)),
+                period=Period(
+                    start=date(2026, 1, 1), end=date.fromisoformat(AS_OF)
+                ),
             )
         )
         assert any("5,588" in w for w in compiled.warnings)
@@ -252,7 +262,9 @@ class TestPointInTimeMetrics:
             warehouse_cursor,
             QuerySpec(
                 metrics=["delinquent_account_count"],
-                period=Period(start=date(2026, 1, 1), end=date.fromisoformat(AS_OF)),
+                period=Period(
+                    start=date(2026, 1, 1), end=date.fromisoformat(AS_OF)
+                ),
             ),
         )
         expected = hand_scalar(
@@ -267,7 +279,9 @@ class TestPointInTimeMetrics:
             warehouse_cursor,
             QuerySpec(
                 metrics=["par_90"],
-                period=Period(start=date(2026, 1, 1), end=date.fromisoformat(AS_OF)),
+                period=Period(
+                    start=date(2026, 1, 1), end=date.fromisoformat(AS_OF)
+                ),
             ),
         )
         expected = hand_scalar(
@@ -311,14 +325,18 @@ class TestBreakdownsSumToTheTotal:
             QuerySpec(
                 metrics=["principal_outstanding"],
                 dimensions=["dpd_bucket"],
-                period=Period(start=date(2026, 1, 1), end=date.fromisoformat(AS_OF)),
+                period=Period(
+                    start=date(2026, 1, 1), end=date.fromisoformat(AS_OF)
+                ),
             ),
         )
         total = scalar(
             warehouse_cursor,
             QuerySpec(
                 metrics=["principal_outstanding"],
-                period=Period(start=date(2026, 1, 1), end=date.fromisoformat(AS_OF)),
+                period=Period(
+                    start=date(2026, 1, 1), end=date.fromisoformat(AS_OF)
+                ),
             ),
         )
         assert close(sum(float(r[1]) for r in rows), total, 0.01)

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+
 import pytest
 
 from app.core.tool_names import (
@@ -416,13 +417,23 @@ def test_observation_is_bounded_while_durable_replay_keeps_every_row(
     monkeypatch.setattr(history, "_MEMORY", {})
     history.begin_turn("c1", "alice", "Question")
     executed.context = _context()
-    durable = json.dumps(executed.result_payload(), default=str, separators=(",", ":"))
-    content, footer = executed.observation_message()["content"].split("\n\n[Tool output clipped] ")
+    durable = json.dumps(
+        executed.result_payload(), default=str, separators=(",", ":")
+    )
+    content, footer = executed.observation_message()["content"].split(
+        "\n\n[Tool output clipped] "
+    )
     metadata = json.loads(footer.splitlines()[0])
     assert len(executed.observation_message()["content"]) <= 5000
-    assert content == durable[:len(content)]
-    assert metadata == {"output_id": "call_big", "total_length": len(durable), "next_offset": len(content)}
-    assert history._MEMORY[("alice", "c1")].tool_outputs == {"call_big": durable}
+    assert content == durable[: len(content)]
+    assert metadata == {
+        "output_id": "call_big",
+        "total_length": len(durable),
+        "next_offset": len(content),
+    }
+    assert history._MEMORY[("alice", "c1")].tool_outputs == {
+        "call_big": durable
+    }
 
 
 def test_small_results_replay_unchanged():

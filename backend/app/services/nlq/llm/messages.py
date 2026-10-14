@@ -86,9 +86,7 @@ def coalesce_system_messages(
     return [
         {
             "role": "system",
-            "content": "\n\n".join(
-                group[0]["text"] for group in system_groups
-            ),
+            "content": "\n\n".join(group[0]["text"] for group in system_groups),
         },
         *conversation,
     ]

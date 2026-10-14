@@ -1,21 +1,21 @@
 from __future__ import annotations
 
 import contextvars
+import uuid
 from contextlib import contextmanager
 from typing import Any, Iterator
-import uuid
 
-_current_trace: contextvars.ContextVar[dict[str, Any]] = (
+_current_trace: contextvars.ContextVar[dict[str, Any] | None] = (
     contextvars.ContextVar(
         "moneypal_trace_context",
-        default={},
+        default=None,
     )
 )
 
 
 def get_trace_context() -> dict[str, Any]:
     """Return a copy of the current thread/task trace context."""
-    return dict(_current_trace.get())
+    return dict(_current_trace.get() or {})
 
 
 def set_trace_context(
@@ -28,7 +28,7 @@ def set_trace_context(
     **kwargs: Any,
 ) -> contextvars.Token:
     """Update trace context variables, returning a Token to restore previous state."""
-    current = dict(_current_trace.get())
+    current = dict(_current_trace.get() or {})
     if trace_id is not None:
         current["trace_id"] = trace_id
     elif "trace_id" not in current:

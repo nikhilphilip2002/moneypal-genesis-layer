@@ -59,9 +59,7 @@ class TestBuild:
             catalog=catalog,
             period=Period(relative="last_quarter"),
         )
-        assert all(
-            s.spec.period.relative == "last_quarter" for s in spec.steps
-        )
+        assert all(s.spec.period.relative == "last_quarter" for s in spec.steps)
 
     def test_filters_are_applied_to_every_step(self, catalog):
         gold_loans = [Filter(field="product", op="eq", value="1")]

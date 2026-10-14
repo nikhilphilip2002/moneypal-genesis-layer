@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import pytest
 
-from app.services.workbench import access, history, nodes, tools
 from app.api.routes.workbench import AskRequest, ToolRequest
+from app.services.workbench import access, history, nodes, tools
 
 
 @pytest.fixture(autouse=True)
@@ -25,8 +25,7 @@ def test_source_groups_match_the_product_contract():
         is access.SourceGroup.EXTERNAL_INDEXED
     )
     assert (
-        access.source_group("regulatory")
-        is access.SourceGroup.EXTERNAL_INDEXED
+        access.source_group("regulatory") is access.SourceGroup.EXTERNAL_INDEXED
     )
     assert access.source_group("web") is access.SourceGroup.LIVE_EXTERNAL
 

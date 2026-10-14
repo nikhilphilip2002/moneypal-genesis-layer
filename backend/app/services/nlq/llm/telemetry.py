@@ -21,7 +21,6 @@ from typing import Any, Iterator, Literal, Sequence
 
 from app.services.nlq.llm.messages import ChatMessage
 
-
 CallPurpose = Literal[
     "agent_select",
     "agent_synthesize",

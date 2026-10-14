@@ -10,8 +10,8 @@ from dataclasses import dataclass, field
 from datetime import date
 from typing import Any, Awaitable, Callable
 
-from app.core.tool_names import READ_TOOL_OUTPUT, SUBMIT_ANSWER
 from app.core.config import settings
+from app.core.tool_names import READ_TOOL_OUTPUT, SUBMIT_ANSWER
 from app.services.nlq.catalog import Catalog
 from app.services.nlq.executor import QueryResult
 from app.services.nlq.llm import NativeToolCall
@@ -58,8 +58,11 @@ class AgentExecutionError(RuntimeError):
     retryable = True
 
 
-class AgentToolTimeout(AgentExecutionError):
+class AgentToolTimeoutError(AgentExecutionError):
     code = "TOOL_TIMEOUT"
+
+
+AgentToolTimeout = AgentToolTimeoutError
 
 
 @dataclass(frozen=True, slots=True)
@@ -207,25 +210,35 @@ class ExecutedAgentCall:
             from app.services.workbench import history
 
             history.store_tool_output(
-                self.context.conversation_id, self.context.user,
-                self.call.id, content
+                self.context.conversation_id,
+                self.context.user,
+                self.call.id,
+                content,
             )
             offset = min(limit, settings.workbench_tool_output_page_chars)
             while True:
-                metadata = json.dumps({
-                    "output_id": self.call.id,
-                    "total_length": len(content),
-                    "next_offset": offset,
-                }, separators=(",", ":"))
+                metadata = json.dumps(
+                    {
+                        "output_id": self.call.id,
+                        "total_length": len(content),
+                        "next_offset": offset,
+                    },
+                    separators=(",", ":"),
+                )
                 footer = (
-                    "\n\n[Tool output clipped] " + metadata
+                    "\n\n[Tool output clipped] "
+                    + metadata
                     + f"\nContinue with {READ_TOOL_OUTPUT}(id=output_id, offset=next_offset)."
                 )
                 if offset + len(footer) <= limit or offset == 0:
                     break
                 offset = max(0, limit - len(footer))
             content = content[:offset] + footer
-        return {"role": "tool", "tool_call_id": self.call.id, "content": content}
+        return {
+            "role": "tool",
+            "tool_call_id": self.call.id,
+            "content": content,
+        }
 
 
 def observation_limit_chars(tool_name: str | None) -> int:
@@ -553,7 +566,6 @@ async def _execute_agent_call(
     if call.error is not None:
         raise AgentToolArgumentsInvalid(call.error["message"])
     from app.mcp import postgres_client
-
     from app.mcp.tool_catalog import catalog as mcp_catalog
 
     if mcp_catalog.is_postgres(call.name) or postgres_client.is_model_tool(

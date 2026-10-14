@@ -16,7 +16,6 @@ from app.services.workbench.agent_tools import (
     visible_runtime_tool_names,
 )
 
-
 ToolOwner = Literal["workbench", "postgres"]
 
 
@@ -146,9 +145,7 @@ class ToolCatalog:
             pass
         return self.readiness()
 
-    async def model_tool_definitions(
-        self, policy: Any
-    ) -> list[dict[str, Any]]:
+    async def model_tool_definitions(self, policy: Any) -> list[dict[str, Any]]:
         if not self._local_ready:
             await self.discover_local()
         allowed_local = set(visible_runtime_tool_names(policy))

@@ -17,8 +17,7 @@ from app.core.tool_names import (
 )
 from app.mcp import workbench_client, workbench_server
 from app.mcp.tool_catalog import ToolCatalog
-from app.services.workbench import access
-from app.services.workbench import agent_executor
+from app.services.workbench import access, agent_executor
 from app.services.workbench.agent_tools import RUNTIME_TOOL_POLICIES
 from app.services.workbench.results import SourceResult
 
@@ -57,9 +56,7 @@ async def test_discovery_is_the_model_contract_source():
 
     catalog = ToolCatalog()
     await catalog.discover_local()
-    definitions = await catalog.model_tool_definitions(
-        _context().source_policy
-    )
+    definitions = await catalog.model_tool_definitions(_context().source_policy)
     assert {item["function"]["name"] for item in definitions} == set(
         RUNTIME_TOOL_POLICIES
     )
@@ -344,9 +341,7 @@ async def test_clarification_with_refusal_reason_reports_only_the_selected_branc
     }
     async with Client(workbench_server.mcp, mode="legacy") as client:
         with pytest.raises(ToolError) as error:
-            await client.call_tool(
-                SUBMIT_ANSWER, {"submission": submission}
-            )
+            await client.call_tool(SUBMIT_ANSWER, {"submission": submission})
         message = str(error.value)
         assert "1 validation error" in message
         assert "submission.clarify.reason_code" in message

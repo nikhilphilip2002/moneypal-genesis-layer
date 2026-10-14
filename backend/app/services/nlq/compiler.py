@@ -85,7 +85,7 @@ class CompiledQuery:
 
 
 def _alias(table: str) -> str:
-    return _ALIASES.get(table, table.split(".")[-1][:4])
+    return _ALIASES.get(table, table.rsplit(".", maxsplit=1)[-1][:4])
 
 
 def compile_spec(
@@ -471,7 +471,7 @@ def _join_plan(
         join = cat.join_between(base_table, table)
         if join is None:
             raise CompileError(
-                f"no declared join between {base_table.split('.')[-1]} and "
+                f"no declared join between {base_table.rsplit('.', maxsplit=1)[-1]} and "
                 f"{table.split('.')[-1]}, so this combination cannot be answered"
             )
         traverses_forward = join.left == base_table

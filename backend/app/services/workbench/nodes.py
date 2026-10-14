@@ -12,13 +12,12 @@ import logging
 import re
 from typing import TYPE_CHECKING, Any
 
-from genesis_core import rag
-
 from app.core.config import MACRO_COLLECTION
 from app.services.nlq.catalog import get_catalog
 from app.services.nlq.catalog.retrieval import retrieve
 from app.services.nlq.normalization import normalize_lending_question
 from app.services.workbench.results import Evidence, SourceResult
+from genesis_core import rag
 
 logger = logging.getLogger(__name__)
 
@@ -222,9 +221,7 @@ async def run_knowledge(
             )
     answer = _catalog_definition_fallback(matched.metrics, cat)
     if not answer and context_lines:
-        answer = " ".join(
-            line.removeprefix("- ") for line in context_lines[:2]
-        )
+        answer = " ".join(line.removeprefix("- ") for line in context_lines[:2])
     if not answer:
         return SourceResult(
             source="knowledge",
@@ -365,9 +362,7 @@ async def run_competitive(
     )
 
 
-def _matching_institutions(
-    intent: str, institutions: list[dict]
-) -> list[dict]:
+def _matching_institutions(intent: str, institutions: list[dict]) -> list[dict]:
     normalized = re.sub(r"[^a-z0-9]+", " ", intent.lower()).strip()
     words = set(normalized.split())
     matched: list[dict] = []
@@ -423,12 +418,14 @@ async def run_regulatory(
     *,
     policy: "SourceAccessPolicy | None" = None,
 ) -> SourceResult:
-    """Answer from regulatory intelligence. The question is matched to a regulation category
-    and that category's grounded detail is returned; an unmatched question falls to the
-    first category rather than guessing."""
+    """Answer from regulatory intelligence.
+
+    The question is matched to a regulation category and that category's
+    grounded detail is returned; an unmatched question falls to the first
+    category rather than guessing.
+    """
     _require_external(policy, "regulatory")
-    from app.services import regulatory_rag
-    from app.services import regulatory
+    from app.services import regulatory, regulatory_rag
 
     try:
         categories = regulatory.list_categories()
@@ -534,9 +531,11 @@ def _intel_card(source: str, resp) -> SourceResult:
 
 
 def _best_category(intent: str, categories: list):
-    """Pick the category whose name best overlaps the question; first category on a tie or
-    no overlap. Deliberately simple — a keyword hit is enough to route, and the category's
-    own grounded detail does the real work."""
+    """Pick the category whose name best overlaps the question; first category on a tie or no overlap.
+
+    Deliberately simple — a keyword hit is enough to route, and the category's
+    own grounded detail does the real work.
+    """
     normalized = re.sub(r"[^a-z0-9]+", " ", intent.lower())
     words = {w for w in normalized.split() if len(w) > 2}
     aliases = {

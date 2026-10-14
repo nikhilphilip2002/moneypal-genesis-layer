@@ -30,8 +30,11 @@ MAX_PLAN_COST = 5_000_000.0
 
 
 class ExecutionError(RuntimeError):
-    """A query that failed to run. The message shown to the user is deliberately generic —
-    a raw Postgres error leaks schema (§2.6)."""
+    """A query that failed to run.
+
+    The message shown to the user is deliberately generic — a raw Postgres error
+    leaks schema (§2.6).
+    """
 
     code = "SQL_EXECUTION_ERROR"
     retryable = True
@@ -110,9 +113,7 @@ def execute(
                     detail=f"estimated plan cost {plan_cost:,.0f} exceeds {MAX_PLAN_COST:,.0f}",
                 )
             cur.execute(sql, params)
-            columns = (
-                [d[0] for d in cur.description] if cur.description else []
-            )
+            columns = [d[0] for d in cur.description] if cur.description else []
             raw_rows = cur.fetchall()
             conn.rollback()  # read-only: end the transaction without holding locks
     except ExecutionError:
@@ -136,7 +137,9 @@ def execute(
         ) from exc
 
     duration_ms = int((time.perf_counter() - started) * 1000)
-    rows = [dict(zip(columns, _coerce_row(row))) for row in raw_rows]
+    rows = [
+        dict(zip(columns, _coerce_row(row), strict=False)) for row in raw_rows
+    ]
     limit = min(
         compiled.params.get("row_limit", settings.nlq_max_rows),
         settings.nlq_max_rows,
@@ -181,9 +184,7 @@ def execute_raw(sql: str, *, explain_gate: bool = True) -> QueryResult:
                     detail=f"estimated plan cost {plan_cost:,.0f}",
                 )
             cur.execute(sql)
-            columns = (
-                [d[0] for d in cur.description] if cur.description else []
-            )
+            columns = [d[0] for d in cur.description] if cur.description else []
             raw_rows = cur.fetchall()
             conn.rollback()
     except ExecutionError:
@@ -202,7 +203,9 @@ def execute_raw(sql: str, *, explain_gate: bool = True) -> QueryResult:
             detail=f"{type(exc).__name__}: {exc}",
         ) from exc
 
-    rows = [dict(zip(columns, _coerce_row(row))) for row in raw_rows]
+    rows = [
+        dict(zip(columns, _coerce_row(row), strict=False)) for row in raw_rows
+    ]
     return QueryResult(
         rows=rows,
         columns=columns,
@@ -248,8 +251,11 @@ def _explain(conn: Any, cur: Any, sql: str, params: list[Any]) -> float | None:
 
 
 def _coerce_row(row: Any) -> list[Any]:
-    """JSON-safe values. Decimal -> float and dates -> ISO strings, because a ChartSpec is
-    serialised straight to the browser."""
+    """JSON-safe values.
+
+    Decimal -> float and dates -> ISO strings, because a ChartSpec is serialised
+    straight to the browser.
+    """
     out = []
     for value in row:
         if isinstance(value, Decimal):

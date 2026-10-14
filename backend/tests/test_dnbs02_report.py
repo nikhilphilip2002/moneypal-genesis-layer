@@ -15,6 +15,7 @@ from app.services import dnbs02_service as svc
 from app.services import dnbs02_spec as spec
 from app.services.dnbs02_lineage import generate_dnbs02_lineage_excel
 from app.services.dnbs02_service import (
+    TABLE_BLOCKS,
     CellMapError,
     PeriodError,
     _find_label_row,
@@ -24,7 +25,6 @@ from app.services.dnbs02_service import (
     get_template_path,
     parse_period_range,
     validate_cell_map,
-    TABLE_BLOCKS,
 )
 
 PAN_RE = re.compile(r"\b[A-Z]{5}\d{4}[A-Z]\b")
@@ -160,8 +160,7 @@ class TestTemplateIntegrity:
         assert _norm(part8a["H13"].value) == "max"
         assert _norm(part8a["I13"].value).startswith("weighted average")
         assert all(
-            _norm(wb["DNBS02_PART8C"][f"{c}13"].value) == "amount"
-            for c in "CD"
+            _norm(wb["DNBS02_PART8C"][f"{c}13"].value) == "amount" for c in "CD"
         )
 
     def test_cell_map_matches_template(self):
@@ -220,9 +219,7 @@ def report():
 @pytest.fixture(scope="module")
 def workbook():
     return openpyxl.load_workbook(
-        io.BytesIO(
-            generate_dnbs02_excel(frequency="monthly", period="2026-05")
-        )
+        io.BytesIO(generate_dnbs02_excel(frequency="monthly", period="2026-05"))
     )
 
 
@@ -304,8 +301,7 @@ class TestReportData:
         ]
         assert borrower_types
         assert all(
-            value in {"Individual", "Corporate", ""}
-            for value in borrower_types
+            value in {"Individual", "Corporate", ""} for value in borrower_types
         )
         assert any(borrower_types)
 
@@ -329,9 +325,7 @@ class TestReportData:
     def test_coverage_is_disclosed(self, report):
         """genln_rpt_day covers product 16 only; the excluded remainder must be stated."""
         coverage = report["coverage"]
-        assert (
-            coverage["covered_lakhs"] == report["summary"]["total_loan_book"]
-        )
+        assert coverage["covered_lakhs"] == report["summary"]["total_loan_book"]
         assert coverage["uncovered_accounts"] > 0
         assert 0 < coverage["covered_pct"] < 100
 
@@ -417,9 +411,7 @@ class TestExcelExport:
                         str(cell.value)
                     ):
                         offences.append(f"{cell.coordinate}={cell.value!r}")
-            assert not offences, (
-                f"{name} carries reported data: {offences[:5]}"
-            )
+            assert not offences, f"{name} carries reported data: {offences[:5]}"
 
     def test_part1_values_land_on_their_rbi_lines(self, workbook, report):
         """Verified against the label in column B, not against a row number."""
@@ -463,9 +455,7 @@ class TestExcelExport:
                 msme["weighted_avg_interest_rate"]
             )
             assert sheet[f"C{row}"].value == msme["account_count"]
-            assert sheet[f"D{row}"].value == pytest.approx(
-                msme["amount_lakhs"]
-            )
+            assert sheet[f"D{row}"].value == pytest.approx(msme["amount_lakhs"])
         else:
             assert all(
                 sheet[f"{column}{row}"].value is None for column in "CDGHI"
@@ -695,9 +685,7 @@ class TestSpecRegistry:
 def lineage():
     return openpyxl.load_workbook(
         io.BytesIO(
-            generate_dnbs02_lineage_excel(
-                frequency="monthly", period="2026-05"
-            )
+            generate_dnbs02_lineage_excel(frequency="monthly", period="2026-05")
         )
     )
 

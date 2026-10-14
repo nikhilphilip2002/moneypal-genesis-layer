@@ -375,7 +375,7 @@ def search_entities(
                     """,
                     (like, term, term),
                 )
-                for cust_id, name, accts, disbursed, brn in cur.fetchall():
+                for cust_id, name, accts, _disbursed, brn in cur.fetchall():
                     results.append(
                         {
                             "id": f"CUST-{cust_id}",
@@ -953,9 +953,7 @@ def get_db_schema_graph(
                         )
                     return len(branch_schemes)
 
-                run_section(
-                    provenance, "branch_schemes", _branch_schemes, conn
-                )
+                run_section(provenance, "branch_schemes", _branch_schemes, conn)
 
                 for scheme in branch_schemes:
                     title = scheme_title(scheme["schm_code"], scheme_names)

@@ -20,7 +20,8 @@ class TestLoads:
     def test_catalog_loads_and_validates(self, catalog):
         assert catalog.metrics and catalog.dimensions and catalog.tables
         assert (
-            catalog.metrics["agent_linked_loans"].base_table == "gold.loan_accounts"
+            catalog.metrics["agent_linked_loans"].base_table
+            == "gold.loan_accounts"
         )
         assert catalog.dimensions["agent"].table == "gold.loan_accounts"
         assert catalog.dimensions["loan_agent"].decode == "agent_identity"
@@ -33,11 +34,12 @@ class TestLoads:
         assert loans is not None
         assert "company_code and customer_id" in loans.restrictions
         assert (
-            agents is not None
-            and "do not reconcile" in agents.coverage_warning
+            agents is not None and "do not reconcile" in agents.coverage_warning
         )
         assert "Use gold.loan_accounts" in agents.restrictions
-        assert "filter or group loans" in catalog.dimensions["agent"].description
+        assert (
+            "filter or group loans" in catalog.dimensions["agent"].description
+        )
         assert "company_code" in catalog.metrics["customer_count"].expression
 
     def test_version_is_content_addressed(self, catalog):
@@ -61,9 +63,7 @@ class TestLoads:
                     path.name
                 )
                 continue
-            assert isinstance(yaml.safe_load(path.read_text()), list), (
-                path.name
-            )
+            assert isinstance(yaml.safe_load(path.read_text()), list), path.name
 
     def test_every_gold_relation_has_a_complete_unique_column_section(
         self, catalog
@@ -124,9 +124,7 @@ class TestReferentialIntegrity:
         seen = set()
         for join in catalog.joins:
             pair = frozenset((join.left, join.right))
-            assert pair not in seen, (
-                f"two declared paths between {tuple(pair)}"
-            )
+            assert pair not in seen, f"two declared paths between {tuple(pair)}"
             seen.add(pair)
 
 
@@ -225,9 +223,7 @@ class TestEnums:
     def test_ambiguous_scheme_name_is_not_silently_mapped_to_one_code(
         self, catalog
     ):
-        assert (
-            catalog.enums["scheme"].code_for("Loan Against Property") is None
-        )
+        assert catalog.enums["scheme"].code_for("Loan Against Property") is None
 
 
 class TestSearch:

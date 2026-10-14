@@ -3,9 +3,8 @@
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
-from genesis_core import IntelligenceResponse
-
 from app.services import brief_cache, policy
+from genesis_core import IntelligenceResponse
 
 router = APIRouter(prefix="/policy", tags=["policy"])
 
@@ -34,11 +33,11 @@ def brief(req: PolicyBriefRequest, refresh: bool = False):
             ),
             refresh,
         )
-    except Exception:
+    except Exception as exc:
         raise HTTPException(
             503,
             "Policy synthesis is unavailable — intelligence services not reachable",
-        )
+        ) from exc
     if result is None:
         raise HTTPException(
             404, "No matching regulations or institutions found"

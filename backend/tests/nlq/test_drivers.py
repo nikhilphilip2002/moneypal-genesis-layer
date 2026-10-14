@@ -65,9 +65,7 @@ class TestFlowMetrics:
         )
         assert d.contributions[0].share == pytest.approx(1.0)
 
-    def test_a_member_absent_from_the_prior_period_counts_as_new(
-        self, catalog
-    ):
+    def test_a_member_absent_from_the_prior_period_counts_as_new(self, catalog):
         current = [
             {"branch": "1", "disbursement_total": 100.0},
             {"branch": "9", "disbursement_total": 50.0},
@@ -446,9 +444,7 @@ class TestNarration:
         text = drivers.narrate(d, catalog)
         allowed = {abs(d.delta), abs(d.current_total), abs(d.prior_total)}
         allowed |= {abs(c.delta) for c in d.all_contributions}
-        allowed |= {
-            round(abs(c.share or 0) * 100) for c in d.all_contributions
-        }
+        allowed |= {round(abs(c.share or 0) * 100) for c in d.all_contributions}
         for token in re.findall(r"\d+(?:\.\d+)?", text):
             value = float(token)
             assert any(abs(value - a) < max(1.0, a * 0.02) for a in allowed), (

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from decimal import Decimal, ROUND_HALF_UP
+from decimal import ROUND_HALF_UP, Decimal
 
 from app.services.workbench.facts import Fact
 
@@ -119,7 +119,7 @@ def weighted_average(
         value.period != period
         or weight.period != period
         or value.dimensions != weight.dimensions
-        for value, weight in zip(values, weights)
+        for value, weight in zip(values, weights, strict=False)
     ):
         raise CalculationError("operand periods are incompatible or missing")
     total_weight = sum((weight.value for weight in weights), Decimal(0))
@@ -129,13 +129,15 @@ def weighted_average(
         sum(
             (
                 item.value * weight.value
-                for item, weight in zip(values, weights)
+                for item, weight in zip(values, weights, strict=False)
             ),
             Decimal(0),
         )
         / total_weight
     )
-    operands = tuple(fact.id for pair in zip(values, weights) for fact in pair)
+    operands = tuple(
+        fact.id for pair in zip(values, weights, strict=False) for fact in pair
+    )
     return Fact(
         id=fact_id,
         label=label,

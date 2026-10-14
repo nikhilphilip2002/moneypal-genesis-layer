@@ -18,14 +18,13 @@ from app.mcp.results import success
 from app.services.nlq.catalog import get_catalog
 from app.services.workbench.access import SourceAccessDenied, build_policy
 from app.services.workbench.agent_contracts import (
-    QueryEvidenceReference,
-    FinalSynthesis,
     FinalSubmissionArguments,
+    FinalSynthesis,
+    QueryEvidenceReference,
     SearchCuratedKnowledgeArguments,
     SearchPublicWebArguments,
     SubmitAnswerArguments,
 )
-
 
 mcp = FastMCP(
     "Moneypal Workbench",
@@ -107,7 +106,7 @@ def _card_data(card: Any) -> dict[str, Any]:
         "Search policy documents, definitions, catalog documentation, macro, competitive, "
         "or regulatory evidence. Never use this to query customer, KYC, loan, agent, or "
         "other database rows named in Gold TABLE hints."
-    )
+    ),
 )
 async def search_curated_knowledge(
     domain: Literal["concepts", "macro", "competitive", "regulatory"],
@@ -131,7 +130,7 @@ async def search_curated_knowledge(
 
 @mcp.tool(
     name=SEARCH_PUBLIC_WEB,
-    description="Search the live public web; never include private bank or customer data."
+    description="Search the live public web; never include private bank or customer data.",
 )
 async def search_public_web(
     search_query: Annotated[str, Field(min_length=1, max_length=500)],
@@ -145,10 +144,13 @@ async def search_public_web(
     return success(_card_data(await _search_public_web(args, execution_ctx)))
 
 
-@mcp.tool(name=READ_TOOL_OUTPUT, description=(
-    "Continue an oversized tool result by its output ID and character offset. "
-    "Page size is controlled by the server."
-))
+@mcp.tool(
+    name=READ_TOOL_OUTPUT,
+    description=(
+        "Continue an oversized tool result by its output ID and character offset. "
+        "Page size is controlled by the server."
+    ),
+)
 async def read_tool_output(
     id: Annotated[str, Field(min_length=1)],
     offset: Annotated[int, Field(ge=0, strict=True)],
@@ -158,7 +160,10 @@ async def read_tool_output(
 
     execution_ctx = _execution_context(ctx)
     page = history.read_tool_output(
-        execution_ctx.conversation_id, execution_ctx.user, id, offset,
+        execution_ctx.conversation_id,
+        execution_ctx.user,
+        id,
+        offset,
         execution_ctx.source_policy,
     )
     return success({"kind": "tool_output", "page": page})
@@ -174,9 +179,8 @@ async def submit_final_answer(
     Prefer visualized results. Submit an answer without visualization only when
     visualization is not possible.
 
-    Use query_id from the query results and card_reference IDs from successful knowledge/web results. 
+    Use query_id from the query results and card_reference IDs from successful knowledge/web results.
     """
-
     if isinstance(submission, SubmitAnswerArguments):
         if any(
             isinstance(ref, QueryEvidenceReference)

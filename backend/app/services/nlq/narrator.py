@@ -167,7 +167,9 @@ def _ranking_sentence(
     dim = cat.dimensions[dim_id]
     values = [r for r in rows if isinstance(r.get(metric.id), (int, float))]
     if not values:
-        return f"{metric.label} by {dim.label.lower()} {_period_phrase(compiled)}."
+        return (
+            f"{metric.label} by {dim.label.lower()} {_period_phrase(compiled)}."
+        )
 
     ranked = sorted(values, key=lambda r: r[metric.id], reverse=True)
     top = ranked[0]
@@ -265,9 +267,7 @@ def _trend_sentence(
         f"({last.get(time_dim)})"
     )
     if change and first[metric.id]:
-        sentence += (
-            f", a change of {abs(change / first[metric.id] * 100):.1f}%"
-        )
+        sentence += f", a change of {abs(change / first[metric.id] * 100):.1f}%"
     sentence += "."
     if gaps:
         sentence += f" {gaps} period(s) in this range have no underlying data."
@@ -278,9 +278,7 @@ def _variance_sentence(
     compiled: CompiledQuery, rows: list[dict[str, Any]], metric
 ) -> str:
     totals_now = sum(
-        r["current"]
-        for r in rows
-        if isinstance(r.get("current"), (int, float))
+        r["current"] for r in rows if isinstance(r.get("current"), (int, float))
     )
     totals_before = sum(
         r["previous"]

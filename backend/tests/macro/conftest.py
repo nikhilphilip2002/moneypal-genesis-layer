@@ -122,14 +122,17 @@ class FakeQdrant:
         return {
             name
             for p in self.points.values()
-            if isinstance(name := p.payload.get("document") or p.payload.get("document_name"), str)
+            if isinstance(
+                name := p.payload.get("document")
+                or p.payload.get("document_name"),
+                str,
+            )
         }
 
 
 @pytest.fixture
 def fake_qdrant(monkeypatch):
     from genesis_core import rag
-
     from scripts.macro_pipeline import ingestor
 
     client = FakeQdrant()

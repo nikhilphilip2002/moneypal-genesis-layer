@@ -1,10 +1,10 @@
-from dataclasses import replace
 import json
+from dataclasses import replace
 
 import pytest
 
-from app.core.tool_names import READ_TOOL_OUTPUT, SEARCH_CURATED_KNOWLEDGE
 from app.core.config import Settings, settings
+from app.core.tool_names import READ_TOOL_OUTPUT, SEARCH_CURATED_KNOWLEDGE
 from app.mcp import workbench_client
 from app.services.nlq.llm import NativeToolCall
 from app.services.workbench import access, history
@@ -20,13 +20,9 @@ from app.services.workbench.results import Evidence, SourceResult
 def context(monkeypatch):
     monkeypatch.setattr(history, "_ensure_table", lambda: False)
     monkeypatch.setattr(history, "_MEMORY", {})
-    monkeypatch.setattr(
-        settings, "workbench_external_connectors_enabled", True
-    )
+    monkeypatch.setattr(settings, "workbench_external_connectors_enabled", True)
     monkeypatch.setattr(settings, "workbench_tool_output_page_chars", 137)
-    monkeypatch.setattr(
-        settings, "workbench_agent_observation_max_chars", 1000
-    )
+    monkeypatch.setattr(settings, "workbench_agent_observation_max_chars", 1000)
     turn_id = history.begin_turn("outputs", "alice", "Question")
     return AgentExecutionContext(
         user="alice",
@@ -200,6 +196,7 @@ async def test_complete_mcp_card_survives_normalization(context, monkeypatch):
 
 def test_outputs_reload_from_persisted_history(context, monkeypatch):
     from contextlib import contextmanager
+
     from app.services import db_schema
 
     oversized(context).observation_message()

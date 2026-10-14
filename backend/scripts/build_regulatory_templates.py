@@ -16,7 +16,6 @@ from pathlib import Path
 
 import openpyxl
 
-
 REPO_ROOT = Path(__file__).resolve().parents[2]
 ASSET_DIR = REPO_ROOT / "backend" / "app" / "assets"
 PAN_RE = re.compile(r"\b[A-Z]{5}\d{4}[A-Z]\b")

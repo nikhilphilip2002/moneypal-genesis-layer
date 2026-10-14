@@ -14,12 +14,12 @@ import os
 import platform
 import re
 import time
-from contextvars import ContextVar
-from datetime import UTC, datetime
-from email.utils import parsedate_to_datetime
 from collections.abc import Awaitable, Callable
 from contextlib import asynccontextmanager
+from contextvars import ContextVar
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
+from email.utils import parsedate_to_datetime
 from types import ModuleType
 from typing import Any, Literal, Protocol, cast, runtime_checkable
 
@@ -30,8 +30,8 @@ from openai import (
     APIStatusError,
     APITimeoutError,
     AsyncOpenAI,
+    AsyncStream,
 )
-from openai import AsyncStream
 from openai.types.chat import ChatCompletionChunk
 
 try:  # POSIX-only advisory locks; Windows development hosts fall back to the process gate.
@@ -42,12 +42,12 @@ else:
     fcntl = _fcntl
 
 from app.core.config import settings
-from app.services.nlq.llm.messages import ChatMessage, coalesce_system_messages
 from app.services.nlq.llm.context import (
     counting_payload,
     estimate_request_tokens,
     is_context_overflow,
 )
+from app.services.nlq.llm.messages import ChatMessage, coalesce_system_messages
 from app.services.nlq.llm.telemetry import (
     CallKind,
     CallPurpose,
@@ -122,7 +122,8 @@ def _strip_replay_reasoning(messages: list[ChatMessage]) -> list[ChatMessage]:
     if settings.nlq_llm_replay_reasoning:
         return list(messages)
     stripped: list[ChatMessage] = []
-    for message in messages:
+    for original_message in messages:
+        message = original_message
         if isinstance(message, dict) and any(
             key in message for key in _REASONING_FIELDS
         ):
@@ -149,19 +150,25 @@ class LLMError(RuntimeError):
     """Base for every failure that should degrade the ask bar rather than 500."""
 
 
-class LLMTimeout(LLMError):
+class LLMTimeoutError(LLMError):
     pass
 
 
-class LLMUnavailable(LLMError):
+LLMTimeout = LLMTimeoutError
+
+
+class LLMUnavailableError(LLMError):
     """Provider unreachable, unauthenticated, or not configured."""
+
+
+LLMUnavailable = LLMUnavailableError
 
 
 class LLMProtocolError(LLMError):
     """A successful provider response violated the native chat/tool protocol."""
 
 
-class LLMIncomplete(LLMError):
+class LLMIncompleteError(LLMError):
     """The provider stopped before producing a complete response."""
 
     prompt_tokens: int = 0
@@ -169,12 +176,21 @@ class LLMIncomplete(LLMError):
     output_emitted: bool = False
 
 
-class LLMContextOverflow(LLMError):
+LLMIncomplete = LLMIncompleteError
+
+
+class LLMContextOverflowError(LLMError):
     """The request or generation exceeded the provider's context capacity."""
 
 
-class LLMResponseBlocked(LLMError):
+LLMContextOverflow = LLMContextOverflowError
+
+
+class LLMResponseBlockedError(LLMError):
     """The provider declined to return a response because of a content policy."""
+
+
+LLMResponseBlocked = LLMResponseBlockedError
 
 
 _RETRYABLE_STATUS_CODES = frozenset({408, 409, 425, 429})
@@ -256,20 +272,41 @@ async def _read_completion_stream(
             if chunk.get("usage"):
                 body["usage"] = chunk["usage"]
             progress = chunk.get("prompt_progress")
-            if processing_prompt and on_prompt_progress and isinstance(progress, dict):
+            if (
+                processing_prompt
+                and on_prompt_progress
+                and isinstance(progress, dict)
+            ):
                 total = progress.get("total")
                 cache = progress.get("cache")
                 processed = progress.get("processed")
-                if all(type(value) is int for value in (total, cache, processed)) and total > 0:
+                if (
+                    all(
+                        type(value) is int
+                        for value in (total, cache, processed)
+                    )
+                    and total > 0
+                ):
                     remaining = total - cache
-                    percent = 100 if remaining <= 0 else 100 * (processed - cache) // remaining
+                    percent = (
+                        100
+                        if remaining <= 0
+                        else 100 * (processed - cache) // remaining
+                    )
                     await on_prompt_progress(max(0, min(100, percent)))
             for choice in chunk.get("choices", []):
                 if choice.get("index", 0) != 0:
                     continue
                 delta = choice.get("delta") or {}
                 if processing_prompt and (
-                    any(delta.get(key) for key in ("content", "reasoning_content", "reasoning"))
+                    any(
+                        delta.get(key)
+                        for key in (
+                            "content",
+                            "reasoning_content",
+                            "reasoning",
+                        )
+                    )
                     or delta.get("tool_calls")
                 ):
                     processing_prompt = False
@@ -308,9 +345,7 @@ async def _read_completion_stream(
                     if fragment.get("type"):
                         call["type"] = fragment["type"]
                     for key in ("name", "arguments"):
-                        value = (
-                            fragment.get("function") or {}
-                        ).get(key)
+                        value = (fragment.get("function") or {}).get(key)
                         if value is not None:
                             if not isinstance(value, str):
                                 raise LLMProtocolError(
@@ -449,9 +484,9 @@ class LLMClient(Protocol):
         max_output_tokens: int | None = None,
         on_text: Callable[[str], Awaitable[None]] | None = None,
         on_reasoning: Callable[[str], Awaitable[None]] | None = None,
-        on_tool_call: Callable[[dict[str, Any]], Awaitable[None]]
+        on_tool_call: Callable[[dict[str, Any]], Awaitable[None]] | None = None,
+        on_prompt_progress: Callable[[int | None], Awaitable[None]]
         | None = None,
-        on_prompt_progress: Callable[[int | None], Awaitable[None]] | None = None,
     ) -> LLMResult: ...
 
     async def health(self) -> dict[str, Any]: ...
@@ -552,9 +587,7 @@ def _parse_native_tool_calls(
         raw_call = cast(dict[str, Any], raw_call_value)
         call_id = raw_call.get("id")
         if not isinstance(call_id, str) or not call_id.strip():
-            raise LLMProtocolError(
-                f"tool call at index {index} has no call ID"
-            )
+            raise LLMProtocolError(f"tool call at index {index} has no call ID")
         if call_id in seen_ids:
             raise LLMProtocolError(f"duplicate tool call ID {call_id!r}")
         seen_ids.add(call_id)
@@ -601,7 +634,9 @@ def _parse_native_tool_calls(
                     "message": f"Tool arguments could not be decoded as JSON: {exc}",
                 }
         parsed.append(
-            NativeToolCall(id=call_id, name=name, arguments=arguments, error=error)
+            NativeToolCall(
+                id=call_id, name=name, arguments=arguments, error=error
+            )
         )
     return parsed
 
@@ -713,7 +748,15 @@ class OpenAICompatibleClient:
             # on the first async request solely to populate its diagnostic OS header.
             system = platform.system().lower()
             platforms: dict[
-                str, Literal["MacOS", "Linux", "Windows", "FreeBSD", "OpenBSD", "Unknown"]
+                str,
+                Literal[
+                    "MacOS",
+                    "Linux",
+                    "Windows",
+                    "FreeBSD",
+                    "OpenBSD",
+                    "Unknown",
+                ],
             ] = {
                 "darwin": "MacOS",
                 "linux": "Linux",
@@ -806,9 +849,9 @@ class OpenAICompatibleClient:
         max_output_tokens: int | None = None,
         on_text: Callable[[str], Awaitable[None]] | None = None,
         on_reasoning: Callable[[str], Awaitable[None]] | None = None,
-        on_tool_call: Callable[[dict[str, Any]], Awaitable[None]]
+        on_tool_call: Callable[[dict[str, Any]], Awaitable[None]] | None = None,
+        on_prompt_progress: Callable[[int | None], Awaitable[None]]
         | None = None,
-        on_prompt_progress: Callable[[int | None], Awaitable[None]] | None = None,
     ) -> LLMResult:
         if tools is not None and json_schema is not None:
             raise LLMError(
@@ -821,9 +864,7 @@ class OpenAICompatibleClient:
         allowed_tool_names: set[str] = set()
         if tools is not None:
             if not self.profile.supports_native_tools:
-                raise LLMError(
-                    f"{self.provider} does not support native tools"
-                )
+                raise LLMError(f"{self.provider} does not support native tools")
             allowed_tool_names = _choice_tool_names(
                 tool_choice, _native_tool_names(tools)
             )
@@ -837,7 +878,10 @@ class OpenAICompatibleClient:
             "stream": True,
             "stream_options": {"include_usage": True},
         }
-        if on_prompt_progress is not None and self.profile.supports_prompt_progress:
+        if (
+            on_prompt_progress is not None
+            and self.profile.supports_prompt_progress
+        ):
             payload["extra_body"] = {"return_progress": True}
         if max_output_tokens is not None:
             payload["max_tokens"] = max(1, int(max_output_tokens))

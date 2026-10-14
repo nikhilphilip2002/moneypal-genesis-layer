@@ -8,11 +8,11 @@ from __future__ import annotations
 
 import logging
 
-
 from fastapi import APIRouter, Header, HTTPException, Response
 from pydantic import BaseModel, Field
 
 from app.api.routes.auth import identity_from_authorization
+from app.services import signals, worklists
 from app.services.nlq import db as nlq_db
 from app.services.nlq.catalog import get_catalog
 from app.services.nlq.compiler import CompileError
@@ -20,7 +20,6 @@ from app.services.nlq.contracts import ChartSpec, Filter, QuerySpec, Worklist
 from app.services.nlq.executor import ExecutionError
 from app.services.nlq.llm import get_llm_client
 from app.services.nlq.pipeline import run_spec
-from app.services import signals, worklists
 from app.services.worklists import store as worklist_store
 
 logger = logging.getLogger(__name__)

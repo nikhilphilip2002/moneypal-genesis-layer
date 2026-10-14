@@ -145,7 +145,9 @@ def _analysis_facts(result: ToolResult, card_index: int) -> list[Fact]:
         raw_spec = finding.get("spec")
         spec: dict[str, Any] = raw_spec if isinstance(raw_spec, dict) else {}
         raw_period = spec.get("period")
-        period_value: dict[str, Any] = raw_period if isinstance(raw_period, dict) else {}
+        period_value: dict[str, Any] = (
+            raw_period if isinstance(raw_period, dict) else {}
+        )
         period = str(
             period_value.get("relative")
             or " to ".join(

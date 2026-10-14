@@ -326,12 +326,8 @@ def _breakdown_finding(
         return None
     # A ratio's "largest member" is only meaningful the way the question asks for it, so
     # respect the step's own ordering when it declared one.
-    reverse = not (
-        step.spec.order_by and step.spec.order_by.direction == "asc"
-    )
-    ranked.sort(
-        key=lambda r: _number(r.get(metric.id)) or 0.0, reverse=reverse
-    )
+    reverse = not (step.spec.order_by and step.spec.order_by.direction == "asc")
+    ranked.sort(key=lambda r: _number(r.get(metric.id)) or 0.0, reverse=reverse)
     top = ranked[0]
     value = _number(top.get(metric.id)) or 0.0
     label = _member_label(top, dimension)
@@ -468,9 +464,7 @@ def _compose_concentration(
         compose=spec.compose,
         headline=findings[0].text,
         findings=findings,
-        charts=[step_result.chart]
-        if step_result and step_result.chart
-        else [],
+        charts=[step_result.chart] if step_result and step_result.chart else [],
         warnings=(
             [
                 f"Measured over the largest {len(values)} borrowers returned by the query."
@@ -663,9 +657,7 @@ def _merge_on_dimension(
             if raw is None:
                 continue
             key = canonical_enum_code(raw)
-            entry = merged.setdefault(
-                key, {dimension: row.get(dimension, key)}
-            )
+            entry = merged.setdefault(key, {dimension: row.get(dimension, key)})
             for name, value in row.items():
                 entry.setdefault(name, value)
     # Only members present in *both* steps can be placed on two axes.
@@ -710,9 +702,7 @@ def _quadrant_chart(
         chart_type="scatter",
         title=spec.title,
         subtitle=spec.subtitle or None,
-        x=AxisSpec(
-            field=x_metric.id, label=x_metric.label, unit=x_metric.unit
-        ),
+        x=AxisSpec(field=x_metric.id, label=x_metric.label, unit=x_metric.unit),
         series=[
             SeriesSpec(
                 field=y_metric.id, label=y_metric.label, unit=y_metric.unit

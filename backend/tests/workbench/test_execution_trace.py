@@ -8,8 +8,8 @@ from typing import Any
 
 import pytest
 
-from app.core.tool_names import QUERY, SEARCH_PUBLIC_WEB
 from app.api.routes.workbench import _turn_for_api
+from app.core.tool_names import QUERY, SEARCH_PUBLIC_WEB
 from app.services.nlq.llm import NativeToolCall
 from app.services.workbench import access, agent, history
 from app.services.workbench.agent_executor import (
@@ -247,7 +247,9 @@ async def test_cancelled_model_selection_finalizes_trace(monkeypatch):
 
     model_trace = [step for step in state["trace"] if step["id"] == "model-1"]
     assert [step["status"] for step in model_trace] == ["running", "error"]
-    assert datetime.fromisoformat(model_trace[0]["started_at"]).tzinfo is not None
+    assert (
+        datetime.fromisoformat(model_trace[0]["started_at"]).tzinfo is not None
+    )
     assert "started_at" not in model_trace[-1]
     assert "detail" not in model_trace[0]
     assert model_trace[-1]["detail"] == "Stopped by user"
@@ -501,8 +503,7 @@ def test_history_api_preserves_exact_reconciled_visual_partition(monkeypatch):
         q2,
     ]
     assert (
-        restored["query_registry"][0]["lineage"]["sql"]
-        == "SELECT month, value"
+        restored["query_registry"][0]["lineage"]["sql"] == "SELECT month, value"
     )
     assert all(
         "result_payload" not in item for item in restored["query_registry"]

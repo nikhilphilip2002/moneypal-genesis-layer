@@ -21,12 +21,12 @@ from typing import Any, cast
 
 from pydantic import TypeAdapter, ValidationError
 
+from app.core.config import settings
 from app.core.tool_names import (
     SEARCH_CURATED_KNOWLEDGE,
     SEARCH_PUBLIC_WEB,
     SUBMIT_ANSWER,
 )
-from app.core.config import settings
 from app.services.nlq.catalog import get_catalog
 from app.services.nlq.llm import LLMError, LLMProtocolError, LLMTimeout
 from app.services.nlq.llm.client import (
@@ -41,13 +41,15 @@ from app.services.nlq.llm.slot_cache import (
     snapshot_filename,
 )
 from app.services.workbench import history, models, prompts
-from app.services.workbench.agent_contracts import CardEvidenceReference
+from app.services.workbench.agent_contracts import (
+    CardEvidenceReference,
+    QueryExecutionRecord,
+)
 from app.services.workbench.agent_executor import (
     AgentExecutionContext,
     ExecutedAgentCall,
     execute_agent_call,
 )
-from app.services.workbench.agent_contracts import QueryExecutionRecord
 from app.services.workbench.agent_tools import (
     AgentToolAccessDenied,
     AgentToolArgumentsInvalid,
@@ -61,8 +63,11 @@ from app.services.workbench.results import ExecutionDecision, SourceResult
 logger = logging.getLogger(__name__)
 
 
-class BudgetExhausted(LLMProtocolError):
+class BudgetExhaustedError(LLMProtocolError):
     """The turn spent its rounds or tool calls before the model finished."""
+
+
+BudgetExhausted = BudgetExhaustedError
 
 
 @dataclass
@@ -193,6 +198,7 @@ _PURPOSES = {
     "none": "agent_synthesize",
 }
 
+
 def _elapsed_ms(state: dict[str, Any]) -> int:
     started_at = state.get("timing", {}).get("started_at", time.perf_counter())
     return max(0, int((time.perf_counter() - started_at) * 1000))
@@ -200,9 +206,7 @@ def _elapsed_ms(state: dict[str, Any]) -> int:
 
 def _trace_arguments(call) -> dict[str, Any]:
     """Return arguments safe to render to the authenticated user."""
-    arguments = (
-        dict(call.arguments) if isinstance(call.arguments, dict) else {}
-    )
+    arguments = dict(call.arguments) if isinstance(call.arguments, dict) else {}
     if call.name == SEARCH_PUBLIC_WEB and "search_query" in arguments:
         # A denied call can contain private material before outbound policy evaluation.
         arguments["search_query"] = "[redacted after policy evaluation]"
@@ -241,7 +245,11 @@ def _initialize_messages(state, catalog) -> None:
     question: ChatMessage = {"role": "user", "content": state["question"]}
     if _persistable(state):
         record = history.start_turn_messages(
-            state["conversation_id"], state["user"], state["turn_id"], system, question
+            state["conversation_id"],
+            state["user"],
+            state["turn_id"],
+            system,
+            question,
         )
         state["messages"] = deepcopy(record.messages)
         state["_request_compaction"] = deepcopy(record.compaction)
@@ -287,9 +295,7 @@ async def _select(
     async def complete(**kwargs):
         if selecting:
             return await client.complete(**kwargs)
-        return await complete_answer(
-            client, state, trace_id=trace_id, **kwargs
-        )
+        return await complete_answer(client, state, trace_id=trace_id, **kwargs)
 
     async def request():
         from app.services.workbench.compaction.request import prepare_request
@@ -300,15 +306,19 @@ async def _select(
                 prepared = messages
                 counted = 0
                 if can_count:
-                    compaction_trace_id = f"compaction-{trace_id or budget.rounds_used}-{attempt}"
+                    compaction_trace_id = (
+                        f"compaction-{trace_id or budget.rounds_used}-{attempt}"
+                    )
                     compaction_started_at = 0.0
 
-                    async def on_compaction(status: str) -> None:
+                    async def on_compaction(
+                        status: str, trace_id: str = compaction_trace_id
+                    ) -> None:
                         nonlocal compaction_started_at
                         if status == "running":
                             compaction_started_at = time.perf_counter()
                         step: dict[str, Any] = {
-                            "id": compaction_trace_id,
+                            "id": trace_id,
                             "kind": "status",
                             "status": status,
                             "label": {
@@ -319,7 +329,8 @@ async def _select(
                         }
                         if status != "running":
                             step["duration_ms"] = int(
-                                (time.perf_counter() - compaction_started_at) * 1000
+                                (time.perf_counter() - compaction_started_at)
+                                * 1000
                             )
                         await _emit_trace(state, step)
 
@@ -343,9 +354,7 @@ async def _select(
                         tool_choice=tool_choice,
                         timeout_s=budget.remaining_s(settings.llm_timeout_s),
                         call_purpose=_PURPOSES[tool_choice],
-                        call_kind="repair"
-                        if attempt
-                        else "planned",
+                        call_kind="repair" if attempt else "planned",
                         catalog_version=catalog.version,
                         **extra,
                     )
@@ -435,7 +444,9 @@ def _preflight(result, state: dict[str, Any]) -> list[tuple[str, str, str]]:
         )
     for call in result.tool_calls:
         if call.error is not None:
-            failures.append((call.id, call.error["message"], call.error["code"]))
+            failures.append(
+                (call.id, call.error["message"], call.error["code"])
+            )
             continue
         if terminals and len(result.tool_calls) != 1 and call in terminals:
             continue
@@ -468,11 +479,8 @@ def _preflight(result, state: dict[str, Any]) -> list[tuple[str, str, str]]:
                     submission
                 )
                 assert isinstance(answer, SubmitAnswerArguments)
-                if (
-                    not answer.evidence
-                    and _has_retrieved_evidence(
-                        list(state.get("_completed_tool_results", {}).values())
-                    )
+                if not answer.evidence and _has_retrieved_evidence(
+                    list(state.get("_completed_tool_results", {}).values())
                 ):
                     raise AgentToolArgumentsInvalid(
                         "Include evidence references from the successful retrievals"
@@ -590,9 +598,14 @@ def _tool_messages(result, failures, executed=(), state=None):
         elif call.id in items:
             messages.append(items[call.id].observation_message())
         else:
-            messages.append(_failure_observation(
-                call, "The call was not executed.", "SOURCE_UNAVAILABLE", state
-            ))
+            messages.append(
+                _failure_observation(
+                    call,
+                    "The call was not executed.",
+                    "SOURCE_UNAVAILABLE",
+                    state,
+                )
+            )
     return messages
 
 
@@ -606,9 +619,7 @@ def _raise_first_failure(failures: list[tuple[str, str, str]]) -> None:
 
 
 def _persistable(state) -> bool:
-    return all(
-        state.get(key) for key in ("conversation_id", "user", "turn_id")
-    )
+    return all(state.get(key) for key in ("conversation_id", "user", "turn_id"))
 
 
 def _persist_query_registry(state: dict[str, Any]) -> None:
@@ -861,7 +872,9 @@ def _record_tool_results(state, result, failures, executed) -> None:
         ]:
             if item.card is not None:
                 history.add_card(
-                    state["conversation_id"], state["user"], state["turn_id"],
+                    state["conversation_id"],
+                    state["user"],
+                    state["turn_id"],
                     {
                         "source": item.card.source,
                         "card_type": item.card.card_type,
@@ -880,10 +893,7 @@ def _denial(failures, executed) -> dict[str, Any] | None:
         if code == "POLICY_DENIED":
             latest = {"policy": "source_access", "message": message}
     for item in executed:
-        if (
-            item.error is not None
-            and item.error.get("code") == "POLICY_DENIED"
-        ):
+        if item.error is not None and item.error.get("code") == "POLICY_DENIED":
             latest = {
                 "policy": item.error.get("denied", {}).get(
                     "policy", "source_access"
@@ -1028,9 +1038,7 @@ async def _stream_item(state: dict[str, Any], item: ExecutedAgentCall) -> None:
     trace_status = "error" if item.error is not None else "complete"
     if item.error is not None:
         trace_detail = str(
-            item.error.get("message")
-            or item.error.get("code")
-            or "Tool failed"
+            item.error.get("message") or item.error.get("code") or "Tool failed"
         )
     elif item.terminal is not None:
         synthesis = item.terminal.get("synthesis")
@@ -1149,7 +1157,9 @@ async def _execute_batch(
             for task in asyncio.as_completed(tasks):
                 index, item = await task
                 output[index] = item
-                state.setdefault("_completed_tool_results", {})[item.call.id] = item
+                state.setdefault("_completed_tool_results", {})[
+                    item.call.id
+                ] = item
                 await _finalize_query_record(
                     state,
                     query_records.get(item.call.id),
@@ -1230,9 +1240,11 @@ async def _announce_route(state: dict[str, Any], calls) -> None:
 async def _end_without_data(
     state: dict[str, Any], payload: dict[str, Any], *, origin: str
 ) -> None:
-    """Emit a clarification or refusal. ``origin`` says who decided: the model's
-    ``submit_final_answer`` call, or the application after a denial the model never
-    resolved within budget."""
+    """Emit a clarification or refusal.
+
+    ``origin`` says who decided: the model's ``submit_final_answer`` call, or
+    the application after a denial the model never resolved within budget.
+    """
     from app.services.workbench.graph import sse
 
     outcome = payload.get("outcome")
@@ -1287,7 +1299,11 @@ def _has_retrieved_evidence(executed: list[ExecutedAgentCall]) -> bool:
 
 
 async def _run(state: dict[str, Any]) -> None:
-    from app.services.workbench.graph import WorkbenchState, answer_results, sse
+    from app.services.workbench.graph import (
+        WorkbenchState,
+        answer_results,
+        sse,
+    )
 
     emit = state["emit"]
     budget = _budget(state)
@@ -1432,9 +1448,7 @@ async def _run(state: dict[str, Any]) -> None:
             "status": "complete",
             "label": model_label,
             "detail": model_detail,
-            "duration_ms": int(
-                (time.perf_counter() - model_started_at) * 1000
-            ),
+            "duration_ms": int((time.perf_counter() - model_started_at) * 1000),
         }
         if reasoning := getattr(result, "reasoning", ""):
             model_trace["reasoning"] = reasoning
@@ -1450,7 +1464,9 @@ async def _run(state: dict[str, Any]) -> None:
         await _emit_trace(state, model_trace)
         if not result.tool_calls:
             if not result.text.strip():
-                raise LLMProtocolError("model returned neither tool calls nor an answer")
+                raise LLMProtocolError(
+                    "model returned neither tool calls nor an answer"
+                )
             if _has_retrieved_evidence(executed):
                 if (
                     not submission_recovery_requested
@@ -1475,10 +1491,19 @@ async def _run(state: dict[str, Any]) -> None:
         try:
             budget.charge_call(len(result.tool_calls))
         except BudgetExhausted:
-            _record_tool_results(state, result, [
-                (call.id, "Tool call budget exhausted.", "BUDGET_EXHAUSTED")
-                for call in result.tool_calls
-            ], ())
+            _record_tool_results(
+                state,
+                result,
+                [
+                    (
+                        call.id,
+                        "Tool call budget exhausted.",
+                        "BUDGET_EXHAUSTED",
+                    )
+                    for call in result.tool_calls
+                ],
+                (),
+            )
             if not has_data:
                 raise
             break
@@ -1612,12 +1637,15 @@ async def run(state: dict[str, Any]) -> None:
         completed = state.pop("_completed_tool_results", {})
         pending = history.pending_tool_calls(state.get("messages", []))
         if pending:
-            _append_messages(state, [
-                completed[call_id].observation_message()
-                if call_id in completed
-                else history.interrupted_tool_result(call_id)
-                for call_id in pending
-            ])
+            _append_messages(
+                state,
+                [
+                    completed[call_id].observation_message()
+                    if call_id in completed
+                    else history.interrupted_tool_result(call_id)
+                    for call_id in pending
+                ],
+            )
 
 
 __all__ = [

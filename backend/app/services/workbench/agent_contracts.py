@@ -206,9 +206,7 @@ class SubmitVisualAnswerArguments(SubmitAnswerArguments, AnswerPresentation):
     message: str = Field(
         min_length=1,
         max_length=1_000,
-        description=(
-            "Short summary of key findings."
-        ),
+        description=("Short summary of key findings."),
     )
     visuals: list[AnswerVisual] = Field(
         min_length=1,

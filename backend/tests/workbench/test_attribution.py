@@ -4,8 +4,8 @@ from pydantic import ValidationError
 from app.core.tool_names import QUERY
 from app.services.workbench.agent_contracts import (
     AnswerVisual,
-    QueryEvidenceReference,
     FinalSynthesis,
+    QueryEvidenceReference,
 )
 from app.services.workbench.attribution import reconcile_query_attribution
 
@@ -50,7 +50,11 @@ def test_reconciliation_selects_one_local_query_and_derives_exclusions():
     registry = [_record("turn:q1", purpose="discovery"), _record("turn:q2")]
     result = reconcile_query_attribution(
         registry,
-        FinalSynthesis(insights="Answer", evidence=[QueryEvidenceReference(query_id=2)], visuals=[AnswerVisual(query_id=2, view="bar")]),
+        FinalSynthesis(
+            insights="Answer",
+            evidence=[QueryEvidenceReference(query_id=2)],
+            visuals=[AnswerVisual(query_id=2, view="bar")],
+        ),
     )
 
     assert result.active_query_ids == ["turn:q2"]
@@ -76,11 +80,19 @@ def test_reconciliation_rejects_unknown_or_unsuccessful_selection():
     registry = [_record("turn:q1", status="error", has_data=False)]
     failed = reconcile_query_attribution(
         registry,
-        FinalSynthesis(insights="", evidence=[QueryEvidenceReference(query_id=1)], visuals=[AnswerVisual(query_id=1, view="table")]),
+        FinalSynthesis(
+            insights="",
+            evidence=[QueryEvidenceReference(query_id=1)],
+            visuals=[AnswerVisual(query_id=1, view="table")],
+        ),
     )
     missing = reconcile_query_attribution(
         registry,
-        FinalSynthesis(insights="", evidence=[QueryEvidenceReference(query_id=2)], visuals=[AnswerVisual(query_id=2, view="table")]),
+        FinalSynthesis(
+            insights="",
+            evidence=[QueryEvidenceReference(query_id=2)],
+            visuals=[AnswerVisual(query_id=2, view="table")],
+        ),
     )
 
     assert failed.active_query_ids == []
@@ -94,13 +106,15 @@ def test_reconciliation_attributes_prior_query_without_excluding_old_executions(
 
     result = reconcile_query_attribution(
         current,
-        FinalSynthesis(insights="", evidence=[QueryEvidenceReference(query_id=1)], visuals=[AnswerVisual(query_id=1, view="table")]),
+        FinalSynthesis(
+            insights="",
+            evidence=[QueryEvidenceReference(query_id=1)],
+            visuals=[AnswerVisual(query_id=1, view="table")],
+        ),
         prior_registry=previous,
     )
 
     assert result.active_query_ids == ["older:q1"]
     assert result.visual_query_ids == ["older:q1"]
     assert result.invalid_query_ids == []
-    assert [item.query_id for item in result.excluded_queries] == [
-        "current:q3"
-    ]
+    assert [item.query_id for item in result.excluded_queries] == ["current:q3"]

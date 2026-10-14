@@ -23,7 +23,13 @@ from app.services.nlq import db as nlq_db
 from app.services.nlq.catalog import Catalog, get_catalog
 from app.services.nlq.catalog.loader import SignalScope, canonical_enum_code
 from app.services.nlq.compiler import CompiledQuery, CompileError, compile_spec
-from app.services.nlq.contracts import Period, QuerySpec, RelativePeriod, ScanReport, Signal
+from app.services.nlq.contracts import (
+    Period,
+    QuerySpec,
+    RelativePeriod,
+    ScanReport,
+    Signal,
+)
 from app.services.nlq.executor import ExecutionError, execute
 from app.services.nlq.narrator import format_value, humanize_label
 from app.services.signals import detectors
@@ -161,9 +167,7 @@ def _scan_scope(
     scope: SignalScope, cat: Catalog, today: date | None
 ) -> list[Signal]:
     metric = cat.metrics.get(scope.metric)
-    if (
-        metric is None
-    ):  # pragma: no cover - the catalog validator rejects these
+    if metric is None:  # pragma: no cover - the catalog validator rejects these
         return []
 
     spec = _series_spec(scope, cat)
@@ -178,8 +182,11 @@ def _scan_scope(
 
 
 def _series_spec(scope: SignalScope, cat: Catalog) -> QuerySpec:
-    """One monthly series per scope. A concentration scope needs no time axis — the question
-    is whether the book *is* concentrated, which is asked of the book as it stands."""
+    """One monthly series per scope.
+
+    A concentration scope needs no time axis — the question is whether the book
+    *is* concentrated, which is asked of the book as it stands.
+    """
     config = cat.signals
     structural = "concentration" in scope.detectors
 
@@ -437,9 +444,7 @@ def _scan_data_health(cat: Catalog) -> tuple[list[Signal], list[str]]:
                 _freshness_query(table.table, check.date_column)
             ).rows
         except ExecutionError as exc:
-            logger.warning(
-                "freshness check on %s failed: %s", check.table, exc
-            )
+            logger.warning("freshness check on %s failed: %s", check.table, exc)
             warnings.append(f"Could not check how fresh {table.label} is.")
             continue
 

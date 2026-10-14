@@ -28,6 +28,8 @@ from app.services.nlq.catalog.index import (
     CatalogDoc,
     build_documents,
     collection_name,
+)
+from app.services.nlq.catalog.index import (
     index as index_catalog,
 )
 from app.services.nlq.catalog.loader import Catalog, get_catalog

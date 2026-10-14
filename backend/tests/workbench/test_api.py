@@ -84,9 +84,7 @@ class TestCompletions:
         monkeypatch.setattr(route, "_completion_in_flight", False)
 
     @pytest.mark.anyio
-    async def test_returns_governed_chat_completions(
-        self, client, monkeypatch
-    ):
+    async def test_returns_governed_chat_completions(self, client, monkeypatch):
         from app.api.routes import workbench as route
 
         monkeypatch.setattr(
@@ -145,9 +143,7 @@ class TestCompletions:
         from app.api.routes import workbench as route
 
         def must_not_query(_q, _kind):
-            raise AssertionError(
-                "question prose reached entity completion SQL"
-            )
+            raise AssertionError("question prose reached entity completion SQL")
 
         monkeypatch.setattr(route.record_lookup, "completions", must_not_query)
 
@@ -271,9 +267,7 @@ class TestConversationOwnership:
     ):
         from app.services.workbench import history
 
-        turn_id = history.begin_turn(
-            "diagnostic", "gicc_policy", "Show PAR 30"
-        )
+        turn_id = history.begin_turn("diagnostic", "gicc_policy", "Show PAR 30")
         history.set_route(
             "diagnostic",
             "gicc_policy",
@@ -313,16 +307,14 @@ class TestAskStreamOverflow:
         self, client, monkeypatch
     ):
         """The route answers 200 with a terminal error frame, never a broken stream."""
-        from app.services.workbench import agent, graph, history
         from app.services.nlq.llm.client import LLMContextOverflow
+        from app.services.workbench import agent, graph, history
 
         monkeypatch.setattr(history, "_ensure_table", lambda: False)
         history._MEMORY.clear()
 
         async def overflow(*_args, **_kwargs):
-            raise LLMContextOverflow(
-                "complete native conversation exceeds"
-            )
+            raise LLMContextOverflow("complete native conversation exceeds")
 
         monkeypatch.setattr(agent, "run", overflow)
 

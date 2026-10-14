@@ -102,9 +102,7 @@ def test_projects_nested_object_union(union_keyword):
         ["outcome", "query_id"],
         ["outcome", "message"],
     ]
-    assert all(
-        variant["additionalProperties"] is False for variant in variants
-    )
+    assert all(variant["additionalProperties"] is False for variant in variants)
     assert variants[0]["properties"]["outcome"]["enum"] == ["answer"]
     assert "oneOf" not in projected["properties"]["submission"]
 

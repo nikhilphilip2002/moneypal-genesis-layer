@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from app.core.config import settings
 from app.core.logging import (
     bind_trace,
     log_app_event,
@@ -11,7 +12,6 @@ from app.core.logging import (
     start_logging,
     stop_logging,
 )
-from app.core.config import settings
 
 
 def test_rotating_logging_streams(tmp_path: Path):
@@ -80,9 +80,7 @@ def test_rotating_logging_streams(tmp_path: Path):
     # Verify parsed output content
     parsed_lines = [
         json.loads(line)
-        for line in parsed_file.read_text(encoding="utf-8")
-        .strip()
-        .splitlines()
+        for line in parsed_file.read_text(encoding="utf-8").strip().splitlines()
     ]
     assert len(parsed_lines) == 1
     assert parsed_lines[0]["trace_id"] == "test-trace-123"

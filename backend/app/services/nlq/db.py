@@ -26,7 +26,7 @@ logger = logging.getLogger(__name__)
 POOL_SIZE = 5
 
 
-class ReadOnlyNotConfigured(RuntimeError):
+class ReadOnlyNotConfiguredError(RuntimeError):
     """Raised when NLQ_DB_PASSWORD is absent.
 
     Deliberately fatal rather than falling back to POSTGRES_USER: silently running NLQ as
@@ -34,9 +34,14 @@ class ReadOnlyNotConfigured(RuntimeError):
     """
 
 
+ReadOnlyNotConfigured = ReadOnlyNotConfiguredError
+
+
 def _connect_kwargs() -> dict[str, Any]:
     if _pg_driver is None:
-        raise RuntimeError("No PostgreSQL driver available (psycopg2-binary or pg8000).")
+        raise RuntimeError(
+            "No PostgreSQL driver available (psycopg2-binary or pg8000)."
+        )
     if not settings.nlq_db_password:
         raise ReadOnlyNotConfigured(
             "NLQ_DB_PASSWORD is not set. Create the nlq_readonly role first "

@@ -441,7 +441,7 @@ def _write_mapping_block(
     first_col: int,
 ) -> None:
     """The mapping table to the right of the template, plus the query appendix below it."""
-    for offset, (header, width) in enumerate(MAP_HEADERS):
+    for offset, (_header, width) in enumerate(MAP_HEADERS):
         col = first_col + offset
         sheet.column_dimensions[get_column_letter(col)].width = width
 

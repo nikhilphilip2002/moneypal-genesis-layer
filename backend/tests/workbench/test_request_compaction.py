@@ -6,8 +6,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from app.core.tool_names import QUERY
 from app.core.config import settings
+from app.core.tool_names import QUERY
 from app.services.nlq.llm.client import (
     LLMContextOverflow,
     LLMError,
@@ -292,9 +292,7 @@ async def test_repeated_compaction_summarizes_only_newly_removed_messages():
         *exchange("first", "first evidence " * 1500),
         *exchange("recent", "recent evidence"),
     ]
-    await prepare_request(
-        state, client, messages, [], current_question=current
-    )
+    await prepare_request(state, client, messages, [], current_question=current)
     previous_count = len(client.summaries)
     next_question: ChatMessage = {"role": "user", "content": "new objective"}
     messages.extend(

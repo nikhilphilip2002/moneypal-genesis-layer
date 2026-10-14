@@ -33,9 +33,7 @@ def live_columns(warehouse_cursor):
 
 class TestTablesExist:
     def test_every_catalog_table_exists(self, catalog, live_columns):
-        missing = [
-            t for t in catalog.allowed_tables() if t not in live_columns
-        ]
+        missing = [t for t in catalog.allowed_tables() if t not in live_columns]
         assert not missing, (
             f"catalog references tables that do not exist: {missing}"
         )
@@ -186,8 +184,8 @@ class TestDocumentedFactsStillHold:
                 drifted.append(
                     f"{table.id}: catalog says {table.row_count}, found {actual}"
                 )
-        assert not drifted, (
-            "row counts in tables.yaml are stale: " + "; ".join(drifted)
+        assert not drifted, "row counts in tables.yaml are stale: " + "; ".join(
+            drifted
         )
 
     def test_portfolio_snapshot_can_be_collapsed_as_of(self, warehouse_cursor):

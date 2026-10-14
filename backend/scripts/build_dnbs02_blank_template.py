@@ -127,9 +127,7 @@ def verify(path: Path) -> None:
                         f"{name}!{cell.coordinate}: PAN-like value {text!r}"
                     )
                 if EMAIL_RE.search(text):
-                    problems.append(
-                        f"{name}!{cell.coordinate}: email {text!r}"
-                    )
+                    problems.append(f"{name}!{cell.coordinate}: email {text!r}")
                 # Any bare number below the header row is a leftover reported figure.
                 if (
                     isinstance(cell.value, (int, float))

@@ -128,7 +128,7 @@ def _rank(
     scored = prioritise(rows, cat.worklists.score)
     items: list[WorklistItem] = []
 
-    for row, (score, weights) in zip(rows, scored):
+    for row, (score, weights) in zip(rows, scored, strict=False):
         triggered = rule_engine.triggered_rules(row, active_rules)
         if not triggered:
             # The WHERE clause is the OR of the same predicates, so this cannot normally
@@ -146,9 +146,7 @@ def _rank(
         items.append(
             WorklistItem(
                 rank=0,  # assigned after the sort, so it always matches what is displayed
-                account=canonical_enum_code(
-                    row.get("loan_account_number", "")
-                ),
+                account=canonical_enum_code(row.get("loan_account_number", "")),
                 score=score,
                 severity=severity,  # type: ignore[arg-type]
                 reasons=[_reason(rule, row, cat) for rule in triggered],
@@ -212,7 +210,8 @@ def _display_fields(row: dict[str, Any]) -> dict[str, Any]:
     The account number is an identifier that Postgres hands back as `numeric`, so it arrives
     as a float and renders as "1000400003373.0". An officer reading that off a screen to key
     into the core system has to know to drop the ".0", which is exactly the kind of small
-    friction that gets a list abandoned."""
+    friction that gets a list abandoned.
+    """
     out = {
         key: value
         for key, value in row.items()
@@ -264,7 +263,7 @@ def _mask(worklist: Worklist, role: str | None, cat: Catalog) -> Worklist:
     )
     if not masked:
         return worklist
-    for item, row in zip(worklist.items, masked_rows):
+    for item, row in zip(worklist.items, masked_rows, strict=False):
         item.fields = row
     for column in worklist.columns:
         if column.name in masked:

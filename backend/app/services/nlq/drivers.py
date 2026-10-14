@@ -204,8 +204,11 @@ def _index(
     metric_id: str,
     weight_metric: str | None,
 ) -> dict[str, tuple[float, float]]:
-    """member -> (metric value, weight). Rows arrive from the executor, so values may be
-    Decimal or None; both are coerced once here rather than at every use."""
+    """Member -> (metric value, weight).
+
+    Rows arrive from the executor, so values may be Decimal or None; both are
+    coerced once here rather than at every use.
+    """
     out: dict[str, tuple[float, float]] = {}
     for row in rows:
         # Key on the raw code, never the decoded label. The current period's rows have been
@@ -317,7 +320,8 @@ def _unweighted_ratio_contributions(members, current, prior, enum, dim_label):
 
     An unweighted mean of the member ratios is *not* the metric — the compiler computes the
     weighted value — so publishing one here would put two different numbers for the same
-    metric on two adjacent cards. The totals are reported as unknown instead."""
+    metric on two adjacent cards. The totals are reported as unknown instead.
+    """
     contributions = []
     for member in members:
         c = current.get(member, (0.0, 0.0))[0]
@@ -337,8 +341,10 @@ def _unweighted_ratio_contributions(members, current, prior, enum, dim_label):
 def _with_shares(
     contributions: list[Contribution], delta: float, *, attributable: bool
 ) -> list[Contribution]:
-    """A share of a zero change, or of a change the parts do not compose into, is not a
-    small number — it is an undefined one. Withhold it rather than round it."""
+    """A share of a zero change, or of a change the parts do not compose into, is not a small number — it is an undefined one.
+
+    Withhold it rather than round it.
+    """
     if not attributable or delta == 0:
         return contributions
 
@@ -395,7 +401,8 @@ def narrate(
     """The sentence under the waterfall. Templated, so every figure in it came from above.
 
     Deliberately not a model call: this is the one sentence a director will quote in a
-    meeting, and it has to be reproducible."""
+    meeting, and it has to be reproducible.
+    """
     d = decomposition
     unit = d.unit
     if catalog is not None and not d.label:
@@ -415,7 +422,9 @@ def narrate(
         )
 
     if d.delta == 0:
-        return f"{d.label} was unchanged at {format_value(d.current_total, unit)}."
+        return (
+            f"{d.label} was unchanged at {format_value(d.current_total, unit)}."
+        )
 
     head = (
         f"{d.label} {d.direction} from {format_value(d.prior_total, unit)} to "

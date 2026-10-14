@@ -59,9 +59,7 @@ class TestPrivileges:
 
     def test_cannot_read_legacy_compatibility_view(self):
         with nlq_db.readonly_cursor() as (_conn, cur):
-            error = _fails(
-                cur, "SELECT count(*) FROM gold.loan_account_master"
-            )
+            error = _fails(cur, "SELECT count(*) FROM gold.loan_account_master")
             assert any(
                 message in error.lower()
                 for message in ("permission denied", "does not exist")

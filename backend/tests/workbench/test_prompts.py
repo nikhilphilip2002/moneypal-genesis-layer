@@ -21,9 +21,7 @@ async def test_database_tools_are_not_defined_in_the_local_registry():
             access.build_policy(role="admin", external_sources_enabled=True),
         )
     ]
-    assert not (
-        {"query_metrics", "run_validated_query", QUERY} & set(offered)
-    )
+    assert not ({"query_metrics", "run_validated_query", QUERY} & set(offered))
     assert set(offered) == {
         READ_TOOL_OUTPUT,
         SEARCH_CURATED_KNOWLEDGE,

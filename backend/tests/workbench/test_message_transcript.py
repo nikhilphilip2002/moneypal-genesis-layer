@@ -5,8 +5,8 @@ from copy import deepcopy
 import pytest
 
 from app.core.tool_names import QUERY, SEARCH_PUBLIC_WEB
-from app.services.nlq.llm.messages import ChatMessage
 from app.services import db_schema
+from app.services.nlq.llm.messages import ChatMessage
 from app.services.workbench import history
 
 
@@ -175,18 +175,30 @@ def test_pending_calls_block_invalid_results_and_are_closed_on_restart():
 
 
 @pytest.mark.parametrize("changed_part", [0, 1])
-def test_followup_refreshes_system_prompt_and_preserves_history_and_checkpoint(changed_part):
+def test_followup_refreshes_system_prompt_and_preserves_history_and_checkpoint(
+    changed_part,
+):
     from app.services.workbench import prompts
     from app.services.workbench.compaction.request import active_messages
 
     first = history.begin_turn("c", "u", "first")
     system = prompts.build_agent_system_prompt()
     history.start_turn_messages(
-        "c", "u", first, system, {"role": "user", "content": "first"},
+        "c",
+        "u",
+        first,
+        system,
+        {"role": "user", "content": "first"},
     )
-    history.append_messages("c", "u", first, [{"role": "assistant", "content": "answer "}])
+    history.append_messages(
+        "c", "u", first, [{"role": "assistant", "content": "answer "}]
+    )
     history.complete_turn("c", "u", first)
-    checkpoint = {"cut": 1, "summary": "previous question", "preserved_question": None}
+    checkpoint = {
+        "cut": 1,
+        "summary": "previous question",
+        "preserved_question": None,
+    }
     history.set_checkpoint("c", "u", checkpoint)
     previous = history.load_messages("c", user="u")
     updated = deepcopy(system)
@@ -196,7 +208,11 @@ def test_followup_refreshes_system_prompt_and_preserves_history_and_checkpoint(c
 
     second = history.begin_turn("c", "u", "second")
     record = history.start_turn_messages(
-        "c", "u", second, updated, {"role": "user", "content": "second"},
+        "c",
+        "u",
+        second,
+        updated,
+        {"role": "user", "content": "second"},
     )
     assert record.messages[0] == updated
     assert record.messages[1:-1] == previous[1:]
@@ -208,7 +224,11 @@ def test_followup_refreshes_system_prompt_and_preserves_history_and_checkpoint(c
 
     third = history.begin_turn("c", "u", "third")
     record = history.start_turn_messages(
-        "c", "u", third, updated, {"role": "user", "content": "third"},
+        "c",
+        "u",
+        third,
+        updated,
+        {"role": "user", "content": "third"},
     )
     assert "previous_system_message" not in record.turns[-1]
     assert record.turns[1]["previous_system_message"] == system

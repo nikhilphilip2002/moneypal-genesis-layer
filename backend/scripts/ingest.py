@@ -11,10 +11,15 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.append(str(ROOT / "backend"))
 
 from app.core.config import DATA_DIR, MACRO_COLLECTION, settings  # noqa: E402
-from app.registry import load_regulation_categories, source_paths_for_category  # noqa: E402
+from app.registry import (  # noqa: E402
+    load_regulation_categories,
+    source_paths_for_category,
+)
 from app.services import institution_loader as il  # noqa: E402
 from genesis_core.rag import (  # noqa: E402
     chunk_text_chars as chunk_text,
+)
+from genesis_core.rag import (  # noqa: E402
     embed_batch,
     load_pdf,
 )
@@ -172,8 +177,7 @@ def _ingest_documents(
                 ]
             else:
                 segments = [
-                    (None, chunk)
-                    for chunk in chunk_text(_read_text_file(path))
+                    (None, chunk) for chunk in chunk_text(_read_text_file(path))
                 ]
         except Exception as exc:
             print(
@@ -182,7 +186,7 @@ def _ingest_documents(
             continue
         vectors = embed_batch([chunk for _, chunk in segments])
         for chunk_index, ((page, chunk), vector) in enumerate(
-            zip(segments, vectors)
+            zip(segments, vectors, strict=False)
         ):
             payload = {
                 **base_payload,

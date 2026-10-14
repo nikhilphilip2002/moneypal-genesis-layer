@@ -4,18 +4,15 @@ from __future__ import annotations
 
 import pytest
 
-from app.services.workbench import sources
 from app.core.config import settings
-
+from app.services.workbench import sources
 
 ALL_IDS = {"db", "macro", "competitive", "regulatory", "knowledge", "web"}
 
 
 @pytest.fixture(autouse=True)
 def _connector_settings(monkeypatch):
-    monkeypatch.setattr(
-        settings, "workbench_external_connectors_enabled", True
-    )
+    monkeypatch.setattr(settings, "workbench_external_connectors_enabled", True)
     monkeypatch.setattr(settings, "exa_mcp_enabled", True)
 
 

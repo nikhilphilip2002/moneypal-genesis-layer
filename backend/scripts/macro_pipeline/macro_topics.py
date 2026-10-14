@@ -311,9 +311,7 @@ TOPIC_BY_ID: dict[str, Topic] = {t.id: t for t in TOPICS}
 
 
 @lru_cache(maxsize=1)
-def _keyword_patterns() -> list[
-    tuple[str, tuple[tuple[re.Pattern, int], ...]]
-]:
+def _keyword_patterns() -> list[tuple[str, tuple[tuple[re.Pattern, int], ...]]]:
     """Compile each topic's keywords into whole-word patterns, once.
 
     Substring matching is wrong here and quietly so: short acronyms hide inside ordinary

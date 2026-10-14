@@ -11,8 +11,11 @@ from typing import Any, Iterable
 from app.services.workbench.access import SourceAccessPolicy
 
 
-class OutboundPolicyDenied(PermissionError):
+class OutboundPolicyDeniedError(PermissionError):
     code = "PII_POLICY_VIOLATION"
+
+
+OutboundPolicyDenied = OutboundPolicyDeniedError
 
 
 _PAN = re.compile(r"(?<![A-Z0-9])[A-Z]{5}[0-9]{4}[A-Z](?![A-Z0-9])", re.I)

@@ -139,9 +139,7 @@ class TestConcentration:
             detectors.concentration([], watch_hhi=0.05, alert_hhi=0.15) is None
         )
         assert (
-            detectors.concentration(
-                [None, 0.0], watch_hhi=0.05, alert_hhi=0.15
-            )
+            detectors.concentration([None, 0.0], watch_hhi=0.05, alert_hhi=0.15)
             is None
         )
 
@@ -486,9 +484,7 @@ class TestScanReporting:
         report = scan.run(catalog=catalog, today=TODAY)
         assert report.signals[0].scope == "npa_total"
 
-    def test_every_signal_is_stamped_and_identified(
-        self, catalog, monkeypatch
-    ):
+    def test_every_signal_is_stamped_and_identified(self, catalog, monkeypatch):
         monkeypatch.setattr(
             scan,
             "_scan_scope",
@@ -535,9 +531,7 @@ class TestSignalEvidence:
             period=Period(relative="last_12_months"),
         )
         assert (
-            scan._member_spec(spec, "branch", "1002", catalog)
-            .filters[-1]
-            .value
+            scan._member_spec(spec, "branch", "1002", catalog).filters[-1].value
             != "Aluva"
         )
 
@@ -572,9 +566,7 @@ class TestMemberLabels:
         scope = catalog.signals.scopes["par30_by_branch"]
         metric = catalog.metrics["par_30"]
         spec = scan._series_spec(scope, catalog)
-        found = scan._scan_by_member(
-            scope, metric, spec, self._rows(), catalog
-        )
+        found = scan._scan_by_member(scope, metric, spec, self._rows(), catalog)
         assert found
         assert any("Aluva" in s.text for s in found)
         assert not any("1002" in s.text for s in found)
@@ -583,9 +575,7 @@ class TestMemberLabels:
         scope = catalog.signals.scopes["par30_by_branch"]
         metric = catalog.metrics["par_30"]
         spec = scan._series_spec(scope, catalog)
-        found = scan._scan_by_member(
-            scope, metric, spec, self._rows(), catalog
-        )
+        found = scan._scan_by_member(scope, metric, spec, self._rows(), catalog)
         branch_filters = [
             f
             for s in found
@@ -654,9 +644,7 @@ class TestAnUnreachableWarehouse:
     ):
         self._down(monkeypatch)
         report = scan.run(catalog=catalog, today=TODAY)
-        assert any(
-            "not the same as a clean book" in w for w in report.warnings
-        )
+        assert any("not the same as a clean book" in w for w in report.warnings)
 
     def test_an_unconfigured_role_is_treated_the_same(
         self, catalog, monkeypatch
@@ -744,15 +732,11 @@ class TestDegenerateBaselines:
         """Collection efficiency moving 99.99 -> 96.3 is a real 3.7-point fall. It is not a
         z-score finding, and the catalog gives it thresholds for exactly that reason."""
         assert (
-            detectors.threshold_breach(
-                96.3, watch_below=95.0, alert_below=90.0
-            )
+            detectors.threshold_breach(96.3, watch_below=95.0, alert_below=90.0)
             is None
         )
         assert (
-            detectors.threshold_breach(
-                88.0, watch_below=95.0, alert_below=90.0
-            )
+            detectors.threshold_breach(88.0, watch_below=95.0, alert_below=90.0)
             is not None
         )
 

@@ -170,9 +170,7 @@ def resolve_relative(relative: str, today: date | None = None) -> DateRange:
     raise PeriodError(f"unknown relative period {relative!r}")
 
 
-def previous_period(
-    current: DateRange, today: date | None = None
-) -> DateRange:
+def previous_period(current: DateRange, today: date | None = None) -> DateRange:
     """The comparable prior period, for `compare_to` when the user says "vs last year".
 
     Aligned to the same calendar shape where one is recognisable (a whole month compares to

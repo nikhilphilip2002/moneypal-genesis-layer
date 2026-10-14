@@ -184,9 +184,12 @@ BANNED_SCHEMAS = {
 
 
 class ValidationError(ValueError):
-    """A statement the validator refuses. The reason is logged and fed back to the model
-    for its single repair attempt — but never shown verbatim to the user, because the
-    message names tables and would leak schema."""
+    """A statement the validator refuses.
+
+    The reason is logged and fed back to the model for its single repair attempt
+    — but never shown verbatim to the user, because the message names tables and
+    would leak schema.
+    """
 
 
 @dataclass(slots=True)
@@ -314,7 +317,7 @@ def _check_no_write_ctes(tree: exp.Expression) -> None:
 
 def _check_no_star(tree: exp.Expression) -> None:
     """`SELECT *` is uncontrolled PII egress — a customer table has 56 columns."""
-    for node in tree.find_all(exp.Star):
+    for _node in tree.find_all(exp.Star):
         raise ValidationError(
             "SELECT * is not allowed; name the columns explicitly"
         )
@@ -330,11 +333,10 @@ _BARE_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
 
 def _function_names(node: exp.Func) -> tuple[str, set[str]]:
-    """The names a function node answers to: how PostgreSQL spells it, plus sqlglot's own
-    canonical key (sqlglot parses `DATE_TRUNC` into `TimestampTrunc` and `TO_CHAR` into
-    `TimeToStr`; the rendered form is what the allowlist is written against).
+    """The names a function node answers to: how PostgreSQL spells it, plus sqlglot's own canonical key (sqlglot parses `DATE_TRUNC` into `TimestampTrunc` and `TO_CHAR` into `TimeToStr`; the rendered form is what the allowlist is written against).
 
-    Returns (display name, all lowercase candidates)."""
+    Returns (display name, all lowercase candidates).
+    """
     candidates: set[str] = set()
     display = ""
     if isinstance(node, exp.Anonymous):
@@ -359,9 +361,12 @@ def _function_names(node: exp.Func) -> tuple[str, set[str]]:
 
 
 def _check_functions(tree: exp.Expression, mode: str = "denylist") -> None:
-    """The denylist always applies. In `allowlist` mode any function outside
-    ALLOWED_FUNCTIONS is rejected; in `denylist` mode it is logged so the allowlist can be
-    completed from evidence before the mode is switched."""
+    """The denylist always applies.
+
+    In `allowlist` mode any function outside ALLOWED_FUNCTIONS is rejected; in
+    `denylist` mode it is logged so the allowlist can be completed from evidence
+    before the mode is switched.
+    """
     for node in tree.walk():
         # sqlglot models AND/OR/NOT and the comparison operators as Func subclasses too;
         # they are syntax, not callables, and only the callable form is policed here.
@@ -432,9 +437,7 @@ def _physical_columns(catalog: Catalog) -> dict[str, set[str]]:
     declared join endpoints are also real columns exposed in the prompt's join paths.
     Anything else is an invention and must be rejected before EXPLAIN reaches Postgres.
     """
-    allowed = {
-        table.table: set(table.key) for table in catalog.tables.values()
-    }
+    allowed = {table.table: set(table.key) for table in catalog.tables.values()}
     for table in catalog.tables.values():
         allowed[table.table].update(table.date_columns.values())
         if table.as_of_column:
@@ -479,9 +482,7 @@ def _check_columns(tree: exp.Expression, catalog: Catalog) -> None:
     try:
         scopes = traverse_scope(root)
     except Exception as exc:  # noqa: BLE001 - sqlglot raises several types
-        raise ValidationError(
-            f"could not resolve query scopes: {exc}"
-        ) from exc
+        raise ValidationError(f"could not resolve query scopes: {exc}") from exc
     if not scopes:
         raise ValidationError("no query scope found")
     scope_by_expression = {id(scope.expression): scope for scope in scopes}
@@ -526,9 +527,7 @@ def _projected_columns(
         alias = source.args.get("alias")
         if alias is not None and alias.columns:
             return {(c.name or "").lower() for c in alias.columns}
-        qualified = (
-            f"{(source.db or '').lower()}.{(source.name or '').lower()}"
-        )
+        qualified = f"{(source.db or '').lower()}.{(source.name or '').lower()}"
         return allowed.get(qualified)
 
     expression = source.expression
@@ -559,9 +558,7 @@ def _describe_scope(scope: Scope) -> str:
         return f"CTE {alias!r}" if alias else "a CTE"
     if kind == ScopeType.DERIVED_TABLE:
         parent = expression.parent
-        alias = (
-            parent.alias_or_name if isinstance(parent, exp.Subquery) else ""
-        )
+        alias = parent.alias_or_name if isinstance(parent, exp.Subquery) else ""
         return f"derived table {alias!r}" if alias else "a derived table"
     if kind == ScopeType.UNION:
         return "a UNION branch"
@@ -644,9 +641,7 @@ def _resolve_unqualified(
 def _check_no_set_operations_on_forbidden_tables(
     tree: exp.Expression, catalog: Catalog
 ) -> None:
-    """A UNION arm is a whole second query and gets the same scrutiny as the first —
-    `SELECT a FROM gold.x UNION SELECT rolpassword FROM pg_authid` must not slip past a
-    check that only looked at the leading SELECT."""
+    """A UNION arm is a whole second query and gets the same scrutiny as the first — `SELECT a FROM gold.x UNION SELECT rolpassword FROM pg_authid` must not slip past a check that only looked at the leading SELECT."""
     for node in tree.find_all(exp.Union, exp.Intersect, exp.Except):
         for side in (node.left, node.right):
             if side is not None:
@@ -654,8 +649,7 @@ def _check_no_set_operations_on_forbidden_tables(
 
 
 def _check_joins_have_conditions(tree: exp.Expression) -> None:
-    """A missing ON clause is a cartesian product: 13k accounts x 260k schedule rows is
-    3.5 billion rows, which is a denial of service written by accident."""
+    """A missing ON clause is a cartesian product: 13k accounts x 260k schedule rows is 3.5 billion rows, which is a denial of service written by accident."""
     for join in tree.find_all(exp.Join):
         if join.args.get("on") or join.args.get("using"):
             continue

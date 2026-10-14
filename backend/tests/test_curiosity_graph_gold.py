@@ -112,9 +112,7 @@ def test_where_filters_support_tenure_and_loan_size():
 
     assert "l.agent_code::text = %s" in where
     assert "l.total_emi_count > 24 AND l.total_emi_count <= 36" in where
-    assert (
-        "l.approved_amount >= 200000 AND l.approved_amount < 500000" in where
-    )
+    assert "l.approved_amount >= 200000 AND l.approved_amount < 500000" in where
     assert "AGNT45" in params
     assert "1616" in params
 

@@ -139,7 +139,7 @@ def _sideways_steps(spec: QuerySpec, cat: Catalog) -> list[DrillStep]:
 def _explain_step(
     spec: QuerySpec, cat: Catalog, today: date | None
 ) -> DrillStep | None:
-    """ "Why did that change?" — the same metric, decomposed across its drivers."""
+    """Why did that change? — the same metric, decomposed across its drivers."""
     if spec.explain:
         return None
     metric = cat.metrics.get(spec.metrics[0])
@@ -150,9 +150,7 @@ def _explain_step(
     if dimension is None:
         # A change has to be attributed to something. Fall back to the first primary head.
         heads = [
-            h
-            for h in cat.drill.heads(primary_only=True)
-            if h in cat.dimensions
+            h for h in cat.drill.heads(primary_only=True) if h in cat.dimensions
         ]
         if not heads:
             return None
@@ -221,7 +219,10 @@ def _act_step(spec: QuerySpec, cat: Catalog) -> DrillStep | None:
 
 
 def _split_step(
-    kind: Literal["deeper", "sideways"], spec: QuerySpec, dimension: str, cat: Catalog
+    kind: Literal["deeper", "sideways"],
+    spec: QuerySpec,
+    dimension: str,
+    cat: Catalog,
 ) -> DrillStep:
     drilled = spec.model_copy(
         update={
@@ -285,9 +286,7 @@ def _qualifiers(spec: QuerySpec, cat: Catalog) -> str:
         parts.append(f"for {humanize_label(dim.label)} {value}")
 
     period = spec.period.relative or (
-        f"{spec.period.start} to {spec.period.end}"
-        if spec.period.start
-        else ""
+        f"{spec.period.start} to {spec.period.end}" if spec.period.start else ""
     )
     if period:
         parts.append(f"in {str(period).replace('_', ' ')}")
@@ -318,9 +317,7 @@ def append_level(
     current = _current_level(spec, cat)
     if current is None:
         heads = [
-            h
-            for h in cat.drill.heads(primary_only=True)
-            if h in cat.dimensions
+            h for h in cat.drill.heads(primary_only=True) if h in cat.dimensions
         ]
         nxt = heads[0] if heads else None
     else:
@@ -379,9 +376,10 @@ def _categorical_levels(spec: QuerySpec, cat: Catalog) -> list[str]:
 
 
 def _is_ambiguous(spec: QuerySpec, cat: Catalog) -> bool:
-    """Two categorical splits already — branch x product — so there is no single "current
-    level" to descend from, and no honest way to pick one. Offer nothing rather than
-    silently drilling one of the two."""
+    """Two categorical splits already — branch x product — so there is no single "current level" to descend from, and no honest way to pick one.
+
+    Offer nothing rather than silently drilling one of the two.
+    """
     return len(_categorical_levels(spec, cat)) > 1
 
 
@@ -398,11 +396,10 @@ def _replace_categorical(
 
     Stacking branch x agent yields a two-dimensional grid nobody asked for; dropping the
     month from a trend loses the shape the question was about. Same rule the conversation
-    layer applies to "and by branch?"."""
+    layer applies to "and by branch?".
+    """
     time_dims = [
-        d
-        for d in spec.dimensions
-        if (e := cat.dimensions.get(d)) and e.is_time
+        d for d in spec.dimensions if (e := cat.dimensions.get(d)) and e.is_time
     ]
     return [*time_dims, dimension]
 
@@ -460,8 +457,7 @@ def _previous_period(period: Period, today: date | None) -> Period | None:
 
 
 def _a_year_earlier(day: date) -> date:
-    """29 February has no counterpart in a common year; 28 February is the day the business
-    means, and it is the only choice that keeps the window the same length."""
+    """29 February has no counterpart in a common year; 28 February is the day the business means, and it is the only choice that keeps the window the same length."""
     try:
         return day.replace(year=day.year - 1)
     except ValueError:

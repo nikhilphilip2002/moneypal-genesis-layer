@@ -1,7 +1,6 @@
 import importlib.util
 from pathlib import Path
 
-
 MODULE_PATH = (
     Path(__file__).resolve().parents[2] / "scripts" / "benchmark_common.py"
 )

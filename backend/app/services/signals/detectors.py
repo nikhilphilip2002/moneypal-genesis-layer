@@ -117,7 +117,7 @@ def trend_break(series: Sequence[float | None]) -> Detection | None:
     if len(values) < 5:
         return None
 
-    deltas = [b - a for a, b in zip(values, values[1:])]
+    deltas = [b - a for a, b in zip(values, values[1:], strict=False)]
     latest = deltas[-1]
     if abs(latest) < FLAT_EPSILON:
         return None
@@ -148,8 +148,11 @@ def threshold_breach(
     watch_below: float | None = None,
     alert_below: float | None = None,
 ) -> Detection | None:
-    """A policy or prudential limit crossed. No history needed, which is why it is the only
-    detector that works on the metrics Genesis has barely any history for."""
+    """A policy or prudential limit crossed.
+
+    No history needed, which is why it is the only detector that works on the
+    metrics Genesis has barely any history for.
+    """
     if value is None:
         return None
 

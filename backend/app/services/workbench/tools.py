@@ -24,8 +24,11 @@ class ToolError(RuntimeError):
     """Base for tool dispatch failures."""
 
 
-class ToolNotFound(ToolError):
+class ToolNotFoundError(ToolError):
     pass
+
+
+ToolNotFound = ToolNotFoundError
 
 
 class ToolAccessError(ToolError):
@@ -132,6 +135,7 @@ async def run_tool(
 ) -> SourceResult:
     """Run a tool, enforcing role access. Raises ToolNotFound / ToolAccessError."""
     import time
+
     from app.core.logging import log_parsed_output
 
     tool = get_tool(tool_id)

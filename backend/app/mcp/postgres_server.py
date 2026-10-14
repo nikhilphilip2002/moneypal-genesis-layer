@@ -13,13 +13,13 @@ from fastmcp import Context, FastMCP
 
 from app.core.tool_names import QUERY
 from app.mcp.results import failure, success
-from app.services.nlq import db as nlq_db, pii
+from app.services.nlq import db as nlq_db
+from app.services.nlq import pii
 from app.services.nlq.catalog import get_catalog
 from app.services.nlq.executor import ExecutionError, execute_raw
 from app.services.nlq.sql_execution import infer_column_units
 from app.services.nlq.validator import ValidationError as SqlValidationError
 from app.services.nlq.validator import validate
-
 
 mcp = FastMCP(
     "Moneypal PostgreSQL",
@@ -52,10 +52,7 @@ def _query(sql: str, meta: dict[str, Any]) -> dict[str, Any]:
     catalog = get_catalog()
     role = str(meta.get("workbench_role") or "")
     effective_sources = meta.get("workbench_effective_sources")
-    if (
-        not isinstance(effective_sources, list)
-        or "db" not in effective_sources
-    ):
+    if not isinstance(effective_sources, list) or "db" not in effective_sources:
         return failure(
             "POLICY_DENIED",
             "This request is not authorized to access the loan-book source.",

@@ -111,9 +111,7 @@ class TestNextSteps:
             period=Period(relative="last_quarter"),
         )
         step = next(
-            s
-            for s in drilldown.next_steps(spec, catalog)
-            if s.kind == "deeper"
+            s for s in drilldown.next_steps(spec, catalog) if s.kind == "deeper"
         )
         assert step.spec.dimensions == ["agent"]
 
@@ -124,9 +122,7 @@ class TestNextSteps:
             period=Period(relative="last_12_months"),
         )
         step = next(
-            s
-            for s in drilldown.next_steps(spec, catalog)
-            if s.kind == "deeper"
+            s for s in drilldown.next_steps(spec, catalog) if s.kind == "deeper"
         )
         assert step.spec.dimensions == ["month", "agent"]
 
@@ -138,9 +134,7 @@ class TestNextSteps:
             period=Period(relative="last_quarter"),
         )
         step = next(
-            s
-            for s in drilldown.next_steps(spec, catalog)
-            if s.kind == "deeper"
+            s for s in drilldown.next_steps(spec, catalog) if s.kind == "deeper"
         )
         assert step.spec.filters == spec.filters
 
@@ -309,9 +303,7 @@ class TestStepQuestions:
             period=Period(relative="last_quarter"),
         )
         step = next(
-            s
-            for s in drilldown.next_steps(spec, catalog)
-            if s.kind == "deeper"
+            s for s in drilldown.next_steps(spec, catalog) if s.kind == "deeper"
         )
         assert "product" in step.question
         assert "last quarter" in step.question

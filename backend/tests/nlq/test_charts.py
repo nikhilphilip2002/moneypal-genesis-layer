@@ -94,8 +94,7 @@ class TestChartTypeRules:
             period=Period(relative="all_time"),
         )
         rows = [
-            {"scheme": str(1300 + i), "sanctioned_amount": i}
-            for i in range(30)
+            {"scheme": str(1300 + i), "sanctioned_amount": i} for i in range(30)
         ]
         assert chart_for(spec, rows, catalog).chart_type == "ranking"
 
@@ -125,9 +124,7 @@ class TestChartTypeRules:
             compare_to=Period(relative="last_quarter"),
         )
         rows = [{"month": "2026-01-01", "sanctioned_amount": 100.0}]
-        prior = result_of(
-            [{"month": "2026-01-01", "sanctioned_amount": 120.0}]
-        )
+        prior = result_of([{"month": "2026-01-01", "sanctioned_amount": 120.0}])
         chart = chart_for(spec, rows, catalog, prior=prior)
         assert chart.chart_type == "variance"
         assert [s.field for s in chart.series] == ["delta"]
@@ -682,9 +679,7 @@ class TestExplain:
         )
         assert "rose" in chart.summary
 
-    def test_a_ratio_without_its_weight_is_not_drawn_as_a_bridge(
-        self, catalog
-    ):
+    def test_a_ratio_without_its_weight_is_not_drawn_as_a_bridge(self, catalog):
         """A ratio's change only splits exactly when the denominator came through the query.
         Without it there is no exact split and no honest total, so a waterfall would have
         nothing at either end — it falls back to a comparison form, which claims only what a

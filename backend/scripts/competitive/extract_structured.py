@@ -6,8 +6,8 @@ from collections import defaultdict
 from pathlib import Path
 
 from pipeline_common import (
-    DEFAULT_CONFIG_PATH,
     DEFAULT_CONFIG_DIR,
+    DEFAULT_CONFIG_PATH,
     DEFAULT_RAW_ROOT,
     DEFAULT_STRUCTURED_ROOT,
     Institution,
@@ -15,7 +15,6 @@ from pipeline_common import (
     raw_folder,
     select_institutions,
 )
-
 
 SECTION_NAMES = [
     "Institution profile",
@@ -181,9 +180,7 @@ def is_noise(line: str) -> bool:
         return True
     if lower.startswith("http://") or lower.startswith("https://"):
         return True
-    return len(lower) < 4 or any(
-        pattern in lower for pattern in NOISE_PATTERNS
-    )
+    return len(lower) < 4 or any(pattern in lower for pattern in NOISE_PATTERNS)
 
 
 def read_docs(source_dir: Path) -> list[dict]:
@@ -425,9 +422,7 @@ def build_profile(institution: Institution, docs: list[dict]) -> str:
         grouped["Institution profile"], "Institution profile"
     )
     extracted["Products"] = extract_products(grouped["Products"])
-    extracted["MSME focus"] = extract_lines(
-        grouped["MSME focus"], "MSME focus"
-    )
+    extracted["MSME focus"] = extract_lines(grouped["MSME focus"], "MSME focus")
     extracted["Public financial highlights"] = extract_lines(
         grouped["Public financial highlights"], "Public financial highlights"
     )

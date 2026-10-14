@@ -110,9 +110,7 @@ def assert_mcp_catalog(health: dict[str, Any]) -> None:
     if catalog.get("status") != "ok":
         raise AssertionError(f"MCP catalog is not ready: {catalog}")
     if local != expected_local:
-        raise AssertionError(
-            f"unexpected Workbench MCP tools: {sorted(local)}"
-        )
+        raise AssertionError(f"unexpected Workbench MCP tools: {sorted(local)}")
     if postgres != {QUERY}:
         raise AssertionError(
             f"unexpected PostgreSQL MCP tools: {sorted(postgres)}"
@@ -185,9 +183,7 @@ def main() -> int:
             external_sources_enabled=enabled,
         )
         cards = [
-            data.get("source")
-            for name, data in events
-            if name == "source_card"
+            data.get("source") for name, data in events if name == "source_card"
         ]
         answer = next((data for name, data in events if name == "answer"), {})
         if expected_source is None:

@@ -21,8 +21,11 @@ from app.core.config import BASE_DIR, settings
 from app.mcp import exa_client
 
 
-class UnsafeWebQuery(ValueError):
+class UnsafeWebQueryError(ValueError):
     pass
+
+
+UnsafeWebQuery = UnsafeWebQueryError
 
 
 _PRIVATE_PATTERNS = (
@@ -161,9 +164,7 @@ _TOPIC_CUES: dict[str, re.Pattern[str]] = {
 
 
 def _topics(query: str) -> set[str]:
-    matched = {
-        topic for topic, cue in _TOPIC_CUES.items() if cue.search(query)
-    }
+    matched = {topic for topic, cue in _TOPIC_CUES.items() if cue.search(query)}
     return matched or {"macro"}
 
 

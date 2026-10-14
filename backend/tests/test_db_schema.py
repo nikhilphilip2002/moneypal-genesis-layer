@@ -72,9 +72,9 @@ class TestLabelling:
     def test_unknown_scheme_keeps_its_code(self):
         """45 scheme codes have no master row; they must not get an invented category."""
         assert scheme_title("9999", {}) == "Scheme #9999"
-        assert scheme_title(
-            "1610", {"1610": "BUSINESS/ SERVICE/INDUSTRY"}
-        ) == ("BUSINESS/ SERVICE/INDUSTRY (Scheme #1610)")
+        assert scheme_title("1610", {"1610": "BUSINESS/ SERVICE/INDUSTRY"}) == (
+            "BUSINESS/ SERVICE/INDUSTRY (Scheme #1610)"
+        )
 
     def test_no_module_level_fallback_data(self):
         """The fabricated product/branch/cohort matrices must be gone."""
@@ -184,9 +184,7 @@ class TestBranchProductRelationship:
             assert name in branch["display_title"]
 
     def test_product_drilldown_only_shows_originating_branches(self):
-        graph = get_db_schema_graph(
-            view_level="zonal", zonal_id="ZONE-PROD-16"
-        )
+        graph = get_db_schema_graph(view_level="zonal", zonal_id="ZONE-PROD-16")
         shown = {n["id"] for n in graph["nodes"] if n["type"] == "manager"}
         with db_cursor() as (_c, cur):
             cur.execute(

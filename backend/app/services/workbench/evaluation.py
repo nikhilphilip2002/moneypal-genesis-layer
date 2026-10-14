@@ -30,8 +30,8 @@ def usage_summary(turns: Iterable[dict[str, Any]]) -> dict[str, Any]:
                 str(call.get("purpose", "unspecified")), []
             ).append(int(call.get("uncached_prompt_tokens", 0)))
         timing = turn.get("timing") or {}
-        for field in latency:
-            latency[field].append(int(timing.get(field, 0)))
+        for field, values in latency.items():
+            values.append(int(timing.get(field, 0)))
     return {
         "purposes": {
             purpose: {

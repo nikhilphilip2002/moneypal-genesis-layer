@@ -25,8 +25,10 @@ acknowledged a breach on Monday sees it again on Tuesday and has stopped reading
 
 from app.services.signals.morning import (
     BriefingError,
-    build as briefing,
     personas,
+)
+from app.services.signals.morning import (
+    build as briefing,
 )
 from app.services.signals.scan import ScanError, run
 from app.services.signals.store import (

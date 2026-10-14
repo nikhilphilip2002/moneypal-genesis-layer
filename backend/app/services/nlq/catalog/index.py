@@ -151,8 +151,9 @@ def index(
     catalog: Catalog | None = None, *, batch_size: int = 64
 ) -> dict[str, Any]:
     """Embed and upsert every catalog document. Idempotent per catalog version."""
-    from genesis_core.rag import embed_batch, ensure_collection, get_qdrant
     from qdrant_client.models import PointStruct
+
+    from genesis_core.rag import embed_batch, ensure_collection, get_qdrant
 
     cat = catalog or get_catalog()
     docs = build_documents(cat)
@@ -177,7 +178,7 @@ def index(
                         **doc.payload,
                     },
                 )
-                for doc, vector in zip(batch, vectors)
+                for doc, vector in zip(batch, vectors, strict=False)
             ],
         )
         written += len(batch)

@@ -109,9 +109,7 @@ async def search(
 ) -> ExaToolResult:
     arguments: dict[str, Any] = {
         "query": query,
-        "numResults": max(
-            1, min(settings.exa_search_max_results, num_results)
-        ),
+        "numResults": max(1, min(settings.exa_search_max_results, num_results)),
     }
     if include_domains:
         arguments["includeDomains"] = include_domains

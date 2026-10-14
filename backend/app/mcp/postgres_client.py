@@ -132,7 +132,7 @@ async def discover_model_tools() -> list[dict[str, Any]]:
         except ProviderSchemaError as exc:
             _model_tools.clear()
             _initialization_error = f"PostgreSQL MCP tool {name!r} has an invalid input schema: {exc}"
-            raise PostgresMCPError(_initialization_error)
+            raise PostgresMCPError(_initialization_error) from exc
         _model_tools[name] = definition
     _initialization_error = ""
     return model_tool_definitions()
@@ -145,8 +145,7 @@ async def initialize() -> dict[str, Any]:
     if health_payload.get("status") not in {"ok", "healthy"}:
         _model_tools.clear()
         _initialization_error = str(
-            health_payload.get("detail")
-            or "PostgreSQL MCP health check failed"
+            health_payload.get("detail") or "PostgreSQL MCP health check failed"
         )
         raise PostgresMCPError(_initialization_error)
     return {

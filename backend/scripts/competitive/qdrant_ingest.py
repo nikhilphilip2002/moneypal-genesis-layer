@@ -9,10 +9,6 @@ from pathlib import Path
 from typing import Iterable
 
 from dotenv import load_dotenv
-from qdrant_client import QdrantClient
-from qdrant_client.http import models
-from sentence_transformers import SentenceTransformer
-
 from pipeline_common import (
     BASE_DIR,
     DEFAULT_CONFIG_DIR,
@@ -21,7 +17,9 @@ from pipeline_common import (
     Institution,
     load_institutions,
 )
-
+from qdrant_client import QdrantClient
+from qdrant_client.http import models
+from sentence_transformers import SentenceTransformer
 
 load_dotenv(BASE_DIR.parent / ".env")
 load_dotenv(BASE_DIR / ".env")
@@ -92,7 +90,9 @@ def vector_size() -> int:
         else model.get_sentence_embedding_dimension()
     )
     if dimension is None:
-        raise ValueError("The embedding model does not declare its vector dimension")
+        raise ValueError(
+            "The embedding model does not declare its vector dimension"
+        )
     return int(dimension)
 
 
@@ -219,9 +219,7 @@ def ensure_collection(
 
     client.create_collection(
         collection_name=collection_name,
-        vectors_config=models.VectorParams(
-            size=size, distance=VECTOR_DISTANCE
-        ),
+        vectors_config=models.VectorParams(size=size, distance=VECTOR_DISTANCE),
     )
     return "created"
 
@@ -264,7 +262,7 @@ def ingest_institution(
         vectors = embed_texts([chunk.text for chunk in batch])
         points = []
 
-        for chunk, vector in zip(batch, vectors):
+        for chunk, vector in zip(batch, vectors, strict=False):
             metadata = document_metadata(institution)
             points.append(
                 models.PointStruct(
@@ -287,9 +285,7 @@ def ingest_institution(
                 )
             )
 
-        client.upsert(
-            collection_name=collection_name, points=points, wait=True
-        )
+        client.upsert(collection_name=collection_name, points=points, wait=True)
         total += len(points)
 
     return {

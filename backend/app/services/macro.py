@@ -2,11 +2,10 @@
 
 from typing import TypedDict
 
-from genesis_core import make_response, rag
-from genesis_core.schema import Confidence
-
 from app import prompts
 from app.core.config import MACRO_COLLECTION
+from genesis_core import make_response, rag
+from genesis_core.schema import Confidence
 
 
 def _brief(

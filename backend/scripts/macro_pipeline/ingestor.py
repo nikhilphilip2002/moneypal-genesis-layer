@@ -26,9 +26,8 @@ import logging
 import uuid
 from typing import Iterable
 
-from genesis_core import rag
-
 from app.core.config import settings
+from genesis_core import rag
 
 log = logging.getLogger("macro.ingestor")
 
@@ -84,9 +83,7 @@ def _macro_filter(**kwargs):
     ]
     for key, value in kwargs.items():
         must.append(
-            models.FieldCondition(
-                key=key, match=models.MatchValue(value=value)
-            )
+            models.FieldCondition(key=key, match=models.MatchValue(value=value))
         )
     return models.Filter(must=must)
 

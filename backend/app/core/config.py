@@ -1,9 +1,8 @@
-from functools import lru_cache
 import os
+from functools import lru_cache
 from pathlib import Path
 
 from app.core.tool_names import QUERY
-
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 
@@ -58,8 +57,7 @@ class Settings:
             get("MACRO_COLLECTION", "macro_intel1") or "macro_intel1"
         )
         self.macro_data_dir = Path(
-            get("MACRO_DATA_DIR", str(DATA_DIR / "macro"))
-            or DATA_DIR / "macro"
+            get("MACRO_DATA_DIR", str(DATA_DIR / "macro")) or DATA_DIR / "macro"
         )
         self.macro_state_file = Path(
             get("MACRO_STATE_FILE", str(DATA_DIR / "macro" / "state.json"))
@@ -74,9 +72,7 @@ class Settings:
         )
         # Weekly refresh. APScheduler day_of_week names: mon,tue,wed,thu,fri,sat,sun.
         self.macro_schedule_day = get("MACRO_SCHEDULE_DAY", "sun") or "sun"
-        self.macro_schedule_hour = int(
-            get("MACRO_SCHEDULE_HOUR", "10") or "10"
-        )
+        self.macro_schedule_hour = int(get("MACRO_SCHEDULE_HOUR", "10") or "10")
         self.macro_schedule_minute = int(
             get("MACRO_SCHEDULE_MINUTE", "0") or "0"
         )
@@ -216,9 +212,7 @@ class Settings:
             get("LOG_DIR", str(DATA_DIR / "logs")) or DATA_DIR / "logs"
         )
         self.nlq_llm_lock_path = Path(
-            get(
-                "NLQ_LLM_LOCK_PATH", str(configured_log_dir / ".llamacpp.lock")
-            )
+            get("NLQ_LLM_LOCK_PATH", str(configured_log_dir / ".llamacpp.lock"))
             or configured_log_dir / ".llamacpp.lock"
         )
         # End-to-end budget for one streamed NLQ turn. Local llama.cpp deployments
@@ -264,9 +258,9 @@ class Settings:
         )
         self.postgres_mcp_model_tools = tuple(
             name.strip()
-            for name in (
-                get("POSTGRES_MCP_MODEL_TOOLS", QUERY) or QUERY
-            ).split(",")
+            for name in (get("POSTGRES_MCP_MODEL_TOOLS", QUERY) or QUERY).split(
+                ","
+            )
             if name.strip()
         )
 
@@ -323,9 +317,7 @@ class Settings:
         # is stored: durable history keeps every row, the observation is shaped to fit.
         self.workbench_agent_observation_max_chars = max(
             2_000,
-            int(
-                get("WORKBENCH_AGENT_OBSERVATION_MAX_CHARS", "5000") or "5000"
-            ),
+            int(get("WORKBENCH_AGENT_OBSERVATION_MAX_CHARS", "5000") or "5000"),
         )
         self.workbench_tool_output_page_chars = max(
             1, int(get("WORKBENCH_TOOL_OUTPUT_PAGE_CHARS", "5000") or "5000")

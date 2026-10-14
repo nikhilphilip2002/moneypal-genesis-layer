@@ -4,11 +4,15 @@ from typing import Literal, Optional
 from fastapi import APIRouter, HTTPException, Response
 from pydantic import BaseModel
 
-from genesis_core import IntelligenceResponse
-
-from app.services import brief_cache, regulatory
+from app.services import (
+    brief_cache,
+    dnbs02_lineage,
+    dnbs02_service,
+    regulatory,
+    regulatory_reports,
+)
 from app.services import reg_loader as rl
-from app.services import dnbs02_service, dnbs02_lineage, regulatory_reports
+from genesis_core import IntelligenceResponse
 
 router = APIRouter(prefix="/regulatory", tags=["regulatory"])
 
@@ -34,9 +38,7 @@ def add_category(req: NewRegulation):
     if not slug:
         raise HTTPException(400, "Display name must contain letters or digits")
     if rl.load_one(slug):
-        raise HTTPException(
-            409, f"Regulation category '{slug}' already exists"
-        )
+        raise HTTPException(409, f"Regulation category '{slug}' already exists")
     record = {
         "id": slug,
         "display_name": req.display_name,

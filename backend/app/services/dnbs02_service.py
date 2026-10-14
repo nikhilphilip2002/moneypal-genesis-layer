@@ -11,28 +11,36 @@ section could be run or tested on its own. They are now Section objects with dec
 inputs, executed by a driver that resolves order and records provenance.
 """
 
-import os
-import io
 import calendar
 import datetime
+import io
 import logging
-from typing import Dict, Any, List, Tuple, Optional
+import os
+from typing import Any, Dict, List, Optional, Tuple
 
 import openpyxl
+
+from app.services import dnbs02_spec as spec
+from app.services.approved_report_values import (
+    apply_approved_values,
+    load_approved_values,
+)
+from app.services.db_schema import (
+    SectionResult,
+)
 
 # Connection handling and section provenance are shared with the information graph so a
 # change to either is made once. Aliased to the private names this module already used.
 from app.services.db_schema import (
     db_cursor as _db_cursor,
-    run_section as _run_section,
-    SectionResult,
 )
-
+from app.services.db_schema import (
+    run_section as _run_section,
+)
 from app.services.dnbs02_spec import (  # noqa: F401 - re-exported for callers and tests
     ASSET_CLASS_TO_PART8C_LINE,
     ASSET_CODE_LABELS,
-    CellMapError,
-    FieldSpec,
+    FIELD_SPECS,
     GL_BORROWINGS,
     GL_DESC_TO_PART1_LINE,
     GL_DESC_TO_PART3_LINE,
@@ -46,26 +54,22 @@ from app.services.dnbs02_spec import (  # noqa: F401 - re-exported for callers a
     KIND_NO_SOURCE,
     KIND_TABLE,
     LABEL_COLUMN,
-    LineItem,
     NPA_ASSET_CODES,
     PART1_TOTAL_LINES,
     PART2_MATURITY_LINES,
     PART3_INVESTMENT_SCOPE,
+    SOURCES,
     STANDARD_ASSET_CODES,
+    TABLE_BLOCKS,
+    CellMapError,
+    FieldSpec,
+    LineItem,
     Section,
     Source,
-    SOURCES,
-    TABLE_BLOCKS,
     TableBlock,
     TableColumn,
-    FIELD_SPECS,
     _norm,
     part8c_buckets,
-)
-from app.services import dnbs02_spec as spec
-from app.services.approved_report_values import (
-    apply_approved_values,
-    load_approved_values,
 )
 
 logger = logging.getLogger(__name__)
@@ -999,9 +1003,7 @@ def get_dnbs02_report_data(
     total_loan_book = ctx.totals["total_loan_book"]
     npa_amount = ctx.totals["npa_amount"]
     gross_npa_pct = (
-        round(npa_amount / total_loan_book * 100, 2)
-        if total_loan_book
-        else 0.0
+        round(npa_amount / total_loan_book * 100, 2) if total_loan_book else 0.0
     )
 
     # A section is "live" only if its own query actually ran and returned rows - not
@@ -1203,9 +1205,7 @@ def _safe_set_cell_value(
     """Write a cell, skipping merged anchors. Raises on anything unexpected."""
     cell = sheet[coord]
     if type(cell).__name__ == "MergedCell":
-        logger.warning(
-            "DNBS-02: skipped merged cell %s!%s", sheet.title, coord
-        )
+        logger.warning("DNBS-02: skipped merged cell %s!%s", sheet.title, coord)
         return
     cell.value = value
     if not isinstance(value, str):

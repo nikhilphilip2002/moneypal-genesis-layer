@@ -7,6 +7,7 @@ code, while PostgreSQL MCP validates model-authored statements at its own bounda
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+
 import sqlglot
 from sqlglot import exp
 

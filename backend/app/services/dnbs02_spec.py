@@ -1303,9 +1303,7 @@ FIELD_SPECS: List[FieldSpec] = (
                     else ""
                 )
             ),
-            value=(
-                part8c_amount(key) if col == "C" else part8c_provision(key)
-            ),
+            value=(part8c_amount(key) if col == "C" else part8c_provision(key)),
             gate="part8_asset_quality",
             unit=LAKHS,
         )

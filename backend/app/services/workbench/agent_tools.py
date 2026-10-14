@@ -9,13 +9,13 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+from app.core.config import settings
 from app.core.tool_names import (
     READ_TOOL_OUTPUT,
     SEARCH_CURATED_KNOWLEDGE,
     SEARCH_PUBLIC_WEB,
     SUBMIT_ANSWER,
 )
-from app.core.config import settings
 from app.services.workbench.access import (
     SourceAccessDenied,
     SourceAccessPolicy,
@@ -27,12 +27,18 @@ class AgentToolError(ValueError):
     """Base for tool classification failures safe to return to the agent."""
 
 
-class AgentToolNotFound(AgentToolError):
+class AgentToolNotFoundError(AgentToolError):
     code = "INVALID_TOOL_ARGUMENTS"
 
 
-class AgentToolArgumentsInvalid(AgentToolError):
+AgentToolNotFound = AgentToolNotFoundError
+
+
+class AgentToolArgumentsInvalidError(AgentToolError):
     code = "INVALID_TOOL_ARGUMENTS"
+
+
+AgentToolArgumentsInvalid = AgentToolArgumentsInvalidError
 
 
 class AgentToolAccessDenied(AgentToolArgumentsInvalid):

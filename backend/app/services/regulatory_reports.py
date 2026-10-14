@@ -15,14 +15,13 @@ from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
 import openpyxl
 
-from app.services.db_schema import db_cursor
 from app.services import dnbs02_service
 from app.services.approved_report_values import (
     apply_approved_values,
     load_approved_declaration,
     load_approved_values,
 )
-
+from app.services.db_schema import db_cursor
 
 ASSET_DIR = Path(__file__).resolve().parents[1] / "assets"
 
@@ -110,9 +109,7 @@ def _find_row(ws, label: str, within: Optional[Tuple[int, int]] = None) -> int:
         if _norm(ws.cell(row, 2).value).startswith(target)
     ]
     if len(matches) != 1:
-        raise ReportError(
-            f"{ws.title}: label {label!r} matched rows {matches}"
-        )
+        raise ReportError(f"{ws.title}: label {label!r} matched rows {matches}")
     return matches[0]
 
 
@@ -171,7 +168,7 @@ def _write_vector(
 ) -> int:
     row = _find_row(ws, label, within)
     columns = _bucket_columns(ws, header_row, len(values))
-    for col, value in zip(columns, values):
+    for col, value in zip(columns, values, strict=False):
         ws.cell(row, col).value = round(value, 2)
     if total:
         ws.cell(row, _header_column(ws, header_row, "Total")).value = round(
@@ -617,9 +614,7 @@ def _write_dnbs4a(
         header_row=10,
         within=(38, 88),
     )
-    _write_vector(
-        ws, "TOTAL INFLOWS", interest, header_row=10, within=(38, 88)
-    )
+    _write_vector(ws, "TOTAL INFLOWS", interest, header_row=10, within=(38, 88))
     _write_vector(ws, "C Mismatch", interest, header_row=10, within=(80, 88))
     _write_cumulative(
         ws, "D Cumulative mismatch", interest, header_row=10, within=(80, 88)

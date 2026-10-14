@@ -265,9 +265,7 @@ async def answer_results(state: WorkbenchState) -> dict[str, Any]:
         for r in all_results
         if r not in results
     ]
-    limitations = list(
-        decision.limitations if decision is not None else []
-    ) + [
+    limitations = list(decision.limitations if decision is not None else []) + [
         {
             "source": r.source,
             "reason": r.limitation
@@ -349,8 +347,7 @@ async def answer_results(state: WorkbenchState) -> dict[str, Any]:
             state["timing"].setdefault(
                 "final_answer_ms",
                 int(
-                    (time.perf_counter() - state["timing"]["started_at"])
-                    * 1000
+                    (time.perf_counter() - state["timing"]["started_at"]) * 1000
                 ),
             )
             _persist(
@@ -380,8 +377,7 @@ async def answer_results(state: WorkbenchState) -> dict[str, Any]:
             state["timing"].setdefault(
                 "final_answer_ms",
                 int(
-                    (time.perf_counter() - state["timing"]["started_at"])
-                    * 1000
+                    (time.perf_counter() - state["timing"]["started_at"]) * 1000
                 ),
             )
             _persist(
@@ -534,8 +530,7 @@ async def answer_results(state: WorkbenchState) -> dict[str, Any]:
         if structured_synthesis
         else [],
         "visuals": [
-            visual.model_dump()
-            for visual in structured_synthesis.visuals
+            visual.model_dump() for visual in structured_synthesis.visuals
         ]
         if structured_synthesis
         else [],
@@ -817,9 +812,7 @@ async def _run_workbench(
                 turn_id,
                 partial=partial,
             )
-            await emit.put(
-                None
-            )  # sentinel: the graph is done producing frames
+            await emit.put(None)  # sentinel: the graph is done producing frames
 
     task = asyncio.create_task(drive())
     active_key = (conversation_id, user, turn_id)
@@ -848,7 +841,9 @@ async def _run_workbench(
     )
 
 
-_turn_locks: WeakValueDictionary[tuple[str, str], asyncio.Lock] = WeakValueDictionary()
+_turn_locks: WeakValueDictionary[tuple[str, str], asyncio.Lock] = (
+    WeakValueDictionary()
+)
 
 
 async def run_workbench(**kwargs) -> AsyncGenerator[str, None]:

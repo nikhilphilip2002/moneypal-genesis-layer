@@ -46,9 +46,7 @@ PP = "pp"
 class Quantity:
     kind: str  # percent | currency | bps | pp
     value: float  # the number itself
-    unit: (
-        str  # "%", "crore", "lakh crore", "bps", "pp", or "" when unqualified
-    )
+    unit: str  # "%", "crore", "lakh crore", "bps", "pp", or "" when unqualified
     text: str  # normalized for display, e.g. "Rs 1,200 crore"
     start: (
         int  # offset in the source string, for locating the sentence around it

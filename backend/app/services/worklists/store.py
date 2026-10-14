@@ -292,7 +292,7 @@ def set_status(
 
 
 def _json(value: Any) -> Any:
-    """psycopg returns jsonb as a dict already; a text column comes back as a string."""
+    """Psycopg returns jsonb as a dict already; a text column comes back as a string."""
     if isinstance(value, (dict, list)) or value is None:
         return value
     return json.loads(value)

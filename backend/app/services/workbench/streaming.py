@@ -54,7 +54,9 @@ async def complete_answer(
     await emit.put(sse("answer_start", {}))
     progress_kwargs = (
         {"on_prompt_progress": on_prompt_progress}
-        if getattr(getattr(client, "profile", None), "supports_prompt_progress", False)
+        if getattr(
+            getattr(client, "profile", None), "supports_prompt_progress", False
+        )
         else {}
     )
     return await client.complete(

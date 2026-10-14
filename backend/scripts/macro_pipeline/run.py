@@ -71,9 +71,7 @@ def _cmd_stats(args) -> int:
 def _cmd_analyze(args) -> int:
     from . import extractor
 
-    rows = list(
-        structured.extract_snapshot(extractor.extract(Path(args.file)))
-    )
+    rows = list(structured.extract_snapshot(extractor.extract(Path(args.file))))
     for row in rows:
         print("\n" + "=" * 70)
         print(
@@ -114,9 +112,7 @@ def _cmd_migrate(args) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(
-        prog="macro-pipeline", description=__doc__
-    )
+    parser = argparse.ArgumentParser(prog="macro-pipeline", description=__doc__)
     parser.add_argument("-v", "--verbose", action="store_true")
     sub = parser.add_subparsers(dest="command", required=True)
 
@@ -136,9 +132,7 @@ def main(argv: list[str] | None = None) -> int:
         func=_cmd_stats
     )
 
-    analyze = sub.add_parser(
-        "analyze", help="show topics/figures for one file"
-    )
+    analyze = sub.add_parser("analyze", help="show topics/figures for one file")
     analyze.add_argument("file")
     analyze.set_defaults(func=_cmd_analyze)
 

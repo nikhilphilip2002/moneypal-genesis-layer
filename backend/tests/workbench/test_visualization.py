@@ -77,7 +77,9 @@ def test_preserves_already_aggregated_rows_for_stacked_area():
 def test_inferred_grouped_bar_preserves_the_series_dimension():
     source = _source()
 
-    result = build_inferred_visual(source, query_id="older:q1", view="grouped_bar")
+    result = build_inferred_visual(
+        source, query_id="older:q1", view="grouped_bar"
+    )
 
     assert result.payload["chart_type"] == "grouped_bar"
     assert result.payload["x"]["field"] == "week_number"
@@ -91,8 +93,16 @@ def test_inferred_grouped_bar_preserves_the_series_dimension():
 def test_inferred_grouped_bar_compares_numeric_measures_by_month():
     source = _source(
         rows=[
-            {"month": "2026-01-01", "disbursed": 168920000, "collected": 4800000},
-            {"month": "2026-02-01", "disbursed": 250463000, "collected": 10500000},
+            {
+                "month": "2026-01-01",
+                "disbursed": 168920000,
+                "collected": 4800000,
+            },
+            {
+                "month": "2026-02-01",
+                "disbursed": 250463000,
+                "collected": 10500000,
+            },
             {"month": "2026-03-01", "disbursed": 353610000, "collected": None},
         ]
     )
@@ -102,7 +112,9 @@ def test_inferred_grouped_bar_compares_numeric_measures_by_month():
         {"name": "collected", "unit": "inr"},
     ]
 
-    result = build_inferred_visual(source, query_id="older:q1", view="grouped_bar")
+    result = build_inferred_visual(
+        source, query_id="older:q1", view="grouped_bar"
+    )
 
     assert result.payload["chart_type"] == "grouped_bar"
     assert result.payload["x"]["field"] == "month"
@@ -119,7 +131,9 @@ def test_inferred_grouped_bar_preserves_numeric_groups_with_repeated_x():
     for row in source["result_payload"]["rows"]:
         row["scheme_code"] = 1 if row["scheme_code"] == "MSME" else 2
 
-    result = build_inferred_visual(source, query_id="older:q1", view="grouped_bar")
+    result = build_inferred_visual(
+        source, query_id="older:q1", view="grouped_bar"
+    )
 
     assert result.payload["series_by"]["field"] == "scheme_code"
     assert [series["field"] for series in result.payload["series"]] == [

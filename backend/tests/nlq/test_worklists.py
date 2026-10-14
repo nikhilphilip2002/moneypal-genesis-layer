@@ -14,8 +14,8 @@ from app.services.nlq.catalog import get_catalog
 from app.services.nlq.catalog.loader import ScoreComponent, ScoreModel
 from app.services.nlq.compiler import bind
 from app.services.nlq.contracts import Filter
-from app.services.worklists import runner as build_module
 from app.services.worklists import rules as rule_engine
+from app.services.worklists import runner as build_module
 from app.services.worklists import store
 from app.services.worklists.score import NEUTRAL, prioritise
 
@@ -272,9 +272,7 @@ class TestRanking:
         assert npa.owner
 
     def test_a_row_that_triggered_nothing_is_dropped(self, catalog):
-        rules = tuple(
-            catalog.worklists.rules[r] for r in ("payments_stalled",)
-        )
+        rules = tuple(catalog.worklists.rules[r] for r in ("payments_stalled",))
         rows = [
             {"loan_account_number": "A9", "dpd_days": 0, "total_overdue": 0.0}
         ]
@@ -298,9 +296,7 @@ class TestExport:
             catalog.worklists.rules[r]
             for r in ("payments_stalled", "early_stress")
         )
-        items = build_module._rank(
-            TestRanking()._rows(catalog), rules, catalog
-        )
+        items = build_module._rank(TestRanking()._rows(catalog), rules, catalog)
         worklist = Worklist(
             id="collections_today",
             title="Today's list",

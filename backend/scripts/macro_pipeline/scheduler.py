@@ -13,9 +13,8 @@ from __future__ import annotations
 
 import logging
 
-from genesis_core import rag
-
 from app.core.config import settings
+from genesis_core import rag
 
 from . import pipeline
 

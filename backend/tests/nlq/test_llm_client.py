@@ -97,9 +97,7 @@ def _client(
 def _completion_body(content="{}"):
     return {
         "model": "m",
-        "choices": [
-            {"message": {"content": content}, "finish_reason": "stop"}
-        ],
+        "choices": [{"message": {"content": content}, "finish_reason": "stop"}],
         "usage": {"prompt_tokens": 10, "completion_tokens": 3},
     }
 
@@ -190,9 +188,30 @@ async def test_llamacpp_prompt_progress_streams_until_generation():
     requests = []
     progress = []
     frames = [
-        _sse_chunk(prompt_progress={"total": 100, "cache": 20, "processed": 20, "time_ms": 0}),
-        _sse_chunk(prompt_progress={"total": 100, "cache": 20, "processed": 60, "time_ms": 50}),
-        _sse_chunk(prompt_progress={"total": 100, "cache": 20, "processed": 100, "time_ms": 100}),
+        _sse_chunk(
+            prompt_progress={
+                "total": 100,
+                "cache": 20,
+                "processed": 20,
+                "time_ms": 0,
+            }
+        ),
+        _sse_chunk(
+            prompt_progress={
+                "total": 100,
+                "cache": 20,
+                "processed": 60,
+                "time_ms": 50,
+            }
+        ),
+        _sse_chunk(
+            prompt_progress={
+                "total": 100,
+                "cache": 20,
+                "processed": 100,
+                "time_ms": 100,
+            }
+        ),
         _sse_chunk({"content": "Done"}),
         _sse_chunk(finish_reason="stop"),
         "data: [DONE]\n\n",
@@ -1114,9 +1133,7 @@ class TestNativeTools:
     @pytest.mark.anyio
     async def test_tool_telemetry_records_names_without_arguments(self):
         with collect_calls() as calls:
-            await _client(
-                lambda _request: _tool_ok(_raw_tool_call())
-            ).complete(
+            await _client(lambda _request: _tool_ok(_raw_tool_call())).complete(
                 messages=[{"role": "user", "content": "Show PAR 30"}],
                 tools=TOOLS,
                 call_purpose="agent_select",
@@ -1143,6 +1160,7 @@ class TestNativeTools:
             _raw_tool_call(call_id="bad", name=name, arguments=arguments),
             _raw_tool_call(call_id="good"),
         ]
+
         def handler(request):
             if request.url.path.endswith("count_tokens"):
                 return httpx.Response(400, json={"error": "invalid input"})
@@ -1168,7 +1186,12 @@ class TestNativeTools:
         assert "arguments" not in str(calls[0].to_dict())
         if code == "INVALID_TOOL_ARGUMENTS":
             client._count_unavailable_until = 0
-            assert await client.count_input_tokens([result.assistant_message], TOOLS) > 0
+            assert (
+                await client.count_input_tokens(
+                    [result.assistant_message], TOOLS
+                )
+                > 0
+            )
         await client.aclose()
 
     @pytest.mark.anyio
@@ -1218,9 +1241,7 @@ class TestFailureHandling:
         def handler(_request):
             calls["n"] += 1
             return (
-                httpx.Response(503)
-                if calls["n"] < 5
-                else _ok('{"ready":true}')
+                httpx.Response(503) if calls["n"] < 5 else _ok('{"ready":true}')
             )
 
         client = _client(handler, max_retries=4)
@@ -1525,7 +1546,9 @@ async def test_context_overflow_is_not_retried_with_identical_request():
 
 @pytest.mark.anyio
 @pytest.mark.parametrize("stream_to_user", [False, True])
-async def test_truncated_tool_arguments_are_incomplete_and_preserve_usage(stream_to_user):
+async def test_truncated_tool_arguments_are_incomplete_and_preserve_usage(
+    stream_to_user,
+):
     body = _tool_body(
         {
             "id": "q1",
@@ -1542,7 +1565,8 @@ async def test_truncated_tool_arguments_are_incomplete_and_preserve_usage(stream
 
     with collect_calls() as calls, pytest.raises(LLMIncomplete) as error:
         await client.complete(
-            messages=[{"role": "user", "content": "query"}], tools=TOOLS,
+            messages=[{"role": "user", "content": "query"}],
+            tools=TOOLS,
             on_tool_call=on_tool_call if stream_to_user else None,
         )
     assert error.value.prompt_tokens == 31000

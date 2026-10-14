@@ -1,10 +1,9 @@
 """Business logic for competitive intelligence (Team B)."""
 
-from genesis_core import make_response, rag
-
 from app import prompts
 from app.core.config import LANDSCAPE_ANCHOR
 from app.services import institution_loader as il
+from genesis_core import make_response, rag
 
 
 def list_institutions() -> list[dict]:
@@ -50,9 +49,7 @@ def profile(institution_id: str):
         key_points=[
             f"Type: {inst['type']}",
             f"HQ: {inst.get('headquarters', 'N/A')}",
-            "MSME-focused lender"
-            if inst.get("msme_focus")
-            else "Broad lender",
+            "MSME-focused lender" if inst.get("msme_focus") else "Broad lender",
             "Karnataka presence",
         ],
         document=f"{inst['name']} public disclosures",

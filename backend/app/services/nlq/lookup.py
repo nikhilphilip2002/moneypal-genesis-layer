@@ -9,16 +9,21 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
+
 from sqlglot import exp
 
 from app.services.nlq.catalog import Catalog, get_catalog
-from app.services.nlq.contracts import ChartSpec, ClarifyPlan, LookupField, LookupPlan
+from app.services.nlq.contracts import (
+    ChartSpec,
+    ClarifyPlan,
+    LookupField,
+    LookupPlan,
+)
 from app.services.nlq.executor import execute_raw
 from app.services.nlq.normalization import normalize_apostrophes
 from app.services.nlq.pipeline import run_validated_sql
 from app.services.nlq.sql_execution import ValidatedSql
 from app.services.nlq.validator import validate
-
 
 _HISTORY_WORD = r"(?:histor(?:y|ies)|histoy|histry|hisotry|hitory)"
 _REPAYMENT_CUE = re.compile(
@@ -877,13 +882,7 @@ def detect(question: str) -> LookupPlan | None:
     # Every pattern below captures a free-text name. A question that already names a
     # governed identifier is never one of them — without this guard "branch 1002 details"
     # and "account number 100... details" are planned as borrowers with those names.
-    if (
-        customer
-        or account
-        or agent
-        or product
-        or _BRANCH_CODE_REF.search(text)
-    ):
+    if customer or account or agent or product or _BRANCH_CODE_REF.search(text):
         return None
 
     named_field = _NAME_BEFORE_CUSTOMER_FIELD.search(text)
@@ -1225,9 +1224,7 @@ def _shape_loan_details(chart: ChartSpec, plan: LookupPlan) -> None:
     chart.series_by = None
     chart.series = []
     if not requested:
-        chart.summary = (
-            f"Returned {len(chart.rows):,} matched loan account(s)."
-        )
+        chart.summary = f"Returned {len(chart.rows):,} matched loan account(s)."
         return
 
     visible = (
@@ -1464,7 +1461,9 @@ def _shape_agent_details(chart: ChartSpec, plan: LookupPlan) -> None:
     chart.series_by = None
     chart.series = []
     if not requested:
-        chart.summary = f"Returned the current governed directory profile for {plan.value}."
+        chart.summary = (
+            f"Returned the current governed directory profile for {plan.value}."
+        )
         return
 
     labels = {
@@ -1554,9 +1553,7 @@ def _agent_accounts(plan: LookupPlan, catalog: Catalog) -> ValidatedSql:
             "total_linked_account_count": "count",
             **{field: available[field][1] for field in requested},
         },
-        pii_columns={"customer_name"}
-        if "borrower_name" in requested
-        else None,
+        pii_columns={"customer_name"} if "borrower_name" in requested else None,
     )
 
 
@@ -1665,8 +1662,7 @@ def _branch_directory(plan: LookupPlan, catalog: Catalog) -> ValidatedSql:
     where = (
         ""
         if plan.value == "all"
-        else " WHERE LOWER(branch_code::text) = "
-        + _literal(plan.value.lower())
+        else " WHERE LOWER(branch_code::text) = " + _literal(plan.value.lower())
     )
     sql = (
         "SELECT branch_code, branch_name, branch_category_name, branch_size, "

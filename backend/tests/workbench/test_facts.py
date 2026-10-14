@@ -59,9 +59,7 @@ def test_derived_difference_and_share_carry_provenance():
 
 
 def test_calculation_rejects_zero_and_mixed_units():
-    with pytest.raises(
-        calculations.CalculationError, match="division by zero"
-    ):
+    with pytest.raises(calculations.CalculationError, match="division by zero"):
         calculations.derive(
             "ratio", _fact("a", 1), _fact("b", 0), fact_id="x", label="x"
         )

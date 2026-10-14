@@ -5,7 +5,6 @@ the title comes from the first question, turns accumulate, and recency ordering 
 
 from __future__ import annotations
 
-
 import pytest
 
 from app.services.workbench import history
@@ -23,9 +22,7 @@ def _memory_only(monkeypatch):
 
 
 def test_first_turn_titles_the_conversation_from_the_question():
-    record_turn(
-        "c1", "What was our disbursement last quarter?", ["db"]
-    )
+    record_turn("c1", "What was our disbursement last quarter?", ["db"])
     rec = history.get("c1")
     assert rec is not None
     assert rec.title.startswith("What was our disbursement")
@@ -255,5 +252,7 @@ def test_cleanup_script_dry_run_and_apply(monkeypatch):
 
 def record_turn(conversation_id, question, sources, user="anonymous"):
     turn = history.begin_turn(conversation_id, user, question)
-    history.set_route(conversation_id, user, turn, sources=sources, intent=question)
+    history.set_route(
+        conversation_id, user, turn, sources=sources, intent=question
+    )
     history.complete_turn(conversation_id, user, turn)

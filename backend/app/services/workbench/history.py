@@ -64,8 +64,11 @@ class ConversationSummary:
     turn_count: int
 
 
-class UnknownRecordVersion(ValueError):
+class UnknownRecordVersionError(ValueError):
     """The record was written by a backend this module does not understand."""
+
+
+UnknownRecordVersion = UnknownRecordVersionError
 
 
 _MEMORY: dict[tuple[str, str], ConversationRecord] = {}
@@ -144,9 +147,7 @@ def _load(conversation_id: str, user: str) -> ConversationRecord | None:
                 conn.rollback()
             if row is None:
                 return None
-            payload = (
-                row[1] if isinstance(row[1], dict) else json.loads(row[1])
-            )
+            payload = row[1] if isinstance(row[1], dict) else json.loads(row[1])
             stored_version = row[4] or payload.get("version", 1)
             if stored_version not in KNOWN_RECORD_VERSIONS:
                 raise UnknownRecordVersion(
@@ -231,9 +232,7 @@ def append_messages(
                 )
             pending = [call["id"] for call in message.get("tool_calls") or []]
             if len(pending) != len(set(pending)):
-                raise ValueError(
-                    "duplicate tool call IDs in assistant message"
-                )
+                raise ValueError("duplicate tool call IDs in assistant message")
     start = len(record.messages)
     turn.setdefault("message_start", start)
     record.messages.extend(deepcopy(messages))
@@ -479,7 +478,6 @@ def set_query_registry(
     registry: list[dict[str, Any]],
 ) -> None:
     """Persist the current authoritative database-query registry for a turn."""
-
     snapshot = [dict(item) for item in registry if isinstance(item, dict)]
 
     def apply(turn: dict[str, Any]) -> None:
@@ -768,8 +766,7 @@ def private_entities(conversation_id: str, *, user: str) -> tuple[str, ...]:
                 values.extend(
                     str(literal.this).strip()
                     for literal in tree.find_all(exp.Literal)
-                    if literal.is_string
-                    and len(str(literal.this).strip()) >= 2
+                    if literal.is_string and len(str(literal.this).strip()) >= 2
                 )
             except Exception:  # noqa: BLE001 - malformed historical SQL contributes no entities
                 logger.debug(

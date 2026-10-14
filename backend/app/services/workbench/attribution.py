@@ -8,9 +8,9 @@ from typing import Any, Sequence
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.services.workbench.agent_contracts import (
-    QueryEvidenceReference,
     ExcludedQueryReference,
     FinalSynthesis,
+    QueryEvidenceReference,
 )
 
 
@@ -19,9 +19,7 @@ class ReconciledAttribution(BaseModel):
 
     active_query_ids: list[str] = Field(default_factory=list)
     visual_query_ids: list[str] = Field(default_factory=list)
-    excluded_queries: list[ExcludedQueryReference] = Field(
-        default_factory=list
-    )
+    excluded_queries: list[ExcludedQueryReference] = Field(default_factory=list)
     invalid_query_ids: list[str] = Field(default_factory=list)
     fallback_used: bool = False
 
@@ -113,7 +111,6 @@ def reconcile_query_attribution(
     prior_registry: Sequence[dict[str, Any]] = (),
 ) -> ReconciledAttribution:
     """Validate the selected evidence; exclude unused executions from this turn only."""
-
     records = {
         str(record.get("query_id")): record
         for record in registry
@@ -153,10 +150,7 @@ def reconcile_query_attribution(
     for query_id, record in records.items():
         if query_id in active or query_id in visual:
             continue
-        if (
-            record.get("status") == "success"
-            and record.get("has_data") is True
-        ):
+        if record.get("status") == "success" and record.get("has_data") is True:
             if record.get("purpose") == "answer":
                 record["purpose"] = "intermediate"
         item = _exclusion(record, superseded=query_id in superseded_ids)

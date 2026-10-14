@@ -56,9 +56,7 @@ class TestHealth:
 
         body = nlq_route.catalog_summary()
         assert (
-            body["metrics"]
-            and body["dimensions"]
-            and body["example_questions"]
+            body["metrics"] and body["dimensions"] and body["example_questions"]
         )
         serialised = json.dumps(body)
         for internal in ("gnlnac_", "ascd_", "lnrepay_"):

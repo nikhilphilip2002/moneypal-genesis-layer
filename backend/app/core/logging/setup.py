@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 import logging
+import queue
 from logging.handlers import QueueHandler, QueueListener, RotatingFileHandler
 from pathlib import Path
-import queue
 
 from app.core.logging.formatters import JSONLinesFormatter
 
@@ -63,9 +63,7 @@ def start_logging(
 
     target_dir = Path(
         log_dir
-        or getattr(
-            settings, "log_dir", settings.macro_data_dir.parent / "logs"
-        )
+        or getattr(settings, "log_dir", settings.macro_data_dir.parent / "logs")
     )
     target_dir.mkdir(parents=True, exist_ok=True)
 
@@ -99,9 +97,7 @@ def start_logging(
         _file_handlers.append(raw_handler)
 
     # 2. Parsed LLM outputs & tool calls stream
-    if parsed_enabled and getattr(
-        settings, "log_parsed_outputs_enabled", True
-    ):
+    if parsed_enabled and getattr(settings, "log_parsed_outputs_enabled", True):
         parsed_handler = RotatingFileHandler(
             target_dir / "llm_parsed_outputs.jsonl",
             maxBytes=max_b,
@@ -157,16 +153,14 @@ def start_logging(
         ]
         logger.addHandler(queue_handler)
 
-    _listener = QueueListener(
-        _log_queue, *handlers, respect_handler_level=True
-    )
+    _listener = QueueListener(_log_queue, *handlers, respect_handler_level=True)
     _listener.start()
     return _listener
 
 
 def stop_logging() -> None:
     """Stop the QueueListener and flush pending log entries to disk."""
-    global _listener, _log_queue, _file_handlers
+    global _listener, _log_queue
 
     if _listener is not None:
         _listener.stop()

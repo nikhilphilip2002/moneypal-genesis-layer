@@ -267,8 +267,11 @@ class QuerySpec(_Model):
         return self
 
     def cache_key(self) -> str:
-        """Stable hash for the plan/result cache. Key ordering is normalised so two
-        semantically identical specs collide as intended."""
+        """Stable hash for the plan/result cache.
+
+        Key ordering is normalised so two semantically identical specs collide
+        as intended.
+        """
         payload = json.dumps(
             self.model_dump(mode="json", exclude_none=True),
             sort_keys=True,
@@ -350,7 +353,8 @@ class AnalysisPlan(_Model):
     The planner picks a *preset* and binds its period and filters. It does not compose the
     steps itself — a model free-composing eight interdependent queries produces a plausible
     analysis roughly as often as a correct one, and the difference is invisible to the reader.
-    Presets are YAML, reviewed once, and each is a golden test."""
+    Presets are YAML, reviewed once, and each is a golden test.
+    """
 
     route: Literal["analysis"] = "analysis"
     analysis_id: str = Field(description="Preset id from analyses.yaml.")
@@ -364,7 +368,7 @@ class AnalysisPlan(_Model):
 
 
 class WorklistPlan(_Model):
-    """ "Create today's collection priority list." — a preset, bound to a slice."""
+    """Create today's collection priority list. — a preset, bound to a slice."""
 
     route: Literal["worklist"] = "worklist"
     worklist_id: str = Field(description="Preset id from worklists.yaml.")
@@ -375,11 +379,12 @@ class WorklistPlan(_Model):
 
 
 class BriefingPlan(_Model):
-    """ "What do I need to know this morning?" — one desk's read, answered in the thread.
+    """What do I need to know this morning? — one desk's read, answered in the thread.
 
     Persona-scoped rather than user-scoped on purpose: the same person asks as a CEO on
     Monday and as a collections manager on Thursday, and the desk they are asking from is in
-    the question, not in their login."""
+    the question, not in their login.
+    """
 
     route: Literal["briefing"] = "briefing"
     persona_id: str = Field(description="Persona id from personas.yaml.")
@@ -485,7 +490,8 @@ class DrillStep(_Model):
 
     The spec is the point. A chip the user taps runs through `/nlq/execute` with no model in
     the loop, so drilling is instant, free, and cannot be misunderstood — the same property
-    that makes structural follow-ups trustworthy."""
+    that makes structural follow-ups trustworthy.
+    """
 
     kind: Literal["deeper", "sideways", "explain", "act"]
     id: str = Field(
@@ -503,8 +509,11 @@ class DrillStep(_Model):
 
 
 class ChartSpec(_Model):
-    """The single response payload. `rows` is always populated — even for `kpi` and
-    `line` — so the table view, CSV export and representation toggle cost no round-trip."""
+    """The single response payload.
+
+    `rows` is always populated — even for `kpi` and `line` — so the table view,
+    CSV export and representation toggle cost no round-trip.
+    """
 
     chart_type: ChartType
     title: str
@@ -556,9 +565,7 @@ class AnalysisStep(_Model):
 
 
 class AnalysisSpec(_Model):
-    id: str = Field(
-        default="", description="Preset id, when it came from one."
-    )
+    id: str = Field(default="", description="Preset id, when it came from one.")
     title: str
     compose: Literal["briefing", "quadrant", "concentration"]
     steps: list[AnalysisStep] = Field(min_length=1, max_length=12)
@@ -622,16 +629,15 @@ class ScoreWeight(_Model):
     Shown on the card rather than kept in the service. A ranking whose order cannot be
     interrogated is a ranking that gets trusted once and then quietly ignored, and a
     collections team is exactly the audience that will test it against the accounts they
-    already know."""
+    already know.
+    """
 
     id: str
     label: str
     weight: float = Field(
         description="From the catalog, identical for every row."
     )
-    value: float = Field(
-        description="This row's normalised component, 0 to 1."
-    )
+    value: float = Field(description="This row's normalised component, 0 to 1.")
     contribution: float = Field(
         description="weight x value — the term's share of the score."
     )
@@ -667,15 +673,14 @@ class Worklist(_Model):
 
     The end of the chain. An answer that stops at a chart is not usable by a collections
     team, and the step from "which branches are worst" to "who do I call this morning" is
-    the one the product exists to make."""
+    the one the product exists to make.
+    """
 
     id: str
     title: str
     subtitle: str = ""
     as_of: date | None = None
-    method: str = Field(
-        default="", description="How the score was normalised."
-    )
+    method: str = Field(default="", description="How the score was normalised.")
     columns: list[ColumnSpec] = Field(default_factory=list)
     items: list[WorklistItem] = Field(default_factory=list)
     candidate_count: int = Field(
@@ -735,15 +740,17 @@ class Signal(_Model):
 
     @property
     def fingerprint(self) -> str:
-        """Identity across scans, so the same standing problem is one signal with a history
-        rather than a fresh alarm every night."""
+        """Identity across scans, so the same standing problem is one signal with a history rather than a fresh alarm every night."""
         raw = f"{self.scope}|{self.kind}|{self.member}"
         return hashlib.sha256(raw.encode()).hexdigest()[:16]
 
 
 class ScanReport(_Model):
-    """What one run of the scan did. Kept because a scan that quietly stopped finding things
-    looks exactly like a book with no problems."""
+    """What one run of the scan did.
+
+    Kept because a scan that quietly stopped finding things looks exactly like a
+    book with no problems.
+    """
 
     started_at: datetime
     duration_ms: int = 0

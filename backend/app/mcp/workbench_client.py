@@ -12,7 +12,6 @@ from app.mcp.provider_schema import provider_tool_definition
 from app.mcp.results import require_owned_data
 from app.mcp.workbench_server import mcp
 
-
 _tools: dict[str, Any] = {}
 _initialization_error = "Workbench MCP tools have not been discovered."
 _protocol_version = ""

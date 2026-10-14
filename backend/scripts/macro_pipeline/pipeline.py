@@ -18,9 +18,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from genesis_core import rag
-
 from app.core.config import settings
+from genesis_core import rag
 
 from . import collector, extractor, ingestor, structured
 
@@ -31,9 +30,7 @@ def _read_state() -> dict:
     if not settings.macro_state_file.exists():
         return {"collections": {}, "last_run": None}
     try:
-        return json.loads(
-            settings.macro_state_file.read_text(encoding="utf-8")
-        )
+        return json.loads(settings.macro_state_file.read_text(encoding="utf-8"))
     except Exception:
         log.warning("state file unreadable; starting fresh")
         return {"collections": {}, "last_run": None}
@@ -47,8 +44,7 @@ def _save_state(state: dict) -> None:
 
 
 def _files_state(state: dict) -> dict:
-    """Per-collection manifest: switching MACRO_COLLECTION must not make the
-    pipeline skip files it only ever ingested into a *different* collection."""
+    """Per-collection manifest: switching MACRO_COLLECTION must not make the pipeline skip files it only ever ingested into a *different* collection."""
     return state.setdefault("collections", {}).setdefault(
         settings.macro_collection, {}
     )
@@ -64,7 +60,9 @@ def _embed_and_upsert(
         return 0
     enriched = list(structured.extract_snapshot(rows))
     vectors = rag.embed_batch([row["text"] for row in enriched])
-    return ingestor.upsert_rows(zip(enriched, vectors), slug, run_id)
+    return ingestor.upsert_rows(
+        zip(enriched, vectors, strict=False), slug, run_id
+    )
 
 
 def _local_slug_dirs() -> dict[str, list[Path]]:

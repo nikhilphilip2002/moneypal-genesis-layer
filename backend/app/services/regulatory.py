@@ -4,8 +4,8 @@ from fastapi import HTTPException
 
 from app.models.schema import (
     IntelligenceResponse,
-    RegulatoryAlert,
     RegulationCategory,
+    RegulatoryAlert,
     Source,
 )
 from app.registry import get_regulation_category, load_regulation_categories
@@ -16,7 +16,6 @@ from app.services.regulatory_rag import (
     key_points_from_text,
     search,
 )
-
 
 DETAIL_QUERY = (
     "For NBFCs below Rs. 500 crore, summarize applicability, business impact, "
@@ -69,7 +68,9 @@ def regulation_detail(category_id: str) -> IntelligenceResponse:
         title=category.display_name,
         summary=summary,
         key_points=key_points_from_text(summary),
-        source=Source(document=source_doc or category.display_name, url=category.rbi_url),
+        source=Source(
+            document=source_doc or category.display_name, url=category.rbi_url
+        ),
         ai_note="",
         last_updated=date.today().isoformat(),
         confidence=confidence,

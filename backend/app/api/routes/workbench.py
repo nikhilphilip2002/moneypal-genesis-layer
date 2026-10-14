@@ -20,10 +20,10 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from app.api.routes.auth import identity_from_authorization
+from app.services.nlq import lookup as record_lookup
 from app.services.workbench import access, history, tools
 from app.services.workbench.graph import cancel_active_turn, run_workbench
 from app.services.workbench.sources import visible_sources
-from app.services.nlq import lookup as record_lookup
 
 logger = logging.getLogger(__name__)
 
@@ -60,8 +60,6 @@ async def _completion_results(q: str, kind: str) -> list[dict]:
     query. The in-flight gate is released by the worker callback, even if the HTTP client
     disconnects before the query finishes.
     """
-    global _completion_db_retry_after, _completion_in_flight
-
     loop = asyncio.get_running_loop()
     future: asyncio.Future[list[dict]] = loop.create_future()
 
@@ -238,7 +236,7 @@ async def chat_completions(
     authorization: str | None = Header(default=None),
 ):
     """Bounded borrower/account/agent suggestions for Tab completion in chat."""
-    global _completion_db_retry_after, _completion_in_flight
+    global _completion_in_flight
 
     _username, role = identity_from_authorization(authorization)
     if "db" not in {
@@ -278,9 +276,7 @@ async def run_tool(
             tool_id,
             role=role,
             params=params,
-            external_sources_enabled=bool(
-                req and req.external_sources_enabled
-            ),
+            external_sources_enabled=bool(req and req.external_sources_enabled),
         )
     except tools.ToolNotFound as exc:
         raise HTTPException(404, f"Unknown tool: {tool_id}") from exc

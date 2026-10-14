@@ -16,8 +16,8 @@ from app.services.nlq.llm import (
     LLMIncomplete,
     LLMProtocolError,
     LLMResponseBlocked,
-    LLMUnavailable,
     LLMResult,
+    LLMUnavailable,
 )
 from app.services.workbench import graph
 from app.services.workbench.agent import BudgetExhausted
@@ -25,7 +25,9 @@ from app.services.workbench.results import SourceResult
 
 
 @pytest.mark.anyio
-async def test_conversation_turns_are_serialized_and_lock_is_released_after_failure(monkeypatch):
+async def test_conversation_turns_are_serialized_and_lock_is_released_after_failure(
+    monkeypatch,
+):
     entered = asyncio.Event()
     release = asyncio.Event()
     seen = []
@@ -39,9 +41,14 @@ async def test_conversation_turns_are_serialized_and_lock_is_released_after_fail
         yield "finished"
 
     async def consume(question):
-        return [frame async for frame in graph.run_workbench(
-            conversation_id="serialized", user="alice", question=question,
-        )]
+        return [
+            frame
+            async for frame in graph.run_workbench(
+                conversation_id="serialized",
+                user="alice",
+                question=question,
+            )
+        ]
 
     monkeypatch.setattr(graph, "_run_workbench", run)
     first = asyncio.create_task(consume("first"))
@@ -458,8 +465,7 @@ async def test_explicit_cancel_stops_owned_turn_without_stream_disconnect(
         await asyncio.wait_for(entered.wait(), timeout=5)
 
         assert (
-            graph.cancel_active_turn("explicit-cancel", "bob", turn_id)
-            is False
+            graph.cancel_active_turn("explicit-cancel", "bob", turn_id) is False
         )
         assert (
             graph.cancel_active_turn("explicit-cancel", "alice", turn_id)

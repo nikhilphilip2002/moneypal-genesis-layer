@@ -1,8 +1,9 @@
 """Mock authentication routes for the Buildathon."""
 
+from typing import Optional
+
 from fastapi import APIRouter, Header, HTTPException
 from pydantic import BaseModel
-from typing import Optional
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 

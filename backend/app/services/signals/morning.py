@@ -144,9 +144,7 @@ def _run(
     analyses: list[AnalysisResult] = []
     lists: list[Worklist] = []
 
-    with concurrent.futures.ThreadPoolExecutor(
-        max_workers=MAX_WORKERS
-    ) as pool:
+    with concurrent.futures.ThreadPoolExecutor(max_workers=MAX_WORKERS) as pool:
         analysis_futures = {
             pool.submit(run_analysis, a): a
             for a in persona.analyses

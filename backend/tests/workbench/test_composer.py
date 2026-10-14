@@ -102,9 +102,7 @@ class TestValidateClaims:
     def test_lakh_and_crore_claims_round_to_the_fact_magnitude(self):
         ledger = [_fact("book", "12345678", "inr")]
         assert composer.validate_claims("Book of ₹1.23 crore.", "", ledger).ok
-        assert composer.validate_claims(
-            "Book of Rs 123.5 lakh.", "", ledger
-        ).ok
+        assert composer.validate_claims("Book of Rs 123.5 lakh.", "", ledger).ok
         assert composer.validate_claims("Book of 1.2 cr.", "", ledger).ok
         assert composer.validate_claims(
             "Book of ₹1.3 crore.", "", ledger
@@ -141,9 +139,7 @@ class TestValidateClaims:
         cited = {fact.operation for fact in validation.cited_facts}
         assert {"percent_change", "rate"} <= cited
         change = next(
-            f
-            for f in validation.cited_facts
-            if f.operation == "percent_change"
+            f for f in validation.cited_facts if f.operation == "percent_change"
         )
         assert change.operands == ("db:0:1:collected", "db:0:0:collected")
         assert change.unit == "percent" and change.formula
@@ -208,9 +204,7 @@ class TestDerivedFacts:
         ids = {fact.id for fact in ledger}
         for fact in derived:
             assert (
-                fact.source == "calculation"
-                and fact.operation
-                and fact.formula
+                fact.source == "calculation" and fact.operation and fact.formula
             )
             assert fact.unit
             assert fact.operands
@@ -228,9 +222,9 @@ class TestDerivedFacts:
 
     def test_derivations_are_deterministic_and_bounded(self):
         ledger = facts.from_results([_collections_result()])
-        assert calculations.derived_facts(
+        assert calculations.derived_facts(ledger) == calculations.derived_facts(
             ledger
-        ) == calculations.derived_facts(ledger)
+        )
         big = [_fact(f"f{i}", i + 1, "count") for i in range(200)]
         assert (
             len(calculations.derived_facts(big))

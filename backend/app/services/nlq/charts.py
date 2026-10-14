@@ -17,8 +17,7 @@ from typing import Any
 from pydantic import TypeAdapter
 
 from app.services.nlq import drilldown, drivers
-from app.services.nlq.catalog import Catalog, get_catalog
-from app.services.nlq.catalog import lookups
+from app.services.nlq.catalog import Catalog, get_catalog, lookups
 from app.services.nlq.catalog.loader import canonical_enum_code
 from app.services.nlq.compiler import (
     CompiledQuery,
@@ -237,8 +236,11 @@ def _is_flow(metric_id: str, cat: Catalog) -> bool:
 
 
 def _is_additive(metric_id: str, cat: Catalog) -> bool:
-    """Part-to-whole requires the parts to sum to the whole. A ratio's slices do not:
-    three collection-efficiency percentages have no meaningful total to be shares of."""
+    """Part-to-whole requires the parts to sum to the whole.
+
+    A ratio's slices do not: three collection-efficiency percentages have no
+    meaningful total to be shares of.
+    """
     metric = cat.metrics.get(metric_id)
     return bool(metric and metric.grain in ("flow", "point_in_time"))
 
@@ -405,11 +407,7 @@ def _axes(
                 label=axis_dim.label if axis_dim else "Driver",
                 unit="text",
             ),
-            [
-                SeriesSpec(
-                    field="value", label="Contribution", unit=metric.unit
-                )
-            ],
+            [SeriesSpec(field="value", label="Contribution", unit=metric.unit)],
         )
 
     # The comparison forms read `_variance_rows` output, whose columns are `previous`,
@@ -510,9 +508,7 @@ def _variance_rows(
         after = row.get(metric_id)
         delta = None
         delta_pct = None
-        if isinstance(after, (int, float)) and isinstance(
-            before, (int, float)
-        ):
+        if isinstance(after, (int, float)) and isinstance(before, (int, float)):
             delta = after - before
             delta_pct = (delta / before * 100) if before else None
         merged = {k: row[k] for k in key_fields if k in row}
@@ -638,9 +634,7 @@ def build_from_rows(
                 name=c,
                 label=c.replace("_", " ").title(),
                 unit=units.get(c, "count" if c in numeric else "text"),
-                format=_format_hint(units[c])
-                if c in units
-                else None,
+                format=_format_hint(units[c]) if c in units else None,
                 sensitivity="internal",
             )
             for c in columns
@@ -816,9 +810,7 @@ def _generated_summary(
         else:
             base = f"The query returned {len(rows):,} row(s)."
     else:
-        readable = ", ".join(
-            column.replace("_", " ") for column in columns[:5]
-        )
+        readable = ", ".join(column.replace("_", " ") for column in columns[:5])
         base = f"The query returned {len(rows):,} row(s) covering {readable}."
 
     detail = " ".join(description.split()).strip()
@@ -885,7 +877,8 @@ def _waterfall_rows(
     """Prior total, each mover, current total — the bridge between two numbers.
 
     The two totals are marked `total` so the renderer can floor them at zero while the
-    contributions float on the running balance."""
+    contributions float on the running balance.
+    """
     d = decomposition
     unit = d.unit
 

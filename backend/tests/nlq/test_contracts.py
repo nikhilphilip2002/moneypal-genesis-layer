@@ -96,9 +96,7 @@ class TestPeriod:
 
     def test_is_resolved_only_with_concrete_dates(self):
         assert not Period(relative="last_quarter").is_resolved
-        assert Period(
-            start=date(2026, 1, 1), end=date(2026, 3, 31)
-        ).is_resolved
+        assert Period(start=date(2026, 1, 1), end=date(2026, 3, 31)).is_resolved
 
     def test_relative_vocabulary_is_closed(self):
         """An open string would let the planner invent periods the compiler cannot honour."""

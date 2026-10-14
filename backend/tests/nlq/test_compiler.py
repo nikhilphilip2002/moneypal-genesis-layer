@@ -50,9 +50,7 @@ class TestGeneratedSql:
     def test_company_code_is_always_in_the_join(self):
         """company_code takes two values; omitting it merges two entities' accounts that
         share an account number."""
-        out = sql_for(
-            metrics=["collection_efficiency"], dimensions=["product"]
-        )
+        out = sql_for(metrics=["collection_efficiency"], dimensions=["product"])
         assert "company_code" in out
 
     def test_customer_count_uses_company_and_customer_identity(self):
@@ -250,9 +248,7 @@ class TestFilters:
                 metrics=["principal_outstanding_book"],
                 dimensions=["borrower"],
                 having=[
-                    Filter(
-                        field="principal_outstanding_book", op="eq", value=0
-                    )
+                    Filter(field="principal_outstanding_book", op="eq", value=0)
                 ],
                 period=Period(relative="today"),
             ),

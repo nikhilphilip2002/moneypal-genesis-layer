@@ -130,9 +130,7 @@ class Dimension:
             )
         qualified = f'{alias}."{self.column}"'
         if self.expression:
-            return " ".join(
-                self.expression.replace("{col}", qualified).split()
-            )
+            return " ".join(self.expression.replace("{col}", qualified).split())
         return qualified
 
     def sort_sql(self, alias: str) -> str | None:
@@ -185,8 +183,10 @@ class Metric:
 
     @property
     def needs_as_of(self) -> bool:
-        """True when the metric reads an event log that must be collapsed to one row per
-        account before aggregation. This is the guard against the classification-event trap."""
+        """True when the metric reads an event log that must be collapsed to one row per account before aggregation.
+
+        This is the guard against the classification-event trap.
+        """
         return bool(
             self.as_of_function or (self.as_of_column and self.as_of_key)
         )
@@ -231,8 +231,7 @@ class Join:
 
     @property
     def fans_out(self) -> bool:
-        """True when following this edge can multiply rows on the left — which would
-        double-count any SUM taken from the left table (§2.5 rule 4)."""
+        """True when following this edge can multiply rows on the left — which would double-count any SUM taken from the left table (§2.5 rule 4)."""
         return self.cardinality in ("one_to_many", "many_to_many")
 
 
@@ -241,7 +240,8 @@ class AnalysisStepDef:
     """One query in a preset analysis, still in catalog terms rather than as a QuerySpec.
 
     Kept as loose data here so the catalog stays importable without the contracts module;
-    `analysis.build` turns it into a real `QuerySpec` and the validators there apply."""
+    `analysis.build` turns it into a real `QuerySpec` and the validators there apply.
+    """
 
     id: str
     label: str
@@ -344,7 +344,8 @@ class EwsRule:
 
     The sentence matters as much as the predicate. A worklist that ranks accounts without
     saying why each one is on it gets worked from the top until the officer loses patience;
-    one that states "184 days since the last receipt, with ₹2.4L overdue" gets worked."""
+    one that states "184 days since the last receipt, with ₹2.4L overdue" gets worked.
+    """
 
     id: str
     label: str
@@ -362,8 +363,11 @@ class ScoreComponent:
 
 @dataclass(frozen=True, slots=True)
 class ScoreModel:
-    """How the list is ordered. Every weight is shown on the card — a priority nobody can
-    interrogate is a priority nobody trusts twice."""
+    """How the list is ordered.
+
+    Every weight is shown on the card — a priority nobody can interrogate is a
+    priority nobody trusts twice.
+    """
 
     method: str
     components: tuple[ScoreComponent, ...]
@@ -412,8 +416,7 @@ class WorklistPreset:
 
 @dataclass(frozen=True, slots=True)
 class WorklistConfig:
-    """Everything behind "what should we do about it?" — the base relation, the rules, the
-    priority score and the playbooks, all as reviewed configuration."""
+    """Everything behind "what should we do about it?" — the base relation, the rules, the priority score and the playbooks, all as reviewed configuration."""
 
     base_from: str
     base_alias: str
@@ -443,7 +446,8 @@ class SignalScope:
     The detectors named here are the only judgement in the signals system. Everything after
     this point is arithmetic, which is what makes "what are the emerging issues?" answerable
     at all — a model asked the same question has no baseline and will call an ordinary month
-    unusual with total confidence."""
+    unusual with total confidence.
+    """
 
     id: str
     label: str
@@ -488,7 +492,8 @@ class Persona:
     The restriction is the point: a persona may reorder and preselect, but it may not change
     a metric, a threshold or a filter. PAR 30 is PAR 30 at every desk, and a persona that
     quietly redefined one would give two people different answers to the same question with
-    no way to discover why."""
+    no way to discover why.
+    """
 
     id: str
     label: str
@@ -526,10 +531,13 @@ class EnumBlock:
         return self.fallback_label.replace("{code}", key)
 
     def code_for(self, text: str) -> str | None:
-        """Resolve a user's word to a code. Exact label or synonym match only — a fuzzy
-        match here would silently answer about the wrong product. Ambiguous governed names
-        also return ``None``: two schemes with the same label must never collapse to the
-        first code merely because it appears first in YAML."""
+        """Resolve a user's word to a code.
+
+        Exact label or synonym match only — a fuzzy match here would silently
+        answer about the wrong product. Ambiguous governed names also return
+        ``None``: two schemes with the same label must never collapse to the
+        first code merely because it appears first in YAML.
+        """
         needle = text.strip().lower()
         matches = [
             code
@@ -594,8 +602,11 @@ class Catalog:
         return self.enums.get(dimension_id)
 
     def search_metrics(self, text: str) -> list[Metric]:
-        """Lexical synonym hit. Short acronyms like PAR and DPD embed poorly but match
-        here with certainty, which is why retrieval scores this alongside vectors."""
+        """Lexical synonym hit.
+
+        Short acronyms like PAR and DPD embed poorly but match here with
+        certainty, which is why retrieval scores this alongside vectors.
+        """
         needle = text.lower()
         tokens = [t for t in _WORD_RE.findall(needle) if len(t) >= 4]
         hits = []
@@ -608,8 +619,7 @@ class Catalog:
             # should reach the "disbursement" synonym. Requiring a 4-character shared
             # prefix keeps "loan" from matching everything.
             if any(
-                term.lower().startswith(token)
-                or token.startswith(term.lower())
+                term.lower().startswith(token) or token.startswith(term.lower())
                 for term in haystack
                 for token in tokens
                 if len(term) >= 4
@@ -1079,9 +1089,10 @@ def _load_enums() -> dict[str, EnumBlock]:
     for raw in _read("enums.yaml"):
         _require(raw, "dimension", "column", where="enums.yaml")
         values: dict[str, EnumValue] = {}
-        for code, spec in (raw.get("values") or {}).items():
-            if isinstance(spec, str):
-                spec = {"label": spec}
+        for code, raw_spec in (raw.get("values") or {}).items():
+            spec = (
+                {"label": raw_spec} if isinstance(raw_spec, str) else raw_spec
+            )
             values[str(code)] = EnumValue(
                 code=str(code),
                 label=spec.get("label", str(code)),
@@ -1423,8 +1434,11 @@ def _persona_problems(catalog: Catalog) -> list[str]:
 
 
 def _cross_validate(catalog: Catalog) -> None:
-    """Every reference must resolve. These are the errors that would otherwise surface as
-    a broken query in front of a user."""
+    """Every reference must resolve.
+
+    These are the errors that would otherwise surface as a broken query in front
+    of a user.
+    """
     known_tables = catalog.allowed_tables()
     problems: list[str] = []
 
@@ -1535,8 +1549,11 @@ def _cross_validate(catalog: Catalog) -> None:
 
 
 def _version(paths: Iterable[Path]) -> str:
-    """Content hash of the definitions. Bumping it invalidates the embedding index and the
-    plan cache, so a catalog edit cannot leave stale vectors behind."""
+    """Content hash of the definitions.
+
+    Bumping it invalidates the embedding index and the plan cache, so a catalog
+    edit cannot leave stale vectors behind.
+    """
     digest = hashlib.sha256()
     for path in sorted(paths):
         digest.update(path.read_bytes())

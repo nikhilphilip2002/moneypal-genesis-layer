@@ -12,8 +12,8 @@ from app.services.nlq.contracts import (
     ChartSpec,
     ColumnSpec,
     Lineage,
-    SeriesSpec,
     Sensitivity,
+    SeriesSpec,
     Unit,
 )
 from app.services.workbench.agent_contracts import (
@@ -59,8 +59,7 @@ def _result_fields(
         for field in fields
         if any(row.get(field) is not None for row in rows)
         and all(
-            row.get(field) is None or _is_number(row.get(field))
-            for row in rows
+            row.get(field) is None or _is_number(row.get(field)) for row in rows
         )
     ]
     return fields, numeric
@@ -192,7 +191,9 @@ def _unit(
 ) -> Unit:
     if counted:
         return "count"
-    return TypeAdapter(Unit).validate_python(columns.get(field, {}).get("unit") or "count")
+    return TypeAdapter(Unit).validate_python(
+        columns.get(field, {}).get("unit") or "count"
+    )
 
 
 def _require_fields(
@@ -241,9 +242,7 @@ def _validate_shape(
     if args.chart_type == "donut" and (
         args.series is not None or len(args.y) != 1
     ):
-        raise VisualizationError(
-            "donut requires one y field and a null series"
-        )
+        raise VisualizationError("donut requires one y field and a null series")
     if args.series is not None and len(args.y) != 1:
         raise VisualizationError("a series split supports exactly one y field")
     if (

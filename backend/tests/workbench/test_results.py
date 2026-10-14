@@ -1,8 +1,8 @@
 from app.services.workbench import composer
 from app.services.workbench.results import (
-    Evidence,
     MAX_EVIDENCE_ITEMS,
     MAX_EXCERPT_CHARS,
+    Evidence,
     ToolResult,
 )
 

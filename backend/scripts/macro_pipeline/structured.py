@@ -19,7 +19,6 @@ from app.services import figures as figure_parser
 
 from . import macro_topics
 
-
 # Sentence boundary = terminal punctuation followed by whitespace and the start of a
 # new sentence. Splitting on a bare "." instead would cut every decimal in half —
 # "bond yield is 6.7%" becomes the sentence "bond yield is 6." and the figure loses

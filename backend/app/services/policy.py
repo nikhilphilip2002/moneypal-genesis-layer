@@ -4,10 +4,9 @@ Synthesises a policy brief across the selected regulation and institution
 collections — one grounded generation over multi-collection retrieval.
 """
 
-from genesis_core import rag, make_response
-
 from app.services import institution_loader as il
 from app.services import reg_loader as rl
+from genesis_core import make_response, rag
 
 
 def brief(regulation_ids: list[str], institution_ids: list[str], focus: str):

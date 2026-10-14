@@ -1,11 +1,10 @@
 """Platform status for the Moneypal administrator dashboard."""
 
-from genesis_core import rag
-from genesis_core.config import settings
-
 from app.core.config import MACRO_COLLECTION
 from app.services import institution_loader as il
 from app.services import reg_loader as rl
+from genesis_core import rag
+from genesis_core.config import settings
 
 # GICC onboarding journey — Genesis phases from the developer brief (section 9).
 ONBOARDING = {
