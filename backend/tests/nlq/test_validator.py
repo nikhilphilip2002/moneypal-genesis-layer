@@ -25,6 +25,22 @@ LIMIT 100
 
 
 class TestAcceptsLegitimateQueries:
+    @pytest.mark.parametrize(
+        "sql",
+        [
+            "SELECT COUNT(*) AS total FROM gold.loan_accounts",
+            "SELECT COUNT(*) FILTER (WHERE approved_amount > 0) FROM gold.loan_accounts",
+            "SELECT COUNT(*) OVER () FROM gold.loan_accounts",
+            "SELECT SUM(approved_amount) / NULLIF(COUNT(*), 0) FROM gold.loan_accounts",
+            "WITH totals AS (SELECT COUNT(*) AS total FROM gold.loan_accounts) "
+            "SELECT total FROM totals",
+        ],
+    )
+    def test_count_star_is_allowed(self, sql):
+        result = validate(sql, function_mode="allowlist")
+        assert "COUNT(*)" in result.sql
+        assert result.tables == ["gold.loan_accounts"]
+
     def test_a_normal_reporting_query_passes(self):
         result = validate(GOOD)
         assert "gold.loan_disbursements" in result.tables
@@ -212,6 +228,12 @@ class TestUncontrolledEgress:
             "SELECT * FROM gold.loan_accounts LIMIT 10",
             "SELECT lam.* FROM gold.loan_accounts AS lam LIMIT 10",
             "SELECT a.* FROM gold.customers AS a LIMIT 1",
+            "SELECT *, COUNT(*) FROM gold.loan_accounts LIMIT 10",
+            "SELECT lam.*, COUNT(*) OVER () FROM gold.loan_accounts AS lam LIMIT 10",
+            "SELECT COUNT(*) FROM (SELECT * FROM gold.loan_accounts) AS loans",
+            "WITH loans AS (SELECT lam.* FROM gold.loan_accounts AS lam) "
+            "SELECT COUNT(*) FROM loans",
+            "SELECT COUNT(lam.*) FROM gold.loan_accounts AS lam",
         ],
     )
     def test_select_star_is_rejected(self, sql):

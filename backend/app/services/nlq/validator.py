@@ -317,7 +317,9 @@ def _check_no_write_ctes(tree: exp.Expression) -> None:
 
 def _check_no_star(tree: exp.Expression) -> None:
     """`SELECT *` is uncontrolled PII egress — a customer table has 56 columns."""
-    for _node in tree.find_all(exp.Star):
+    for node in tree.find_all(exp.Star):
+        if isinstance(node.parent, exp.Count) and node.parent.this is node:
+            continue
         raise ValidationError(
             "Including all columns using * is prohibited specify the needed colums."
         )
