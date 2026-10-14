@@ -60,6 +60,18 @@ def test_reconciliation_selects_one_local_query_and_derives_exclusions():
     assert result.excluded_queries[0].reason_code == "discovery_only"
 
 
+def test_reconciliation_accepts_synthesis_without_visuals():
+    synthesis = FinalSynthesis.model_validate(
+        {"insights": "Answer", "evidence": [{"query_id": 1}]}
+    )
+
+    result = reconcile_query_attribution([_record("turn:q1")], synthesis)
+
+    assert result.active_query_ids == ["turn:q1"]
+    assert result.visual_query_ids == []
+    assert "visuals" not in synthesis.model_dump(exclude_defaults=True)
+
+
 def test_reconciliation_rejects_unknown_or_unsuccessful_selection():
     registry = [_record("turn:q1", status="error", has_data=False)]
     failed = reconcile_query_attribution(

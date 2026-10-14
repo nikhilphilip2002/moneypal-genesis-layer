@@ -19,7 +19,7 @@ from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from typing import Any
 
-from pydantic import ValidationError
+from pydantic import TypeAdapter, ValidationError
 
 from app.core.tool_names import (
     SEARCH_CURATED_KNOWLEDGE,
@@ -456,13 +456,17 @@ def _preflight(result, state: dict[str, Any]) -> list[tuple[str, str, str]]:
                 and submission.get("outcome") == "answer"
             ):
                 from app.services.workbench.agent_contracts import (
+                    FinalSubmissionArguments,
                     SubmitAnswerArguments,
                 )
                 from app.services.workbench.attribution import (
                     resolve_current_query,
                 )
 
-                answer = SubmitAnswerArguments.model_validate(submission)
+                answer = TypeAdapter(FinalSubmissionArguments).validate_python(
+                    submission
+                )
+                assert isinstance(answer, SubmitAnswerArguments)
                 if (
                     not answer.evidence
                     and _has_retrieved_evidence(

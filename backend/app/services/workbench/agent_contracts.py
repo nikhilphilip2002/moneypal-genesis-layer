@@ -8,7 +8,14 @@ from __future__ import annotations
 
 from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Discriminator, Field, Tag, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Discriminator,
+    Field,
+    Tag,
+    model_validator,
+)
 
 
 class AgentArguments(BaseModel):
@@ -103,7 +110,7 @@ class ExcludedQueryReference(BaseModel):
 class QueryEvidenceReference(AgentArguments):
     query_id: int = Field(
         ge=1,
-        description="ID of a successful database query supporting the answer.",
+        description="ID of a successful database query.",
     )
 
 
@@ -111,7 +118,7 @@ class CardEvidenceReference(AgentArguments):
     card_reference: str = Field(
         min_length=1,
         max_length=500,
-        description="ID of a successful knowledge or web search result supporting the answer.",
+        description="ID of a successful knowledge or web search result.",
     )
 
 
@@ -124,18 +131,22 @@ class AnswerVisual(AgentArguments):
         description="ID of the database query result shown in the visual.",
     )
     view: VisualizationChartType = Field(
-        description="Table, KPI, or chart type of the visual.",
+        description="Visualization Type",
     )
 
 
-class AnswerPresentation(AgentArguments):
+class AnswerEvidence(AgentArguments):
     evidence: list[EvidenceReference] = Field(
         max_length=30,
-        description="References to retrieved results supporting the answer.",
+        description="References to retrieved results.",
     )
+
+
+class AnswerPresentation(AnswerEvidence):
     visuals: list[AnswerVisual] = Field(
+        default_factory=list,
         max_length=10,
-        description="Tables, KPIs, or charts accompanying the answer.",
+        description="Visualization Type",
     )
 
     @model_validator(mode="after")
@@ -180,7 +191,7 @@ class VisualizeQueryResultArguments(AgentArguments):
     aggregation: VisualizationAggregation
 
 
-class SubmitAnswerArguments(AnswerPresentation):
+class SubmitAnswerArguments(AnswerEvidence):
     outcome: Literal["answer"] = Field(
         description="Completed answer outcome.",
     )
@@ -191,19 +202,19 @@ class SubmitAnswerArguments(AnswerPresentation):
     )
 
 
-class SubmitVisualAnswerArguments(SubmitAnswerArguments):
+class SubmitVisualAnswerArguments(SubmitAnswerArguments, AnswerPresentation):
     message: str = Field(
         min_length=1,
         max_length=1_000,
         description=(
             "A short summary of key findings from the accompanying visuals. "
-            "The application displays the referenced query results separately."
+            "The tool will displays the referenced query results."
         ),
     )
     visuals: list[AnswerVisual] = Field(
         min_length=1,
         max_length=10,
-        description="Tables, KPIs, or charts accompanying the summary.",
+        description="Visualization type",
     )
 
 
@@ -211,11 +222,7 @@ class SubmitMarkdownAnswerArguments(SubmitAnswerArguments):
     message: str = Field(
         min_length=1,
         max_length=20_000,
-        description="The complete answer shown to the user.",
-    )
-    visuals: list[AnswerVisual] = Field(
-        max_length=0,
-        description="An empty list for an answer presented entirely in Markdown.",
+        description="Final answer",
     )
 
 
@@ -239,13 +246,11 @@ class SubmitClarificationArguments(AgentArguments):
 class SubmitRefusalArguments(AgentArguments):
     """Decline an unsupported or prohibited request with a governed reason."""
 
-    outcome: Literal["refuse"] = Field(
-        description="Refusal outcome.",
-    )
+    outcome: Literal["refuse"] = Field(description="Refusal outcome.")
     message: str = Field(
         min_length=1,
         max_length=500,
-        description="The refusal explanation shown to the user.",
+        description="The refusal reason.",
     )
     reason_code: Literal[
         "out_of_scope",

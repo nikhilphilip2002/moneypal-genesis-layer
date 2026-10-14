@@ -4,6 +4,7 @@ import asyncio
 from copy import deepcopy
 import json
 import time
+from typing import Any
 
 import pytest
 
@@ -1648,17 +1649,17 @@ async def test_composed_answer_persists_multiple_queries_and_source(
         else []
     )
     message = "## Comparison\n\n**Two queries** support this conclusion alongside the policy."
+    submission: dict[str, Any] = {
+        "outcome": "answer",
+        "message": message,
+        "evidence": evidence,
+    }
+    if with_visuals:
+        submission["visuals"] = visuals
     final = NativeToolCall(
         id="composed-final",
         name=SUBMIT_ANSWER,
-        arguments={
-            "submission": {
-                "outcome": "answer",
-                "message": message,
-                "evidence": evidence,
-                "visuals": visuals,
-            }
-        },
+        arguments={"submission": submission},
     )
     citation = (
         {"document": "Policy", "url": "https://example.org/policy"}
@@ -1758,7 +1759,6 @@ async def test_submission_recovery_is_bounded(scripted, monkeypatch, recovery):
                         "evidence": [
                             {"query_id": 99 if recovery == "invalid" else 1}
                         ],
-                        "visuals": [],
                     }
                 },
             )
@@ -1822,7 +1822,6 @@ async def test_composed_reference_feedback_can_be_repaired(
                         "outcome": "answer",
                         "message": "**4.2%**.",
                         "evidence": [reference],
-                        "visuals": [],
                     }
                 },
             )
@@ -1885,7 +1884,6 @@ async def test_knowledge_only_submission_without_database_access(scripted):
                 "outcome": "answer",
                 "message": "**PAR 30** definition.",
                 "evidence": [{"card_reference": "definition"}],
-                "visuals": [],
             }
         },
     )

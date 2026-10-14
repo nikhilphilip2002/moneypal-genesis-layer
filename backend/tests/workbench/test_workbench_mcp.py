@@ -174,30 +174,75 @@ async def test_web_tool_executes_through_in_memory_client(monkeypatch):
 
 
 @pytest.mark.anyio
-@pytest.mark.parametrize("visuals", [[], [{"query_id": 1, "view": "table"}]])
-async def test_submit_final_answer_executes_through_in_memory_client(visuals):
+@pytest.mark.parametrize(
+    "submission,expected_synthesis",
+    [
+        (
+            {
+                "outcome": "answer",
+                "message": "Answer",
+                "evidence": [{"query_id": 1}],
+            },
+            {"insights": "Answer", "evidence": [{"query_id": 1}]},
+        ),
+        (
+            {
+                "outcome": "answer",
+                "message": "Answer",
+                "evidence": [{"query_id": 1}],
+                "visuals": [{"query_id": 1, "view": "table"}],
+            },
+            {
+                "insights": "Answer",
+                "evidence": [{"query_id": 1}],
+                "visuals": [{"query_id": 1, "view": "table"}],
+            },
+        ),
+    ],
+)
+async def test_submit_final_answer_executes_through_in_memory_client(
+    submission, expected_synthesis
+):
     async with Client(workbench_server.mcp, mode="legacy") as client:
         result = await client.call_tool(
             SUBMIT_ANSWER,
-            {
-                "submission": {
-                    "outcome": "answer",
-                    "message": "Answer",
-                    "evidence": [{"query_id": 1}],
-                    "visuals": visuals,
-                }
-            },
+            {"submission": submission},
             meta=workbench_client.execution_meta(_context()),
         )
 
     terminal = result.data["data"]["terminal"]
     assert terminal["outcome"] == "answer"
-    assert terminal["synthesis"] == {
-        "insights": "Answer",
-        "evidence": [{"query_id": 1}],
-        "visuals": visuals,
-    }
+    assert terminal["synthesis"] == expected_synthesis
     assert json.loads(result.content[0].text) == {"success": True}
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    "visuals,error",
+    [
+        ([], "extra_forbidden"),
+        ([{"query_id": 2, "view": "table"}], "must also appear in evidence"),
+        (
+            [{"query_id": 1, "view": "table"}, {"query_id": 1, "view": "kpi"}],
+            "at most one visual per query",
+        ),
+    ],
+)
+async def test_final_answer_rejects_invalid_visuals(visuals, error):
+    async with Client(workbench_server.mcp, mode="legacy") as client:
+        with pytest.raises(ToolError, match=error):
+            await client.call_tool(
+                SUBMIT_ANSWER,
+                {
+                    "submission": {
+                        "outcome": "answer",
+                        "message": "Answer",
+                        "evidence": [{"query_id": 1}],
+                        "visuals": visuals,
+                    }
+                },
+                meta=workbench_client.execution_meta(_context()),
+            )
 
 
 @pytest.mark.anyio

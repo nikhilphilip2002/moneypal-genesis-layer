@@ -182,8 +182,7 @@ async def submit_final_answer(
             _execution_context(ctx).source_policy.require("db")
         synthesis = FinalSynthesis(
             insights=submission.message,
-            evidence=submission.evidence,
-            visuals=submission.visuals,
+            **submission.model_dump(exclude={"outcome", "message"}),
         )
         terminal = {
             "outcome": "answer",

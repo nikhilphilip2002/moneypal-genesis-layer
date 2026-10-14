@@ -189,13 +189,14 @@ async def test_final_answer_schema_supports_all_terminal_outcomes():
     }
     assert answer["outcome"]["enum"] == ["answer"]
     assert markdown["outcome"]["enum"] == ["answer"]
-    assert set(markdown) == set(answer)
+    assert set(markdown) == {"outcome", "message", "evidence"}
     assert answer["visuals"]["minItems"] == 1
-    assert markdown["visuals"]["maxItems"] == 0
     assert answer["message"]["maxLength"] == 1_000
     assert markdown["message"]["maxLength"] == 20_000
     assert "short summary" in answer["message"]["description"]
-    assert "complete answer" in markdown["message"]["description"]
+    assert markdown["message"]["description"] == (
+        SubmitMarkdownAnswerArguments.model_fields["message"].description
+    )
     references = answer["evidence"]["items"]["anyOf"]
     assert [set(ref["properties"]) for ref in references] == [
         {"query_id"},
