@@ -9,6 +9,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+from app.core.config import settings
 from app.services.workbench.access import (
     SourceAccessDenied,
     SourceAccessPolicy,
@@ -61,7 +62,7 @@ RUNTIME_TOOL_POLICIES: dict[str, RuntimeToolPolicy] = {
     "search_curated_knowledge": RuntimeToolPolicy(
         source_id=None,
         sensitivity="internal",
-        timeout_s=20.0,
+        timeout_s=settings.workbench_curated_timeout_s,
         max_result_chars=12_000,
     ),
     "search_public_web": RuntimeToolPolicy(

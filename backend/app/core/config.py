@@ -225,6 +225,9 @@ class Settings:
         self.nlq_request_budget_s = float(
             get("NLQ_REQUEST_BUDGET_S", "60") or "60"
         )
+        self.workbench_curated_timeout_s = float(
+            get("WORKBENCH_CURATED_TIMEOUT_S", "20") or "20"
+        )
         # Bound every individual LLM request (including provider retries) uniformly so a
         # loading or wedged model server cannot consume the whole turn deadline.
         # Read-only database role (see docs/GENESIS_NLQ_BUILD_PLAN.md §7.1). Separate
