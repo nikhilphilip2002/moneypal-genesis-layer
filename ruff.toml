@@ -1,0 +1,57 @@
+target-version = "py313"
+line-length = 80
+indent-width = 4
+src = ["backend", "packages/genesis_core/src"]
+extend-exclude = ["third_party", "tests", "test_*.py", "*_test.py"]
+force-exclude = true
+
+[lint]
+select = ["E4", "E7", "E9", "F", "W", "I", "N", "D", "B", "G", "PL"]
+ignore = [
+    "D100",
+    "D101",
+    "D102",
+    "D103",
+    "D104",
+    "D105",
+    "D106",
+    "D107",
+    "PLC0415",
+    "PLR",
+    "PLW0603",
+]
+dummy-variable-rgx = "^(_+$|unused_.*|dummy_.*|_.*)$"
+
+[lint.per-file-ignores]
+"**/__init__.py" = ["F401"]
+
+[lint.pydocstyle]
+convention = "google"
+
+[lint.isort]
+known-first-party = ["app", "genesis_core", "scripts", "tests"]
+
+[lint.flake8-bugbear]
+extend-immutable-calls = [
+    "fastapi.Body",
+    "fastapi.Cookie",
+    "fastapi.Depends",
+    "fastapi.File",
+    "fastapi.Form",
+    "fastapi.Header",
+    "fastapi.Path",
+    "fastapi.Query",
+    "fastapi.Security",
+]
+
+[lint.pycodestyle]
+ignore-overlong-task-comments = true
+
+[format]
+indent-style = "space"
+quote-style = "double"
+line-ending = "lf"
+docstring-code-format = true
+
+[per-file-target-version]
+"packages/genesis_core/**/*.py" = "py311"
