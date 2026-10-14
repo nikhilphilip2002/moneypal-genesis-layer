@@ -163,6 +163,7 @@ def _check_dimension_compatibility(
         dim = cat.dimensions[dim_id]
         if dim.is_time or dim.table == base_table:
             continue
+        assert dim.table is not None
         # Reaching a dimension on another table needs a declared route: either the
         # dimension sits on the hub and the base table joins to it, or it sits on a table
         # the base table joins to directly.

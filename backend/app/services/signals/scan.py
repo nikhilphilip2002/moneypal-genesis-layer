@@ -23,7 +23,7 @@ from app.services.nlq import db as nlq_db
 from app.services.nlq.catalog import Catalog, get_catalog
 from app.services.nlq.catalog.loader import SignalScope, canonical_enum_code
 from app.services.nlq.compiler import CompiledQuery, CompileError, compile_spec
-from app.services.nlq.contracts import Period, QuerySpec, ScanReport, Signal
+from app.services.nlq.contracts import Period, QuerySpec, RelativePeriod, ScanReport, Signal
 from app.services.nlq.executor import ExecutionError, execute
 from app.services.nlq.narrator import format_value, humanize_label
 from app.services.signals import detectors
@@ -202,7 +202,7 @@ def _series_spec(scope: SignalScope, cat: Catalog) -> QuerySpec:
     )
 
 
-def _window(count: int, grain: str) -> str:
+def _window(count: int, grain: str) -> RelativePeriod:
     """The closed relative-period token covering roughly `count` periods of `grain`."""
     if grain == "month" and count > 3:
         return "last_12_months"

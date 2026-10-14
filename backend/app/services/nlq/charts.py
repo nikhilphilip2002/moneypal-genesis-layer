@@ -10,8 +10,11 @@ to one decimal — so a number never appears in a unit the catalog did not decla
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from datetime import datetime
 from typing import Any
+
+from pydantic import TypeAdapter
 
 from app.services.nlq import drilldown, drivers
 from app.services.nlq.catalog import Catalog, get_catalog
@@ -25,10 +28,12 @@ from app.services.nlq.compiler import (
 from app.services.nlq.contracts import (
     AxisSpec,
     ChartSpec,
+    ChartType,
     ColumnSpec,
     Lineage,
     QuerySpec,
     SeriesSpec,
+    Unit,
 )
 from app.services.nlq.executor import QueryResult
 from app.services.nlq.narrator import format_value
@@ -121,7 +126,7 @@ def build(
 
 def choose_chart_type(
     spec: QuerySpec, compiled: CompiledQuery, result: QueryResult, cat: Catalog
-) -> str:
+) -> ChartType:
     if result.status == "empty":
         return "kpi" if not spec.dimensions else "table"
 
@@ -572,14 +577,14 @@ def build_from_rows(
     model-authored statements unverified; fixed record lookups use the same renderer.
     """
     cat = catalog or get_catalog()
-    unit_hints = unit_hints or {}
+    units = TypeAdapter(dict[str, Unit]).validate_python(unit_hints or {})
     columns = result.columns
     rows = _decode_generated_rows(result.rows, columns, cat)
     # PostgreSQL numeric identifiers arrive as floats through the generic executor.  Their
     # catalog unit, not their runtime Python type, determines presentation.
     for row in rows:
         for column in columns:
-            if unit_hints.get(column) != "text":
+            if units.get(column) != "text":
                 continue
             value = row.get(column)
             if isinstance(value, float) and value.is_integer():
@@ -589,9 +594,9 @@ def build_from_rows(
     numeric = [
         c
         for c in columns
-        if unit_hints.get(c) not in {"text", "date", "datetime", "boolean"}
+        if units.get(c) not in {"text", "date", "datetime", "boolean"}
         and _column_is_numeric(rows, c)
-        and not _generated_dimension_column(c, columns, unit_hints)
+        and not _generated_dimension_column(c, columns, units)
     ]
     labels = [c for c in columns if c not in numeric]
 
@@ -616,7 +621,7 @@ def build_from_rows(
         x=AxisSpec(
             field=labels[0],
             label=labels[0].replace("_", " ").title(),
-            unit=unit_hints.get(labels[0], "text"),
+            unit=units.get(labels[0], "text"),
         )
         if labels
         else None,
@@ -624,7 +629,7 @@ def build_from_rows(
             SeriesSpec(
                 field=c,
                 label=c.replace("_", " ").title(),
-                unit=unit_hints.get(c, "count"),
+                unit=units.get(c, "count"),
             )
             for c in numeric
         ],
@@ -632,9 +637,9 @@ def build_from_rows(
             ColumnSpec(
                 name=c,
                 label=c.replace("_", " ").title(),
-                unit=unit_hints.get(c, "count" if c in numeric else "text"),
-                format=_format_hint(unit_hints[c])
-                if c in unit_hints
+                unit=units.get(c, "count" if c in numeric else "text"),
+                format=_format_hint(units[c])
+                if c in units
                 else None,
                 sensitivity="internal",
             )
@@ -646,7 +651,7 @@ def build_from_rows(
             columns,
             numeric,
             labels,
-            unit_hints,
+            units,
             description=description,
             unverified=lineage.unverified,
         ),
@@ -683,7 +688,7 @@ _DIMENSION_LIKE_GENERATED_COLUMNS = frozenset(
 
 
 def _generated_dimension_column(
-    column: str, columns: list[str], unit_hints: dict[str, str]
+    column: str, columns: list[str], unit_hints: Mapping[str, str]
 ) -> bool:
     """Recognise a numeric grouping key in generated output.
 
@@ -755,7 +760,7 @@ def _generated_summary(
     columns: list[str],
     numeric: list[str],
     labels: list[str],
-    unit_hints: dict[str, str],
+    unit_hints: Mapping[str, str],
     *,
     description: str,
     unverified: bool,

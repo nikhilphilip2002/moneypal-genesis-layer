@@ -77,7 +77,7 @@ def _macro_filter(**kwargs):
     """Filter over this module's points. Keyword args become equality conditions."""
     from qdrant_client.http import models
 
-    must = [
+    must: list[models.Condition] = [
         models.FieldCondition(
             key="module", match=models.MatchValue(value="macro")
         )
@@ -203,7 +203,7 @@ def _stale_filter(run_id: str):
     """
     from qdrant_client.http import models
 
-    conditions = [
+    conditions: list[models.Condition] = [
         models.FieldCondition(
             key="ingest_run", match=models.MatchValue(value=run_id)
         )

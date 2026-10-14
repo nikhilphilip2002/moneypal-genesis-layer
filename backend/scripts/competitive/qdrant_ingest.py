@@ -86,9 +86,14 @@ def get_model() -> SentenceTransformer:
 
 def vector_size() -> int:
     model = get_model()
-    if hasattr(model, "get_embedding_dimension"):
-        return int(model.get_embedding_dimension())
-    return int(model.get_sentence_embedding_dimension())
+    dimension = (
+        model.get_embedding_dimension()
+        if hasattr(model, "get_embedding_dimension")
+        else model.get_sentence_embedding_dimension()
+    )
+    if dimension is None:
+        raise ValueError("The embedding model does not declare its vector dimension")
+    return int(dimension)
 
 
 def structured_file_for(

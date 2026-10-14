@@ -20,7 +20,8 @@ from email.utils import parsedate_to_datetime
 from collections.abc import Awaitable, Callable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
-from typing import Any, Protocol, runtime_checkable
+from types import ModuleType
+from typing import Any, Literal, Protocol, cast, runtime_checkable
 
 import httpx
 from openai import (
@@ -34,9 +35,11 @@ from openai import AsyncStream
 from openai.types.chat import ChatCompletionChunk
 
 try:  # POSIX-only advisory locks; Windows development hosts fall back to the process gate.
-    import fcntl
+    import fcntl as _fcntl
 except ImportError:  # pragma: no cover - exercised only on non-POSIX platforms
-    fcntl = None  # type: ignore[assignment]
+    fcntl: ModuleType | None = None
+else:
+    fcntl = _fcntl
 
 from app.core.config import settings
 from app.services.nlq.llm.messages import ChatMessage, coalesce_system_messages
@@ -123,9 +126,9 @@ def _strip_replay_reasoning(messages: list[ChatMessage]) -> list[ChatMessage]:
         if isinstance(message, dict) and any(
             key in message for key in _REASONING_FIELDS
         ):
-            message = {
-                k: v for k, v in message.items() if k not in _REASONING_FIELDS
-            }
+            message = message.copy()
+            message.pop("reasoning_content", None)
+            message.pop("reasoning", None)
         stripped.append(message)
     return stripped
 
@@ -541,11 +544,12 @@ def _parse_native_tool_calls(
 
     parsed: list[NativeToolCall] = []
     seen_ids: set[str] = set()
-    for index, raw_call in enumerate(raw_calls):
-        if not isinstance(raw_call, dict):
+    for index, raw_call_value in enumerate(raw_calls):
+        if not isinstance(raw_call_value, dict):
             raise LLMProtocolError(
                 f"tool call at index {index} must be an object"
             )
+        raw_call = cast(dict[str, Any], raw_call_value)
         call_id = raw_call.get("id")
         if not isinstance(call_id, str) or not call_id.strip():
             raise LLMProtocolError(
@@ -708,13 +712,16 @@ class OpenAICompatibleClient:
             # Resolve this synchronously once. The SDK otherwise starts a worker thread
             # on the first async request solely to populate its diagnostic OS header.
             system = platform.system().lower()
-            self._client._platform = {
+            platforms: dict[
+                str, Literal["MacOS", "Linux", "Windows", "FreeBSD", "OpenBSD", "Unknown"]
+            ] = {
                 "darwin": "MacOS",
                 "linux": "Linux",
                 "windows": "Windows",
                 "freebsd": "FreeBSD",
                 "openbsd": "OpenBSD",
-            }.get(system, "Unknown")
+            }
+            self._client._platform = platforms.get(system, "Unknown")
         return self._client
 
     async def aclose(self) -> None:

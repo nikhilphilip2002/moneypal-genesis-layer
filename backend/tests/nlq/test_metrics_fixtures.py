@@ -9,6 +9,8 @@ The independent SQL is included in each test. If a test fails, the two statement
 side by side show whether the compiler drifted or the data moved.
 """
 
+from datetime import date
+
 from app.services.nlq.compiler import bind, compile_spec
 from app.services.nlq.contracts import Period, QuerySpec
 from tests.nlq.conftest import requires_db
@@ -170,7 +172,7 @@ class TestPointInTimeMetrics:
             warehouse_cursor,
             QuerySpec(
                 metrics=["par_30"],
-                period=Period(start="2026-01-01", end=AS_OF),
+                period=Period(start=date(2026, 1, 1), end=date.fromisoformat(AS_OF)),
             ),
         )
         assert close(actual, expected, 0.0001)
@@ -182,7 +184,7 @@ class TestPointInTimeMetrics:
             warehouse_cursor,
             QuerySpec(
                 metrics=["par_30"],
-                period=Period(start="2026-01-01", end=AS_OF),
+                period=Period(start=date(2026, 1, 1), end=date.fromisoformat(AS_OF)),
             ),
         )
         assert correct is not None and correct > 0
@@ -196,7 +198,7 @@ class TestPointInTimeMetrics:
             warehouse_cursor,
             QuerySpec(
                 metrics=["principal_outstanding"],
-                period=Period(start="2026-01-01", end=AS_OF),
+                period=Period(start=date(2026, 1, 1), end=date.fromisoformat(AS_OF)),
             ),
         )
         assert close(actual, expected)
@@ -224,7 +226,7 @@ class TestPointInTimeMetrics:
             warehouse_cursor,
             QuerySpec(
                 metrics=["principal_outstanding"],
-                period=Period(start="2026-01-01", end=AS_OF),
+                period=Period(start=date(2026, 1, 1), end=date.fromisoformat(AS_OF)),
             ),
         )
         whole_book = scalar(
@@ -234,11 +236,13 @@ class TestPointInTimeMetrics:
                 period=Period(relative="today"),
             ),
         )
+        assert classified is not None
+        assert whole_book is not None
         assert classified < whole_book
         compiled = compile_spec(
             QuerySpec(
                 metrics=["principal_outstanding"],
-                period=Period(start="2026-01-01", end=AS_OF),
+                period=Period(start=date(2026, 1, 1), end=date.fromisoformat(AS_OF)),
             )
         )
         assert any("5,588" in w for w in compiled.warnings)
@@ -248,7 +252,7 @@ class TestPointInTimeMetrics:
             warehouse_cursor,
             QuerySpec(
                 metrics=["delinquent_account_count"],
-                period=Period(start="2026-01-01", end=AS_OF),
+                period=Period(start=date(2026, 1, 1), end=date.fromisoformat(AS_OF)),
             ),
         )
         expected = hand_scalar(
@@ -263,7 +267,7 @@ class TestPointInTimeMetrics:
             warehouse_cursor,
             QuerySpec(
                 metrics=["par_90"],
-                period=Period(start="2026-01-01", end=AS_OF),
+                period=Period(start=date(2026, 1, 1), end=date.fromisoformat(AS_OF)),
             ),
         )
         expected = hand_scalar(
@@ -307,14 +311,14 @@ class TestBreakdownsSumToTheTotal:
             QuerySpec(
                 metrics=["principal_outstanding"],
                 dimensions=["dpd_bucket"],
-                period=Period(start="2026-01-01", end=AS_OF),
+                period=Period(start=date(2026, 1, 1), end=date.fromisoformat(AS_OF)),
             ),
         )
         total = scalar(
             warehouse_cursor,
             QuerySpec(
                 metrics=["principal_outstanding"],
-                period=Period(start="2026-01-01", end=AS_OF),
+                period=Period(start=date(2026, 1, 1), end=date.fromisoformat(AS_OF)),
             ),
         )
         assert close(sum(float(r[1]) for r in rows), total, 0.01)

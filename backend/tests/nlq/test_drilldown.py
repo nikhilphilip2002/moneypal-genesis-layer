@@ -261,7 +261,9 @@ class TestAppendLevel:
             dimensions=["branch"],
             period=Period(relative="last_quarter"),
         )
-        assert drilldown.append_level(spec, catalog).dimensions == [
+        appended = drilldown.append_level(spec, catalog)
+        assert appended is not None
+        assert appended.dimensions == [
             "branch",
             "agent",
         ]
@@ -272,7 +274,9 @@ class TestAppendLevel:
             dimensions=["month"],
             period=Period(relative="last_12_months"),
         )
-        assert drilldown.append_level(spec, catalog).dimensions == [
+        appended = drilldown.append_level(spec, catalog)
+        assert appended is not None
+        assert appended.dimensions == [
             "month",
             "branch",
         ]

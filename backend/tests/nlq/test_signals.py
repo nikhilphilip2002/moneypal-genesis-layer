@@ -246,7 +246,7 @@ class TestSignalIdentity:
             scope="par30_by_branch", label="PAR 30", kind="threshold", text="x"
         )
         base.update(kwargs)
-        return Signal(**base)
+        return Signal.model_validate(base)
 
     def test_the_same_problem_keeps_one_fingerprint(self):
         """A standing problem is one signal with a history. Without that, a director who

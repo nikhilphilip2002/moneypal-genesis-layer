@@ -1,6 +1,9 @@
 """Business logic for macro-economic intelligence (Team A)."""
 
+from typing import TypedDict
+
 from genesis_core import make_response, rag
+from genesis_core.schema import Confidence
 
 from app import prompts
 from app.core.config import MACRO_COLLECTION
@@ -87,7 +90,16 @@ def msme():
 
 
 # Shared so the cached and streamed briefing paths produce an identical envelope.
-_BRIEFING_META = dict(
+class BriefingMetadata(TypedDict):
+    title: str
+    key_points: list[str]
+    document: str
+    url: str
+    ai_note: str
+    confidence: Confidence
+
+
+_BRIEFING_META: BriefingMetadata = dict(
     title="Macro Intelligence",
     key_points=[
         "Credit environment",

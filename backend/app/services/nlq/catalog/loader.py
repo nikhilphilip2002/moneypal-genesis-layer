@@ -17,9 +17,12 @@ import hashlib
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Iterable, Literal
+from typing import TYPE_CHECKING, Any, Iterable, Literal
 
 import yaml
+
+if TYPE_CHECKING:
+    from app.services.nlq.contracts import Grain, Sensitivity, Severity, Unit
 
 DEFS_DIR = Path(__file__).resolve().parent / "defs"
 ACTIVE_DEFS_DIR = DEFS_DIR / "gold"
@@ -87,7 +90,7 @@ class Column:
     table: str
     column: str
     label: str
-    unit: str = "text"
+    unit: Unit = "text"
     synonyms: tuple[str, ...] = ()
     description: str = ""
     sensitivity: Literal["public", "internal", "pii"] = "internal"
@@ -106,7 +109,7 @@ class Dimension:
     type: Literal["categorical", "time"]
     table: str | None = None
     column: str | None = None
-    grain: str | None = None
+    grain: Grain | None = None
     decode: str | None = None
     expression: str | None = None
     sort_expression: str | None = None
@@ -146,7 +149,7 @@ class Dimension:
 class Metric:
     id: str
     label: str
-    unit: str
+    unit: Unit
     grain: Literal["flow", "point_in_time", "ratio"]
     base_table: str
     formula: str
@@ -260,7 +263,7 @@ class AnalysisDef:
 
     id: str
     title: str
-    compose: str
+    compose: Literal["briefing", "quadrant", "concentration"]
     steps: tuple[AnalysisStepDef, ...]
     description: str = ""
     synonyms: tuple[str, ...] = ()
@@ -330,9 +333,9 @@ class WorklistColumn:
     id: str
     sql: str
     label: str
-    unit: str = "text"
+    unit: Unit = "text"
     decode: str | None = None
-    sensitivity: str = "internal"
+    sensitivity: Sensitivity = "internal"
 
 
 @dataclass(frozen=True, slots=True)
@@ -345,7 +348,7 @@ class EwsRule:
 
     id: str
     label: str
-    severity: str
+    severity: Severity
     predicate: str
     reason: str = ""
 
@@ -471,7 +474,7 @@ class DataHealthCheck:
 @dataclass(frozen=True, slots=True)
 class SignalConfig:
     periods: int
-    grain: str
+    grain: Grain
     max_members: int
     scopes: dict[str, SignalScope]
     data_health: tuple[DataHealthCheck, ...]

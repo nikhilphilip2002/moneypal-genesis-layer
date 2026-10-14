@@ -35,6 +35,8 @@ class ReadOnlyNotConfigured(RuntimeError):
 
 
 def _connect_kwargs() -> dict[str, Any]:
+    if _pg_driver is None:
+        raise RuntimeError("No PostgreSQL driver available (psycopg2-binary or pg8000).")
     if not settings.nlq_db_password:
         raise ReadOnlyNotConfigured(
             "NLQ_DB_PASSWORD is not set. Create the nlq_readonly role first "

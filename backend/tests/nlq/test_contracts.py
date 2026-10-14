@@ -34,7 +34,7 @@ def _spec(**overrides) -> QuerySpec:
         period=Period(grain="month", relative="last_quarter"),
     )
     base.update(overrides)
-    return QuerySpec(**base)
+    return QuerySpec.model_validate(base)
 
 
 class TestFilter:
@@ -60,7 +60,9 @@ class TestFilter:
 
     def test_unknown_operator_is_rejected(self):
         with pytest.raises(ValidationError):
-            Filter(field="branch", op="regex", value=".*")
+            Filter.model_validate(
+                {"field": "branch", "op": "regex", "value": ".*"}
+            )
 
 
 class TestPeriod:
@@ -101,7 +103,7 @@ class TestPeriod:
     def test_relative_vocabulary_is_closed(self):
         """An open string would let the planner invent periods the compiler cannot honour."""
         with pytest.raises(ValidationError):
-            Period(relative="last_fortnight")
+            Period.model_validate({"relative": "last_fortnight"})
 
 
 class TestQuerySpec:
@@ -124,10 +126,12 @@ class TestQuerySpec:
     def test_unknown_field_is_rejected(self):
         """extra="forbid" — a hallucinated key must fail loudly, not be dropped."""
         with pytest.raises(ValidationError):
-            QuerySpec(
-                metrics=["par_30"],
-                period=Period(relative="ytd"),
-                having="sum > 100",
+            QuerySpec.model_validate(
+                {
+                    "metrics": ["par_30"],
+                    "period": {"relative": "ytd"},
+                    "having": "sum > 100",
+                }
             )
 
     def test_cache_key_is_stable_and_order_independent(self):
@@ -185,7 +189,7 @@ class TestPlanUnion:
 
     def test_refusal_reason_is_a_closed_set(self):
         with pytest.raises(ValidationError):
-            RefusalPlan(reason="dont_feel_like_it")
+            RefusalPlan.model_validate({"reason": "dont_feel_like_it"})
 
     def test_confidence_is_bounded(self):
         with pytest.raises(ValidationError):
@@ -195,7 +199,9 @@ class TestPlanUnion:
 class TestChartSpec:
     def test_lineage_is_mandatory(self):
         with pytest.raises(ValidationError):
-            ChartSpec(chart_type="kpi", title="Disbursement")
+            ChartSpec.model_validate(
+                {"chart_type": "kpi", "title": "Disbursement"}
+            )
 
     def test_postgres_mcp_answers_can_be_marked_unverified(self):
         chart = ChartSpec(
@@ -210,8 +216,10 @@ class TestChartSpec:
 
     def test_unknown_chart_type_is_rejected(self):
         with pytest.raises(ValidationError):
-            ChartSpec(
-                chart_type="pie",  # deliberately not in the vocabulary
-                title="Share",
-                lineage=Lineage(path="queryspec", sql="SELECT 1"),
+            ChartSpec.model_validate(
+                {
+                    "chart_type": "pie",
+                    "title": "Share",
+                    "lineage": {"path": "queryspec", "sql": "SELECT 1"},
+                }
             )

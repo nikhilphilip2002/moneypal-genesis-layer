@@ -367,7 +367,10 @@ def _crawl_site(
         for anchor in BeautifulSoup(response.text, "lxml").find_all(
             "a", href=True
         ):
-            href = anchor["href"].strip()
+            href_value = anchor["href"]
+            if not isinstance(href_value, str):
+                continue
+            href = href_value.strip()
             if href.startswith(("mailto:", "javascript:", "tel:", "#")):
                 continue
             child = urllib.parse.urldefrag(urllib.parse.urljoin(url, href)).url

@@ -15,8 +15,11 @@ and then the real one arrives and gets ignored too.
 from __future__ import annotations
 
 import math
+from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Sequence
+from typing import Literal, Sequence
+
+from app.services.nlq.contracts import Severity
 
 MIN_BASELINE = 5
 """Prior periods needed before a z-score means anything. Below this the standard deviation is
@@ -54,8 +57,8 @@ class Detection:
     """
 
     kind: str
-    severity: str
-    direction: str  # "up" | "down" | "flat"
+    severity: Severity
+    direction: Literal["up", "down", "flat"]
     magnitude: float
     baseline: float | None = None
     detail: str = ""
@@ -201,7 +204,7 @@ def concentration(
 
 
 def rank_movement(
-    current: dict[str, float | None], prior: dict[str, float | None]
+    current: Mapping[str, float | None], prior: Mapping[str, float | None]
 ) -> list[tuple[str, Detection]]:
     """Members that moved several places in the ranking.
 
@@ -217,8 +220,8 @@ def rank_movement(
     if len(shared) < RANK_MOVE + 1:
         return []
 
-    def positions(values: dict[str, float | None]) -> dict[str, int]:
-        ordered = sorted(shared, key=lambda m: values[m], reverse=True)  # type: ignore[arg-type]
+    def positions(values: Mapping[str, float | None]) -> dict[str, int]:
+        ordered = sorted(shared, key=lambda m: values[m] or 0.0, reverse=True)
         return {member: index + 1 for index, member in enumerate(ordered)}
 
     now, before = positions(current), positions(prior)

@@ -20,8 +20,6 @@ from typing import Dict, Any, List, Tuple, Optional
 
 import openpyxl
 
-logger = logging.getLogger(__name__)
-
 # Connection handling and section provenance are shared with the information graph so a
 # change to either is made once. Aliased to the private names this module already used.
 from app.services.db_schema import (
@@ -69,6 +67,8 @@ from app.services.approved_report_values import (
     apply_approved_values,
     load_approved_values,
 )
+
+logger = logging.getLogger(__name__)
 
 TEMPLATE_FILENAME = "DNBS02_Blank_Template.xlsx"
 

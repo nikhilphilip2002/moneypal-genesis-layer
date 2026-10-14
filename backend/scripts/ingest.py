@@ -4,6 +4,7 @@ import argparse
 import json
 import sys
 import uuid
+from math import ceil
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -12,11 +13,11 @@ sys.path.append(str(ROOT / "backend"))
 from app.core.config import DATA_DIR, MACRO_COLLECTION, settings  # noqa: E402
 from app.registry import load_regulation_categories, source_paths_for_category  # noqa: E402
 from app.services import institution_loader as il  # noqa: E402
-from genesis_core.rag import (
+from genesis_core.rag import (  # noqa: E402
     chunk_text_chars as chunk_text,
     embed_batch,
     load_pdf,
-)  # noqa: E402
+)
 
 
 def read_pdf_pages(path: Path) -> list[tuple[int, str]]:
@@ -45,7 +46,7 @@ def ingest_regulatory(use_qdrant: bool = True) -> None:
         client = QdrantClient(
             url=settings.qdrant_url,
             api_key=settings.qdrant_api_key,
-            timeout=settings.qdrant_timeout,
+            timeout=ceil(settings.qdrant_timeout),
         )
 
     settings.local_index_path.parent.mkdir(parents=True, exist_ok=True)
@@ -80,7 +81,7 @@ def ingest_regulatory(use_qdrant: bool = True) -> None:
                 embed_batch([chunk for _, chunk in segments]) if client else []
             )
             for chunk_index, (page_number, chunk) in enumerate(segments):
-                payload = {
+                payload: dict[str, object] = {
                     "module": "regulatory",
                     "category_id": category.id,
                     "category": category.display_name,
@@ -133,7 +134,7 @@ def _qdrant():
     return QdrantClient(
         url=settings.qdrant_url,
         api_key=settings.qdrant_api_key,
-        timeout=settings.qdrant_timeout,
+        timeout=ceil(settings.qdrant_timeout),
     )
 
 

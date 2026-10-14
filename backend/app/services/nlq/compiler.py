@@ -182,6 +182,7 @@ def compile_spec(
                     f"by {dim.label.lower()}"
                 )
             else:
+                assert dim.grain is not None
                 expr = periods.truncate_sql(dim.grain, date_column)
             sort_expr = None
         else:
@@ -249,8 +250,9 @@ def compile_spec(
 
     source_tables = [base_table] + [t for _, t in joins]
     touches_pii = any(
-        (cat.table_by_name(t).contains_pii if cat.table_by_name(t) else False)
+        entry.contains_pii
         for t in source_tables
+        if (entry := cat.table_by_name(t)) is not None
     )
 
     compiled = CompiledQuery(
@@ -448,6 +450,7 @@ def _join_plan(
     for dim in dims:
         if (
             not dim.is_time
+            and dim.table is not None
             and dim.table != base_table
             and dim.table not in needed
         ):
@@ -457,6 +460,7 @@ def _join_plan(
         if (
             dim
             and not dim.is_time
+            and dim.table is not None
             and dim.table != base_table
             and dim.table not in needed
         ):
@@ -488,6 +492,7 @@ def _join_plan(
 def _dimension_sql(
     cat: Catalog, dim: Dimension, base_table: str, base_alias: str
 ) -> tuple[str, str | None]:
+    assert dim.table is not None
     alias = base_alias if dim.table == base_table else _alias(dim.table)
     return dim.sql(alias), dim.sort_sql(alias)
 
@@ -511,6 +516,7 @@ def _filter_sql(
             "time is expressed through the period, not as a filter — set `period` instead"
         )
 
+    assert dim.table is not None
     alias = base_alias if dim.table == base_table else _alias(dim.table)
     # Filters on derived categorical dimensions (DPD buckets, open/closed state) must use
     # the same governed CASE expression as grouping. Comparing their raw source column to

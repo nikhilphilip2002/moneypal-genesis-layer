@@ -5,12 +5,16 @@ from __future__ import annotations
 from collections import OrderedDict
 from typing import Any
 
+from pydantic import TypeAdapter
+
 from app.services.nlq.contracts import (
     AxisSpec,
     ChartSpec,
     ColumnSpec,
     Lineage,
     SeriesSpec,
+    Sensitivity,
+    Unit,
 )
 from app.services.workbench.agent_contracts import (
     VisualizationChartType,
@@ -185,10 +189,10 @@ def _column_map(payload: dict[str, Any]) -> dict[str, dict[str, Any]]:
 
 def _unit(
     columns: dict[str, dict[str, Any]], field: str, *, counted: bool = False
-) -> str:
+) -> Unit:
     if counted:
         return "count"
-    return str(columns.get(field, {}).get("unit") or "count")
+    return TypeAdapter(Unit).validate_python(columns.get(field, {}).get("unit") or "count")
 
 
 def _require_fields(
@@ -456,7 +460,7 @@ def build_visual(
                 if field == "__point"
                 else _unit(columns, field, counted=counted and field in args.y)
             ),
-            sensitivity=str(
+            sensitivity=TypeAdapter(Sensitivity).validate_python(
                 columns.get(field, {}).get("sensitivity") or "internal"
             ),
         )

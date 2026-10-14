@@ -140,6 +140,7 @@ async def test_database_query_reference_reaches_mcp_and_observation(
         context,
     )
 
+    assert seen_meta is not None
     assert seen_meta["workbench_query_id"] == "t1:q1"
     assert seen_meta["workbench_attempt_id"] == "t1:q1:a1"
     assert json.loads(executed.observation_message()["content"])[
@@ -172,6 +173,7 @@ async def test_terminal_call_executes_no_data_handler():
         _context(),
     )
     assert executed.card is None
+    assert executed.terminal is not None
     assert executed.terminal["outcome"] == "clarify"
 
 
@@ -194,6 +196,7 @@ async def test_final_answer_call_is_strict_terminal_contract():
     )
 
     assert executed.card is None
+    assert executed.terminal is not None
     assert executed.terminal["outcome"] == "answer"
     assert executed.terminal["synthesis"] == {
         "insights": "PAR 30 is 4.2%.",
@@ -359,6 +362,7 @@ async def test_each_nonterminal_tool_dispatches_through_in_memory_mcp(
         NativeToolCall(id=f"call_{name}", name=name, arguments=arguments),
         _context(),
     )
+    assert result.card is not None
     assert result.card.summary == "ok"
     assert seen["name"] == name
     assert seen["arguments"] == arguments

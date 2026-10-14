@@ -37,6 +37,7 @@ def test_later_turns_accumulate_and_keep_the_title():
     record_turn("c1", "First question about the book", ["db"])
     record_turn("c1", "and by branch?", ["db"])
     rec = history.get("c1")
+    assert rec is not None
     assert rec.title.startswith("First question")
     assert len(rec.turns) == 2
 
@@ -135,7 +136,9 @@ def test_route_tools_and_structured_error_round_trip():
         reason="deadline",
     )
 
-    turn = history.get("diagnostic", user="alice").turns[0]
+    record = history.get("diagnostic", user="alice")
+    assert record is not None
+    turn = record.turns[0]
     assert turn["route"]["tools"] == ["query_metrics"]
     assert turn["error"] == "The model timed out."
     assert turn["error_details"] == {
@@ -162,7 +165,9 @@ def test_explicit_empty_query_attribution_survives_history_round_trip():
     }
     history.set_answer("attribution", "alice", turn_id, answer)
 
-    stored = history.get("attribution", user="alice").turns[0]["answer"]
+    record = history.get("attribution", user="alice")
+    assert record is not None
+    stored = record.turns[0]["answer"]
     assert stored["active_query_ids"] == []
     assert stored["visual_query_ids"] == []
     assert stored["excluded_queries"] == []
@@ -212,6 +217,8 @@ def test_cleanup_script_dry_run_and_apply(monkeypatch):
     spec = importlib.util.spec_from_file_location(
         "clear_pre_release_workbench_history", path
     )
+    assert spec is not None
+    assert spec.loader is not None
     script = importlib.util.module_from_spec(spec)
     # Registered before execution so the script's dataclass can resolve its
     # postponed annotations through sys.modules, as a normal import would.

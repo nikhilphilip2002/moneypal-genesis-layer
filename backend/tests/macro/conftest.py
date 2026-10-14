@@ -120,8 +120,9 @@ class FakeQdrant:
         # Legacy points name the file in `document_name`, mirroring the fallback in
         # genesis_core.rag.search.
         return {
-            p.payload.get("document") or p.payload.get("document_name")
+            name
             for p in self.points.values()
+            if isinstance(name := p.payload.get("document") or p.payload.get("document_name"), str)
         }
 
 

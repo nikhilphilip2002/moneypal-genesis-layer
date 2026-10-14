@@ -649,8 +649,10 @@ def test_unique_agent_name_is_resolved_to_code_before_account_query(
         )
 
     monkeypatch.setattr(executor, "execute_raw", execute_accounts)
+    plan = detect("borrowers name,sanctioned amount under agent vanitha")
+    assert plan is not None
     result = run(
-        detect("borrowers name,sanctioned amount under agent vanitha"),
+        plan,
         role="admin",
         catalog=get_catalog(),
     )
@@ -690,8 +692,10 @@ def test_ambiguous_agent_name_asks_for_the_code_instead_of_combining_agents(
         ),
     )
 
+    plan = detect("borrowers name,sanctioned amount under agent vanitha")
+    assert plan is not None
     result = run(
-        detect("borrowers name,sanctioned amount under agent vanitha"),
+        plan,
         role="admin",
         catalog=get_catalog(),
     )

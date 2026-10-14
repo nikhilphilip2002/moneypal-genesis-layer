@@ -289,6 +289,27 @@ class QuerySpecPlan(_Model):
     reasoning: str = Field(default="", max_length=500)
 
 
+LookupField = Literal[
+    "sanction_amount",
+    "sanction_date",
+    "disbursed_amount",
+    "first_disbursement_date",
+    "agent_name",
+    "agent_type",
+    "designation",
+    "mobile",
+    "email",
+    "branch_code",
+    "role_code",
+    "joined_on",
+    "linked_customer_count",
+    "linked_loan_count",
+    "borrower_name",
+    "scheme_name",
+    "number_of_emis",
+]
+
+
 class LookupPlan(_Model):
     """Governed person/account lookup compiled by the application, never by the LLM."""
 
@@ -318,27 +339,7 @@ class LookupPlan(_Model):
         "product_details",
         "account_sample",
     ]
-    requested_fields: list[
-        Literal[
-            "sanction_amount",
-            "sanction_date",
-            "disbursed_amount",
-            "first_disbursement_date",
-            "agent_name",
-            "agent_type",
-            "designation",
-            "mobile",
-            "email",
-            "branch_code",
-            "role_code",
-            "joined_on",
-            "linked_customer_count",
-            "linked_loan_count",
-            "borrower_name",
-            "scheme_name",
-            "number_of_emis",
-        ]
-    ] = Field(default_factory=list)
+    requested_fields: list[LookupField] = Field(default_factory=list)
     confidence: float = Field(default=1.0, ge=0.0, le=1.0)
     reasoning: str = Field(default="", max_length=500)
 

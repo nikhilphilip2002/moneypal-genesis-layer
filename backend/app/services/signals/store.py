@@ -49,9 +49,9 @@ _MEMORY: dict[str, "StoredSignal"] = {}
 @dataclass(slots=True)
 class StoredSignal:
     signal: Signal
+    first_seen_at: datetime
+    last_seen_at: datetime
     status: str = "open"
-    first_seen_at: datetime = None  # type: ignore[assignment]
-    last_seen_at: datetime = None  # type: ignore[assignment]
     acknowledged_by: str = ""
 
     @property

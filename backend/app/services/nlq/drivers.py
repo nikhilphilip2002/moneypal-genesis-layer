@@ -30,6 +30,7 @@ from typing import Any, Sequence
 
 from app.services.nlq.catalog import Catalog, get_catalog
 from app.services.nlq.catalog.loader import canonical_enum_code
+from app.services.nlq.contracts import Unit
 from app.services.nlq.narrator import format_value, humanize_label
 
 DEFAULT_TOP_N = 6
@@ -71,7 +72,7 @@ class Contribution:
 class Decomposition:
     metric: str
     label: str
-    unit: str
+    unit: Unit
     dimension: str
     dimension_label: str
     current_total: float

@@ -18,6 +18,7 @@ from __future__ import annotations
 import csv
 import io
 import logging
+from collections.abc import Sequence
 from pathlib import Path
 
 from genesis_core import rag
@@ -25,7 +26,7 @@ from genesis_core import rag
 log = logging.getLogger("macro.extractor")
 
 
-def _pdf_pages(path: Path) -> list[tuple[int | None, str]]:
+def _pdf_pages(path: Path) -> list[tuple[int, str]]:
     """Return [(page_number, text), ...], skipping pages with no extractable text."""
     # A single malformed page should not cost us the rest of the document.
     return rag.load_pdf(str(path), skip_page_errors=True)
@@ -64,7 +65,7 @@ def _csv_text(path: Path) -> str:
     return "\n".join("\t".join(row) for row in csv.reader(io.StringIO(raw)))
 
 
-def extract_pages(path: Path) -> list[tuple[int | None, str]]:
+def extract_pages(path: Path) -> Sequence[tuple[int | None, str]]:
     """Return [(page_or_None, text), ...] for one file, dispatched on extension."""
     suffix = path.suffix.lower()
     if suffix == ".pdf":

@@ -2,10 +2,10 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+from importlib import import_module
 from pathlib import Path
+from typing import Any, Protocol
 from urllib.parse import urljoin, urlparse
-
-from crawl4ai import AsyncWebCrawler
 
 from pipeline_common import (
     DEFAULT_CONFIG_PATH,
@@ -20,6 +20,17 @@ from pipeline_common import (
     same_domain,
     select_institutions,
 )
+
+
+class CrawlResult(Protocol):
+    success: bool
+    metadata: dict[str, Any]
+    markdown: object
+    links: dict[str, list[dict[str, str]]]
+
+
+class WebCrawler(Protocol):
+    async def arun(self, *, url: str) -> CrawlResult: ...
 
 
 def should_crawl(url: str, start_url: str) -> bool:
@@ -39,7 +50,7 @@ def should_crawl(url: str, start_url: str) -> bool:
 
 async def crawl_institution(
     institution: Institution,
-    crawler: AsyncWebCrawler,
+    crawler: WebCrawler,
     raw_root: Path,
     default_max_pages: int,
 ) -> int:
@@ -94,6 +105,7 @@ async def crawl_institution(
 
 
 async def run(args: argparse.Namespace) -> None:
+    crawler_module = import_module("crawl4ai")
     config_path = Path(args.config)
     raw_root = Path(args.raw_root)
     institutions = select_institutions(
@@ -102,7 +114,7 @@ async def run(args: argparse.Namespace) -> None:
 
     raw_root.mkdir(parents=True, exist_ok=True)
 
-    async with AsyncWebCrawler() as crawler:
+    async with crawler_module.AsyncWebCrawler() as crawler:
         for institution in institutions:
             await crawl_institution(
                 institution, crawler, raw_root, args.max_pages

@@ -771,8 +771,10 @@ async def test_final_answer_reuses_previous_turn_query_without_sql(
     assert answer["invalid_query_ids"] == []
     assert answer["visuals"][0]["view"] == "table"
     assert state["query_registry"] == []
+    saved_record = history.get(state["conversation_id"], user="alice")
+    assert saved_record is not None
     assert (
-        history.get(state["conversation_id"], user="alice").turns[-1][
+        saved_record.turns[-1][
             "query_registry"
         ]
         == []
@@ -1708,7 +1710,9 @@ async def test_composed_answer_persists_multiple_queries_and_source(
     assert answer["visual_query_ids"] == (
         answer["active_query_ids"] if with_visuals else []
     )
-    saved = history.get(state["conversation_id"], user="alice").turns[-1]
+    saved_record = history.get(state["conversation_id"], user="alice")
+    assert saved_record is not None
+    saved = saved_record.turns[-1]
     assert saved["answer"] == answer
     assert len([card for card in saved["cards"] if card.get("query_id")]) == (
         2 if with_visuals else 0
@@ -1774,7 +1778,9 @@ async def test_submission_recovery_is_bounded(scripted, monkeypatch, recovery):
     assert len(client.requests) == (
         2 if recovery in {"deadline", "calls", "rounds"} else 3
     )
-    saved = history.get(state["conversation_id"], user="alice").turns[-1]
+    saved_record = history.get(state["conversation_id"], user="alice")
+    assert saved_record is not None
+    saved = saved_record.turns[-1]
     frames = _frames(state)
     if recovery == "success":
         assert saved["answer"]["text"] == "## Result\n\n**4.2%**."
@@ -1858,7 +1864,9 @@ async def test_composed_reference_feedback_can_be_repaired(
     )
     state = _run_state(f"reference-repair-{reference}")
     await agent.run(state)
-    saved = history.get(state["conversation_id"], user="alice").turns[-1]
+    saved_record = history.get(state["conversation_id"], user="alice")
+    assert saved_record is not None
+    saved = saved_record.turns[-1]
     assert saved["answer"]["evidence"] == [{"query_id": 1}]
     assert saved["answer"]["text"] == "**4.2%**."
 
@@ -1911,7 +1919,9 @@ async def test_knowledge_only_submission_without_database_access(scripted):
         execute,
     )
     await agent.run(state)
-    saved = history.get(state["conversation_id"], user="alice").turns[-1]
+    saved_record = history.get(state["conversation_id"], user="alice")
+    assert saved_record is not None
+    saved = saved_record.turns[-1]
     assert saved["answer"]["sources"] == ["knowledge"]
     assert saved["answer"]["active_query_ids"] == []
     assert saved["answer"]["citations"] == [{"document": "Glossary"}]

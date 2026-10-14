@@ -257,6 +257,7 @@ def _trend_sentence(
     time_dim = next(
         (d for d in spec.dimensions if cat.dimensions[d].is_time), None
     )
+    assert time_dim is not None
 
     sentence = (
         f"{metric.label} {direction} from {format_value(first[metric.id], metric.unit)} "

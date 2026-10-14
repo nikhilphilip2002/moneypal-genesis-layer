@@ -8,6 +8,8 @@ than filled with a plausible-looking placeholder.
 import contextlib
 import logging
 import os
+from importlib import import_module
+from types import ModuleType
 from typing import (
     Any,
     Callable,
@@ -25,11 +27,12 @@ logger = logging.getLogger(__name__)
 # fallback for environments where psycopg2's compiled extension cannot load (e.g. NixOS,
 # where it fails on libz). Both expose the DB-API "format" paramstyle, so the %s
 # placeholders used throughout this package work unchanged on either.
+_driver: ModuleType | None
 try:
-    import psycopg2 as _driver
+    _driver = import_module("psycopg2")
 except ImportError:
     try:
-        import pg8000.dbapi as _driver
+        _driver = import_module("pg8000.dbapi")
     except ImportError:
         _driver = None
 
@@ -833,9 +836,9 @@ def get_db_schema_graph(
             )
             for product in products:
                 linked = {
-                    l["branch_code"]
-                    for l in branch_product_links
-                    if l["zone_id"] == product["id"]
+                    link["branch_code"]
+                    for link in branch_product_links
+                    if link["zone_id"] == product["id"]
                 }
                 nodes.append(_product_node(product, len(linked)))
                 edges.append(
@@ -858,9 +861,9 @@ def get_db_schema_graph(
             if selected_zonal:
                 # Only branches that genuinely originate this product.
                 linked_codes = [
-                    l["branch_code"]
-                    for l in branch_product_links
-                    if l["zone_id"] == selected_zonal["id"]
+                    link["branch_code"]
+                    for link in branch_product_links
+                    if link["zone_id"] == selected_zonal["id"]
                 ]
                 assigned = [
                     b for b in branches if b["code"] in set(linked_codes)
@@ -869,10 +872,10 @@ def get_db_schema_graph(
                 for branch in assigned:
                     link = next(
                         (
-                            l
-                            for l in branch_product_links
-                            if l["branch_code"] == branch["code"]
-                            and l["zone_id"] == selected_zonal["id"]
+                            link
+                            for link in branch_product_links
+                            if link["branch_code"] == branch["code"]
+                            and link["zone_id"] == selected_zonal["id"]
                         ),
                         None,
                     )
@@ -915,6 +918,7 @@ def get_db_schema_graph(
                 branch_schemes: List[Dict[str, Any]] = []
 
                 def _branch_schemes() -> int:
+                    assert selected_mgr is not None
                     # Exact branch match; this used to be a LIKE '%code%' substring.
                     cur.execute(
                         f"""

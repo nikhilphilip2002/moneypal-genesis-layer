@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from sqlglot import exp
 
 from app.services.nlq.catalog import Catalog, get_catalog
-from app.services.nlq.contracts import ChartSpec, ClarifyPlan, LookupPlan
+from app.services.nlq.contracts import ChartSpec, ClarifyPlan, LookupField, LookupPlan
 from app.services.nlq.executor import execute_raw
 from app.services.nlq.normalization import normalize_apostrophes
 from app.services.nlq.pipeline import run_validated_sql
@@ -620,9 +620,9 @@ def _clean_name(value: str) -> str:
     return " ".join(tokens)
 
 
-def _requested_loan_fields(text: str) -> list[str]:
+def _requested_loan_fields(text: str) -> list[LookupField]:
     """Extract requested loan facts without binding to a particular phrasing or value."""
-    fields: list[str] = []
+    fields: list[LookupField] = []
     if _SANCTION_AMOUNT_CUE.search(text):
         fields.append("sanction_amount")
     if _SANCTION_DATE_CUE.search(text):
@@ -646,8 +646,8 @@ def _requested_loan_fields(text: str) -> list[str]:
     return fields
 
 
-def _requested_agent_fields(text: str) -> list[str]:
-    cues = (
+def _requested_agent_fields(text: str) -> list[LookupField]:
+    cues: tuple[tuple[str, LookupField], ...] = (
         (r"\b(?:mobile|phone)(?:\s+number)?\b", "mobile"),
         (r"\bemail(?:\s+address)?\b", "email"),
         (r"\bnames?\b", "agent_name"),
@@ -751,7 +751,7 @@ def detect(question: str) -> LookupPlan | None:
         and not _COUNT_CUE.search(text)
     )
     if agent and (_AGENT_ACCOUNT_CUE.search(text) or agent_borrowers):
-        requested = []
+        requested: list[LookupField] = []
         if _BORROWER_NAME_CUE.search(text) or agent_borrowers:
             requested.append("borrower_name")
         requested.extend(_requested_loan_fields(text))
@@ -777,7 +777,7 @@ def detect(question: str) -> LookupPlan | None:
     if agent_name and (
         _AGENT_ACCOUNT_CUE.search(text) or named_agent_borrowers
     ):
-        requested = []
+        requested: list[LookupField] = []
         if _BORROWER_NAME_CUE.search(text) or named_agent_borrowers:
             requested.append("borrower_name")
         requested.extend(_requested_loan_fields(text))

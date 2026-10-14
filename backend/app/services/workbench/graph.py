@@ -8,7 +8,8 @@ import json
 import logging
 import time
 import uuid
-from typing import Any, AsyncGenerator, AsyncIterator, NotRequired, TypedDict
+from collections.abc import Mapping
+from typing import Any, AsyncGenerator, NotRequired, TypedDict, cast
 from weakref import WeakValueDictionary
 
 import anyio
@@ -50,7 +51,7 @@ def sse(event: str, data: Any) -> str:
 
 
 def _log_query_attribution(
-    state: dict[str, Any],
+    state: Mapping[str, Any],
     *,
     active: list[str],
     visual: list[str],
@@ -720,13 +721,14 @@ async def _run_workbench(
     }
 
     async def drive() -> None:
+        agent_state = cast(dict[str, Any], state)
         partial = False
         call_records = []
         try:
             with collect_calls() as call_records:
                 from app.services.workbench import agent
 
-                await agent.run(state)
+                await agent.run(agent_state)
             log_app_event(
                 "Workbench turn completed successfully",
                 event="workbench_turn_completed",
@@ -739,8 +741,8 @@ async def _run_workbench(
                 conversation_id,
                 turn_id,
             )
-            await agent.finalize_running_queries(state)
-            await agent.finalize_running_traces(state)
+            await agent.finalize_running_queries(agent_state)
+            await agent.finalize_running_traces(agent_state)
             raise
         except Exception as exc:  # noqa: BLE001 - surface as an error frame, never a 500
             partial = True
@@ -849,7 +851,7 @@ async def _run_workbench(
 _turn_locks: WeakValueDictionary[tuple[str, str], asyncio.Lock] = WeakValueDictionary()
 
 
-async def run_workbench(**kwargs) -> AsyncIterator[str]:
+async def run_workbench(**kwargs) -> AsyncGenerator[str, None]:
     key = (kwargs["user"], kwargs["conversation_id"])
     lock = _turn_locks.setdefault(key, asyncio.Lock())
     async with lock:

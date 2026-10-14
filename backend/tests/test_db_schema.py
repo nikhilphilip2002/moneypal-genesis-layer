@@ -144,8 +144,8 @@ class TestBranchProductRelationship:
         """Branches used to be attached to products by round-robin list index."""
         graph = get_db_schema_graph(view_level="executive")
         actual = {
-            (l["branch_code"], l["product_code"], l["acnt_count"])
-            for l in graph["branch_product_links"]
+            (link["branch_code"], link["product_code"], link["acnt_count"])
+            for link in graph["branch_product_links"]
         }
         with db_cursor() as (_c, cur):
             cur.execute(
@@ -163,8 +163,8 @@ class TestBranchProductRelationship:
     def test_branch_product_links_are_not_duplicated(self):
         graph = get_db_schema_graph(view_level="executive")
         pairs = [
-            (l["branch_code"], l["product_code"])
-            for l in graph["branch_product_links"]
+            (link["branch_code"], link["product_code"])
+            for link in graph["branch_product_links"]
         ]
         assert len(pairs) == len(set(pairs))
 

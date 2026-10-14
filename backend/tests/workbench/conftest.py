@@ -6,7 +6,7 @@ LLM client. `FakeLLM` returns a canned completion for deterministic agent and sy
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 import pytest
@@ -34,10 +34,7 @@ class FakeLLM:
     """Stands in for OpenAICompatibleClient. Records calls; returns a scripted text."""
 
     reply: str = "{}"
-    calls: list[dict] = None  # type: ignore[assignment]
-
-    def __post_init__(self):
-        self.calls = []
+    calls: list[dict] = field(default_factory=list, init=False)
 
     async def complete(
         self, *, messages, json_schema=None, timeout_s=None, **metadata

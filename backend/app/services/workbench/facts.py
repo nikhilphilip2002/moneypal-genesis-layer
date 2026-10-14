@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
-from typing import Any, Iterable
+from typing import Any, Iterable, cast
 
 from app.services.workbench.results import ToolResult
 
@@ -38,12 +38,10 @@ def _decimal(value: Any) -> Decimal | None:
 
 
 def _period_from_payload(payload: dict[str, Any]) -> str:
-    plan = (
-        payload.get("drilldown")
-        if isinstance(payload.get("drilldown"), dict)
-        else {}
-    )
-    period = plan.get("period") if isinstance(plan.get("period"), dict) else {}
+    raw_plan = payload.get("drilldown")
+    plan: dict[str, Any] = raw_plan if isinstance(raw_plan, dict) else {}
+    raw_period = plan.get("period")
+    period: dict[str, Any] = raw_period if isinstance(raw_period, dict) else {}
     if period.get("relative"):
         return str(period["relative"])
     if period.get("start") or period.get("end"):
@@ -74,7 +72,7 @@ def from_results(
         rows = result.payload.get("rows")
         if not isinstance(columns, list) or not isinstance(rows, list):
             continue
-        numeric = {
+        numeric: dict[str, dict[str, Any]] = {
             str(column.get("name")): column
             for column in columns
             if isinstance(column, dict)
@@ -91,9 +89,10 @@ def from_results(
         ]
         period = _period_from_payload(result.payload)
         result_fact_count = 0
-        for row_index, row in enumerate(rows):
-            if not isinstance(row, dict):
+        for row_index, raw_row in enumerate(rows):
+            if not isinstance(raw_row, dict):
                 continue
+            row = cast(dict[str, Any], raw_row)
             for field, column in numeric.items():
                 value = _decimal(row.get(field))
                 if value is None:
@@ -136,20 +135,17 @@ def _analysis_facts(result: ToolResult, card_index: int) -> list[Fact]:
     if not isinstance(findings, list):
         return []
     output: list[Fact] = []
-    for row_index, finding in enumerate(findings):
-        if not isinstance(finding, dict):
+    for row_index, raw_finding in enumerate(findings):
+        if not isinstance(raw_finding, dict):
             continue
+        finding = cast(dict[str, Any], raw_finding)
         value = _decimal(finding.get("value"))
         if value is None:
             continue
-        spec = (
-            finding.get("spec")
-            if isinstance(finding.get("spec"), dict)
-            else {}
-        )
-        period_value = (
-            spec.get("period") if isinstance(spec.get("period"), dict) else {}
-        )
+        raw_spec = finding.get("spec")
+        spec: dict[str, Any] = raw_spec if isinstance(raw_spec, dict) else {}
+        raw_period = spec.get("period")
+        period_value: dict[str, Any] = raw_period if isinstance(raw_period, dict) else {}
         period = str(
             period_value.get("relative")
             or " to ".join(

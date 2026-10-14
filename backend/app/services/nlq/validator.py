@@ -679,7 +679,7 @@ def _check_pii(
 ) -> set[str]:
     """Find referenced PII columns; reject them when the caller's role does not permit."""
     pii_columns = {column for _table, column in catalog.pii_columns()}
-    referenced = {
+    referenced: set[str] = {
         (column.name or "").lower()
         for column in tree.find_all(exp.Column)
         if (column.name or "").lower() in pii_columns

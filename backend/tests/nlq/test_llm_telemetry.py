@@ -1,3 +1,6 @@
+from typing import Any
+
+from app.services.nlq.llm.messages import ChatMessage
 from app.services.nlq.llm.telemetry import (
     CallRecord,
     budget_violations,
@@ -10,7 +13,7 @@ from app.services.nlq.llm.telemetry import (
 
 
 def _record(**changes):
-    values = {
+    values: dict[str, Any] = {
         "purpose": "route",
         "call_kind": "planned",
         "provider": "llamacpp",
@@ -33,7 +36,7 @@ def _record(**changes):
 
 
 def test_message_serialization_and_hash_are_byte_stable():
-    messages = [{"role": "system", "content": "fixed"}]
+    messages: list[ChatMessage] = [{"role": "system", "content": "fixed"}]
     assert serialize_messages(messages) == serialize_messages(list(messages))
     assert prefix_hash(messages) == prefix_hash(list(messages))
     assert prefix_hash(messages) != prefix_hash(

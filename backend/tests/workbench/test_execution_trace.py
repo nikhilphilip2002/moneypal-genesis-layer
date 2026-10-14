@@ -4,17 +4,30 @@ import asyncio
 import json
 import time
 from datetime import datetime
+from typing import Any
 
 import pytest
 
 from app.core.tool_names import QUERY, SEARCH_PUBLIC_WEB
 from app.api.routes.workbench import _turn_for_api
 from app.services.nlq.llm import NativeToolCall
-from app.services.workbench import agent, history
+from app.services.workbench import access, agent, history
 from app.services.workbench.agent_executor import (
+    AgentExecutionContext,
     ExecutedAgentCall,
     RawQueryResult,
 )
+
+
+def _context() -> AgentExecutionContext:
+    return AgentExecutionContext(
+        user="alice",
+        role="admin",
+        conversation_id="trace-test",
+        turn_id="turn-1",
+        source_policy=access.build_policy(role="admin"),
+        deadline_s=5.0,
+    )
 
 
 def _sse_payload(frame: str) -> tuple[str, dict]:
@@ -30,7 +43,7 @@ def test_query_ids_distinguish_retry_attempts_from_corrected_sql(monkeypatch):
     monkeypatch.setattr(
         postgres_client, "is_model_tool", lambda name: name == QUERY
     )
-    state = {"turn_id": "turn-retry", "query_registry": []}
+    state: dict[str, Any] = {"turn_id": "turn-retry", "query_registry": []}
     original = NativeToolCall(
         id="call-1", name=QUERY, arguments={"sql": "SELECT 1"}
     )
@@ -103,7 +116,7 @@ async def test_tool_trace_streams_running_then_completed_with_arguments(
         postgres_client, "is_model_tool", lambda name: name == QUERY
     )
 
-    state = {
+    state: dict[str, Any] = {
         "emit": asyncio.Queue(),
         "trace": [],
         "turn_id": "turn-1",
@@ -113,7 +126,7 @@ async def test_tool_trace_streams_running_then_completed_with_arguments(
             "source_completions": [],
         },
     }
-    items = await agent._execute_batch(state, object(), [call])
+    items = await agent._execute_batch(state, _context(), [call])
 
     frames = []
     while not state["emit"].empty():
@@ -166,7 +179,7 @@ async def test_cancelled_database_query_is_finalized_in_registry(monkeypatch):
     monkeypatch.setattr(
         postgres_client, "is_model_tool", lambda name: name == QUERY
     )
-    state = {
+    state: dict[str, Any] = {
         "emit": asyncio.Queue(),
         "trace": [],
         "turn_id": "turn-cancel",
@@ -177,7 +190,7 @@ async def test_cancelled_database_query_is_finalized_in_registry(monkeypatch):
         },
     }
 
-    task = asyncio.create_task(agent._execute_batch(state, object(), [call]))
+    task = asyncio.create_task(agent._execute_batch(state, _context(), [call]))
     await entered.wait()
     task.cancel()
     with pytest.raises(asyncio.CancelledError):
@@ -210,7 +223,7 @@ async def test_cancelled_model_selection_finalizes_trace(monkeypatch):
 
     monkeypatch.setattr(agent, "_select", select)
     monkeypatch.setattr(agent, "get_catalog", lambda: object())
-    state = {
+    state: dict[str, Any] = {
         "question": "cancel probe",
         "user": "alice",
         "role": "admin",
@@ -243,7 +256,7 @@ async def test_cancelled_model_selection_finalizes_trace(monkeypatch):
 
 @pytest.mark.anyio
 async def test_cancellation_finalizes_all_running_trace_kinds_once():
-    state = {
+    state: dict[str, Any] = {
         "emit": asyncio.Queue(),
         "timing": {"started_at": time.perf_counter()},
         "trace": [
@@ -302,7 +315,7 @@ async def test_cancellation_finalizes_all_running_trace_kinds_once():
 
 @pytest.mark.anyio
 async def test_cancellation_finalizes_all_unfinished_queries_once():
-    state = {
+    state: dict[str, Any] = {
         "emit": asyncio.Queue(),
         "turn_id": "turn-query-cancel",
         "query_registry": [
@@ -479,6 +492,7 @@ def test_history_api_preserves_exact_reconciled_visual_partition(monkeypatch):
     history.complete_turn("visual-history", "alice", turn_id)
 
     record = history.get("visual-history", user="alice")
+    assert record is not None
     restored = _turn_for_api(record.turns[0])
     assert restored["answer"]["visual_query_ids"] == [q1]
     assert restored["answer"]["excluded_queries"][0]["query_id"] == q2

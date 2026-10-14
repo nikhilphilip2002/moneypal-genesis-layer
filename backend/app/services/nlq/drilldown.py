@@ -16,6 +16,7 @@ sequence. Rungs the bank asks for but we cannot source â€” `region`, `segment` â
 from __future__ import annotations
 
 from datetime import date
+from typing import Literal
 
 from app.services.nlq import periods
 from app.services.nlq.catalog import Catalog, get_catalog
@@ -26,6 +27,7 @@ from app.services.nlq.contracts import (
     OrderBy,
     Period,
     QuerySpec,
+    RelativePeriod,
 )
 from app.services.nlq.narrator import humanize_label
 
@@ -219,7 +221,7 @@ def _act_step(spec: QuerySpec, cat: Catalog) -> DrillStep | None:
 
 
 def _split_step(
-    kind: str, spec: QuerySpec, dimension: str, cat: Catalog
+    kind: Literal["deeper", "sideways"], spec: QuerySpec, dimension: str, cat: Catalog
 ) -> DrillStep:
     drilled = spec.model_copy(
         update={
@@ -405,7 +407,7 @@ def _replace_categorical(
     return [*time_dims, dimension]
 
 
-_RELATIVE_PREDECESSOR = {
+_RELATIVE_PREDECESSOR: dict[str, RelativePeriod] = {
     "this_month": "last_month",
     "this_quarter": "last_quarter",
     "this_fy": "last_fy",

@@ -54,7 +54,7 @@ def _agent_gold_schema_for_version(version: str) -> str:
         listed: set[str] = set()
         for column in cat.columns_for(table.table):
             listed.add(column.column)
-            flags = [column.unit]
+            flags: list[str] = [column.unit]
             if column.is_pii:
                 flags.append("pii")
             label = column.label.strip()

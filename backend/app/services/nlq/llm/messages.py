@@ -54,14 +54,14 @@ def coalesce_system_messages(
     has_structured_content = False
     conversation: list[ChatMessage] = []
     for message in messages:
-        copied: ChatMessage = dict(message)
+        copied = message.copy()
         if copied.get("role") == "system":
             content = copied.get("content") or ""
             if isinstance(content, str) and content.strip():
                 system_groups.append([{"type": "text", "text": content}])
             elif isinstance(content, list):
-                parts = [
-                    dict(part)
+                parts: list[ContentPartText] = [
+                    part.copy()
                     for part in content
                     if part.get("text", "").strip()
                 ]

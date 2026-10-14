@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from types import SimpleNamespace
+from typing import Any
 
 import pytest
 from fastmcp import Client
@@ -19,7 +20,7 @@ def test_trusted_metadata_accepts_fastmcp_dictionary_shape():
         "workbench_role": "admin",
         "workbench_effective_sources": ["db"],
     }
-    ctx = SimpleNamespace(request_context=SimpleNamespace(meta=meta))
+    ctx: Any = SimpleNamespace(request_context=SimpleNamespace(meta=meta))
 
     assert postgres_server._trusted_meta(ctx) == meta
     assert postgres_server._trusted_meta(ctx) is not meta
@@ -29,13 +30,11 @@ def test_trusted_metadata_accepts_model_shape_and_missing_context():
     model_meta = SimpleNamespace(
         model_dump=lambda **_kwargs: {"workbench_role": "admin"}
     )
-    ctx = SimpleNamespace(request_context=SimpleNamespace(meta=model_meta))
+    ctx: Any = SimpleNamespace(request_context=SimpleNamespace(meta=model_meta))
 
     assert postgres_server._trusted_meta(ctx) == {"workbench_role": "admin"}
-    assert (
-        postgres_server._trusted_meta(SimpleNamespace(request_context=None))
-        == {}
-    )
+    ctx.request_context = None
+    assert postgres_server._trusted_meta(ctx) == {}
 
 
 @pytest.mark.anyio

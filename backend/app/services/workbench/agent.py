@@ -17,7 +17,7 @@ import time
 from copy import deepcopy
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, cast
 
 from pydantic import TypeAdapter, ValidationError
 
@@ -34,6 +34,7 @@ from app.services.nlq.llm.client import (
     LLMIncomplete,
     request_gate,
 )
+from app.services.nlq.llm.messages import ChatMessage
 from app.services.nlq.llm.slot_cache import (
     SlotCacheError,
     slot_action,
@@ -237,7 +238,7 @@ def _initialize_messages(state, catalog) -> None:
     if state.get("_messages_initialized"):
         return
     system = prompts.build_agent_system_prompt(catalog)
-    question = {"role": "user", "content": state["question"]}
+    question: ChatMessage = {"role": "user", "content": state["question"]}
     if _persistable(state):
         record = history.start_turn_messages(
             state["conversation_id"], state["user"], state["turn_id"], system, question
@@ -1286,7 +1287,7 @@ def _has_retrieved_evidence(executed: list[ExecutedAgentCall]) -> bool:
 
 
 async def _run(state: dict[str, Any]) -> None:
-    from app.services.workbench.graph import answer_results, sse
+    from app.services.workbench.graph import WorkbenchState, answer_results, sse
 
     emit = state["emit"]
     budget = _budget(state)
@@ -1546,7 +1547,7 @@ async def _run(state: dict[str, Any]) -> None:
                 for entry in [item, *item.additional_visuals]
                 if entry.card is not None
             ]
-            await answer_results(state)
+            await answer_results(cast(WorkbenchState, state))
         else:
             await _end_without_data(state, terminal_payload, origin="model")
         return
@@ -1601,7 +1602,7 @@ async def _run(state: dict[str, Any]) -> None:
     elif cards and any(card.card_type != "error" for card in cards):
         state["decision"].limitations.append(dict(_BUDGET_LIMITATION))
     state["results"] = cards
-    await answer_results(state)
+    await answer_results(cast(WorkbenchState, state))
 
 
 async def run(state: dict[str, Any]) -> None:

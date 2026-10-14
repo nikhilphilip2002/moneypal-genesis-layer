@@ -16,6 +16,7 @@ import logging
 import time
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any
 
 from genesis_core import rag
 
@@ -99,7 +100,7 @@ def run(force: bool = False) -> dict:
     ingestor.ensure_collection()
     points_before = ingestor.count()
 
-    summary = {
+    summary: dict[str, Any] = {
         "run_id": run_id,
         "ran_at": datetime.now(timezone.utc).isoformat(),
         "collection": settings.macro_collection,

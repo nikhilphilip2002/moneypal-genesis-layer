@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import re
-from typing import Any
+from typing import Any, Sequence
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -46,7 +46,7 @@ def resolve_current_query(
     registry: list[dict[str, Any]],
     query_number: int,
     *,
-    prior_registry: list[dict[str, Any]] = (),
+    prior_registry: Sequence[dict[str, Any]] = (),
 ) -> dict[str, Any] | None:
     """Resolve qN, preferring this turn when older conversations reused the number."""
     suffix = f":q{query_number}"
@@ -110,7 +110,7 @@ def reconcile_query_attribution(
     registry: list[dict[str, Any]],
     synthesis: FinalSynthesis,
     *,
-    prior_registry: list[dict[str, Any]] = (),
+    prior_registry: Sequence[dict[str, Any]] = (),
 ) -> ReconciledAttribution:
     """Validate the selected evidence; exclude unused executions from this turn only."""
 

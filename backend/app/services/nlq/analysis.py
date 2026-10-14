@@ -52,6 +52,7 @@ from app.services.nlq.contracts import (
     Period,
     QuerySpec,
     SeriesSpec,
+    Severity,
 )
 from app.services.nlq.narrator import format_value, humanize_label
 
@@ -124,7 +125,7 @@ def build(
     return AnalysisSpec(
         id=definition.id,
         title=definition.title,
-        compose=definition.compose,  # type: ignore[arg-type]
+        compose=definition.compose,
         steps=steps,
         subtitle=_subtitle(resolved_period, filters, cat),
     )
@@ -142,10 +143,7 @@ def _step_spec(
 ) -> QuerySpec:
     order_by = None
     if step.order_by:
-        order_by = OrderBy(
-            field=step.order_by["field"],
-            direction=step.order_by.get("direction", "desc"),
-        )
+        order_by = OrderBy.model_validate(step.order_by)
     return QuerySpec(
         metrics=list(step.metrics),
         dimensions=list(step.dimensions),
@@ -367,7 +365,7 @@ def _member_label(row: dict[str, Any] | None, dimension: str) -> str:
     return str(value) if value not in (None, "") else f"(no {dimension})"
 
 
-def _severity(value: float, step: AnalysisStep) -> str:
+def _severity(value: float, step: AnalysisStep) -> Severity:
     """Thresholds are the bank's, from analyses.yaml. Alert is checked before watch."""
     if step.alert_above is not None and value > step.alert_above:
         return "alert"
