@@ -274,10 +274,20 @@ test('composed answers keep streamed text, Markdown, selected visuals, and docum
   assert.match(markup, /Visual 1/);
   assert.match(markup, /Visual 2/);
   assert.doesNotMatch(markup, /Visual 3/);
+  const assertVisualsBeforeExplanation = (html, explanation) => {
+    for (const title of ['Visual 1', 'Visual 2']) {
+      assert.ok(html.indexOf(title) >= 0);
+      assert.ok(html.indexOf(explanation) > html.indexOf(title),
+        `${title} should render before ${explanation}`);
+    }
+  };
+  assertVisualsBeforeExplanation(markup, 'A detailed explanation');
+  assertVisualsBeforeExplanation(markup, 'Comparison</h2>');
   const text = turn.answer.text;
   turn.answer.text = '';
   assert.match(render(), /A detailed explanation that accompanies the chart\./);
   assert.match(render(), /Visual 1/);
+  assertVisualsBeforeExplanation(render(), 'A detailed explanation');
   turn.answer.text = text;
   const answer = turn.answer;
   delete turn.answer;
@@ -285,6 +295,12 @@ test('composed answers keep streamed text, Markdown, selected visuals, and docum
   assert.match(render(), /A detailed explanation that accompanies the chart\./);
   assert.match(render(), /Visual 1/);
   assert.match(render(), /Visual 2/);
+  assertVisualsBeforeExplanation(render(), 'A detailed explanation');
+  turn.done = true;
+  turn.synthesis = 'Legacy chart summary';
+  assertVisualsBeforeExplanation(render(), 'Legacy chart summary');
+  delete turn.synthesis;
+  turn.done = false;
   turn.answer = answer;
   turn.modelMessages = [answer.text];
   assert.equal(render().match(/<h2[^>]*>Comparison<\/h2>/g)?.length, 1);

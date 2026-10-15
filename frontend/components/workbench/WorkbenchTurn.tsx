@@ -120,6 +120,10 @@ export default function WorkbenchTurn({ turn, onAsk }: { turn: WorkbenchTurnData
             />
           )}
 
+          {supportingCards.map((card, index) => (
+            <CardBody key={card.query_id ?? `${card.source}-${index}`} card={card} onAsk={onAsk} />
+          ))}
+
           {modelMessages.map((message, index) => (
             <div key={`model-message-${index}`} className="text-sm leading-7 text-foreground">
               <MarkdownRenderer content={message} />
@@ -213,10 +217,6 @@ export default function WorkbenchTurn({ turn, onAsk }: { turn: WorkbenchTurnData
               ))}
             </div>
           )}
-
-          {supportingCards.map((card, index) => (
-            <CardBody key={card.query_id ?? `${card.source}-${index}`} card={card} onAsk={onAsk} />
-          ))}
 
           {turn.answer?.status === 'partial' &&
             (turn.answer.unavailable_sources.length > 0 || turn.answer.limitations?.length > 0) && (
